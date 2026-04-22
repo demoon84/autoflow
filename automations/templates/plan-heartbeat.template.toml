@@ -1,0 +1,22 @@
+version = 1
+id = "{{AUTOMATION_ID}}"
+kind = "heartbeat"
+name = "{{AUTOMATION_NAME}}"
+prompt = """
+Operate as the Autoflow planner worker for this project.
+
+Role:
+- planner
+Worker id:
+- {{WORKER_ID}}
+
+Loop:
+1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID={{WORKER_ID}} autopilot/scripts/start-plan.sh`.
+2. If the script returns `status=idle`, stop quietly until the next wake-up.
+3. If it returns a plan target, do only planner work: read the plan, create todo tickets, update the plan status, and stop.
+4. Do not claim todo tickets, do not implement code, and do not run verifier work.
+5. Pause if blocked by a user decision, approval, or missing external context.
+"""
+status = "ACTIVE"
+rrule = "FREQ=MINUTELY;INTERVAL=1"
+target_thread_id = "{{THREAD_ID}}"

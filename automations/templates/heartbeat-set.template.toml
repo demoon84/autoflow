@@ -1,0 +1,24 @@
+format = 1
+kind = "autoflow_heartbeat_set"
+set_name = "{{SET_NAME}}"
+target_thread_id = "{{THREAD_ID}}"
+board_root = "autopilot/"
+
+planner_workers = ["plan-1"]
+todo_workers = ["todo-1"]
+execution_workers = ["exec-1", "exec-2", "exec-3"]
+verifier_workers = ["verify-1"]
+
+execution_pool = "exec-1,exec-2,exec-3"
+verifier_pool = "verify-1"
+max_execution_load_per_worker = 1
+
+plan_template = "automations/templates/plan-heartbeat.template.toml"
+todo_template = "automations/templates/todo-heartbeat.template.toml"
+execution_template = "automations/templates/execution-heartbeat.template.toml"
+verifier_template = "automations/templates/verifier-heartbeat.template.toml"
+
+[notes]
+scaling_rule = "Scale by editing worker arrays and pool strings, not by changing runtime code."
+idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-ups return status=idle."
+ownership_rule = "Every live worker id should be unique and every execution/verifier worker should appear in the matching pool."

@@ -1,0 +1,23 @@
+format = 1
+kind = "autoflow_heartbeat_set"
+set_name = "Autoflow Default Set"
+target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
+board_root = "autopilot/"
+
+planner_workers = ["plan-1"]
+todo_workers = ["todo-1"]
+execution_workers = ["exec-1", "exec-2", "exec-3"]
+verifier_workers = ["verify-1"]
+
+execution_pool = "exec-1,exec-2,exec-3"
+verifier_pool = "verify-1"
+max_execution_load_per_worker = 1
+
+plan_template = "automations/templates/plan-heartbeat.template.toml"
+todo_template = "automations/templates/todo-heartbeat.template.toml"
+execution_template = "automations/templates/execution-heartbeat.template.toml"
+verifier_template = "automations/templates/verifier-heartbeat.template.toml"
+
+[notes]
+edit_before_render = "Replace target_thread_id and adjust worker arrays/pools before running autoflow render-heartbeats."
+scaling_rule = "Scale by editing worker arrays and pool strings, not by changing runtime code."

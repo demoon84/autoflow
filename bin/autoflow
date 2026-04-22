@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Autoflow CLI
+
+Usage:
+  autoflow init [project-root] [board-dir-name]
+  autoflow render-heartbeats [project-root] [board-dir-name]
+  autoflow status [project-root] [board-dir-name]
+  autoflow doctor [project-root] [board-dir-name]
+  autoflow upgrade [project-root] [board-dir-name]
+  autoflow help
+
+Examples:
+  autoflow init .
+  autoflow init /path/to/project
+  autoflow init /path/to/project autopilot
+  autoflow render-heartbeats /path/to/project
+  autoflow status .
+  autoflow doctor /path/to/project
+  autoflow upgrade /path/to/project
+EOF
+}
+
+cmd="${1:-help}"
+
+case "$cmd" in
+  init)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autopilot}"
+    exec "${REPO_ROOT}/scripts/scaffold-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  status)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autopilot}"
+    exec "${REPO_ROOT}/scripts/status-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  render-heartbeats)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autopilot}"
+    exec "${REPO_ROOT}/scripts/render-heartbeats.sh" "$target_root" "$board_dir_name"
+    ;;
+  doctor)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autopilot}"
+    exec "${REPO_ROOT}/scripts/doctor-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  upgrade)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autopilot}"
+    exec "${REPO_ROOT}/scripts/upgrade-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: ${cmd}" >&2
+    echo >&2
+    usage >&2
+    exit 1
+    ;;
+esac
