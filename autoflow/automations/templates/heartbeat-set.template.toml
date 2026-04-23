@@ -1,0 +1,36 @@
+format = 1
+kind = "autoflow_heartbeat_set"
+set_name = "{{SET_NAME}}"
+target_thread_id = "{{THREAD_ID}}"
+board_root = "autoflow/"
+
+planner_workers = ["plan-1"]
+todo_workers = ["todo-1"]
+verifier_workers = ["verify-1"]
+
+# execution_pool is the list of todo worker ids that can pick up work.
+# In the merged model, todo worker claims AND implements, so this mirrors
+# todo_workers. Scale parallelism by adding more todo workers and widening
+# this pool together.
+execution_pool = "todo-1"
+verifier_pool = "verify-1"
+max_execution_load_per_worker = 1
+
+plan_template = "automations/templates/plan-heartbeat.template.toml"
+todo_template = "automations/templates/todo-heartbeat.template.toml"
+verifier_template = "automations/templates/verifier-heartbeat.template.toml"
+
+# Per-worker Codex thread_id override. A worker present here is rendered with
+# its own target_thread_id. Workers without an entry fall back to the
+# top-level target_thread_id above.
+[thread_ids]
+plan-1 = "{{PLAN_1_THREAD_ID}}"
+todo-1 = "{{TODO_1_THREAD_ID}}"
+verify-1 = "{{VERIFY_1_THREAD_ID}}"
+
+[notes]
+scaling_rule = "Scale by editing worker arrays, pool strings, and [thread_ids] entries — not by changing runtime code."
+idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-ups return status=idle."
+ownership_rule = "Every live worker id should be unique and every execution/verifier worker should appear in the matching pool."
+thread_binding_rule = "One conversation per worker: fill every [thread_ids] entry with a unique Codex thread id. Shared mode: leave [thread_ids] empty and set target_thread_id only."
+trigger_rule = "`#plan`, `#todo`, `#veri` should create or resume these 1-minute heartbeats and keep them active until the user explicitly says stop."

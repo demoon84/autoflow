@@ -16,6 +16,9 @@ Autoflow CLI
 
 Usage:
   autoflow init [project-root] [board-dir-name]
+  autoflow install-stop-hook [project-root] [board-dir-name]
+  autoflow remove-stop-hook [project-root] [board-dir-name]
+  autoflow stop-hook-status [project-root] [board-dir-name]
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow status [project-root] [board-dir-name]
   autoflow doctor [project-root] [board-dir-name]
@@ -27,7 +30,29 @@ Usage:
 "@ | Write-Host
 }
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$scriptPath = $PSCommandPath
+while ($true) {
+  $item = Get-Item -LiteralPath $scriptPath -Force
+  if ($item.LinkType -ne 'SymbolicLink' -or -not $item.Target) { break }
+  $target = @($item.Target)[0]
+  if ([System.IO.Path]::IsPathRooted($target)) {
+    $scriptPath = $target
+  } else {
+    $scriptPath = Join-Path (Split-Path -Parent $scriptPath) $target
+  }
+}
+$scriptPath = (Resolve-Path -LiteralPath $scriptPath).Path
+$repoRoot = Split-Path -Parent (Split-Path -Parent $scriptPath)
+$cliScriptMap = @{
+  "init" = "scaffold-project.ps1"
+  "install-stop-hook" = "stop-hook-project.ps1"
+  "remove-stop-hook" = "stop-hook-project.ps1"
+  "stop-hook-status" = "stop-hook-project.ps1"
+  "status" = "status-project.ps1"
+  "doctor" = "doctor-project.ps1"
+  "upgrade" = "upgrade-project.ps1"
+  "render-heartbeats" = "render-heartbeats.ps1"
+}
 
 if ($Command -in @("help", "-h", "--help")) {
   Show-Usage
@@ -52,27 +77,28 @@ if ($Command -eq "watch-stop") {
   exit $LASTEXITCODE
 }
 
-switch ($Command) {
-  "init" {
-    $scriptPath = Join-Path $repoRoot "scripts/cli/scaffold-project.ps1"
+if ($cliScriptMap.ContainsKey($Command)) {
+  $scriptName = $cliScriptMap[$Command]
+  $cliScript = Join-Path $repoRoot ("scripts/cli/" + $scriptName)
+
+  switch ($Command) {
+    "install-stop-hook" {
+      & $cliScript "install" @RemainingArgs
+    }
+    "remove-stop-hook" {
+      & $cliScript "remove" @RemainingArgs
+    }
+    "stop-hook-status" {
+      & $cliScript "status" @RemainingArgs
+    }
+    default {
+      & $cliScript @RemainingArgs
+    }
   }
-  "status" {
-    $scriptPath = Join-Path $repoRoot "scripts/cli/status-project.ps1"
-  }
-  "doctor" {
-    $scriptPath = Join-Path $repoRoot "scripts/cli/doctor-project.ps1"
-  }
-  "upgrade" {
-    $scriptPath = Join-Path $repoRoot "scripts/cli/upgrade-project.ps1"
-  }
-  "render-heartbeats" {
-    $scriptPath = Join-Path $repoRoot "scripts/cli/render-heartbeats.ps1"
-  }
-  default {
-    Write-Error "Unknown command: $Command"
-    Show-Usage
-    exit 1
-  }
+
+  exit $LASTEXITCODE
 }
-& $scriptPath @RemainingArgs
-exit $LASTEXITCODE
+
+Write-Host "Unknown command: $Command"
+Show-Usage
+exit 1

@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+  dir="$(cd "$(dirname "$source")" && pwd)"
+  source="$(readlink "$source")"
+  [[ "$source" != /* ]] && source="$dir/$source"
+done
+SCRIPT_DIR="$(cd "$(dirname "$source")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
@@ -11,6 +17,12 @@ Autoflow CLI
 
 Usage:
   autoflow init [project-root] [board-dir-name]
+  autoflow install-stop-hook [project-root] [board-dir-name]
+  autoflow remove-stop-hook [project-root] [board-dir-name]
+  autoflow stop-hook-status [project-root] [board-dir-name]
+  autoflow watch [project-root] [board-dir-name] [config-path]
+  autoflow watch-bg [project-root] [board-dir-name] [config-path]
+  autoflow watch-stop [project-root] [board-dir-name]
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow status [project-root] [board-dir-name]
   autoflow doctor [project-root] [board-dir-name]
@@ -20,7 +32,9 @@ Usage:
 Examples:
   autoflow init .
   autoflow init /path/to/project
-  autoflow init /path/to/project .autoflow
+  autoflow init /path/to/project autoflow
+  autoflow install-stop-hook /path/to/project
+  autoflow watch-bg /path/to/project
   autoflow render-heartbeats /path/to/project
   autoflow status .
   autoflow doctor /path/to/project
@@ -34,31 +48,61 @@ case "$cmd" in
   init)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-.autoflow}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  install-stop-hook)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autoflow}"
+    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" install "$target_root" "$board_dir_name"
+    ;;
+  remove-stop-hook)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autoflow}"
+    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" remove "$target_root" "$board_dir_name"
+    ;;
+  stop-hook-status)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-autoflow}"
+    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" status "$target_root" "$board_dir_name"
+    ;;
+  watch)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" "$@"
+    ;;
+  watch-bg)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --background "$@"
+    ;;
+  watch-stop)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --stop "$@"
     ;;
   status)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-.autoflow}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/status-project.sh" "$target_root" "$board_dir_name"
     ;;
   render-heartbeats)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-.autoflow}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
     ;;
   doctor)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-.autoflow}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/doctor-project.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-.autoflow}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
     ;;
   help|-h|--help)
