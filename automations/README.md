@@ -1,6 +1,6 @@
 # Automations
 
-이 폴더는 `PROJECT_ROOT/autopilot/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
+이 폴더는 `PROJECT_ROOT/autoflow/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
 
 ## Reference Model
 
@@ -24,7 +24,7 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 - 권장 주기:
   - 1분
 - source of truth:
-  - `autopilot/` 보드 파일
+  - `autoflow/` 보드 파일
 
 주의:
 
@@ -247,4 +247,4 @@ heartbeat 를 붙이더라도 자동화는 역할별로 분리한다.
 
 - 이 파일들은 template 이지 자동 등록 스크립트는 아니다.
 - 실제 Codex automation id 와 thread id 는 환경마다 다르므로 placeholder 를 채워야 한다.
-- prompt 안의 `autopilot/` 경로는 보드 폴더 이름에 맞춰 조정될 수 있다.
+- prompt 안의 `autoflow/` 경로는 보드 폴더 이름에 맞춰 조정될 수 있다.

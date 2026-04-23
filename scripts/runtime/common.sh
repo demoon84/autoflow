@@ -3,13 +3,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOARD_ROOT="${AUTOPILOT_BOARD_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+BOARD_ROOT="${AUTOFLOW_BOARD_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
 resolve_project_root() {
   local configured resolved
 
-  if [ -n "${AUTOPILOT_PROJECT_ROOT:-}" ]; then
-    cd "${AUTOPILOT_PROJECT_ROOT}" && pwd
+  if [ -n "${AUTOFLOW_PROJECT_ROOT:-}" ]; then
+    cd "${AUTOFLOW_PROJECT_ROOT}" && pwd
     return 0
   fi
 

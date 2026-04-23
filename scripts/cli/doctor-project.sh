@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 
 project_root_input="${1:-.}"
-board_dir_name="${2:-autopilot}"
+board_dir_name="${2:-autoflow}"
 
 project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
@@ -165,7 +165,7 @@ if [ -d "$board_root" ]; then
   else
     record_check "board_version_marker" "warning"
     printf 'package_version=%s\n' "$package_version" >> "$check_output"
-    record_warning "board version marker is missing: ${board_root}/.autopilot-version"
+    record_warning "board version marker is missing: ${board_root}/.autoflow-version"
   fi
 
   for starter_file in \

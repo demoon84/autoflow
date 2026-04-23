@@ -16,7 +16,7 @@ Pool contract:
 - max execution load per worker: {{MAX_EXECUTION_LOAD}}
 
 Loop:
-1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=todo AUTOFLOW_WORKER_ID={{WORKER_ID}} AUTOFLOW_EXECUTION_POOL='{{EXECUTION_POOL}}' AUTOFLOW_VERIFIER_POOL='{{VERIFIER_POOL}}' AUTOFLOW_MAX_EXECUTION_LOAD_PER_WORKER={{MAX_EXECUTION_LOAD}} autopilot/scripts/start-todo.sh`.
+1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=todo AUTOFLOW_WORKER_ID={{WORKER_ID}} AUTOFLOW_EXECUTION_POOL='{{EXECUTION_POOL}}' AUTOFLOW_VERIFIER_POOL='{{VERIFIER_POOL}}' AUTOFLOW_MAX_EXECUTION_LOAD_PER_WORKER={{MAX_EXECUTION_LOAD}} autoflow/scripts/start-todo.sh`.
 2. If the script returns `status=idle`, stop quietly until the next wake-up.
 3. If it claims a ticket, do only todo-queue work: confirm metadata, owner assignment, next action, and resume context.
 4. Do not implement code and do not run verifier work.

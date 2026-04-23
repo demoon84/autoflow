@@ -4,7 +4,7 @@
 
 핵심 목표는 이것이다.
 
-- 실제 프로젝트 안에 `autopilot/` 보드를 생성한다.
+- 실제 프로젝트 안에 `autoflow/` 보드를 생성한다.
 - 보드 상태는 프로젝트 로컬 파일로 남긴다.
 - 설치는 공개 저장소의 CLI/스크립트로 수행한다.
 
@@ -13,7 +13,7 @@
 ```text
 tetris/
   AGENTS.md
-  autopilot/
+  autoflow/
     AGENTS.md
     README.md
     agents/
@@ -27,7 +27,7 @@ tetris/
   package.json
 ```
 
-여기서 `autopilot/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
+여기서 `autoflow/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
 프로젝트별 온보딩 메모나 테스트 명령 모음은 둘 수 있지만, canonical 규칙은 계속 `rules/` 아래에 둔다.
 
 ## Distribution Model
@@ -36,7 +36,7 @@ tetris/
 
 - 공개 Git 저장소
 - 설치용 CLI 엔트리포인트
-- 로컬 프로젝트에 생성되는 `autopilot/` 보드
+- 로컬 프로젝트에 생성되는 `autoflow/` 보드
 
 이 방식의 장점:
 
@@ -48,7 +48,7 @@ tetris/
 ## 핵심 개념
 
 - `PROJECT_ROOT`: 실제 제품 코드를 두는 호스트 프로젝트 루트
-- `BOARD_ROOT`: `PROJECT_ROOT/autopilot`
+- `BOARD_ROOT`: `PROJECT_ROOT/autoflow`
 
 이 스캐폴드에서는 아래 원칙을 쓴다.
 
@@ -62,14 +62,14 @@ tetris/
 
 ```text
 PROJECT_ROOT
-  -> autopilot/rules/spec
-  -> autopilot/rules/plan
-  -> autopilot/automations
-  -> autopilot/tickets/todo
-  -> autopilot/tickets/inprogress
-  -> autopilot/rules/verifier
-  -> autopilot/tickets/runs
-  -> autopilot/tickets/done
+  -> autoflow/rules/spec
+  -> autoflow/rules/plan
+  -> autoflow/automations
+  -> autoflow/tickets/todo
+  -> autoflow/tickets/inprogress
+  -> autoflow/rules/verifier
+  -> autoflow/tickets/runs
+  -> autoflow/tickets/done
 ```
 
 ## When This Fits
@@ -79,7 +79,7 @@ PROJECT_ROOT
 - `tetris` 같은 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
 - 여러 Codex 스레드나 heartbeat worker 가 병렬로 티켓을 나눠 처리할 때
 - 보드 상태와 제품 코드를 물리적으로 분리하고 싶을 때
-- 사람이 `autopilot/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
+- 사람이 `autoflow/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
 
 ## Install
 
@@ -95,7 +95,7 @@ PROJECT_ROOT
 ./bin/autoflow init .
 ```
 
-기본 보드 폴더 이름은 `autopilot` 이다.
+기본 보드 폴더 이름은 `autoflow` 이다.
 
 다른 이름을 시험하고 싶으면:
 
@@ -141,10 +141,10 @@ PROJECT_ROOT
 현재 브랜드 전략은 아래와 같다.
 
 - 제품/배포 이름: `Autoflow`
-- 로컬 보드 폴더: `autopilot/`
-- 현재 보드 명령 예시: `init autopilot`, `start plan` 등 기존 흐름 유지
+- 로컬 보드 폴더: `autoflow/`
+- 현재 보드 명령 예시: `init autoflow`, `start plan` 등 기존 흐름 유지
 
-즉 브랜드는 `Autoflow` 로 가져가되, 실제 프로젝트 경로는 당분간 `autopilot/` 으로 유지한다.
+즉 브랜드는 `Autoflow` 로 가져가되, 실제 프로젝트 경로는 당분간 `autoflow/` 으로 유지한다.
 
 ## Public Package Layout
 
@@ -160,16 +160,16 @@ autoflow/
   tickets/
 ```
 
-`bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `autopilot/` 아래에 남는다.
+`bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `autoflow/` 아래에 남는다.
 
 생성 대상은 현재 저장소 전체가 아니라 `templates/board/`, `templates/host-AGENTS.md`, 그리고 선택된 runtime 문서/스크립트다.
 즉 새 프로젝트에는 이 저장소의 내부 plan, 샘플 ticket, 플러그인 실험 파일이 들어가지 않는다.
 
-생성된 보드에는 `.autopilot-version` 이 기록되고, `status` 와 `doctor` 는 이 값을 패키지 버전과 비교한다.
+생성된 보드에는 `.autoflow-version` 이 기록되고, `status` 와 `doctor` 는 이 값을 패키지 버전과 비교한다.
 
 ## Script Hooks
 
-생성된 `autopilot/scripts/` 의 훅은 보드 상태 전환을 맡는다.
+생성된 `autoflow/scripts/` 의 훅은 보드 상태 전환을 맡는다.
 
 - `start-plan.sh`
 - `start-todo.sh`
@@ -228,7 +228,7 @@ pool 예시는 숫자가 고정이 아니다.
 - 공용 템플릿
 - 보드 운영용 README/agent 문서
 - 호스트 루트 `AGENTS.md`
-- `.autopilot-version`
+- `.autoflow-version`
 
 아래는 보존한다 (경로는 모두 생성된 `BOARD_ROOT/` 기준이며, 이 루트 패키지 소스에는 해당 파일들이 없다).
 
@@ -259,7 +259,7 @@ pool 예시는 숫자가 고정이 아니다.
 - 공개 저장소 형태로 쉽게 배포하기
 - 실제 프로젝트 안에 삽입 가능한 하네스 sidecar 만들기
 - 보드와 제품 코드를 물리적으로 분리하기
-- 에이전트가 `autopilot/` 보드만 읽어도 현재 흐름을 이해하게 하기
+- 에이전트가 `autoflow/` 보드만 읽어도 현재 흐름을 이해하게 하기
 - 실제 코드 수정 범위는 `Allowed Paths` 로 좁히기
 - 여러 대화창이 동시에 `start todo` 를 실행해도 서로 다른 티켓을 점유하게 하기
 - 대화창이 멈췄다가 다시 시작되어도 `tickets/inprogress/` 기준으로 재개하게 하기

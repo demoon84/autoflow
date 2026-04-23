@@ -11,7 +11,7 @@ Worker id:
 - {{WORKER_ID}}
 
 Loop:
-1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=execution AUTOFLOW_WORKER_ID={{WORKER_ID}} autopilot/scripts/start.sh`.
+1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=execution AUTOFLOW_WORKER_ID={{WORKER_ID}} autoflow/scripts/start.sh`.
 2. If the script returns `status=idle`, stop quietly until the next wake-up.
 3. If it returns a ticket target, do only execution work for that assigned ticket: read the ticket, work within Allowed Paths, update notes/result/resume fields, and prepare `ready_for_verification` when appropriate.
 4. Do not claim new todo tickets and do not run verifier work.

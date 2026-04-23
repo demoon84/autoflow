@@ -36,8 +36,8 @@ autoflow/
 ```text
 PROJECT_ROOT/
   AGENTS.md
-  autopilot/
-    .autopilot-version
+  autoflow/
+    .autoflow-version
     rules/
     tickets/
 ```
@@ -82,7 +82,7 @@ PROJECT_ROOT/
   - source repo templates
   - `templates/board/`
 - writes:
-  - `PROJECT_ROOT/autopilot/`
+  - `PROJECT_ROOT/autoflow/`
   - `PROJECT_ROOT/AGENTS.md`
 - must be:
   - idempotent
@@ -109,7 +109,7 @@ PROJECT_ROOT/
 - writes:
   - package-managed board assets
   - `PROJECT_ROOT/AGENTS.md`
-  - `BOARD_ROOT/.autopilot-version`
+  - `BOARD_ROOT/.autoflow-version`
 - must:
   - preserve live ticket and run state
   - preserve project-specific starter state files
@@ -120,7 +120,7 @@ PROJECT_ROOT/
 - public package name:
   - `Autoflow`
 - local board path:
-  - `autopilot/`
+  - `autoflow/`
 
 ## Deferred Alternatives
 

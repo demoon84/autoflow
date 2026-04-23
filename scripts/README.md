@@ -3,7 +3,7 @@
 이 폴더는 두 종류의 스크립트를 담는다.
 
 - `cli/`: 패키지 CLI 측 스크립트. `bin/autoflow` 가 직접 호출한다. 생성 보드에는 복사되지 않는다.
-- `runtime/`: 생성 보드의 `autopilot/scripts/` 로 복사되는 runtime 훅. 보드 쪽 경로는 계속 flat 하다 (`autopilot/scripts/start-*.sh`).
+- `runtime/`: 생성 보드의 `autoflow/scripts/` 로 복사되는 runtime 훅. 보드 쪽 경로는 계속 flat 하다 (`autoflow/scripts/start-*.sh`).
 
 ## cli/
 
@@ -27,16 +27,16 @@
 
 스크립트는 두 루트를 구분한다.
 
-- `BOARD_ROOT`: 현재 `autopilot/` 폴더
+- `BOARD_ROOT`: 현재 `autoflow/` 폴더
 - `PROJECT_ROOT`: 실제 제품 코드 루트
 
 해석 순서:
 
-1. `AUTOPILOT_PROJECT_ROOT` 환경 변수
-2. `autopilot/.project-root`
+1. `AUTOFLOW_PROJECT_ROOT` 환경 변수
+2. `autoflow/.project-root`
 3. `BOARD_ROOT` 의 부모 폴더
 
-권장 설치 위치는 항상 `PROJECT_ROOT/autopilot/` 이다.
+권장 설치 위치는 항상 `PROJECT_ROOT/autoflow/` 이다.
 
 ## Hook Scripts
 

@@ -6,7 +6,7 @@
 ## Current Goal
 
 - `Autoflow` 를 `repo template + installer CLI` 방식의 공개 배포 가능한 하네스로 유지한다.
-- 실제 프로젝트에는 `autopilot/` sidecar 보드를 생성하고, worker 기반으로 `start plan -> start todo -> start -> start verifier` 흐름을 운영할 수 있어야 한다.
+- 실제 프로젝트에는 `autoflow/` sidecar 보드를 생성하고, worker 기반으로 `start plan -> start todo -> start -> start verifier` 흐름을 운영할 수 있어야 한다.
 
 ## Current State
 
@@ -19,7 +19,7 @@
 ```text
 PROJECT_ROOT/
   AGENTS.md
-  autopilot/
+  autoflow/
     AGENTS.md
     README.md
     agents/
@@ -132,7 +132,7 @@ bash -n bin/autoflow scripts/*.sh
 - `error_count=0`
 - `warning_count=0`
 
-즉 현재 패키지로 새 `tetris` 같은 host project 에 `autopilot/` 보드를 생성하는 흐름은 살아 있다.
+즉 현재 패키지로 새 `tetris` 같은 host project 에 `autoflow/` 보드를 생성하는 흐름은 살아 있다.
 
 ## Remaining Work
 
@@ -168,9 +168,9 @@ bash -n bin/autoflow scripts/*.sh
 완료 내용:
 
 - `D:/lab/tetris/` 생성 후 `autoflow init /d/lab/tetris` 로 보드 초기화 완료.
-- `autopilot/rules/spec/project_001.md` 를 Tetris 실제 스펙으로 교체 (vanilla JS, 10x20, 7종 블록, 키보드 입력, 점수/레벨/게임오버/일시정지).
-- `autopilot/rules/plan/plan_001.md` 를 Tetris 실제 plan 으로 교체하고 `Status: ready` 로 전환. `Execution Candidates` 11개 선언.
-- `AUTOFLOW_ROLE=plan autopilot/scripts/start-plan.sh` 실행해서 `tickets/todo/tickets_001.md` ~ `tickets_011.md` 11개 생성 완료. plan 상태는 `ticketed` 로 전환됨.
+- `autoflow/rules/spec/project_001.md` 를 Tetris 실제 스펙으로 교체 (vanilla JS, 10x20, 7종 블록, 키보드 입력, 점수/레벨/게임오버/일시정지).
+- `autoflow/rules/plan/plan_001.md` 를 Tetris 실제 plan 으로 교체하고 `Status: ready` 로 전환. `Execution Candidates` 11개 선언.
+- `AUTOFLOW_ROLE=plan autoflow/scripts/start-plan.sh` 실행해서 `tickets/todo/tickets_001.md` ~ `tickets_011.md` 11개 생성 완료. plan 상태는 `ticketed` 로 전환됨.
 - `autoflow doctor /d/lab/tetris` 는 `status=ok`, `error_count=0`, `warning_count=0`.
 
 남은 일:
@@ -203,4 +203,4 @@ bash -n bin/autoflow scripts/*.sh
 - 구조 정리 후에는 매번 `bash -n`, fresh `autoflow init`, fresh `autoflow doctor` 를 같이 돌리는 편이 안전하다.
 - 생성 보드에 더 이상 `docs/`, 상태별 README, `runs/README`, `scripts/README` 를 기대하면 안 된다.
 - 위에서 발견된 `next_ticket_id()` 버그처럼 runtime 실행 경로를 실제로 돌려 봐야만 드러나는 버그가 남아 있을 수 있다. E2E 시연이 최고의 regression test 다.
-- Tetris 보드 시연이 본격적으로 이어지는 위치: `D:/lab/tetris/autopilot/`. 루트 autoflow 저장소는 `tetris` 와 별개로 유지된다.
+- Tetris 보드 시연이 본격적으로 이어지는 위치: `D:/lab/tetris/autoflow/`. 루트 autoflow 저장소는 `tetris` 와 별개로 유지된다.

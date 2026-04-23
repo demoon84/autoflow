@@ -39,11 +39,11 @@ package_version_value() {
 board_version_value() {
   local board_root="$1"
 
-  if [ ! -f "${board_root}/.autopilot-version" ]; then
+  if [ ! -f "${board_root}/.autoflow-version" ]; then
     return 1
   fi
 
-  tr -d '\r\n' < "${board_root}/.autopilot-version"
+  tr -d '\r\n' < "${board_root}/.autoflow-version"
 }
 
 project_root_marker_value() {

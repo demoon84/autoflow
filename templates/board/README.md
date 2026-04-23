@@ -57,7 +57,7 @@ worker 수는 고정이 아니다. 프로젝트 상황에 따라 `execution` 과
 
 해석 순서:
 
-1. `AUTOPILOT_PROJECT_ROOT`
+1. `AUTOFLOW_PROJECT_ROOT`
 2. `.project-root`
 3. `BOARD_ROOT` 의 부모 폴더
 

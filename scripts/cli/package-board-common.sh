@@ -42,7 +42,7 @@ render_text_file() {
 
   mkdir -p "$(dirname "$target_file")"
   escaped_board_dir="$(printf '%s' "$board_dir_name" | sed 's/[\/&]/\\&/g')"
-  sed "s#autopilot/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
+  sed "s#autoflow/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
 }
 
 managed_board_asset_entries() {
@@ -233,11 +233,11 @@ write_project_root_marker() {
 board_version_value() {
   local board_root="$1"
 
-  if [ ! -f "${board_root}/.autopilot-version" ]; then
+  if [ ! -f "${board_root}/.autoflow-version" ]; then
     return 1
   fi
 
-  tr -d '\r\n' < "${board_root}/.autopilot-version"
+  tr -d '\r\n' < "${board_root}/.autoflow-version"
 }
 
 write_board_version_marker() {
@@ -246,7 +246,7 @@ write_board_version_marker() {
   local version
 
   version="$(package_version)"
-  sync_literal_file "${board_root}/.autopilot-version" "$version" "$backup_root" ".autopilot-version"
+  sync_literal_file "${board_root}/.autoflow-version" "$version" "$backup_root" ".autoflow-version"
 }
 
 sync_host_agents_file() {

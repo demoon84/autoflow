@@ -14,7 +14,7 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then
 fi
 
 TARGET_PROJECT_ROOT="$1"
-BOARD_DIR_NAME="${2:-autopilot}"
+BOARD_DIR_NAME="${2:-autoflow}"
 
 mkdir -p "$TARGET_PROJECT_ROOT"
 TARGET_PROJECT_ROOT="$(cd "$TARGET_PROJECT_ROOT" && pwd)"

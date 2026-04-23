@@ -20,7 +20,7 @@ Usage:
 Examples:
   autoflow init .
   autoflow init /path/to/project
-  autoflow init /path/to/project autopilot
+  autoflow init /path/to/project autoflow
   autoflow render-heartbeats /path/to/project
   autoflow status .
   autoflow doctor /path/to/project
@@ -34,31 +34,31 @@ case "$cmd" in
   init)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autopilot}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
     ;;
   status)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autopilot}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/status-project.sh" "$target_root" "$board_dir_name"
     ;;
   render-heartbeats)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autopilot}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
     ;;
   doctor)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autopilot}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/doctor-project.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autopilot}"
+    board_dir_name="${2:-autoflow}"
     exec "${REPO_ROOT}/scripts/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
     ;;
   help|-h|--help)

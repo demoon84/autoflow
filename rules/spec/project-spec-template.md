@@ -18,7 +18,7 @@
 ## Global Rules
 
 - ...
-- Board files live in `autopilot/`
+- Board files live in `autoflow/`
 - Allowed Paths are relative to the host project root
 - Verification commands run from the host project root unless a ticket says otherwise
 

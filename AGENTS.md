@@ -1,23 +1,23 @@
 # AGENTS.md
 
-이 저장소의 목적은 `문서 기반 AI 작업 하네스 보드`를 `PROJECT_ROOT/autopilot/` 형태로 삽입하기 위한 sidecar scaffold source 를 운영하는 것이다.
+이 저장소의 목적은 `문서 기반 AI 작업 하네스 보드`를 `PROJECT_ROOT/autoflow/` 형태로 삽입하기 위한 sidecar scaffold source 를 운영하는 것이다.
 
 에이전트는 이 저장소에서 임의로 바로 구현부터 시작하지 말고, 아래의 보드 흐름을 따라야 한다.
 
 ## Canonical Flow
 
-`PROJECT_ROOT -> autopilot/rules/spec -> autopilot/rules/plan -> autopilot/automations -> autopilot/tickets/todo -> autopilot/tickets/inprogress -> autopilot/rules/verifier -> autopilot/tickets/runs -> autopilot/tickets/done`
+`PROJECT_ROOT -> autoflow/rules/spec -> autoflow/rules/plan -> autoflow/automations -> autoflow/tickets/todo -> autoflow/tickets/inprogress -> autoflow/rules/verifier -> autoflow/tickets/runs -> autoflow/tickets/done`
 
 의미:
 
 - `PROJECT_ROOT`: 실제 제품 코드 루트
-- `autopilot/rules/spec/`: 무엇이 맞는지 정의하는 기준
-- `autopilot/rules/plan/`: 어떤 일을 어떤 순서로 티켓화할지 정리
-- `autopilot/automations/`: 훅과 폴더별 자동화 역할
-- `autopilot/agents/`: 각 훅이 실행할 역할 정의
-- `autopilot/tickets/`: 작업 단위와 상태 보드
-- `autopilot/rules/verifier/`: 검증 기준과 체크리스트
-- `autopilot/tickets/runs/`: 실행과 검증 기록
+- `autoflow/rules/spec/`: 무엇이 맞는지 정의하는 기준
+- `autoflow/rules/plan/`: 어떤 일을 어떤 순서로 티켓화할지 정리
+- `autoflow/automations/`: 훅과 폴더별 자동화 역할
+- `autoflow/agents/`: 각 훅이 실행할 역할 정의
+- `autoflow/tickets/`: 작업 단위와 상태 보드
+- `autoflow/rules/verifier/`: 검증 기준과 체크리스트
+- `autoflow/tickets/runs/`: 실행과 검증 기록
 
 ## Read Order
 
