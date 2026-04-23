@@ -61,6 +61,22 @@ toml_array_values() {
   '
 }
 
+toml_section_value() {
+  local file="$1"
+  local section="$2"
+  local key="$3"
+  awk -v section="[$section]" -v key="$key" '
+    $0 == section { in_section = 1; next }
+    /^\[/ && in_section { in_section = 0 }
+    in_section && $0 ~ "^"key"[[:space:]]*=" {
+      if (match($0, /"[^"]*"/)) {
+        print substr($0, RSTART + 1, RLENGTH - 2)
+        exit
+      }
+    }
+  ' "$file"
+}
+
 resolve_board_relative_path() {
   local rel="$1"
   case "$rel" in
@@ -83,10 +99,11 @@ render_template() {
   local automation_id="$3"
   local automation_name="$4"
   local worker_id="$5"
+  local thread_id="$6"
   local escaped_thread_id escaped_automation_id escaped_automation_name
   local escaped_worker_id escaped_execution_pool escaped_verifier_pool escaped_max_load
 
-  escaped_thread_id="$(escape_sed_replacement "$target_thread_id")"
+  escaped_thread_id="$(escape_sed_replacement "$thread_id")"
   escaped_automation_id="$(escape_sed_replacement "$automation_id")"
   escaped_automation_name="$(escape_sed_replacement "$automation_name")"
   escaped_worker_id="$(escape_sed_replacement "$worker_id")"
@@ -111,7 +128,19 @@ append_manifest_entry() {
   local role="$2"
   local worker_id="$3"
   local automation_id="$4"
-  printf '%s|%s|%s|%s\n' "$role" "$worker_id" "$automation_id" "$output_file" >> "$manifest_tmp"
+  local thread_id="$5"
+  printf '%s|%s|%s|%s|%s\n' "$role" "$worker_id" "$automation_id" "$thread_id" "$output_file" >> "$manifest_tmp"
+}
+
+resolve_worker_thread_id() {
+  local worker_id="$1"
+  local found
+  found="$(toml_section_value "$set_file" "thread_ids" "$worker_id")"
+  if [ -n "$found" ] && ! printf '%s' "$found" | grep -qE 'REPLACE_WITH|{{'; then
+    printf '%s' "$found"
+    return 0
+  fi
+  printf '%s' "$target_thread_id"
 }
 
 set_name="$(toml_string_value "$set_file" "set_name")"
@@ -182,16 +211,17 @@ render_role_workers() {
   local role="$1"
   local array_key="$2"
   local template_file="$3"
-  local worker_id automation_id automation_name output_file
+  local worker_id automation_id automation_name output_file worker_thread_id
 
   while IFS= read -r worker_id; do
     [ -n "$worker_id" ] || continue
     automation_id="${set_slug}-${worker_id}"
     automation_name="${set_name} / ${worker_id}"
     output_file="${output_root}/${worker_id}.toml"
-    render_template "$template_file" "$output_file" "$automation_id" "$automation_name" "$worker_id"
-    append_manifest_entry "$output_file" "$role" "$worker_id" "$automation_id"
-    printf 'rendered=%s\n' "$output_file"
+    worker_thread_id="$(resolve_worker_thread_id "$worker_id")"
+    render_template "$template_file" "$output_file" "$automation_id" "$automation_name" "$worker_id" "$worker_thread_id"
+    append_manifest_entry "$output_file" "$role" "$worker_id" "$automation_id" "$worker_thread_id"
+    printf 'rendered=%s thread=%s\n' "$output_file" "$worker_thread_id"
   done < <(toml_array_values "$set_file" "$array_key")
 }
 

@@ -18,6 +18,19 @@ todo_template = "automations/templates/todo-heartbeat.template.toml"
 execution_template = "automations/templates/execution-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 
+# Per-worker Codex thread_id override. Each entry binds one worker to one
+# conversation. Workers not listed here fall back to the top-level
+# target_thread_id. Values starting with REPLACE_WITH_ are treated as
+# missing at render time.
+[thread_ids]
+plan-1 = "REPLACE_WITH_PLAN_1_THREAD_ID"
+todo-1 = "REPLACE_WITH_TODO_1_THREAD_ID"
+exec-1 = "REPLACE_WITH_EXEC_1_THREAD_ID"
+exec-2 = "REPLACE_WITH_EXEC_2_THREAD_ID"
+exec-3 = "REPLACE_WITH_EXEC_3_THREAD_ID"
+verify-1 = "REPLACE_WITH_VERIFY_1_THREAD_ID"
+
 [notes]
-edit_before_render = "Replace target_thread_id and adjust worker arrays/pools before running autoflow render-heartbeats."
-scaling_rule = "Scale by editing worker arrays and pool strings, not by changing runtime code."
+edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
+scaling_rule = "Scale by editing worker arrays, pool strings, and [thread_ids] entries — not by changing runtime code."
+single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
