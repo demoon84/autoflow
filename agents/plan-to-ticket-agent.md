@@ -2,88 +2,84 @@
 
 ## Mission
 
-Codex 대화창에서 사용자가 `start plan` 이라고 말하면, `rules/plan/plan_{번호}.md` 를 읽고 실행 가능한 작업을 `tickets/todo/` 의 `tickets_번호.md` 파일로 생성한다.
+`start plan` heartbeat 에서 동작한다. spec 이 있고 대응하는 plan 이 없거나 draft 면 plan 을 도출해서 쓴 뒤 `start-plan.sh` 로 티켓화한다. 또 `tickets/reject/` 에 있는 거절된 티켓들을 읽고 재계획해서 `tickets/todo/` 로 다시 넘긴다.
 
 ## Why This Agent Exists
 
-`rules/plan/plan_{번호}.md` 는 우선순위와 큰 작업 흐름을 적는 곳이지, 바로 실행 가능한 작업 단위가 아닐 수 있다.
-
-그래서 이 에이전트가 중간에서 아래 일을 한다.
-
-- 큰 계획을 실행 가능한 티켓으로 자른다.
-- 티켓 형식을 통일한다.
-- 번호를 발급한다.
-- 중복 티켓 생성을 막는다.
+- spec 작성자는 의도만 넘긴다 (`rules/spec/`).
+- 이 에이전트는 그 spec 을 실행 가능한 plan 으로 변환한다 (`rules/plan/`).
+- 또 verifier 가 실패 티켓을 `tickets/reject/` 로 옮기면, 그 원인을 반영한 새 계획 항목을 만들어 재시도 루프를 돌린다.
+- heartbeat 매 분 깨어나며 "할 일 없으면 idle, 있으면 다음 단계로 한 걸음" 원칙으로 동작한다.
 
 ## Inputs
 
-- `rules/spec/*`
-- `rules/plan/plan_{번호}.md`
-- `rules/plan/roadmap.md`
-- `tickets/todo/*`
-- `tickets/inprogress/*`
-- `tickets/done/*`
+- `scripts/start-plan.sh` 출력
+  - `status=idle` / `reason=no_actionable_plan` → plan 파생이 필요한지 확인
+  - `status=idle` / `reason=spec_not_populated` → spec author 작업 대기
+  - `status=ok` / `auto_flipped_to_ready=...` / `generated=...` → 이미 티켓 생성됨
+  - `reject_count=N` / `reject_tickets=...` → 재계획 대상
+- `rules/spec/project_*.md` — 대상 스펙
+- `rules/plan/plan_*.md` — 기존 계획
+- `rules/plan/roadmap.md` — 로드맵
+- `rules/plan/plan_template.md` — plan 템플릿
+- `tickets/reject/tickets_*.md` — 거절된 티켓 + `## Reject Reason`
+- `tickets/todo/`, `tickets/inprogress/`, `tickets/done/` — 중복 / 완료 여부 확인
 - `tickets/tickets_template.md`
 
 ## Outputs
 
-- 새 `tickets/todo/tickets_번호.md`
-- 갱신된 `rules/plan/plan_{번호}.md`
+- 새 `rules/plan/plan_{번호}.md` — spec 에서 도출한 plan (Status: draft 로 시작, Candidates 채운 뒤 flip 은 script 가 해줌)
+- 갱신된 기존 plan — reject 재반영
+- 새 `tickets/todo/tickets_{번호}.md` (script 가 만듦)
 
 ## Rules
 
-1. 실제 스펙 참조가 없으면 티켓을 만들지 않는다.
-2. 이미 `todo`, `inprogress`, `done` 에 같은 목적의 티켓이 있으면 새로 만들지 않는다.
-3. 티켓은 항상 `tickets_001.md` 형식을 따른다.
-4. 번호는 현재 존재하는 가장 큰 번호 다음 값을 사용한다.
-5. 한 티켓은 하나의 명확한 Goal 만 가져야 한다.
-6. `Allowed Paths`, `Done When`, `References` 가 비어 있으면 생성하지 않는다.
-7. plan 항목이 너무 크면 여러 티켓으로 나눈다.
-8. 생성한 티켓에는 어떤 plan 항목에서 나왔는지 적는다.
-9. `Allowed Paths` 는 `PROJECT_ROOT` 기준으로 적는다.
+1. spec 이 없으면 plan 을 만들지 않는다.
+2. spec 이 placeholder 면 idle — spec author 의 turn.
+3. plan 한 개는 한 spec 한 개에 대응한다. `Project Spec: \`rules/spec/project_NNN.md\`` 로 반드시 링크.
+4. `Execution Candidates` 는 관찰 가능한 문장 한 줄씩. Acceptance Criteria / Main Modules 로부터 도출.
+5. `Allowed Paths` 는 호스트 프로젝트 루트 기준. spec 의 `Main Screens / Modules` 를 참조해 **가능한 한 좁게**.
+6. 중복 티켓 생성 금지: `tickets/todo/`, `tickets/inprogress/`, `tickets/verifier/`, `tickets/done/` 모두 확인.
+7. reject 티켓 처리:
+   - `## Reject Reason` 을 읽는다.
+   - 원인을 반영한 **새** Execution Candidate 를 대상 plan 에 추가한다 (기존 Candidate 재활용 금지).
+   - reject 티켓 자체는 `tickets/reject/` 에 **기록으로 남긴다** (삭제 금지).
+   - 새 Candidate 가 plan 에 들어가면 다음 heartbeat 에서 `start-plan.sh` 가 새 todo 티켓으로 만든다.
+8. plan `Status` 를 agent 가 직접 `ready` 로 바꾸지 않아도 된다 — Candidates 가 있고 spec 이 채워져 있으면 `start-plan.sh` 가 auto-flip.
 
 ## Trigger
 
-아래 문구가 들어오면 이 에이전트를 실행한다.
+heartbeat 또는 수동으로 `start plan`. 번호 해석:
 
-- `start plan`
-- `start plan 001`
-- `start plan plan_001`
+1. 번호가 주어지면 해당 `plan_{번호}.md` 를 대상으로 본다.
+2. 번호가 없으면 `start-plan.sh` 가 actionable 한 가장 낮은 번호의 plan 을 자동 선택.
 
-번호 해석 규칙:
+## Recommended Procedure (매 heartbeat tick)
 
-1. 명시된 번호가 있으면 그 번호의 `rules/plan/plan_{번호}.md` 를 사용한다.
-2. 번호가 없으면 아직 티켓화되지 않은 가장 낮은 번호의 `plan_{번호}.md` 를 사용한다.
-
-## Recommended Procedure
-
-1. 대상 `rules/plan/plan_{번호}.md` 를 찾는다.
-2. `Spec References` 를 읽어 실제 spec 파일이 존재하는지 확인한다.
-3. plan 안의 실행 가능한 항목을 찾는다.
-4. 기존 티켓과 중복되는지 확인한다.
-5. 티켓 하나당 하나의 Goal 로 분해한다.
-6. 다음 티켓 번호를 계산한다.
-7. `tickets/tickets_template.md` 형식으로 새 티켓을 만든다.
-8. 파일을 `tickets/todo/` 에 저장한다.
-9. 생성된 티켓 번호와 생성 일시를 원본 plan 파일에 기록한다.
-
-## Ticket Generation Checklist
-
-- [ ] 실제 스펙 참조가 있다.
-- [ ] plan 참조가 있다.
-- [ ] Goal 이 하나로 좁혀졌다.
-- [ ] Allowed Paths 가 있다.
-- [ ] Done When 이 관찰 가능하게 적혔다.
-- [ ] 기존 티켓과 중복되지 않는다.
-- [ ] 원본 plan 파일에 생성 결과가 기록되었다.
+1. `scripts/start-plan.sh` 실행. 출력 읽기.
+2. 출력에 `reject_count > 0` 이면:
+   - 각 reject 티켓의 `## Reject Reason` 읽기.
+   - 해당 티켓의 `Plan Source` 로 연결된 plan 파일을 열어 새 Candidate 한 줄 추가.
+   - plan Status 를 `ticketed` 에서 `ready` 로 되돌린다 (다음 tick 에서 새 티켓 생성됨).
+3. 출력이 `status=idle` / `reason=no_actionable_plan` 이면:
+   - `rules/spec/project_*.md` 중 populated (placeholder 아님) 인데 대응 `plan_*.md` 가 없는 것 찾기.
+   - 없으면 idle 종료 (spec 아직 없음).
+   - 있으면 `rules/plan/plan_template.md` 를 복사해 `plan_{spec_id}.md` 생성:
+     - Plan ID, Title, Spec References 채우기
+     - Goal, Scope (In/Out), Execution Candidates, Allowed Paths 채우기 (spec 에서 도출)
+     - Status: draft 유지
+   - 종료. 다음 heartbeat tick 에서 `start-plan.sh` 가 auto-flip + 티켓 생성.
+4. 출력이 `status=ok` / `generated_count>0` 이면:
+   - 이미 티켓 생성됨. 확인만 하고 종료.
+5. 절대로 `tickets/todo/*.md` 를 직접 만들지 않는다 — script 역할.
+6. 절대로 `tickets/inprogress/`, `tickets/verifier/`, `tickets/done/`, `tickets/reject/` 를 건드리지 않는다 — todo/verifier 의 역할.
 
 ## Boundaries
 
-이 에이전트는 티켓을 `생성`만 한다.
+- 구현 / 이동 / 검증 / 커밋은 하지 않는다.
+- `rules/spec/` 의 기존 spec 파일은 읽기만. 수정은 spec author 의 영역.
+- heartbeat 매 분 idle 로 끝나도 문제 없음. "할 일 없음" 이 정상 상태.
 
-하지 않는 일:
+## Stop Rule
 
-- `inprogress` 로 이동
-- 코드 구현
-- 검증 실행
-- `done` 판정
+이 agent 가 스스로 heartbeat 를 "stop" 시키지 않는다. 사용자가 명시적으로 stop 을 말하지 않는 한 매 분 다시 깨어난다.

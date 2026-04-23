@@ -51,14 +51,12 @@ template_text|AGENTS.md|AGENTS.md
 template_text|README.md|README.md
 source_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
-source_text|agents/execution-agent.md|agents/execution-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
 source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 source_text|automations/README.md|automations/README.md
 source_text|automations/templates/heartbeat-set.template.toml|automations/templates/heartbeat-set.template.toml
 source_text|automations/templates/plan-heartbeat.template.toml|automations/templates/plan-heartbeat.template.toml
 source_text|automations/templates/todo-heartbeat.template.toml|automations/templates/todo-heartbeat.template.toml
-source_text|automations/templates/execution-heartbeat.template.toml|automations/templates/execution-heartbeat.template.toml
 source_text|automations/templates/verifier-heartbeat.template.toml|automations/templates/verifier-heartbeat.template.toml
 source_text|rules/README.md|rules/README.md
 source_text|rules/plan/README.md|rules/plan/README.md
@@ -66,7 +64,6 @@ source_text|rules/plan/plan_template.md|rules/plan/plan_template.md
 source_executable|scripts/runtime/common.sh|scripts/common.sh
 source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
 source_executable|scripts/runtime/start-todo.sh|scripts/start-todo.sh
-source_executable|scripts/runtime/start.sh|scripts/start.sh
 source_executable|scripts/runtime/start-verifier.sh|scripts/start-verifier.sh
 source_executable|scripts/runtime/start-spec.sh|scripts/start-spec.sh
 source_text|rules/spec/README.md|rules/spec/README.md
@@ -93,7 +90,9 @@ scripts
 tickets
 tickets/todo
 tickets/inprogress
+tickets/verifier
 tickets/done
+tickets/reject
 tickets/runs
 EOF
 }

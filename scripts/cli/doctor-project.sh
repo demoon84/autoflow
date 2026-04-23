@@ -88,7 +88,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for ticket_dir in todo inprogress done; do
+  for ticket_dir in todo inprogress verifier done reject; do
     if [ -d "${board_root}/tickets/${ticket_dir}" ]; then
       record_check "tickets_${ticket_dir}" "ok"
     else
@@ -111,7 +111,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_file in common.sh start-plan.sh start-todo.sh start.sh start-verifier.sh start-spec.sh; do
+  for runtime_file in common.sh start-plan.sh start-todo.sh start-verifier.sh start-spec.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -176,7 +176,6 @@ if [ -d "$board_root" ]; then
     "automations/templates/heartbeat-set.template.toml" \
     "automations/templates/plan-heartbeat.template.toml" \
     "automations/templates/todo-heartbeat.template.toml" \
-    "automations/templates/execution-heartbeat.template.toml" \
     "automations/templates/verifier-heartbeat.template.toml" \
     "tickets/tickets_template.md" \
     "rules/verifier/checklist-template.md" \

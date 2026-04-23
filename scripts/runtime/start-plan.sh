@@ -6,21 +6,77 @@ source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
 ensure_expected_role "plan"
 
+spec_is_populated() {
+  local spec_ref="$1"
+  [ -n "$spec_ref" ] || return 1
+  [ -f "${BOARD_ROOT}/${spec_ref}" ] || return 1
+  if grep -qsF "Replace with your project name" "${BOARD_ROOT}/${spec_ref}"; then
+    return 1
+  fi
+  return 0
+}
+
+plan_status_value() {
+  local plan_file="$1"
+  extract_scalar_field_in_section "$plan_file" "Plan" "Status" | tr -d ' '
+}
+
+lowest_actionable_plan() {
+  local file status spec_ref candidates
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    status="$(plan_status_value "$file")"
+    case "$status" in
+      ready)
+        printf '%s' "$file"
+        return 0
+        ;;
+      draft)
+        spec_ref="$(strip_markdown_code_ticks "$(extract_reference_value "$file" "Spec References" "Project Spec")")"
+        if spec_is_populated "$spec_ref"; then
+          candidates="$(extract_execution_candidates "$file")"
+          if [ -n "$candidates" ]; then
+            printf '%s' "$file"
+            return 0
+          fi
+        fi
+        ;;
+    esac
+  done < <(list_matching_files "${BOARD_ROOT}/rules/plan" 'plan_[0-9][0-9][0-9].md')
+  return 1
+}
+
+reject_count=0
+reject_list=""
+if [ -d "${BOARD_ROOT}/tickets/reject" ]; then
+  while IFS= read -r reject_file; do
+    [ -n "$reject_file" ] || continue
+    reject_count=$((reject_count + 1))
+    reject_list="${reject_list}$(basename "$reject_file")\n"
+  done < <(find "${BOARD_ROOT}/tickets/reject" -maxdepth 1 -type f -name 'tickets_*.md' | sort)
+fi
+
 requested_id="${1:-}"
 if [ -n "$requested_id" ]; then
   plan_id="$(normalize_id "$requested_id")"
   target_plan="$(plan_path "$plan_id")"
 else
-  target_plan="$(lowest_ready_plan || true)"
+  target_plan="$(lowest_actionable_plan || true)"
   if [ -z "$target_plan" ]; then
-    fail_or_idle "No ready plan file found." "no_ready_plan"
+    printf 'status=idle\n'
+    printf 'reason=no_actionable_plan\n'
+    printf 'reject_count=%s\n' "$reject_count"
+    [ "$reject_count" -gt 0 ] && printf 'reject_tickets=\n%b' "$reject_list"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'worker_role=%s\n' "$(worker_role)"
+    exit 0
   fi
   plan_id="$(extract_numeric_id "$target_plan")"
 fi
 
 if [ ! -f "$target_plan" ]; then
-  echo "Plan file not found: $target_plan" >&2
-  exit 1
+  fail_or_idle "Plan file not found: $target_plan" "plan_file_missing"
 fi
 
 project_spec_raw="$(extract_reference_value "$target_plan" "Spec References" "Project Spec")"
@@ -29,19 +85,22 @@ feature_spec_raw="$(extract_reference_value "$target_plan" "Spec References" "Fe
 feature_spec_ref="$(strip_markdown_code_ticks "$feature_spec_raw")"
 
 if [ -z "$project_spec_ref" ]; then
-  echo "Project spec reference is required in $target_plan" >&2
-  exit 1
+  fail_or_idle "Project spec reference is required in $target_plan" "missing_spec_reference"
 fi
 
-if ! board_file_exists "$project_spec_ref"; then
-  echo "Referenced project spec does not exist: ${BOARD_ROOT}/${project_spec_ref}" >&2
-  exit 1
+if ! spec_is_populated "$project_spec_ref"; then
+  fail_or_idle "Referenced spec is missing or still a placeholder: ${project_spec_ref}" "spec_not_populated"
+fi
+
+pre_status="$(plan_status_value "$target_plan")"
+if [ "$pre_status" = "draft" ]; then
+  replace_scalar_field_in_section "$target_plan" "## Plan" "Status" "ready"
+  printf 'auto_flipped_to_ready=%s\n' "$target_plan"
 fi
 
 allowed_paths="$(extract_allowed_paths_block "$target_plan")"
 if [ -z "$allowed_paths" ]; then
-  echo "Allowed Paths must be declared in $target_plan" >&2
-  exit 1
+  fail_or_idle "Allowed Paths must be declared in $target_plan" "missing_allowed_paths"
 fi
 
 candidates_file="$(mktemp)"
@@ -98,13 +157,13 @@ ${allowed_paths}
 
 ## Next Action
 
-- 다음에 바로 이어서 할 일: todo worker 가 이 티켓을 claim 하고 execution owner 를 배정
+- 다음에 바로 이어서 할 일: todo worker 가 이 티켓을 claim 해서 inprogress 로 옮기고 구현을 진행
 
 ## Resume Context
 
 - 현재 상태 요약: plan 에서 생성된 새 todo 티켓
 - 직전 작업: scripts/start-plan.sh 로 생성됨
-- 재개 시 먼저 볼 것: Goal, Allowed Paths, Done When, Execution Owner
+- 재개 시 먼저 볼 것: Goal, Allowed Paths, Done When
 
 ## Notes
 
@@ -137,6 +196,10 @@ if [ "$generated_count" -gt 0 ]; then
   replace_scalar_field_in_section "$target_plan" "## Plan" "Status" "ticketed"
 fi
 
+printf 'status=ok\n'
 printf 'plan=%s\n' "$target_plan"
+printf 'generated_count=%s\n' "$generated_count"
+printf 'reject_count=%s\n' "$reject_count"
+[ "$reject_count" -gt 0 ] && printf 'reject_tickets=\n%b' "$reject_list"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"

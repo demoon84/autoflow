@@ -53,32 +53,25 @@ if field_is_unassigned "$primary_owner"; then
   primary_owner="$claimed_by"
 fi
 
-if field_is_unassigned "$execution_owner"; then
-  next_action_block="- 다음에 바로 이어서 할 일: Execution Owner 를 지정한 뒤 start 로 구현을 시작"
-  resume_status="todo 에서 점유되어 inprogress 로 이동됨. execution owner 지정이 아직 필요함"
-else
-  next_action_block="- 다음에 바로 이어서 할 일: ${execution_owner} 가 Goal 기준으로 첫 구현 단계를 시작"
-  resume_status="todo 에서 점유되어 inprogress 로 이동됨. ${execution_owner} 에게 실행 배정됨"
-fi
-
-replace_scalar_field_in_section "$claimed" "## Ticket" "Stage" "claimed"
+replace_scalar_field_in_section "$claimed" "## Ticket" "Stage" "executing"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Owner" "$primary_owner"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Claimed By" "$claimed_by"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Execution Owner" "$execution_owner"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Verifier Owner" "$verifier_owner"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Last Updated" "$timestamp"
-replace_section_block "$claimed" "Next Action" "$next_action_block"
-replace_section_block "$claimed" "Resume Context" "- 현재 상태 요약: ${resume_status}
+replace_section_block "$claimed" "Next Action" "- 다음에 바로 이어서 할 일: Allowed Paths 범위 안에서 Goal 을 구현하고, 완료되면 이 티켓 파일을 \`tickets/verifier/\` 로 mv 해서 검증 대기 상태로 넘긴다."
+replace_section_block "$claimed" "Resume Context" "- 현재 상태 요약: todo 에서 점유되어 inprogress 로 이동. 같은 todo worker 가 구현까지 책임진다.
 - 직전 작업: scripts/start-todo.sh 로 claim 완료
-- 재개 시 먼저 볼 것: Goal, Allowed Paths, Done When, Execution Owner"
+- 재개 시 먼저 볼 것: Goal, Allowed Paths, Done When, Notes 의 진행 로그"
 append_note "$claimed" "Claimed by ${claimed_by} at ${timestamp}; execution=${execution_owner}; verifier=${verifier_owner}"
 
+printf 'status=ok\n'
 printf 'claimed=%s\n' "$claimed"
 printf 'ticket_id=%s\n' "$ticket_id"
 printf 'claimed_by=%s\n' "$claimed_by"
 printf 'execution_owner=%s\n' "$execution_owner"
 printf 'verifier_owner=%s\n' "$verifier_owner"
-printf 'stage=claimed\n'
+printf 'stage=executing\n'
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
-printf 'next_hook=start\n'
+printf 'next_action=Implement within Allowed Paths; when done, mv this ticket file to tickets/verifier/ for the verifier heartbeat to pick up.\n'

@@ -3,24 +3,27 @@ id = "{{AUTOMATION_ID}}"
 kind = "heartbeat"
 name = "{{AUTOMATION_NAME}}"
 prompt = """
-Operate as the Autoflow todo claimer worker for this project.
+Operate as the Autoflow todo worker for this project. This role claims todo tickets AND implements them. There is no separate execution worker anymore.
 
-Role:
-- todo
-Worker id:
-- {{WORKER_ID}}
+Role: todo
+Worker id: {{WORKER_ID}}
 
 Pool contract:
 - execution pool: {{EXECUTION_POOL}}
 - verifier pool: {{VERIFIER_POOL}}
 - max execution load per worker: {{MAX_EXECUTION_LOAD}}
 
-Loop:
-1. Run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=todo AUTOFLOW_WORKER_ID={{WORKER_ID}} AUTOFLOW_EXECUTION_POOL='{{EXECUTION_POOL}}' AUTOFLOW_VERIFIER_POOL='{{VERIFIER_POOL}}' AUTOFLOW_MAX_EXECUTION_LOAD_PER_WORKER={{MAX_EXECUTION_LOAD}} autoflow/scripts/start-todo.sh`.
-2. If the script returns `status=idle`, stop quietly until the next wake-up.
-3. If it claims a ticket, do only todo-queue work: confirm metadata, owner assignment, next action, and resume context.
-4. Do not implement code and do not run verifier work.
-5. Pause if blocked by a user decision, approval, or missing external context.
+Loop (run every wake-up):
+
+1. First check `autoflow/tickets/inprogress/` for tickets where `Execution Owner` = {{WORKER_ID}} (or `Owner` = {{WORKER_ID}} if execution owner is unassigned). If any exist, resume the lowest-numbered one: read `Resume Context`, `Next Action`, `Notes`, then implement the next step within `Allowed Paths`. Update `Notes` with progress. When `Done When` is fully satisfied, fill `Result.Summary` and `mv` the ticket file from `autoflow/tickets/inprogress/` to `autoflow/tickets/verifier/` (this is how you hand off to the verifier heartbeat). Stop.
+2. Else run `AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=todo AUTOFLOW_WORKER_ID={{WORKER_ID}} AUTOFLOW_EXECUTION_POOL='{{EXECUTION_POOL}}' AUTOFLOW_VERIFIER_POOL='{{VERIFIER_POOL}}' AUTOFLOW_MAX_EXECUTION_LOAD_PER_WORKER={{MAX_EXECUTION_LOAD}} autoflow/scripts/start-todo.sh`. The script atomically moves one todo ticket into `tickets/inprogress/` and sets owners.
+3. If `status=idle`, stop quietly until next wake-up.
+4. If `status=ok`, read the newly claimed ticket and begin the first implementation step NOW within `Allowed Paths`. Capture the initial step in `Notes`. You do not have to finish in one tick — next heartbeat you will resume via step 1.
+5. Never modify paths outside `Allowed Paths`. If that is required, record a blocker in `Notes` and stop.
+6. Never call `git commit` or `git push`. Verifier is responsible for commits. Push is forbidden for all automation.
+7. Do NOT run verifier work; do NOT create new todo tickets; do NOT touch `rules/spec/` or `rules/plan/`.
+
+Stop rule: Unless the user has explicitly told you to stop, do NOT self-terminate. Exit the current turn cleanly. The heartbeat fires again in ~1 minute and picks up where Resume Context left off.
 """
 status = "ACTIVE"
 rrule = "FREQ=MINUTELY;INTERVAL=1"

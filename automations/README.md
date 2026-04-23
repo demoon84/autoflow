@@ -36,41 +36,43 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 ## Hook Map
 
 - `start spec` (manual trigger only — no heartbeat)
-  - 대상: `BOARD_ROOT/rules/spec/` + `BOARD_ROOT/rules/plan/`
-  - 역할: 사용자의 high-level 의도를 받아 `rules/spec/project_{번호}.md` + `rules/plan/plan_{번호}.md` 초안 작성
+  - 대상: `BOARD_ROOT/rules/spec/`
+  - 역할: 사용자의 high-level 의도를 받아 `rules/spec/project_{번호}.md` 에만 초안 작성 (plan 은 건드리지 않음)
   - 스크립트: `scripts/start-spec.sh`
   - 참고: `agents/spec-author-agent.md`
-  - 비고: heartbeat 에 붙이지 않는다. 새 이니셔티브가 있을 때만 사용자가 별도 대화창에서 직접 트리거.
+  - 비고: heartbeat 에 붙이지 않는다. 사용자가 별도 대화창에서 직접 트리거.
 
-- `start plan`
-  - 대상: `BOARD_ROOT/rules/plan/`
-  - 역할: `rules/plan/plan_{번호}.md` 를 읽고 `tickets/todo/` 티켓 생성
+- `start plan` (heartbeat)
+  - 대상: `BOARD_ROOT/rules/spec/`, `BOARD_ROOT/rules/plan/`, `BOARD_ROOT/tickets/reject/`
+  - 역할:
+    1. spec 이 채워졌는데 plan 이 없으면 plan 을 자동 도출 (Candidates 까지)
+    2. draft plan + spec 채워짐 → script 가 ready 로 auto-flip
+    3. ready plan → Candidates 당 `tickets/todo/` 티켓 생성
+    4. `tickets/reject/` 감시해 실패 티켓의 `## Reject Reason` 을 새 Candidate 로 재반영
   - 스크립트: `scripts/start-plan.sh`
+  - 참고: `agents/plan-to-ticket-agent.md`
 
-- `start todo`
-  - 대상: `BOARD_ROOT/tickets/todo/`
-  - 역할: 다음 todo 티켓을 선택해 `tickets/inprogress/` 로 이동하고 execution / verifier 책임자를 기록
+- `start todo` (heartbeat)
+  - 대상: `BOARD_ROOT/tickets/todo/` + `BOARD_ROOT/tickets/inprogress/`
+  - 역할: todo 에서 한 티켓을 점유해 `inprogress/` 로 옮기고 **같은 worker 가 구현까지 진행**. 완료 시 `tickets/verifier/` 로 mv. execution 별도 역할 없음.
   - 스크립트: `scripts/start-todo.sh`
+  - 참고: `agents/todo-queue-agent.md`
 
-- `start`
-  - 대상: `BOARD_ROOT/tickets/inprogress/`
-  - 역할: 자기에게 배정된 execution 티켓의 중단된 작업을 재개
-  - 스크립트: `scripts/start.sh`
-
-- `start verifier`
-  - 대상: `BOARD_ROOT/rules/verifier/` + `BOARD_ROOT/tickets/inprogress/`
-  - 역할: `ready_for_verification` 티켓을 verifier 기준으로 검사하고 `BOARD_ROOT/tickets/runs/` 기록 후 `done` 여부 결정
+- `start verifier` (heartbeat)
+  - 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/runs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
+  - 역할: `tickets/verifier/` 의 티켓을 검증해 **pass → `tickets/done/` + git commit (local)**, **fail → `tickets/reject/` + `## Reject Reason`**. `git push` 절대 금지.
   - 스크립트: `scripts/start-verifier.sh`
+  - 참고: `agents/verifier-agent.md`
 
 ## Operating Principle
 
 자동화는 폴더별 책임을 섞지 않는다.
 
-- `start spec` 은 사용자 의도를 spec + plan 초안으로 옮기는 manual 훅이다. heartbeat 에 붙이지 않는다.
-- `start plan` 은 ready 상태 plan 을 읽고 티켓을 생성만 한다.
-- `start todo` 는 `점유 + 이동 + owner 배정` 만 한다.
-- `start` 는 `assigned execution` 작업 재개를 한다.
-- `start verifier` 는 검증과 종료 판정만 한다.
+- `start spec` 은 사용자 의도를 spec 초안으로 옮기는 manual 훅이다. heartbeat 에 붙이지 않고, plan 파일도 건드리지 않는다.
+- `start plan` 은 spec 에서 plan 도출 + ready plan 을 티켓으로 분해 + reject 재계획을 담당한다. 구현은 하지 않는다.
+- `start todo` 는 `점유 → 구현 → verifier 로 mv` 한 흐름을 같은 worker 안에서 완결한다.
+- `start verifier` 는 검증 + pass 시 git commit + fail 시 reject 이동만. push 는 절대 하지 않는다.
+- 모든 heartbeat 는 할 일 없을 때 `status=idle` 로 조용히 끝난다. 스스로 stop 하지 않는다.
 
 스크립트 역할:
 
@@ -84,26 +86,32 @@ heartbeat 를 붙이더라도 자동화는 역할별로 분리한다.
 
 예:
 
+- planner worker heartbeat
+  - 할 일:
+    - `rules/spec/`, `rules/plan/`, `tickets/reject/` 보고 `start plan` 수행
+    - spec → plan 도출, draft → ready flip, reject 재계획
+  - 하면 안 되는 일:
+    - 구현
+    - 검증
+    - commit / push
+
 - todo worker heartbeat
   - 할 일:
-    - `tickets/todo/` 만 보고 `start todo` 만 수행
+    - `tickets/todo/` / `tickets/inprogress/` 보고 `start todo` 수행
+    - claim + 구현 + 완료 시 `tickets/verifier/` 로 mv
   - 하면 안 되는 일:
-    - `start`
-    - `start verifier`
-
-- execution worker heartbeat
-  - 할 일:
-    - `tickets/inprogress/` 만 보고 `start` 만 수행
-  - 하면 안 되는 일:
-    - 새 todo claim
-    - verifier 실행
+    - 검증
+    - commit / push
+    - 다른 티켓 생성
 
 - verifier worker heartbeat
   - 할 일:
-    - `ready_for_verification` 상태의 자기 배정 티켓만 보고 `start verifier` 만 수행
+    - `tickets/verifier/` 보고 `start verifier` 수행
+    - pass → `tickets/done/` + local commit / fail → `tickets/reject/` + Reject Reason
   - 하면 안 되는 일:
+    - 코드 수정
     - todo claim
-    - 구현 재개
+    - `git push` (절대 금지)
 
 즉 heartbeat 는 "무슨 역할을 할지 고르는 라우터"가 아니라, 이미 정해진 역할을 주기적으로 다시 깨우는 장치다.
 

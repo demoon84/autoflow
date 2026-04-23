@@ -6,16 +6,16 @@ board_root = "autoflow/"
 
 planner_workers = ["plan-1"]
 todo_workers = ["todo-1"]
-execution_workers = ["exec-1", "exec-2", "exec-3"]
 verifier_workers = ["verify-1"]
 
-execution_pool = "exec-1,exec-2,exec-3"
+# execution_pool is the list of todo worker ids that can pick up work.
+# Todo worker handles claim AND implementation together.
+execution_pool = "todo-1"
 verifier_pool = "verify-1"
 max_execution_load_per_worker = 1
 
 plan_template = "automations/templates/plan-heartbeat.template.toml"
 todo_template = "automations/templates/todo-heartbeat.template.toml"
-execution_template = "automations/templates/execution-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 
 # Per-worker Codex thread_id override. Each entry binds one worker to one
@@ -25,9 +25,6 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 [thread_ids]
 plan-1 = "REPLACE_WITH_PLAN_1_THREAD_ID"
 todo-1 = "REPLACE_WITH_TODO_1_THREAD_ID"
-exec-1 = "REPLACE_WITH_EXEC_1_THREAD_ID"
-exec-2 = "REPLACE_WITH_EXEC_2_THREAD_ID"
-exec-3 = "REPLACE_WITH_EXEC_3_THREAD_ID"
 verify-1 = "REPLACE_WITH_VERIFY_1_THREAD_ID"
 
 [notes]

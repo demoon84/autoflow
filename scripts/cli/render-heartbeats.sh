@@ -175,18 +175,15 @@ fi
 
 plan_template_rel="$(toml_string_value "$set_file" "plan_template")"
 todo_template_rel="$(toml_string_value "$set_file" "todo_template")"
-execution_template_rel="$(toml_string_value "$set_file" "execution_template")"
 verifier_template_rel="$(toml_string_value "$set_file" "verifier_template")"
 
 plan_template_file="$(resolve_board_relative_path "$plan_template_rel")"
 todo_template_file="$(resolve_board_relative_path "$todo_template_rel")"
-execution_template_file="$(resolve_board_relative_path "$execution_template_rel")"
 verifier_template_file="$(resolve_board_relative_path "$verifier_template_rel")"
 
 for required_template in \
   "$plan_template_file" \
   "$todo_template_file" \
-  "$execution_template_file" \
   "$verifier_template_file"
 do
   if [ ! -f "$required_template" ]; then
@@ -227,7 +224,6 @@ render_role_workers() {
 
 render_role_workers "plan" "planner_workers" "$plan_template_file"
 render_role_workers "todo" "todo_workers" "$todo_template_file"
-render_role_workers "execution" "execution_workers" "$execution_template_file"
 render_role_workers "verifier" "verifier_workers" "$verifier_template_file"
 
 rendered_count="$(wc -l < "$manifest_tmp" | tr -d ' ')"

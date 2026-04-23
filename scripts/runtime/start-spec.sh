@@ -9,17 +9,10 @@ ensure_expected_role "spec"
 requested_id="${1:-}"
 
 spec_dir="${BOARD_ROOT}/rules/spec"
-plan_dir="${BOARD_ROOT}/rules/plan"
 spec_template="${spec_dir}/project-spec-template.md"
-plan_template="${plan_dir}/plan_template.md"
 
 if [ ! -f "$spec_template" ]; then
   echo "Spec template not found: ${spec_template}" >&2
-  exit 1
-fi
-
-if [ ! -f "$plan_template" ]; then
-  echo "Plan template not found: ${plan_template}" >&2
   exit 1
 fi
 
@@ -54,21 +47,11 @@ else
 fi
 
 spec_file="${spec_dir}/project_${spec_id}.md"
-plan_file="${plan_dir}/plan_${spec_id}.md"
 
 created_spec="false"
-created_plan="false"
-
 if [ ! -f "$spec_file" ]; then
   cp "$spec_template" "$spec_file"
   created_spec="true"
-fi
-
-if [ ! -f "$plan_file" ]; then
-  cp "$plan_template" "$plan_file"
-  replace_scalar_field_in_section "$plan_file" "## Plan" "Plan ID" "$spec_id"
-  replace_scalar_field_in_section "$plan_file" "## Spec References" "Project Spec" "\`rules/spec/project_${spec_id}.md\`"
-  created_plan="true"
 fi
 
 spec_is_placeholder="false"
@@ -76,17 +59,11 @@ if is_spec_placeholder "$spec_file"; then
   spec_is_placeholder="true"
 fi
 
-plan_status="$(extract_scalar_field_in_section "$plan_file" "Plan" "Status" | tr -d ' ')"
-[ -n "$plan_status" ] || plan_status="draft"
-
 printf 'status=ready_for_input\n'
 printf 'spec_id=%s\n' "$spec_id"
 printf 'spec_file=%s\n' "$spec_file"
-printf 'plan_file=%s\n' "$plan_file"
 printf 'spec_created=%s\n' "$created_spec"
-printf 'plan_created=%s\n' "$created_plan"
 printf 'spec_is_placeholder=%s\n' "$spec_is_placeholder"
-printf 'plan_status=%s\n' "$plan_status"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
-printf 'next_action=Describe the project or feature intent in this conversation. The spec-author agent will write it into %s and %s. Keep plan Status as draft; flip to ready only when the plan is actionable.\n' "$spec_file" "$plan_file"
+printf 'next_action=Describe the project or feature intent in this conversation. The spec-author agent will write ONLY %s. The plan file is generated later by the planner heartbeat from this spec. Do not touch rules/plan/ here.\n' "$spec_file"
