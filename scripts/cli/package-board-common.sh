@@ -53,6 +53,7 @@ source_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 source_text|agents/execution-agent.md|agents/execution-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
+source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 source_text|automations/README.md|automations/README.md
 source_text|automations/templates/heartbeat-set.template.toml|automations/templates/heartbeat-set.template.toml
 source_text|automations/templates/plan-heartbeat.template.toml|automations/templates/plan-heartbeat.template.toml
@@ -67,6 +68,7 @@ source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
 source_executable|scripts/runtime/start-todo.sh|scripts/start-todo.sh
 source_executable|scripts/runtime/start.sh|scripts/start.sh
 source_executable|scripts/runtime/start-verifier.sh|scripts/start-verifier.sh
+source_executable|scripts/runtime/start-spec.sh|scripts/start-spec.sh
 source_text|rules/spec/README.md|rules/spec/README.md
 source_text|rules/spec/project-spec-template.md|rules/spec/project-spec-template.md
 source_text|rules/spec/feature-spec-template.md|rules/spec/feature-spec-template.md

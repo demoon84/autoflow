@@ -35,6 +35,13 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 
 ## Hook Map
 
+- `start spec` (manual trigger only — no heartbeat)
+  - 대상: `BOARD_ROOT/rules/spec/` + `BOARD_ROOT/rules/plan/`
+  - 역할: 사용자의 high-level 의도를 받아 `rules/spec/project_{번호}.md` + `rules/plan/plan_{번호}.md` 초안 작성
+  - 스크립트: `scripts/start-spec.sh`
+  - 참고: `agents/spec-author-agent.md`
+  - 비고: heartbeat 에 붙이지 않는다. 새 이니셔티브가 있을 때만 사용자가 별도 대화창에서 직접 트리거.
+
 - `start plan`
   - 대상: `BOARD_ROOT/rules/plan/`
   - 역할: `rules/plan/plan_{번호}.md` 를 읽고 `tickets/todo/` 티켓 생성
@@ -59,7 +66,8 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 
 자동화는 폴더별 책임을 섞지 않는다.
 
-- `start plan` 은 티켓 생성만 한다.
+- `start spec` 은 사용자 의도를 spec + plan 초안으로 옮기는 manual 훅이다. heartbeat 에 붙이지 않는다.
+- `start plan` 은 ready 상태 plan 을 읽고 티켓을 생성만 한다.
 - `start todo` 는 `점유 + 이동 + owner 배정` 만 한다.
 - `start` 는 `assigned execution` 작업 재개를 한다.
 - `start verifier` 는 검증과 종료 판정만 한다.

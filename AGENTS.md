@@ -31,6 +31,7 @@
 6. `tickets/README.md`
 7. `rules/verifier/README.md`
 8. 관련 문서:
+   - 새 의도 받아서 spec+plan 초안이면 `agents/spec-author-agent.md`
    - 티켓 생성이면 `agents/plan-to-ticket-agent.md`
    - todo 이동이면 `agents/todo-queue-agent.md`
    - 구현이면 `agents/execution-agent.md`
@@ -59,9 +60,35 @@
 
 ## Agent Modes
 
-이 저장소에서 에이전트는 보통 아래 넷 중 하나로 동작한다.
+이 저장소에서 에이전트는 보통 아래 다섯 중 하나로 동작한다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. 나머지 넷은 heartbeat 로 연결할 수 있다.
 
-### 1. Plan Automation Mode
+### 1. Spec Authoring Mode
+
+목적:
+
+- Codex/Claude 대화창에서 사용자가 `start spec` 이라고 말했을 때, 이어지는 대화로 프로젝트/기능 의도를 모아 `rules/spec/project_{번호}.md` 와 `rules/plan/plan_{번호}.md` 초안을 작성한다.
+
+반드시 읽을 파일:
+
+- `agents/spec-author-agent.md`
+- 호스트 루트 `AGENTS.md` (있으면)
+- 기존 `rules/spec/*.md`, `rules/plan/*.md`, `rules/plan/roadmap.md`
+- `rules/spec/project-spec-template.md`, `rules/plan/plan_template.md`
+
+해야 하는 일:
+
+- `scripts/start-spec.sh` 실행해서 대상 번호 슬롯 확인
+- 사용자와 대화하면서 Goal, Scope, Stack, Allowed Paths, Acceptance Criteria 수집
+- `project_{번호}.md` 와 `plan_{번호}.md` 에 초안 내용 작성
+- plan `Status` 는 `draft` 로 남겨둔다
+
+하면 안 되는 일:
+
+- 사용자 확인 없이 plan `Status` 를 `ready` 로 바꾸는 것
+- 티켓 생성
+- 구현 / 검증
+
+### 2. Plan Automation Mode
 
 목적:
 
@@ -90,7 +117,7 @@
 - 검증 실행
 - `done` 판정
 
-### 2. Todo Queue Mode
+### 3. Todo Queue Mode
 
 목적:
 
@@ -116,7 +143,7 @@
 - 검증
 - `done` 처리
 
-### 3. Execution Mode
+### 4. Execution Mode
 
 목적:
 
@@ -144,7 +171,7 @@
 - 검증 없이 `done` 처리
 - 검증 실행
 
-### 4. Verification Mode
+### 5. Verification Mode
 
 목적:
 
@@ -219,6 +246,21 @@ rules/plan/plan_001.md
 이미 같은 Goal 또는 같은 plan source 를 가진 티켓이 있으면 새로 만들지 않는다.
 
 ## Chat Trigger
+
+Codex/Claude 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Spec Authoring Mode` 로 해석한다.
+
+- `start spec`
+- `start spec 003`
+- `start spec project_003`
+
+동작 규칙:
+
+1. `scripts/start-spec.sh` 를 실행해서 대상 번호 슬롯을 확인한다.
+2. 번호가 없고 `project_001.md` 가 starter placeholder 면 001 을 쓴다. 그 외엔 다음 번호.
+3. 사용자와 대화해서 Goal / Scope / Allowed Paths / Acceptance Criteria 를 모은다.
+4. `project_{번호}.md` 와 `plan_{번호}.md` 에 초안 내용을 쓴다.
+5. plan `Status` 는 `draft` 로 남긴다. 사용자가 `ready` 로 바꿔달라고 할 때만 바꾼다.
+6. 티켓은 만들지 않는다.
 
 Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Plan Automation Mode` 로 해석한다.
 

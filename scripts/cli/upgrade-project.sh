@@ -64,9 +64,14 @@ record_sync_action() {
   fi
 }
 
-sync_host_agents_file "$HOST_AGENTS_PATH" "$BOARD_DIR_NAME" "$backup_root"
-host_agents_action="$SYNC_ACTION_RESULT"
-record_sync_action "$host_agents_action"
+if [ -f "$HOST_AGENTS_PATH" ]; then
+  host_agents_action="preserved"
+  SYNC_ACTION_RESULT="unchanged"
+else
+  sync_host_agents_file "$HOST_AGENTS_PATH" "$BOARD_DIR_NAME" "$backup_root"
+  host_agents_action="$SYNC_ACTION_RESULT"
+fi
+record_sync_action "$SYNC_ACTION_RESULT"
 
 while IFS='|' read -r asset_kind source_rel target_rel; do
   [ -n "$asset_kind" ] || continue
