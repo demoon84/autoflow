@@ -5,15 +5,55 @@ set -euo pipefail
 CLI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_VERSION_FILE="$(cd "${CLI_COMMON_DIR}/../.." && pwd)/VERSION"
 
-resolve_project_root_or_die() {
+normalize_input_path() {
   local raw_path="$1"
 
-  if [ ! -d "$raw_path" ]; then
+  case "$raw_path" in
+    [A-Za-z]:[\\/]*)
+      if command -v wslpath >/dev/null 2>&1; then
+        wslpath -a -u "$raw_path"
+        return 0
+      fi
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -a -u "$raw_path"
+        return 0
+      fi
+      ;;
+  esac
+
+  printf '%s' "$raw_path"
+}
+
+spec_file_is_placeholder() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  grep -qsF -- "Replace with your project name" "$file"
+}
+
+plan_file_is_placeholder() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+  if grep -qsF -- "<!-- AUTOFLOW_STARTER_PLAN_PLACEHOLDER -->" "$file"; then
+    return 0
+  fi
+  if grep -qsF -- "첫 구현 티켓 후보를 관찰 가능한 문장으로 적기" "$file"; then
+    return 0
+  fi
+  grep -qsF -- "- Title: Initial project bootstrap" "$file"
+}
+
+resolve_project_root_or_die() {
+  local raw_path="$1"
+  local normalized_path
+
+  normalized_path="$(normalize_input_path "$raw_path")"
+
+  if [ ! -d "$normalized_path" ]; then
     echo "Project root not found: $raw_path" >&2
     exit 1
   fi
 
-  cd "$raw_path" && pwd
+  cd "$normalized_path" && pwd
 }
 
 board_root_path() {
@@ -22,9 +62,46 @@ board_root_path() {
   printf '%s/%s' "$project_root" "$board_dir_name"
 }
 
+board_has_any_spec_root() {
+  local board_root="$1"
+  [ -d "${board_root}/tickets/backlog" ] || [ -d "${board_root}/rules/spec" ]
+}
+
+spec_root_path() {
+  local board_root="$1"
+
+  if [ -d "${board_root}/tickets/backlog" ]; then
+    printf '%s/tickets/backlog' "$board_root"
+    return 0
+  fi
+
+  if [ -d "${board_root}/rules/spec" ]; then
+    printf '%s/rules/spec' "$board_root"
+    return 0
+  fi
+
+  printf '%s/tickets/backlog' "$board_root"
+}
+
+plan_root_path() {
+  local board_root="$1"
+
+  if [ -d "${board_root}/tickets/plan" ]; then
+    printf '%s/tickets/plan' "$board_root"
+    return 0
+  fi
+
+  if [ -d "${board_root}/rules/plan" ]; then
+    printf '%s/rules/plan' "$board_root"
+    return 0
+  fi
+
+  printf '%s/tickets/plan' "$board_root"
+}
+
 board_is_initialized() {
   local board_root="$1"
-  [ -f "${board_root}/AGENTS.md" ] && [ -d "${board_root}/tickets" ] && [ -d "${board_root}/rules/spec" ]
+  [ -f "${board_root}/AGENTS.md" ] && [ -d "${board_root}/tickets" ] && board_has_any_spec_root "$board_root"
 }
 
 package_version_value() {
@@ -88,29 +165,49 @@ count_matching_files() {
     return 0
   fi
 
-  find "$search_root" -maxdepth 1 -type f -name "$pattern" | wc -l | tr -d ' '
+  find "$search_root" -type f -name "$pattern" | wc -l | tr -d ' '
 }
 
 count_numbered_plan_files() {
   local plan_root="$1"
+  local count=0
+  local file
 
   if [ ! -d "$plan_root" ]; then
     printf '0'
     return 0
   fi
 
-  find "$plan_root" -maxdepth 1 -type f -name 'plan_[0-9][0-9][0-9].md' | wc -l | tr -d ' '
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if plan_file_is_placeholder "$file"; then
+      continue
+    fi
+    count=$((count + 1))
+  done < <(find "$plan_root" -maxdepth 1 -type f -name 'plan_[0-9][0-9][0-9].md' | sort)
+
+  printf '%s' "$count"
 }
 
 count_active_specs() {
   local spec_root="$1"
+  local count=0
+  local file
 
   if [ ! -d "$spec_root" ]; then
     printf '0'
     return 0
   fi
 
-  find "$spec_root" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' ! -name '*template*.md' | wc -l | tr -d ' '
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if spec_file_is_placeholder "$file"; then
+      continue
+    fi
+    count=$((count + 1))
+  done < <(find "$spec_root" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' ! -name '*template*.md' | sort)
+
+  printf '%s' "$count"
 }
 
 count_plan_status() {
@@ -126,6 +223,9 @@ count_plan_status() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
+    if plan_file_is_placeholder "$file"; then
+      continue
+    fi
     if awk -v wanted_status="$wanted_status" '
       /^## Plan/ { in_plan=1; next }
       /^## / && in_plan { in_plan=0 }
@@ -135,6 +235,35 @@ count_plan_status() {
       count=$((count + 1))
     fi
   done < <(find "$plan_root" -maxdepth 1 -type f -name 'plan_[0-9][0-9][0-9].md' | sort)
+
+  printf '%s' "$count"
+}
+
+count_plan_status_recursive() {
+  local plan_root="$1"
+  local wanted_status="$2"
+  local count file
+
+  count=0
+  if [ ! -d "$plan_root" ]; then
+    printf '0'
+    return 0
+  fi
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if plan_file_is_placeholder "$file"; then
+      continue
+    fi
+    if awk -v wanted_status="$wanted_status" '
+      /^## Plan/ { in_plan=1; next }
+      /^## / && in_plan { in_plan=0 }
+      in_plan && $0 == "- Status: " wanted_status { found=1 }
+      END { exit(found ? 0 : 1) }
+    ' "$file"; then
+      count=$((count + 1))
+    fi
+  done < <(find "$plan_root" -type f -name 'plan_[0-9][0-9][0-9].md' | sort)
 
   printf '%s' "$count"
 }

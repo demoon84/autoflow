@@ -63,12 +63,12 @@ if [ -d "$board_root" ]; then
     summary_status="partial_board"
   fi
 
-  spec_count="$(count_active_specs "${board_root}/rules/spec")"
-  plan_count="$(count_numbered_plan_files "${board_root}/rules/plan")"
-  plan_draft_count="$(count_plan_status "${board_root}/rules/plan" "draft")"
-  plan_ready_count="$(count_plan_status "${board_root}/rules/plan" "ready")"
-  plan_ticketed_count="$(count_plan_status "${board_root}/rules/plan" "ticketed")"
-  plan_done_count="$(count_plan_status "${board_root}/rules/plan" "done")"
+  spec_count="$(count_active_specs "$(spec_root_path "$board_root")")"
+  plan_count="$(count_numbered_plan_files "$(plan_root_path "$board_root")")"
+  plan_draft_count="$(count_plan_status "$(plan_root_path "$board_root")" "draft")"
+  plan_ready_count="$(count_plan_status "$(plan_root_path "$board_root")" "ready")"
+  plan_ticketed_count="$(count_plan_status "$(plan_root_path "$board_root")" "ticketed")"
+  plan_done_count="$(( $(count_plan_status "$(plan_root_path "$board_root")" "done") + $(count_plan_status_recursive "${board_root}/tickets/done" "done") ))"
   ticket_todo_count="$(count_matching_files "${board_root}/tickets/todo" 'tickets_*.md')"
   ticket_inprogress_count="$(count_matching_files "${board_root}/tickets/inprogress" 'tickets_*.md')"
   ticket_done_count="$(count_matching_files "${board_root}/tickets/done" 'tickets_*.md')"

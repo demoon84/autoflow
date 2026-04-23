@@ -33,3 +33,4 @@ scaling_rule = "Scale by editing worker arrays, pool strings, and [thread_ids] e
 idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-ups return status=idle."
 ownership_rule = "Every live worker id should be unique and every execution/verifier worker should appear in the matching pool."
 thread_binding_rule = "One conversation per worker: fill every [thread_ids] entry with a unique Codex thread id. Shared mode: leave [thread_ids] empty and set target_thread_id only."
+trigger_rule = "`#plan`, `#todo`, `#veri` should create or resume these 1-minute heartbeats and keep them active until the user explicitly says stop."

@@ -12,10 +12,10 @@
 
 ## Spec References
 
-- Project Spec: `rules/spec/autoflow-package-spec.md`
+- Project Spec: `tickets/backlog/autoflow-package-spec.md`
 - Feature Spec:
-  - `rules/spec/public-distribution-spec.md`
-  - `rules/spec/autoflow-cli-spec.md`
+  - `tickets/backlog/public-distribution-spec.md`
+  - `tickets/backlog/autoflow-cli-spec.md`
 
 ## Scope
 

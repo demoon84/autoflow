@@ -1,7 +1,7 @@
 # Roadmap (Autoflow Package)
 
 이 로드맵은 이 저장소에서 운영되는 **Autoflow 패키지 소스 자체**의 방향을 다룬다.
-생성된 보드의 starter roadmap 은 `templates/board/rules/plan/roadmap.md` 에 따로 있고, 실제 프로젝트 로드맵은 각 보드가 직접 채운다.
+생성된 보드의 starter roadmap 도 `reference/roadmap.md` 로 제공한다. 실제 프로젝트 로드맵은 state 폴더가 아니라 reference 또는 별도 docs 폴더에서 관리한다.
 
 ## Now
 

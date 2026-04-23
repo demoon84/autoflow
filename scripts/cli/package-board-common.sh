@@ -9,6 +9,25 @@ PACKAGE_VERSION_FILE="${SOURCE_REPO_ROOT}/VERSION"
 SYNC_BACKUP_CREATED=0
 SYNC_ACTION_RESULT=""
 
+normalize_input_path() {
+  local raw_path="$1"
+
+  case "$raw_path" in
+    [A-Za-z]:[\\/]*)
+      if command -v wslpath >/dev/null 2>&1; then
+        wslpath -a -u "$raw_path"
+        return 0
+      fi
+      if command -v cygpath >/dev/null 2>&1; then
+        cygpath -a -u "$raw_path"
+        return 0
+      fi
+      ;;
+  esac
+
+  printf '%s' "$raw_path"
+}
+
 ensure_package_templates_present() {
   if [ ! -d "$TEMPLATE_BOARD_ROOT" ]; then
     echo "Template board root not found: $TEMPLATE_BOARD_ROOT" >&2
@@ -31,7 +50,7 @@ board_dir_has_entries() {
 
 board_already_initialized() {
   local board_root="$1"
-  [ -f "${board_root}/AGENTS.md" ] && [ -d "${board_root}/tickets" ] && [ -d "${board_root}/rules/spec" ]
+  [ -f "${board_root}/AGENTS.md" ] && [ -d "${board_root}/tickets" ] && { [ -d "${board_root}/tickets/backlog" ] || [ -d "${board_root}/rules/spec" ]; }
 }
 
 render_text_file() {
@@ -54,26 +73,53 @@ source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
 source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 source_text|automations/README.md|automations/README.md
+source_text|automations/file-watch.psd1|automations/file-watch.psd1
+source_text|automations/state/README.md|automations/state/README.md
+source_text|automations/state/.gitignore|automations/state/.gitignore
 source_text|automations/templates/heartbeat-set.template.toml|automations/templates/heartbeat-set.template.toml
 source_text|automations/templates/plan-heartbeat.template.toml|automations/templates/plan-heartbeat.template.toml
 source_text|automations/templates/todo-heartbeat.template.toml|automations/templates/todo-heartbeat.template.toml
 source_text|automations/templates/verifier-heartbeat.template.toml|automations/templates/verifier-heartbeat.template.toml
 source_text|rules/README.md|rules/README.md
-source_text|rules/plan/README.md|rules/plan/README.md
-source_text|rules/plan/plan_template.md|rules/plan/plan_template.md
+source_text|reference/README.md|reference/README.md
+source_text|reference/backlog.md|reference/backlog.md
+source_text|reference/backlog-processed.md|reference/backlog-processed.md
+source_text|reference/project-spec-template.md|reference/project-spec-template.md
+source_text|reference/feature-spec-template.md|reference/feature-spec-template.md
+source_text|reference/tickets-board.md|reference/tickets-board.md
+source_text|reference/ticket-template.md|reference/ticket-template.md
+source_text|reference/plan.md|reference/plan.md
+source_text|reference/plan-template.md|reference/plan-template.md
+source_text|reference/roadmap.md|reference/roadmap.md
+source_text|reference/logs.md|reference/logs.md
+source_text|reference/hook-logs.md|reference/hook-logs.md
 source_executable|scripts/runtime/common.sh|scripts/common.sh
+source_executable|scripts/runtime/check-stop.sh|scripts/check-stop.sh
+source_executable|scripts/runtime/set-thread-context.sh|scripts/set-thread-context.sh
+source_executable|scripts/runtime/clear-thread-context.sh|scripts/clear-thread-context.sh
 source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
 source_executable|scripts/runtime/start-todo.sh|scripts/start-todo.sh
+source_executable|scripts/runtime/handoff-todo.sh|scripts/handoff-todo.sh
 source_executable|scripts/runtime/start-verifier.sh|scripts/start-verifier.sh
 source_executable|scripts/runtime/start-spec.sh|scripts/start-spec.sh
-source_text|rules/spec/README.md|rules/spec/README.md
-source_text|rules/spec/project-spec-template.md|rules/spec/project-spec-template.md
-source_text|rules/spec/feature-spec-template.md|rules/spec/feature-spec-template.md
-source_text|tickets/README.md|tickets/README.md
-source_text|tickets/tickets_template.md|tickets/tickets_template.md
+source_executable|scripts/runtime/integrate-worktree.sh|scripts/integrate-worktree.sh
+source_file|scripts/runtime/invoke-runtime-sh.ps1|scripts/invoke-runtime-sh.ps1
+source_file|scripts/runtime/check-stop.ps1|scripts/check-stop.ps1
+source_file|scripts/runtime/set-thread-context.ps1|scripts/set-thread-context.ps1
+source_file|scripts/runtime/clear-thread-context.ps1|scripts/clear-thread-context.ps1
+source_file|scripts/runtime/start-spec.ps1|scripts/start-spec.ps1
+source_file|scripts/runtime/start-plan.ps1|scripts/start-plan.ps1
+source_file|scripts/runtime/start-todo.ps1|scripts/start-todo.ps1
+source_file|scripts/runtime/handoff-todo.ps1|scripts/handoff-todo.ps1
+source_file|scripts/runtime/start-verifier.ps1|scripts/start-verifier.ps1
+source_file|scripts/runtime/integrate-worktree.ps1|scripts/integrate-worktree.ps1
+source_file|scripts/runtime/write-verifier-log.ps1|scripts/write-verifier-log.ps1
+source_file|scripts/runtime/run-hook.ps1|scripts/run-hook.ps1
+source_file|scripts/runtime/watch-board.ps1|scripts/watch-board.ps1
 source_text|rules/verifier/README.md|rules/verifier/README.md
 source_text|rules/verifier/checklist-template.md|rules/verifier/checklist-template.md
 source_text|rules/verifier/verification-template.md|rules/verifier/verification-template.md
+source_executable|scripts/runtime/write-verifier-log.sh|scripts/write-verifier-log.sh
 EOF
 }
 
@@ -81,13 +127,18 @@ managed_board_directory_entries() {
   cat <<'EOF'
 agents
 automations
+automations/state
+automations/state/threads
 automations/templates
+reference
 rules
-rules/spec
-rules/plan
 rules/verifier
 scripts
+logs
+logs/hooks
 tickets
+tickets/backlog
+tickets/plan
 tickets/todo
 tickets/inprogress
 tickets/verifier
@@ -110,9 +161,6 @@ ensure_board_directories() {
 starter_board_state_asset_entries() {
   cat <<'EOF'
 template_text|automations/heartbeat-set.toml|automations/heartbeat-set.toml
-template_text|rules/spec/project_001.md|rules/spec/project_001.md
-template_text|rules/plan/roadmap.md|rules/plan/roadmap.md
-template_text|rules/plan/plan_001.md|rules/plan/plan_001.md
 EOF
 }
 
@@ -260,4 +308,43 @@ sync_host_agents_file() {
   render_text_file "${SOURCE_REPO_ROOT}/templates/host-AGENTS.md" "$temp_file" "$board_dir_name"
   sync_temp_file "$temp_file" "$target_file" "$backup_root" "AGENTS.md" "0"
   rm -f "$temp_file"
+}
+
+backup_board_file_once() {
+  local board_root="$1"
+  local path="$2"
+  local backup_root="${3:-}"
+
+  [ -n "$backup_root" ] || return 0
+  [ -f "$path" ] || return 0
+
+  case "$path" in
+    "${board_root}/"*)
+      local rel="${path#${board_root}/}"
+      if [ ! -f "${backup_root}/${rel}" ]; then
+        mkdir -p "${backup_root}/$(dirname "$rel")"
+        cp "$path" "${backup_root}/${rel}"
+        SYNC_BACKUP_CREATED=1
+      fi
+      ;;
+  esac
+}
+
+replace_literal_in_file() {
+  local file="$1"
+  local before="$2"
+  local after="$3"
+  local tmp before_escaped after_escaped
+
+  [ -f "$file" ] || return 1
+  before_escaped="$(printf '%s' "$before" | sed 's/[\/&]/\\&/g')"
+  after_escaped="$(printf '%s' "$after" | sed 's/[\/&]/\\&/g')"
+  tmp="$(mktemp)"
+  sed "s/${before_escaped}/${after_escaped}/g" "$file" > "$tmp"
+  if cmp -s "$tmp" "$file"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$file"
+  return 0
 }

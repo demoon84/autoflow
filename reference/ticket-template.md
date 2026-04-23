@@ -3,6 +3,7 @@
 ## Ticket
 
 - ID:
+- Project Key:
 - Title:
 - Stage: todo
 - Owner: unassigned
@@ -21,9 +22,23 @@
 - Feature Spec:
 - Plan Source:
 
+## Obsidian Links
+
+- Project Note:
+- Plan Note:
+- Ticket Note:
+
 ## Allowed Paths
 
 - ...
+
+## Worktree
+
+- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: pending_claim
 
 ## Done When
 
@@ -47,6 +62,7 @@
 ## Verification
 
 - Run file:
+- Log file:
 - Result:
 
 ## Result
@@ -57,4 +73,6 @@
 ## Path Notes
 
 - `References` 는 `BOARD_ROOT` 상대 경로다.
-- `Allowed Paths` 는 `PROJECT_ROOT` 상대 경로다.
+- `Allowed Paths` 는 구현 worktree 루트 기준 상대 경로다. worktree 가 없으면 `PROJECT_ROOT` 기준이다.
+- `Worktree` 는 todo claim 시 자동으로 채워진다. 보드는 중앙 `BOARD_ROOT` 를 유지하고, 제품 코드는 티켓별 worktree 에서 수정한다.
+- `Obsidian Links` 는 note 이름 기준 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`) 으로 적는다.

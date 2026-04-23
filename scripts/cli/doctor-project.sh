@@ -79,7 +79,7 @@ if [ -d "$board_root" ]; then
     record_error "board README.md is missing: ${board_root}/README.md"
   fi
 
-  for required_dir in agents automations rules scripts tickets; do
+  for required_dir in agents automations reference rules scripts tickets logs; do
     if [ -d "${board_root}/${required_dir}" ]; then
       record_check "dir_${required_dir}" "ok"
     else
@@ -98,10 +98,13 @@ if [ -d "$board_root" ]; then
   done
 
   for required_nested_dir in \
-    "rules/spec" \
-    "rules/plan" \
+    "tickets/backlog" \
     "rules/verifier" \
-    "tickets/runs"
+    "logs/hooks" \
+    "tickets/runs" \
+    "tickets/plan" \
+    "automations/state" \
+    "automations/state/threads"
   do
     if [ -d "${board_root}/${required_nested_dir}" ]; then
       record_check "dir_$(printf '%s' "$required_nested_dir" | tr '/.-' '___')" "ok"
@@ -111,7 +114,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_file in common.sh start-plan.sh start-todo.sh start-verifier.sh start-spec.sh; do
+  for runtime_file in common.sh check-stop.sh set-thread-context.sh clear-thread-context.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -125,6 +128,15 @@ if [ -d "$board_root" ]; then
     else
       record_check "script_${runtime_file}_executable" "error"
       record_error "runtime script is not executable: ${board_root}/scripts/${runtime_file}"
+    fi
+  done
+
+  for runtime_ps1 in invoke-runtime-sh.ps1 check-stop.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
+    if [ -f "${board_root}/scripts/${runtime_ps1}" ]; then
+      record_check "script_${runtime_ps1}" "ok"
+    else
+      record_check "script_${runtime_ps1}" "error"
+      record_error "runtime script is missing: ${board_root}/scripts/${runtime_ps1}"
     fi
   done
 
@@ -170,14 +182,25 @@ if [ -d "$board_root" ]; then
 
   for starter_file in \
     "automations/heartbeat-set.toml" \
-    "rules/spec/project_001.md" \
-    "rules/plan/plan_001.md" \
-    "rules/plan/roadmap.md" \
+    "automations/file-watch.psd1" \
+    "automations/state/README.md" \
+    "automations/state/.gitignore" \
+    "reference/README.md" \
+    "reference/backlog.md" \
+    "reference/backlog-processed.md" \
+    "reference/project-spec-template.md" \
+    "reference/feature-spec-template.md" \
+    "reference/plan.md" \
+    "reference/plan-template.md" \
+    "reference/roadmap.md" \
+    "reference/tickets-board.md" \
+    "reference/ticket-template.md" \
+    "reference/logs.md" \
+    "reference/hook-logs.md" \
     "automations/templates/heartbeat-set.template.toml" \
     "automations/templates/plan-heartbeat.template.toml" \
     "automations/templates/todo-heartbeat.template.toml" \
     "automations/templates/verifier-heartbeat.template.toml" \
-    "tickets/tickets_template.md" \
     "rules/verifier/checklist-template.md" \
     "rules/verifier/verification-template.md"
   do
@@ -189,14 +212,45 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  if [ -f "${board_root}/tickets/tickets_template.md" ]; then
+  for forbidden_state_file in \
+    "tickets/backlog/README.md" \
+    "tickets/backlog/project-spec-template.md" \
+    "tickets/backlog/feature-spec-template.md" \
+    "tickets/backlog/processed/README.md" \
+    "tickets/plan/README.md" \
+    "tickets/plan/plan_template.md" \
+    "tickets/plan/roadmap.md" \
+    "tickets/README.md" \
+    "tickets/tickets_template.md" \
+    "logs/README.md" \
+    "logs/hooks/README.md"
+  do
+    if [ -f "${board_root}/${forbidden_state_file}" ]; then
+      record_check "state_doc_$(printf '%s' "$forbidden_state_file" | tr '/.-' '___')" "error"
+      record_error "state folder contains reference/template file; move it under reference/: ${board_root}/${forbidden_state_file}"
+    fi
+  done
+
+  if [ -d "${board_root}/tickets/plan/inprogress" ] && find "${board_root}/tickets/plan/inprogress" -maxdepth 1 -type f -name 'plan_*.md' -print -quit | grep -q .; then
+    record_check "legacy_plan_inprogress_empty" "error"
+    record_error "legacy plan inprogress folder still contains plan files; use tickets/inprogress instead: ${board_root}/tickets/plan/inprogress"
+  fi
+
+  if [ -d "${board_root}/tickets/reject" ] && find "${board_root}/tickets/reject" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md' -print -quit | grep -q .; then
+    record_check "legacy_reject_ticket_names" "error"
+    record_error "reject folder still contains tickets_NNN.md files; run autoflow upgrade so failed tickets use reject_NNN.md: ${board_root}/tickets/reject"
+  else
+    record_check "legacy_reject_ticket_names" "ok"
+  fi
+
+  if [ -f "${board_root}/reference/ticket-template.md" ]; then
     for required_ticket_field in "Stage" "Claimed By" "Execution Owner" "Verifier Owner"; do
       check_field_id="$(printf '%s' "$required_ticket_field" | tr ' ' '_')"
-      if ticket_field_present "${board_root}/tickets/tickets_template.md" "$required_ticket_field"; then
+      if ticket_field_present "${board_root}/reference/ticket-template.md" "$required_ticket_field"; then
         record_check "ticket_template_${check_field_id}" "ok"
       else
         record_check "ticket_template_${check_field_id}" "error"
-        record_error "ticket template is missing field ${required_ticket_field}: ${board_root}/tickets/tickets_template.md"
+        record_error "ticket template is missing field ${required_ticket_field}: ${board_root}/reference/ticket-template.md"
       fi
     done
   fi

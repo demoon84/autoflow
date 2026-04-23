@@ -11,7 +11,7 @@
 - [ ] 참조 스펙이 존재한다.
 - [ ] Allowed Paths 가 명시되어 있다.
 - [ ] 티켓 필수 항목이 비어 있지 않다.
-- [ ] `Allowed Paths` 가 `PROJECT_ROOT` 기준으로 해석 가능하다.
+- [ ] `Allowed Paths` 가 ticket worktree 루트 기준으로 해석 가능하다. worktree 가 없으면 `PROJECT_ROOT` 기준으로 해석 가능하다.
 
 ## Functional Checks
 

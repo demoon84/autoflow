@@ -6,14 +6,14 @@
 ## Current Goal
 
 - `Autoflow` 를 `repo template + installer CLI` 방식의 공개 배포 가능한 하네스로 유지한다.
-- 실제 프로젝트에는 `autoflow/` sidecar 보드를 생성하고, worker 기반으로 `start plan -> start todo -> start -> start verifier` 흐름을 운영할 수 있어야 한다.
+- 실제 프로젝트에는 `autoflow/` sidecar 보드를 생성하고, worker 기반으로 `#plan -> #todo -> #veri` 흐름을 운영할 수 있어야 한다.
 
 ## Current State
 
 - 루트 패키지 소스는 이제 `README.md`, `AGENTS.md`, `VERSION`, `agents/`, `automations/`, `rules/`, `scripts/`, `templates/`, `tickets/` 중심으로 정리돼 있다.
 - sidecar 생성은 `bin/autoflow` 와 `scripts/cli/scaffold-project.sh` 가 담당하고, 공용 자산 동기화는 `scripts/cli/package-board-common.sh` 가 맡는다.
 - generated board starter 상태는 루트 live 파일이 아니라 `templates/board/` 아래에서만 관리한다.
-- root package 기준 스펙은 `rules/spec/autoflow-package-spec.md` 다.
+- root package 기준 스펙은 `tickets/backlog/autoflow-package-spec.md` 다.
 - 생성된 보드는 기본적으로 아래 구조를 가진다.
 
 ```text
@@ -43,7 +43,7 @@ PROJECT_ROOT/
 ### 1. plugin / docs / bootstrap 실험 흔적 정리
 
 - plugin-first 흔적은 이미 제거했다.
-- 루트 `docs/` 폴더는 삭제했고, 내용은 `README.md`, `tickets/README.md`, `automations/README.md`, `rules/spec/*.md` 로 흡수했다.
+- 루트 `docs/` 폴더는 삭제했고, 내용은 `README.md`, `tickets/README.md`, `automations/README.md`, `tickets/backlog/*.md` 로 흡수했다.
 - `bootstrap/` 폴더는 삭제했고, 호스트 루트 `AGENTS.md` 템플릿은 `templates/host-AGENTS.md` 로 옮겼다.
 
 ### 2. verifier / runs / tickets 구조 재정리
@@ -70,12 +70,12 @@ PROJECT_ROOT/
 ### 4. root package 와 generated board sample state 분리
 
 - 루트에 있던 sample/live 상태 파일은 삭제했다.
-  - `rules/spec/project_001.md`
-  - `rules/plan/plan_001.md`
+  - `tickets/backlog/project_001.md`
+  - `tickets/plan/plan_001.md`
   - `tickets/todo/tickets_001.md`
-- generated board starter 파일은 계속 `templates/board/rules/spec/project_001.md`, `templates/board/rules/plan/plan_001.md`, `templates/board/rules/plan/roadmap.md` 에서 관리한다.
-- 루트 패키지 소스 기준 스펙으로 `rules/spec/autoflow-package-spec.md` 를 추가했다.
-- `rules/plan/plan_004.md` 는 이제 package spec 를 참조한다.
+- generated board starter 파일은 계속 `templates/board/tickets/backlog/project_001.md`, `templates/board/tickets/plan/plan_001.md`, `templates/board/tickets/plan/roadmap.md` 에서 관리한다.
+- 루트 패키지 소스 기준 스펙으로 `tickets/backlog/autoflow-package-spec.md` 를 추가했다.
+- `tickets/plan/plan_004.md` 는 이제 package spec 를 참조한다.
 
 ### 5. 로컬 잡파일 정리
 
@@ -101,17 +101,17 @@ PROJECT_ROOT/
 - `templates/board/AGENTS.md`
 - `templates/board/README.md`
 - `templates/board/automations/heartbeat-set.toml`
-- `templates/board/rules/spec/project_001.md`
-- `templates/board/rules/plan/plan_001.md`
-- `templates/board/rules/plan/roadmap.md`
+- `templates/board/tickets/backlog/project_001.md`
+- `templates/board/tickets/plan/plan_001.md`
+- `templates/board/tickets/plan/roadmap.md`
 
 ### Canonical package docs
 
 - `README.md`
 - `AGENTS.md`
-- `rules/spec/autoflow-package-spec.md`
-- `rules/spec/public-distribution-spec.md`
-- `rules/spec/autoflow-cli-spec.md`
+- `tickets/backlog/autoflow-package-spec.md`
+- `tickets/backlog/public-distribution-spec.md`
+- `tickets/backlog/autoflow-cli-spec.md`
 - `automations/README.md`
 - `tickets/README.md`
 
@@ -160,22 +160,22 @@ bash -n bin/autoflow scripts/*.sh
 
 완료 내용:
 
-- 루트 `rules/plan/roadmap.md` 상단에 “이 로드맵은 **Autoflow 패키지 소스 자체**의 방향을 다룬다” 문구 추가. 생성 보드 starter roadmap 위치도 같이 언급.
-- `templates/board/rules/plan/roadmap.md` 상단에도 “이 로드맵은 generated board 의 starter 템플릿이다. 프로젝트 상황에 맞게 직접 채워야 한다” 문구 추가.
+- 루트 `tickets/plan/roadmap.md` 상단에 “이 로드맵은 **Autoflow 패키지 소스 자체**의 방향을 다룬다” 문구 추가. 생성 보드 starter roadmap 위치도 같이 언급.
+- `templates/board/tickets/plan/roadmap.md` 상단에도 “이 로드맵은 generated board 의 starter 템플릿이다. 프로젝트 상황에 맞게 직접 채워야 한다” 문구 추가.
 
 ### 4. 실제 Tetris 시연 (bootstrap done 2026-04-23)
 
 완료 내용:
 
 - `D:/lab/tetris/` 생성 후 `autoflow init /d/lab/tetris` 로 보드 초기화 완료.
-- `autoflow/rules/spec/project_001.md` 를 Tetris 실제 스펙으로 교체 (vanilla JS, 10x20, 7종 블록, 키보드 입력, 점수/레벨/게임오버/일시정지).
-- `autoflow/rules/plan/plan_001.md` 를 Tetris 실제 plan 으로 교체하고 `Status: ready` 로 전환. `Execution Candidates` 11개 선언.
+- `autoflow/tickets/backlog/project_001.md` 를 Tetris 실제 스펙으로 교체 (vanilla JS, 10x20, 7종 블록, 키보드 입력, 점수/레벨/게임오버/일시정지).
+- `autoflow/tickets/plan/plan_001.md` 를 Tetris 실제 plan 으로 교체하고 `Status: ready` 로 전환. `Execution Candidates` 11개 선언.
 - `AUTOFLOW_ROLE=plan autoflow/scripts/start-plan.sh` 실행해서 `tickets/todo/tickets_001.md` ~ `tickets_011.md` 11개 생성 완료. plan 상태는 `ticketed` 로 전환됨.
 - `autoflow doctor /d/lab/tetris` 는 `status=ok`, `error_count=0`, `warning_count=0`.
 
 남은 일:
 
-- `start todo` 로 todo 티켓 하나를 claim 해서 inprogress 로 이동시키는 것부터가 다음 세션의 첫 단계.
+- `#todo` 로 todo 티켓 하나를 claim 해서 inprogress 로 이동시키는 것부터가 다음 세션의 첫 단계.
 - 11개 티켓을 execution/verifier 흐름으로 하나씩 처리해서 `public/index.html` 이 실제로 브라우저에서 돌아가는 상태까지 끌고 가는 것이 남은 end-to-end 목표.
 - 병렬로 돌릴 경우 `AUTOFLOW_EXECUTION_POOL`, `AUTOFLOW_VERIFIER_POOL`, `AUTOFLOW_BACKGROUND=1` 조합을 쓴다.
 
@@ -190,11 +190,11 @@ bash -n bin/autoflow scripts/*.sh
 
 ## Suggested Next Task Order
 
-1. `start todo` 로 tetris `tickets_001.md` 를 claim → inprogress 로 이동.
+1. `#todo` 로 tetris `tickets_001.md` 를 claim → inprogress 로 이동.
 2. `start` 로 실제 구현 진행 (execution worker).
-3. `start verifier` 로 검증.
+3. `#veri` 로 검증.
 4. 11개 티켓을 순서대로 (또는 병렬로) 처리해서 playable tetris 완성.
-5. 완성 후 `rules/plan/plan_002.md` 등으로 다음 iteration (사운드, 고득점, 모바일 등) 계획.
+5. 완성 후 `tickets/plan/plan_002.md` 등으로 다음 iteration (사운드, 고득점, 모바일 등) 계획.
 
 ## Notes For Next Worker
 
