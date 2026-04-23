@@ -162,7 +162,7 @@ autoflow/
 
 `bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `autopilot/` 아래에 남는다.
 
-생성 대상은 현재 저장소 전체가 아니라 `templates/board/`, `templates/host/AGENTS.md`, 그리고 선택된 runtime 문서/스크립트다.
+생성 대상은 현재 저장소 전체가 아니라 `templates/board/`, `templates/host-AGENTS.md`, 그리고 선택된 runtime 문서/스크립트다.
 즉 새 프로젝트에는 이 저장소의 내부 plan, 샘플 ticket, 플러그인 실험 파일이 들어가지 않는다.
 
 생성된 보드에는 `.autopilot-version` 이 기록되고, `status` 와 `doctor` 는 이 값을 패키지 버전과 비교한다.

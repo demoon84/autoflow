@@ -19,7 +19,7 @@
   - `project-root`: 현재 디렉터리
   - `board-dir-name`: `autopilot`
 - 구현:
-  - `scripts/scaffold-project.sh` 를 래핑한다.
+  - `scripts/cli/scaffold-project.sh` 를 래핑한다.
 
 ### `autoflow status [project-root] [board-dir-name]`
 
@@ -29,7 +29,7 @@
   - `project-root`: 현재 디렉터리
   - `board-dir-name`: `autopilot`
 - 구현:
-  - `scripts/status-project.sh` 를 래핑한다.
+  - `scripts/cli/status-project.sh` 를 래핑한다.
 - 출력:
   - `status=...`
   - `ticket_todo_count=...`
@@ -49,7 +49,7 @@
   - `project-root`: 현재 디렉터리
   - `board-dir-name`: `autopilot`
 - 구현:
-  - `scripts/render-heartbeats.sh` 를 래핑한다.
+  - `scripts/cli/render-heartbeats.sh` 를 래핑한다.
 - 출력:
   - `status=rendered`
   - `project_root=...`
@@ -67,7 +67,7 @@
   - `project-root`: 현재 디렉터리
   - `board-dir-name`: `autopilot`
 - 구현:
-  - `scripts/doctor-project.sh` 를 래핑한다.
+  - `scripts/cli/doctor-project.sh` 를 래핑한다.
 - 출력:
   - `status=ok|fail`
   - `error_count=...`
@@ -83,7 +83,7 @@
   - `project-root`: 현재 디렉터리
   - `board-dir-name`: `autopilot`
 - 구현:
-  - `scripts/upgrade-project.sh` 를 래핑한다.
+  - `scripts/cli/upgrade-project.sh` 를 래핑한다.
 - 출력:
   - `status=upgraded|already_current`
   - `previous_board_version=...`

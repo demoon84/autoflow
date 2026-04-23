@@ -35,31 +35,31 @@ case "$cmd" in
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-autopilot}"
-    exec "${REPO_ROOT}/scripts/scaffold-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/scripts/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
     ;;
   status)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-autopilot}"
-    exec "${REPO_ROOT}/scripts/status-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/scripts/cli/status-project.sh" "$target_root" "$board_dir_name"
     ;;
   render-heartbeats)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-autopilot}"
-    exec "${REPO_ROOT}/scripts/render-heartbeats.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/scripts/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
     ;;
   doctor)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-autopilot}"
-    exec "${REPO_ROOT}/scripts/doctor-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/scripts/cli/doctor-project.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-autopilot}"
-    exec "${REPO_ROOT}/scripts/upgrade-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/scripts/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
     ;;
   help|-h|--help)
     usage

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PACKAGE_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_REPO_ROOT="$(cd "${PACKAGE_COMMON_DIR}/.." && pwd)"
+SOURCE_REPO_ROOT="$(cd "${PACKAGE_COMMON_DIR}/../.." && pwd)"
 TEMPLATE_BOARD_ROOT="${SOURCE_REPO_ROOT}/templates/board"
 PACKAGE_VERSION_FILE="${SOURCE_REPO_ROOT}/VERSION"
 SYNC_BACKUP_CREATED=0
@@ -62,11 +62,11 @@ source_text|automations/templates/verifier-heartbeat.template.toml|automations/t
 source_text|rules/README.md|rules/README.md
 source_text|rules/plan/README.md|rules/plan/README.md
 source_text|rules/plan/plan_template.md|rules/plan/plan_template.md
-source_executable|scripts/common.sh|scripts/common.sh
-source_executable|scripts/start-plan.sh|scripts/start-plan.sh
-source_executable|scripts/start-todo.sh|scripts/start-todo.sh
-source_executable|scripts/start.sh|scripts/start.sh
-source_executable|scripts/start-verifier.sh|scripts/start-verifier.sh
+source_executable|scripts/runtime/common.sh|scripts/common.sh
+source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
+source_executable|scripts/runtime/start-todo.sh|scripts/start-todo.sh
+source_executable|scripts/runtime/start.sh|scripts/start.sh
+source_executable|scripts/runtime/start-verifier.sh|scripts/start-verifier.sh
 source_text|rules/spec/README.md|rules/spec/README.md
 source_text|rules/spec/project-spec-template.md|rules/spec/project-spec-template.md
 source_text|rules/spec/feature-spec-template.md|rules/spec/feature-spec-template.md
@@ -256,7 +256,7 @@ sync_host_agents_file() {
   local temp_file
 
   temp_file="$(mktemp)"
-  render_text_file "${SOURCE_REPO_ROOT}/templates/host/AGENTS.md" "$temp_file" "$board_dir_name"
+  render_text_file "${SOURCE_REPO_ROOT}/templates/host-AGENTS.md" "$temp_file" "$board_dir_name"
   sync_temp_file "$temp_file" "$target_file" "$backup_root" "AGENTS.md" "0"
   rm -f "$temp_file"
 }

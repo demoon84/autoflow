@@ -11,7 +11,7 @@
 ## Current State
 
 - 루트 패키지 소스는 이제 `README.md`, `AGENTS.md`, `VERSION`, `agents/`, `automations/`, `rules/`, `scripts/`, `templates/`, `tickets/` 중심으로 정리돼 있다.
-- sidecar 생성은 `bin/autoflow` 와 `scripts/scaffold-project.sh` 가 담당하고, 공용 자산 동기화는 `scripts/package-board-common.sh` 가 맡는다.
+- sidecar 생성은 `bin/autoflow` 와 `scripts/cli/scaffold-project.sh` 가 담당하고, 공용 자산 동기화는 `scripts/cli/package-board-common.sh` 가 맡는다.
 - generated board starter 상태는 루트 live 파일이 아니라 `templates/board/` 아래에서만 관리한다.
 - root package 기준 스펙은 `rules/spec/autoflow-package-spec.md` 다.
 - 생성된 보드는 기본적으로 아래 구조를 가진다.
@@ -44,7 +44,7 @@ PROJECT_ROOT/
 
 - plugin-first 흔적은 이미 제거했다.
 - 루트 `docs/` 폴더는 삭제했고, 내용은 `README.md`, `tickets/README.md`, `automations/README.md`, `rules/spec/*.md` 로 흡수했다.
-- `bootstrap/` 폴더는 삭제했고, 호스트 루트 `AGENTS.md` 템플릿은 `templates/host/AGENTS.md` 로 옮겼다.
+- `bootstrap/` 폴더는 삭제했고, 호스트 루트 `AGENTS.md` 템플릿은 `templates/host-AGENTS.md` 로 옮겼다.
 
 ### 2. verifier / runs / tickets 구조 재정리
 
@@ -65,7 +65,7 @@ PROJECT_ROOT/
   - `agents/README.md`
   - `automations/templates/README.md`
 - 대신 필요한 설명은 `templates/board/README.md`, `tickets/README.md`, `automations/README.md` 에 흡수했다.
-- 빈 상태 디렉터리 보장은 `scripts/package-board-common.sh` 의 `ensure_board_directories()` 로 처리한다.
+- 빈 상태 디렉터리 보장은 `scripts/cli/package-board-common.sh` 의 `ensure_board_directories()` 로 처리한다.
 
 ### 4. root package 와 generated board sample state 분리
 
@@ -89,15 +89,15 @@ PROJECT_ROOT/
 ### Entry points
 
 - `bin/autoflow`
-- `scripts/scaffold-project.sh`
-- `scripts/status-project.sh`
-- `scripts/doctor-project.sh`
-- `scripts/upgrade-project.sh`
-- `scripts/render-heartbeats.sh`
+- `scripts/cli/scaffold-project.sh`
+- `scripts/cli/status-project.sh`
+- `scripts/cli/doctor-project.sh`
+- `scripts/cli/upgrade-project.sh`
+- `scripts/cli/render-heartbeats.sh`
 
 ### Generated board sources
 
-- `templates/host/AGENTS.md`
+- `templates/host-AGENTS.md`
 - `templates/board/AGENTS.md`
 - `templates/board/README.md`
 - `templates/board/automations/heartbeat-set.toml`
@@ -183,7 +183,7 @@ bash -n bin/autoflow scripts/*.sh
 
 완료 내용:
 
-- `scripts/common.sh` 의 `next_ticket_id()` 가 `find ... -name 'tickets_*.md'` 로 `tickets/` 전체를 훑을 때 `tickets/tickets_template.md` 까지 포함했다.
+- `scripts/runtime/common.sh` 의 `next_ticket_id()` 가 `find ... -name 'tickets_*.md'` 로 `tickets/` 전체를 훑을 때 `tickets/tickets_template.md` 까지 포함했다.
 - 이 경우 `extract_numeric_id` 가 빈 문자열을 리턴하고, 이어지는 `”$((10#$id))”` 가 `10#: invalid integer constant` 로 죽었다.
 - `id=”$(extract_numeric_id “$path” 2>/dev/null || true)”` 로 감싸고 `[ -n “$id” ] || continue` 가드를 추가해 해결.
 - 이 수정은 `autoflow upgrade /d/lab/tetris` 로 tetris 보드에도 이미 반영됨 (`managed_files_updated=1`).

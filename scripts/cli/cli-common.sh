@@ -3,7 +3,7 @@
 set -euo pipefail
 
 CLI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_VERSION_FILE="$(cd "${CLI_COMMON_DIR}/.." && pwd)/VERSION"
+PACKAGE_VERSION_FILE="$(cd "${CLI_COMMON_DIR}/../.." && pwd)/VERSION"
 
 resolve_project_root_or_die() {
   local raw_path="$1"

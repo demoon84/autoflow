@@ -1,18 +1,27 @@
 # Scripts
 
-이 폴더는 `PROJECT_ROOT/autopilot/scripts/` 에 놓일 훅과 설치 스크립트를 둔다.
+이 폴더는 두 종류의 스크립트를 담는다.
 
-공개 배포 기준에서는 이 폴더의 `scaffold-project.sh` 가 `bin/autoflow` 의 백엔드 설치기로도 쓰인다.
-생성된 보드에는 runtime 훅만 복사되고, `scaffold-project.sh` 는 배포 패키지 쪽에만 남는다.
+- `cli/`: 패키지 CLI 측 스크립트. `bin/autoflow` 가 직접 호출한다. 생성 보드에는 복사되지 않는다.
+- `runtime/`: 생성 보드의 `autopilot/scripts/` 로 복사되는 runtime 훅. 보드 쪽 경로는 계속 flat 하다 (`autopilot/scripts/start-*.sh`).
 
-패키지 쪽 CLI 보조 스크립트:
+## cli/
 
 - `cli-common.sh`
 - `package-board-common.sh`
+- `scaffold-project.sh`
 - `render-heartbeats.sh`
 - `status-project.sh`
 - `doctor-project.sh`
 - `upgrade-project.sh`
+
+## runtime/
+
+- `common.sh`
+- `start-plan.sh`
+- `start-todo.sh`
+- `start.sh`
+- `start-verifier.sh`
 
 ## Root Resolution
 
