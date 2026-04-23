@@ -230,7 +230,7 @@ pool 예시는 숫자가 고정이 아니다.
 - 호스트 루트 `AGENTS.md`
 - `.autopilot-version`
 
-아래는 보존한다.
+아래는 보존한다 (경로는 모두 생성된 `BOARD_ROOT/` 기준이며, 이 루트 패키지 소스에는 해당 파일들이 없다).
 
 - `rules/spec/project_001.md`
 - `rules/plan/plan_001.md`
@@ -242,7 +242,7 @@ pool 예시는 숫자가 고정이 아니다.
 
 ## Path Rules
 
-예:
+예 (아래는 generated board 안에서 티켓이 쓰는 경로 형식이다. 이 루트 패키지 소스에는 이 파일들이 없다):
 
 - 보드 문서 참조: `rules/spec/project_001.md`
 - plan 참조: `rules/plan/plan_001.md`

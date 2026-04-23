@@ -177,7 +177,8 @@ next_ticket_id() {
   local path id
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    id="$(extract_numeric_id "$path")"
+    id="$(extract_numeric_id "$path" 2>/dev/null || true)"
+    [ -n "$id" ] || continue
     if [ "$((10#$id))" -gt "$max_id" ]; then
       max_id="$((10#$id))"
     fi

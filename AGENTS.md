@@ -172,7 +172,7 @@
 
 ## Ticket Lifecycle
 
-표준 이동 순서는 아래와 같다.
+표준 이동 순서는 아래와 같다 (generated board example — 이 루트 패키지 소스에는 이 티켓 파일이 없다. 실제 번호는 각 보드가 직접 발급한다).
 
 ```text
 rules/plan/plan_001.md
