@@ -66,4 +66,7 @@ printf 'spec_created=%s\n' "$created_spec"
 printf 'spec_is_placeholder=%s\n' "$spec_is_placeholder"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
-printf 'next_action=Describe the project or feature intent in this conversation. The spec-author agent will write ONLY %s. The plan file is generated later by the planner heartbeat from this spec. Do not touch rules/plan/ here.\n' "$spec_file"
+printf 'next_action=1) Ask the user for the intent + scope + acceptance criteria. 2) Draft the full spec inside THIS conversation as a fenced markdown block — do NOT write to %s yet. 3) Ask "이 내용으로 저장할까요? (저장 / 바꿔 / 취소)" and iterate in chat until the user replies with an explicit confirmation phrase (저장, OK 저장, 확정, save, go). 4) Only after explicit confirmation, overwrite %s. 5) Never create or modify files under rules/plan/; the planner heartbeat does that.\n' "$spec_file" "$spec_file"
+printf 'confirmation_required=true\n'
+printf 'confirmation_phrases=저장,OK 저장,확정,save,go,yes save,좋아 저장해\n'
+

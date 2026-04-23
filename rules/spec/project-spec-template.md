@@ -2,8 +2,8 @@
 
 ## Project
 
-- Name:
-- Goal:
+- Name: Replace with your project name
+- Goal: Describe the shipped outcome in observable terms
 - Owner:
 
 ## Core Scope
