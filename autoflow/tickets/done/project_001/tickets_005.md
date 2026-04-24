@@ -6,12 +6,12 @@
 - Project Key: project_001
 - Plan Candidate: Update README and reference docs to describe Autoflow as a local coding-agent harness with board ledger and wiki map.
 - Title: Document the local agent harness and wiki direction
-- Stage: blocked
+- Stage: done
 - Owner: verify-1
 - Claimed By: todo-1
 - Execution Owner: unassigned
 - Verifier Owner: verify-1
-- Last Updated: 2026-04-25T08:01:00+09:00
+- Last Updated: 2026-04-24T23:18:03Z
 
 ## Goal
 
@@ -43,8 +43,8 @@
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005_local`
 - Branch: codex/autoflow-tickets-005
 - Base Commit: 30f9b3a872bbadf4c3047b1e693a4906122d19b8
-- Worktree Commit:
-- Integration Status: blocked_dirty_project_root
+- Worktree Commit: c3717f62ec53ca3fa5ca7f47237cfa56ef7d134c
+- Integration Status: integrated
 
 ## Done When
 
@@ -55,12 +55,12 @@
 - [x] Existing `#spec`, `#plan`, `#todo`, `#veri` workflow documentation remains accurate.
 
 ## Next Action
-- Next: clear or isolate existing non-board dirty files in `PROJECT_ROOT`, then rerun verifier so the worktree can be integrated without mixing unrelated changes.
+- Complete. No further action for this ticket.
 
 ## Resume Context
-- Current state: documentation checks passed, but verifier pass integration is blocked by existing non-board dirty files in `PROJECT_ROOT`.
-- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_005.md` refused to integrate because the central project root is dirty outside `autoflow/`.
-- Next reader: verifier should retry after the central dirty files are committed, stashed, or otherwise isolated.
+- Current state: verifier passed after resolving README/reference wording overlap.
+- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_005.md` produced worktree commit `c3717f62ec53ca3fa5ca7f47237cfa56ef7d134c`; conflicts were resolved in `PROJECT_ROOT`.
+- Next reader: use the linked verification record and completion log for evidence.
 
 ## Notes
 
@@ -79,12 +79,17 @@
 - Verifier prepared by verify-1 via scripts/start-verifier.sh at 2026-04-24T23:00:52Z
 - Worktree integration blocked at 2026-04-24T23:01:01Z: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket.
 - Verifier evidence: `git diff --check` passed; grep confirmed required wording; changed files are within allowed paths. Pass is blocked only by central dirty-root protection.
+- Allowed path was not present in worktree during integration at 2026-04-24T23:16:36Z, so it was skipped: plan.md
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:16:36Z: c3717f62ec53ca3fa5ca7f47237cfa56ef7d134c. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
+- 2026-04-24T23:18:03Z: Resolved documentation overlap, confirmed required wording with grep, ran `git diff --check`, and marked integration as passed.
+- Allowed path was not present in worktree during integration at 2026-04-24T23:16:36Z, so it was skipped: plan.md
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:16:36Z: c3717f62ec53ca3fa5ca7f47237cfa56ef7d134c. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
 ## Verification
-- Run file: `tickets/inprogress/verify_005.md`
-- Log file: pending
-- Result: blocked_dirty_project_root
+- Run file: `tickets/done/project_001/verify_005.md`
+- Log file: `logs/verifier_005_20260424_231826Z_pass.md`
+- Result: passed
 
 ## Result
 
 - Summary: Documented Autoflow as a local coding-agent harness with board ledger, planned wiki map, and planned `#autoflow` spec handoff direction.
-- Remaining risk: This ticket updates docs only; runtime alias and local runner execution remain later phases. Ticket 005 cannot be integrated until central non-board dirty files are isolated.
+- Remaining risk: This ticket updates docs only; runtime alias and local runner execution remain later phases.

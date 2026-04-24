@@ -10,3 +10,10 @@
 
 - `runner-harness.md`: local agent runner 역할과 상태 원칙
 - `wiki.md`: board ledger 에서 파생되는 wiki layer 원칙
+
+제품 방향:
+
+- Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트를 위한 local work harness 다.
+- `tickets/` 는 spec 부터 verifier 까지의 실행 원장이다.
+- 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다.
+- `#autoflow` 는 Codex/Claude 대화창에서 spec 만 넘기는 handoff alias 로 계획한다. 기존 `#spec`, `#plan`, `#todo`, `#veri` 흐름은 그대로 유지한다.
