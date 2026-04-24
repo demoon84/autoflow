@@ -4,6 +4,8 @@
 
 실제 제품 코드는 프로젝트 루트에 있고, 하네스 보드는 `.autoflow/` 안에 있다.
 
+Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트를 위한 local work harness 다. 대화창은 작업 진입점일 수 있지만, 작업 상태의 source of truth 는 `.autoflow/tickets/` 보드다.
+
 ## Read Order
 
 작업을 시작할 때는 아래 순서로 읽는다.
@@ -34,12 +36,20 @@
 9. verifier 가 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
 10. verifier 는 `.autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
 11. `#todo` / `#veri` tick 이 끝나면 active ticket context 를 비우고, 다음 tick 은 보드 파일과 Obsidian links 에서 다시 읽어 재개한다. role / worker context 는 heartbeat 유지를 위해 남긴다.
+12. `tickets/` 는 실행 원장이고, 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다. wiki 문서만으로 done/pass 를 판단하지 않는다.
+13. local runner / embedded terminal / adapter execution 은 별도 단계로 추가한다. 현재 자동화는 기존 `#spec`, `#plan`, `#todo`, `#veri` 계약을 유지한다.
 
 ## Trigger Interpretation
 
 - `#spec`
   - 사용자와 대화해 내용을 정리하고, 사용자가 명시적으로 저장을 허락하면 `.autoflow/tickets/backlog/project_{NNN}.md` 에 spec 만 남긴다.
   - `.autoflow/tickets/plan/` 은 건드리지 않는다.
+
+- `#autoflow`
+  - 계획된 spec handoff alias 다.
+  - Codex/Claude 대화창에서 요구사항을 정리해 `.autoflow/tickets/backlog/project_{NNN}.md` spec 만 넘긴다.
+  - 이후 plan / todo / verifier 는 Autoflow 보드와 runner 가 이어받는다.
+  - 현재 프로젝트에 이 alias 구현이 없다면 `#spec` 과 같은 원칙으로 처리하되, plan / ticket / 구현은 시작하지 않는다.
 
 - `#plan`
   - 현재 스레드의 planner heartbeat 를 1분 주기로 생성 또는 재개한다.

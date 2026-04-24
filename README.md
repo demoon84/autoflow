@@ -1,12 +1,16 @@
 # Autoflow
 
-`Autoflow` 는 공개 배포 가능한 `repo template + installer CLI` 방식의 로컬 AI 작업 보드 스캐폴드다.
+`Autoflow` 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트를 위한 로컬 작업 하네스다.
+
+현재 패키지는 공개 배포 가능한 `repo template + installer CLI` 방식으로, 프로젝트 안에 파일 기반 AI 작업 보드를 설치한다. Autoflow 가 직접 코딩 모델이 되는 것이 아니라, 여러 local agent runner 가 안전하게 같은 보드 큐를 소비할 수 있는 운영 레이어를 제공한다.
 
 핵심 목표는 이것이다.
 
 - 실제 프로젝트 안에 `.autoflow/` 보드를 생성한다.
 - 보드 상태는 프로젝트 로컬 파일로 남긴다.
 - 설치는 공개 저장소의 CLI/스크립트로 수행한다.
+- spec 부터 verifier 까지 `tickets/` 보드가 실행 원장이 된다.
+- 완료된 작업과 의사결정은 향후 `wiki/` layer 에 사람이 읽기 좋은 지도로 축적한다.
 
 예를 들어 `tetris` 프로젝트에 적용하면 목표 구조는 아래와 같다.
 
@@ -33,6 +37,23 @@ tetris/
 
 여기서 `.autoflow/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
 프로젝트별 온보딩 메모나 테스트 명령 모음은 둘 수 있지만, 상태 폴더에는 실제 작업 문서만 둔다. 설명서와 템플릿은 `reference/` 에 모으고, 검증 기준 문서는 `rules/verifier/` 아래에 둔다. planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동한다. plan / ticket / verification / log 문서는 `[[project_NNN]]`, `[[plan_NNN]]`, `[[tickets_NNN]]`, `[[verify_NNN]]` 형태의 옵시디언 링크도 함께 남겨 서로 연결한다.
+
+중요한 구분:
+
+- `tickets/` 는 실행 원장이다. 실제 상태, 책임자, 검증 결과, reject reason 은 여기서 판단한다.
+- `wiki/` 는 이해의 지도다. 완료된 작업, 결정, 실패 패턴을 재사용 가능한 지식으로 정리하지만 완료 판정의 source of truth 는 아니다.
+- `runners/` 는 process state 다. Codex/Claude/OpenCode/Gemini CLI 같은 실행기가 어떤 역할로 움직이는지 기록하지만 ticket stage 를 대체하지 않는다.
+
+## Spec Handoff Direction
+
+Codex/Claude 대화창에서 `#autoflow` 라고 말하는 흐름은 **spec handoff 전용 진입점**으로 둔다.
+
+- 대화창에서는 사용자 요구를 정리해 spec 만 작성한다.
+- 저장 대상은 `.autoflow/tickets/backlog/project_NNN.md` 하나다.
+- plan / todo / verifier 는 Autoflow 보드와 runner 가 이어받는다.
+- 긴 대화가 작업 상태를 대신하지 않는다. 대화는 spec 과 compact summary 로만 보드에 연결된다.
+
+현재 구현된 수동 트리거는 `#spec`, `#plan`, `#todo`, `#veri` 이다. `#autoflow` alias, local runner 실행, desktop terminal controls 는 이후 runner harness 단계에서 추가한다.
 
 ## Distribution Model
 
@@ -89,6 +110,8 @@ PROJECT_ROOT
 
 - `tetris` 같은 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
 - 여러 Codex 대화창이나 heartbeat worker 가 병렬로 작업을 나눠 처리할 때. 단, Codex 대화 하나는 한 번에 `#spec` / `#plan` / `#todo` / `#veri` 각각 active 항목 하나만 처리한다.
+- Codex, Claude Code, OpenCode, Gemini CLI 를 작업별 runner 로 바꿔가며 쓰고 싶을 때
+- 대화창이 늘어나도 프로젝트의 spec / ticket / verifier / done 숫자를 보드에서 세고 싶을 때
 - 보드 상태와 제품 코드를 물리적으로 분리하고 싶을 때
 - 사람이 `.autoflow/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
 
@@ -157,6 +180,7 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell 
 - `Autoflow` CLI 는 설치와 배포 진입점을 제공한다.
 - `render-heartbeats`, `status`, `doctor`, `upgrade` 는 현재 보드 상태를 AI 친화적인 `key=value` 출력과 안전한 갱신 계약으로 다룬다.
 - 생성된 로컬 보드는 작업 보드 흐름을 제공한다.
+- runner execution, embedded desktop terminals, adapter-specific local CLI invocation 은 계획된 다음 단계다. 현재 문서는 그 방향을 고정하지만, 아직 기존 `#spec/#plan/#todo/#veri` 흐름을 대체하지 않는다.
 
 권장 시작 순서는 아래와 같다.
 

@@ -4,6 +4,8 @@
 
 Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지는 대화로 프로젝트/기능 의도를 **대화창 안에서 먼저 초안으로 보여준 뒤**, 사용자가 명시적으로 확정하면 `tickets/backlog/project_{번호}.md` 에 저장한다. **plan 파일은 절대 쓰지 않는다** — planner heartbeat 이 spec 을 읽고 별도로 plan 을 만든다.
 
+`#autoflow` 는 planned alias 로, 같은 원칙을 따르는 spec handoff 전용 진입점이다. 대화창은 요구사항을 정리하는 입력면이고, 이후 plan / todo / verifier 실행은 Autoflow 보드와 runner 가 이어받는다.
+
 ## Why This Agent Exists
 
 "테트리스 만들어줘", "wiki lint 강화해" 같은 high-level 의도는 바로 실행 가능한 작업 단위가 아니다. 이 에이전트는 사용자와 대화하면서 의도를 스펙으로 구조화하되, **사용자가 내용을 눈으로 확인하고 확정하는 게이트를 반드시 거치게** 한다. 사용자가 모르는 사이에 파일이 바뀌는 일이 없게 하는 게 핵심.
@@ -45,6 +47,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 - `#spec`
 - `#spec 003`
 - `#spec project_003`
+- `#autoflow` (planned alias: spec handoff only)
 
 번호 해석 규칙:
 
