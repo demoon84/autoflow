@@ -4,6 +4,23 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Write-HookDiagnostic {
+  param([string]$Message)
+
+  try {
+    $logRoot = Join-Path $env:USERPROFILE ".codex\log"
+    if (-not (Test-Path -LiteralPath $logRoot)) {
+      New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+    }
+
+    $timestamp = (Get-Date).ToString("o")
+    Add-Content -LiteralPath (Join-Path $logRoot "autoflow-stop-hook.log") -Value "[$timestamp] $Message"
+  }
+  catch {
+    # Stop hook diagnostics are best-effort.
+  }
+}
+
 function Convert-ToBashPath {
   param([string]$PathValue)
 
@@ -18,7 +35,9 @@ function Convert-ToBashPath {
 
 function Convert-ToBashLiteral {
   param([string]$Value)
-  return "'" + $Value + "'"
+
+  $escaped = $Value.Replace("'", "'\''")
+  return "'" + $escaped + "'"
 }
 
 function Invoke-BashScript {
@@ -49,8 +68,22 @@ function Invoke-BashScript {
     $commandParts += (Convert-ToBashLiteral $argument)
   }
 
-  & bash -lc ($commandParts -join " ")
-  exit $LASTEXITCODE
+  try {
+    if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
+      Write-HookDiagnostic "bash executable was not found for board stop hook."
+      exit 0
+    }
+
+    & bash -lc ($commandParts -join " ")
+    if ($LASTEXITCODE -ne 0) {
+      Write-HookDiagnostic "check-stop.sh exited with code $LASTEXITCODE."
+    }
+    exit 0
+  }
+  catch {
+    Write-HookDiagnostic "check-stop.ps1 failed open: $($_.Exception.Message)"
+    exit 0
+  }
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -63,4 +96,10 @@ else {
 }
 $bashScript = Convert-ToBashPath (Join-Path $scriptDir "check-stop.sh")
 
-Invoke-BashScript -BoardRootValue (Convert-ToBashPath $boardRoot) -BashScriptPath $bashScript -ScriptArguments @()
+try {
+  Invoke-BashScript -BoardRootValue (Convert-ToBashPath $boardRoot) -BashScriptPath $bashScript -ScriptArguments @()
+}
+catch {
+  Write-HookDiagnostic "check-stop.ps1 failed open: $($_.Exception.Message)"
+  exit 0
+}

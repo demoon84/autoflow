@@ -8,7 +8,7 @@
 - 순서는 `tickets/plan/`
 - 실행 단위는 `tickets/`
 - 검증 기준과 템플릿은 `rules/verifier/`
-- 검증 증거는 `tickets/runs/`
+- 검증 증거는 시작 시 `tickets/inprogress/verify_*.md`, 완료 후에는 final ticket 옆 `verify_*.md`
 - verifier 완료 이력은 `logs/`
 
 ## First Use
@@ -50,7 +50,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 - `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
 - `tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
 - `tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
-- `tickets/runs/`: 검증 기록
+- `tickets/inprogress/verify_*.md`: 진행 중 검증 기록
+- `tickets/done/<project-key>/verify_*.md`, `tickets/reject/verify_*.md`: 완료 후 정리된 검증 기록
 - `logs/`: verifier 완료 로그
 - `tickets/done/<project-key>/`: 프로젝트 단위로 모아 둔 완료 티켓, 처리된 spec, ticket 생성 완료 plan
 - `scripts/`: 보드 runtime 훅
@@ -69,10 +70,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 - `start-todo.ps1`
 - `handoff-todo.ps1`
 - `start-verifier.ps1`
+- `check-stop.sh`
+- `check-stop.ps1`
+- `codex-stop-hook.ps1`
 - `run-hook.ps1`
 - `watch-board.ps1`
 
 Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `.ps1` 래퍼는 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 런타임을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
+
+`codex-stop-hook.ps1` 는 Codex 전역 Stop hook 에 연결하는 Autoflow 자체 dispatcher 다. 활성 보드의 `check-stop.ps1` 를 찾아 실행하고, 보드가 없거나 내부 오류가 나면 진단 로그만 남긴 뒤 조용히 통과한다.
+`#todo` / `#veri` 는 tick 이 끝날 때 active ticket context 를 비워 토큰 사용을 줄이고, 다음 tick 에는 보드 파일과 Obsidian links 를 다시 읽어 재개한다. role / worker context 는 유지하므로 사용자가 "멈춰"라고 하기 전까지 heartbeat 연속성은 유지된다.
 
 역할은 아래처럼 고정한다.
 

@@ -13,11 +13,11 @@ package_version="$(package_version_value)"
 
 error_count=0
 warning_count=0
-check_output="$(mktemp)"
-detail_output="$(mktemp)"
+check_output="$(autoflow_mktemp)"
+detail_output="$(autoflow_mktemp)"
 
 cleanup() {
-  rm -f "$check_output" "$detail_output"
+  autoflow_cleanup_tmp
 }
 trap cleanup EXIT
 
@@ -101,7 +101,6 @@ if [ -d "$board_root" ]; then
     "tickets/backlog" \
     "rules/verifier" \
     "logs/hooks" \
-    "tickets/runs" \
     "tickets/plan" \
     "automations/state" \
     "automations/state/threads"
@@ -131,7 +130,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_ps1 in invoke-runtime-sh.ps1 check-stop.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
+  for runtime_ps1 in invoke-runtime-sh.ps1 check-stop.ps1 codex-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
     if [ -f "${board_root}/scripts/${runtime_ps1}" ]; then
       record_check "script_${runtime_ps1}" "ok"
     else
@@ -242,6 +241,13 @@ if [ -d "$board_root" ]; then
   else
     record_check "legacy_reject_ticket_names" "ok"
   fi
+
+if [ -d "${board_root}/tickets/runs" ] && find "${board_root}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' -print -quit | grep -q .; then
+  record_check "legacy_verification_runs_dir" "warning"
+  record_warning "tickets/runs still contains verification records; move them to tickets/inprogress or their final done/reject location, or run autoflow upgrade"
+else
+  record_check "legacy_verification_runs_dir" "ok"
+fi
 
   if [ -f "${board_root}/reference/ticket-template.md" ]; then
     for required_ticket_field in "Stage" "Claimed By" "Execution Owner" "Verifier Owner"; do

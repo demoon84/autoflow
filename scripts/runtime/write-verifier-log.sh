@@ -23,6 +23,16 @@ if [ ! -f "$run_file" ]; then
   exit 1
 fi
 
+final_run_file="$(final_run_path_for_ticket_file "$ticket_file" "$outcome")"
+if [ -n "$final_run_file" ] && [ "$final_run_file" != "$run_file" ]; then
+  mkdir -p "$(dirname "$final_run_file")"
+  if [ -f "$final_run_file" ]; then
+    rm -f "$final_run_file"
+  fi
+  mv "$run_file" "$final_run_file"
+  run_file="$final_run_file"
+fi
+
 ticket_id="$(extract_numeric_id "$ticket_file")"
 ticket_title="$(ticket_scalar_field "$ticket_file" "Title")"
 ticket_stage="$(ticket_scalar_field "$ticket_file" "Stage")"
@@ -48,6 +58,17 @@ log_file="${log_dir}/verifier_${ticket_id}_${timestamp_slug}_${outcome}.md"
 
 ticket_rel="$(board_relative_path "$ticket_file")"
 run_rel="$(board_relative_path "$run_file")"
+log_rel="$(board_relative_path "$log_file")"
+
+case "$outcome" in
+  pass) verification_result="passed" ;;
+  fail) verification_result="failed" ;;
+  *) verification_result="$outcome" ;;
+esac
+
+replace_section_block "$ticket_file" "Verification" "- Run file: \`${run_rel}\`
+- Log file: \`${log_rel}\`
+- Result: ${verification_result}"
 
 {
   printf '# Verifier Completion Log\n\n'

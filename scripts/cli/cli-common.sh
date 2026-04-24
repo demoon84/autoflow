@@ -4,6 +4,36 @@ set -euo pipefail
 
 CLI_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_VERSION_FILE="$(cd "${CLI_COMMON_DIR}/../.." && pwd)/VERSION"
+AUTOFLOW_TMP_FILES=()
+AUTOFLOW_TMP_REGISTRY="${TMPDIR:-/tmp}/autoflow-tmp-registry.$$"
+
+autoflow_mktemp() {
+  local tmp
+
+  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow.XXXXXX")"
+  AUTOFLOW_TMP_FILES+=("$tmp")
+  printf '%s\n' "$tmp" >> "$AUTOFLOW_TMP_REGISTRY"
+  printf '%s' "$tmp"
+}
+
+autoflow_cleanup_tmp() {
+  local tmp
+
+  if [ -f "$AUTOFLOW_TMP_REGISTRY" ]; then
+    while IFS= read -r tmp; do
+      [ -n "$tmp" ] || continue
+      rm -f "$tmp" 2>/dev/null || true
+    done < "$AUTOFLOW_TMP_REGISTRY"
+    rm -f "$AUTOFLOW_TMP_REGISTRY" 2>/dev/null || true
+  fi
+
+  for tmp in "${AUTOFLOW_TMP_FILES[@]:-}"; do
+    [ -n "$tmp" ] || continue
+    rm -f "$tmp" 2>/dev/null || true
+  done
+}
+
+trap autoflow_cleanup_tmp EXIT
 
 normalize_input_path() {
   local raw_path="$1"

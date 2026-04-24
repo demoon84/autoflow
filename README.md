@@ -23,8 +23,9 @@ tetris/
     scripts/
     tickets/
       plan/
-        inprogress/
-      runs/
+      inprogress/
+      done/
+      reject/
   src/
   public/
   package.json
@@ -77,9 +78,9 @@ PROJECT_ROOT
   -> autoflow/tickets/todo
   -> autoflow/tickets/inprogress
   -> autoflow/rules/verifier
-  -> autoflow/tickets/runs
+  -> autoflow/tickets/inprogress/verify_NNN.md
   -> autoflow/logs
-  -> autoflow/tickets/done/<project-key>
+  -> autoflow/tickets/done/<project-key>/verify_NNN.md
 ```
 
 ## When This Fits
@@ -87,7 +88,7 @@ PROJECT_ROOT
 아래 같은 상황이면 이 구조가 잘 맞는다.
 
 - `tetris` 같은 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
-- 여러 Codex 스레드나 heartbeat worker 가 병렬로 티켓을 나눠 처리할 때
+- 여러 Codex 대화창이나 heartbeat worker 가 병렬로 작업을 나눠 처리할 때. 단, Codex 대화 하나는 한 번에 `#spec` / `#plan` / `#todo` / `#veri` 각각 active 항목 하나만 처리한다.
 - 보드 상태와 제품 코드를 물리적으로 분리하고 싶을 때
 - 사람이 `autoflow/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
 
@@ -161,11 +162,11 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell 
 
 1. `autoflow init` 으로 보드를 만든다.
 2. `autoflow status` 와 `autoflow doctor` 로 초기 상태를 확인한다.
-3. `#spec` 으로 사용자와 대화해 정리된 spec 을 `tickets/backlog/` 에 남긴다.
-4. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 만들고, ticket 생성 시 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 `tickets/todo/` 를 생성한다. 실제 ticket 생성이 끝나면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해 backlog / plan 루트에서는 빠진다.
-5. `#todo` 로 todo heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
-   이때 stop-hook runtime context 는 역할 문맥과 현재 ticket 문맥을 나눠 갖고, 기능 단위 작업이 끝나면 전체 clear 대신 현재 ticket 문맥만 비운다. 상관관계는 Obsidian links, `References`, `Resume Context`, run/log 파일로 재구성한다.
-6. `#veri` 로 verifier heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `verifier/` 를 검사해 티켓 `working_root` 에서 검증한다. pass 면 `integrate-worktree` 런타임으로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동하고, 완료 로그를 `logs/` 에 남긴다.
+3. `#spec` 으로 사용자와 대화해 정리된 spec 을 `tickets/backlog/` 에 남긴다. 같은 대화창에 active spec 이 있으면 새 번호를 만들지 않고 그 spec 만 이어 쓴다.
+4. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 만들고, ticket 생성 시 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 `tickets/todo/` 를 생성한다. 같은 대화창에 active plan 이 있으면 새 plan 을 잡지 않고 그 plan 만 이어 처리한다. 실제 ticket 생성이 끝나면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해 backlog / plan 루트에서는 빠진다.
+5. `#todo` 로 todo heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다. 같은 Codex 대화/worker 에 기존 `inprogress` 티켓이 있으면 새 claim 대신 그 티켓을 재개한다.
+   이때 stop-hook runtime context 는 역할 문맥과 현재 ticket 문맥을 나눠 갖고, 각 todo tick 이 끝나면 전체 clear 대신 현재 ticket 문맥만 비운다. 상관관계는 Obsidian links, `References`, `Resume Context`, run/log 파일로 재구성한다.
+6. `#veri` 로 verifier heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `verifier/` 를 검사해 티켓 `working_root` 에서 검증한다. 같은 대화창에 active verifier 티켓이 있으면 새 티켓을 잡지 않고 그 티켓만 이어 검증한다. pass 면 `integrate-worktree` 런타임으로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동하고, 완료 로그를 `logs/` 에 남긴다.
    브라우저 확인이 필요해도 기본값은 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 이며 Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 쓰고, 현재 턴에서 연 브라우저/탭은 같은 턴에서 닫고 끝내야 한다.
    이 역할은 `PROJECT_ROOT` / `BOARD_ROOT` / ticket worktree 범위 안의 검증 명령, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 을 추가 허락 없이 바로 수행한다.
 7. heartbeat 세트를 파일로 관리하고 싶다면 `automations/heartbeat-set.toml` 을 채우고 `autoflow render-heartbeats` 로 role별 heartbeat TOML 묶음을 만든다.
@@ -217,17 +218,22 @@ autoflow/
 - `start-todo.ps1`
 - `handoff-todo.ps1`
 - `start-verifier.ps1`
+- `check-stop.sh`
+- `check-stop.ps1`
+- `codex-stop-hook.ps1`
 - `run-hook.ps1`
 - `watch-board.ps1`
 
-Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `.ps1` 래퍼는 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 런타임을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
+Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `bin/autoflow.ps1` 는 top-level CLI 를 `scripts/cli/*.ps1` 로 dispatch 하고, 생성 보드의 runtime 도 `scripts/*.ps1` 래퍼를 우선 쓴다. 이 `.ps1` 래퍼들은 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 구현을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
 
 이 스크립트들은 결정적인 파일 이동과 상태 갱신을 맡고, 실제 구현 판단은 에이전트가 이어받는다.
 
 `watch-board.ps1` 는 OS 파일 이벤트를 받아 route 별 훅을 한 번씩 dispatch 하는 장기 실행 watcher 다. minute heartbeat 가 외부 사유로 끊기는 환경에서는 이 watcher 를 함께 두는 쪽이 더 안정적이다. 평소에는 `watch-bg` 로 숨김 프로세스 실행을 사용하고, watcher 자체는 사용자가 `watch-stop` 으로 멈출 때까지 계속 살아 있다. 상세 실행 기록은 `logs/hooks/` 에 남긴다.
 
-자동화 철학은 `/Users/demoon/Documents/project/mySkills/skills/autopilot/SKILL.md` 처럼 "남은 일이 있는데 너무 일찍 멈추지 않게 하기"에 가깝다.
-다만 현재 `Autoflow` 는 단일 작업 계획 파일 대신 보드 파일을 source of truth 로 쓰고, Codex 자동화는 필요할 때 1분 heartbeat 형태의 wake-up 계층으로 붙이되 각 heartbeat 는 `plan`, `todo`, `verifier` 중 자기 역할만 수행하는 쪽을 기준으로 한다.
+`codex-stop-hook.ps1` 는 Codex 전역 Stop hook 에 연결하는 Autoflow 자체 dispatcher 다. `CODEX_PROJECT_DIR` 또는 현재 작업 폴더에서 `autoflow/scripts/check-stop.ps1` 를 찾아 실행하고, 보드가 없거나 내부 오류가 나면 진단 로그만 남긴 뒤 조용히 통과한다.
+
+자동화 철학은 "남은 일이 있는데 너무 일찍 멈추지 않게 하기"다. `Autoflow` 는 단일 작업 계획 파일 대신 보드 파일을 source of truth 로 쓰고, Codex 자동화는 필요할 때 1분 heartbeat 형태의 wake-up 계층으로 붙이되 각 heartbeat 는 `plan`, `todo`, `verifier` 중 자기 역할만 수행하는 쪽을 기준으로 한다.
+`#todo` / `#veri` 는 tick 이 끝날 때 active ticket context 를 비워 토큰 사용을 줄이고, 다음 tick 에는 보드 파일과 Obsidian links 를 다시 읽어 재개한다. role / worker context 는 유지하므로 사용자가 "멈춰"라고 하기 전까지 heartbeat 연속성은 유지된다.
 
 역할 분리형 운영에서는 아래 환경 변수를 쓰는 편이 좋다.
 
@@ -263,7 +269,7 @@ pool 예시는 숫자가 고정이 아니다.
 
 24시간 heartbeat 운영에서는 `AUTOFLOW_BACKGROUND=1` 을 주는 편이 좋다. 이 모드에서는 "할 일 없음" 이 실패가 아니라 `status=idle` 로 출력되어 자동화가 조용히 다음 wake-up 을 기다린다.
 
-또한 todo worker 는 execution pool 이 이미 꽉 찼으면 새 티켓을 claim 하지 않는다. 여기서 execution pool 은 **구현을 진행할 수 있는 todo worker id 목록**을 뜻한다.
+또한 todo worker 는 execution pool 이 이미 꽉 찼거나 같은 worker 가 기존 `inprogress` 티켓을 갖고 있으면 새 티켓을 claim 하지 않는다. 여기서 execution pool 은 **구현을 진행할 수 있는 todo worker id 목록**을 뜻한다.
 
 즉 이 구조는 6개 전용이 아니다.
 `planner P / todo K / verifier M` 형태로 worker 수를 가변 운영하는 쪽이 기준이다.
@@ -286,7 +292,8 @@ pool 예시는 숫자가 고정이 아니다.
 - `tickets/plan/plan_*.md`
 - `tickets/inprogress/plan_*.md`
 - `tickets/*/tickets_*.md`
-- `tickets/runs/verify_*.md`
+- `tickets/inprogress/verify_*.md` while verification is active
+- `tickets/done/<project-key>/verify_*.md` or `tickets/reject/verify_*.md` after verification is settled
 - `logs/verifier_*.md`
 
 업그레이드 중 변경되는 공용 파일이 이미 수정되어 있으면, 이전 내용은 `BOARD_ROOT/.autoflow-upgrade-backups/<timestamp>/` 아래에 백업한다.
@@ -298,7 +305,8 @@ pool 예시는 숫자가 고정이 아니다.
 - 보드 문서 참조: `tickets/backlog/project_001.md` 또는 `tickets/done/project_001/project_001.md`
 - plan 참조: `tickets/plan/plan_001.md`, `tickets/inprogress/plan_001.md`, 또는 `tickets/done/project_001/plan_001.md`
 - done 티켓 경로: `tickets/done/project_001/tickets_001.md`
-- 검증 기록 참조: `tickets/runs/verify_001.md`
+- 진행 중 검증 기록 참조: `tickets/inprogress/verify_001.md`
+- 완료 후 검증 기록 참조: `tickets/done/project_001/verify_001.md`
 - verifier completion log 참조: `logs/verifier_001_<timestamp>_<outcome>.md`
 - 실제 작업 허용 경로: `src/`, `public/`, `package.json`
 
@@ -315,7 +323,7 @@ pool 예시는 숫자가 고정이 아니다.
 - 보드와 제품 코드를 물리적으로 분리하기
 - 에이전트가 `autoflow/` 보드만 읽어도 현재 흐름을 이해하게 하기
 - 실제 코드 수정 범위는 티켓 worktree 안의 `Allowed Paths` 로 좁히기
-- 여러 대화창이 동시에 `#todo` 를 실행해도 서로 다른 티켓을 점유하게 하기
+- 여러 대화창이 동시에 `#spec` / `#plan` / `#todo` / `#veri` 를 실행해도 각 대화창은 자기 active 항목 하나만 처리하게 하기.
 - 대화창이 멈췄다가 다시 시작되어도 `tickets/inprogress/` 기준으로 재개하게 하기
 - 검증 기준과 검증 결과를 분리하기
 - todo / verifier heartbeat 가 자기 owner 와 상태 큐를 계속 따라가게 하기
@@ -324,14 +332,14 @@ pool 예시는 숫자가 고정이 아니다.
 
 - 티켓 파일 이름은 `tickets_001.md` 처럼 번호 기반으로 만든다.
 - 한 티켓은 한 번에 한 상태 폴더에만 존재한다.
-- `done/<project-key>/` 으로 옮기기 전에 검증 기록이 `tickets/runs/` 에 있어야 하고, verifier completion log 가 `logs/` 에 남아 있어야 한다.
+- `done/<project-key>/` 으로 옮기기 전에 verifier 가 `tickets/inprogress/verify_*.md` 를 준비해야 하고, 완료 후에는 그 기록도 `done/<project-key>/verify_*.md` 또는 `reject/verify_*.md` 로 정리돼야 한다. verifier completion log 는 `logs/` 에 남아 있어야 한다.
 - 티켓을 만들기 전에 관련 계획 항목이 `tickets/plan/` 에 있어야 한다.
 - 티켓 생성 전에는 실제 `tickets/backlog/*.md` 가 있어야 한다.
 - 티켓 생성이 끝난 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해야 한다.
 - `Allowed Paths` 는 repo-relative 경로로 적고, 구현은 티켓 worktree 기준으로 진행한다. worktree 가 없을 때만 `PROJECT_ROOT` 기준으로 fallback 한다.
 - `#spec`, `#plan`, `#todo`, `#veri` 는 서로 다른 역할을 섞지 않는다.
 - `#plan`, `#todo`, `#veri` 는 먼저 1분 heartbeat 자동화를 붙이고, 사용자가 멈추라고 하기 전까지 자동화가 계속 살아 있어야 한다.
-- planner 는 현재 plan 을 ticketed 로 만든 뒤에도 backlog 에 populated spec 이 남아 있으면 다음 plan 으로 계속 이어가야 한다.
+- planner 는 현재 plan 을 ticketed 로 만든 뒤 active context 를 비운다. backlog 에 populated spec 이 남아 있으면 다음 tick 이 보드에서 다시 읽되, 같은 대화창에서 동시에 두 plan 을 active 처리하지 않는다.
 - `#todo` 는 단순 이동 훅이 아니라 `점유 + 이동 + 구현 + verifier 이동` 훅이다.
 - 티켓 제목, Goal, Done When 문구가 검증처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행한다. pass / fail 판정은 verifier 만 한다.
 - `inprogress/` 티켓에는 항상 재개 가능한 상태 요약이 남아 있어야 한다.

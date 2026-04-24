@@ -27,23 +27,7 @@ Usage:
 "@ | Write-Host
 }
 
-function Convert-ToBashPath {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$PathValue
-  )
-
-  if ($PathValue -match '^[A-Za-z]:[\\/](.*)$') {
-    $drive = $PathValue.Substring(0, 1).ToLowerInvariant()
-    $rest = $PathValue.Substring(2) -replace '\\', '/'
-    return "/mnt/$drive/$rest"
-  }
-
-  return $PathValue
-}
-
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$bashEntry = Convert-ToBashPath (Join-Path $PSScriptRoot "autoflow")
 
 if ($Command -in @("help", "-h", "--help")) {
   Show-Usage
@@ -68,18 +52,27 @@ if ($Command -eq "watch-stop") {
   exit $LASTEXITCODE
 }
 
-$commandsWithProjectRoot = @("init", "status", "doctor", "upgrade", "render-heartbeats")
-$forwardedArgs = New-Object System.Collections.Generic.List[string]
-$forwardedArgs.Add($Command)
-
-for ($i = 0; $i -lt $RemainingArgs.Count; $i++) {
-  $arg = $RemainingArgs[$i]
-  if ($i -eq 0 -and $commandsWithProjectRoot -contains $Command) {
-    $forwardedArgs.Add((Convert-ToBashPath $arg))
-    continue
+switch ($Command) {
+  "init" {
+    $scriptPath = Join-Path $repoRoot "scripts/cli/scaffold-project.ps1"
   }
-  $forwardedArgs.Add($arg)
+  "status" {
+    $scriptPath = Join-Path $repoRoot "scripts/cli/status-project.ps1"
+  }
+  "doctor" {
+    $scriptPath = Join-Path $repoRoot "scripts/cli/doctor-project.ps1"
+  }
+  "upgrade" {
+    $scriptPath = Join-Path $repoRoot "scripts/cli/upgrade-project.ps1"
+  }
+  "render-heartbeats" {
+    $scriptPath = Join-Path $repoRoot "scripts/cli/render-heartbeats.ps1"
+  }
+  default {
+    Write-Error "Unknown command: $Command"
+    Show-Usage
+    exit 1
+  }
 }
-
-& bash $bashEntry @forwardedArgs
+& $scriptPath @RemainingArgs
 exit $LASTEXITCODE

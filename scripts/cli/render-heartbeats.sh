@@ -198,8 +198,7 @@ if [ -z "$set_slug" ]; then
 fi
 
 output_root="${board_root}/automations/rendered/${set_slug}"
-manifest_tmp="$(mktemp)"
-trap 'rm -f "$manifest_tmp"' EXIT
+manifest_tmp="$(autoflow_mktemp)"
 
 rm -rf "$output_root"
 mkdir -p "$output_root"

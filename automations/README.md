@@ -64,6 +64,15 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 - 보드에 할 일이 없으면 현재 wake-up 만 종료하는 것이 맞다.
 - 서로 다른 자동화는 각자 자기 역할만 수행해야 한다.
 
+## Stop Hook Guard
+
+Codex Stop hook 은 Autoflow 자체 dispatcher 인 `scripts/codex-stop-hook.ps1` 를 전역 hook 으로 연결한다.
+
+- dispatcher 는 `CODEX_PROJECT_DIR`, `AUTOFLOW_BOARD_ROOT`, 현재 작업 폴더를 기준으로 활성 보드의 `scripts/check-stop.ps1` 를 찾는다.
+- 보드 내부 판정은 `check-stop.ps1` / `check-stop.sh` 가 맡고, 현재 thread context 의 role 에 따라 plan / todo / verifier 잔여 작업만 block 한다.
+- 보드가 없거나 hook 내부 오류가 나면 `%USERPROFILE%\.codex\log\autoflow-stop-hook.log` 에 진단만 남기고 통과한다.
+- 따라서 hook 실패 때문에 Codex UI 에 `Stop hook failed` 가 떠서는 안 된다.
+
 ## File Watch Mode
 
 heartbeat 가 외부 사유로 자주 끊기거나, 폴더에 파일이 올라오자마자 바로 반응해야 하면 file-watch hook 모드를 같이 둔다.
@@ -133,7 +142,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
   - 참고: `agents/todo-queue-agent.md`
 
 - `#veri` (heartbeat)
-  - 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/runs/`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
+- 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/inprogress/verify_*.md`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
+  완료된 검증 기록은 `tickets/done/<project-key>/verify_*.md` 또는 `tickets/reject/verify_*.md` 로 정리된다.
   - 역할: `tickets/verifier/` 의 티켓을 검증해 **pass → `tickets/done/<project-key>/` + local commit**, **fail → `tickets/reject/reject_NNN.md` + `## Reject Reason`**, 그리고 완료 로그를 `logs/` 에 남김
   - Windows 진입점: `scripts/start-verifier.ps1`
   - Bash 진입점: `scripts/start-verifier.sh`
@@ -157,9 +167,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 
 - `#spec`: heartbeat 를 만들지 않고 active ticket context 도 만들지 않는다.
 - `#plan`: `start-plan.*` 가 role=`plan` 을 남기되 active ticket 은 비워 둔다. planner 는 다음 tick 에 backlog / reject / plan 파일을 다시 읽는다.
-- `#todo`: `start-todo.*` 가 claim 한 티켓을 active ticket 으로 남긴다. 구현 완료 시 `handoff-todo.*` 가 `tickets/inprogress/ → tickets/verifier/` 이동과 `active-only` clear 를 함께 처리한다.
-- `#veri`: `start-verifier.*` 가 검증 대상 티켓을 active ticket 으로 남긴다. pass/fail 완료 시 `write-verifier-log.*` 가 completion log 를 쓰고 active ticket context 를 비운다.
-- 전체 context 삭제는 사용자가 `멈춰` 라고 해서 heartbeat / stop hook 연속성을 끝낼 때만 쓴다. 평소에는 role context 를 유지하고 active ticket 만 비운다.
+- `#todo`: tick 중에는 claim / resume 대상 티켓을 active ticket 으로 잡을 수 있다. tick 이 끝나면 Stop hook 이 active ticket context 를 비우고, 다음 tick 은 `tickets/inprogress/`, `Resume Context`, `Next Action`, `Notes` 를 다시 읽는다.
+- `#veri`: tick 중에는 검증 대상 티켓을 active ticket 으로 잡을 수 있다. tick 이 끝나면 Stop hook 이 active ticket context 를 비우고, 다음 tick 은 `tickets/verifier/`, `tickets/inprogress/verify_NNN.md`, `logs/` 를 다시 읽는다.
+- 전체 context 삭제는 사용자가 `멈춰` 라고 해서 heartbeat / stop hook 연속성을 끝낼 때만 쓴다. 평소에는 role / worker context 를 유지하고 active ticket 만 비운다.
 
 ## Worker Identity Contract
 
@@ -233,7 +243,7 @@ worker 수를 고정하지 않는다. 기본 형태는 아래처럼 읽는다.
   - `autoflow render-heartbeats` 로 만든 `automations/rendered/<set-name>/` 출력물
 - 아직 없음:
   - 실제 Codex automation 등록 스크립트
-  - stop hook 스크립트 등록 로직
+  - stop hook 자동 등록 CLI
 
 ## Template Files
 

@@ -210,7 +210,7 @@ replace_scalar_field_in_section_in_file() {
   local value="$4"
   local tmp
 
-  tmp="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
   awk -v heading="$heading" -v field="$field" -v value="$value" '
     BEGIN {
       in_target = 0
@@ -255,8 +255,8 @@ replace_section_block_in_file() {
   local block="$3"
   local tmp block_file
 
-  tmp="$(mktemp)"
-  block_file="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
+  block_file="$(autoflow_mktemp)"
   printf '%s\n' "$block" > "$block_file"
   awk -v heading="$heading" -v block_file="$block_file" '
     BEGIN {
@@ -607,7 +607,7 @@ hydrate_plan_obsidian_links() {
     plan_note="$(note_name_from_board_ref_for_upgrade "$plan_file")"
     block="- Project Note: [[${project_key}]]
 - Plan Note: [[${plan_note}]]"
-    temp_file="$(mktemp)"
+    temp_file="$(autoflow_mktemp)"
     cp "$plan_file" "$temp_file"
     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
 
@@ -638,7 +638,7 @@ hydrate_ticket_obsidian_links() {
     block="- Project Note: [[${project_key}]]
 - Plan Note: [[${plan_note}]]
 - Ticket Note: [[${ticket_note}]]"
-    temp_file="$(mktemp)"
+    temp_file="$(autoflow_mktemp)"
     cp "$ticket_file" "$temp_file"
     replace_scalar_field_in_section_in_file "$temp_file" "## Ticket" "Project Key" "$project_key"
     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
@@ -661,10 +661,10 @@ ticket_file_for_id_for_upgrade() {
     -type f \( -name "tickets_${ticket_id}.md" -o -name "reject_${ticket_id}.md" \) -print | sort | head -n 1
 }
 
-hydrate_run_obsidian_links() {
-  local run_file ticket_id ticket_file project_key plan_ref plan_note ticket_note verification_note block relative_file temp_file
+  hydrate_run_obsidian_links() {
+    local run_file ticket_id ticket_file project_key plan_ref plan_note ticket_note verification_note block relative_file temp_file
 
-  while IFS= read -r run_file; do
+    while IFS= read -r run_file; do
     [ -n "$run_file" ] || continue
     ticket_id="$(printf '%s' "$(basename "$run_file")" | sed -n 's/^verify_\([0-9][0-9][0-9]\)\.md$/\1/p')"
     [ -n "$ticket_id" ] || continue
@@ -682,7 +682,7 @@ hydrate_run_obsidian_links() {
 - Plan Note: [[${plan_note}]]
 - Ticket Note: [[${ticket_note}]]
 - Verification Note: [[${verification_note}]]"
-    temp_file="$(mktemp)"
+    temp_file="$(autoflow_mktemp)"
     cp "$run_file" "$temp_file"
     replace_scalar_field_in_section_in_file "$temp_file" "## Meta" "Project Key" "$project_key"
     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
@@ -693,8 +693,112 @@ hydrate_run_obsidian_links() {
       mv "$temp_file" "$run_file"
     else
       rm -f "$temp_file"
+      fi
+    done < <(
+      {
+        find "${TARGET_BOARD_ROOT}/tickets/inprogress" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+        find "${TARGET_BOARD_ROOT}/tickets/reject" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+        find "${TARGET_BOARD_ROOT}/tickets/done" -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+        find "${TARGET_BOARD_ROOT}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+      } | sort -u
+    )
+  }
+
+  final_run_path_for_ticket_for_upgrade() {
+    local ticket_file="$1"
+    local ticket_id project_key
+
+    ticket_id="$(printf '%s' "$(basename "$ticket_file")" | sed -n 's/^[^_]*_\([0-9][0-9][0-9]\)\.md$/\1/p')"
+    [ -n "$ticket_id" ] || return 1
+
+    case "$ticket_file" in
+      "${TARGET_BOARD_ROOT}/tickets/done/"*)
+        project_key="$(project_key_from_ticket_for_upgrade "$ticket_file")"
+        printf '%s/tickets/done/%s/verify_%s.md' "$TARGET_BOARD_ROOT" "$project_key" "$ticket_id"
+        ;;
+      "${TARGET_BOARD_ROOT}/tickets/reject/"*)
+        printf '%s/tickets/reject/verify_%s.md' "$TARGET_BOARD_ROOT" "$ticket_id"
+        ;;
+      *)
+        printf '%s/tickets/inprogress/verify_%s.md' "$TARGET_BOARD_ROOT" "$ticket_id"
+        ;;
+    esac
+  }
+
+  archive_finalized_run_files() {
+    local run_file ticket_id ticket_file target_file old_ref new_ref
+
+    while IFS= read -r run_file; do
+      [ -n "$run_file" ] || continue
+      ticket_id="$(printf '%s' "$(basename "$run_file")" | sed -n 's/^verify_\([0-9][0-9][0-9]\)\.md$/\1/p')"
+      [ -n "$ticket_id" ] || continue
+
+      ticket_file="$(ticket_file_for_id_for_upgrade "$ticket_id")"
+      [ -n "$ticket_file" ] || continue
+
+      case "$ticket_file" in
+        "${TARGET_BOARD_ROOT}/tickets/done/"*|"${TARGET_BOARD_ROOT}/tickets/reject/"*)
+          target_file="$(final_run_path_for_ticket_for_upgrade "$ticket_file")"
+          ;;
+        *)
+          continue
+          ;;
+      esac
+
+      [ -n "$target_file" ] || continue
+      old_ref="$(board_relative_target_path "$run_file")"
+      new_ref="$(board_relative_target_path "$target_file")"
+
+      if [ "$run_file" != "$target_file" ]; then
+        record_backup_once_for_path "$old_ref"
+        mkdir -p "$(dirname "$target_file")"
+        if [ -f "$target_file" ]; then
+          record_backup_once_for_path "$new_ref"
+          rm -f "$target_file"
+        fi
+        mv "$run_file" "$target_file"
+      fi
+
+      while IFS= read -r board_file; do
+        [ -n "$board_file" ] || continue
+        replace_board_literal_if_present "$board_file" "\`${old_ref}\`" "\`${new_ref}\`"
+        replace_board_literal_if_present "$board_file" "$old_ref" "$new_ref"
+      done < <(
+        find "$TARGET_BOARD_ROOT" \
+          \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
+          -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+      )
+    done < <(
+      {
+        find "${TARGET_BOARD_ROOT}/tickets/inprogress" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+        find "${TARGET_BOARD_ROOT}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+      } | sort -u
+    )
+  }
+
+migrate_legacy_run_files_to_inprogress() {
+  local legacy_run_root="${TARGET_BOARD_ROOT}/tickets/runs"
+  local target_root="${TARGET_BOARD_ROOT}/tickets/inprogress"
+  local legacy_file target_file
+
+  [ -d "$legacy_run_root" ] || return 0
+  mkdir -p "$target_root"
+
+  while IFS= read -r legacy_file; do
+    [ -n "$legacy_file" ] || continue
+    target_file="${target_root}/$(basename "$legacy_file")"
+
+    record_backup_once_for_path "$legacy_file"
+    if [ -f "$target_file" ]; then
+      record_backup_once_for_path "$target_file"
+      rm -f "$legacy_file"
+      continue
     fi
-  done < <(find "${TARGET_BOARD_ROOT}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' | sort)
+
+    mv "$legacy_file" "$target_file"
+  done < <(find "$legacy_run_root" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' | sort)
+
+  rmdir "$legacy_run_root" 2>/dev/null || true
 }
 
 migrate_spec_root_to_backlog() {
@@ -836,6 +940,28 @@ rewrite_plan_references_to_ticket_plan() {
   )
 }
 
+rewrite_run_references_to_ticket_inprogress() {
+  local file
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+
+    if grep -qsF -- "autoflow/tickets/runs/" "$file"; then
+      record_backup_once_for_path "$file"
+      replace_literal_in_file "$file" "autoflow/tickets/runs/" "autoflow/tickets/inprogress/" || true
+    fi
+
+    if grep -qsF -- "tickets/runs/" "$file"; then
+      record_backup_once_for_path "$file"
+      replace_literal_in_file "$file" "tickets/runs/" "tickets/inprogress/" || true
+    fi
+  done < <(
+    find "$TARGET_BOARD_ROOT" \
+      \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
+      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+  )
+}
+
 rewrite_legacy_browser_tool_references() {
   local file
 
@@ -878,13 +1004,16 @@ migrate_plan_root_to_ticket_plan
 migrate_legacy_ticket_spec_view_to_backlog
 rewrite_spec_references_to_backlog
 rewrite_plan_references_to_ticket_plan
+rewrite_run_references_to_ticket_inprogress
 rewrite_legacy_browser_tool_references
 migrate_legacy_reject_ticket_names
-migrate_ticketed_specs_and_plans_to_done
-migrate_legacy_plan_inprogress_to_ticket_inprogress
-migrate_processed_specs_to_done
-remove_legacy_state_reference_files
-migrate_done_tickets_to_project_dirs
+  migrate_ticketed_specs_and_plans_to_done
+  migrate_legacy_plan_inprogress_to_ticket_inprogress
+  migrate_legacy_run_files_to_inprogress
+  archive_finalized_run_files
+  migrate_processed_specs_to_done
+  remove_legacy_state_reference_files
+  migrate_done_tickets_to_project_dirs
 hydrate_plan_obsidian_links
 hydrate_ticket_obsidian_links
 hydrate_run_obsidian_links

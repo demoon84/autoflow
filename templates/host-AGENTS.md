@@ -33,6 +33,7 @@
 8. verifier 의 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
 9. verifier 가 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
 10. verifier 는 `autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
+11. `#todo` / `#veri` tick 이 끝나면 active ticket context 를 비우고, 다음 tick 은 보드 파일과 Obsidian links 에서 다시 읽어 재개한다. role / worker context 는 heartbeat 유지를 위해 남긴다.
 
 ## Trigger Interpretation
 

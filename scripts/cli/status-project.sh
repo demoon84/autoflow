@@ -77,7 +77,12 @@ if [ -d "$board_root" ]; then
   ticket_ready_for_verification_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "ready_for_verification")"
   ticket_verifying_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "verifying")"
   ticket_blocked_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "blocked")"
-  verify_run_count="$(count_matching_files "${board_root}/tickets/runs" 'verify_*.md')"
+  verify_run_count="$(( \
+    $(count_matching_files "${board_root}/tickets/inprogress" 'verify_*.md') + \
+    $(count_matching_files "${board_root}/tickets/reject" 'verify_*.md') + \
+    $(count_matching_files "${board_root}/tickets/done" 'verify_*.md') + \
+    $(count_matching_files "${board_root}/tickets/runs" 'verify_*.md') \
+  ))"
   board_version="$(board_version_value "$board_root" || true)"
   version_status="$(board_version_status "$board_root")"
 fi
