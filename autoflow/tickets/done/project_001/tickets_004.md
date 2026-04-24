@@ -6,12 +6,12 @@
 - Project Key: project_001
 - Plan Candidate: Update doctor/status checks to report runner/wiki scaffold health in machine-readable output.
 - Title: Report runner and wiki scaffold health
-- Stage: blocked
+- Stage: done
 - Owner: verify-1
 - Claimed By: todo-1
 - Execution Owner: unassigned
 - Verifier Owner: verify-1
-- Last Updated: 2026-04-25T07:57:00+09:00
+- Last Updated: 2026-04-24T23:15:32Z
 
 ## Goal
 
@@ -41,8 +41,8 @@
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004_local`
 - Branch: codex/autoflow-tickets-004
 - Base Commit: 30f9b3a872bbadf4c3047b1e693a4906122d19b8
-- Worktree Commit:
-- Integration Status: blocked_dirty_project_root
+- Worktree Commit: 4018b99f2bd2127da04a329819048b7c81499a4f
+- Integration Status: integrated
 
 ## Done When
 
@@ -53,12 +53,12 @@
 - [x] Bash and PowerShell output keys remain aligned.
 
 ## Next Action
-- Next: clear or isolate existing non-board dirty files in `PROJECT_ROOT`, then rerun verifier so the worktree can be integrated without mixing unrelated changes.
+- Complete. No further action for this ticket.
 
 ## Resume Context
-- Current state: implementation checks passed, but verifier pass integration is blocked by existing non-board dirty files in `PROJECT_ROOT`.
-- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_004.md` refused to integrate because the central project root is dirty outside `autoflow/`.
-- Next reader: verifier should retry after the central dirty files are committed, stashed, or otherwise isolated.
+- Current state: verifier passed after resolving doctor script overlap with existing runtime checks.
+- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_004.md` produced worktree commit `4018b99f2bd2127da04a329819048b7c81499a4f`; conflict resolution was completed in `PROJECT_ROOT`.
+- Next reader: use the linked verification record and completion log for evidence.
 
 ## Notes
 
@@ -77,12 +77,15 @@
 - Verifier prepared by verify-1 via scripts/start-verifier.sh at 2026-04-24T22:56:08Z
 - Worktree integration blocked at 2026-04-24T22:56:18Z: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket.
 - Verifier evidence: `git diff --check` passed; shell syntax check passed; smoke checks cover scaffold absent and present states; changed files are within allowed paths. Pass is blocked only by central dirty-root protection.
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:14:53Z: 4018b99f2bd2127da04a329819048b7c81499a4f. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
+- 2026-04-24T23:15:32Z: Resolved doctor script overlap, reran shell syntax plus present/missing scaffold smoke checks, and marked integration as passed.
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:14:53Z: 4018b99f2bd2127da04a329819048b7c81499a4f. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
 ## Verification
-- Run file: `tickets/inprogress/verify_004.md`
-- Log file: pending
-- Result: blocked_dirty_project_root
+- Run file: `tickets/done/project_001/verify_004.md`
+- Log file: `logs/verifier_004_20260424_231554Z_pass.md`
+- Result: passed
 
 ## Result
 
 - Summary: Doctor and status now expose runner/wiki scaffold health with stable machine-readable keys.
-- Remaining risk: PowerShell path was not executed locally because `pwsh`/`powershell` is unavailable in this environment. Ticket 004 cannot be integrated until central non-board dirty files are isolated.
+- Remaining risk: PowerShell path was not executed locally because `pwsh`/`powershell` is unavailable in this environment.

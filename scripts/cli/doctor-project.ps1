@@ -134,6 +134,45 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
     }
   }
 
+  $runnerScaffoldOk = $true
+  foreach ($runnerScaffoldPath in @(
+      "runners",
+      "runners/state",
+      "runners/logs",
+      "runners/config.toml"
+    )) {
+    if (-not (Test-Path -LiteralPath (Join-Path $boardRoot $runnerScaffoldPath))) {
+      $runnerScaffoldOk = $false
+    }
+  }
+  if ($runnerScaffoldOk) {
+    Add-Check "runner_scaffold" "ok"
+  }
+  else {
+    Add-Check "runner_scaffold" "warning"
+    Add-WarningLine "runner scaffold is missing or incomplete; run autoflow upgrade to add runners/config.toml, runners/state, and runners/logs"
+  }
+
+  $wikiScaffoldOk = $true
+  foreach ($wikiScaffoldPath in @(
+      "wiki",
+      "wiki/index.md",
+      "wiki/log.md",
+      "wiki/project-overview.md",
+      "rules/wiki"
+    )) {
+    if (-not (Test-Path -LiteralPath (Join-Path $boardRoot $wikiScaffoldPath))) {
+      $wikiScaffoldOk = $false
+    }
+  }
+  if ($wikiScaffoldOk) {
+    Add-Check "wiki_scaffold" "ok"
+  }
+  else {
+    Add-Check "wiki_scaffold" "warning"
+    Add-WarningLine "wiki scaffold is missing or incomplete; run autoflow upgrade to add wiki pages and rules/wiki"
+  }
+
   foreach ($runtimeFile in @(
       "common.sh",
       "check-stop.sh",
