@@ -5,7 +5,43 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
 ensure_expected_role "todo"
-set_thread_context_record "todo" "$(owner_id)" "" "" ""
+
+worker_id="$(owner_id)"
+set_thread_context_record "todo" "$worker_id" "" "" ""
+
+find_owned_inprogress() {
+  local wanted_owner="$1"
+  local file owner execution_owner
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    owner="$(ticket_scalar_field "$file" "Owner")"
+    execution_owner="$(ticket_scalar_field "$file" "Execution Owner")"
+
+    if [ "$execution_owner" = "$wanted_owner" ] || \
+       { field_is_unassigned "$execution_owner" && [ "$owner" = "$wanted_owner" ]; }; then
+      printf '%s' "$file"
+      return 0
+    fi
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+
+  return 1
+}
+
+owned_inprogress="$(find_owned_inprogress "$worker_id" || true)"
+if [ -n "$owned_inprogress" ]; then
+  ticket_id="$(extract_numeric_id "$owned_inprogress")"
+  set_thread_context_record "todo" "$worker_id" "$ticket_id" "executing" "$(board_relative_path "$owned_inprogress")"
+  printf 'status=resume\n'
+  printf 'claimed=%s\n' "$owned_inprogress"
+  printf 'ticket_id=%s\n' "$ticket_id"
+  printf 'claimed_by=%s\n' "$worker_id"
+  printf 'stage=executing\n'
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  printf 'next_action=Resume the existing inprogress ticket for this worker; one Codex conversation runs one todo at a time.\n'
+  exit 0
+fi
 
 if ! execution_pool_has_capacity; then
   fail_or_idle "No available execution slot for todo claim." "execution_pool_full"
@@ -45,7 +81,7 @@ fi
 
 ticket_id="$(extract_numeric_id "$claimed")"
 timestamp="$(now_iso)"
-claimed_by="$(owner_id)"
+claimed_by="$worker_id"
 execution_owner="$(resolve_execution_owner_for_claim)"
 verifier_owner="$(resolve_verifier_owner_for_claim)"
 primary_owner="$execution_owner"

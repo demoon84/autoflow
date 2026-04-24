@@ -8,36 +8,6 @@ TEMPLATE_BOARD_ROOT="${SOURCE_REPO_ROOT}/templates/board"
 PACKAGE_VERSION_FILE="${SOURCE_REPO_ROOT}/VERSION"
 SYNC_BACKUP_CREATED=0
 SYNC_ACTION_RESULT=""
-AUTOFLOW_TMP_FILES=()
-AUTOFLOW_TMP_REGISTRY="${TMPDIR:-/tmp}/autoflow-tmp-registry.$$"
-
-autoflow_mktemp() {
-  local tmp
-
-  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow.XXXXXX")"
-  AUTOFLOW_TMP_FILES+=("$tmp")
-  printf '%s\n' "$tmp" >> "$AUTOFLOW_TMP_REGISTRY"
-  printf '%s' "$tmp"
-}
-
-autoflow_cleanup_tmp() {
-  local tmp
-
-  if [ -f "$AUTOFLOW_TMP_REGISTRY" ]; then
-    while IFS= read -r tmp; do
-      [ -n "$tmp" ] || continue
-      rm -f "$tmp" 2>/dev/null || true
-    done < "$AUTOFLOW_TMP_REGISTRY"
-    rm -f "$AUTOFLOW_TMP_REGISTRY" 2>/dev/null || true
-  fi
-
-  for tmp in "${AUTOFLOW_TMP_FILES[@]:-}"; do
-    [ -n "$tmp" ] || continue
-    rm -f "$tmp" 2>/dev/null || true
-  done
-}
-
-trap autoflow_cleanup_tmp EXIT
 
 normalize_input_path() {
   local raw_path="$1"
@@ -91,7 +61,7 @@ render_text_file() {
 
   mkdir -p "$(dirname "$target_file")"
   escaped_board_dir="$(printf '%s' "$board_dir_name" | sed 's/[\/&]/\\&/g')"
-  sed "s#\\.autoflow/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
+  sed "s#autoflow/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
 }
 
 managed_board_asset_entries() {
@@ -125,6 +95,9 @@ source_text|reference/logs.md|reference/logs.md
 source_text|reference/hook-logs.md|reference/hook-logs.md
 source_executable|scripts/runtime/common.sh|scripts/common.sh
 source_executable|scripts/runtime/check-stop.sh|scripts/check-stop.sh
+source_executable|scripts/runtime/file-watch-common.sh|scripts/file-watch-common.sh
+source_executable|scripts/runtime/install-stop-hook.sh|scripts/install-stop-hook.sh
+source_executable|scripts/runtime/run-hook.sh|scripts/run-hook.sh
 source_executable|scripts/runtime/set-thread-context.sh|scripts/set-thread-context.sh
 source_executable|scripts/runtime/clear-thread-context.sh|scripts/clear-thread-context.sh
 source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
@@ -135,7 +108,7 @@ source_executable|scripts/runtime/start-spec.sh|scripts/start-spec.sh
 source_executable|scripts/runtime/integrate-worktree.sh|scripts/integrate-worktree.sh
 source_file|scripts/runtime/invoke-runtime-sh.ps1|scripts/invoke-runtime-sh.ps1
 source_file|scripts/runtime/check-stop.ps1|scripts/check-stop.ps1
-source_file|scripts/runtime/codex-stop-hook.ps1|scripts/codex-stop-hook.ps1
+source_file|scripts/runtime/install-stop-hook.ps1|scripts/install-stop-hook.ps1
 source_file|scripts/runtime/set-thread-context.ps1|scripts/set-thread-context.ps1
 source_file|scripts/runtime/clear-thread-context.ps1|scripts/clear-thread-context.ps1
 source_file|scripts/runtime/start-spec.ps1|scripts/start-spec.ps1
@@ -147,6 +120,7 @@ source_file|scripts/runtime/integrate-worktree.ps1|scripts/integrate-worktree.ps
 source_file|scripts/runtime/write-verifier-log.ps1|scripts/write-verifier-log.ps1
 source_file|scripts/runtime/run-hook.ps1|scripts/run-hook.ps1
 source_file|scripts/runtime/watch-board.ps1|scripts/watch-board.ps1
+source_executable|scripts/runtime/watch-board.sh|scripts/watch-board.sh
 source_text|rules/verifier/README.md|rules/verifier/README.md
 source_text|rules/verifier/checklist-template.md|rules/verifier/checklist-template.md
 source_text|rules/verifier/verification-template.md|rules/verifier/verification-template.md
@@ -175,6 +149,7 @@ tickets/inprogress
 tickets/verifier
 tickets/done
 tickets/reject
+tickets/runs
 EOF
 }
 
@@ -200,7 +175,7 @@ build_asset_temp_file() {
   local board_dir_name="$3"
   local temp_file source_file
 
-  temp_file="$(autoflow_mktemp)"
+  temp_file="$(mktemp)"
 
   case "$asset_kind" in
     template_text)
@@ -297,7 +272,7 @@ sync_literal_file() {
   local backup_rel="${4:-}"
   local temp_file
 
-  temp_file="$(autoflow_mktemp)"
+  temp_file="$(mktemp)"
   printf '%s\n' "$literal_content" > "$temp_file"
   sync_temp_file "$temp_file" "$target_file" "$backup_root" "$backup_rel" "0"
   rm -f "$temp_file"
@@ -334,7 +309,7 @@ sync_host_agents_file() {
   local backup_root="${3:-}"
   local temp_file
 
-  temp_file="$(autoflow_mktemp)"
+  temp_file="$(mktemp)"
   render_text_file "${SOURCE_REPO_ROOT}/templates/host-AGENTS.md" "$temp_file" "$board_dir_name"
   sync_temp_file "$temp_file" "$target_file" "$backup_root" "AGENTS.md" "0"
   rm -f "$temp_file"
@@ -369,7 +344,7 @@ replace_literal_in_file() {
   [ -f "$file" ] || return 1
   before_escaped="$(printf '%s' "$before" | sed 's/[\/&]/\\&/g')"
   after_escaped="$(printf '%s' "$after" | sed 's/[\/&]/\\&/g')"
-  tmp="$(autoflow_mktemp)"
+  tmp="$(mktemp)"
   sed "s/${before_escaped}/${after_escaped}/g" "$file" > "$tmp"
   if cmp -s "$tmp" "$file"; then
     rm -f "$tmp"

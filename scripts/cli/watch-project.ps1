@@ -8,7 +8,7 @@ param(
   [string]$ProjectRoot = ".",
 
   [Parameter(Position = 1)]
-  [string]$BoardDirName = ".autoflow",
+  [string]$BoardDirName = "autoflow",
 
   [Parameter(Position = 2)]
   [string]$ConfigPath

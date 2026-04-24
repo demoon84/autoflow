@@ -6,7 +6,7 @@
 
 ## Canonical Flow
 
-`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/runs -> logs -> tickets/done`
+`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done/<project-key>/verify_NNN.md`
 
 의미:
 
@@ -21,7 +21,7 @@
 - `tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
 - `reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
 - `rules/verifier/`: 검증 기준과 체크리스트
-- `tickets/runs/`: 실행과 검증 기록
+- `tickets/inprogress/verify_NNN.md`: verifier 가 작업 중일 때 쓰는 임시 검증 기록
 - `logs/`: verifier 완료 이력 로그
 
 ## Read Order
@@ -51,7 +51,7 @@
 
 1. 스펙이 없으면 플랜도 티켓도 만들지 않는다.
 2. 플랜은 `#plan` heartbeat 가 spec 에서 도출해 만든다. 사람이 손으로 만들 수도 있다.
-3. 새 티켓은 `start-plan.sh` 가 plan 의 Execution Candidates 를 소비해 `tickets/todo/` 에만 생성한다.
+3. 새 티켓은 planner agent 가 plan 의 Execution Candidates 를 보고 `tickets/todo/` 에 직접 작성한다. `start-plan.sh` 는 각 Candidate 에 대해 ID/경로/lock/중복체크를 해주고 `pending_ticket_begin ... pending_ticket_end` 블록을 출력하며, agent 가 해당 블록마다 `tickets_{id}.md` 본문을 `reference/ticket-template.md` 기반으로 작성한다. `Plan Candidate` 필드는 script 의 `candidate` 값을 글자 그대로 복사해야 dedup 이 동작한다.
 4. planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 옮겨 backlog / plan 루트에서 빠져야 한다.
 5. `#todo` 는 티켓을 `todo → inprogress` 로 점유 이동한 뒤 티켓별 git worktree 를 만들고 **같은 worker 가 그 worktree 에서 구현**한다. execution 별도 역할 없음. 구현이 끝나면 `handoff-todo` 런타임으로 중앙 보드 티켓을 `tickets/inprogress/ → tickets/verifier/` 로 옮기고 active ticket context 를 비운다.
 6. 티켓 제목, Goal, Done When 문구가 검증·리뷰처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행한다. board stage 가 authoritative 이며 pass / fail 판정은 verifier 만 한다.
@@ -63,10 +63,10 @@
 12. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
 13. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
 14. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
-15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. 기능 단위 작업이 끝나면 전체 context 를 지우지 않고 `clear-thread-context.* --active-only` 로 active ticket 문맥만 비운다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
+15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. `#todo` / `#veri` 는 tick 중에 active ticket context 를 잡아도 tick 이 끝날 때 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
 16. 여러 todo worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
-17. verifier 가 끝나면 `tickets/runs/verify_NNN.md` 와 별도로 `logs/verifier_NNN_*.md` completion log 를 남긴다.
-18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/runs/verify_NNN.md` 및 생성된 completion log 와 연결한다.
+17. verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
+18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다.
 19. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
 20. git 저장소에서는 todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, verifier pass 시 `scripts/integrate-worktree.sh` 로 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
 21. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
@@ -108,7 +108,7 @@
 
 목적:
 
-- `#plan` heartbeat 로 동작. spec 이 있고 대응하는 plan 이 없거나 draft 면 plan 을 도출해 쓰고, `tickets/reject/reject_NNN.md` 를 감시해 실패 원인을 새 Execution Candidate 로 재반영한다. `start-plan.sh` 가 ready plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 Candidates 를 티켓으로 생성하고, 생성이 끝난 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
+- `#plan` heartbeat 로 동작. spec 이 있고 대응하는 plan 이 없거나 draft 면 plan 을 도출해 쓰고, `tickets/reject/reject_NNN.md` 를 감시해 실패 원인을 새 Execution Candidate 로 재반영한다. `start-plan.sh` 가 ready plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 각 Candidate 에 대해 `pending_ticket` 블록을 출력하고, agent 가 그 블록마다 `tickets/todo/tickets_NNN.md` 본문을 직접 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
 
 반드시 읽을 파일:
 
@@ -121,7 +121,7 @@
 해야 하는 일:
 
 - spec 이 채워져 있는데 plan 이 없으면 plan 초안 생성 (Candidates 까지 채움, Status 는 draft 유지)
-- 다음 tick 에서 `start-plan.sh` 가 draft → ready 자동 flip + `tickets/inprogress/plan_NNN.md` 점유 + 티켓 생성 + spec/plan done 보관
+- 다음 tick 에서 `start-plan.sh` 가 draft → ready 자동 flip + `tickets/inprogress/plan_NNN.md` 점유 + pending_ticket 블록 출력 → agent 가 같은 tick 에서 `tickets/todo/tickets_NNN.md` 본문 작성. 모든 Candidate 가 ticket 화되면 다음 tick 에서 script 가 spec/plan 을 done 으로 보관.
 - reject 티켓의 `## Reject Reason` 을 읽고 새 Candidate 추가 + plan Status 를 ready 로 되돌림. 재시도 todo 가 생성되면 해당 `reject_NNN.md` 는 `tickets/done/<project-key>/` 로 이동
 
 하면 안 되는 일:
@@ -177,7 +177,7 @@
 해야 하는 일:
 
 - `start-verifier.sh` 가 출력한 `working_root` 에서 spec 의 `Verification.Command` 실행 + Acceptance Criteria 관찰
-- `tickets/runs/verify_NNN.md` 에 pass/fail 결과 기록
+- 검증 시작 시 `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
 - `logs/verifier_NNN_*.md` completion log 생성
 - **Pass**: worktree 가 있으면 `scripts/integrate-worktree.sh` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[티켓명] 간략 수정내용"` (local commit)
 - **Fail**: 티켓 하단에 `## Reject Reason` 추가 후 `tickets/reject/reject_NNN.md` 로 mv. commit 하지 않음
@@ -197,7 +197,7 @@
 tickets/backlog/project_001.md            (사용자가 #spec 으로 채움)
   → tickets/plan/plan_001.md           (planner heartbeat 가 도출 후 Candidates 채움)
   → tickets/inprogress/plan_001.md (planner 가 ticket 생성 작업 점유)
-  → tickets/todo/tickets_001.md      (start-plan.sh 가 Candidate 당 티켓 생성)
+  → tickets/todo/tickets_001.md      (start-plan.sh 가 pending_ticket 블록 출력 → planner agent 가 본문 작성)
   → tickets/inprogress/tickets_001.md   (todo worker 가 claim + 구현)
   → tickets/verifier/tickets_001.md  (구현 완료 후 verifier 로 mv)
   → tickets/done/project_001/tickets_001.md  (pass: git commit + mv)
@@ -214,7 +214,7 @@ tickets/backlog/project_001.md            (사용자가 #spec 으로 채움)
 - `verifier`: 구현 완료, 검증 대기
 - `done`: 검증 pass + local commit 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
 - `reject`: 검증 fail + Reject Reason 기록. 파일명은 `reject_NNN.md` 이며 planner 가 재계획 이후 새 ticket 으로 다시 돌리면 프로젝트별 `done` 폴더로 보관
-- `runs`: pass/fail 기록 파일 (`verify_NNN.md`) — 상태 폴더와 별개
+- `verify_NNN.md`: verifier 가 시작 시 `inprogress/` 아래에 만들고, 완료 시 final ticket 위치로 같이 이동하는 검증 기록 파일
 
 ## Required Ticket Fields
 
@@ -279,8 +279,9 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `P
 1. 먼저 현재 스레드에 `plan` 역할용 1분 heartbeat 자동화를 생성 또는 재개한다. 이 자동화는 사용자가 "멈춰"라고 할 때까지 유지한다.
 2. `scripts/start-plan.sh` 실행. 출력 읽기.
 3. `reject_count > 0` 이면 각 `reject_NNN.md` 의 `## Reject Reason` 을 해당 plan 의 새 Candidate 로 추가 + Status = ready 되돌림.
-4. `status=idle` / `reason=no_actionable_plan` + populated spec 에 대응 plan 이 없으면 `reference/plan-template.md` 를 참고해 plan 초안 생성 (Candidates 까지 채움, Status=draft). 다음 tick 에서 auto-flip + inprogress 점유 + 티켓 생성.
-5. `status=ok` / `generated_count>0` 이면 이미 티켓 생성됨. 여기서 끝내지 말고 backlog 를 다시 확인해 다음 populated spec 의 plan drafting 으로 이어간다.
+4. `status=idle` / `reason=no_actionable_plan` + populated spec 에 대응 plan 이 없으면 `reference/plan-template.md` 를 참고해 plan 초안 생성 (Candidates 까지 채움, Status=draft). 다음 tick 에서 auto-flip + inprogress 점유 + pending_ticket 출력.
+5. `status=ok` / `pending_ticket_count>0` 이면 각 `pending_ticket_begin ... pending_ticket_end` 블록의 `file` 경로에 `reference/ticket-template.md` 기반 ticket 본문을 작성한다. `Plan Candidate` 는 블록의 `candidate` 를 글자 그대로, `Title`/`Goal`/`Done When`/`Verification` 은 spec 과 plan 의 Allowed Paths 를 참고해 구체적으로 채운다. 그 뒤 backlog 를 다시 확인해 다음 populated spec 의 plan drafting 으로 이어간다.
+5a. `status=ok` / `pending_ticket_count=0` + `archived_plan=...` 이 있으면 해당 plan 은 script 가 done 으로 보관한 것. 추가 작업 없음.
 6. 구현 / 이동 / 검증 / commit / push 금지.
 
 Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Todo Queue Mode` 로 해석한다 (heartbeat 대상).
@@ -316,7 +317,7 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `V
 
 1. 티켓의 `Done When` 항목이 충족되었다.
 2. `rules/verifier/` 기준으로 검증했다.
-3. 검증 기록이 `tickets/runs/` 에 있다.
+3. 검증 기록이 최종 티켓과 같은 위치에 있다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md`.
 4. verifier completion log 가 `logs/` 에 있다.
 5. 티켓의 `Verification` 항목에 그 기록과 로그가 연결되어 있다.
 6. 티켓의 `Result` 가 채워져 있다.

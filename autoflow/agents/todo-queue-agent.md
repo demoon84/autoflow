@@ -26,7 +26,7 @@
 1. **claim 과 구현은 한 worker 가 담당.** 별도 execution worker 없음.
 2. 구현은 티켓 `## Worktree.Path` 또는 `start-todo.sh` 의 `implementation_root` 에서 진행한다. 중앙 `PROJECT_ROOT` 는 보드 source of truth 와 최종 통합 커밋용으로 유지한다.
 3. 항상 `Allowed Paths` 범위 밖을 수정하지 않는다. 필요하면 ticket 에 blocker 로 기록하고 멈춘다.
-4. 구현이 한 heartbeat tick 에 끝나지 않아도 된다. `Resume Context` 와 `Notes` 에 진행 상태를 남기면 다음 heartbeat 가 이어서 재개한다.
+4. 구현이 한 heartbeat tick 에 끝나지 않아도 된다. `Resume Context` 와 `Notes` 에 진행 상태를 남기면 다음 heartbeat 가 이어서 재개한다. tick 이 끝날 때는 active ticket context 를 비워 다음 tick 이 보드 파일에서 다시 읽게 한다.
 5. 구현이 완료됐다고 판단되면:
    - `Notes`, `Result`, `Verification` 섹션 갱신
 - `scripts/handoff-todo.*` 런타임을 실행해 티켓 파일을 `tickets/inprogress/` 에서 `tickets/verifier/` 로 넘김
@@ -35,6 +35,7 @@
 7. execution pool 이 꽉 찼으면 (`AUTOFLOW_EXECUTION_POOL` 기준) 새 claim 하지 않는다 — script 가 알아서 idle 반환.
 8. 이미 `inprogress/` 에 자기 owner 로 배정된 티켓이 있으면 그것부터 이어서 진행한다. 새 todo 점유 전에 기존 inprogress 를 마무리.
 9. board stage 가 authoritative 다. 티켓 제목 / Goal / Done When 이 검증·리뷰처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행하고, pass / fail 판정은 verifier 만 한다.
+10. Codex 대화 하나는 todo 하나만 활성 처리한다. 같은 대화/worker 에 기존 `inprogress` 티켓이 있으면 `start-todo.*` 런타임도 `status=resume` 을 반환하고 새 claim 을 만들지 않는다. 병렬 처리는 Codex 대화를 여러 개 열어 worker id 를 분리해서 수행한다.
 
 ## Trigger
 
@@ -48,9 +49,10 @@ heartbeat 또는 수동으로 `#todo`. 수동 트리거라면 **먼저 1분 todo
    - 현재 ticket 을 재개하는 순간 `scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다.
 - 완료되면 `Notes` 에 최종 로그, `Result → Summary` 를 채운다.
 - verifier 로 넘길 때는 Windows 에서 `scripts/handoff-todo.ps1 <ticket-id-or-path>`, Bash-only 환경에서 `scripts/handoff-todo.sh <ticket-id-or-path>` 를 실행한다. 이 런타임이 티켓 이동과 active ticket context 초기화를 함께 처리한다.
-   - 완료 아니면 진행 로그만 남기고 tick 종료.
+   - 완료 아니면 진행 로그를 `Resume Context` / `Notes` 에 남기고 tick 종료. Stop hook 이 active ticket context 를 비워 다음 tick 의 토큰 사용을 줄인다.
 4. 없으면: `scripts/start-todo.sh` 실행. 새 티켓 claim 시도.
    - `status=idle` / `reason=no_todo_ticket` → idle 종료.
+   - `status=resume` → 이미 이 worker 가 가진 `tickets/inprogress/` 티켓을 반환한 것. 새 claim 없이 그 티켓을 이어서 구현.
    - `status=ok` → `implementation_root` 를 작업 루트로 사용해 새로 claim 된 티켓을 읽고 **바로 첫 구현 단계 진행** (가능한 범위까지). 못 끝내면 다음 tick 에 이어서.
 5. 티켓 제목 / Goal / Done When 이 검증처럼 보여도 state 를 다시 해석하지 않는다. 파일이 `todo/` 또는 `inprogress/` 에 있으면 그대로 구현 단계로 처리한다.
 6. 구현 중 `Allowed Paths` 바깥이 필요하면 Notes 에 blocker 로 기록하고 현재 wake-up 을 종료. 사람이 개입할 수 있게.
@@ -74,3 +76,9 @@ heartbeat 또는 수동으로 `#todo`. 수동 트리거라면 **먼저 1분 todo
 ## Stop Rule
 
 이 agent 가 스스로 heartbeat 를 stop 시키지 않는다. 구현이 한 tick 에 끝나지 않아도 Resume Context 만 남기고 종료. 다음 heartbeat 가 이어받는다. 사용자가 명시적으로 stop 을 말하지 않는 한 계속 돌아간다.
+
+## Context Compaction
+
+- tick 중에는 `set-thread-context.*` 로 현재 active ticket 을 맞춰도 된다.
+- tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 todo 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
+- 다음 tick 은 대화 히스토리 대신 `tickets/inprogress/`, `Resume Context`, `Next Action`, `Notes`, Obsidian links 를 다시 읽어 이어간다.

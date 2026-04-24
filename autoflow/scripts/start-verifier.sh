@@ -8,14 +8,97 @@ ensure_expected_role "verifier"
 
 worker_id="$(owner_id)"
 worker_role_value="$(worker_role)"
-set_thread_context_record "verifier" "$worker_id" "" "" ""
+[ -n "$worker_role_value" ] || worker_role_value="verifier"
+requested_id="${1:-}"
+resume_mode="false"
 
 verifier_dir="${BOARD_ROOT}/tickets/verifier"
 mkdir -p "$verifier_dir"
 
+context_active_verification_file() {
+  local context_role active_id active_path active_file
+
+  context_role="$(context_effective_value "role" || true)"
+  [ "$context_role" = "verifier" ] || return 1
+
+  active_id="$(context_effective_value "active_ticket_id" || true)"
+  active_path="$(context_effective_value "active_ticket_path" || true)"
+  [ -n "$active_id" ] || return 1
+
+  if [ -n "$active_path" ]; then
+    active_file="${BOARD_ROOT}/${active_path}"
+  else
+    active_file="${verifier_dir}/tickets_${active_id}.md"
+  fi
+
+  [ -f "$active_file" ] || return 1
+  printf '%s' "$active_file"
+}
+
+find_owned_verification_target() {
+  local candidate_file candidate_verifier_owner candidate_owner candidate_stage candidate_integration_status
+
+  while IFS= read -r candidate_file; do
+    [ -n "$candidate_file" ] || continue
+
+    candidate_integration_status="$(trim_spaces "$(ticket_worktree_field "$candidate_file" "Integration Status")")"
+    case "$candidate_integration_status" in
+      blocked_*)
+        continue
+        ;;
+    esac
+
+    candidate_verifier_owner="$(ticket_scalar_field "$candidate_file" "Verifier Owner")"
+    candidate_owner="$(ticket_scalar_field "$candidate_file" "Owner")"
+    candidate_stage="$(ticket_stage "$candidate_file")"
+
+    if [ "$candidate_verifier_owner" = "$worker_id" ] || \
+       { field_is_unassigned "$candidate_verifier_owner" && [ "$candidate_owner" = "$worker_id" ] && [ "$candidate_stage" = "verifying" ]; }; then
+      printf '%s' "$candidate_file"
+      return 0
+    fi
+  done < <(list_matching_files "$verifier_dir" 'tickets_*.md')
+
+  return 1
+}
+
+active_verification_file="$(context_active_verification_file || true)"
+owned_verification_file=""
+if [ -n "$active_verification_file" ]; then
+  owned_verification_file="$active_verification_file"
+else
+  owned_verification_file="$(find_owned_verification_target || true)"
+fi
+
+if [ -n "$owned_verification_file" ]; then
+  owned_ticket_id="$(extract_numeric_id "$owned_verification_file")"
+  requested_ticket_id=""
+  if [ -n "$requested_id" ]; then
+    requested_ticket_id="$(normalize_id "$requested_id")"
+  fi
+
+  if [ -n "$requested_ticket_id" ] && [ "$requested_ticket_id" != "$owned_ticket_id" ]; then
+    printf 'status=blocked\n'
+    printf 'reason=conversation_already_has_active_verification\n'
+    printf 'active_ticket_id=%s\n' "$owned_ticket_id"
+    printf 'active_ticket=%s\n' "$owned_verification_file"
+    printf 'requested_ticket_id=%s\n' "$requested_ticket_id"
+    printf 'worker_id=%s\n' "$worker_id"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'next_action=Resume or finish the active verification in this conversation before starting another verification. Use a new Codex conversation for parallel verification.\n'
+    exit 0
+  fi
+
+  requested_id="$owned_ticket_id"
+  resume_mode="true"
+else
+  set_thread_context_record "verifier" "$worker_id" "" "" ""
+fi
+
 select_verification_target() {
   local requested_id="${1:-}"
-  local candidate_file candidate_verifier_owner candidate_owner id
+  local candidate_file candidate_verifier_owner candidate_owner candidate_integration_status id
 
   if [ -n "$requested_id" ]; then
     id="$(normalize_id "$requested_id")"
@@ -25,6 +108,13 @@ select_verification_target() {
 
   while IFS= read -r candidate_file; do
     [ -n "$candidate_file" ] || continue
+
+    candidate_integration_status="$(trim_spaces "$(ticket_worktree_field "$candidate_file" "Integration Status")")"
+    case "$candidate_integration_status" in
+      blocked_*)
+        continue
+        ;;
+    esac
 
     if [ "$worker_role_value" = "verifier" ]; then
       candidate_verifier_owner="$(ticket_scalar_field "$candidate_file" "Verifier Owner")"
@@ -45,10 +135,10 @@ select_verification_target() {
   return 1
 }
 
-target_file="$(select_verification_target "${1:-}" || true)"
+target_file="$(select_verification_target "$requested_id" || true)"
 
 if [ -z "$target_file" ] || [ ! -f "$target_file" ]; then
-  fail_or_idle "No ticket in tickets/verifier/ awaiting verification." "no_verification_ticket"
+  fail_or_idle "No unblocked ticket in tickets/verifier/ awaiting verification." "no_unblocked_verification_ticket"
 fi
 
 current_verifier_owner="$(ticket_scalar_field "$target_file" "Verifier Owner")"
@@ -99,13 +189,21 @@ if field_is_unassigned "$current_verifier_owner"; then
   replace_scalar_field_in_section "$target_file" "## Ticket" "Verifier Owner" "$worker_id"
 fi
 replace_scalar_field_in_section "$target_file" "## Ticket" "Last Updated" "$timestamp"
-replace_section_block "$target_file" "Verification" "- Run file: \`tickets/runs/$(basename "$run_file")\`
+replace_section_block "$target_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
 - Result: pending verifier by ${worker_id}"
-append_note "$target_file" "Verifier prepared by ${worker_id} via scripts/start-verifier.sh at ${timestamp}"
+if [ "$resume_mode" = "true" ]; then
+  append_note "$target_file" "Verifier resumed by ${worker_id} via scripts/start-verifier.sh at ${timestamp}"
+else
+  append_note "$target_file" "Verifier prepared by ${worker_id} via scripts/start-verifier.sh at ${timestamp}"
+fi
 set_thread_context_record "verifier" "$worker_id" "$ticket_id" "verifying" "$(board_relative_path "$target_file")"
 
-printf 'status=ok\n'
+if [ "$resume_mode" = "true" ]; then
+  printf 'status=resume\n'
+else
+  printf 'status=ok\n'
+fi
 printf 'verify=%s\n' "$target_file"
 printf 'ticket_id=%s\n' "$ticket_id"
 printf 'ticket_title=%s\n' "$ticket_title"

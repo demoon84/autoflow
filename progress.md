@@ -1,0 +1,24 @@
+# Progress
+
+- 2026-04-24 22:50 — Confirmed no existing JavaScript package setup and checked local Node/npm availability.
+- 2026-04-24 22:51 — Chose a plain Electron MVP under `apps/desktop/` to keep the first step small and low-risk.
+- 2026-04-24 22:56 — Added root package scripts plus `apps/desktop` Electron main/preload/renderer scaffold.
+- 2026-04-24 22:57 — Wired safe IPC command execution through a command whitelist around `bin/autoflow`.
+- 2026-04-24 22:58 — Added README instructions for the desktop console.
+- 2026-04-24 23:00 — Verified desktop syntax, root package script, CLI help, disposable init/status/doctor smoke, and whitespace checks.
+- 2026-04-24 23:05 — User chose shadcn as the UI toolchain; checked official shadcn Vite/components configuration docs.
+- 2026-04-24 23:11 — Installed Electron desktop dependencies; first check exposed TypeScript module resolution mismatch for Tailwind's Vite plugin.
+- 2026-04-24 23:13 — Updated TypeScript module resolution for Vite/Tailwind v4 and verified the React/shadcn renderer build.
+- 2026-04-24 23:20 — Started a direct visual redesign pass after user feedback that the first shadcn layout was too plain.
+- 2026-04-24 23:25 — Reworked the renderer into a dark command rail, compact status strip, seven-lane ticket board, and log/output panels.
+- 2026-04-24 23:27 — Verified the redesigned build and visually checked the running Electron window.
+- 2026-04-24 23:30 — Bundled Pretendard Variable and switched the Electron renderer sans font stack to Pretendard.
+- 2026-04-24 23:35 — Moved project selection into a compact lower sidebar dock and made the sidebar sticky so the dock remains visible while the main workspace scrolls.
+- 2026-04-24 23:40 — Removed the sidebar and rebuilt the renderer around a top command bar, scrollable board workspace, and bottom project switcher.
+- 2026-04-24 23:45 — Removed the duplicate workspace header block so the main panel starts at the summary cards.
+- 2026-04-24 23:50 — Reframed the desktop app as a read-only flow viewer: removed public command execution IPC and kept only board refresh/status reading.
+- 2026-04-24 23:58 — Reworded the desktop UI as a Codex work-flow visualizer rather than an Autoflow action surface.
+- 2026-04-24 23:59 — Started aligning the desktop app around Codex `#` command flow visibility and `.autoflow/` setup.
+- 2026-04-24 23:59 — Removed the editable flow-folder control so changing the project path always resolves against `PROJECT_ROOT/.autoflow/`.
+- 2026-04-24 23:59 — Rebuilt the empty/setup state as an Obsidian-like screen with recent projects on the left and create/open actions on the right.
+- 2026-04-24 23:59 — Reverted the Obsidian-like setup screen back to the earlier board-first layout with a bottom project selector and `.autoflow` setup button.

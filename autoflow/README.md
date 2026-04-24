@@ -15,7 +15,7 @@
 
 1. `#spec` 으로 사용자와 대화해 내용을 정리하고, 저장이 확정되면 `tickets/backlog/project_{NNN}.md` 에 남긴다.
 2. 원하면 `scripts/install-stop-hook.sh install` 또는 Windows 에서 `scripts/install-stop-hook.ps1 install` 을 한 번 실행한다. 그러면 현재 보드 `check-stop.*` 가 Codex Stop hook 에 연결되어, `#plan`, `#todo`, `#veri` 가 턴을 마칠 때도 남은 role work 가 있으면 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 훅은 heartbeat / watcher 를 대체하지 않고 보완한다.
-3. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 도출하고, ticket 생성 시 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 `tickets/todo/` 를 만든다. 실제 ticket 생성이 끝난 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동한다.
+3. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 도출한다. `start-plan.sh` 는 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 각 Execution Candidate 에 대해 `pending_ticket` 블록을 출력하고, planner agent 가 그 블록마다 `tickets/todo/tickets_NNN.md` 본문을 `reference/ticket-template.md` 기반으로 직접 작성한다 (`Plan Candidate` 는 candidate 글자 그대로; Title/Goal/Done When/Verification 은 spec 맥락 반영). 모든 Candidate 가 ticket 화되면 대응 spec/plan 은 `tickets/done/<project-key>/` 로 이동한다.
 4. `#todo` 로 todo heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
 5. `#veri` 로 verifier heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `verifier/` 를 검사해 티켓 `working_root` 에서 검증한다. pass 면 `integrate-worktree` 런타임으로 코드 변경을 중앙 프로젝트 루트에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동하고, 완료 로그를 `logs/` 에 남긴다.
    이 역할은 호스트 프로젝트, 보드, ticket worktree 범위 안의 검증 명령, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 을 추가 허락 없이 바로 수행한다.

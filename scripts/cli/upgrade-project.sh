@@ -14,7 +14,7 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then
 fi
 
 TARGET_PROJECT_ROOT="$1"
-BOARD_DIR_NAME="${2:-.autoflow}"
+BOARD_DIR_NAME="${2:-autoflow}"
 TARGET_PROJECT_ROOT="$(normalize_input_path "$TARGET_PROJECT_ROOT")"
 
 if [ ! -d "$TARGET_PROJECT_ROOT" ]; then

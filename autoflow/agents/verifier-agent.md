@@ -15,6 +15,8 @@
 
 - `scripts/start-verifier.sh` 출력
   - `status=ok` 이면 `verify`, `ticket_id`, `ticket_title`, `run`, `working_root`, `integration_command` 경로 제공
+  - `status=resume` 이면 이 대화창/worker 가 이미 맡은 verifier 티켓을 계속 검증
+  - `status=blocked` / `reason=conversation_already_has_active_verification` 이면 이 대화창의 active verification 을 먼저 끝내고, 다른 verifier 티켓은 새 Codex 대화창에서 처리
   - `routing_pass=...`, `routing_fail=...` 로 다음 mv/commit 명령 힌트
 - 대상 티켓 파일 (`tickets/verifier/tickets_NNN.md`)
 - 관련 spec 문서 (`tickets/backlog/project_*.md` 또는 `tickets/done/*/project_*.md`)
@@ -23,7 +25,7 @@
 
 ## Outputs
 
-- 업데이트된 `tickets/runs/verify_NNN.md` (pass/fail 기록)
+- 검증 중에는 `tickets/inprogress/verify_NNN.md`, 완료 후에는 final ticket 옆으로 이동된 `verify_NNN.md` (pass/fail 기록)
 - 업데이트된 `logs/verifier_NNN_*.md` (verifier completion log)
 - 위 두 문서에는 `## Obsidian Links` 로 `project / plan / ticket / verify` note 연결을 남긴다
 - 이동된 티켓 파일: `tickets/verifier/ → tickets/done/<project-key>/` (pass) or `tickets/verifier/ → tickets/reject/reject_NNN.md` (fail)
@@ -43,6 +45,8 @@
 10. fail 시 기존 코드 변경은 되돌리지 않는다 — 변경된 working tree 는 그대로 두고 reject 티켓만 남긴다 (planner 가 다음 tick 에 재계획할 때 현 상태를 고려).
 11. pass 후에는 먼저 `integration_command` 로 티켓 worktree 의 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한다. 그 다음 `PROJECT_ROOT` 에서 `git add . && git commit` 하여 ticket/log 이동 + 코드 변경을 한 커밋으로 묶는다.
 12. pass 또는 fail 한 건을 처리했다고 전체 자동화가 끝난 것은 아니다. backlog 에 다음 populated spec 이 남아 있으면 planner heartbeat 또는 `done/` / `reject/` hook 이 다음 plan 을 이어간다.
+13. tick 이 끝날 때는 active ticket context 를 비워 다음 tick 이 티켓 / 검증 기록 / 로그에서 다시 읽게 한다. verifier role 과 worker context 는 heartbeat 유지를 위해 남긴다.
+14. Codex 대화창 하나는 한 번에 verifier 티켓 하나만 활성 검증한다. `start-verifier.*` 가 `status=resume` 을 반환하면 새 검증 티켓을 잡지 말고 반환된 티켓만 이어서 처리한다.
 
 ## Trigger
 
@@ -54,6 +58,8 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 2. `scripts/start-verifier.sh` 실행.
    - `status=idle` → 현재 wake-up 만 종료.
    - `status=ok` → `verify`, `run`, `ticket_id`, `ticket_title`, `routing_pass`, `routing_fail` 확보.
+   - `status=resume` → 기존 active verifier 티켓의 `verify`, `run`, `ticket_id`, `routing_pass`, `routing_fail` 확보 후 이어서 검증.
+   - `status=blocked` → 같은 대화창의 active verifier 티켓을 먼저 끝내야 하므로 새 티켓 검증을 시작하지 않음.
 3. 대상 티켓 읽기 + spec 의 `Global Acceptance Criteria` + `Verification.Command` 확인.
 4. `working_root` 에서 검증 명령 실행. 결과 수집.
    - 이 단계에서 필요한 로컬 명령, 브라우저 확인, ticket/log file 이동, local git commit 은 이미 사용자 승인된 것으로 간주하고 추가 질문 없이 진행한다.
@@ -63,14 +69,14 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
    - Codex 에서는 Codex 브라우저 도구를 사용한다.
    - Claude 에서는 Claude browser tool 을 사용한다.
    - 브라우저 도구를 열었다면 현재 tick 에서만 열고 검증이 끝나면 바로 닫는다.
-6. `rules/verifier/verification-template.md` 기준으로 `tickets/runs/verify_NNN.md` 에 결과 기록:
+6. `rules/verifier/verification-template.md` 기준으로 먼저 `tickets/inprogress/verify_NNN.md` 에 결과 기록:
    - `## Meta`: Status = `pass` / `fail`
    - `## Findings` / `## Blockers` / `## Next Fix Hint` 채움
 7. **Pass 인 경우** (`routing_pass` 힌트 따라):
 - `worktree_path` 가 비어 있지 않으면 먼저 `integration_command` 를 실행해 티켓 worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 가져온다. 이 단계는 commit 하지 않는다.
 - `mv tickets/verifier/tickets_NNN.md tickets/done/<project-key>/tickets_NNN.md`
 - 티켓 `Stage = done`, `Result.Summary` 갱신
-- `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/runs/verify_NNN.md pass` 실행 후 생성된 로그 경로를 티켓 `Verification.Log file` 에 반영. 이 스크립트가 active runtime context 를 비운다
+- `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/inprogress/verify_NNN.md pass` 실행 후 검증 기록은 `tickets/done/<project-key>/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
 - `cd PROJECT_ROOT && git add . && git commit -m "[티켓명] 간략 수정내용"`
    - **절대 `git push` 하지 않는다.**
 8. **Fail 인 경우** (`routing_fail` 힌트 따라):
@@ -85,12 +91,13 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
      ```
    - `mv tickets/verifier/tickets_NNN.md tickets/reject/reject_NNN.md`
    - 티켓 `Stage = rejected`, `Result.Summary` 갱신 ("reject: <요약>")
-   - `scripts/write-verifier-log.sh tickets/reject/reject_NNN.md tickets/runs/verify_NNN.md fail` 실행 후 생성된 로그 경로를 티켓 `Verification.Log file` 에 반영. 이 스크립트가 active runtime context 를 비운다
+- `scripts/write-verifier-log.sh tickets/reject/reject_NNN.md tickets/inprogress/verify_NNN.md fail` 실행 후 검증 기록은 `tickets/reject/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
    - worktree 는 삭제하지 않는다. reject 재계획이나 사람이 실패 원인을 확인할 때 참고할 수 있게 남긴다.
 9. 브라우저나 탭을 열었다면 pass / fail 처리 전에 정리 상태를 확인한다. 사용자가 유지하라고 하지 않았다면 열린 탭/페이지를 닫고 나서 현재 tick 을 마친다.
 10. git commit 은 pass 경로에서만. fail 경로에서는 commit 하지 않는다 (working tree 는 남지만 커밋 시점 판단은 다음 재계획 사이클에서).
 11. pass 로 `tickets/done/<project-key>/` 에 도착한 뒤 backlog 잔량이 있으면 planner 가 다음 plan 으로 이어갈 수 있으므로, verifier 는 현재 티켓만 마무리하고 전체 흐름을 끝난 것으로 선언하지 않는다.
-12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 Obsidian links, ticket `References`, `tickets/runs/verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
+12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 Obsidian links, ticket `References`, 현재 위치의 `verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
+13. 현재 tick 을 마칠 때 Stop hook 이 active ticket context 를 비워 토큰 사용을 줄인다. 다음 verifier tick 은 `tickets/verifier/` 와 `tickets/inprogress/verify_NNN.md` 를 다시 읽는다.
 
 ## Pass / Fail 판정 가이드
 
@@ -110,3 +117,9 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 ## Stop Rule
 
 이 agent 가 스스로 heartbeat 를 stop 시키지 않는다. 대기 티켓이 없으면 idle 로 끝나고 다음 tick 이 깨운다. 사용자가 명시적으로 stop 을 말하지 않는 한 계속 돌아간다.
+
+## Context Compaction
+
+- tick 중에는 `start-verifier.*` 가 active ticket context 를 잡아도 된다.
+- tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 verifier 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
+- pass / fail 완료 시에는 `write-verifier-log.*` 도 active context 를 비운다.

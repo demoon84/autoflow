@@ -1481,7 +1481,7 @@ ticket_exists_for_plan_candidate() {
   while IFS= read -r ticket; do
     [ -n "$ticket" ] || continue
     if ticket_belongs_to_plan_id "$ticket" "$plan_id" && \
-       grep -qsF -- "- 이번 작업의 목표: ${candidate}" "$ticket"; then
+       grep -qsF -- "- Plan Candidate: ${candidate}" "$ticket"; then
       return 0
     fi
   done < <(list_ticket_record_files_under "${BOARD_ROOT}/tickets")

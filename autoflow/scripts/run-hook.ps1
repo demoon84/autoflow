@@ -211,7 +211,7 @@ function Build-CodexPrompt {
         "3. Verify it against the referenced spec and verifier rules."
         "4. Treat local verification commands, browser checks, ticket/log file moves, and local git commit inside the current project/board as pre-authorized. Do not ask the user for permission."
         "5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open."
-        '6. Write or update `autoflow/tickets/runs/verify_NNN.md`.'
+        '6. Write or update `autoflow/tickets/inprogress/verify_NNN.md`, then let `write-verifier-log` archive it beside the final ticket when the verification finishes.'
         '7. Write a verifier completion log under `autoflow/logs/`.'
         '8. Pass: move the ticket to the matching `autoflow/tickets/done/<project-key>/` folder and make a local git commit if the project uses git. Use commit message format `[ticket title] concise change summary`; take the bracket text from the ticket `Title` and keep the summary to one short line.'
         '9. Fail: append `## Reject Reason` and move the ticket to `autoflow/tickets/reject/reject_NNN.md`.'
@@ -233,39 +233,31 @@ function Invoke-CapturedProcess {
     [hashtable]$EnvironmentOverrides
   )
 
-  $stdoutFile = [System.IO.Path]::GetTempFileName()
-  $stderrFile = [System.IO.Path]::GetTempFileName()
-
-  try {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $FilePath
-    foreach ($arg in $ArgumentList) {
-      [void]$psi.ArgumentList.Add($arg)
-    }
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-
-    foreach ($key in $EnvironmentOverrides.Keys) {
-      $psi.Environment[$key] = [string]$EnvironmentOverrides[$key]
-    }
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $psi
-    [void]$process.Start()
-
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
-    $process.WaitForExit()
-
-    return [pscustomobject]@{
-      ExitCode = $process.ExitCode
-      StdOut = $stdout
-      StdErr = $stderr
-    }
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $FilePath
+  foreach ($arg in $ArgumentList) {
+    [void]$psi.ArgumentList.Add($arg)
   }
-  finally {
-    Remove-Item -LiteralPath $stdoutFile, $stderrFile -Force -ErrorAction SilentlyContinue
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+
+  foreach ($key in $EnvironmentOverrides.Keys) {
+    $psi.Environment[$key] = [string]$EnvironmentOverrides[$key]
+  }
+
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $psi
+  [void]$process.Start()
+
+  $stdout = $process.StandardOutput.ReadToEnd()
+  $stderr = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+
+  return [pscustomobject]@{
+    ExitCode = $process.ExitCode
+    StdOut = $stdout
+    StdErr = $stderr
   }
 }
 

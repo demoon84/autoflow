@@ -322,7 +322,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
 
   $ticketTemplate = Join-Path $boardRoot "reference/ticket-template.md"
   if (Test-Path -LiteralPath $ticketTemplate -PathType Leaf) {
-    foreach ($requiredField in @("Stage", "Claimed By", "Execution Owner", "Verifier Owner")) {
+    foreach ($requiredField in @("Plan Candidate", "Stage", "Claimed By", "Execution Owner", "Verifier Owner")) {
       $checkId = "ticket_template_{0}" -f ($requiredField -replace " ", "_")
       if (Test-MarkdownFieldPresentInSection -FilePath $ticketTemplate -Heading "Ticket" -Field $requiredField) {
         Add-Check $checkId "ok"
