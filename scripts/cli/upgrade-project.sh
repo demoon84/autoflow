@@ -14,7 +14,7 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then
 fi
 
 TARGET_PROJECT_ROOT="$1"
-BOARD_DIR_NAME="${2:-autoflow}"
+BOARD_DIR_NAME="${2:-.autoflow}"
 TARGET_PROJECT_ROOT="$(normalize_input_path "$TARGET_PROJECT_ROOT")"
 
 if [ ! -d "$TARGET_PROJECT_ROOT" ]; then
@@ -46,6 +46,50 @@ managed_created_count=0
 managed_updated_count=0
 managed_unchanged_count=0
 backup_count=0
+pruned_backup_count=0
+
+upgrade_backup_keep_count() {
+  local keep="${AUTOFLOW_UPGRADE_BACKUP_KEEP:-5}"
+
+  case "$keep" in
+    ""|*[!0-9]*)
+      keep=5
+      ;;
+  esac
+
+  if [ "$keep" -lt 1 ]; then
+    keep=1
+  fi
+
+  printf '%s' "$keep"
+}
+
+prune_upgrade_backups() {
+  local backups_root="${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups"
+  local keep_count seen backup_dir
+
+  [ -d "$backups_root" ] || return 0
+
+  keep_count="$(upgrade_backup_keep_count)"
+  seen=0
+
+  while IFS= read -r backup_dir; do
+    [ -n "$backup_dir" ] || continue
+    seen=$((seen + 1))
+    if [ "$seen" -le "$keep_count" ]; then
+      continue
+    fi
+
+    case "$backup_dir" in
+      "${backups_root}/20"[0-9][0-9][0-9][0-9][0-9][0-9]"T"[0-9][0-9][0-9][0-9][0-9][0-9]"Z")
+        rm -rf -- "$backup_dir"
+        pruned_backup_count=$((pruned_backup_count + 1))
+        ;;
+    esac
+  done < <(find "$backups_root" -mindepth 1 -maxdepth 1 -type d -name '20??????T??????Z' | sort -r)
+
+  rmdir "$backups_root" 2>/dev/null || true
+}
 
 record_sync_action() {
   local action="$1"
@@ -902,9 +946,9 @@ rewrite_spec_references_to_backlog() {
       replace_literal_in_file "$file" "rules/spec/" "tickets/backlog/" || true
     fi
 
-    if grep -qsF -- "autoflow/rules/spec/" "$file"; then
+    if grep -qsF -- ".autoflow/rules/spec/" "$file"; then
       record_backup_once_for_path "$file"
-      replace_literal_in_file "$file" "autoflow/rules/spec/" "autoflow/tickets/backlog/" || true
+      replace_literal_in_file "$file" ".autoflow/rules/spec/" ".autoflow/tickets/backlog/" || true
     fi
 
     if grep -qsF -- "tickets/spec/" "$file"; then
@@ -924,9 +968,9 @@ rewrite_plan_references_to_ticket_plan() {
   while IFS= read -r file; do
     [ -n "$file" ] || continue
 
-    if grep -qsF -- "autoflow/rules/plan/" "$file"; then
+    if grep -qsF -- ".autoflow/rules/plan/" "$file"; then
       record_backup_once_for_path "$file"
-      replace_literal_in_file "$file" "autoflow/rules/plan/" "autoflow/tickets/plan/" || true
+      replace_literal_in_file "$file" ".autoflow/rules/plan/" ".autoflow/tickets/plan/" || true
     fi
 
     if grep -qsF -- "rules/plan/" "$file"; then
@@ -946,9 +990,9 @@ rewrite_run_references_to_ticket_inprogress() {
   while IFS= read -r file; do
     [ -n "$file" ] || continue
 
-    if grep -qsF -- "autoflow/tickets/runs/" "$file"; then
+    if grep -qsF -- ".autoflow/tickets/runs/" "$file"; then
       record_backup_once_for_path "$file"
-      replace_literal_in_file "$file" "autoflow/tickets/runs/" "autoflow/tickets/inprogress/" || true
+      replace_literal_in_file "$file" ".autoflow/tickets/runs/" ".autoflow/tickets/inprogress/" || true
     fi
 
     if grep -qsF -- "tickets/runs/" "$file"; then
@@ -1034,6 +1078,8 @@ if [ "$backup_count" -eq 0 ] && [ -d "$backup_root" ]; then
   rmdir "$(dirname "$backup_root")" 2>/dev/null || true
 fi
 
+prune_upgrade_backups
+
 current_board_version="$(board_version_value "$TARGET_BOARD_ROOT" || package_version)"
 
 printf 'project_root=%s\n' "$TARGET_PROJECT_ROOT"
@@ -1048,6 +1094,8 @@ printf 'managed_files_created=%s\n' "$managed_created_count"
 printf 'managed_files_updated=%s\n' "$managed_updated_count"
 printf 'managed_files_unchanged=%s\n' "$managed_unchanged_count"
 printf 'backups_created=%s\n' "$backup_count"
+printf 'backup_keep_count=%s\n' "$(upgrade_backup_keep_count)"
+printf 'backups_pruned=%s\n' "$pruned_backup_count"
 if [ "$backup_count" -gt 0 ]; then
   printf 'backup_root=%s\n' "$backup_root"
 else

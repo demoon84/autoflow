@@ -1,29 +1,29 @@
 # AGENTS.md
 
-이 저장소의 목적은 `문서 기반 AI 작업 하네스 보드`를 `PROJECT_ROOT/autoflow/` 형태로 삽입하기 위한 sidecar scaffold source 를 운영하는 것이다.
+이 저장소의 목적은 `문서 기반 AI 작업 하네스 보드`를 `PROJECT_ROOT/.autoflow/` 형태로 삽입하기 위한 sidecar scaffold source 를 운영하는 것이다.
 
 에이전트는 이 저장소에서 임의로 바로 구현부터 시작하지 말고, 아래의 보드 흐름을 따라야 한다.
 
 ## Canonical Flow
 
-`PROJECT_ROOT -> autoflow/tickets/backlog -> autoflow/tickets/plan -> autoflow/tickets/inprogress -> autoflow/automations -> autoflow/tickets/todo -> autoflow/tickets/inprogress -> autoflow/rules/verifier -> autoflow/tickets/inprogress/verify_NNN.md -> autoflow/logs -> autoflow/tickets/done/<project-key>/verify_NNN.md`
+`PROJECT_ROOT -> .autoflow/tickets/backlog -> .autoflow/tickets/plan -> .autoflow/tickets/inprogress -> .autoflow/automations -> .autoflow/tickets/todo -> .autoflow/tickets/inprogress -> .autoflow/rules/verifier -> .autoflow/tickets/inprogress/verify_NNN.md -> .autoflow/logs -> .autoflow/tickets/done/<project-key>/verify_NNN.md`
 
 의미:
 
 - `PROJECT_ROOT`: 실제 제품 코드 루트
-- `autoflow/tickets/backlog/`: 아직 plan 전인 spec 입력 큐
-- `autoflow/tickets/plan/`: 어떤 일을 어떤 순서로 티켓화할지 정리
-- `autoflow/automations/`: 훅과 폴더별 자동화 역할
-- `autoflow/agents/`: 각 훅이 실행할 역할 정의
-- `autoflow/tickets/`: 작업 단위와 상태 보드
-- `autoflow/tickets/backlog/`: 아직 plan 전인 spec 입력 큐
-- `autoflow/tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
-- `autoflow/tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
-- `autoflow/tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
-- `autoflow/reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
-- `autoflow/rules/verifier/`: 검증 기준과 체크리스트
-- `autoflow/tickets/inprogress/verify_NNN.md`: verifier 가 작업 중일 때 쓰는 임시 검증 기록
-- `autoflow/logs/`: verifier 완료 이력 로그
+- `.autoflow/tickets/backlog/`: 아직 plan 전인 spec 입력 큐
+- `.autoflow/tickets/plan/`: 어떤 일을 어떤 순서로 티켓화할지 정리
+- `.autoflow/automations/`: 훅과 폴더별 자동화 역할
+- `.autoflow/agents/`: 각 훅이 실행할 역할 정의
+- `.autoflow/tickets/`: 작업 단위와 상태 보드
+- `.autoflow/tickets/backlog/`: 아직 plan 전인 spec 입력 큐
+- `.autoflow/tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
+- `.autoflow/tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
+- `.autoflow/tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
+- `.autoflow/reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
+- `.autoflow/rules/verifier/`: 검증 기준과 체크리스트
+- `.autoflow/tickets/inprogress/verify_NNN.md`: verifier 가 작업 중일 때 쓰는 임시 검증 기록
+- `.autoflow/logs/`: verifier 완료 이력 로그
 
 ## Read Order
 
@@ -44,7 +44,7 @@
 
 ## Runtime Command Convention
 
-- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-todo.ps1 001`
+- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/start-todo.ps1 001`
 - Bash 전용 환경에서는 같은 이름의 `scripts/*.sh` 를 실행한다.
 - 문서에서 `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
 

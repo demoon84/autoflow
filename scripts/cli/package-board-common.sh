@@ -91,7 +91,7 @@ render_text_file() {
 
   mkdir -p "$(dirname "$target_file")"
   escaped_board_dir="$(printf '%s' "$board_dir_name" | sed 's/[\/&]/\\&/g')"
-  sed "s#autoflow/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
+  sed "s#\\.autoflow/#${escaped_board_dir}/#g" "$source_file" > "$target_file"
 }
 
 managed_board_asset_entries() {

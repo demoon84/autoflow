@@ -3,7 +3,7 @@
 ## Project
 
 - Name: Autoflow package source
-- Goal: 공개 배포 가능한 `repo template + installer CLI` 형태로 `autoflow/` 작업 보드를 생성하고 갱신할 수 있게 한다.
+- Goal: 공개 배포 가능한 `repo template + installer CLI` 형태로 `.autoflow/` 작업 보드를 생성하고 갱신할 수 있게 한다.
 - Owner: package maintainers
 
 ## Core Scope
@@ -35,7 +35,7 @@
 
 ## Global Acceptance Criteria
 
-- [ ] `autoflow init` 으로 host project 안에 `autoflow/` 보드를 생성할 수 있다.
+- [ ] `autoflow init` 으로 host project 안에 `.autoflow/` 보드를 생성할 수 있다.
 - [ ] `autoflow doctor` 가 fresh board 에서 통과한다.
 - [ ] generated board starter 상태는 `templates/board/` 에서 관리된다.
 - [ ] 패키지 소스와 generated board sample state 가 서로 섞이지 않는다.

@@ -1,6 +1,6 @@
 # Automations
 
-이 폴더는 `PROJECT_ROOT/autoflow/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
+이 폴더는 `PROJECT_ROOT/.autoflow/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
 
 ## Reference Model
 
@@ -9,7 +9,7 @@
 핵심 해석:
 
 - 자동화 자체가 상태를 저장하지 않는다.
-- source of truth 는 항상 `autoflow/` 보드 파일이다.
+- source of truth 는 항상 `.autoflow/` 보드 파일이다.
 - 할 일이 없으면 해당 wake-up 턴만 `status=idle` 로 끝난다.
 - `status=idle` 은 자동화 종료가 아니라 다음 1분 wake-up 대기다.
 - 사용자가 명시적으로 "멈춰"라고 하기 전까지 자동화는 pause / delete / self-stop 하지 않는다.
@@ -55,7 +55,7 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 - 권장 주기:
   - 1분
 - source of truth:
-  - `autoflow/` 보드 파일
+  - `.autoflow/` 보드 파일
 
 주의:
 

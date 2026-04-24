@@ -36,7 +36,7 @@ autoflow/
 ```text
 PROJECT_ROOT/
   AGENTS.md
-  autoflow/
+  .autoflow/
     .autoflow-version
     rules/
     tickets/
@@ -82,7 +82,7 @@ PROJECT_ROOT/
   - source repo templates
   - `templates/board/`
 - writes:
-  - `PROJECT_ROOT/autoflow/`
+  - `PROJECT_ROOT/.autoflow/`
   - `PROJECT_ROOT/AGENTS.md`
 - must be:
   - idempotent
@@ -120,7 +120,7 @@ PROJECT_ROOT/
 - public package name:
   - `Autoflow`
 - local board path:
-  - `autoflow/`
+  - `.autoflow/`
 
 ## Deferred Alternatives
 

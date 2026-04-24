@@ -43,7 +43,7 @@
 
 ## Runtime Command Convention
 
-- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-todo.ps1 001`
+- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/start-todo.ps1 001`
 - Bash 전용 환경에서는 같은 이름의 `scripts/*.sh` 를 실행한다.
 - 문서에서 `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
 

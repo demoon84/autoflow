@@ -14,10 +14,10 @@
 ### `autoflow init [project-root] [board-dir-name]`
 
 - 목적:
-  - 지정한 프로젝트에 `autoflow/` 보드를 생성한다.
+  - 지정한 프로젝트에 `.autoflow/` 보드를 생성한다.
 - 기본값:
   - `project-root`: 현재 디렉터리
-  - `board-dir-name`: `autoflow`
+  - `board-dir-name`: `.autoflow`
 - 구현:
   - `scripts/cli/scaffold-project.sh` 를 래핑한다.
 
@@ -27,7 +27,7 @@
   - 지정한 프로젝트의 보드 상태를 요약한다.
 - 기본값:
   - `project-root`: 현재 디렉터리
-  - `board-dir-name`: `autoflow`
+  - `board-dir-name`: `.autoflow`
 - 구현:
   - `scripts/cli/status-project.sh` 를 래핑한다.
 - 출력:
@@ -47,7 +47,7 @@
   - 생성된 보드의 `automations/heartbeat-set.toml` 을 읽어 role별 heartbeat TOML 파일 묶음을 만든다.
 - 기본값:
   - `project-root`: 현재 디렉터리
-  - `board-dir-name`: `autoflow`
+  - `board-dir-name`: `.autoflow`
 - 구현:
   - `scripts/cli/render-heartbeats.sh` 를 래핑한다.
 - 출력:
@@ -65,7 +65,7 @@
   - 생성된 보드 구조의 무결성을 검사한다.
 - 기본값:
   - `project-root`: 현재 디렉터리
-  - `board-dir-name`: `autoflow`
+  - `board-dir-name`: `.autoflow`
 - 구현:
   - `scripts/cli/doctor-project.sh` 를 래핑한다.
 - 출력:
@@ -81,7 +81,7 @@
   - 생성된 보드의 공용 자산을 최신 패키지 기준으로 갱신한다.
 - 기본값:
   - `project-root`: 현재 디렉터리
-  - `board-dir-name`: `autoflow`
+  - `board-dir-name`: `.autoflow`
 - 구현:
   - `scripts/cli/upgrade-project.sh` 를 래핑한다.
 - 출력:
