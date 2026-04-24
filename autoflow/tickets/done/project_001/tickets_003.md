@@ -1,0 +1,89 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_003
+- Project Key: project_001
+- Plan Candidate: Update upgrade logic so existing boards receive missing runner/wiki scaffold files and directories safely.
+- Title: Upgrade existing boards with runner and wiki scaffold
+- Stage: done
+- Owner: verify-1
+- Claimed By: todo-1
+- Execution Owner: todo-1
+- Verifier Owner: verify-1
+- Last Updated: 2026-04-24T23:24:24Z
+
+## Goal
+
+- 이번 작업의 목표: `autoflow upgrade` safely adds missing runner/wiki harness scaffold to existing boards without changing live tickets, logs, runner state, or user-authored files.
+
+## References
+
+- Project Spec: tickets/done/project_001/project_001.md
+- Feature Spec:
+- Plan Source: tickets/inprogress/plan_001.md
+
+## Obsidian Links
+- Project Note: [[project_001]]
+- Plan Note: [[plan_001]]
+- Ticket Note: [[tickets_003]]
+
+## Allowed Paths
+
+- scripts/cli/upgrade-project.sh
+- scripts/cli/upgrade-project.ps1
+- scripts/cli/package-board-common.sh
+- scripts/cli/package-board-common.ps1
+- templates/board/
+- README.md
+
+## Worktree
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003_local`
+- Branch: codex/autoflow-tickets-003
+- Base Commit: 30f9b3a872bbadf4c3047b1e693a4906122d19b8
+- Worktree Commit: 65cd1c340e5e894c845b2987bfe1e6c9c77abc9a
+- Integration Status: integrated
+
+## Done When
+
+- [x] `./bin/autoflow upgrade <project>` adds missing runner/wiki scaffold directories and docs to an existing board.
+- [x] Existing ticket, log, automation state, wiki, metric, conversation, and runner files are preserved.
+- [x] Upgrade output says what was added or already present in machine-readable form.
+- [x] Bash and PowerShell upgrade behavior stays aligned.
+- [x] Running upgrade twice is idempotent.
+
+## Next Action
+- Complete. No further action for this ticket.
+
+## Resume Context
+- Current state: verifier passed and the worktree commit was integrated into `PROJECT_ROOT`.
+- Last runtime action: self-host board upgrade returned `status=already_current` on the second run and status now reports runner/wiki scaffold present.
+- Next reader: use the linked verification record and completion log for evidence.
+
+## Notes
+
+- Treat user board files as live state. Prefer create-if-missing over replacement unless the current upgrade contract already says otherwise.
+
+- Claimed by todo-1 at 2026-04-24T23:03:16Z; execution=todo-1; verifier=unassigned; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003_local
+
+- 2026-04-24T23:04:52Z: Corrected worktree context to `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003_local` on branch `codex/autoflow-tickets-003`.
+- 2026-04-24T23:04:52Z: Blocked before implementation because this ticket depends on tickets_002 package-board/template scaffold changes being integrated into central PROJECT_ROOT. Implementing now would duplicate or conflict with pending tickets_002 changes.
+- 2026-04-24T23:23:29Z: Resumed after tickets_002 integration. Added upgrade-only create-if-missing handling for runner/wiki scaffold assets, scaffold directory/file counters, and Bash/PowerShell aligned output keys.
+- 2026-04-24T23:23:29Z: Fixed `upgrade-project.sh` local temp helper usage after package common no longer exposed `autoflow_mktemp`.
+- 2026-04-24T23:23:29Z: Added upgrade-time normalization so generated assets do not reintroduce legacy verification-run references and cause non-idempotent second upgrades.
+- 2026-04-24T23:23:29Z: Smoke test on `/tmp/autoflow-upgrade-smoke.oIw60s` passed: first upgrade created scaffold, status reported runner/wiki scaffold present, second upgrade returned `status=already_current`, and hashes for existing runner/wiki/metrics/conversation/ticket/log/automation-state files were unchanged.
+- Handed off to verifier at 2026-04-24T23:23:45Z via scripts/handoff-todo.*
+- Verifier prepared by verify-1 via scripts/start-verifier.sh at 2026-04-24T23:23:49Z
+- Integrated worktree commit 65cd1c340e5e894c845b2987bfe1e6c9c77abc9a into PROJECT_ROOT without committing at 2026-04-24T23:23:55Z; verifier should now include board + code changes in one local commit.
+- 2026-04-24T23:24:24Z: Verifier ran central `bash -n` and upgrade smoke. First upgrade created 23 scaffold files and reported runner/wiki scaffold present; second upgrade returned `status=already_current`; hashes for existing runner/wiki/metrics/conversation/ticket/log/automation-state files were unchanged.
+- 2026-04-24T23:25:16Z: Ran `./bin/autoflow upgrade .` on the self-host board. It created the missing scaffold, and the follow-up run returned `status=already_current`; `./bin/autoflow status .` now reports `runner_scaffold_present=true` and `wiki_scaffold_present=true`.
+- 2026-04-24T23:27:05Z: Removed stale `tickets/runs` requirements from package directory generation and doctor checks so the CLI matches the current `tickets/inprogress/verify_*.md` verifier flow. `./bin/autoflow doctor .` now returns `status=ok`, `error_count=0`, and `warning_count=0`.
+## Verification
+- Run file: `tickets/done/project_001/verify_003.md`
+- Log file: `logs/verifier_003_20260424_232829Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Upgrade now adds missing runner/wiki scaffold to existing boards with create-if-missing behavior and machine-readable scaffold counters.
+- Remaining risk: PowerShell behavior was aligned in code but not executed locally because `pwsh`/`powershell` is unavailable in this environment.

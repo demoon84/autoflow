@@ -118,7 +118,6 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
       "tickets/backlog",
       "rules/verifier",
       "logs/hooks",
-      "tickets/runs",
       "tickets/plan",
       "automations/state",
       "automations/state/threads"

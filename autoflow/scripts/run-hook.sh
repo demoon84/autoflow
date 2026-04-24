@@ -169,7 +169,7 @@ Do exactly one current hook turn:
 3. Verify it against the referenced spec and verifier rules.
 4. Treat local verification commands, browser checks, ticket/log file moves, and local git commit inside the current project/board as pre-authorized. Do not ask the user for permission.
 5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open.
-6. Write or update \`autoflow/tickets/runs/verify_NNN.md\`.
+6. Write or update \`autoflow/tickets/inprogress/verify_NNN.md\`.
 7. Write a verifier completion log under \`autoflow/logs/\`.
 8. Pass: move the ticket to the matching \`autoflow/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[ticket title] concise change summary\`; take the bracket text from the ticket \`Title\` and keep the summary to one short line.
 9. Fail: append \`## Reject Reason\` and move the ticket to \`autoflow/tickets/reject/reject_NNN.md\`.

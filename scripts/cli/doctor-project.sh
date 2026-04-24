@@ -101,7 +101,6 @@ if [ -d "$board_root" ]; then
     "tickets/backlog" \
     "rules/verifier" \
     "logs/hooks" \
-    "tickets/runs" \
     "tickets/plan" \
     "automations/state" \
     "automations/state/threads"

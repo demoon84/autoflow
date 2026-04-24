@@ -105,7 +105,7 @@ PROJECT_ROOT
   -> autoflow/tickets/todo
   -> autoflow/tickets/inprogress
   -> autoflow/rules/verifier
-  -> autoflow/tickets/runs
+  -> autoflow/tickets/inprogress/verify_NNN.md
   -> autoflow/logs
   -> autoflow/tickets/done/<project-key>
 ```
@@ -372,7 +372,8 @@ pool 예시는 숫자가 고정이 아니다.
 - `tickets/plan/plan_*.md`
 - `tickets/inprogress/plan_*.md`
 - `tickets/*/tickets_*.md`
-- `tickets/runs/verify_*.md`
+- `tickets/inprogress/verify_*.md` while verification is active
+- `tickets/done/<project-key>/verify_*.md` or `tickets/reject/verify_*.md` after verification is settled
 - `logs/verifier_*.md`
 
 업그레이드 중 변경되는 공용 파일이 이미 수정되어 있으면, 이전 내용은 `BOARD_ROOT/.autoflow-upgrade-backups/<timestamp>/` 아래에 백업한다.
@@ -384,7 +385,8 @@ pool 예시는 숫자가 고정이 아니다.
 - 보드 문서 참조: `tickets/backlog/project_001.md` 또는 `tickets/done/project_001/project_001.md`
 - plan 참조: `tickets/plan/plan_001.md`, `tickets/inprogress/plan_001.md`, 또는 `tickets/done/project_001/plan_001.md`
 - done 티켓 경로: `tickets/done/project_001/tickets_001.md`
-- 검증 기록 참조: `tickets/runs/verify_001.md`
+- 진행 중 검증 기록 참조: `tickets/inprogress/verify_001.md`
+- 완료 후 검증 기록 참조: `tickets/done/project_001/verify_001.md`
 - verifier completion log 참조: `logs/verifier_001_<timestamp>_<outcome>.md`
 - 실제 작업 허용 경로: `src/`, `public/`, `package.json`
 
@@ -410,7 +412,7 @@ pool 예시는 숫자가 고정이 아니다.
 
 - 티켓 파일 이름은 `tickets_001.md` 처럼 번호 기반으로 만든다.
 - 한 티켓은 한 번에 한 상태 폴더에만 존재한다.
-- `done/<project-key>/` 으로 옮기기 전에 검증 기록이 `tickets/runs/` 에 있어야 하고, verifier completion log 가 `logs/` 에 남아 있어야 한다.
+- `done/<project-key>/` 으로 옮기기 전에 verifier 가 `tickets/inprogress/verify_*.md` 를 준비해야 하고, 완료 후에는 그 기록도 `done/<project-key>/verify_*.md` 또는 `reject/verify_*.md` 로 정리돼야 한다. verifier completion log 는 `logs/` 에 남아 있어야 한다.
 - 티켓을 만들기 전에 관련 계획 항목이 `tickets/plan/` 에 있어야 한다.
 - 티켓 생성 전에는 실제 `tickets/backlog/*.md` 가 있어야 한다.
 - 티켓 생성이 끝난 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해야 한다.

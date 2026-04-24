@@ -25,6 +25,26 @@ fi
 TARGET_PROJECT_ROOT="$(cd "$TARGET_PROJECT_ROOT" && pwd)"
 TARGET_BOARD_ROOT="${TARGET_PROJECT_ROOT}/${BOARD_DIR_NAME}"
 HOST_AGENTS_PATH="${TARGET_PROJECT_ROOT}/AGENTS.md"
+AUTOFLOW_UPGRADE_TMP_FILES=()
+
+autoflow_mktemp() {
+  local tmp
+
+  tmp="$(mktemp)"
+  AUTOFLOW_UPGRADE_TMP_FILES+=("$tmp")
+  printf '%s' "$tmp"
+}
+
+autoflow_cleanup_tmp() {
+  local tmp
+
+  for tmp in "${AUTOFLOW_UPGRADE_TMP_FILES[@]:-}"; do
+    [ -n "$tmp" ] || continue
+    rm -f "$tmp" 2>/dev/null || true
+  done
+}
+
+trap autoflow_cleanup_tmp EXIT
 
 ensure_package_templates_present
 
@@ -32,8 +52,6 @@ if ! board_already_initialized "$TARGET_BOARD_ROOT"; then
   echo "Board is not initialized: $TARGET_BOARD_ROOT" >&2
   exit 1
 fi
-
-ensure_board_directories "$TARGET_BOARD_ROOT"
 
 timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
 backup_root="${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/${timestamp}"
@@ -47,6 +65,53 @@ managed_updated_count=0
 managed_unchanged_count=0
 backup_count=0
 pruned_backup_count=0
+scaffold_directories_created_count=0
+scaffold_directories_present_count=0
+scaffold_files_created_count=0
+scaffold_files_present_count=0
+
+upgrade_scaffold_directory_entries() {
+  cat <<'EOF'
+agents/adapters
+conversations
+rules/wiki
+runners
+runners/state
+runners/logs
+metrics
+wiki
+wiki/decisions
+wiki/features
+wiki/architecture
+wiki/learnings
+EOF
+}
+
+count_upgrade_scaffold_directories() {
+  local rel_dir
+
+  while IFS= read -r rel_dir; do
+    [ -n "$rel_dir" ] || continue
+    if [ -d "${TARGET_BOARD_ROOT}/${rel_dir}" ]; then
+      scaffold_directories_present_count=$((scaffold_directories_present_count + 1))
+    else
+      scaffold_directories_created_count=$((scaffold_directories_created_count + 1))
+    fi
+  done < <(upgrade_scaffold_directory_entries)
+}
+
+is_upgrade_scaffold_asset() {
+  local target_rel="$1"
+
+  case "$target_rel" in
+    agents/adapters/*|conversations/README.md|rules/wiki/*|runners/*|metrics/*|wiki/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 upgrade_backup_keep_count() {
   local keep="${AUTOFLOW_UPGRADE_BACKUP_KEEP:-5}"
@@ -107,6 +172,20 @@ record_sync_action() {
   if [ "${SYNC_BACKUP_CREATED:-0}" = "1" ]; then
     backup_count=$((backup_count + 1))
   fi
+}
+
+record_scaffold_sync_action() {
+  local target_rel="$1"
+  local action="$2"
+
+  if ! is_upgrade_scaffold_asset "$target_rel"; then
+    return 0
+  fi
+
+  case "$action" in
+    created) scaffold_files_created_count=$((scaffold_files_created_count + 1)) ;;
+    unchanged) scaffold_files_present_count=$((scaffold_files_present_count + 1)) ;;
+  esac
 }
 
 record_backup_once_for_path() {
@@ -356,6 +435,38 @@ replace_board_literal_if_present() {
   relative_file="$(board_relative_target_path "$file")"
   record_backup_once_for_path "$relative_file"
   replace_literal_in_file "$file" "$from_literal" "$to_literal" || true
+}
+
+normalize_upgrade_asset_temp_file() {
+  local temp_file="$1"
+  local tmp
+
+  tmp="$(mktemp)"
+  sed \
+    -e 's#\.autoflow/tickets/runs/#.autoflow/tickets/inprogress/#g' \
+    -e 's#tickets/runs/#tickets/inprogress/#g' \
+    "$temp_file" > "$tmp"
+  mv "$tmp" "$temp_file"
+}
+
+sync_board_asset_for_upgrade() {
+  local board_root="$1"
+  local board_dir_name="$2"
+  local asset_kind="$3"
+  local source_rel="$4"
+  local target_rel="$5"
+  local backup_root="${6:-}"
+  local temp_file executable_flag
+
+  executable_flag="0"
+  if [ "$asset_kind" = "source_executable" ]; then
+    executable_flag="1"
+  fi
+
+  temp_file="$(build_asset_temp_file "$asset_kind" "$source_rel" "$board_dir_name")"
+  normalize_upgrade_asset_temp_file "$temp_file"
+  sync_temp_file "$temp_file" "${board_root}/${target_rel}" "$backup_root" "$target_rel" "$executable_flag"
+  rm -f "$temp_file"
 }
 
 ticket_state_files_for_upgrade() {
@@ -1028,6 +1139,9 @@ rewrite_legacy_browser_tool_references() {
   )
 }
 
+count_upgrade_scaffold_directories
+ensure_board_directories "$TARGET_BOARD_ROOT"
+
 if [ -f "$HOST_AGENTS_PATH" ]; then
   host_agents_action="preserved"
   SYNC_ACTION_RESULT="unchanged"
@@ -1039,8 +1153,16 @@ record_sync_action "$SYNC_ACTION_RESULT"
 
 while IFS='|' read -r asset_kind source_rel target_rel; do
   [ -n "$asset_kind" ] || continue
-  sync_board_asset "$TARGET_BOARD_ROOT" "$BOARD_DIR_NAME" "$asset_kind" "$source_rel" "$target_rel" "$backup_root"
+  if is_upgrade_scaffold_asset "$target_rel" && [ -f "${TARGET_BOARD_ROOT}/${target_rel}" ]; then
+    SYNC_BACKUP_CREATED=0
+    SYNC_ACTION_RESULT="unchanged"
+    record_sync_action "$SYNC_ACTION_RESULT"
+    record_scaffold_sync_action "$target_rel" "$SYNC_ACTION_RESULT"
+    continue
+  fi
+  sync_board_asset_for_upgrade "$TARGET_BOARD_ROOT" "$BOARD_DIR_NAME" "$asset_kind" "$source_rel" "$target_rel" "$backup_root"
   record_sync_action "$SYNC_ACTION_RESULT"
+  record_scaffold_sync_action "$target_rel" "$SYNC_ACTION_RESULT"
 done < <(managed_board_asset_entries)
 
 migrate_spec_root_to_backlog
@@ -1093,6 +1215,10 @@ printf 'host_agents_action=%s\n' "$host_agents_action"
 printf 'managed_files_created=%s\n' "$managed_created_count"
 printf 'managed_files_updated=%s\n' "$managed_updated_count"
 printf 'managed_files_unchanged=%s\n' "$managed_unchanged_count"
+printf 'scaffold_directories_created=%s\n' "$scaffold_directories_created_count"
+printf 'scaffold_directories_present=%s\n' "$scaffold_directories_present_count"
+printf 'scaffold_files_created=%s\n' "$scaffold_files_created_count"
+printf 'scaffold_files_present=%s\n' "$scaffold_files_present_count"
 printf 'backups_created=%s\n' "$backup_count"
 printf 'backup_keep_count=%s\n' "$(upgrade_backup_keep_count)"
 printf 'backups_pruned=%s\n' "$pruned_backup_count"

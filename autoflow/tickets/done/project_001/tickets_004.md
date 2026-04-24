@@ -24,7 +24,6 @@
 - Plan Source: tickets/inprogress/plan_001.md
 
 ## Obsidian Links
-
 - Project Note: [[project_001]]
 - Plan Note: [[plan_001]]
 - Ticket Note: [[tickets_004]]

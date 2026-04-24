@@ -166,7 +166,6 @@ function Get-ManagedBoardDirectoryEntries {
     "tickets/verifier"
     "tickets/done"
     "tickets/reject"
-    "tickets/runs"
   )
 }
 

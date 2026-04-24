@@ -166,7 +166,7 @@ macOS/Linux 에서는 보드 루트에서 아래처럼 직접 실행할 수 있�
   - 참고: `agents/todo-queue-agent.md`
 
 - `#veri` (heartbeat)
-  - 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/runs/`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
+  - 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/inprogress/`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
   - 역할: `tickets/verifier/` 의 티켓을 검증해 **pass → `tickets/done/<project-key>/` + local commit**, **fail → `tickets/reject/reject_NNN.md` + `## Reject Reason`**, 그리고 완료 로그를 `logs/` 에 남김
   - Windows 진입점: `scripts/start-verifier.ps1`
   - Bash 진입점: `scripts/start-verifier.sh`

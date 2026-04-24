@@ -186,7 +186,6 @@ tickets/inprogress
 tickets/verifier
 tickets/done
 tickets/reject
-tickets/runs
 EOF
 }
 

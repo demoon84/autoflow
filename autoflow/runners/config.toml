@@ -1,0 +1,13 @@
+# Autoflow runner configuration.
+#
+# This file is intentionally minimal until `autoflow runners` is implemented.
+# Example:
+#
+# [[runners]]
+# id = "todo-1"
+# role = "todo"
+# agent = "shell"
+# model = ""
+# reasoning = ""
+# mode = "one-shot"
+# enabled = true

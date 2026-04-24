@@ -10,7 +10,7 @@ Autoflow 보드는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이
 - 순서는 `tickets/plan/`
 - 실행 단위는 `tickets/`
 - 검증 기준과 템플릿은 `rules/verifier/`
-- 검증 증거는 `tickets/runs/`
+- 검증 증거는 시작 시 `tickets/inprogress/verify_*.md`, 완료 후에는 final ticket 옆 `verify_*.md`
 - verifier 완료 이력은 `logs/`
 
 운영 구분:
@@ -76,7 +76,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 - `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
 - `tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
 - `tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
-- `tickets/runs/`: 검증 기록
+- `tickets/inprogress/verify_*.md`: 진행 중 검증 기록
+- `tickets/done/<project-key>/verify_*.md`, `tickets/reject/verify_*.md`: 완료 후 정리된 검증 기록
 - `logs/`: verifier 완료 로그
 - `tickets/done/<project-key>/`: 프로젝트 단위로 모아 둔 완료 티켓, 처리된 spec, ticket 생성 완료 plan
 - `scripts/`: 보드 runtime 훅
