@@ -87,7 +87,11 @@ if [ "$dirty_outside_board" -ne 0 ]; then
   exit 1
 fi
 
-mapfile -t allowed_paths < <(extract_ticket_allowed_paths "$ticket_file")
+allowed_paths=()
+while IFS= read -r allowed_path; do
+  [ -n "$allowed_path" ] || continue
+  allowed_paths+=("$allowed_path")
+done < <(extract_ticket_allowed_paths "$ticket_file")
 if [ "${#allowed_paths[@]}" -eq 0 ]; then
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_missing_allowed_paths"
   append_note "$ticket_file" "Worktree integration blocked at ${timestamp}: Allowed Paths was empty."
