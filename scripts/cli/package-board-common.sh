@@ -98,10 +98,17 @@ managed_board_asset_entries() {
   cat <<'EOF'
 template_text|AGENTS.md|AGENTS.md
 template_text|README.md|README.md
+template_text|agents/adapters/README.md|agents/adapters/README.md
+template_text|agents/adapters/shell.md|agents/adapters/shell.md
+template_text|agents/adapters/codex-cli.md|agents/adapters/codex-cli.md
+template_text|agents/adapters/claude-cli.md|agents/adapters/claude-cli.md
+template_text|agents/adapters/opencode.md|agents/adapters/opencode.md
+template_text|agents/adapters/gemini-cli.md|agents/adapters/gemini-cli.md
 source_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
 source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
+template_text|conversations/README.md|conversations/README.md
 source_text|automations/README.md|automations/README.md
 source_text|automations/file-watch.psd1|automations/file-watch.psd1
 source_text|automations/state/README.md|automations/state/README.md
@@ -111,6 +118,9 @@ source_text|automations/templates/plan-heartbeat.template.toml|automations/templ
 source_text|automations/templates/todo-heartbeat.template.toml|automations/templates/todo-heartbeat.template.toml
 source_text|automations/templates/verifier-heartbeat.template.toml|automations/templates/verifier-heartbeat.template.toml
 source_text|rules/README.md|rules/README.md
+template_text|rules/wiki/README.md|rules/wiki/README.md
+template_text|rules/wiki/page-template.md|rules/wiki/page-template.md
+template_text|rules/wiki/lint-checklist.md|rules/wiki/lint-checklist.md
 source_text|reference/README.md|reference/README.md
 source_text|reference/backlog.md|reference/backlog.md
 source_text|reference/backlog-processed.md|reference/backlog-processed.md
@@ -123,6 +133,21 @@ source_text|reference/plan-template.md|reference/plan-template.md
 source_text|reference/roadmap.md|reference/roadmap.md
 source_text|reference/logs.md|reference/logs.md
 source_text|reference/hook-logs.md|reference/hook-logs.md
+template_text|runners/README.md|runners/README.md
+template_text|runners/config.toml|runners/config.toml
+template_text|runners/state/README.md|runners/state/README.md
+template_text|runners/state/.gitignore|runners/state/.gitignore
+template_text|runners/logs/README.md|runners/logs/README.md
+template_text|runners/logs/.gitignore|runners/logs/.gitignore
+template_text|metrics/README.md|metrics/README.md
+template_text|metrics/.gitignore|metrics/.gitignore
+template_text|wiki/index.md|wiki/index.md
+template_text|wiki/log.md|wiki/log.md
+template_text|wiki/project-overview.md|wiki/project-overview.md
+template_text|wiki/decisions/README.md|wiki/decisions/README.md
+template_text|wiki/features/README.md|wiki/features/README.md
+template_text|wiki/architecture/README.md|wiki/architecture/README.md
+template_text|wiki/learnings/README.md|wiki/learnings/README.md
 source_executable|scripts/runtime/common.sh|scripts/common.sh
 source_executable|scripts/runtime/check-stop.sh|scripts/check-stop.sh
 source_executable|scripts/runtime/set-thread-context.sh|scripts/set-thread-context.sh
@@ -157,14 +182,26 @@ EOF
 managed_board_directory_entries() {
   cat <<'EOF'
 agents
+agents/adapters
 automations
 automations/state
 automations/state/threads
 automations/templates
+conversations
 reference
 rules
 rules/verifier
+rules/wiki
 scripts
+runners
+runners/state
+runners/logs
+metrics
+wiki
+wiki/decisions
+wiki/features
+wiki/architecture
+wiki/learnings
 logs
 logs/hooks
 tickets
