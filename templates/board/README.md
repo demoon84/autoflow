@@ -55,14 +55,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
   - `plan-to-ticket-agent.md`
   - `todo-queue-agent.md`
   - `verifier-agent.md`
-  - `adapters/`: local agent CLI adapter contracts
+  - `adapters/`: Codex, Claude, OpenCode, Gemini CLI, shell adapter contracts
 - `automations/`: 1분 heartbeat 자동화 계약, file-watch 설정, 템플릿
-- `conversations/`: approved compact conversation summaries
+- `conversations/`: 승인된 대화 요약과 spec handoff 기록
 - `reference/`: state 폴더 밖에서 관리하는 README 와 템플릿
-- `rules/`: verifier and wiki maintenance 기준 문서
-- `runners/`: local runner configuration, state, and process logs
-- `metrics/`: derived metric files
-- `wiki/`: LLM-maintained project knowledge derived from tickets and logs
+- `rules/`: verifier 기준과 wiki 유지보수 기준 문서
+- `rules/wiki/`: wiki page / lint 기준
+- `runners/`: local runner 설정, 상태, 프로세스 로그
+- `metrics/`: board transition 에서 파생되는 수치 파일
+- `wiki/`: 완료된 작업과 의사결정을 정리하는 LLM-maintained project map
 - `tickets/`: todo / inprogress / verifier / done / reject 상태 보드
 - `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
 - `tickets/plan/`: 아직 ticket 생성 전인 plan 대기열

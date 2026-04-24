@@ -48,10 +48,17 @@ function Get-ManagedBoardAssetEntries {
   return @(
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "AGENTS.md"; TargetRel = "AGENTS.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "README.md"; TargetRel = "README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/README.md"; TargetRel = "agents/adapters/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/shell.md"; TargetRel = "agents/adapters/shell.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/codex-cli.md"; TargetRel = "agents/adapters/codex-cli.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/claude-cli.md"; TargetRel = "agents/adapters/claude-cli.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/opencode.md"; TargetRel = "agents/adapters/opencode.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/adapters/gemini-cli.md"; TargetRel = "agents/adapters/gemini-cli.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/plan-to-ticket-agent.md"; TargetRel = "agents/plan-to-ticket-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/todo-queue-agent.md"; TargetRel = "agents/todo-queue-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/verifier-agent.md"; TargetRel = "agents/verifier-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/spec-author-agent.md"; TargetRel = "agents/spec-author-agent.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "conversations/README.md"; TargetRel = "conversations/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/README.md"; TargetRel = "automations/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/file-watch.psd1"; TargetRel = "automations/file-watch.psd1" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/state/README.md"; TargetRel = "automations/state/README.md" }
@@ -61,6 +68,9 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/todo-heartbeat.template.toml"; TargetRel = "automations/templates/todo-heartbeat.template.toml" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/verifier-heartbeat.template.toml"; TargetRel = "automations/templates/verifier-heartbeat.template.toml" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "rules/README.md"; TargetRel = "rules/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "rules/wiki/README.md"; TargetRel = "rules/wiki/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "rules/wiki/page-template.md"; TargetRel = "rules/wiki/page-template.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "rules/wiki/lint-checklist.md"; TargetRel = "rules/wiki/lint-checklist.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/README.md"; TargetRel = "reference/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/backlog.md"; TargetRel = "reference/backlog.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/backlog-processed.md"; TargetRel = "reference/backlog-processed.md" }
@@ -73,6 +83,21 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/roadmap.md"; TargetRel = "reference/roadmap.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/logs.md"; TargetRel = "reference/logs.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "reference/hook-logs.md"; TargetRel = "reference/hook-logs.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/README.md"; TargetRel = "runners/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/config.toml"; TargetRel = "runners/config.toml" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/state/README.md"; TargetRel = "runners/state/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/state/.gitignore"; TargetRel = "runners/state/.gitignore" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/logs/README.md"; TargetRel = "runners/logs/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "runners/logs/.gitignore"; TargetRel = "runners/logs/.gitignore" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "metrics/README.md"; TargetRel = "metrics/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "metrics/.gitignore"; TargetRel = "metrics/.gitignore" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/index.md"; TargetRel = "wiki/index.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/log.md"; TargetRel = "wiki/log.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/project-overview.md"; TargetRel = "wiki/project-overview.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/decisions/README.md"; TargetRel = "wiki/decisions/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/features/README.md"; TargetRel = "wiki/features/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/architecture/README.md"; TargetRel = "wiki/architecture/README.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/learnings/README.md"; TargetRel = "wiki/learnings/README.md" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/common.sh"; TargetRel = "scripts/common.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/check-stop.sh"; TargetRel = "scripts/check-stop.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/file-watch-common.sh"; TargetRel = "scripts/file-watch-common.sh" }
@@ -111,14 +136,26 @@ function Get-ManagedBoardAssetEntries {
 function Get-ManagedBoardDirectoryEntries {
   return @(
     "agents"
+    "agents/adapters"
     "automations"
     "automations/state"
     "automations/state/threads"
     "automations/templates"
+    "conversations"
     "reference"
     "rules"
     "rules/verifier"
+    "rules/wiki"
     "scripts"
+    "runners"
+    "runners/state"
+    "runners/logs"
+    "metrics"
+    "wiki"
+    "wiki/decisions"
+    "wiki/features"
+    "wiki/architecture"
+    "wiki/learnings"
     "logs"
     "logs/hooks"
     "tickets"

@@ -12,4 +12,3 @@ State files should be small, machine-readable snapshots such as:
 - last event time
 
 Do not treat this directory as the source of truth for ticket state.
-

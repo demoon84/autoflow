@@ -6,12 +6,12 @@
 - Project Key: project_001
 - Plan Candidate: Update init/package-board logic so fresh boards include the new runner/wiki scaffold without overwriting existing state.
 - Title: Include runner and wiki scaffold in fresh board init
-- Stage: blocked
+- Stage: done
 - Owner: verify-1
 - Claimed By: todo-1
 - Execution Owner: unassigned
 - Verifier Owner: verify-1
-- Last Updated: 2026-04-25T07:53:00+09:00
+- Last Updated: 2026-04-24T23:14:20Z
 
 ## Goal
 
@@ -42,8 +42,8 @@
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002_local`
 - Branch: codex/autoflow-tickets-002
 - Base Commit: 30f9b3a872bbadf4c3047b1e693a4906122d19b8
-- Worktree Commit:
-- Integration Status: blocked_dirty_project_root
+- Worktree Commit: 35e61b7738f22e1bd4bd67366168ba8504d734c2
+- Integration Status: integrated
 
 ## Done When
 
@@ -54,12 +54,12 @@
 - [x] The change can be verified without running any real coding-agent CLI.
 
 ## Next Action
-- Next: clear or isolate existing non-board dirty files in `PROJECT_ROOT`, then rerun verifier so the worktree can be integrated without mixing unrelated changes.
+- Complete. No further action for this ticket.
 
 ## Resume Context
-- Current state: implementation checks passed, but verifier pass integration is blocked by existing non-board dirty files in `PROJECT_ROOT`.
-- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_002.md` refused to integrate because the central project root is dirty outside `autoflow/`.
-- Next reader: verifier should retry after the central dirty files are committed, stashed, or otherwise isolated.
+- Current state: verifier passed after resolving scaffold template overlap with tickets_001.
+- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_002.md` produced worktree commit `35e61b7738f22e1bd4bd67366168ba8504d734c2`; cherry-pick conflicts were resolved in `PROJECT_ROOT`.
+- Next reader: use the linked verification record and completion log for evidence.
 
 ## Notes
 
@@ -79,12 +79,15 @@
 - Verifier prepared by verify-1 via scripts/start-verifier.sh at 2026-04-24T22:52:01Z
 - Worktree integration blocked at 2026-04-24T22:52:17Z: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket.
 - Verifier evidence: `git diff --check` passed; shell syntax check passed; fresh init smoke created the new scaffold; re-running init returned `status=already_initialized`; changed files are within allowed paths. Pass is blocked only by central dirty-root protection.
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:13:08Z: 35e61b7738f22e1bd4bd67366168ba8504d734c2. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
+- 2026-04-24T23:14:20Z: Resolved scaffold template overlap from tickets_001, reran shell syntax and fresh init smoke, confirmed idempotent init, and marked integration as passed.
+- Worktree integration hit a cherry-pick conflict at 2026-04-24T23:13:08Z: 35e61b7738f22e1bd4bd67366168ba8504d734c2. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying.
 ## Verification
-- Run file: `tickets/inprogress/verify_002.md`
-- Log file: pending
-- Result: blocked_dirty_project_root
+- Run file: `tickets/done/project_001/verify_002.md`
+- Log file: `logs/verifier_002_20260424_231442Z_pass.md`
+- Result: passed
 
 ## Result
 
 - Summary: Fresh init now includes runner, wiki, metrics, conversations, adapter, and wiki-rule scaffold files through package-board common asset and directory lists.
-- Remaining risk: PowerShell path was not executed locally because `pwsh`/`powershell` is unavailable in this environment. Ticket 002 cannot be integrated until central non-board dirty files are isolated.
+- Remaining risk: PowerShell path was not executed locally because `pwsh`/`powershell` is unavailable in this environment.

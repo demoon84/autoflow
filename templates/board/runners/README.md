@@ -18,4 +18,3 @@ runners/
 
 `tickets/` remains the source of truth for work state. Runner files describe
 process state only.
-

@@ -11,4 +11,3 @@ Prefer compact summaries over raw full transcripts by default:
 - links to the resulting spec or ticket
 
 The ticket board remains the execution source of truth.
-

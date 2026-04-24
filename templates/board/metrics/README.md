@@ -13,4 +13,3 @@ Initial useful metrics:
 - runner blocked count
 
 Do not edit metrics by hand unless a command explicitly asks for manual repair.
-

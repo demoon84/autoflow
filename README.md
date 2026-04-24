@@ -7,6 +7,7 @@
 - 실제 프로젝트 안에 `autoflow/` 보드를 생성한다.
 - 보드 상태는 프로젝트 로컬 파일로 남긴다.
 - 설치는 공개 저장소의 CLI/스크립트로 수행한다.
+- fresh init 은 runner, wiki, metrics, conversation, adapter scaffold 를 함께 만든다.
 
 예를 들어 `tetris` 프로젝트에 적용하면 목표 구조는 아래와 같다.
 
@@ -17,10 +18,16 @@ tetris/
     AGENTS.md
     README.md
     agents/
+      adapters/
     automations/
+    conversations/
+    metrics/
     reference/
+    runners/
     rules/
+      wiki/
     scripts/
+    wiki/
     tickets/
       plan/
         inprogress/
@@ -203,6 +210,7 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell 
 - `Autoflow` CLI 는 설치와 배포 진입점을 제공한다.
 - `render-heartbeats`, `status`, `doctor`, `upgrade` 는 현재 보드 상태를 AI 친화적인 `key=value` 출력과 안전한 갱신 계약으로 다룬다.
 - 생성된 로컬 보드는 작업 보드 흐름을 제공한다.
+- 새 보드는 `runners/`, `wiki/`, `metrics/`, `conversations/`, `agents/adapters/`, `rules/wiki/` scaffold 를 포함한다. 이 단계의 scaffold 는 실행 원장이 아니라 향후 local runner harness 와 wiki-maintainer 를 위한 계약면이다.
 
 권장 시작 순서는 아래와 같다.
 
