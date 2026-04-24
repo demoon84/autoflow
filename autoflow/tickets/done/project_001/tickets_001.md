@@ -6,12 +6,12 @@
 - Project Key: project_001
 - Plan Candidate: Add runner, wiki, metrics, conversations, adapter, and wiki-rule template files to the generated board scaffold.
 - Title: Add runner and wiki scaffold templates
-- Stage: blocked
+- Stage: done
 - Owner: verify-1
 - Claimed By: todo-1
 - Execution Owner: unassigned
 - Verifier Owner: verify-1
-- Last Updated: 2026-04-25T07:47:00+09:00
+- Last Updated: 2026-04-24T23:12:41Z
 
 ## Goal
 
@@ -40,8 +40,8 @@
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001_local`
 - Branch: codex/autoflow-tickets-001
 - Base Commit: 30f9b3a872bbadf4c3047b1e693a4906122d19b8
-- Worktree Commit:
-- Integration Status: blocked_dirty_project_root
+- Worktree Commit: 0660e582bb7606e145161d88c2566c4451412dff
+- Integration Status: integrated
 
 ## Done When
 
@@ -52,12 +52,12 @@
 - [x] No planner/todo/verifier lifecycle scripts are changed by this ticket.
 
 ## Next Action
-- Next: clear or isolate existing non-board dirty files in `PROJECT_ROOT`, then rerun verifier so the worktree can be integrated without mixing unrelated changes.
+- Complete. No further action for this ticket.
 
 ## Resume Context
-- Current state: implementation checks passed, but verifier pass integration is blocked by existing non-board dirty files in `PROJECT_ROOT`.
-- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_001.md` refused to integrate because the central project root is dirty outside `autoflow/`.
-- Next reader: verifier should retry after the central dirty files are committed, stashed, or otherwise isolated.
+- Current state: verifier passed and the worktree commit was integrated into `PROJECT_ROOT`.
+- Last runtime action: `integrate-worktree.sh tickets/verifier/tickets_001.md` integrated worktree commit `0660e582bb7606e145161d88c2566c4451412dff`.
+- Next reader: use the linked verification record and completion log for evidence.
 
 ## Notes
 
@@ -75,12 +75,14 @@
 - Verifier prepared by verify-1 via scripts/start-verifier.sh at 2026-04-24T22:45:18Z
 - Worktree integration blocked at 2026-04-24T22:45:57Z: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket.
 - Verifier evidence: spec exists, allowed paths are respected, `git diff --check` passed in the ticket worktree, and implementation files are present. Pass is blocked only by central dirty-root protection.
+- 2026-04-24T23:12:41Z: Re-ran verifier after local checkpoint isolated the dirty project root; integration succeeded and `git diff --check` passed in `PROJECT_ROOT`.
+- Integrated worktree commit 0660e582bb7606e145161d88c2566c4451412dff into PROJECT_ROOT without committing at 2026-04-24T23:12:12Z; verifier should now include board + code changes in one local commit.
 ## Verification
-- Run file: `tickets/inprogress/verify_001.md`
-- Log file: pending
-- Result: blocked_dirty_project_root
+- Run file: `tickets/done/project_001/verify_001.md`
+- Log file: `logs/verifier_001_20260424_231257Z_pass.md`
+- Result: passed
 
 ## Result
 
 - Summary: Added Phase 1 runner/wiki scaffold template and adapter documentation in the ticket worktree.
-- Remaining risk: Ticket 002 still needs to wire these files into fresh board init/package copying. Ticket 001 cannot be integrated until central non-board dirty files are isolated.
+- Remaining risk: Ticket 002 still needs to wire these files into fresh board init/package copying.

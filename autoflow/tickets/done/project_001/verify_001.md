@@ -5,7 +5,7 @@
 - Project Key: project_001
 - Ticket ID: 001
 - Target: tickets_001.md
-- Status: blocked
+- Status: passed
 - Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001_local
 
 ## Obsidian Links
@@ -19,16 +19,16 @@
 - [x] spec reference confirmed
 - [x] allowed paths respected
 - [x] implementation completed
-- [ ] manual or automated verification passed
+- [x] manual or automated verification passed
 
 ## Findings
 
-- blocker: Worktree implementation satisfies the ticket checks, but pass integration is blocked because `PROJECT_ROOT` has dirty files outside `autoflow/`.
-- warning: `integrate-worktree.sh` refused to cherry-pick this ticket so unrelated work is not mixed into the final commit.
+- pass: Worktree implementation satisfies the ticket checks and has been integrated into `PROJECT_ROOT`.
+- note: Initial integration was blocked by dirty non-board files, then passed after a local checkpoint isolated that state.
 
 ## Next Fix Hint
 
-- Commit, stash, or otherwise isolate the existing non-board dirty files in `PROJECT_ROOT`, then rerun verifier for `tickets_001`.
+- No follow-up required for this ticket.
 
 ## Evidence
 
@@ -36,7 +36,9 @@
 - Worktree root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001_local`.
 - `git diff --check` passed in the ticket worktree.
 - `git status --short` in the ticket worktree shows changes only under `templates/board/`, `agents/`, `reference/`, and `rules/`.
-- `integrate-worktree.sh tickets/verifier/tickets_001.md` returned `blocked_dirty_project_root`.
+- `integrate-worktree.sh tickets/verifier/tickets_001.md` first returned `blocked_dirty_project_root`.
+- After the local checkpoint, `integrate-worktree.sh tickets/verifier/tickets_001.md` returned `status=integrated` with worktree commit `0660e582bb7606e145161d88c2566c4451412dff`.
+- `git diff --check` passed in `PROJECT_ROOT` after integration.
 
 ## Notes
 
