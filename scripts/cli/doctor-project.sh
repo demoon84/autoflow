@@ -113,6 +113,43 @@ if [ -d "$board_root" ]; then
     fi
   done
 
+  runner_scaffold_ok="true"
+  for runner_scaffold_path in \
+    "runners" \
+    "runners/state" \
+    "runners/logs" \
+    "runners/config.toml"
+  do
+    if [ ! -e "${board_root}/${runner_scaffold_path}" ]; then
+      runner_scaffold_ok="false"
+    fi
+  done
+  if [ "$runner_scaffold_ok" = "true" ]; then
+    record_check "runner_scaffold" "ok"
+  else
+    record_check "runner_scaffold" "warning"
+    record_warning "runner scaffold is missing or incomplete; run autoflow upgrade to add runners/config.toml, runners/state, and runners/logs"
+  fi
+
+  wiki_scaffold_ok="true"
+  for wiki_scaffold_path in \
+    "wiki" \
+    "wiki/index.md" \
+    "wiki/log.md" \
+    "wiki/project-overview.md" \
+    "rules/wiki"
+  do
+    if [ ! -e "${board_root}/${wiki_scaffold_path}" ]; then
+      wiki_scaffold_ok="false"
+    fi
+  done
+  if [ "$wiki_scaffold_ok" = "true" ]; then
+    record_check "wiki_scaffold" "ok"
+  else
+    record_check "wiki_scaffold" "warning"
+    record_warning "wiki scaffold is missing or incomplete; run autoflow upgrade to add wiki pages and rules/wiki"
+  fi
+
   for runtime_file in common.sh check-stop.sh set-thread-context.sh clear-thread-context.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"

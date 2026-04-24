@@ -37,6 +37,8 @@ $ticketReadyForVerificationCount = 0
 $ticketVerifyingCount = 0
 $ticketBlockedCount = 0
 $verifyRunCount = 0
+$runnerScaffoldPresent = $false
+$wikiScaffoldPresent = $false
 $summaryStatus = "missing_board"
 $packageVersion = Get-PackageVersionValue
 $boardVersion = ""
@@ -78,6 +80,17 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   $ticketVerifyingCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "verifying"
   $ticketBlockedCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "blocked"
   $verifyRunCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/runs") -Filter "verify_*.md"
+  $runnerScaffoldPresent =
+    (Test-Path -LiteralPath (Join-Path $boardRoot "runners") -PathType Container) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "runners/state") -PathType Container) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "runners/logs") -PathType Container) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "runners/config.toml") -PathType Leaf)
+  $wikiScaffoldPresent =
+    (Test-Path -LiteralPath (Join-Path $boardRoot "wiki") -PathType Container) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "wiki/index.md") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "wiki/log.md") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "wiki/project-overview.md") -PathType Leaf) -and
+    (Test-Path -LiteralPath (Join-Path $boardRoot "rules/wiki") -PathType Container)
   $boardVersion = Get-BoardVersionValue $boardRoot
   if (-not $boardVersion) {
     $boardVersion = ""
@@ -115,3 +128,6 @@ Write-StatusSummary `
   -PackageVersion $packageVersion `
   -BoardVersion $boardVersion `
   -VersionStatus $versionStatus
+
+Write-KeyValueLine "runner_scaffold_present" ([string]$runnerScaffoldPresent).ToLowerInvariant()
+Write-KeyValueLine "wiki_scaffold_present" ([string]$wikiScaffoldPresent).ToLowerInvariant()

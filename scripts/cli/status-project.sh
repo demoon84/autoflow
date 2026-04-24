@@ -32,6 +32,8 @@ ticket_ready_for_verification_count="0"
 ticket_verifying_count="0"
 ticket_blocked_count="0"
 verify_run_count="0"
+runner_scaffold_present="false"
+wiki_scaffold_present="false"
 summary_status="missing_board"
 package_version="$(package_version_value)"
 board_version=""
@@ -83,6 +85,19 @@ if [ -d "$board_root" ]; then
     $(count_matching_files "${board_root}/tickets/done" 'verify_*.md') + \
     $(count_matching_files "${board_root}/tickets/runs" 'verify_*.md') \
   ))"
+  if [ -d "${board_root}/runners" ] && \
+     [ -d "${board_root}/runners/state" ] && \
+     [ -d "${board_root}/runners/logs" ] && \
+     [ -f "${board_root}/runners/config.toml" ]; then
+    runner_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/wiki" ] && \
+     [ -f "${board_root}/wiki/index.md" ] && \
+     [ -f "${board_root}/wiki/log.md" ] && \
+     [ -f "${board_root}/wiki/project-overview.md" ] && \
+     [ -d "${board_root}/rules/wiki" ]; then
+    wiki_scaffold_present="true"
+  fi
   board_version="$(board_version_value "$board_root" || true)"
   version_status="$(board_version_status "$board_root")"
 fi
@@ -117,3 +132,6 @@ print_status_summary \
   "$package_version" \
   "$board_version" \
   "$version_status"
+
+printf 'runner_scaffold_present=%s\n' "$runner_scaffold_present"
+printf 'wiki_scaffold_present=%s\n' "$wiki_scaffold_present"
