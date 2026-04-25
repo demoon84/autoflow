@@ -365,8 +365,8 @@ prepare_ticket_owner_context() {
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   printf 'next_action=Use this same ticket owner turn to update the mini-plan, implement within Allowed Paths, run verification, record evidence in the run file, then move to done or reject. Never split planner/todo/verifier roles and never git push.\n'
-  printf 'routing_pass=After evidence passes, integrate the worktree if needed, move ticket to done_target, run scripts/write-verifier-log.sh <done-ticket> %s pass, then create a local git commit from PROJECT_ROOT. Never push.\n' "$run_file"
-  printf 'routing_fail=If the owner cannot fix the failure in scope, append ## Reject Reason, move ticket to reject_target, and run scripts/write-verifier-log.sh <reject-ticket> %s fail. Do not commit failed work.\n' "$run_file"
+  printf 'routing_pass=After evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It integrates the worktree if needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when PROJECT_ROOT is a git repo. Never push.\n' "$ticket_id"
+  printf 'routing_fail=If the owner cannot fix the failure in scope, run scripts/finish-ticket-owner.sh %s fail "<concrete reject reason>". It moves the ticket to reject, writes the verifier log, and does not commit failed work.\n' "$ticket_id"
 }
 
 active_file="$(find_active_context_ticket || true)"

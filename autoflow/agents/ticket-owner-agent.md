@@ -27,8 +27,8 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 - If verification fails, fix within the same owner loop when the fix is inside scope.
 - Move the ticket to `tickets/done/<project-key>/` only after evidence is recorded.
 - Leave a verifier-style record and completion log even though the owner performed the verification.
-- On pass, use `scripts/integrate-worktree.sh` when the ticket has a worktree, then call `scripts/write-verifier-log.sh <done-ticket> <run-file> pass`.
-- On fail that cannot be fixed in scope, append `## Reject Reason`, move the ticket to `tickets/reject/reject_NNN.md`, then call `scripts/write-verifier-log.sh <reject-ticket> <run-file> fail`.
+- On pass, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> pass "<short summary>"`; it integrates worktree changes when needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when the project is a git repo.
+- On fail that cannot be fixed in scope, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> fail "<concrete reject reason>"`; it moves the ticket to reject, writes the verifier log, clears active context, and does not commit failed work.
 - Never run `git push`.
 
 ## Preferred Flow

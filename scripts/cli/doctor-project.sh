@@ -513,7 +513,7 @@ if [ -d "$board_root" ]; then
     record_warning "adapter scaffold is missing or incomplete; run autoflow upgrade to add agents/adapters docs"
   fi
 
-  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
+  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh finish-ticket-owner.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -530,7 +530,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_ps1 in invoke-runtime-sh.ps1 runner-common.ps1 codex-stop-hook.ps1 check-stop.ps1 install-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-ticket-owner.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
+  for runtime_ps1 in invoke-runtime-sh.ps1 runner-common.ps1 codex-stop-hook.ps1 check-stop.ps1 install-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-ticket-owner.ps1 finish-ticket-owner.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
     if [ -f "${board_root}/scripts/${runtime_ps1}" ]; then
       record_check "script_${runtime_ps1}" "ok"
     else
