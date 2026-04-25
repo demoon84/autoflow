@@ -34,6 +34,9 @@ ticket_blocked_count="0"
 verify_run_count="0"
 runner_scaffold_present="false"
 wiki_scaffold_present="false"
+metrics_scaffold_present="false"
+conversation_scaffold_present="false"
+adapter_scaffold_present="false"
 summary_status="missing_board"
 package_version="$(package_version_value)"
 board_version=""
@@ -98,6 +101,24 @@ if [ -d "$board_root" ]; then
      [ -d "${board_root}/rules/wiki" ]; then
     wiki_scaffold_present="true"
   fi
+  if [ -d "${board_root}/metrics" ] && \
+     [ -f "${board_root}/metrics/README.md" ] && \
+     [ -f "${board_root}/metrics/.gitignore" ]; then
+    metrics_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/conversations" ] && \
+     [ -f "${board_root}/conversations/README.md" ]; then
+    conversation_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/agents/adapters" ] && \
+     [ -f "${board_root}/agents/adapters/README.md" ] && \
+     [ -f "${board_root}/agents/adapters/shell.md" ] && \
+     [ -f "${board_root}/agents/adapters/codex-cli.md" ] && \
+     [ -f "${board_root}/agents/adapters/claude-cli.md" ] && \
+     [ -f "${board_root}/agents/adapters/opencode.md" ] && \
+     [ -f "${board_root}/agents/adapters/gemini-cli.md" ]; then
+    adapter_scaffold_present="true"
+  fi
   board_version="$(board_version_value "$board_root" || true)"
   version_status="$(board_version_status "$board_root")"
 fi
@@ -135,3 +156,6 @@ print_status_summary \
 
 printf 'runner_scaffold_present=%s\n' "$runner_scaffold_present"
 printf 'wiki_scaffold_present=%s\n' "$wiki_scaffold_present"
+printf 'metrics_scaffold_present=%s\n' "$metrics_scaffold_present"
+printf 'conversation_scaffold_present=%s\n' "$conversation_scaffold_present"
+printf 'adapter_scaffold_present=%s\n' "$adapter_scaffold_present"

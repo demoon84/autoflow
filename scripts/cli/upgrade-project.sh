@@ -1146,8 +1146,9 @@ if [ -f "$HOST_AGENTS_PATH" ]; then
   host_agents_action="preserved"
   SYNC_ACTION_RESULT="unchanged"
 else
-  sync_host_agents_file "$HOST_AGENTS_PATH" "$BOARD_DIR_NAME" "$backup_root"
-  host_agents_action="$SYNC_ACTION_RESULT"
+  host_agents_action="absent"
+  SYNC_BACKUP_CREATED=0
+  SYNC_ACTION_RESULT="unchanged"
 fi
 record_sync_action "$SYNC_ACTION_RESULT"
 

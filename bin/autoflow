@@ -22,7 +22,24 @@ Usage:
   autoflow stop-hook-status [project-root] [board-dir-name]
   autoflow watch [project-root] [board-dir-name] [config-path]
   autoflow watch-bg [project-root] [board-dir-name] [config-path]
+  autoflow watch-status [project-root] [board-dir-name]
   autoflow watch-stop [project-root] [board-dir-name]
+  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow wiki update [project-root] [board-dir-name] [--dry-run]
+  autoflow wiki lint [project-root] [board-dir-name]
+  autoflow runners list [project-root] [board-dir-name]
+  autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
+  autoflow runners remove <runner-id> [project-root] [board-dir-name]
+  autoflow runners start <runner-id> [project-root] [board-dir-name]
+  autoflow runners stop <runner-id> [project-root] [board-dir-name]
+  autoflow runners restart <runner-id> [project-root] [board-dir-name]
+  autoflow runners artifacts <runner-id> [project-root] [board-dir-name]
+  autoflow runners set <runner-id> [project-root] [board-dir-name] key=value...
+  autoflow metrics [project-root] [board-dir-name] [--write]
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow status [project-root] [board-dir-name]
   autoflow doctor [project-root] [board-dir-name]
@@ -35,6 +52,13 @@ Examples:
   autoflow init /path/to/project autoflow
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
+  echo "Build the local runner harness" | autoflow spec create /path/to/project --title "Runner harness"
+  autoflow run planner /path/to/project --runner planner-1
+  autoflow wiki update /path/to/project
+  autoflow runners list /path/to/project
+  autoflow runners add todo-2 todo /path/to/project agent=codex model=gpt-5.2
+  autoflow runners set todo-1 /path/to/project agent=codex model=gpt-5.2
+  autoflow metrics /path/to/project
   autoflow render-heartbeats /path/to/project
   autoflow status .
   autoflow doctor /path/to/project
@@ -77,9 +101,33 @@ case "$cmd" in
     shift || true
     exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --background "$@"
     ;;
+  watch-status)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --status "$@"
+    ;;
   watch-stop)
     shift || true
     exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --stop "$@"
+    ;;
+  spec)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/spec-project.sh" "$@"
+    ;;
+  run)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/run-role.sh" "$@"
+    ;;
+  wiki)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/wiki-project.sh" "$@"
+    ;;
+  runners)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/runners-project.sh" "$@"
+    ;;
+  metrics)
+    shift || true
+    exec "${REPO_ROOT}/scripts/cli/metrics-project.sh" "$@"
     ;;
   status)
     shift || true

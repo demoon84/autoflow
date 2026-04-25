@@ -78,6 +78,7 @@ source_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
 source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
+source_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
 template_text|conversations/README.md|conversations/README.md
 source_text|automations/README.md|automations/README.md
 source_text|automations/file-watch.psd1|automations/file-watch.psd1
@@ -119,6 +120,7 @@ template_text|wiki/features/README.md|wiki/features/README.md
 template_text|wiki/architecture/README.md|wiki/architecture/README.md
 template_text|wiki/learnings/README.md|wiki/learnings/README.md
 source_executable|scripts/runtime/common.sh|scripts/common.sh
+source_executable|scripts/runtime/runner-common.sh|scripts/runner-common.sh
 source_executable|scripts/runtime/check-stop.sh|scripts/check-stop.sh
 source_executable|scripts/runtime/file-watch-common.sh|scripts/file-watch-common.sh
 source_executable|scripts/runtime/install-stop-hook.sh|scripts/install-stop-hook.sh
@@ -132,6 +134,8 @@ source_executable|scripts/runtime/start-verifier.sh|scripts/start-verifier.sh
 source_executable|scripts/runtime/start-spec.sh|scripts/start-spec.sh
 source_executable|scripts/runtime/integrate-worktree.sh|scripts/integrate-worktree.sh
 source_file|scripts/runtime/invoke-runtime-sh.ps1|scripts/invoke-runtime-sh.ps1
+source_file|scripts/runtime/runner-common.ps1|scripts/runner-common.ps1
+source_file|scripts/runtime/codex-stop-hook.ps1|scripts/codex-stop-hook.ps1
 source_file|scripts/runtime/check-stop.ps1|scripts/check-stop.ps1
 source_file|scripts/runtime/install-stop-hook.ps1|scripts/install-stop-hook.ps1
 source_file|scripts/runtime/set-thread-context.ps1|scripts/set-thread-context.ps1

@@ -11,6 +11,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "cli-common.ps1")
+. (Join-Path $PSScriptRoot "../runtime/runner-common.ps1")
 
 function Test-WindowsPlatform {
   return $env:OS -eq "Windows_NT"
@@ -62,6 +63,296 @@ function Add-WarningLine {
   [void]$detailLines.Add(("warning.{0}={1}" -f $script:warningCount, $Message))
 }
 
+function ConvertTo-CheckIdFragment {
+  param([string]$Value)
+
+  return ($Value -replace "[^A-Za-z0-9_]", "_")
+}
+
+function Add-RunnerAdapterCheck {
+  param(
+    [Parameter(Mandatory = $true)][object]$Runner
+  )
+
+  $runnerId = [string]$Runner.id
+  $role = [string]$Runner.role
+  $agent = [string]$Runner.agent
+  $mode = [string]$Runner.mode
+  $enabled = [string]$Runner.enabled
+  $commandValue = [string]$Runner.command
+  $intervalSeconds = [string]$Runner.interval_seconds
+  $checkId = "runner_{0}" -f (ConvertTo-CheckIdFragment $runnerId)
+
+  if ([string]::IsNullOrWhiteSpace($agent)) {
+    $agent = "manual"
+  }
+  if ([string]::IsNullOrWhiteSpace($mode)) {
+    $mode = "one-shot"
+  }
+  if ([string]::IsNullOrWhiteSpace($enabled)) {
+    $enabled = "true"
+  }
+  if ([string]::IsNullOrWhiteSpace($intervalSeconds)) {
+    $intervalSeconds = "60"
+  }
+
+  Add-Check "${checkId}_defined" "ok"
+  [void]$checkLines.Add(("runner.{0}.role={1}" -f $checkId, $role))
+  [void]$checkLines.Add(("runner.{0}.agent={1}" -f $checkId, $agent))
+  [void]$checkLines.Add(("runner.{0}.interval_seconds={1}" -f $checkId, $intervalSeconds))
+
+  if ($role -in @("planner", "todo", "verifier", "wiki-maintainer", "watcher")) {
+    Add-Check "${checkId}_role" "ok"
+  }
+  else {
+    Add-Check "${checkId}_role" "warning"
+    Add-WarningLine "runner $runnerId has unsupported role=$role; expected planner, todo, verifier, wiki-maintainer, or watcher"
+  }
+
+  if ($enabled -in @("true", "false")) {
+    Add-Check "${checkId}_enabled" "ok"
+  }
+  else {
+    Add-Check "${checkId}_enabled" "warning"
+    Add-WarningLine "runner $runnerId has invalid enabled=$enabled; expected true or false"
+  }
+
+  if ($enabled -ne "true") {
+    Add-Check "${checkId}_adapter" "disabled"
+    Add-Check "${checkId}_interval" "disabled"
+    return
+  }
+
+  switch ($mode) {
+    { $_ -in @("one-shot", "loop") } {
+      Add-Check "${checkId}_mode" "ok"
+      break
+    }
+    "watch" {
+      Add-Check "${checkId}_mode" "warning"
+      Add-WarningLine "runner $runnerId uses mode=watch; use the file watcher controls until watcher runners are implemented"
+      break
+    }
+    default {
+      Add-Check "${checkId}_mode" "warning"
+      Add-WarningLine "runner $runnerId uses unsupported mode=$mode; expected one-shot, loop, or watch"
+    }
+  }
+
+  if ($mode -eq "loop") {
+    $intervalValue = 0
+    if (-not [int]::TryParse($intervalSeconds, [ref]$intervalValue) -or $intervalValue -lt 1 -or $intervalValue -gt 86400) {
+      Add-Check "${checkId}_interval" "warning"
+      Add-WarningLine "runner $runnerId has invalid interval_seconds=$intervalSeconds; expected an integer between 1 and 86400"
+    }
+    else {
+      Add-Check "${checkId}_interval" "ok"
+    }
+  }
+  else {
+    Add-Check "${checkId}_interval" "not_applicable"
+  }
+
+  switch ($agent) {
+    { $_ -in @("shell", "manual") } {
+      Add-Check "${checkId}_adapter" "ok"
+      break
+    }
+    { $_ -in @("codex", "claude", "opencode", "gemini") } {
+      if (-not [string]::IsNullOrWhiteSpace($commandValue)) {
+        Add-Check "${checkId}_adapter" "custom_command"
+      }
+      else {
+        $adapter = Get-Command -Name $agent -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($adapter) {
+          Add-Check "${checkId}_adapter" "ok"
+          [void]$checkLines.Add(("runner.{0}.adapter_path={1}" -f $checkId, $adapter.Source))
+        }
+        else {
+          Add-Check "${checkId}_adapter" "warning"
+          Add-WarningLine "runner $runnerId uses agent=$agent, but $agent is not on PATH"
+        }
+      }
+      break
+    }
+    default {
+      Add-Check "${checkId}_adapter" "warning"
+      Add-WarningLine "runner $runnerId uses unsupported agent=$agent; use shell, manual, codex, claude, opencode, or gemini"
+      break
+    }
+  }
+}
+
+function Test-ProcessAliveById {
+  param([string]$ProcessIdValue)
+
+  if ([string]::IsNullOrWhiteSpace($ProcessIdValue)) {
+    return $false
+  }
+
+  $parsedProcessId = 0
+  if (-not [int]::TryParse($ProcessIdValue, [ref]$parsedProcessId)) {
+    return $false
+  }
+  if ($parsedProcessId -le 0) {
+    return $false
+  }
+
+  return $null -ne (Get-Process -Id $parsedProcessId -ErrorAction SilentlyContinue)
+}
+
+function Add-RunnerStateCheck {
+  param(
+    [Parameter(Mandatory = $true)][object]$Runner
+  )
+
+  $runnerId = [string]$Runner.id
+  $checkId = "runner_{0}" -f (ConvertTo-CheckIdFragment $runnerId)
+  $stateStatus = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "status")
+  $processIdValue = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "pid")
+  $statePath = Get-AutoflowRunnerStatePath -RunnerId $runnerId
+  $lastRuntimeLog = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "last_runtime_log")
+  $lastPromptLog = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "last_prompt_log")
+  $lastStdoutLog = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "last_stdout_log")
+  $lastStderrLog = [string](Get-AutoflowRunnerStateValue -RunnerId $runnerId -Field "last_stderr_log")
+
+  if ([string]::IsNullOrWhiteSpace($stateStatus)) {
+    Add-Check "${checkId}_state" "missing"
+    return
+  }
+
+  Add-Check "${checkId}_state" "ok"
+  [void]$checkLines.Add(("runner.{0}.state_status={1}" -f $checkId, $stateStatus))
+  [void]$checkLines.Add(("runner.{0}.pid={1}" -f $checkId, $processIdValue))
+  [void]$checkLines.Add(("runner.{0}.state_path={1}" -f $checkId, $statePath))
+  [void]$checkLines.Add(("runner.{0}.last_runtime_log={1}" -f $checkId, $lastRuntimeLog))
+  [void]$checkLines.Add(("runner.{0}.last_prompt_log={1}" -f $checkId, $lastPromptLog))
+  [void]$checkLines.Add(("runner.{0}.last_stdout_log={1}" -f $checkId, $lastStdoutLog))
+  [void]$checkLines.Add(("runner.{0}.last_stderr_log={1}" -f $checkId, $lastStderrLog))
+
+  $artifactIssueCount = 0
+  $artifactCount = 0
+  $boardFullPath = [System.IO.Path]::GetFullPath($boardRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $artifactValues = @(
+    @{ Label = "runtime"; Path = $lastRuntimeLog },
+    @{ Label = "prompt"; Path = $lastPromptLog },
+    @{ Label = "stdout"; Path = $lastStdoutLog },
+    @{ Label = "stderr"; Path = $lastStderrLog }
+  )
+
+  foreach ($artifact in $artifactValues) {
+    $artifactPath = [string]$artifact.Path
+    if ([string]::IsNullOrWhiteSpace($artifactPath)) {
+      continue
+    }
+
+    $artifactCount += 1
+    try {
+      $artifactFullPath = [System.IO.Path]::GetFullPath($artifactPath)
+      $isInsideBoard = $artifactFullPath.StartsWith($boardFullPath + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::Ordinal)
+      if (-not $isInsideBoard) {
+        $artifactIssueCount += 1
+        Add-WarningLine "runner $runnerId last $($artifact.Label) artifact is outside board root: $artifactPath"
+      }
+      elseif (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+        $artifactIssueCount += 1
+        Add-WarningLine "runner $runnerId last $($artifact.Label) artifact is missing: $artifactPath"
+      }
+    }
+    catch {
+      $artifactIssueCount += 1
+      Add-WarningLine "runner $runnerId last $($artifact.Label) artifact path is invalid: $artifactPath"
+    }
+  }
+
+  if ($artifactCount -eq 0) {
+    Add-Check "${checkId}_artifacts" "not_applicable"
+  }
+  elseif ($artifactIssueCount -eq 0) {
+    Add-Check "${checkId}_artifacts" "ok"
+  }
+  else {
+    Add-Check "${checkId}_artifacts" "warning"
+  }
+
+  if ($stateStatus -eq "running" -and -not [string]::IsNullOrWhiteSpace($processIdValue) -and -not (Test-ProcessAliveById -ProcessIdValue $processIdValue)) {
+    Add-Check "${checkId}_pid" "warning"
+    Add-WarningLine "runner $runnerId state says running with stale pid=$processIdValue; run autoflow runners stop $runnerId or restart it"
+  }
+  elseif ($stateStatus -eq "running" -and -not [string]::IsNullOrWhiteSpace($processIdValue)) {
+    Add-Check "${checkId}_pid" "ok"
+  }
+  else {
+    Add-Check "${checkId}_pid" "not_applicable"
+  }
+}
+
+function Add-WatcherStateCheck {
+  $pidFile = Join-Path $boardRoot "logs/hooks/watch-board.pid"
+  [void]$checkLines.Add(("watcher.pid_file={0}" -f $pidFile))
+
+  if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
+    Add-Check "watcher_pid" "not_running"
+    [void]$checkLines.Add("watcher.status=not_running")
+    return
+  }
+
+  $processIdValue = (Get-Content -Raw -LiteralPath $pidFile).Trim()
+  [void]$checkLines.Add(("watcher.pid={0}" -f $processIdValue))
+
+  if (Test-ProcessAliveById -ProcessIdValue $processIdValue) {
+    Add-Check "watcher_pid" "ok"
+    [void]$checkLines.Add("watcher.status=running")
+    return
+  }
+
+  Add-Check "watcher_pid" "warning"
+  [void]$checkLines.Add("watcher.status=stale_pid")
+  Add-WarningLine "watcher pid file is stale or invalid: $pidFile pid=$(if ($processIdValue) { $processIdValue } else { 'empty' }); run autoflow watch-stop to clean it up"
+}
+
+function Test-ProjectSpecExistsForKey {
+  param([string]$ProjectKey)
+
+  return (Test-Path -LiteralPath (Join-Path $boardRoot "tickets/backlog/$ProjectKey.md") -PathType Leaf) -or
+    (Test-Path -LiteralPath (Join-Path $boardRoot "tickets/done/$ProjectKey/$ProjectKey.md") -PathType Leaf)
+}
+
+function Add-ConversationHandoffCheck {
+  $conversationsRoot = Join-Path $boardRoot "conversations"
+  if (-not (Test-Path -LiteralPath $conversationsRoot -PathType Container)) {
+    Add-Check "conversation_scaffold" "warning"
+    Add-WarningLine "conversation scaffold is missing; run autoflow upgrade to add conversations/"
+    return
+  }
+
+  Add-Check "conversation_scaffold" "ok"
+  $handoffFiles = @(Get-ChildItem -LiteralPath $conversationsRoot -File -Filter "spec-handoff.md" -Recurse | Sort-Object FullName)
+  $invalidCount = 0
+
+  foreach ($handoffFile in $handoffFiles) {
+    $projectKey = Split-Path -Leaf (Split-Path -Parent $handoffFile.FullName)
+    if ($projectKey -notmatch '^project_[0-9][0-9][0-9]$') {
+      $invalidCount += 1
+      Add-WarningLine "handoff is not under conversations/project_NNN/: $($handoffFile.FullName)"
+      continue
+    }
+
+    if (-not (Test-ProjectSpecExistsForKey -ProjectKey $projectKey)) {
+      $invalidCount += 1
+      Add-WarningLine "handoff has no matching spec in backlog or done: $($handoffFile.FullName)"
+    }
+  }
+
+  [void]$checkLines.Add(("conversation.handoff_count={0}" -f $handoffFiles.Count))
+  if ($invalidCount -gt 0) {
+    Add-Check "conversation_handoffs" "warning"
+  }
+  else {
+    Add-Check "conversation_handoffs" "ok"
+  }
+}
+
 if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   Add-Check "board_root_exists" "ok"
 }
@@ -74,8 +365,7 @@ if (Test-Path -LiteralPath (Join-Path $resolvedProjectRoot "AGENTS.md") -PathTyp
   Add-Check "host_agents" "ok"
 }
 else {
-  Add-Check "host_agents" "error"
-  Add-ErrorLine "host AGENTS.md is missing: $(Join-Path $resolvedProjectRoot 'AGENTS.md')"
+  Add-Check "host_agents" "not_applicable"
 }
 
 if (Test-Path -LiteralPath $boardRoot -PathType Container) {
@@ -152,6 +442,19 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
     Add-WarningLine "runner scaffold is missing or incomplete; run autoflow upgrade to add runners/config.toml, runners/state, and runners/logs"
   }
 
+  $runnerConfigPath = Join-Path $boardRoot "runners/config.toml"
+  $runners = @()
+  if (Test-Path -LiteralPath $runnerConfigPath -PathType Leaf) {
+    $runners = @(Get-AutoflowRunnerDefinitions -ConfigPath $runnerConfigPath)
+    foreach ($runner in $runners) {
+      Add-RunnerAdapterCheck -Runner $runner
+      Add-RunnerStateCheck -Runner $runner
+    }
+  }
+  [void]$checkLines.Add(("runner_count={0}" -f $runners.Count))
+  Add-WatcherStateCheck
+  Add-ConversationHandoffCheck
+
   $wikiScaffoldOk = $true
   foreach ($wikiScaffoldPath in @(
       "wiki",
@@ -172,8 +475,49 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
     Add-WarningLine "wiki scaffold is missing or incomplete; run autoflow upgrade to add wiki pages and rules/wiki"
   }
 
+  $metricsScaffoldOk = $true
+  foreach ($metricsScaffoldPath in @(
+      "metrics",
+      "metrics/README.md",
+      "metrics/.gitignore"
+    )) {
+    if (-not (Test-Path -LiteralPath (Join-Path $boardRoot $metricsScaffoldPath))) {
+      $metricsScaffoldOk = $false
+    }
+  }
+  if ($metricsScaffoldOk) {
+    Add-Check "metrics_scaffold" "ok"
+  }
+  else {
+    Add-Check "metrics_scaffold" "warning"
+    Add-WarningLine "metrics scaffold is missing or incomplete; run autoflow upgrade to add metrics/README.md and metrics/.gitignore"
+  }
+
+  $adapterScaffoldOk = $true
+  foreach ($adapterScaffoldPath in @(
+      "agents/adapters",
+      "agents/adapters/README.md",
+      "agents/adapters/shell.md",
+      "agents/adapters/codex-cli.md",
+      "agents/adapters/claude-cli.md",
+      "agents/adapters/opencode.md",
+      "agents/adapters/gemini-cli.md"
+    )) {
+    if (-not (Test-Path -LiteralPath (Join-Path $boardRoot $adapterScaffoldPath))) {
+      $adapterScaffoldOk = $false
+    }
+  }
+  if ($adapterScaffoldOk) {
+    Add-Check "adapter_scaffold" "ok"
+  }
+  else {
+    Add-Check "adapter_scaffold" "warning"
+    Add-WarningLine "adapter scaffold is missing or incomplete; run autoflow upgrade to add agents/adapters docs"
+  }
+
   foreach ($runtimeFile in @(
       "common.sh",
+      "runner-common.sh",
       "check-stop.sh",
       "file-watch-common.sh",
       "install-stop-hook.sh",
@@ -213,6 +557,8 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
 
   foreach ($runtimePs1 in @(
       "invoke-runtime-sh.ps1",
+      "runner-common.ps1",
+      "codex-stop-hook.ps1",
       "check-stop.ps1",
       "install-stop-hook.ps1",
       "set-thread-context.ps1",
@@ -356,6 +702,41 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   }
   else {
     Add-Check "legacy_reject_ticket_names" "ok"
+  }
+
+  $ticketLocations = @{}
+  foreach ($ticketStateDir in @("todo", "inprogress", "verifier", "done")) {
+    $stateRoot = Join-Path $boardRoot "tickets/$ticketStateDir"
+    if (-not (Test-Path -LiteralPath $stateRoot -PathType Container)) {
+      continue
+    }
+
+    if ($ticketStateDir -eq "done") {
+      $ticketFiles = Get-ChildItem -LiteralPath $stateRoot -File -Filter "tickets_*.md" -Recurse
+    }
+    else {
+      $ticketFiles = Get-ChildItem -LiteralPath $stateRoot -File -Filter "tickets_*.md"
+    }
+
+    foreach ($ticketFile in ($ticketFiles | Where-Object { $_.Name -match '^tickets_[0-9][0-9][0-9]\.md$' } | Sort-Object FullName)) {
+      $relativePath = $ticketFile.FullName.Substring($boardRoot.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+      $relativePath = $relativePath -replace '\\', '/'
+      if (-not $ticketLocations.ContainsKey($ticketFile.Name)) {
+        $ticketLocations[$ticketFile.Name] = New-Object System.Collections.Generic.List[string]
+      }
+      [void]$ticketLocations[$ticketFile.Name].Add($relativePath)
+    }
+  }
+
+  $duplicateTicketIds = @($ticketLocations.Keys | Where-Object { $ticketLocations[$_].Count -gt 1 } | Sort-Object)
+  if ($duplicateTicketIds.Count -gt 0) {
+    Add-Check "ticket_duplicate_ids" "error"
+    foreach ($duplicateTicketId in $duplicateTicketIds) {
+      Add-ErrorLine ("duplicate ticket id {0} exists in multiple state folders: {1}" -f $duplicateTicketId, (($ticketLocations[$duplicateTicketId] | Sort-Object) -join ", "))
+    }
+  }
+  else {
+    Add-Check "ticket_duplicate_ids" "ok"
   }
 
   $ticketTemplate = Join-Path $boardRoot "reference/ticket-template.md"

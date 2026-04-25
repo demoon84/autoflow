@@ -128,11 +128,13 @@ macOS/Linux 에서는 보드 루트에서 아래처럼 직접 실행할 수 있�
 
 ```bash
 ./bin/autoflow watch-bg /path/to/project
+./bin/autoflow watch-status /path/to/project
 ./bin/autoflow watch-stop /path/to/project
 ```
 
 ```powershell
 .\bin\autoflow.ps1 watch-bg D:\project\astra
+.\bin\autoflow.ps1 watch-status D:\project\astra
 .\bin\autoflow.ps1 watch-stop D:\project\astra
 ```
 

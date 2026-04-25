@@ -20,11 +20,28 @@ Usage:
   autoflow remove-stop-hook [project-root] [board-dir-name]
   autoflow stop-hook-status [project-root] [board-dir-name]
   autoflow render-heartbeats [project-root] [board-dir-name]
+  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow wiki update [project-root] [board-dir-name] [--dry-run]
+  autoflow wiki lint [project-root] [board-dir-name]
+  autoflow runners list [project-root] [board-dir-name]
+  autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
+  autoflow runners remove <runner-id> [project-root] [board-dir-name]
+  autoflow runners start <runner-id> [project-root] [board-dir-name]
+  autoflow runners stop <runner-id> [project-root] [board-dir-name]
+  autoflow runners restart <runner-id> [project-root] [board-dir-name]
+  autoflow runners artifacts <runner-id> [project-root] [board-dir-name]
+  autoflow runners set <runner-id> [project-root] [board-dir-name] key=value...
+  autoflow metrics [project-root] [board-dir-name] [--write]
   autoflow status [project-root] [board-dir-name]
   autoflow doctor [project-root] [board-dir-name]
   autoflow upgrade [project-root] [board-dir-name]
   autoflow watch [project-root] [board-dir-name] [config-path]
   autoflow watch-bg [project-root] [board-dir-name] [config-path]
+  autoflow watch-status [project-root] [board-dir-name]
   autoflow watch-stop [project-root] [board-dir-name]
   autoflow help
 "@ | Write-Host
@@ -52,6 +69,11 @@ $cliScriptMap = @{
   "doctor" = "doctor-project.ps1"
   "upgrade" = "upgrade-project.ps1"
   "render-heartbeats" = "render-heartbeats.ps1"
+  "spec" = "spec-project.ps1"
+  "wiki" = "wiki-project.ps1"
+  "runners" = "runners-project.ps1"
+  "run" = "run-role.ps1"
+  "metrics" = "metrics-project.ps1"
 }
 
 if ($Command -in @("help", "-h", "--help")) {
@@ -68,6 +90,12 @@ if ($Command -eq "watch") {
 if ($Command -eq "watch-bg") {
   $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
   & $watchScript -Background @RemainingArgs
+  exit $LASTEXITCODE
+}
+
+if ($Command -eq "watch-status") {
+  $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
+  & $watchScript -Status @RemainingArgs
   exit $LASTEXITCODE
 }
 

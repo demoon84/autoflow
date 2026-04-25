@@ -152,8 +152,9 @@ if (Test-Path -LiteralPath $hostAgentsPath -PathType Leaf) {
   $script:SyncActionResult = "unchanged"
 }
 else {
-  Sync-HostAgentsFile -TargetFile $hostAgentsPath -BoardDirName $BoardDirName -BackupRoot $backupRoot
-  $hostAgentsAction = $script:SyncActionResult
+  $hostAgentsAction = "absent"
+  $script:SyncBackupCreated = $false
+  $script:SyncActionResult = "unchanged"
 }
 Record-SyncAction $script:SyncActionResult
 

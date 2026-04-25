@@ -58,6 +58,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/todo-queue-agent.md"; TargetRel = "agents/todo-queue-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/verifier-agent.md"; TargetRel = "agents/verifier-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/spec-author-agent.md"; TargetRel = "agents/spec-author-agent.md" }
+    [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/wiki-maintainer-agent.md"; TargetRel = "agents/wiki-maintainer-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "conversations/README.md"; TargetRel = "conversations/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/README.md"; TargetRel = "automations/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/file-watch.psd1"; TargetRel = "automations/file-watch.psd1" }
@@ -99,6 +100,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/architecture/README.md"; TargetRel = "wiki/architecture/README.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "wiki/learnings/README.md"; TargetRel = "wiki/learnings/README.md" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/common.sh"; TargetRel = "scripts/common.sh" }
+    [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/runner-common.sh"; TargetRel = "scripts/runner-common.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/check-stop.sh"; TargetRel = "scripts/check-stop.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/file-watch-common.sh"; TargetRel = "scripts/file-watch-common.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/install-stop-hook.sh"; TargetRel = "scripts/install-stop-hook.sh" }
@@ -112,6 +114,8 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/start-spec.sh"; TargetRel = "scripts/start-spec.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/integrate-worktree.sh"; TargetRel = "scripts/integrate-worktree.sh" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/invoke-runtime-sh.ps1"; TargetRel = "scripts/invoke-runtime-sh.ps1" }
+    [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/runner-common.ps1"; TargetRel = "scripts/runner-common.ps1" }
+    [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/codex-stop-hook.ps1"; TargetRel = "scripts/codex-stop-hook.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/check-stop.ps1"; TargetRel = "scripts/check-stop.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/install-stop-hook.ps1"; TargetRel = "scripts/install-stop-hook.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/set-thread-context.ps1"; TargetRel = "scripts/set-thread-context.ps1" }
