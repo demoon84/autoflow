@@ -39,6 +39,7 @@
 7. `rules/verifier/README.md`
 8. 관련 문서:
    - 새 의도 받아서 spec 초안이면 `agents/spec-author-agent.md`
+   - 기본 ticket owner 실행이면 `agents/ticket-owner-agent.md`
    - plan 도출 / reject 재계획이면 `agents/plan-to-ticket-agent.md`
    - claim + 구현이면 `agents/todo-queue-agent.md`
    - 검증 / pass 커밋 / fail reject 면 `agents/verifier-agent.md`, `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`, `reference/tickets-board.md`
@@ -47,33 +48,34 @@
 
 - Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-todo.ps1 001`
 - Bash 전용 환경에서는 같은 이름의 `scripts/*.sh` 를 실행한다.
-- 문서에서 `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
+- 문서에서 `start-ticket-owner 런타임`, `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
 
 ## Core Rules
 
 1. 스펙이 없으면 플랜도 티켓도 만들지 않는다.
-2. 플랜은 `#plan` heartbeat 가 spec 에서 도출해 만든다. 사람이 손으로 만들 수도 있다.
-3. 새 티켓은 planner agent 가 plan 의 Execution Candidates 를 보고 `tickets/todo/` 에 직접 작성한다. `start-plan.sh` 는 각 Candidate 에 대해 ID/경로/lock/중복체크를 해주고 `pending_ticket_begin ... pending_ticket_end` 블록을 출력하며, agent 가 해당 블록마다 `tickets_{id}.md` 본문을 `reference/ticket-template.md` 기반으로 작성한다. `Plan Candidate` 필드는 script 의 `candidate` 값을 글자 그대로 복사해야 dedup 이 동작한다.
-4. planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 옮겨 backlog / plan 루트에서 빠져야 한다.
-5. `#todo` 는 티켓을 `todo → inprogress` 로 점유 이동한 뒤 티켓별 git worktree 를 만들고 **같은 worker 가 그 worktree 에서 구현**한다. execution 별도 역할 없음. 구현이 끝나면 `handoff-todo` 런타임으로 중앙 보드 티켓을 `tickets/inprogress/ → tickets/verifier/` 로 옮기고 active ticket context 를 비운다.
-6. 티켓 제목, Goal, Done When 문구가 검증·리뷰처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행한다. board stage 가 authoritative 이며 pass / fail 판정은 verifier 만 한다.
-7. `#veri` 는 `tickets/verifier/` 의 티켓을 검사해 pass → `tickets/done/<project-key>/` + git commit (local), fail → `tickets/reject/reject_NNN.md` + `## Reject Reason` 기록. 완료 시마다 `logs/` 아래 completion log 를 남긴다. **`git push` 절대 금지.**
-8. verifier 의 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
-9. verifier 가 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
-10. verifier 는 `BOARD_ROOT` / ticket worktree / `PROJECT_ROOT` 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
-11. planner heartbeat 와 plan hook 은 `tickets/reject/reject_NNN.md` 뿐 아니라 `tickets/done/<project-key>/` 완료 뒤에도 backlog 를 다시 확인해, 다음 populated spec 이 남아 있으면 다음 plan 으로 이어가야 한다. reject 원인을 반영한 재시도 todo 가 생성되면 해당 reject 파일은 `tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
-12. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
-13. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
-14. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
-15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. `#todo` / `#veri` 는 tick 중에 active ticket context 를 잡아도 tick 이 끝날 때 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
-16. 여러 todo worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
-17. verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
-18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다.
-19. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
-20. git 저장소에서는 todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, verifier pass 시 `scripts/integrate-worktree.sh` 로 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
-21. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
-22. heartbeat worker 는 할 일 없어도 스스로 멈추지 않는다. `status=idle` 로 턴만 마치고 다음 wake-up 을 기다린다. "멈춰" 명령은 사용자만 내린다.
-23. 사용자가 `#plan`, `#todo`, `#veri` 라고 하면 먼저 해당 역할의 **1분 heartbeat 자동화**를 생성 또는 재개하고, 같은 턴에서 첫 tick 도 바로 수행한다. 자동화는 사용자가 멈추라고 하기 전까지 절대 스스로 꺼지지 않는다.
+2. 기본 실행은 `scripts/start-ticket-owner.*` 로 한 owner 가 티켓을 만들거나 점유한 뒤, 같은 owner 가 local plan / 구현 / 검증 / evidence / done-reject 이동까지 처리한다.
+3. 레거시 role-pipeline 에서 플랜은 `#plan` heartbeat 가 spec 에서 도출해 만든다. 사람이 손으로 만들 수도 있다.
+4. 레거시 role-pipeline 에서 새 티켓은 planner agent 가 plan 의 Execution Candidates 를 보고 `tickets/todo/` 에 직접 작성한다. `start-plan.sh` 는 각 Candidate 에 대해 ID/경로/lock/중복체크를 해주고 `pending_ticket_begin ... pending_ticket_end` 블록을 출력하며, agent 가 해당 블록마다 `tickets_{id}.md` 본문을 `reference/ticket-template.md` 기반으로 작성한다. `Plan Candidate` 필드는 script 의 `candidate` 값을 글자 그대로 복사해야 dedup 이 동작한다.
+5. planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 옮겨 backlog / plan 루트에서 빠져야 한다.
+6. `#todo` 는 티켓을 `todo → inprogress` 로 점유 이동한 뒤 티켓별 git worktree 를 만들고 **같은 worker 가 그 worktree 에서 구현**한다. execution 별도 역할 없음. 구현이 끝나면 `handoff-todo` 런타임으로 중앙 보드 티켓을 `tickets/inprogress/ → tickets/verifier/` 로 옮기고 active ticket context 를 비운다.
+7. 티켓 제목, Goal, Done When 문구가 검증·리뷰처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행한다. board stage 가 authoritative 이며 pass / fail 판정은 verifier 만 한다.
+8. `#veri` 는 `tickets/verifier/` 의 티켓을 검사해 pass → `tickets/done/<project-key>/` + git commit (local), fail → `tickets/reject/reject_NNN.md` + `## Reject Reason` 기록. 완료 시마다 `logs/` 아래 completion log 를 남긴다. **`git push` 절대 금지.**
+9. verifier 의 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
+10. verifier 가 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
+11. verifier 는 `BOARD_ROOT` / ticket worktree / `PROJECT_ROOT` 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
+12. planner heartbeat 와 plan hook 은 `tickets/reject/reject_NNN.md` 뿐 아니라 `tickets/done/<project-key>/` 완료 뒤에도 backlog 를 다시 확인해, 다음 populated spec 이 남아 있으면 다음 plan 으로 이어가야 한다. reject 원인을 반영한 재시도 todo 가 생성되면 해당 reject 파일은 `tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
+13. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
+14. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
+15. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
+16. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. `#todo` / `#veri` 는 tick 중에 active ticket context 를 잡아도 tick 이 끝날 때 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
+17. 여러 todo worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
+18. verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
+19. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다.
+20. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
+21. git 저장소에서는 todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, verifier pass 시 `scripts/integrate-worktree.sh` 로 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
+22. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
+23. heartbeat worker 는 할 일 없어도 스스로 멈추지 않는다. `status=idle` 로 턴만 마치고 다음 wake-up 을 기다린다. "멈춰" 명령은 사용자만 내린다.
+24. 사용자가 `#plan`, `#todo`, `#veri` 라고 하면 먼저 해당 역할의 **1분 heartbeat 자동화**를 생성 또는 재개하고, 같은 턴에서 첫 tick 도 바로 수행한다. 자동화는 사용자가 멈추라고 하기 전까지 절대 스스로 꺼지지 않는다.
 
 ## Agent Modes
 

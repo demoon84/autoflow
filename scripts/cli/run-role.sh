@@ -60,7 +60,7 @@ case "$requested_role" in
     public_role="ticket"
     runtime_role="ticket-owner"
     default_runner_id="owner-1"
-    runtime_script=""
+    runtime_script="start-ticket-owner.sh"
     ;;
   planner|plan)
     public_role="planner"
@@ -378,9 +378,7 @@ case "$public_role:$configured_role" in
     ;;
 esac
 
-if [ "$public_role" = "ticket" ]; then
-  runtime_path=""
-elif [ "$public_role" = "wiki" ]; then
+if [ "$public_role" = "wiki" ]; then
   runtime_path="${SCRIPT_DIR}/wiki-project.sh"
 elif [ -z "$runtime_script" ]; then
   write_blocked_state "role_run_not_implemented"
@@ -391,7 +389,7 @@ else
   runtime_path="${board_root}/scripts/${runtime_script}"
 fi
 
-if [ "$public_role" != "ticket" ] && [ ! -f "$runtime_path" ]; then
+if [ ! -f "$runtime_path" ]; then
   write_blocked_state "runtime_script_missing"
   print_run_header "blocked"
   printf 'reason=runtime_script_missing\n'
@@ -401,13 +399,6 @@ fi
 
 case "$agent" in
   shell|manual)
-    if [ "$public_role" = "ticket" ]; then
-      write_blocked_state "ticket_owner_requires_agent_adapter_or_command"
-      print_run_header "blocked"
-      printf 'reason=ticket_owner_requires_agent_adapter_or_command\n'
-      printf 'agent=%s\n' "$agent"
-      exit 0
-    fi
     ;;
   codex|claude|opencode|gemini)
     instruction_file="$(agent_instruction_path)"

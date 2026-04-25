@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
 usage() {
-  echo "Usage: $(basename "$0") <plan|todo|verifier> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]" >&2
+  echo "Usage: $(basename "$0") <ticket-owner|plan|todo|verifier> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]" >&2
 }
 
 if [ $# -lt 1 ] || [ $# -gt 5 ]; then
@@ -15,11 +15,15 @@ fi
 
 role="$1"
 case "$role" in
-  plan|todo|verifier) ;;
+  ticket-owner|ticket|owner|plan|todo|verifier) ;;
   *)
     usage
     exit 1
     ;;
+esac
+
+case "$role" in
+  ticket|owner) role="ticket-owner" ;;
 esac
 
 worker_id="${2:-$(owner_id)}"

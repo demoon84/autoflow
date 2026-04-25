@@ -362,7 +362,7 @@ runner_allowed_config_key() {
 
 runner_allowed_role() {
   case "${1:-}" in
-    planner|todo|verifier|wiki-maintainer|watcher)
+    ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|watcher)
       return 0
       ;;
     *)

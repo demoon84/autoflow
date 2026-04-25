@@ -199,6 +199,57 @@ verifier_hook_reason() {
   return 1
 }
 
+ticket_owner_hook_reason() {
+  local inprogress_file stage owner claimed_by execution_owner verifier_owner todo_file verifier_file spec_file
+
+  if [ -n "$hook_worker_id" ]; then
+    while IFS= read -r inprogress_file; do
+      [ -n "$inprogress_file" ] || continue
+      stage="$(ticket_stage "$inprogress_file")"
+      owner="$(ticket_scalar_field "$inprogress_file" "Owner")"
+      claimed_by="$(ticket_scalar_field "$inprogress_file" "Claimed By")"
+      execution_owner="$(ticket_scalar_field "$inprogress_file" "Execution Owner")"
+      verifier_owner="$(ticket_scalar_field "$inprogress_file" "Verifier Owner")"
+
+      if [ "$owner" = "$hook_worker_id" ] ||
+         [ "$claimed_by" = "$hook_worker_id" ] ||
+         [ "$execution_owner" = "$hook_worker_id" ] ||
+         [ "$verifier_owner" = "$hook_worker_id" ]; then
+        case "${stage:-}" in
+          done|rejected)
+            ;;
+          *)
+            printf 'ticket-owner work remains: owner %s still has inprogress ticket %s.' "$hook_worker_id" "$(basename "$inprogress_file")"
+            return 0
+            ;;
+        esac
+      fi
+    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  fi
+
+  todo_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'tickets_*.md' || true)"
+  if [ -n "$todo_file" ]; then
+    printf 'ticket-owner work remains: claimable ticket %s is waiting.' "$(basename "$todo_file")"
+    return 0
+  fi
+
+  verifier_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'tickets_*.md' || true)"
+  if [ -n "$verifier_file" ]; then
+    printf 'ticket-owner work remains: legacy verifier ticket %s should be finished by an owner.' "$(basename "$verifier_file")"
+    return 0
+  fi
+
+  while IFS= read -r spec_file; do
+    [ -n "$spec_file" ] || continue
+    if spec_is_populated "$spec_file"; then
+      printf 'ticket-owner work remains: populated backlog spec %s is waiting.' "$(basename "$spec_file")"
+      return 0
+    fi
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md')
+
+  return 1
+}
+
 compact_tick_context() {
   case "${hook_role:-}" in
     todo|verifier)
@@ -219,6 +270,9 @@ fi
 
 reason=""
 case "$hook_role" in
+  ticket-owner|ticket|owner)
+    reason="$(ticket_owner_hook_reason || true)"
+    ;;
   plan)
     reason="$(plan_hook_reason || true)"
     ;;

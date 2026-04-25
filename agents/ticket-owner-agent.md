@@ -19,6 +19,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 ## Operating Contract
 
 - Claim or create exactly one ticket-sized unit of work.
+- Use `scripts/start-ticket-owner.sh` or `scripts/start-ticket-owner.ps1` before editing. It resumes an owned ticket, claims a todo ticket, adopts a legacy verifier ticket, or creates an inprogress ticket from a populated backlog spec.
 - Keep the ticket file as the source of truth.
 - Write a local mini-plan into the ticket before editing product code.
 - Implement within the ticket's `Allowed Paths`.
@@ -26,6 +27,8 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 - If verification fails, fix within the same owner loop when the fix is inside scope.
 - Move the ticket to `tickets/done/<project-key>/` only after evidence is recorded.
 - Leave a verifier-style record and completion log even though the owner performed the verification.
+- On pass, use `scripts/integrate-worktree.sh` when the ticket has a worktree, then call `scripts/write-verifier-log.sh <done-ticket> <run-file> pass`.
+- On fail that cannot be fixed in scope, append `## Reject Reason`, move the ticket to `tickets/reject/reject_NNN.md`, then call `scripts/write-verifier-log.sh <reject-ticket> <run-file> fail`.
 - Never run `git push`.
 
 ## Preferred Flow

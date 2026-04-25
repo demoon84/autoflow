@@ -108,6 +108,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/run-hook.sh"; TargetRel = "scripts/run-hook.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/set-thread-context.sh"; TargetRel = "scripts/set-thread-context.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/clear-thread-context.sh"; TargetRel = "scripts/clear-thread-context.sh" }
+    [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/start-ticket-owner.sh"; TargetRel = "scripts/start-ticket-owner.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/start-plan.sh"; TargetRel = "scripts/start-plan.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/start-todo.sh"; TargetRel = "scripts/start-todo.sh" }
     [pscustomobject]@{ Kind = "source_executable"; SourceRel = "scripts/runtime/handoff-todo.sh"; TargetRel = "scripts/handoff-todo.sh" }
@@ -121,6 +122,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/install-stop-hook.ps1"; TargetRel = "scripts/install-stop-hook.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/set-thread-context.ps1"; TargetRel = "scripts/set-thread-context.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/clear-thread-context.ps1"; TargetRel = "scripts/clear-thread-context.ps1" }
+    [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/start-ticket-owner.ps1"; TargetRel = "scripts/start-ticket-owner.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/start-spec.ps1"; TargetRel = "scripts/start-spec.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/start-plan.ps1"; TargetRel = "scripts/start-plan.ps1" }
     [pscustomobject]@{ Kind = "source_file"; SourceRel = "scripts/runtime/start-todo.ps1"; TargetRel = "scripts/start-todo.ps1" }

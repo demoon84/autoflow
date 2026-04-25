@@ -367,6 +367,54 @@ if (-not $hookRole) {
 $reason = ""
 
 switch ($hookRole) {
+  { $_ -in @("ticket-owner", "ticket", "owner") } {
+    if ($hookWorkerId) {
+      foreach ($ticket in (Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/inprogress") -Filter "tickets_*.md")) {
+        $stage = Get-TicketStage $ticket.FullName
+        $owner = Get-TicketField -FilePath $ticket.FullName -Field "Owner"
+        $claimedBy = Get-TicketField -FilePath $ticket.FullName -Field "Claimed By"
+        $executionOwner = Get-TicketField -FilePath $ticket.FullName -Field "Execution Owner"
+        $verifierOwner = Get-TicketField -FilePath $ticket.FullName -Field "Verifier Owner"
+
+        $ownedByTicketOwner = ($owner -eq $hookWorkerId) -or
+          ($claimedBy -eq $hookWorkerId) -or
+          ($executionOwner -eq $hookWorkerId) -or
+          ($verifierOwner -eq $hookWorkerId)
+
+        if ($ownedByTicketOwner -and (@("done", "rejected") -notcontains $stage)) {
+          $reason = "ticket-owner work remains: owner $hookWorkerId still has inprogress ticket $($ticket.Name)."
+          break
+        }
+      }
+    }
+
+    if (-not $reason) {
+      $todoTicket = Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/todo") -Filter "tickets_*.md" | Select-Object -First 1
+      if ($todoTicket) {
+        $reason = "ticket-owner work remains: claimable ticket $($todoTicket.Name) is waiting."
+      }
+    }
+
+    if (-not $reason) {
+      $verifierTicket = Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/verifier") -Filter "tickets_*.md" | Select-Object -First 1
+      if ($verifierTicket) {
+        $reason = "ticket-owner work remains: legacy verifier ticket $($verifierTicket.Name) should be finished by an owner."
+      }
+    }
+
+    if (-not $reason) {
+      $specRoot = Join-Path $boardRoot "tickets/backlog"
+      if (Test-Path -LiteralPath $specRoot -PathType Container) {
+        foreach ($specFile in (Get-ChildItem -LiteralPath $specRoot -File -Filter "project_*.md" | Sort-Object FullName)) {
+          if (-not (Test-SpecFilePlaceholder $specFile.FullName)) {
+            $reason = "ticket-owner work remains: populated backlog spec $($specFile.Name) is waiting."
+            break
+          }
+        }
+      }
+    }
+    break
+  }
   "plan" {
     $rejectFile = Get-RejectTicketFiles -BoardRoot $boardRoot | Select-Object -First 1
     if ($rejectFile) {

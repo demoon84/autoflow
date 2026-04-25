@@ -45,9 +45,7 @@ const runnerModeOptions = ["one-shot", "loop", "watch"] as const;
 const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 const runnerRoleOptions = [
-  { role: "planner", label: "Planner" },
-  { role: "todo", label: "Todo" },
-  { role: "verifier", label: "Verifier" },
+  { role: "ticket-owner", label: "Owner" },
   { role: "wiki-maintainer", label: "Wiki" }
 ] as const;
 
@@ -193,6 +191,10 @@ function formatDate(value: string) {
 }
 
 function runRoleForRunner(role: string) {
+  if (role === "ticket-owner" || role === "owner") {
+    return "ticket";
+  }
+
   if (role === "wiki-maintainer") {
     return "wiki";
   }
@@ -302,6 +304,10 @@ function runnerStatusTone(status: string) {
 }
 
 function runnerIdPrefix(role: string) {
+  if (role === "ticket-owner" || role === "owner" || role === "ticket") {
+    return "owner";
+  }
+
   if (role === "wiki-maintainer") {
     return "wiki";
   }
@@ -815,7 +821,7 @@ function App() {
           role,
           ...options,
           config: {
-            agent: "shell",
+            agent: role === "ticket-owner" ? "codex" : "shell",
             mode: "one-shot",
             interval_seconds: "60",
             enabled: "true"
@@ -963,7 +969,7 @@ function App() {
     setSpecError("");
   }, []);
 
-  const createSpec = React.useCallback(async (dryRunPlanner = false) => {
+  const createSpec = React.useCallback(async (dryRunOwner = false) => {
     if (!options.projectRoot || isCreatingSpec) {
       return;
     }
@@ -990,23 +996,24 @@ function App() {
         await readLog(specFile);
       }
 
-      if (dryRunPlanner) {
-        const plannerRunner = (board?.runners || []).find(
-          (runner) => runner.role === "planner" && runnerIsEnabled(runner.enabled)
+      if (dryRunOwner) {
+        const ownerRunner = (board?.runners || []).find(
+          (runner) =>
+            (runner.role === "ticket-owner" || runner.role === "owner") && runnerIsEnabled(runner.enabled)
         );
-        if (!plannerRunner) {
-          setSpecError("Spec was created, but no enabled planner runner is available for dry-run.");
+        if (!ownerRunner) {
+          setSpecError("Spec was created, but no enabled ticket owner runner is available for dry-run.");
         } else {
-          const planResult = await window.autoflow.runRole({
-            role: "planner",
-            runnerId: plannerRunner.id,
+          const ownerResult = await window.autoflow.runRole({
+            role: "ticket",
+            runnerId: ownerRunner.id,
             dryRun: true,
             ...options
           });
-          if (!planResult.ok) {
-            setSpecError(planResult.stderr || planResult.stdout || "Planner dry-run failed.");
+          if (!ownerResult.ok) {
+            setSpecError(ownerResult.stderr || ownerResult.stdout || "Ticket owner dry-run failed.");
           }
-          const artifactPath = runArtifactPath(planResult.stdout);
+          const artifactPath = runArtifactPath(ownerResult.stdout);
           if (artifactPath) {
             await readLog(artifactPath);
           }
@@ -1973,7 +1980,7 @@ function SpecIntake({
   onRawChange: (value: boolean) => void;
   onArchiveHandoffChange: (value: boolean) => void;
   onClear: () => void;
-  onCreate: (dryRunPlanner?: boolean) => void;
+  onCreate: (dryRunOwner?: boolean) => void;
 }) {
   const titleReady = raw || title.trim().length > 0;
   const canCreate = boardExists && titleReady && handoff.trim().length > 0 && !isCreating;
@@ -2003,7 +2010,7 @@ function SpecIntake({
           </Button>
           <Button className="spec-secondary-button" disabled={!canCreate} onClick={() => onCreate(true)}>
             {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-            Create + Plan Dry Run
+            Create + Owner Dry Run
           </Button>
           <Button className="spec-create-button" disabled={!canCreate} onClick={() => onCreate(false)}>
             {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
