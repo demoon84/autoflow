@@ -28,7 +28,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 
 1. 보드 문서는 `autoflow/` 안에 둔다.
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
-3. `Allowed Paths` 는 repo-relative 경로로 해석한다. todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
+3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Ticket Owner 또는 legacy todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `autoflow/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
 5. 기본 실행 모델은 `ticket-owner` 다. 한 runner 가 ticket mini-plan, 구현, 검증, evidence, done/reject 이동을 끝까지 책임진다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 역할 분리보다 `autoflow run ticket` / owner runner 를 우선한다.
@@ -53,6 +53,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 현재 프로젝트에 이 alias 구현이 없다면 `#spec` 과 같은 원칙으로 처리하되, plan / ticket / 구현은 시작하지 않는다.
 
 - `#plan`
+  - legacy role-pipeline 호환 트리거다. 기본 실행은 `ticket-owner` 다.
   - 현재 스레드의 planner heartbeat 를 1분 주기로 생성 또는 재개한다.
   - populated spec 이 있으면 계속 처리해 plan 을 작성하고, start-plan 런타임으로 `autoflow/tickets/todo/` 티켓을 만든다.
   - 실제 ticket 생성이 끝난 spec 과 plan 은 `autoflow/tickets/done/<project-key>/` 로 이동한다.
@@ -61,13 +62,15 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
 
 - `#todo`
+  - legacy role-pipeline 호환 트리거다. 기본 실행은 `ticket-owner` 다.
   - 현재 스레드의 todo heartbeat 를 1분 주기로 생성 또는 재개한다.
   - 처리할 `autoflow/tickets/todo/` 가 있으면 `inprogress/` 로 옮기고 티켓별 worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
-  - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태가 `autoflow/tickets/todo/` 또는 `autoflow/tickets/inprogress/` 이면 todo worker 가 구현을 계속 진행한다.
+  - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태가 `autoflow/tickets/todo/` 또는 `autoflow/tickets/inprogress/` 이면 legacy todo worker 가 구현을 계속 진행한다.
   - 작업이 끝나면 `autoflow/tickets/verifier/` 로 이동한다.
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
 
 - `#veri`
+  - legacy role-pipeline 호환 트리거다. 기본 실행은 `ticket-owner` 다.
   - 현재 스레드의 verifier heartbeat 를 1분 주기로 생성 또는 재개한다.
   - 처리할 `autoflow/tickets/verifier/` 가 있으면 `working_root` 에서 검증하고, pass 면 worktree 변경을 중앙 프로젝트 루트에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 이유를 적어 `reject/` 로 이동한다.
   - 브라우저 확인이 필요해도 먼저 비브라우저 확인을 우선하고, Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 쓰며 열린 탭은 같은 턴에서 닫는다.
