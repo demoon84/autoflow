@@ -22,10 +22,36 @@
 - [ ] implementation completed
 - [ ] manual or automated verification passed
 
+## Command
+
+- Started At:
+- Finished At:
+- Working Root:
+- Command:
+- Exit Code:
+
 ## Findings
 
 - blocker:
 - warning:
+
+## Output
+
+### stdout
+
+```text
+```
+
+### stderr
+
+```text
+```
+
+## Evidence
+
+- Result:
+- Exit Code:
+- Completed At:
 
 ## Next Fix Hint
 

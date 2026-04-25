@@ -364,8 +364,9 @@ prepare_ticket_owner_context() {
   printf 'reject_target=%s\n' "$reject_target"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Use this same ticket owner turn to update the mini-plan, implement within Allowed Paths, run verification, record evidence in the run file, then move to done or reject. Never split planner/todo/verifier roles and never git push.\n'
-  printf 'routing_pass=After evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It integrates the worktree if needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when PROJECT_ROOT is a git repo. Never push.\n' "$ticket_id"
+  printf 'next_action=Use this same ticket owner turn to update the mini-plan and implement within Allowed Paths. Then run scripts/verify-ticket-owner.sh %s, followed by scripts/finish-ticket-owner.sh %s pass "<summary>" or fail "<reason>". Never split planner/todo/verifier roles and never git push.\n' "$ticket_id" "$ticket_id"
+  printf 'routing_verify=Run scripts/verify-ticket-owner.sh %s to execute the ticket/spec verification command from implementation_root and record command/output/evidence in the run file.\n' "$ticket_id"
+  printf 'routing_pass=After verification evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It integrates the worktree if needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when PROJECT_ROOT is a git repo. Never push.\n' "$ticket_id"
   printf 'routing_fail=If the owner cannot fix the failure in scope, run scripts/finish-ticket-owner.sh %s fail "<concrete reject reason>". It moves the ticket to reject, writes the verifier log, and does not commit failed work.\n' "$ticket_id"
 }
 

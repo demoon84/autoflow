@@ -24,6 +24,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 - Write a local mini-plan into the ticket before editing product code.
 - Implement within the ticket's `Allowed Paths`.
 - Run the ticket verification command and record evidence.
+- Prefer `scripts/verify-ticket-owner.sh <ticket-id-or-path>` for automated checks; it reads the command from the ticket or referenced project spec, executes it from the ticket working root, and records command/output/evidence in `tickets/inprogress/verify_NNN.md`.
 - If verification fails, fix within the same owner loop when the fix is inside scope.
 - Move the ticket to `tickets/done/<project-key>/` only after evidence is recorded.
 - Leave a verifier-style record and completion log even though the owner performed the verification.

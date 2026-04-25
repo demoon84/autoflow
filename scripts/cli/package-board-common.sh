@@ -129,6 +129,7 @@ source_executable|scripts/runtime/run-hook.sh|scripts/run-hook.sh
 source_executable|scripts/runtime/set-thread-context.sh|scripts/set-thread-context.sh
 source_executable|scripts/runtime/clear-thread-context.sh|scripts/clear-thread-context.sh
 source_executable|scripts/runtime/start-ticket-owner.sh|scripts/start-ticket-owner.sh
+source_executable|scripts/runtime/verify-ticket-owner.sh|scripts/verify-ticket-owner.sh
 source_executable|scripts/runtime/finish-ticket-owner.sh|scripts/finish-ticket-owner.sh
 source_executable|scripts/runtime/start-plan.sh|scripts/start-plan.sh
 source_executable|scripts/runtime/start-todo.sh|scripts/start-todo.sh
@@ -144,6 +145,7 @@ source_file|scripts/runtime/install-stop-hook.ps1|scripts/install-stop-hook.ps1
 source_file|scripts/runtime/set-thread-context.ps1|scripts/set-thread-context.ps1
 source_file|scripts/runtime/clear-thread-context.ps1|scripts/clear-thread-context.ps1
 source_file|scripts/runtime/start-ticket-owner.ps1|scripts/start-ticket-owner.ps1
+source_file|scripts/runtime/verify-ticket-owner.ps1|scripts/verify-ticket-owner.ps1
 source_file|scripts/runtime/finish-ticket-owner.ps1|scripts/finish-ticket-owner.ps1
 source_file|scripts/runtime/start-spec.ps1|scripts/start-spec.ps1
 source_file|scripts/runtime/start-plan.ps1|scripts/start-plan.ps1
