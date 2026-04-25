@@ -296,12 +296,14 @@ worker 수를 고정하지 않는다. 기본 형태는 아래처럼 읽는다.
   - project-owned set manifest
 - `automations/templates/heartbeat-set.template.toml`
   - 배포 패키지 쪽 원본 set template
+- `automations/templates/ticket-owner-heartbeat.template.toml`
+  - 기본 Ticket Owner worker heartbeat
 - `automations/templates/plan-heartbeat.template.toml`
-  - planner worker heartbeat
+  - legacy planner worker heartbeat
 - `automations/templates/todo-heartbeat.template.toml`
-  - todo worker heartbeat
+  - legacy todo worker heartbeat
 - `automations/templates/verifier-heartbeat.template.toml`
-  - verifier worker heartbeat
+  - legacy verifier worker heartbeat
 
 주의:
 

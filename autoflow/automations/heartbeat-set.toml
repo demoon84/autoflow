@@ -4,16 +4,18 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = "autoflow/"
 
-planner_workers = ["plan-1"]
-todo_workers = ["todo-1"]
-verifier_workers = ["verify-1"]
+owner_workers = ["owner-1"]
 
-# execution_pool is the list of todo worker ids that can pick up work.
-# Todo worker handles claim AND implementation together.
-execution_pool = "todo-1"
-verifier_pool = "verify-1"
+# Legacy role-pipeline workers. Leave these empty for Ticket Owner Mode.
+planner_workers = []
+todo_workers = []
+verifier_workers = []
+
+execution_pool = ""
+verifier_pool = ""
 max_execution_load_per_worker = 1
 
+owner_template = "automations/templates/ticket-owner-heartbeat.template.toml"
 plan_template = "automations/templates/plan-heartbeat.template.toml"
 todo_template = "automations/templates/todo-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"
@@ -23,12 +25,10 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 # target_thread_id. Values starting with REPLACE_WITH_ are treated as
 # missing at render time.
 [thread_ids]
-plan-1 = "REPLACE_WITH_PLAN_1_THREAD_ID"
-todo-1 = "REPLACE_WITH_TODO_1_THREAD_ID"
-verify-1 = "REPLACE_WITH_VERIFY_1_THREAD_ID"
+owner-1 = "REPLACE_WITH_OWNER_1_THREAD_ID"
 
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-scaling_rule = "Scale by editing worker arrays, pool strings, and [thread_ids] entries — not by changing runtime code."
+scaling_rule = "Scale Ticket Owner Mode by adding owner_workers and matching [thread_ids] entries. Use legacy planner/todo/verifier arrays only for role-pipeline compatibility."
 single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
-trigger_rule = "`#plan`, `#todo`, `#veri` should create or resume these 1-minute heartbeats and keep them active until the user explicitly says stop."
+trigger_rule = "`autoflow run ticket` / owner heartbeats should keep running until the user explicitly says stop."

@@ -66,6 +66,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/state/README.md"; TargetRel = "automations/state/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/state/.gitignore"; TargetRel = "automations/state/.gitignore" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/heartbeat-set.template.toml"; TargetRel = "automations/templates/heartbeat-set.template.toml" }
+    [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/ticket-owner-heartbeat.template.toml"; TargetRel = "automations/templates/ticket-owner-heartbeat.template.toml" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/plan-heartbeat.template.toml"; TargetRel = "automations/templates/plan-heartbeat.template.toml" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/todo-heartbeat.template.toml"; TargetRel = "automations/templates/todo-heartbeat.template.toml" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/templates/verifier-heartbeat.template.toml"; TargetRel = "automations/templates/verifier-heartbeat.template.toml" }

@@ -86,6 +86,7 @@ source_text|automations/file-watch.psd1|automations/file-watch.psd1
 source_text|automations/state/README.md|automations/state/README.md
 source_text|automations/state/.gitignore|automations/state/.gitignore
 source_text|automations/templates/heartbeat-set.template.toml|automations/templates/heartbeat-set.template.toml
+source_text|automations/templates/ticket-owner-heartbeat.template.toml|automations/templates/ticket-owner-heartbeat.template.toml
 source_text|automations/templates/plan-heartbeat.template.toml|automations/templates/plan-heartbeat.template.toml
 source_text|automations/templates/todo-heartbeat.template.toml|automations/templates/todo-heartbeat.template.toml
 source_text|automations/templates/verifier-heartbeat.template.toml|automations/templates/verifier-heartbeat.template.toml

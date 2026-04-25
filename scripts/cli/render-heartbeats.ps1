@@ -152,22 +152,44 @@ $targetThreadId = Get-TomlStringValue -Path $setFile -Key "target_thread_id"
 $executionPool = Get-TomlStringValue -Path $setFile -Key "execution_pool"
 $verifierPool = Get-TomlStringValue -Path $setFile -Key "verifier_pool"
 $maxExecutionLoad = Get-TomlIntegerValue -Path $setFile -Key "max_execution_load_per_worker"
+$ownerWorkers = @(Get-TomlArrayValues -Path $setFile -Key "owner_workers")
+$plannerWorkers = @(Get-TomlArrayValues -Path $setFile -Key "planner_workers")
+$todoWorkers = @(Get-TomlArrayValues -Path $setFile -Key "todo_workers")
+$verifierWorkers = @(Get-TomlArrayValues -Path $setFile -Key "verifier_workers")
 
 if (-not $setName) { throw "set_name is required in $setFile" }
 if (-not $targetThreadId -or $targetThreadId -match 'REPLACE_WITH|{{') { throw "target_thread_id must be set to a real Codex thread id in $setFile" }
-if (-not $executionPool) { throw "execution_pool is required in $setFile" }
-if (-not $verifierPool) { throw "verifier_pool is required in $setFile" }
+if ($todoWorkers.Count -gt 0 -and -not $executionPool) { throw "execution_pool is required in $setFile when todo_workers is not empty" }
+if ($todoWorkers.Count -gt 0 -and -not $verifierPool) { throw "verifier_pool is required in $setFile when todo_workers is not empty" }
 if (-not $maxExecutionLoad) { $maxExecutionLoad = "1" }
 
-$planTemplate = Resolve-BoardRelativePath -BoardRoot $boardRoot -RelativePath (Get-TomlStringValue -Path $setFile -Key "plan_template")
-$todoTemplate = Resolve-BoardRelativePath -BoardRoot $boardRoot -RelativePath (Get-TomlStringValue -Path $setFile -Key "todo_template")
-$verifierTemplate = Resolve-BoardRelativePath -BoardRoot $boardRoot -RelativePath (Get-TomlStringValue -Path $setFile -Key "verifier_template")
+function Resolve-TemplateForWorkers {
+  param(
+    [string]$TemplateKey,
+    [object[]]$Workers
+  )
 
-foreach ($requiredTemplate in @($planTemplate, $todoTemplate, $verifierTemplate)) {
-  if (-not (Test-Path -LiteralPath $requiredTemplate -PathType Leaf)) {
-    throw "Heartbeat template not found: $requiredTemplate"
+  if ($Workers.Count -eq 0) {
+    return ""
   }
+
+  $templateRel = Get-TomlStringValue -Path $setFile -Key $TemplateKey
+  if (-not $templateRel) {
+    throw "$TemplateKey is required in $setFile when the matching worker array is not empty"
+  }
+
+  $templatePath = Resolve-BoardRelativePath -BoardRoot $boardRoot -RelativePath $templateRel
+  if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
+    throw "Heartbeat template not found: $templatePath"
+  }
+
+  return $templatePath
 }
+
+$ownerTemplate = Resolve-TemplateForWorkers -TemplateKey "owner_template" -Workers $ownerWorkers
+$planTemplate = Resolve-TemplateForWorkers -TemplateKey "plan_template" -Workers $plannerWorkers
+$todoTemplate = Resolve-TemplateForWorkers -TemplateKey "todo_template" -Workers $todoWorkers
+$verifierTemplate = Resolve-TemplateForWorkers -TemplateKey "verifier_template" -Workers $verifierWorkers
 
 $setSlug = Get-SlugValue $setName
 $outputRoot = Join-Path $boardRoot "automations/rendered/$setSlug"
@@ -181,11 +203,11 @@ $manifestLines = New-Object System.Collections.Generic.List[string]
 function Render-RoleWorkers {
   param(
     [string]$Role,
-    [string]$ArrayKey,
+    [object[]]$Workers,
     [string]$TemplatePath
   )
 
-  foreach ($workerId in (Get-TomlArrayValues -Path $setFile -Key $ArrayKey)) {
+  foreach ($workerId in $Workers) {
     $automationId = "$setSlug-$workerId"
     $automationName = "$setName / $workerId"
     $outputFile = Join-Path $outputRoot "$workerId.toml"
@@ -206,9 +228,10 @@ function Render-RoleWorkers {
   }
 }
 
-Render-RoleWorkers -Role "plan" -ArrayKey "planner_workers" -TemplatePath $planTemplate
-Render-RoleWorkers -Role "todo" -ArrayKey "todo_workers" -TemplatePath $todoTemplate
-Render-RoleWorkers -Role "verifier" -ArrayKey "verifier_workers" -TemplatePath $verifierTemplate
+if ($ownerTemplate) { Render-RoleWorkers -Role "ticket" -Workers $ownerWorkers -TemplatePath $ownerTemplate }
+if ($planTemplate) { Render-RoleWorkers -Role "plan" -Workers $plannerWorkers -TemplatePath $planTemplate }
+if ($todoTemplate) { Render-RoleWorkers -Role "todo" -Workers $todoWorkers -TemplatePath $todoTemplate }
+if ($verifierTemplate) { Render-RoleWorkers -Role "verifier" -Workers $verifierWorkers -TemplatePath $verifierTemplate }
 
 $renderedCount = $manifestLines.Count
 if ($renderedCount -eq 0) {
@@ -219,6 +242,7 @@ $manifestFile = Join-Path $outputRoot "manifest.txt"
 $manifestContent = @(
   "set_name=$setName"
   "target_thread_id=$targetThreadId"
+  "owner_workers=$($ownerWorkers -join ',')"
   "execution_pool=$executionPool"
   "verifier_pool=$verifierPool"
   "max_execution_load_per_worker=$maxExecutionLoad"

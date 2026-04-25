@@ -61,6 +61,12 @@ toml_array_values() {
   '
 }
 
+toml_array_has_values() {
+  local file="$1"
+  local key="$2"
+  [ -n "$(toml_array_values "$file" "$key" | head -n 1)" ]
+}
+
 toml_section_value() {
   local file="$1"
   local section="$2"
@@ -159,38 +165,63 @@ if [ -z "$target_thread_id" ] || printf '%s' "$target_thread_id" | grep -qE 'REP
   exit 1
 fi
 
-if [ -z "$execution_pool" ]; then
-  echo "execution_pool is required in ${set_file}" >&2
-  exit 1
-fi
-
-if [ -z "$verifier_pool" ]; then
-  echo "verifier_pool is required in ${set_file}" >&2
-  exit 1
-fi
-
 if [ -z "$max_execution_load" ]; then
   max_execution_load="1"
 fi
 
+owner_template_rel="$(toml_string_value "$set_file" "owner_template")"
 plan_template_rel="$(toml_string_value "$set_file" "plan_template")"
 todo_template_rel="$(toml_string_value "$set_file" "todo_template")"
 verifier_template_rel="$(toml_string_value "$set_file" "verifier_template")"
 
-plan_template_file="$(resolve_board_relative_path "$plan_template_rel")"
-todo_template_file="$(resolve_board_relative_path "$todo_template_rel")"
-verifier_template_file="$(resolve_board_relative_path "$verifier_template_rel")"
+owner_template_file=""
+plan_template_file=""
+todo_template_file=""
+verifier_template_file=""
 
-for required_template in \
-  "$plan_template_file" \
-  "$todo_template_file" \
-  "$verifier_template_file"
-do
+require_template_for_workers() {
+  local array_key="$1"
+  local template_rel="$2"
+  local label="$3"
+  local required_template
+
+  if ! toml_array_has_values "$set_file" "$array_key"; then
+    return 0
+  fi
+
+  if [ -z "$template_rel" ]; then
+    echo "${label}_template is required in ${set_file} when ${array_key} is not empty" >&2
+    exit 1
+  fi
+
+  required_template="$(resolve_board_relative_path "$template_rel")"
   if [ ! -f "$required_template" ]; then
     echo "Heartbeat template not found: ${required_template}" >&2
     exit 1
   fi
-done
+
+  case "$label" in
+    owner) owner_template_file="$required_template" ;;
+    plan) plan_template_file="$required_template" ;;
+    todo) todo_template_file="$required_template" ;;
+    verifier) verifier_template_file="$required_template" ;;
+  esac
+}
+
+require_template_for_workers "owner_workers" "$owner_template_rel" "owner"
+require_template_for_workers "planner_workers" "$plan_template_rel" "plan"
+require_template_for_workers "todo_workers" "$todo_template_rel" "todo"
+require_template_for_workers "verifier_workers" "$verifier_template_rel" "verifier"
+
+if toml_array_has_values "$set_file" "todo_workers" && [ -z "$execution_pool" ]; then
+  echo "execution_pool is required in ${set_file} when todo_workers is not empty" >&2
+  exit 1
+fi
+
+if toml_array_has_values "$set_file" "todo_workers" && [ -z "$verifier_pool" ]; then
+  echo "verifier_pool is required in ${set_file} when todo_workers is not empty" >&2
+  exit 1
+fi
 
 set_slug="$(slugify "$set_name")"
 if [ -z "$set_slug" ]; then
@@ -221,9 +252,10 @@ render_role_workers() {
   done < <(toml_array_values "$set_file" "$array_key")
 }
 
-render_role_workers "plan" "planner_workers" "$plan_template_file"
-render_role_workers "todo" "todo_workers" "$todo_template_file"
-render_role_workers "verifier" "verifier_workers" "$verifier_template_file"
+[ -n "$owner_template_file" ] && render_role_workers "ticket" "owner_workers" "$owner_template_file"
+[ -n "$plan_template_file" ] && render_role_workers "plan" "planner_workers" "$plan_template_file"
+[ -n "$todo_template_file" ] && render_role_workers "todo" "todo_workers" "$todo_template_file"
+[ -n "$verifier_template_file" ] && render_role_workers "verifier" "verifier_workers" "$verifier_template_file"
 
 rendered_count="$(wc -l < "$manifest_tmp" | tr -d ' ')"
 if [ "$rendered_count" -eq 0 ]; then
@@ -235,6 +267,7 @@ manifest_file="${output_root}/manifest.txt"
 {
   printf 'set_name=%s\n' "$set_name"
   printf 'target_thread_id=%s\n' "$target_thread_id"
+  printf 'owner_workers=%s\n' "$(toml_array_values "$set_file" "owner_workers" | paste -sd, -)"
   printf 'execution_pool=%s\n' "$execution_pool"
   printf 'verifier_pool=%s\n' "$verifier_pool"
   printf 'max_execution_load_per_worker=%s\n' "$max_execution_load"

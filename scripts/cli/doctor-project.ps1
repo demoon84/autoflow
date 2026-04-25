@@ -654,6 +654,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
       "reference/logs.md",
       "reference/hook-logs.md",
       "automations/templates/heartbeat-set.template.toml",
+      "automations/templates/ticket-owner-heartbeat.template.toml",
       "automations/templates/plan-heartbeat.template.toml",
       "automations/templates/todo-heartbeat.template.toml",
       "automations/templates/verifier-heartbeat.template.toml",
