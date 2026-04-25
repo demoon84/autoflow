@@ -242,7 +242,7 @@ Electron 기반 Codex Flow Visualizer 는 `apps/desktop/` 아래에 둔다. 이 
 - `autoflow/` 가 없는 프로젝트에 기본 보드 설치
 - Codex 작업 흐름 새로고침
 - Spec Intake 에 conversation handoff 또는 raw markdown 을 붙여 `tickets/backlog/project_NNN.md` 생성
-- spec 생성 직후 planner dry-run 으로 다음 runtime 호출 미리보기
+- spec 생성 직후 Owner dry-run 으로 다음 runtime 호출 미리보기
 - runner 목록, 상태, add/remove, start/stop/restart, dry-run, one-shot role run
 - runner agent / model / reasoning / mode / interval / enabled / command override 설정 편집
 - runner command output 패널, 최근 실행 출력 이력, runtime / prompt / stdout / stderr artifact 개별 열람
