@@ -4,6 +4,7 @@
 
 - `cli/`: 패키지 CLI 측 스크립트. `bin/autoflow` 가 직접 호출한다. 생성 보드에는 복사되지 않는다.
 - `runtime/`: 생성 보드의 `autoflow/scripts/` 로 복사되는 runtime 훅. 보드 쪽 경로는 계속 flat 하다 (`autoflow/scripts/start-*.sh`).
+- `tests/`: 패키지 개발용 smoke test. 생성 보드에는 복사되지 않는다.
 
 ## cli/
 
@@ -77,6 +78,12 @@
 - `run-hook.ps1`
 - `watch-board.ps1`
 - `watch-board.sh`
+
+## tests/
+
+- `ticket-owner-smoke.sh`
+  - temp git 프로젝트에 보드를 설치하고 raw spec → `start-ticket-owner` → `verify-ticket-owner` → `finish-ticket-owner pass` → status 확인까지 실행한다.
+  - 루트에서 `npm run smoke:ticket-owner` 로 실행한다.
 
 ## Root Resolution
 

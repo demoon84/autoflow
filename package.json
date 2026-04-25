@@ -5,6 +5,7 @@
   "description": "Autoflow CLI and desktop operating console.",
   "scripts": {
     "desktop:dev": "npm --prefix apps/desktop run dev",
-    "desktop:check": "npm --prefix apps/desktop run check"
+    "desktop:check": "npm --prefix apps/desktop run check",
+    "smoke:ticket-owner": "bash scripts/tests/ticket-owner-smoke.sh"
   }
 }
