@@ -100,6 +100,90 @@ function Resolve-ContextPath {
   return ""
 }
 
+function Write-ContextSnapshot {
+  param(
+    [string]$BoardRoot,
+    [string]$SourceContextPath,
+    [string]$Role,
+    [string]$WorkerId,
+    [string]$ExecutionPool,
+    [string]$VerifierPool
+  )
+
+  if (-not $Role) {
+    return
+  }
+
+  $stateRoot = Get-StateRoot $BoardRoot
+  $threadRoot = Join-Path $stateRoot "threads"
+  New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
+  New-Item -ItemType Directory -Force -Path $threadRoot | Out-Null
+
+  $threadKey = Get-CurrentThreadKey
+  if (-not $threadKey -and $SourceContextPath) {
+    $threadKey = Get-ContextValue -Path $SourceContextPath -Key "thread_key"
+  }
+
+  $projectRoot = ""
+  if ($SourceContextPath) {
+    $projectRoot = Get-ContextValue -Path $SourceContextPath -Key "project_root"
+  }
+  if (-not $projectRoot) {
+    $projectRoot = (Split-Path -Parent $BoardRoot)
+  }
+
+  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $lines = @(
+    "role=$Role",
+    "worker_id=$WorkerId",
+    "thread_key=$threadKey",
+    "board_root=$BoardRoot",
+    "project_root=$projectRoot",
+    "execution_pool=$ExecutionPool",
+    "verifier_pool=$VerifierPool",
+    "active_ticket_id=",
+    "active_ticket_path=",
+    "active_stage=",
+    "updated_at=$timestamp",
+    "active_updated_at="
+  )
+
+  $currentPath = Get-CurrentContextPath -BoardRoot $BoardRoot
+  Set-Content -LiteralPath $currentPath -Value $lines -Encoding UTF8
+
+  if ($threadKey) {
+    $threadPath = Get-ThreadContextPath -BoardRoot $BoardRoot -ThreadKey $threadKey
+    Set-Content -LiteralPath $threadPath -Value $lines -Encoding UTF8
+  }
+}
+
+function Clear-ActiveTicketContext {
+  param(
+    [string]$BoardRoot,
+    [string]$ContextPath,
+    [string]$Role,
+    [string]$WorkerId,
+    [string]$ExecutionPool,
+    [string]$VerifierPool
+  )
+
+  if ($Role -notin @("ticket-owner", "ticket", "owner", "todo", "verifier")) {
+    return
+  }
+
+  if (-not $WorkerId -and $ContextPath) {
+    $WorkerId = Get-ContextValue -Path $ContextPath -Key "worker_id"
+  }
+
+  Write-ContextSnapshot `
+    -BoardRoot $BoardRoot `
+    -SourceContextPath $ContextPath `
+    -Role $Role `
+    -WorkerId $WorkerId `
+    -ExecutionPool $ExecutionPool `
+    -VerifierPool $VerifierPool
+}
+
 function Get-SectionLines {
   param([string]$FilePath, [string]$Heading)
 
@@ -518,6 +602,14 @@ switch ($hookRole) {
     exit 0
   }
 }
+
+Clear-ActiveTicketContext `
+  -BoardRoot $boardRoot `
+  -ContextPath $contextPath `
+  -Role $hookRole `
+  -WorkerId $hookWorkerId `
+  -ExecutionPool $hookExecutionPool `
+  -VerifierPool $hookVerifierPool
 
 if (-not $reason) {
   exit 0

@@ -252,7 +252,7 @@ ticket_owner_hook_reason() {
 
 compact_tick_context() {
   case "${hook_role:-}" in
-    todo|verifier)
+    ticket-owner|ticket|owner|todo|verifier)
       clear_active_ticket_context_record >/dev/null 2>&1 || true
       ;;
   esac
