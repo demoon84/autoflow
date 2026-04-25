@@ -31,6 +31,7 @@ $planDoneCount = 0
 $ticketTodoCount = 0
 $ticketInprogressCount = 0
 $ticketDoneCount = 0
+$ticketPlanningCount = 0
 $ticketClaimedCount = 0
 $ticketExecutingCount = 0
 $ticketReadyForVerificationCount = 0
@@ -77,6 +78,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   $ticketTodoCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/todo") -Filter "tickets_*.md"
   $ticketInprogressCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/inprogress") -Filter "tickets_*.md"
   $ticketDoneCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/done") -Filter "tickets_*.md" -Recurse
+  $ticketPlanningCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "planning"
   $ticketClaimedCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "claimed"
   $ticketExecutingCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "executing"
   $ticketReadyForVerificationCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "ready_for_verification"
@@ -156,3 +158,5 @@ Write-KeyValueLine "wiki_scaffold_present" ([string]$wikiScaffoldPresent).ToLowe
 Write-KeyValueLine "metrics_scaffold_present" ([string]$metricsScaffoldPresent).ToLowerInvariant()
 Write-KeyValueLine "conversation_scaffold_present" ([string]$conversationScaffoldPresent).ToLowerInvariant()
 Write-KeyValueLine "adapter_scaffold_present" ([string]$adapterScaffoldPresent).ToLowerInvariant()
+Write-KeyValueLine "ticket_planning_count" ([string]$ticketPlanningCount)
+Write-KeyValueLine "ticket_owner_active_count" ([string]$ticketInprogressCount)

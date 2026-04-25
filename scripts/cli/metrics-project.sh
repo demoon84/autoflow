@@ -171,7 +171,7 @@ count_runner_states() {
         if [ "$in_runner" -eq 1 ] && [ -n "$id" ]; then
           runner_total_count=$((runner_total_count + 1))
           case "$role" in
-            planner|todo|verifier|wiki-maintainer|watcher) ;;
+            ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|watcher) ;;
             *) invalid_config="true" ;;
           esac
           case "$enabled" in
@@ -281,6 +281,7 @@ spec_total="$((spec_backlog_count + spec_done_count))"
 
 ticket_todo_count="$(count_matching_files "${board_root}/tickets/todo" 'tickets_*.md')"
 ticket_inprogress_count="$(count_matching_files "${board_root}/tickets/inprogress" 'tickets_*.md')"
+ticket_planning_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "planning")"
 ticket_verifier_count="$(count_matching_files "${board_root}/tickets/verifier" 'tickets_*.md')"
 ticket_done_count="$(count_matching_files "${board_root}/tickets/done" 'tickets_*.md')"
 ticket_reject_count="$(count_matching_files "${board_root}/tickets/reject" 'reject_*.md')"
@@ -288,6 +289,7 @@ ticket_done_reject_count="$(count_matching_files "${board_root}/tickets/done" 'r
 reject_count="$((ticket_reject_count + ticket_done_reject_count))"
 ticket_total="$((ticket_todo_count + ticket_inprogress_count + ticket_verifier_count + ticket_done_count + ticket_reject_count))"
 active_ticket_count="$((ticket_todo_count + ticket_inprogress_count + ticket_verifier_count))"
+ticket_owner_active_count="$ticket_inprogress_count"
 
 verifier_pass_count="$(count_matching_files "${board_root}/logs" 'verifier_*_pass.md')"
 verifier_fail_count="$(count_matching_files "${board_root}/logs" 'verifier_*_fail.md')"
@@ -341,10 +343,12 @@ printf 'spec_total=%s\n' "$spec_total"
 printf 'ticket_total=%s\n' "$ticket_total"
 printf 'ticket_todo_count=%s\n' "$ticket_todo_count"
 printf 'ticket_inprogress_count=%s\n' "$ticket_inprogress_count"
+printf 'ticket_planning_count=%s\n' "$ticket_planning_count"
 printf 'ticket_verifier_count=%s\n' "$ticket_verifier_count"
 printf 'ticket_done_count=%s\n' "$ticket_done_count"
 printf 'reject_count=%s\n' "$reject_count"
 printf 'active_ticket_count=%s\n' "$active_ticket_count"
+printf 'ticket_owner_active_count=%s\n' "$ticket_owner_active_count"
 printf 'verifier_pass_count=%s\n' "$verifier_pass_count"
 printf 'verifier_fail_count=%s\n' "$verifier_fail_count"
 printf 'verifier_total=%s\n' "$verifier_total"

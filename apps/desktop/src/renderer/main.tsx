@@ -2379,6 +2379,12 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
   const runnerRunningCount = statusValue(metrics, "runner_running_count", "0");
   const runnerTotalCount = statusValue(metrics, "runner_total_count", String(board?.runners?.length || 0));
   const runnerEnabledCount = statusValue(metrics, "runner_enabled_count", runnerTotalCount);
+  const ownerActiveCount = statusValue(
+    metrics,
+    "ticket_owner_active_count",
+    statusValue(status, "ticket_owner_active_count", String(board?.tickets.inprogress?.length || 0))
+  );
+  const planningCount = statusValue(metrics, "ticket_planning_count", statusValue(status, "ticket_planning_count", "0"));
   const cards = [
     {
       label: "Specs",
@@ -2388,16 +2394,16 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
       tone: "metric-blue"
     },
     {
-      label: "Todo",
+      label: "Queue",
       value: statusValue(status, "ticket_todo_count", String(board?.tickets.todo?.length || 0)),
-      detail: "ready",
+      detail: "ready tickets",
       icon: Layers3,
       tone: "metric-amber"
     },
     {
-      label: "Running",
-      value: statusValue(metrics, "active_ticket_count", String(board?.tickets.inprogress?.length || 0)),
-      detail: `${runnerRunningCount}/${runnerEnabledCount} enabled`,
+      label: "Owner",
+      value: ownerActiveCount,
+      detail: `${planningCount} planning / ${runnerRunningCount}/${runnerEnabledCount} runners`,
       icon: Activity,
       tone: "metric-teal"
     },
