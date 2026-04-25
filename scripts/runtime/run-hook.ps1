@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet("plan", "todo", "verifier")]
+  [ValidateSet("ticket", "ticket-owner", "owner", "plan", "todo", "verifier")]
   [string]$Role,
 
   [string]$BoardRoot,
@@ -17,6 +17,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ($Role -in @("ticket-owner", "owner")) {
+  $Role = "ticket"
+}
 
 function Resolve-BoardRoot {
   param([string]$InputPath)
@@ -97,9 +101,13 @@ function Build-ShellCommand {
   )
 
   $boardRootBash = Convert-ToBashPath $ResolvedBoardRoot
-  $workerId = Get-Setting $RouteConfig "WorkerId" "$RouteName-hook"
+  $defaultWorkerId = if ($RouteName -eq "ticket") { "owner-hook" } else { "$RouteName-hook" }
+  $workerId = Get-Setting $RouteConfig "WorkerId" $defaultWorkerId
 
   switch ($RouteName) {
+    "ticket" {
+      return "cd ""$boardRootBash"" && AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=""$workerId"" ./scripts/start-ticket-owner.sh"
+    }
     "plan" {
       return "cd ""$boardRootBash"" && AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=""$workerId"" ./scripts/start-plan.sh"
     }
@@ -128,11 +136,39 @@ function Build-CodexPrompt {
     [string]$HookChangeType
   )
 
-  $workerId = Get-Setting $RouteConfig "WorkerId" "$RouteName-hook"
+  $defaultWorkerId = if ($RouteName -eq "ticket") { "owner-hook" } else { "$RouteName-hook" }
+  $workerId = Get-Setting $RouteConfig "WorkerId" $defaultWorkerId
   $triggerLine = if ($HookTriggerPath) { ('- Trigger Path: `{0}`' -f $HookTriggerPath) } else { "- Trigger Path: (none)" }
   $changeLine = if ($HookChangeType) { "- Change Type: $HookChangeType" } else { "- Change Type: (unknown)" }
 
   switch ($RouteName) {
+    "ticket" {
+      return @(
+        "Autoflow Hook Mode: ticket-owner"
+        ""
+        ('This run was triggered by the file watcher for the board at `{0}` (project root: `{1}`).' -f $ResolvedBoardRoot, $ResolvedProjectRoot)
+        "Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn."
+        ""
+        "Worker identity:"
+        "- Role: ticket-owner"
+        "- Worker Id: $workerId"
+        "- Permission Mode: pre-authorized within the current project and board scope"
+        ""
+        "Hook context:"
+        $triggerLine
+        $changeLine
+        ""
+        "Do exactly one current hook turn:"
+        "1. Read the repo instructions, `autoflow/agents/ticket-owner-agent.md`, and the current board state."
+        "2. Run `autoflow/scripts/start-ticket-owner.ps1` to resume an owned inprogress ticket, claim a ready ticket, adopt a legacy verifier ticket, or create one inprogress ticket from a populated backlog spec."
+        "3. Keep the same owner responsible for mini-plan, implementation, verification command execution, evidence recording, and done/reject movement. Do not split the work across planner/todo/verifier roles."
+        "4. Implement only within the ticket's Allowed Paths and record durable progress in Notes, Result, and Resume Context."
+        "5. When ready, run `autoflow/scripts/verify-ticket-owner.ps1 <ticket-id>` to write command/output/evidence, then `autoflow/scripts/finish-ticket-owner.ps1 <ticket-id> pass ""<summary>""` or `fail ""<concrete reason>""`."
+        "6. Treat local verification commands, board file moves, worktree integration, and local git commit on pass as pre-authorized inside the current project/board. Never git push."
+        "7. If there is no actionable work, leave the runner idle with a concise reason."
+        "8. Exit after the current hook turn is complete."
+      ) -join [Environment]::NewLine
+    }
     "plan" {
       return @(
         "Autoflow Hook Mode: plan"
@@ -287,10 +323,11 @@ $routeConfig = Read-RouteConfig -Config $config -RouteName $Role
 $dispatch = Get-Setting $routeConfig "Dispatch" "codex"
 $dryRunEnabled = [bool](Get-Setting $routeConfig "DryRun" $false) -or $DryRun.IsPresent
 $customCommand = Get-Setting $routeConfig "Command" ""
-$workerId = Get-Setting $routeConfig "WorkerId" "$Role-hook"
+$defaultWorkerId = if ($Role -eq "ticket") { "owner-hook" } else { "$Role-hook" }
+$workerId = Get-Setting $routeConfig "WorkerId" $defaultWorkerId
 
 $environmentOverrides = @{
-  "AUTOFLOW_ROLE" = $Role
+  "AUTOFLOW_ROLE" = if ($Role -eq "ticket") { "ticket-owner" } else { $Role }
   "AUTOFLOW_WORKER_ID" = $workerId
   "AUTOFLOW_BOARD_ROOT" = $resolvedBoardRoot
   "AUTOFLOW_PROJECT_ROOT" = $resolvedProjectRoot

@@ -151,6 +151,9 @@ $stableWriteDelayMs = [int](Read-ConfigValue -RouteConfig $config -Name "StableW
 $routeConfigs = $config["Routes"]
 
 $watchMap = @(
+  @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "project_*.md"; IncludeSubdirectories = $false },
+  @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/todo"); Filter = "tickets_*.md"; IncludeSubdirectories = $false },
+  @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/verifier"); Filter = "tickets_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "project_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/reject"); Filter = "reject_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/done"); Filter = "tickets_*.md"; IncludeSubdirectories = $true },
@@ -159,7 +162,7 @@ $watchMap = @(
 )
 
 $routeStates = @{}
-foreach ($routeName in @("plan", "todo", "verifier")) {
+foreach ($routeName in @("ticket", "plan", "todo", "verifier")) {
   $routeStates[$routeName] = [pscustomobject]@{
     Pending = $false
     LastEventAt = [datetime]::MinValue
@@ -204,7 +207,7 @@ try {
   Write-Host "Autoflow file-watch hook is running."
   Write-Host "Board Root: $resolvedBoardRoot"
   Write-Host "Config: $resolvedConfigPath"
-  Write-Host "Watched routes: plan, todo, verifier"
+  Write-Host "Watched routes: ticket, plan, todo, verifier"
   Write-Host "Press Ctrl+C to stop."
 
   while ($true) {
@@ -231,7 +234,7 @@ try {
     }
 
     $now = Get-Date
-    foreach ($routeName in @("plan", "todo", "verifier")) {
+    foreach ($routeName in @("ticket", "plan", "todo", "verifier")) {
       $state = $routeStates[$routeName]
       if (-not $state.Pending) {
         continue

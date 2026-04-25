@@ -10,7 +10,7 @@ change_type=""
 dry_run="false"
 
 usage() {
-  echo "Usage: run-hook.sh --role <plan|todo|verifier> [--board-root <path>] [--config-path <path>] [--trigger-path <path>] [--change-type <type>] [--dry-run]" >&2
+  echo "Usage: run-hook.sh --role <ticket|plan|todo|verifier> [--board-root <path>] [--config-path <path>] [--trigger-path <path>] [--change-type <type>] [--dry-run]" >&2
 }
 
 while [ $# -gt 0 ]; do
@@ -47,6 +47,9 @@ while [ $# -gt 0 ]; do
 done
 
 case "$role" in
+  ticket|ticket-owner|owner)
+    role="ticket"
+    ;;
   plan|todo|verifier)
     ;;
   *)
@@ -68,8 +71,11 @@ else
   config_path="$(normalize_runtime_path "$config_path")"
 fi
 
+default_worker_id="${role}-hook"
+[ "$role" = "ticket" ] && default_worker_id="owner-hook"
+
 dispatch="$(file_watch_route_setting "$config_path" "$role" "Dispatch" "codex")"
-worker_id="$(file_watch_route_setting "$config_path" "$role" "WorkerId" "${role}-hook")"
+worker_id="$(file_watch_route_setting "$config_path" "$role" "WorkerId" "$default_worker_id")"
 model_name="$(file_watch_route_setting "$config_path" "$role" "Model" "")"
 custom_command="$(file_watch_route_setting "$config_path" "$role" "Command" "")"
 
@@ -88,6 +94,34 @@ fi
 
 trigger_line="- Trigger Path: ${trigger_path:-"(none)"}"
 change_line="- Change Type: ${change_type:-"(unknown)"}"
+
+ticket_prompt() {
+  cat <<EOF
+Autoflow Hook Mode: ticket-owner
+
+This run was triggered by the file watcher for the board at \`${BOARD_ROOT}\` (project root: \`${PROJECT_ROOT}\`).
+Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn.
+
+Worker identity:
+- Role: ticket-owner
+- Worker Id: ${worker_id}
+- Permission Mode: pre-authorized within the current project and board scope
+
+Hook context:
+${trigger_line}
+${change_line}
+
+Do exactly one current hook turn:
+1. Read the repo instructions, \`autoflow/agents/ticket-owner-agent.md\`, and the current board state.
+2. Run \`autoflow/scripts/start-ticket-owner.sh\` to resume an owned inprogress ticket, claim a ready ticket, adopt a legacy verifier ticket, or create one inprogress ticket from a populated backlog spec.
+3. Keep the same owner responsible for mini-plan, implementation, verification command execution, evidence recording, and done/reject movement. Do not split the work across planner/todo/verifier roles.
+4. Implement only within the ticket's Allowed Paths and record durable progress in Notes, Result, and Resume Context.
+5. When ready, run \`autoflow/scripts/verify-ticket-owner.sh <ticket-id>\` to write command/output/evidence, then \`autoflow/scripts/finish-ticket-owner.sh <ticket-id> pass "<summary>"\` or \`fail "<concrete reason>"\`.
+6. Treat local verification commands, board file moves, worktree integration, and local git commit on pass as pre-authorized inside the current project/board. Never git push.
+7. If there is no actionable work, leave the runner idle with a concise reason.
+8. Exit after the current hook turn is complete.
+EOF
+}
 
 plan_prompt() {
   cat <<EOF
@@ -181,6 +215,11 @@ EOF
 
 build_shell_command() {
   case "$role" in
+    ticket)
+      printf 'cd %s && AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=%s ./scripts/start-ticket-owner.sh' \
+        "$(shell_quote "$BOARD_ROOT")" \
+        "$(shell_quote "$worker_id")"
+      ;;
     plan)
       printf 'cd %s && AUTOFLOW_BACKGROUND=1 AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=%s ./scripts/start-plan.sh' \
         "$(shell_quote "$BOARD_ROOT")" \
@@ -204,6 +243,9 @@ build_shell_command() {
 
 build_prompt() {
   case "$role" in
+    ticket)
+      ticket_prompt
+      ;;
     plan)
       plan_prompt
       ;;
@@ -244,7 +286,7 @@ stderr_file="$(mktemp)"
 trap 'rm -f "$stdout_file" "$stderr_file"' EXIT
 
 env_args=(
-  "AUTOFLOW_ROLE=$role"
+  "AUTOFLOW_ROLE=$( [ "$role" = "ticket" ] && printf 'ticket-owner' || printf '%s' "$role" )"
   "AUTOFLOW_WORKER_ID=$worker_id"
   "AUTOFLOW_BOARD_ROOT=$BOARD_ROOT"
   "AUTOFLOW_PROJECT_ROOT=$PROJECT_ROOT"

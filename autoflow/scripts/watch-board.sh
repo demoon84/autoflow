@@ -46,6 +46,9 @@ fi
 
 route_trigger_root() {
   case "$1" in
+    ticket)
+      printf '%s/tickets/backlog' "$BOARD_ROOT"
+      ;;
     plan)
       printf '%s/tickets/backlog' "$BOARD_ROOT"
       ;;
@@ -60,6 +63,13 @@ route_trigger_root() {
 
 route_file_stream() {
   case "$1" in
+    ticket)
+      {
+        find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
+      } | sort
+      ;;
     plan)
       {
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
@@ -119,29 +129,40 @@ write_hook_log() {
   printf '%s' "$log_file"
 }
 
+ticket_enabled="false"
 plan_enabled="false"
 todo_enabled="false"
 verifier_enabled="false"
 
+ticket_pending="false"
 plan_pending="false"
 todo_pending="false"
 verifier_pending="false"
 
+ticket_last_event_ms="0"
 plan_last_event_ms="0"
 todo_last_event_ms="0"
 verifier_last_event_ms="0"
 
+ticket_last_path="$(route_trigger_root ticket)"
 plan_last_path="$(route_trigger_root plan)"
 todo_last_path="$(route_trigger_root todo)"
 verifier_last_path="$(route_trigger_root verifier)"
 
+ticket_last_change_type="poll"
 plan_last_change_type="poll"
 todo_last_change_type="poll"
 verifier_last_change_type="poll"
 
+ticket_fingerprint_cache=""
 plan_fingerprint_cache=""
 todo_fingerprint_cache=""
 verifier_fingerprint_cache=""
+
+if file_watch_route_enabled "$config_path" "ticket"; then
+  ticket_enabled="true"
+  ticket_fingerprint_cache="$(route_fingerprint ticket)"
+fi
 
 if file_watch_route_enabled "$config_path" "plan"; then
   plan_enabled="true"
@@ -166,10 +187,21 @@ stable_sleep="$(ms_to_sleep_seconds "$stable_write_delay_ms")"
 printf 'Autoflow file-watch hook is running.\n'
 printf 'Board Root: %s\n' "$BOARD_ROOT"
 printf 'Config: %s\n' "$config_path"
-printf 'Watched routes: plan, todo, verifier\n'
+printf 'Watched routes: ticket, plan, todo, verifier\n'
 printf 'Press Ctrl+C to stop.\n'
 
 while true; do
+  if [ "$ticket_enabled" = "true" ]; then
+    current_fingerprint="$(route_fingerprint ticket)"
+    if [ "$current_fingerprint" != "$ticket_fingerprint_cache" ]; then
+      ticket_fingerprint_cache="$current_fingerprint"
+      ticket_pending="true"
+      ticket_last_event_ms="$(now_epoch_ms)"
+      ticket_last_path="$(route_trigger_root ticket)"
+      ticket_last_change_type="polled-change"
+    fi
+  fi
+
   if [ "$plan_enabled" = "true" ]; then
     current_fingerprint="$(route_fingerprint plan)"
     if [ "$current_fingerprint" != "$plan_fingerprint_cache" ]; then
@@ -204,8 +236,14 @@ while true; do
   fi
 
   now_ms="$(now_epoch_ms)"
-  for route_name in plan todo verifier; do
+  for route_name in ticket plan todo verifier; do
     case "$route_name" in
+      ticket)
+        route_pending_value="$ticket_pending"
+        route_last_event_value="$ticket_last_event_ms"
+        route_last_path_value="$ticket_last_path"
+        route_last_change_value="$ticket_last_change_type"
+        ;;
       plan)
         route_pending_value="$plan_pending"
         route_last_event_value="$plan_last_event_ms"
@@ -237,6 +275,7 @@ while true; do
 
     sleep "$stable_sleep"
     case "$route_name" in
+      ticket) ticket_pending="false" ;;
       plan) plan_pending="false" ;;
       todo) todo_pending="false" ;;
       verifier) verifier_pending="false" ;;

@@ -3,8 +3,17 @@
   StableWriteDelayMs = 750
 
   Routes = @{
-    plan = @{
+    ticket = @{
       Enabled = $true
+      Dispatch = 'codex'
+      WorkerId = 'owner-hook'
+      DryRun = $false
+      Model = ''
+      Command = ''
+    }
+
+    plan = @{
+      Enabled = $false
       Dispatch = 'codex'
       WorkerId = 'plan-hook'
       DryRun = $false
@@ -13,7 +22,7 @@
     }
 
     todo = @{
-      Enabled = $true
+      Enabled = $false
       Dispatch = 'codex'
       WorkerId = 'todo-hook'
       ExecutionPool = 'todo-hook'
@@ -25,7 +34,7 @@
     }
 
     verifier = @{
-      Enabled = $true
+      Enabled = $false
       Dispatch = 'codex'
       WorkerId = 'verify-hook'
       DryRun = $false

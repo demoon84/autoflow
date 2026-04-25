@@ -22,8 +22,19 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint"]);
-const allowedRunRoles = new Set(["planner", "plan", "todo", "verifier", "veri", "wiki", "wiki-maintainer"]);
-const allowedRunnerRoles = new Set(["planner", "todo", "verifier", "wiki-maintainer", "watcher"]);
+const allowedRunRoles = new Set([
+  "ticket",
+  "ticket-owner",
+  "owner",
+  "planner",
+  "plan",
+  "todo",
+  "verifier",
+  "veri",
+  "wiki",
+  "wiki-maintainer"
+]);
+const allowedRunnerRoles = new Set(["ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "watcher"]);
 const allowedRunnerConfigKeys = new Set([
   "agent",
   "model",
