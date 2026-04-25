@@ -2,7 +2,9 @@
 
 이 보드의 목적은 `문서 기반 AI 작업 하네스 보드`를 운영하는 것이다.
 
-에이전트는 이 보드에서 임의로 바로 구현부터 시작하지 말고, 아래의 보드 흐름을 따라야 한다.
+기본 실행 모델은 `Ticket Owner` 다. 한 runner 가 한 티켓의 local plan, implementation, verification, evidence 기록, done/reject 이동까지 끝까지 책임진다.
+
+아래의 planner / todo / verifier role-pipeline 문서는 호환용 레거시 경로다. 새 구현과 기본 runner 는 역할을 분리하지 말고 `ticket-owner` 흐름을 우선한다.
 
 ## Canonical Flow
 

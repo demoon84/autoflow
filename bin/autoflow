@@ -25,6 +25,7 @@ Usage:
   autoflow watch-status [project-root] [board-dir-name]
   autoflow watch-stop [project-root] [board-dir-name]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
@@ -53,6 +54,7 @@ Examples:
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
   echo "Build the local runner harness" | autoflow spec create /path/to/project --title "Runner harness"
+  autoflow run ticket /path/to/project --runner owner-1
   autoflow run planner /path/to/project --runner planner-1
   autoflow wiki update /path/to/project
   autoflow runners list /path/to/project

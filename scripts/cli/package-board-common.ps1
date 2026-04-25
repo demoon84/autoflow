@@ -58,6 +58,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/todo-queue-agent.md"; TargetRel = "agents/todo-queue-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/verifier-agent.md"; TargetRel = "agents/verifier-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/spec-author-agent.md"; TargetRel = "agents/spec-author-agent.md" }
+    [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/ticket-owner-agent.md"; TargetRel = "agents/ticket-owner-agent.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "agents/wiki-maintainer-agent.md"; TargetRel = "agents/wiki-maintainer-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "conversations/README.md"; TargetRel = "conversations/README.md" }
     [pscustomobject]@{ Kind = "source_text"; SourceRel = "automations/README.md"; TargetRel = "automations/README.md" }

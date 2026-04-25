@@ -78,6 +78,7 @@ source_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 source_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 source_text|agents/verifier-agent.md|agents/verifier-agent.md
 source_text|agents/spec-author-agent.md|agents/spec-author-agent.md
+source_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
 source_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
 template_text|conversations/README.md|conversations/README.md
 source_text|automations/README.md|automations/README.md

@@ -10,6 +10,7 @@ source "${SCRIPT_DIR}/../runtime/runner-common.sh"
 usage() {
   cat <<'EOF' >&2
 Usage:
+  run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
@@ -55,6 +56,12 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$requested_role" in
+  ticket|owner|ticket-owner)
+    public_role="ticket"
+    runtime_role="ticket-owner"
+    default_runner_id="owner-1"
+    runtime_script=""
+    ;;
   planner|plan)
     public_role="planner"
     runtime_role="plan"
@@ -158,6 +165,9 @@ agent_instruction_path() {
     planner)
       printf '%s/agents/plan-to-ticket-agent.md' "$board_root"
       ;;
+    ticket)
+      printf '%s/agents/ticket-owner-agent.md' "$board_root"
+      ;;
     todo)
       printf '%s/agents/todo-queue-agent.md' "$board_root"
       ;;
@@ -195,12 +205,13 @@ Context:
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
-3. Use the runtime script when claiming or preparing board state.
+3. Use the runtime script when claiming or preparing board state if a runtime script is defined.
 4. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
 5. Do not rely on this prompt as future memory.
 6. Never git push.
 
 Role boundary:
+- ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
 - planner: create/update plans and todo ticket files only. Do not implement, verify, commit, or push.
 - todo: claim/resume one todo ticket, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
@@ -356,7 +367,7 @@ if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1
 fi
 
 case "$public_role:$configured_role" in
-  planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -367,7 +378,9 @@ case "$public_role:$configured_role" in
     ;;
 esac
 
-if [ "$public_role" = "wiki" ]; then
+if [ "$public_role" = "ticket" ]; then
+  runtime_path=""
+elif [ "$public_role" = "wiki" ]; then
   runtime_path="${SCRIPT_DIR}/wiki-project.sh"
 elif [ -z "$runtime_script" ]; then
   write_blocked_state "role_run_not_implemented"
@@ -378,7 +391,7 @@ else
   runtime_path="${board_root}/scripts/${runtime_script}"
 fi
 
-if [ ! -f "$runtime_path" ]; then
+if [ "$public_role" != "ticket" ] && [ ! -f "$runtime_path" ]; then
   write_blocked_state "runtime_script_missing"
   print_run_header "blocked"
   printf 'reason=runtime_script_missing\n'
@@ -388,6 +401,13 @@ fi
 
 case "$agent" in
   shell|manual)
+    if [ "$public_role" = "ticket" ]; then
+      write_blocked_state "ticket_owner_requires_agent_adapter_or_command"
+      print_run_header "blocked"
+      printf 'reason=ticket_owner_requires_agent_adapter_or_command\n'
+      printf 'agent=%s\n' "$agent"
+      exit 0
+    fi
     ;;
   codex|claude|opencode|gemini)
     instruction_file="$(agent_instruction_path)"

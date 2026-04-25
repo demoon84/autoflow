@@ -21,6 +21,7 @@ Usage:
   autoflow stop-hook-status [project-root] [board-dir-name]
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]

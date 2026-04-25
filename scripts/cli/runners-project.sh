@@ -176,6 +176,9 @@ runner_loop_stderr_path() {
 
 runner_role_to_run_role() {
   case "${1:-}" in
+    ticket-owner|owner|ticket)
+      printf 'ticket'
+      ;;
     planner|plan)
       printf 'planner'
       ;;

@@ -79,12 +79,12 @@ record_runner_adapter_check() {
   printf 'runner.%s.interval_seconds=%s\n' "$check_id" "$interval_seconds" >> "$check_output"
 
   case "$role" in
-    planner|todo|verifier|wiki-maintainer|watcher)
+    ticket-owner|owner|planner|todo|verifier|wiki-maintainer|watcher)
       record_check "${check_id}_role" "ok"
       ;;
     *)
       record_check "${check_id}_role" "warning"
-      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected planner, todo, verifier, wiki-maintainer, or watcher"
+      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, wiki-maintainer, or watcher"
       ;;
   esac
 

@@ -101,12 +101,12 @@ function Add-RunnerAdapterCheck {
   [void]$checkLines.Add(("runner.{0}.agent={1}" -f $checkId, $agent))
   [void]$checkLines.Add(("runner.{0}.interval_seconds={1}" -f $checkId, $intervalSeconds))
 
-  if ($role -in @("planner", "todo", "verifier", "wiki-maintainer", "watcher")) {
+  if ($role -in @("ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "watcher")) {
     Add-Check "${checkId}_role" "ok"
   }
   else {
     Add-Check "${checkId}_role" "warning"
-    Add-WarningLine "runner $runnerId has unsupported role=$role; expected planner, todo, verifier, wiki-maintainer, or watcher"
+    Add-WarningLine "runner $runnerId has unsupported role=$role; expected ticket-owner, planner, todo, verifier, wiki-maintainer, or watcher"
   }
 
   if ($enabled -in @("true", "false")) {
