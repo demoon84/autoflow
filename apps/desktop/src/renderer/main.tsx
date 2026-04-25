@@ -30,13 +30,13 @@ import { Label } from "@/components/ui/label";
 import "./styles.css";
 
 const ticketColumns = [
-  { key: "backlog", label: "Backlog", meta: "Spec intake", icon: Inbox, tone: "lane-backlog" },
-  { key: "plan", label: "Plan", meta: "Planning", icon: ClipboardList, tone: "lane-plan" },
-  { key: "todo", label: "Todo", meta: "Ready", icon: Layers3, tone: "lane-todo" },
-  { key: "inprogress", label: "Running", meta: "Claimed", icon: Activity, tone: "lane-inprogress" },
-  { key: "verifier", label: "Verify", meta: "Review", icon: ShieldCheck, tone: "lane-verifier" },
-  { key: "done", label: "Done", meta: "Passed", icon: CheckCircle2, tone: "lane-done" },
-  { key: "reject", label: "Reject", meta: "Needs plan", icon: TriangleAlert, tone: "lane-reject" }
+  { key: "backlog", label: "스펙 대기", meta: "요청 접수", icon: Inbox, tone: "lane-backlog" },
+  { key: "plan", label: "계획", meta: "작업 설계", icon: ClipboardList, tone: "lane-plan" },
+  { key: "todo", label: "할 일", meta: "실행 대기", icon: Layers3, tone: "lane-todo" },
+  { key: "inprogress", label: "진행 중", meta: "점유됨", icon: Activity, tone: "lane-inprogress" },
+  { key: "verifier", label: "검증", meta: "검토 대기", icon: ShieldCheck, tone: "lane-verifier" },
+  { key: "done", label: "완료", meta: "통과", icon: CheckCircle2, tone: "lane-done" },
+  { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "lane-reject" }
 ] as const;
 
 const defaultFlowFolder = "autoflow";
@@ -45,8 +45,8 @@ const runnerModeOptions = ["one-shot", "loop", "watch"] as const;
 const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 const runnerRoleOptions = [
-  { role: "ticket-owner", label: "Owner" },
-  { role: "wiki-maintainer", label: "Wiki" }
+  { role: "ticket-owner", label: "오너" },
+  { role: "wiki-maintainer", label: "위키" }
 ] as const;
 
 type RunnerRole = (typeof runnerRoleOptions)[number]["role"];
@@ -182,12 +182,104 @@ function formatDate(value: string) {
     return value;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("ko-KR", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+const statusLabels: Record<string, string> = {
+  ok: "정상",
+  idle: "대기",
+  running: "실행 중",
+  blocked: "막힘",
+  failed: "실패",
+  fail: "실패",
+  stopped: "중지됨",
+  warning: "주의",
+  error: "오류",
+  disabled: "꺼짐",
+  not_applicable: "해당 없음",
+  unknown: "알 수 없음",
+  absent: "없음",
+  installed: "설치됨",
+  missing: "없음",
+  started: "시작됨",
+  already_running: "이미 실행 중",
+  stale_pid: "오래된 PID",
+  stale_pid_removed: "오래된 PID 제거됨",
+  true: "사용",
+  false: "중지"
+};
+
+const runnerRoleLabels: Record<string, string> = {
+  "ticket-owner": "티켓 오너",
+  owner: "티켓 오너",
+  ticket: "티켓 오너",
+  "wiki-maintainer": "위키 관리자",
+  wiki: "위키 관리자",
+  planner: "플래너",
+  plan: "플랜",
+  todo: "작업자",
+  verifier: "검증자",
+  veri: "검증자",
+  watcher: "감시기",
+  runner: "실행기"
+};
+
+const runnerModeLabels: Record<string, string> = {
+  "one-shot": "1회 실행",
+  loop: "반복 실행",
+  watch: "파일 감시"
+};
+
+const artifactLabels: Record<string, string> = {
+  runtime: "런타임",
+  prompt: "프롬프트",
+  stdout: "표준 출력",
+  stderr: "표준 오류"
+};
+
+const actionLabels: Record<string, string> = {
+  start: "시작",
+  stop: "중지",
+  restart: "재시작",
+  remove: "삭제",
+  artifacts: "산출물",
+  config: "설정 저장",
+  "dry-run": "미리 실행",
+  run: "실행",
+  add: "추가",
+  wiki: "위키",
+  metrics: "지표"
+};
+
+function displayStatus(value: string) {
+  return statusLabels[value] || value || "-";
+}
+
+function displayRunnerRole(value: string) {
+  return runnerRoleLabels[value] || value || "실행기";
+}
+
+function displayRunnerMode(value: string) {
+  return runnerModeLabels[value] || value || "-";
+}
+
+function displayArtifactLabel(value: string) {
+  return artifactLabels[value] || value || "산출물";
+}
+
+function displayActionKey(actionKey: string) {
+  if (!actionKey) {
+    return "";
+  }
+
+  const [action, target] = actionKey.split(":");
+  const label = actionLabels[action] || action;
+  return target ? `${label} ${target}` : label;
 }
 
 function runRoleForRunner(role: string) {
@@ -227,18 +319,18 @@ function commandPreviewForRunner(
   const commandOverride = draft.command.trim();
 
   if (commandOverride) {
-    return `custom: ${commandOverride} < $AUTOFLOW_PROMPT_FILE`;
+    return `사용자 명령: ${commandOverride} < $AUTOFLOW_PROMPT_FILE`;
   }
 
   if (draft.mode === "loop") {
     const interval = draft.intervalSeconds.trim() || runner.intervalEffectiveSeconds || "60";
-    return `loop every ${interval}s: autoflow runners start ${shellArg(runner.id)} ${shellArg(projectRoot)} ${shellArg(
+    return `${interval}초마다 반복: autoflow runners start ${shellArg(runner.id)} ${shellArg(projectRoot)} ${shellArg(
       boardDirName
     )}`;
   }
 
   if (draft.mode === "watch") {
-    return `watch: autoflow watch-bg ${shellArg(projectRoot)} ${shellArg(boardDirName)}`;
+    return `파일 감시: autoflow watch-bg ${shellArg(projectRoot)} ${shellArg(boardDirName)}`;
   }
 
   if (draft.agent === "codex") {
@@ -363,25 +455,25 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
 function boardFileKind(filePath: string) {
   const normalizedPath = filePath.replace(/\\/g, "/");
   if (normalizedPath.includes("/tickets/")) {
-    return "Ticket";
+    return "티켓";
   }
   if (normalizedPath.includes("/wiki/")) {
-    return "Wiki";
+    return "위키";
   }
   if (normalizedPath.includes("/metrics/")) {
-    return "Metrics";
+    return "지표";
   }
   if (normalizedPath.includes("/conversations/")) {
-    return "Handoff";
+    return "인수인계";
   }
   if (normalizedPath.includes("/runners/logs/")) {
-    return "Runner";
+    return "실행기";
   }
   if (normalizedPath.includes("/logs/")) {
-    return "Log";
+    return "로그";
   }
 
-  return "File";
+  return "파일";
 }
 
 function searchBoardFiles(board: AutoflowBoardSnapshot | null, query: string) {
@@ -471,7 +563,7 @@ function preferredRunnerArtifact(runner: AutoflowRunner) {
 
 function runnerArtifactSummary(runner: AutoflowRunner) {
   return runnerArtifactEntries(runner)
-    .map((entry) => `${entry.label}:${entry.status}`)
+    .map((entry) => `${displayArtifactLabel(entry.label)}:${displayStatus(entry.status)}`)
     .join(" ");
 }
 
@@ -484,7 +576,7 @@ function terminalArtifactEntries(output: string): RunnerArtifactEntry[] {
   return Array.from({ length: count }, (_, index) => {
     const item = index + 1;
     return {
-      label: outputValue(output, `artifact.${item}.label`) || `artifact ${item}`,
+      label: outputValue(output, `artifact.${item}.label`) || `산출물 ${item}`,
       path: outputValue(output, `artifact.${item}.path`),
       status: outputValue(output, `artifact.${item}.status`) || "unknown"
     };
@@ -715,7 +807,7 @@ function App() {
       try {
         const result = await window.autoflow.installBoard(targetOptions);
         if (!result.ok) {
-          setSetupError(result.stderr || "Install failed.");
+          setSetupError(result.stderr || "설치에 실패했습니다.");
           return;
         }
 
@@ -744,7 +836,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner action failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 작업에 실패했습니다.");
         }
 
         await loadBoard();
@@ -769,7 +861,7 @@ function App() {
           ...options
         });
         if (!result.ok) {
-          setStopHookError(result.stderr || result.stdout || "Stop hook action failed.");
+          setStopHookError(result.stderr || result.stdout || "중단 방지 훅 작업에 실패했습니다.");
         }
 
         await loadBoard();
@@ -794,7 +886,7 @@ function App() {
           ...options
         });
         if (!result.ok) {
-          setWatcherError(result.stderr || result.stdout || "Watcher action failed.");
+          setWatcherError(result.stderr || result.stdout || "파일 감시기 작업에 실패했습니다.");
         }
 
         await loadBoard();
@@ -829,7 +921,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner add failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 추가에 실패했습니다.");
         }
 
         await loadBoard();
@@ -846,7 +938,7 @@ function App() {
         return;
       }
 
-      if (!window.confirm(`Remove runner ${runner.id}?`)) {
+      if (!window.confirm(`${runner.id} 실행기를 삭제할까요?`)) {
         return;
       }
 
@@ -861,7 +953,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner remove failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 삭제에 실패했습니다.");
         }
 
         await loadBoard();
@@ -888,7 +980,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner artifact list failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 산출물 목록을 불러오지 못했습니다.");
         }
 
         await loadBoard();
@@ -915,7 +1007,7 @@ function App() {
         });
         if (!result.ok) {
           setLogPreview(null);
-          setLogError(result.stderr || "Log preview failed.");
+          setLogError(result.stderr || "파일 미리보기에 실패했습니다.");
           return;
         }
 
@@ -945,7 +1037,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner tick failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 1회 실행에 실패했습니다.");
         }
 
         await loadBoard();
@@ -986,7 +1078,7 @@ function App() {
         archiveHandoff: specArchiveHandoff
       });
       if (!result.ok) {
-        setSpecError(result.stderr || result.stdout || "Spec create failed.");
+        setSpecError(result.stderr || result.stdout || "스펙 생성에 실패했습니다.");
         return;
       }
 
@@ -1002,7 +1094,7 @@ function App() {
             (runner.role === "ticket-owner" || runner.role === "owner") && runnerIsEnabled(runner.enabled)
         );
         if (!ownerRunner) {
-          setSpecError("Spec was created, but no enabled ticket owner runner is available for dry-run.");
+          setSpecError("스펙은 생성됐지만 미리 실행할 활성 티켓 오너 실행기가 없습니다.");
         } else {
           const ownerResult = await window.autoflow.runRole({
             role: "ticket",
@@ -1011,7 +1103,7 @@ function App() {
             ...options
           });
           if (!ownerResult.ok) {
-            setSpecError(ownerResult.stderr || ownerResult.stdout || "Ticket owner dry-run failed.");
+            setSpecError(ownerResult.stderr || ownerResult.stdout || "티켓 오너 미리 실행에 실패했습니다.");
           }
           const artifactPath = runArtifactPath(ownerResult.stdout);
           if (artifactPath) {
@@ -1089,7 +1181,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "Runner config failed.");
+          setRunnerError(result.stderr || result.stdout || "실행기 설정 저장에 실패했습니다.");
         }
 
         await loadBoard();
@@ -1117,7 +1209,7 @@ function App() {
         });
         recordRunnerTerminal(result);
         if (!result.ok) {
-          setWikiError(result.stderr || result.stdout || "Wiki action failed.");
+          setWikiError(result.stderr || result.stdout || "위키 작업에 실패했습니다.");
           return;
         }
 
@@ -1144,7 +1236,7 @@ function App() {
       const result = await window.autoflow.writeMetricsSnapshot(options);
       recordRunnerTerminal(result);
       if (!result.ok) {
-        setMetricsError(result.stderr || result.stdout || "Metrics snapshot write failed.");
+        setMetricsError(result.stderr || result.stdout || "지표 스냅샷 저장에 실패했습니다.");
         return;
       }
 
@@ -1160,7 +1252,7 @@ function App() {
 
   const boardExists = Boolean(board?.exists);
   const ticketTotal = countTickets(board);
-  const projectLabel = options.projectRoot ? basename(options.projectRoot) : "No project";
+  const projectLabel = options.projectRoot ? basename(options.projectRoot) : "프로젝트 없음";
 
   return (
     <div className="viewer-shell">
@@ -1172,26 +1264,26 @@ function App() {
             <span />
           </div>
           <div className="min-w-0">
-            <h1>Codex Flow</h1>
-            <p>Autoflow Console</p>
+            <h1>코덱스 플로우</h1>
+            <p>오토플로 콘솔</p>
           </div>
         </div>
 
         <div className="viewer-title">
-          <strong>Codex Runner Flow</strong>
-          <span>Tracking tickets and local runners</span>
+          <strong>코덱스 실행 흐름</strong>
+          <span>티켓과 로컬 실행기를 추적합니다</span>
         </div>
 
         <div className="top-actions">
           <div className="status-chip">
             {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             <span>
-              {lastUpdated ? `Updated ${formatDate(lastUpdated)}${autoRefreshActive ? " / auto" : ""}` : "No snapshot"}
+              {lastUpdated ? `업데이트 ${formatDate(lastUpdated)}${autoRefreshActive ? " / 자동" : ""}` : "스냅샷 없음"}
             </span>
           </div>
           <Button variant="default" className="refresh-button" disabled={isRefreshing} onClick={refreshBoard}>
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            새로고침
           </Button>
         </div>
       </header>
@@ -1240,24 +1332,24 @@ function App() {
           onReadLog={readLog}
         />
 
-        <section className="board-section" aria-label="Codex work flow">
+        <section className="board-section" aria-label="코덱스 작업 흐름">
           <div className="section-heading">
             <div>
-              <h3>Agent Ticket Flow</h3>
+              <h3>작업 티켓 흐름</h3>
             </div>
             <Badge variant="outline" className="count-badge">
-              {ticketTotal} files
+              {ticketTotal}개 파일
             </Badge>
           </div>
           <TicketBoard board={board} selectedPath={selectedLogPath} onSelect={readLog} />
         </section>
 
-        <section className="lower-grid" aria-label="Codex progress logs and snapshot">
+        <section className="lower-grid" aria-label="코덱스 진행 로그와 스냅샷">
           <div className="tool-panel">
             <div className="section-heading compact">
               <div>
-                <div className="section-kicker">History</div>
-                <h3>Recent Logs</h3>
+                <div className="section-kicker">이력</div>
+                <h3>최근 로그</h3>
               </div>
               <Clock3 className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -1267,16 +1359,16 @@ function App() {
           <div className="tool-panel">
             <div className="section-heading compact">
               <div>
-                <div className="section-kicker">Knowledge</div>
-                <h3>Wiki & Handoffs</h3>
+                <div className="section-kicker">지식</div>
+                <h3>위키와 인수인계</h3>
               </div>
               <div className="knowledge-actions">
                 <Button
                   variant="outline"
                   size="icon"
                   className="knowledge-action-button"
-                  title="Dry-run wiki update"
-                  aria-label="Dry-run wiki update"
+                  title="위키 업데이트 미리 실행"
+                  aria-label="위키 업데이트 미리 실행"
                   disabled={!boardExists || Boolean(wikiActionKey)}
                   onClick={() => controlWiki("update", true)}
                 >
@@ -1290,8 +1382,8 @@ function App() {
                   variant="outline"
                   size="icon"
                   className="knowledge-action-button"
-                  title="Update wiki"
-                  aria-label="Update wiki"
+                  title="위키 업데이트"
+                  aria-label="위키 업데이트"
                   disabled={!boardExists || Boolean(wikiActionKey)}
                   onClick={() => controlWiki("update", false)}
                 >
@@ -1305,8 +1397,8 @@ function App() {
                   variant="outline"
                   size="icon"
                   className="knowledge-action-button"
-                  title="Lint wiki"
-                  aria-label="Lint wiki"
+                  title="위키 검사"
+                  aria-label="위키 검사"
                   disabled={!boardExists || Boolean(wikiActionKey)}
                   onClick={() => controlWiki("lint", false)}
                 >
@@ -1328,16 +1420,16 @@ function App() {
           <div className="snapshot-panel">
             <div className="section-heading compact">
               <div>
-                <div className="section-kicker">Snapshot</div>
-                <h3>Progress Snapshot</h3>
+                <div className="section-kicker">스냅샷</div>
+                <h3>진행 스냅샷</h3>
               </div>
               <div className="snapshot-actions">
                 <Button
                   variant="outline"
                   size="icon"
                   className="snapshot-action-button"
-                  title="Write metrics snapshot"
-                  aria-label="Write metrics snapshot"
+                  title="지표 스냅샷 저장"
+                  aria-label="지표 스냅샷 저장"
                   disabled={!boardExists || Boolean(metricsActionKey)}
                   onClick={writeMetricsSnapshot}
                 >
@@ -1348,7 +1440,7 @@ function App() {
                   )}
                 </Button>
                 <Badge variant={boardExists ? "default" : options.projectRoot ? "destructive" : "secondary"}>
-                  {boardExists ? "tracking" : "missing"}
+                  {boardExists ? "추적 중" : "없음"}
                 </Badge>
               </div>
             </div>
@@ -1380,35 +1472,35 @@ function App() {
         </section>
       </main>
 
-      <footer className="project-switcher" aria-label="Codex progress source settings">
+      <footer className="project-switcher" aria-label="코덱스 진행 소스 설정">
         <div className="switcher-status">
           <span className={boardExists ? "status-dot status-dot-ok" : "status-dot"} />
           <div>
             <strong>{projectLabel}</strong>
             <span>
               {setupError ||
-                (boardExists ? "autoflow loaded" : options.projectRoot ? "autoflow not installed" : "No project")}
+                (boardExists ? "autoflow 로드됨" : options.projectRoot ? "autoflow가 설치되지 않음" : "프로젝트 없음")}
             </span>
           </div>
         </div>
 
         <div className="switcher-field project-root-field">
-          <Label htmlFor="projectRoot">Project Root</Label>
+          <Label htmlFor="projectRoot">프로젝트 루트</Label>
           <div className="input-with-action">
             <Input
               id="projectRoot"
               value={projectRoot}
               spellCheck={false}
-              placeholder="/path/to/project"
+              placeholder="/프로젝트/경로"
               onChange={(event) => setProjectRoot(event.target.value)}
             />
             <Button
               variant="outline"
               size="icon"
               className="browse-button"
-              title="Browse project"
+              title="프로젝트 선택"
               onClick={browseProject}
-              aria-label="Browse project"
+              aria-label="프로젝트 선택"
             >
               <FolderOpen className="h-4 w-4" />
             </Button>
@@ -1418,11 +1510,11 @@ function App() {
         {options.projectRoot && !boardExists ? (
           <Button className="setup-button" disabled={isInstalling} onClick={() => void installFlow()}>
             {isInstalling ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
-            Install Autoflow
+            Autoflow 설치
           </Button>
         ) : (
           <Badge variant="secondary" className="switcher-count">
-            {ticketTotal} files
+            {ticketTotal}개 파일
           </Badge>
         )}
       </footer>
@@ -1460,14 +1552,14 @@ function RunnerConsole({
   const runners = board?.runners || [];
 
   return (
-    <section className="runner-section" aria-label="Autoflow runner console">
+    <section className="runner-section" aria-label="Autoflow 실행기 콘솔">
       <div className="section-heading">
         <div>
-          <h3>Runner Console</h3>
+          <h3>실행기 콘솔</h3>
         </div>
         <div className="runner-heading-actions">
           <Badge variant="outline" className="count-badge">
-            {runners.length} runners
+            {runners.length}개 실행기
           </Badge>
           <div className="runner-add-actions">
             {runnerRoleOptions.map(({ role, label }) => (
@@ -1476,8 +1568,8 @@ function RunnerConsole({
                 variant="outline"
                 size="sm"
                 className="runner-add-button"
-                title={`Add ${label} runner`}
-                aria-label={`Add ${label} runner`}
+                title={`${label} 실행기 추가`}
+                aria-label={`${label} 실행기 추가`}
                 disabled={Boolean(actionKey)}
                 onClick={() => onAddRole(role)}
               >
@@ -1550,7 +1642,7 @@ function RunnerConsole({
             const showArtifactHealth = artifactHealth !== "not_applicable" && artifactHealth !== "unknown";
             const showRoleHealth = roleHealth === "warning";
             const showEnabledHealth = enabledHealth === "warning";
-            const runnerEvent = runner.activeItem || runner.lastResult || runner.lastEventAt || "No event";
+            const runnerEvent = runner.activeItem || runner.lastResult || runner.lastEventAt || "이벤트 없음";
 
             return (
               <article key={runner.id} className="runner-row">
@@ -1558,42 +1650,50 @@ function RunnerConsole({
                 <div className="runner-main">
                   <div className="runner-title-line">
                     <strong>{runner.id}</strong>
-                    <Badge variant={enabled ? "secondary" : "outline"}>{runner.role || "runner"}</Badge>
+                    <Badge variant={enabled ? "secondary" : "outline"}>
+                      {displayRunnerRole(runner.role || "runner")}
+                    </Badge>
                   </div>
                   <span>
-                    {runner.agent || "agent"} {runner.model ? `- ${runner.model}` : ""} - {mode}
+                    {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - {displayRunnerMode(mode)}
                     {mode === "loop" ? ` / ${intervalLabel}s` : ""}
                   </span>
                   <div className="runner-health-line">
                     {showRoleHealth ? (
-                      <span className={`runner-health-pill ${runnerHealthTone(roleHealth)}`}>role {roleHealth}</span>
+                      <span className={`runner-health-pill ${runnerHealthTone(roleHealth)}`}>
+                        역할 {displayStatus(roleHealth)}
+                      </span>
                     ) : null}
                     <span className={`runner-health-pill ${runnerHealthTone(adapterHealth)}`}>
-                      adapter {adapterHealth}
+                      어댑터 {displayStatus(adapterHealth)}
                     </span>
                     {showEnabledHealth ? (
                       <span className={`runner-health-pill ${runnerHealthTone(enabledHealth)}`}>
-                        enabled {enabledHealth}
+                        사용 {displayStatus(enabledHealth)}
                       </span>
                     ) : null}
-                    <span className={`runner-health-pill ${runnerHealthTone(modeHealth)}`}>mode {modeHealth}</span>
+                    <span className={`runner-health-pill ${runnerHealthTone(modeHealth)}`}>
+                      모드 {displayStatus(modeHealth)}
+                    </span>
                     {showIntervalHealth ? (
                       <span className={`runner-health-pill ${runnerHealthTone(intervalHealth)}`}>
-                        interval {intervalHealth}
+                        주기 {displayStatus(intervalHealth)}
                       </span>
                     ) : null}
                     {showPidHealth ? (
-                      <span className={`runner-health-pill ${runnerHealthTone(pidHealth)}`}>pid {pidHealth}</span>
+                      <span className={`runner-health-pill ${runnerHealthTone(pidHealth)}`}>
+                        PID {displayStatus(pidHealth)}
+                      </span>
                     ) : null}
                     {showArtifactHealth ? (
                       <span className={`runner-health-pill ${runnerHealthTone(artifactHealth)}`}>
-                        artifact {artifactHealth}
+                        산출물 {displayStatus(artifactHealth)}
                       </span>
                     ) : null}
                   </div>
                 </div>
                 <div className="runner-state">
-                  <strong>{status}</strong>
+                  <strong>{displayStatus(status)}</strong>
                   <span>{runnerEvent}</span>
                   {runner.lastResult && runner.lastEventAt ? (
                     <span className="runner-state-muted">{runner.lastEventAt}</span>
@@ -1609,8 +1709,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title={mode === "one-shot" ? "Dry run" : "Dry run requires one-shot mode"}
-                    aria-label={`Dry run ${runner.id}`}
+                    title={mode === "one-shot" ? "미리 실행" : "미리 실행은 1회 실행 모드에서만 가능합니다"}
+                    aria-label={`${runner.id} 미리 실행`}
                     disabled={!canRun || Boolean(actionKey)}
                     onClick={() => onRun(runner, true)}
                   >
@@ -1624,8 +1724,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title={mode === "one-shot" ? "Run one tick" : "Run one tick requires one-shot mode"}
-                    aria-label={`Run ${runner.id}`}
+                    title={mode === "one-shot" ? "1회 실행" : "1회 실행은 1회 실행 모드에서만 가능합니다"}
+                    aria-label={`${runner.id} 1회 실행`}
                     disabled={!canRun || Boolean(actionKey)}
                     onClick={() => onRun(runner, false)}
                   >
@@ -1639,8 +1739,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title={mode === "loop" ? "Start loop" : "Start requires loop mode"}
-                    aria-label={`Start ${runner.id}`}
+                    title={mode === "loop" ? "반복 시작" : "반복 모드에서만 시작할 수 있습니다"}
+                    aria-label={`${runner.id} 반복 시작`}
                     disabled={!canStart || Boolean(actionKey)}
                     onClick={() => onControl("start", runner.id)}
                   >
@@ -1654,8 +1754,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title="Stop runner"
-                    aria-label={`Stop ${runner.id}`}
+                    title="실행기 중지"
+                    aria-label={`${runner.id} 실행기 중지`}
                     disabled={!canStop || Boolean(actionKey)}
                     onClick={() => onControl("stop", runner.id)}
                   >
@@ -1669,8 +1769,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title={mode === "loop" ? "Restart loop" : "Restart requires loop mode"}
-                    aria-label={`Restart ${runner.id}`}
+                    title={mode === "loop" ? "반복 재시작" : "반복 모드에서만 재시작할 수 있습니다"}
+                    aria-label={`${runner.id} 반복 재시작`}
                     disabled={!canStart || Boolean(actionKey)}
                     onClick={() => onControl("restart", runner.id)}
                   >
@@ -1684,8 +1784,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title="List artifact status"
-                    aria-label={`List ${runner.id} artifacts`}
+                    title="산출물 상태 보기"
+                    aria-label={`${runner.id} 산출물 상태 보기`}
                     disabled={Boolean(actionKey)}
                     onClick={() => onArtifacts(runner)}
                   >
@@ -1699,8 +1799,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title="Open runner log"
-                    aria-label={`Open ${runner.id} log`}
+                    title="실행기 로그 열기"
+                    aria-label={`${runner.id} 실행기 로그 열기`}
                     disabled={!runner.logPath || Boolean(actionKey)}
                     onClick={() => onReadLog(runner.logPath)}
                   >
@@ -1712,10 +1812,10 @@ function RunnerConsole({
                     className="runner-icon-button"
                     title={
                       lastRunArtifact
-                        ? `Open ${lastRunArtifact.label} artifact (${artifactSummary})`
-                        : `No run artifact (${artifactSummary})`
+                        ? `${displayArtifactLabel(lastRunArtifact.label)} 산출물 열기 (${artifactSummary})`
+                        : `실행 산출물 없음 (${artifactSummary})`
                     }
-                    aria-label={`Open ${runner.id} last run artifact`}
+                    aria-label={`${runner.id} 마지막 실행 산출물 열기`}
                     disabled={!lastRunArtifact?.path || Boolean(actionKey)}
                     onClick={() => lastRunArtifact?.path && onReadLog(lastRunArtifact.path)}
                   >
@@ -1725,8 +1825,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title="Remove runner"
-                    aria-label={`Remove ${runner.id}`}
+                    title="실행기 삭제"
+                    aria-label={`${runner.id} 실행기 삭제`}
                     disabled={Boolean(actionKey)}
                     onClick={() => onRemove(runner)}
                   >
@@ -1737,7 +1837,7 @@ function RunnerConsole({
                     )}
                   </Button>
                 </div>
-                <div className="runner-artifacts" aria-label={`${runner.id} run artifacts`}>
+                <div className="runner-artifacts" aria-label={`${runner.id} 실행 산출물`}>
                   {artifactEntries.map((artifact) => {
                     const canOpenArtifact = Boolean(artifact.path && artifact.status === "ok");
                     return (
@@ -1745,8 +1845,12 @@ function RunnerConsole({
                         key={artifact.label}
                         type="button"
                         className={`runner-artifact-chip ${runnerHealthTone(artifact.status)}`}
-                        title={`${artifact.label}: ${artifact.status}${artifact.path ? ` - ${artifact.path}` : ""}`}
-                        aria-label={`${runner.id} ${artifact.label} artifact ${artifact.status}`}
+                        title={`${displayArtifactLabel(artifact.label)}: ${displayStatus(artifact.status)}${
+                          artifact.path ? ` - ${artifact.path}` : ""
+                        }`}
+                        aria-label={`${runner.id} ${displayArtifactLabel(artifact.label)} 산출물 ${displayStatus(
+                          artifact.status
+                        )}`}
                         disabled={!canOpenArtifact || Boolean(actionKey)}
                         onClick={() => {
                           if (artifact.path) {
@@ -1754,8 +1858,8 @@ function RunnerConsole({
                           }
                         }}
                       >
-                        <span>{artifact.label}</span>
-                        <strong>{artifact.status}</strong>
+                        <span>{displayArtifactLabel(artifact.label)}</span>
+                        <strong>{displayStatus(artifact.status)}</strong>
                       </button>
                     );
                   })}
@@ -1764,7 +1868,7 @@ function RunnerConsole({
                   <select
                     className="runner-select runner-agent-select"
                     value={draft.agent}
-                    aria-label={`${runner.id} agent`}
+                    aria-label={`${runner.id} 에이전트`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "agent", event.target.value)}
                   >
@@ -1777,26 +1881,26 @@ function RunnerConsole({
                   <select
                     className="runner-select runner-mode-select"
                     value={draft.mode}
-                    aria-label={`${runner.id} mode`}
+                    aria-label={`${runner.id} 모드`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "mode", event.target.value)}
                   >
                     {modeOptions.map((mode) => (
                       <option key={mode} value={mode}>
-                        {mode}
+                        {displayRunnerMode(mode)}
                       </option>
                     ))}
                   </select>
                   <select
                     className="runner-select runner-enabled-select"
                     value={draft.enabled}
-                    aria-label={`${runner.id} enabled`}
+                    aria-label={`${runner.id} 사용 여부`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "enabled", event.target.value)}
                   >
                     {enabledOptions.map((enabledValue) => (
                       <option key={enabledValue} value={enabledValue}>
-                        {enabledValue === "true" ? "enabled" : enabledValue === "false" ? "disabled" : enabledValue}
+                        {enabledValue === "true" ? "사용" : enabledValue === "false" ? "중지" : enabledValue}
                       </option>
                     ))}
                   </select>
@@ -1807,8 +1911,8 @@ function RunnerConsole({
                     min={1}
                     max={86400}
                     spellCheck={false}
-                    placeholder="interval"
-                    aria-label={`${runner.id} loop interval seconds`}
+                    placeholder="주기(초)"
+                    aria-label={`${runner.id} 반복 주기 초`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "intervalSeconds", event.target.value)}
                   />
@@ -1816,8 +1920,8 @@ function RunnerConsole({
                     className="runner-config-input"
                     value={draft.model}
                     spellCheck={false}
-                    placeholder="model"
-                    aria-label={`${runner.id} model`}
+                    placeholder="모델"
+                    aria-label={`${runner.id} 모델`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "model", event.target.value)}
                   />
@@ -1825,8 +1929,8 @@ function RunnerConsole({
                     className="runner-config-input"
                     value={draft.reasoning}
                     spellCheck={false}
-                    placeholder="reasoning"
-                    aria-label={`${runner.id} reasoning`}
+                    placeholder="추론 강도"
+                    aria-label={`${runner.id} 추론 강도`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "reasoning", event.target.value)}
                   />
@@ -1834,8 +1938,8 @@ function RunnerConsole({
                     className="runner-config-input runner-command-input"
                     value={draft.command}
                     spellCheck={false}
-                    placeholder="command override"
-                    aria-label={`${runner.id} command override`}
+                    placeholder="명령 오버라이드"
+                    aria-label={`${runner.id} 명령 오버라이드`}
                     disabled={Boolean(actionKey)}
                     onChange={(event) => onDraftChange(runner.id, "command", event.target.value)}
                   />
@@ -1843,8 +1947,8 @@ function RunnerConsole({
                     variant="outline"
                     size="icon"
                     className="runner-icon-button"
-                    title="Save runner config"
-                    aria-label={`Save ${runner.id} config`}
+                    title="실행기 설정 저장"
+                    aria-label={`${runner.id} 설정 저장`}
                     disabled={!hasDraftChanges || Boolean(actionKey)}
                     onClick={() => onConfigure(runner)}
                   >
@@ -1863,7 +1967,7 @@ function RunnerConsole({
             );
           })
         ) : (
-          <div className="empty-panel runner-empty">No runners</div>
+          <div className="empty-panel runner-empty">실행기가 없습니다</div>
         )}
       </div>
     </section>
@@ -1888,14 +1992,14 @@ function RunnerTerminalPanel({
   const artifacts = result ? terminalArtifactEntries(result.stdout) : [];
 
   return (
-    <section className="runner-terminal-panel" aria-label="Runner command output">
+    <section className="runner-terminal-panel" aria-label="실행기 명령 출력">
       <div className="section-heading compact">
         <div>
-          <div className="section-kicker">Terminal</div>
-          <h3>Runner Output</h3>
+          <div className="section-kicker">터미널</div>
+          <h3>실행기 출력</h3>
         </div>
         <Badge variant={result?.ok ? "default" : result ? "destructive" : "secondary"}>
-          {actionKey || (selected ? formatDate(selected.recordedAt) : "idle")}
+          {actionKey ? displayActionKey(actionKey) : selected ? formatDate(selected.recordedAt) : "대기"}
         </Badge>
       </div>
       <div className="runner-terminal-meta">
@@ -1903,7 +2007,7 @@ function RunnerTerminalPanel({
         <code>{result?.command || "autoflow runners"}</code>
       </div>
       {history.length ? (
-        <div className="runner-terminal-history" aria-label="Recent runner command output">
+        <div className="runner-terminal-history" aria-label="최근 실행기 명령 출력">
           {history.map((entry) => (
             <button
               key={entry.id}
@@ -1914,13 +2018,13 @@ function RunnerTerminalPanel({
             >
               <span>{entry.result.command}</span>
               <em>{formatDate(entry.recordedAt)}</em>
-              <strong>{entry.result.ok ? "ok" : `exit ${entry.result.code}`}</strong>
+              <strong>{entry.result.ok ? "정상" : `종료 ${entry.result.code}`}</strong>
             </button>
           ))}
         </div>
       ) : null}
       {artifacts.length ? (
-        <div className="runner-terminal-artifacts" aria-label="Runner output artifacts">
+        <div className="runner-terminal-artifacts" aria-label="실행기 출력 산출물">
           {artifacts.map((artifact) => {
             const canOpenArtifact = Boolean(artifact.path && artifact.status === "ok");
             return (
@@ -1928,8 +2032,10 @@ function RunnerTerminalPanel({
                 key={artifact.label}
                 type="button"
                 className={`runner-artifact-chip ${runnerHealthTone(artifact.status)}`}
-                title={`${artifact.label}: ${artifact.status}${artifact.path ? ` - ${artifact.path}` : ""}`}
-                aria-label={`${artifact.label} artifact ${artifact.status}`}
+                title={`${displayArtifactLabel(artifact.label)}: ${displayStatus(artifact.status)}${
+                  artifact.path ? ` - ${artifact.path}` : ""
+                }`}
+                aria-label={`${displayArtifactLabel(artifact.label)} 산출물 ${displayStatus(artifact.status)}`}
                 disabled={!canOpenArtifact}
                 onClick={() => {
                   if (artifact.path) {
@@ -1937,14 +2043,14 @@ function RunnerTerminalPanel({
                   }
                 }}
               >
-                <span>{artifact.label}</span>
-                <strong>{artifact.status}</strong>
+                <span>{displayArtifactLabel(artifact.label)}</span>
+                <strong>{displayStatus(artifact.status)}</strong>
               </button>
             );
           })}
         </div>
       ) : null}
-      {output ? <pre>{output}</pre> : <div className="runner-terminal-empty">No runner output</div>}
+      {output ? <pre>{output}</pre> : <div className="runner-terminal-empty">실행기 출력이 없습니다</div>}
     </section>
   );
 }
@@ -1998,23 +2104,23 @@ function SpecIntake({
   );
 
   return (
-    <section className="spec-section" aria-label="Autoflow spec intake">
+    <section className="spec-section" aria-label="Autoflow 스펙 입력">
       <div className="section-heading">
         <div>
-          <h3>Spec Intake</h3>
+          <h3>스펙 입력</h3>
         </div>
         <div className="spec-actions">
           <Button className="spec-secondary-button" disabled={!hasDraft || isCreating} onClick={onClear}>
             <Trash2 className="h-4 w-4" />
-            Clear Draft
+            초안 지우기
           </Button>
           <Button className="spec-secondary-button" disabled={!canCreate} onClick={() => onCreate(true)}>
             {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-            Create + Owner Dry Run
+            생성 후 오너 미리 실행
           </Button>
           <Button className="spec-create-button" disabled={!canCreate} onClick={() => onCreate(false)}>
             {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-            Create Spec
+            스펙 생성
           </Button>
         </div>
       </div>
@@ -2026,16 +2132,16 @@ function SpecIntake({
           <Input
             value={title}
             spellCheck={false}
-            placeholder={raw ? "Spec title (optional)" : "Spec title"}
-            aria-label="Spec title"
+            placeholder={raw ? "스펙 제목(선택)" : "스펙 제목"}
+            aria-label="스펙 제목"
             disabled={!boardExists || isCreating}
             onChange={(event) => onTitleChange(event.target.value)}
           />
           <Input
             value={goal}
             spellCheck={false}
-            placeholder="Goal"
-            aria-label="Spec goal"
+            placeholder="목표"
+            aria-label="스펙 목표"
             disabled={!boardExists || isCreating || raw}
             onChange={(event) => onGoalChange(event.target.value)}
           />
@@ -2046,7 +2152,7 @@ function SpecIntake({
               disabled={!boardExists || isCreating}
               onChange={(event) => onRawChange(event.target.checked)}
             />
-            <span>Raw markdown</span>
+            <span>마크다운 원문</span>
           </label>
           <label className="spec-raw-toggle">
             <input
@@ -2055,15 +2161,15 @@ function SpecIntake({
               disabled={!boardExists || isCreating}
               onChange={(event) => onArchiveHandoffChange(event.target.checked)}
             />
-            <span>Archive handoff</span>
+            <span>인수인계 보관</span>
           </label>
         </div>
         <textarea
           className="spec-handoff"
           value={handoff}
           spellCheck={false}
-          placeholder={raw ? "# Project Spec..." : "Paste conversation handoff or #autoflow summary here"}
-          aria-label="Conversation handoff"
+          placeholder={raw ? "# 프로젝트 스펙..." : "대화 인수인계나 #autoflow 요약을 붙여넣으세요"}
+          aria-label="대화 인수인계"
           disabled={!boardExists || isCreating}
           onChange={(event) => onHandoffChange(event.target.value)}
           onKeyDown={handleKeyDown}
@@ -2086,22 +2192,22 @@ function SnapshotGrid({
   const doctor = board?.doctor || {};
   const metrics = board?.metrics || {};
   const rows = [
-    ["Flow Source", board?.exists ? "autoflow found" : "Missing"],
-    ["Version", statusValue(status, "board_version", "-")],
-    ["Health", statusValue(doctor, "status", board?.exists ? "unknown" : "-")],
-    ["Completion", `${statusValue(metrics, "completion_rate_percent", "0.0")}%`],
-    ["Pass Rate", `${statusValue(metrics, "verification_pass_rate_percent", "0.0")}%`],
-    ["Ticket Files", statusValue(metrics, "ticket_total", String(ticketTotal))],
+    ["흐름 소스", board?.exists ? "autoflow 발견" : "없음"],
+    ["버전", statusValue(status, "board_version", "-")],
+    ["상태", displayStatus(statusValue(doctor, "status", board?.exists ? "unknown" : "-"))],
+    ["완료율", `${statusValue(metrics, "completion_rate_percent", "0.0")}%`],
+    ["통과율", `${statusValue(metrics, "verification_pass_rate_percent", "0.0")}%`],
+    ["티켓 파일", statusValue(metrics, "ticket_total", String(ticketTotal))],
     [
-      "Artifacts",
-      `${statusValue(metrics, "runner_artifact_ok_count", "0")} ok / ${statusValue(
+      "산출물",
+      `${statusValue(metrics, "runner_artifact_ok_count", "0")} 정상 / ${statusValue(
         metrics,
         "runner_artifact_warning_count",
         "0"
-      )} warn`
+      )} 주의`
     ],
-    ["Handoffs", statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0))],
-    ["Updated", lastUpdated ? formatDate(lastUpdated) : "-"]
+    ["인수인계", statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0))],
+    ["업데이트", lastUpdated ? formatDate(lastUpdated) : "-"]
   ];
 
   return (
@@ -2139,8 +2245,8 @@ function BoardSearch({
         <Input
           value={query}
           spellCheck={false}
-          placeholder="Find files"
-          aria-label="Find board files"
+          placeholder="파일 찾기"
+          aria-label="보드 파일 찾기"
           disabled={!board?.exists}
           onChange={(event) => onQueryChange(event.target.value)}
         />
@@ -2159,7 +2265,7 @@ function BoardSearch({
                 <div className="min-w-0">
                   <strong>{file.name}</strong>
                   <span>
-                    {boardFileKind(file.filePath)} - {formatDate(file.modifiedAt)}
+                    {boardFileKind(file.filePath)} · {formatDate(file.modifiedAt)}
                   </span>
                   <p>{file.title}</p>
                 </div>
@@ -2167,7 +2273,7 @@ function BoardSearch({
             ))}
           </div>
         ) : (
-          <div className="empty-panel board-search-empty">No matches</div>
+          <div className="empty-panel board-search-empty">검색 결과가 없습니다</div>
         )
       ) : null}
     </div>
@@ -2188,7 +2294,7 @@ function MetricsHistory({
   return (
     <div className="metrics-history">
       <div className="panel-subheading">
-        <span>Metric History</span>
+        <span>지표 이력</span>
         <Badge variant="outline">{files.length}</Badge>
       </div>
       {files.length ? (
@@ -2203,13 +2309,13 @@ function MetricsHistory({
               <ClipboardCheck className="h-4 w-4" />
               <div className="min-w-0">
                 <strong>{file.name}</strong>
-                <span>Metrics - {formatDate(file.modifiedAt)}</span>
+                <span>지표 · {formatDate(file.modifiedAt)}</span>
               </div>
             </button>
           ))}
         </div>
       ) : (
-        <div className="empty-panel metrics-empty">No metric snapshots</div>
+        <div className="empty-panel metrics-empty">지표 스냅샷이 없습니다</div>
       )}
     </div>
   );
@@ -2237,8 +2343,8 @@ function StopHookPanel({
         <div className="stop-hook-title">
           <ShieldCheck className="h-4 w-4" />
           <div>
-            <strong>Stop Hook</strong>
-            <span>{status}</span>
+            <strong>중단 방지 훅</strong>
+            <span>{displayStatus(status)}</span>
           </div>
         </div>
         <div className="stop-hook-actions">
@@ -2246,8 +2352,8 @@ function StopHookPanel({
             variant="outline"
             size="icon"
             className="runner-icon-button"
-            title="Refresh stop hook"
-            aria-label="Refresh stop hook"
+            title="중단 방지 훅 새로고침"
+            aria-label="중단 방지 훅 새로고침"
             disabled={!board?.exists || Boolean(actionKey)}
             onClick={() => onControl("status")}
           >
@@ -2260,7 +2366,7 @@ function StopHookPanel({
             onClick={() => onControl("install")}
           >
             {actionKey === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            Install
+            설치
           </Button>
           <Button
             variant="outline"
@@ -2269,7 +2375,7 @@ function StopHookPanel({
             onClick={() => onControl("remove")}
           >
             {actionKey === "remove" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            Remove
+            제거
           </Button>
         </div>
       </div>
@@ -2301,8 +2407,8 @@ function WatcherPanel({
         <div className="watcher-title">
           <Activity className="h-4 w-4" />
           <div>
-            <strong>File Watcher</strong>
-            <span>{watcher.pid ? `${status} - pid ${watcher.pid}` : status}</span>
+            <strong>파일 감시기</strong>
+            <span>{watcher.pid ? `${displayStatus(status)} · PID ${watcher.pid}` : displayStatus(status)}</span>
           </div>
         </div>
         <div className="watcher-actions">
@@ -2310,8 +2416,8 @@ function WatcherPanel({
             variant="outline"
             size="icon"
             className="runner-icon-button"
-            title="Refresh watcher"
-            aria-label="Refresh watcher"
+            title="파일 감시기 새로고침"
+            aria-label="파일 감시기 새로고침"
             disabled={!board?.exists || Boolean(actionKey)}
             onClick={() => onControl("status")}
           >
@@ -2324,7 +2430,7 @@ function WatcherPanel({
             onClick={() => onControl("start")}
           >
             {actionKey === "start" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Start
+            시작
           </Button>
           <Button
             variant="outline"
@@ -2333,7 +2439,7 @@ function WatcherPanel({
             onClick={() => onControl("stop")}
           >
             {actionKey === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
-            Stop
+            중지
           </Button>
         </div>
       </div>
@@ -2353,8 +2459,10 @@ function DoctorPanel({ board }: { board: AutoflowBoardSnapshot | null }) {
   return (
     <div className={`doctor-panel ${tone}`}>
       <div className="doctor-panel-header">
-        <strong>Doctor</strong>
-        <Badge variant={errors.length ? "destructive" : warnings.length ? "outline" : "secondary"}>{status}</Badge>
+        <strong>진단</strong>
+        <Badge variant={errors.length ? "destructive" : warnings.length ? "outline" : "secondary"}>
+          {displayStatus(status)}
+        </Badge>
       </div>
       {messages.length ? (
         <ul>
@@ -2363,7 +2471,7 @@ function DoctorPanel({ board }: { board: AutoflowBoardSnapshot | null }) {
           ))}
         </ul>
       ) : (
-        <p>{board?.exists ? "No health messages" : "No board snapshot"}</p>
+        <p>{board?.exists ? "상태 메시지가 없습니다" : "보드 스냅샷이 없습니다"}</p>
       )}
     </div>
   );
@@ -2387,44 +2495,44 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
   const planningCount = statusValue(metrics, "ticket_planning_count", statusValue(status, "ticket_planning_count", "0"));
   const cards = [
     {
-      label: "Specs",
+      label: "스펙",
       value: statusValue(metrics, "spec_total", statusValue(status, "spec_count", String(board?.tickets.backlog?.length || 0))),
-      detail: `${handoffCount} handoffs`,
+      detail: `${handoffCount}개 인수인계`,
       icon: ClipboardCheck,
       tone: "metric-blue"
     },
     {
-      label: "Queue",
+      label: "대기열",
       value: statusValue(status, "ticket_todo_count", String(board?.tickets.todo?.length || 0)),
-      detail: "ready tickets",
+      detail: "준비된 티켓",
       icon: Layers3,
       tone: "metric-amber"
     },
     {
-      label: "Owner",
+      label: "오너",
       value: ownerActiveCount,
-      detail: `${planningCount} planning / ${runnerRunningCount}/${runnerEnabledCount} runners`,
+      detail: `계획 ${planningCount}개 / 실행기 ${runnerRunningCount}/${runnerEnabledCount}`,
       icon: Activity,
       tone: "metric-teal"
     },
     {
-      label: "Pass Rate",
+      label: "통과율",
       value: `${passRate}%`,
       detail: `${passCount}/${verifierTotal}`,
       icon: ShieldCheck,
       tone: "metric-violet"
     },
     {
-      label: "Done",
+      label: "완료",
       value: statusValue(metrics, "ticket_done_count", statusValue(status, "ticket_done_count", String(board?.tickets.done?.length || 0))),
-      detail: `${statusValue(metrics, "completion_rate_percent", "0.0")}% complete`,
+      detail: `${statusValue(metrics, "completion_rate_percent", "0.0")}% 완료`,
       icon: Archive,
       tone: "metric-green"
     }
   ];
 
   return (
-    <section className="metrics-strip" aria-label="Codex progress summary">
+    <section className="metrics-strip" aria-label="코덱스 진행 요약">
       {cards.map(({ label, value, detail, icon: Icon, tone }) => (
         <article key={label} className={`metric-card ${tone}`}>
           <div className="metric-icon">
@@ -2481,7 +2589,7 @@ function TicketBoard({
                   </button>
                 ))
               ) : (
-                <div className="empty-lane">Empty</div>
+                <div className="empty-lane">비어 있음</div>
               )}
             </div>
           </section>
@@ -2503,7 +2611,7 @@ function LogList({
   const logs = React.useMemo(() => recentLogs(board), [board]);
 
   if (!logs.length) {
-    return <div className="empty-panel">No logs</div>;
+    return <div className="empty-panel">로그가 없습니다</div>;
   }
 
   return (
@@ -2519,7 +2627,7 @@ function LogList({
           <div className="min-w-0">
             <strong>{log.name}</strong>
             <span>
-              {log.source} - {formatDate(log.modifiedAt)}
+              {log.source === "Board" ? "보드" : "실행기"} · {formatDate(log.modifiedAt)}
             </span>
             <p>{log.title}</p>
           </div>
@@ -2541,7 +2649,7 @@ function WikiList({
   const pages = board?.wikiFiles || [];
 
   if (!pages.length) {
-    return <div className="empty-panel">No wiki pages</div>;
+    return <div className="empty-panel">위키 페이지가 없습니다</div>;
   }
 
   return (
@@ -2556,7 +2664,7 @@ function WikiList({
           <BookOpenText className="h-4 w-4" />
           <div className="min-w-0">
             <strong>{page.name}</strong>
-            <span>Wiki - {formatDate(page.modifiedAt)}</span>
+            <span>위키 · {formatDate(page.modifiedAt)}</span>
             <p>{page.title}</p>
           </div>
         </button>
@@ -2579,7 +2687,7 @@ function HandoffList({
   return (
     <div className="handoff-block">
       <div className="panel-subheading">
-        <span>Handoffs</span>
+        <span>인수인계</span>
         <Badge variant="outline">{handoffs.length}</Badge>
       </div>
       {handoffs.length ? (
@@ -2594,14 +2702,14 @@ function HandoffList({
               <ClipboardList className="h-4 w-4" />
               <div className="min-w-0">
                 <strong>{handoff.name}</strong>
-                <span>Handoff - {formatDate(handoff.modifiedAt)}</span>
+                <span>인수인계 · {formatDate(handoff.modifiedAt)}</span>
                 <p>{handoff.title}</p>
               </div>
             </button>
           ))}
         </div>
       ) : (
-        <div className="empty-panel handoff-empty">No handoffs</div>
+        <div className="empty-panel handoff-empty">인수인계가 없습니다</div>
       )}
     </div>
   );
@@ -2619,17 +2727,17 @@ function LogPreview({
   return (
     <div className="log-preview">
       <div className="log-preview-header">
-        <strong>{preview?.name || "Log Preview"}</strong>
+        <strong>{preview?.name || "로그 미리보기"}</strong>
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
         {!isLoading && preview?.truncated ? (
           <Badge variant="outline" className="log-preview-badge">
-            truncated
+            일부만 표시
           </Badge>
         ) : null}
       </div>
       {error ? <div className="log-preview-error">{error}</div> : null}
-      {!error && preview ? <pre>{preview.content || "(empty)"}</pre> : null}
-      {!error && !preview ? <div className="empty-panel log-preview-empty">No log selected</div> : null}
+      {!error && preview ? <pre>{preview.content || "(비어 있음)"}</pre> : null}
+      {!error && !preview ? <div className="empty-panel log-preview-empty">선택된 로그가 없습니다</div> : null}
     </div>
   );
 }

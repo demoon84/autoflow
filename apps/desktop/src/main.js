@@ -54,7 +54,7 @@ function createWindow() {
     height: 860,
     minWidth: 1040,
     minHeight: 720,
-    title: "Codex Work Flow",
+    title: "코덱스 작업 흐름",
     backgroundColor: "#f4f6f8",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
