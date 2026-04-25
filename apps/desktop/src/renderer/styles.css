@@ -323,7 +323,6 @@ pre {
 
 .board-section,
 .runner-section,
-.spec-section,
 .tool-panel,
 .snapshot-panel {
   min-width: 0;
@@ -333,8 +332,7 @@ pre {
 }
 
 .board-section,
-.runner-section,
-.spec-section {
+.runner-section {
   margin-top: 2px;
   padding: 16px;
 }
@@ -368,12 +366,6 @@ pre {
 
 .runner-section > .section-heading {
   margin-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 12px;
-}
-
-.spec-section > .section-heading {
-  margin-bottom: 12px;
   border-bottom: 1px solid var(--border);
   padding-bottom: 12px;
 }
@@ -422,88 +414,6 @@ pre {
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.spec-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 0;
-}
-
-.spec-create-button,
-.spec-secondary-button {
-  display: flex !important;
-  align-items: center !important;
-  gap: 7px !important;
-  height: 32px;
-}
-
-.spec-create-button {
-  background: var(--primary) !important;
-  color: var(--primary-foreground) !important;
-}
-
-.spec-secondary-button {
-  border-color: oklch(0.82 0.018 250) !important;
-  background: var(--card) !important;
-  color: oklch(0.32 0.024 255) !important;
-}
-
-.spec-intake-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.42fr) minmax(0, 1fr);
-  gap: 10px;
-}
-
-.spec-fields {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.spec-fields input {
-  height: 34px;
-  box-shadow: none;
-}
-
-.spec-raw-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  color: oklch(0.36 0.024 255);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.spec-raw-toggle input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-}
-
-.spec-handoff {
-  width: 100%;
-  min-height: 118px;
-  max-height: 220px;
-  min-width: 0;
-  resize: vertical;
-  border: 1px solid oklch(0.82 0.018 250);
-  border-radius: 7px;
-  background: oklch(0.985 0.002 250);
-  padding: 10px;
-  color: var(--foreground);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.45;
-  box-shadow: none;
-}
-
-.spec-handoff::placeholder {
-  color: var(--muted-foreground);
 }
 
 .runner-grid {

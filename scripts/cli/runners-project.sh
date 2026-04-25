@@ -27,7 +27,7 @@ shift || true
 case "$action" in
   list)
     project_root_input="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-.autoflow}"
     ;;
   add)
     runner_id="${1:-}"
@@ -38,7 +38,7 @@ case "$action" in
     fi
     shift 2 || true
     project_root_input="."
-    board_dir_name="autoflow"
+    board_dir_name=".autoflow"
     if [ "${1:-}" != "" ] && [[ "${1:-}" != *=* ]]; then
       project_root_input="$1"
       shift || true
@@ -57,7 +57,7 @@ case "$action" in
     fi
     shift || true
     project_root_input="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-.autoflow}"
     ;;
   start|stop|restart|artifacts)
     runner_id="${1:-}"
@@ -67,7 +67,7 @@ case "$action" in
     fi
     shift || true
     project_root_input="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-.autoflow}"
     ;;
   loop-worker)
     runner_id="${1:-}"
@@ -77,7 +77,7 @@ case "$action" in
     fi
     shift || true
     project_root_input="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-.autoflow}"
     ;;
   set)
     runner_id="${1:-}"
@@ -87,7 +87,7 @@ case "$action" in
     fi
     shift || true
     project_root_input="."
-    board_dir_name="autoflow"
+    board_dir_name=".autoflow"
     if [ "${1:-}" != "" ] && [[ "${1:-}" != *=* ]]; then
       project_root_input="$1"
       shift || true

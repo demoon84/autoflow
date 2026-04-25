@@ -18,7 +18,7 @@ function Get-AutoflowRunnerBoardRoot {
 
   if ($scriptLeaf -eq "runtime") {
     $projectRoot = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
-    $boardRoot = Join-Path $projectRoot "autoflow"
+    $boardRoot = Join-Path $projectRoot ".autoflow"
     if (Test-Path -LiteralPath (Join-Path $boardRoot "runners")) {
       return $boardRoot
     }

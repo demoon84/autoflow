@@ -39,7 +39,7 @@ const ticketColumns = [
   { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "lane-reject" }
 ] as const;
 
-const defaultFlowFolder = "autoflow";
+const defaultFlowFolder = ".autoflow";
 const runnerAgentOptions = ["shell", "manual", "codex", "claude", "opencode", "gemini"] as const;
 const runnerModeOptions = ["one-shot", "loop", "watch"] as const;
 const runnerEnabledOptions = ["true", "false"] as const;
@@ -77,86 +77,12 @@ type DisplayLog = AutoflowFilePreview & {
   source: "Board" | "Runner";
 };
 
-type SpecDraft = {
-  title: string;
-  goal: string;
-  handoff: string;
-  raw: boolean;
-  archiveHandoff: boolean;
-};
-
 function initialSetting(key: string, fallback: string) {
   return window.localStorage.getItem(key) || fallback;
 }
 
 function basename(value: string) {
   return value.split(/[\\/]/).filter(Boolean).pop() || value;
-}
-
-function emptySpecDraft(): SpecDraft {
-  return {
-    title: "",
-    goal: "",
-    handoff: "",
-    raw: false,
-    archiveHandoff: true
-  };
-}
-
-function specDraftStorageKey(projectRoot: string) {
-  return `autoflow.specDraft.${encodeURIComponent(projectRoot || "default")}`;
-}
-
-function legacySpecDraft(): SpecDraft {
-  return {
-    title: initialSetting("autoflow.specTitle", ""),
-    goal: initialSetting("autoflow.specGoal", ""),
-    handoff: initialSetting("autoflow.specHandoff", ""),
-    raw: window.localStorage.getItem("autoflow.specRaw") === "true",
-    archiveHandoff: true
-  };
-}
-
-function hasSpecDraftContent(draft: SpecDraft) {
-  return Boolean(draft.title.trim() || draft.goal.trim() || draft.handoff.trim() || draft.raw);
-}
-
-function clearLegacySpecDraft() {
-  window.localStorage.removeItem("autoflow.specTitle");
-  window.localStorage.removeItem("autoflow.specGoal");
-  window.localStorage.removeItem("autoflow.specHandoff");
-  window.localStorage.removeItem("autoflow.specRaw");
-}
-
-function readSpecDraft(projectRoot: string): SpecDraft {
-  const stored = window.localStorage.getItem(specDraftStorageKey(projectRoot));
-  if (!stored) {
-    const legacyDraft = legacySpecDraft();
-    if (hasSpecDraftContent(legacyDraft)) {
-      writeSpecDraft(projectRoot, legacyDraft);
-      clearLegacySpecDraft();
-      return legacyDraft;
-    }
-
-    return emptySpecDraft();
-  }
-
-  try {
-    const parsed = JSON.parse(stored) as Partial<SpecDraft>;
-    return {
-      title: String(parsed.title || ""),
-      goal: String(parsed.goal || ""),
-      handoff: String(parsed.handoff || ""),
-      raw: parsed.raw === true,
-      archiveHandoff: parsed.archiveHandoff !== false
-    };
-  } catch {
-    return emptySpecDraft();
-  }
-}
-
-function writeSpecDraft(projectRoot: string, draft: SpecDraft) {
-  window.localStorage.setItem(specDraftStorageKey(projectRoot), JSON.stringify(draft));
 }
 
 function countTickets(board: AutoflowBoardSnapshot | null) {
@@ -312,7 +238,7 @@ function commandPreviewForRunner(
   board: AutoflowBoardSnapshot | null
 ) {
   const projectRoot = board?.status.project_root || "<project-root>";
-  const boardDirName = board?.status.board_dir_name || "autoflow";
+  const boardDirName = board?.status.board_dir_name || ".autoflow";
   const role = runRoleForRunner(runner.role);
   const model = draft.model.trim();
   const reasoning = draft.reasoning.trim();
@@ -607,7 +533,6 @@ function hasLiveProcess(board: AutoflowBoardSnapshot | null) {
 
 function App() {
   const [projectRoot, setProjectRoot] = React.useState(() => initialSetting("autoflow.projectRoot", ""));
-  const initialDraft = React.useMemo(() => readSpecDraft(projectRoot), []);
   const [board, setBoard] = React.useState<AutoflowBoardSnapshot | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [isInstalling, setIsInstalling] = React.useState(false);
@@ -621,13 +546,6 @@ function App() {
   const [logPreview, setLogPreview] = React.useState<AutoflowFileContentResult | null>(null);
   const [isReadingLog, setIsReadingLog] = React.useState(false);
   const [logError, setLogError] = React.useState("");
-  const [specTitle, setSpecTitle] = React.useState(initialDraft.title);
-  const [specGoal, setSpecGoal] = React.useState(initialDraft.goal);
-  const [specHandoff, setSpecHandoff] = React.useState(initialDraft.handoff);
-  const [specRaw, setSpecRaw] = React.useState(initialDraft.raw);
-  const [specArchiveHandoff, setSpecArchiveHandoff] = React.useState(initialDraft.archiveHandoff);
-  const [isCreatingSpec, setIsCreatingSpec] = React.useState(false);
-  const [specError, setSpecError] = React.useState("");
   const [setupError, setSetupError] = React.useState("");
   const [wikiActionKey, setWikiActionKey] = React.useState("");
   const [wikiError, setWikiError] = React.useState("");
@@ -643,8 +561,6 @@ function App() {
     () => ({ projectRoot: projectRoot.trim(), boardDirName: defaultFlowFolder }),
     [projectRoot]
   );
-  const specDraftProjectRef = React.useRef(options.projectRoot);
-  const skipNextSpecDraftWriteRef = React.useRef(false);
   const autoRefreshInFlightRef = React.useRef(false);
   const runnerTerminalCounterRef = React.useRef(0);
 
@@ -754,33 +670,6 @@ function App() {
       setLogError("");
     }
   }, [board, selectedLogPath]);
-
-  React.useEffect(() => {
-    const draft = readSpecDraft(options.projectRoot);
-    specDraftProjectRef.current = options.projectRoot;
-    skipNextSpecDraftWriteRef.current = true;
-    setSpecTitle(draft.title);
-    setSpecGoal(draft.goal);
-    setSpecHandoff(draft.handoff);
-    setSpecRaw(draft.raw);
-    setSpecArchiveHandoff(draft.archiveHandoff);
-    setSpecError("");
-  }, [options.projectRoot]);
-
-  React.useEffect(() => {
-    if (skipNextSpecDraftWriteRef.current) {
-      skipNextSpecDraftWriteRef.current = false;
-      return;
-    }
-
-    writeSpecDraft(specDraftProjectRef.current, {
-      title: specTitle,
-      goal: specGoal,
-      handoff: specHandoff,
-      raw: specRaw,
-      archiveHandoff: specArchiveHandoff
-    });
-  }, [specArchiveHandoff, specGoal, specHandoff, specRaw, specTitle]);
 
   const browseProject = React.useCallback(async () => {
     const selected = await window.autoflow.selectProject();
@@ -1052,85 +941,6 @@ function App() {
     [loadBoard, options, readLog, recordRunnerTerminal, runnerActionKey]
   );
 
-  const clearSpecDraft = React.useCallback(() => {
-    setSpecTitle("");
-    setSpecGoal("");
-    setSpecHandoff("");
-    setSpecRaw(false);
-    setSpecArchiveHandoff(true);
-    setSpecError("");
-  }, []);
-
-  const createSpec = React.useCallback(async (dryRunOwner = false) => {
-    if (!options.projectRoot || isCreatingSpec) {
-      return;
-    }
-
-    setIsCreatingSpec(true);
-    setSpecError("");
-    try {
-      const result = await window.autoflow.createSpec({
-        ...options,
-        title: specTitle,
-        goal: specGoal,
-        handoff: specHandoff,
-        raw: specRaw,
-        archiveHandoff: specArchiveHandoff
-      });
-      if (!result.ok) {
-        setSpecError(result.stderr || result.stdout || "스펙 생성에 실패했습니다.");
-        return;
-      }
-
-      await loadBoard();
-      const specFile = outputValue(result.stdout, "spec_file");
-      if (specFile) {
-        await readLog(specFile);
-      }
-
-      if (dryRunOwner) {
-        const ownerRunner = (board?.runners || []).find(
-          (runner) =>
-            (runner.role === "ticket-owner" || runner.role === "owner") && runnerIsEnabled(runner.enabled)
-        );
-        if (!ownerRunner) {
-          setSpecError("스펙은 생성됐지만 미리 실행할 활성 티켓 오너 실행기가 없습니다.");
-        } else {
-          const ownerResult = await window.autoflow.runRole({
-            role: "ticket",
-            runnerId: ownerRunner.id,
-            dryRun: true,
-            ...options
-          });
-          if (!ownerResult.ok) {
-            setSpecError(ownerResult.stderr || ownerResult.stdout || "티켓 오너 미리 실행에 실패했습니다.");
-          }
-          const artifactPath = runArtifactPath(ownerResult.stdout);
-          if (artifactPath) {
-            await readLog(artifactPath);
-          }
-          await loadBoard();
-        }
-      }
-
-      clearSpecDraft();
-    } finally {
-      setIsCreatingSpec(false);
-    }
-  }, [
-    board?.runners,
-    clearSpecDraft,
-    isCreatingSpec,
-    loadBoard,
-    options,
-    readLog,
-    specGoal,
-    specHandoff,
-    specArchiveHandoff,
-    specRaw,
-    specTitle
-  ]);
-
   const updateRunnerDraft = React.useCallback((runnerId: string, field: keyof RunnerDraft, value: string) => {
     setRunnerDrafts((current) => ({
       ...current,
@@ -1290,24 +1100,6 @@ function App() {
 
       <main className="workspace">
         <SummaryGrid board={board} />
-
-        <SpecIntake
-          boardExists={boardExists}
-          title={specTitle}
-          goal={specGoal}
-          handoff={specHandoff}
-          raw={specRaw}
-          archiveHandoff={specArchiveHandoff}
-          error={specError}
-          isCreating={isCreatingSpec}
-          onTitleChange={setSpecTitle}
-          onGoalChange={setSpecGoal}
-          onHandoffChange={setSpecHandoff}
-          onRawChange={setSpecRaw}
-          onArchiveHandoffChange={setSpecArchiveHandoff}
-          onClear={clearSpecDraft}
-          onCreate={createSpec}
-        />
 
         <RunnerConsole
           board={board}
@@ -2051,130 +1843,6 @@ function RunnerTerminalPanel({
         </div>
       ) : null}
       {output ? <pre>{output}</pre> : <div className="runner-terminal-empty">실행기 출력이 없습니다</div>}
-    </section>
-  );
-}
-
-function SpecIntake({
-  boardExists,
-  title,
-  goal,
-  handoff,
-  raw,
-  archiveHandoff,
-  error,
-  isCreating,
-  onTitleChange,
-  onGoalChange,
-  onHandoffChange,
-  onRawChange,
-  onArchiveHandoffChange,
-  onClear,
-  onCreate
-}: {
-  boardExists: boolean;
-  title: string;
-  goal: string;
-  handoff: string;
-  raw: boolean;
-  archiveHandoff: boolean;
-  error: string;
-  isCreating: boolean;
-  onTitleChange: (value: string) => void;
-  onGoalChange: (value: string) => void;
-  onHandoffChange: (value: string) => void;
-  onRawChange: (value: boolean) => void;
-  onArchiveHandoffChange: (value: boolean) => void;
-  onClear: () => void;
-  onCreate: (dryRunOwner?: boolean) => void;
-}) {
-  const titleReady = raw || title.trim().length > 0;
-  const canCreate = boardExists && titleReady && handoff.trim().length > 0 && !isCreating;
-  const hasDraft = title.trim().length > 0 || goal.trim().length > 0 || handoff.trim().length > 0 || raw;
-  const handleKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key !== "Enter" || !canCreate) {
-        return;
-      }
-
-      event.preventDefault();
-      onCreate(event.shiftKey);
-    },
-    [canCreate, onCreate]
-  );
-
-  return (
-    <section className="spec-section" aria-label="Autoflow 스펙 입력">
-      <div className="section-heading">
-        <div>
-          <h3>스펙 입력</h3>
-        </div>
-        <div className="spec-actions">
-          <Button className="spec-secondary-button" disabled={!hasDraft || isCreating} onClick={onClear}>
-            <Trash2 className="h-4 w-4" />
-            초안 지우기
-          </Button>
-          <Button className="spec-secondary-button" disabled={!canCreate} onClick={() => onCreate(true)}>
-            {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Terminal className="h-4 w-4" />}
-            생성 후 오너 미리 실행
-          </Button>
-          <Button className="spec-create-button" disabled={!canCreate} onClick={() => onCreate(false)}>
-            {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClipboardCheck className="h-4 w-4" />}
-            스펙 생성
-          </Button>
-        </div>
-      </div>
-
-      {error ? <div className="runner-error">{error}</div> : null}
-
-      <div className="spec-intake-grid">
-        <div className="spec-fields">
-          <Input
-            value={title}
-            spellCheck={false}
-            placeholder={raw ? "스펙 제목(선택)" : "스펙 제목"}
-            aria-label="스펙 제목"
-            disabled={!boardExists || isCreating}
-            onChange={(event) => onTitleChange(event.target.value)}
-          />
-          <Input
-            value={goal}
-            spellCheck={false}
-            placeholder="목표"
-            aria-label="스펙 목표"
-            disabled={!boardExists || isCreating || raw}
-            onChange={(event) => onGoalChange(event.target.value)}
-          />
-          <label className="spec-raw-toggle">
-            <input
-              type="checkbox"
-              checked={raw}
-              disabled={!boardExists || isCreating}
-              onChange={(event) => onRawChange(event.target.checked)}
-            />
-            <span>마크다운 원문</span>
-          </label>
-          <label className="spec-raw-toggle">
-            <input
-              type="checkbox"
-              checked={archiveHandoff}
-              disabled={!boardExists || isCreating}
-              onChange={(event) => onArchiveHandoffChange(event.target.checked)}
-            />
-            <span>인수인계 보관</span>
-          </label>
-        </div>
-        <textarea
-          className="spec-handoff"
-          value={handoff}
-          spellCheck={false}
-          placeholder={raw ? "# 프로젝트 스펙..." : "대화 인수인계나 #autoflow 요약을 붙여넣으세요"}
-          aria-label="대화 인수인계"
-          disabled={!boardExists || isCreating}
-          onChange={(event) => onHandoffChange(event.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </div>
     </section>
   );
 }

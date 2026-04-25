@@ -4,7 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
-const defaultBoardDirName = "autoflow";
+const defaultBoardDirName = ".autoflow";
 
 const allowedCommands = new Set([
   "init",
@@ -743,71 +743,6 @@ function runRole(options = {}) {
   return runAutoflowArgs(args, options);
 }
 
-function createSpec(options = {}) {
-  if (!options.projectRoot) {
-    return Promise.resolve({
-      ok: false,
-      command: "spec create",
-      code: -1,
-      stdout: "",
-      stderr: "Project root is required."
-    });
-  }
-
-  const title = String(options.title || "").trim();
-  const goal = String(options.goal || "").trim();
-  const handoff = String(options.handoff || "").trim();
-  const raw = options.raw === true;
-  const archiveHandoff = options.archiveHandoff === true;
-
-  if (!raw && !title) {
-    return Promise.resolve({
-      ok: false,
-      command: "spec create",
-      code: -1,
-      stdout: "",
-      stderr: "Spec title is required."
-    });
-  }
-
-  if (!handoff) {
-    return Promise.resolve({
-      ok: false,
-      command: "spec create",
-      code: -1,
-      stdout: "",
-      stderr: "Conversation handoff is required."
-    });
-  }
-
-  if (/[\r\n\t]/.test(title) || /[\r\n\t]/.test(goal)) {
-    return Promise.resolve({
-      ok: false,
-      command: "spec create",
-      code: -1,
-      stdout: "",
-      stderr: "Title and goal must be single-line values."
-    });
-  }
-
-  const boardDirName = options.boardDirName || defaultBoardDirName;
-  const args = ["spec", "create", options.projectRoot, boardDirName];
-  if (title) {
-    args.push("--title", title);
-  }
-  if (goal) {
-    args.push("--goal", goal);
-  }
-  if (raw) {
-    args.push("--raw");
-  }
-  if (archiveHandoff) {
-    args.push("--save-handoff");
-  }
-
-  return runAutoflowArgs(args, { ...options, input: handoff });
-}
-
 function configureRunner(options = {}) {
   if (!options.projectRoot) {
     return Promise.resolve({
@@ -1012,7 +947,6 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlRunner", (_event, options) => controlRunner(options || {}));
   ipcMain.handle("autoflow:listRunnerArtifacts", (_event, options) => listRunnerArtifacts(options || {}));
   ipcMain.handle("autoflow:runRole", (_event, options) => runRole(options || {}));
-  ipcMain.handle("autoflow:createSpec", (_event, options) => createSpec(options || {}));
   ipcMain.handle("autoflow:configureRunner", (_event, options) => configureRunner(options || {}));
   ipcMain.handle("autoflow:createRunner", (_event, options) => createRunner(options || {}));
   ipcMain.handle("autoflow:controlWiki", (_event, options) => controlWiki(options || {}));

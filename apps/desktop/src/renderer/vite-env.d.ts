@@ -128,15 +128,6 @@ interface Window {
       boardDirName: string;
       dryRun?: boolean;
     }) => Promise<AutoflowRunResult>;
-    createSpec: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      title: string;
-      goal: string;
-      handoff: string;
-      raw?: boolean;
-      archiveHandoff?: boolean;
-    }) => Promise<AutoflowRunResult>;
     configureRunner: (options: {
       runnerId: string;
       projectRoot: string;

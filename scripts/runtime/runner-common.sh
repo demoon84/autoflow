@@ -19,7 +19,7 @@ runner_default_board_root() {
 
   if [ "$script_base" = "runtime" ]; then
     project_candidate="$(cd "${script_dir}/../.." && pwd)"
-    board_candidate="${project_candidate}/autoflow"
+    board_candidate="${project_candidate}/.autoflow"
     if [ -d "${board_candidate}/runners" ]; then
       printf '%s' "$board_candidate"
       return 0

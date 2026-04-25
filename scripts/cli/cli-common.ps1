@@ -70,7 +70,7 @@ function Get-BoardRootPath {
     [Parameter(Mandatory = $true)]
     [string]$ProjectRoot,
 
-    [string]$BoardDirName = "autoflow"
+    [string]$BoardDirName = ".autoflow"
   )
 
   return (Join-Path $ProjectRoot $BoardDirName)

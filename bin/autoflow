@@ -10,6 +10,7 @@ while [ -L "$source" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$source")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEFAULT_BOARD_DIR_NAME=".autoflow"
 
 usage() {
   cat <<'EOF'
@@ -50,7 +51,7 @@ Usage:
 Examples:
   autoflow init .
   autoflow init /path/to/project
-  autoflow init /path/to/project autoflow
+  autoflow init /path/to/project .autoflow
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
   echo "Build the local runner harness" | autoflow spec create /path/to/project --title "Runner harness"
@@ -74,25 +75,25 @@ case "$cmd" in
   init)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
     ;;
   install-stop-hook)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" install "$target_root" "$board_dir_name"
     ;;
   remove-stop-hook)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" remove "$target_root" "$board_dir_name"
     ;;
   stop-hook-status)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" status "$target_root" "$board_dir_name"
     ;;
   watch)
@@ -134,25 +135,25 @@ case "$cmd" in
   status)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/status-project.sh" "$target_root" "$board_dir_name"
     ;;
   render-heartbeats)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
     ;;
   doctor)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/doctor-project.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true
     target_root="${1:-.}"
-    board_dir_name="${2:-autoflow}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/scripts/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
     ;;
   help|-h|--help)

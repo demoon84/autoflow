@@ -126,6 +126,28 @@ function Build-ShellCommand {
   }
 }
 
+function Get-BoardPromptRoot {
+  param(
+    [string]$ResolvedBoardRoot,
+    [string]$ResolvedProjectRoot
+  )
+
+  $trimChars = [char[]]@([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+  $fullBoardRoot = [System.IO.Path]::GetFullPath($ResolvedBoardRoot).TrimEnd($trimChars)
+  $fullProjectRoot = [System.IO.Path]::GetFullPath($ResolvedProjectRoot).TrimEnd($trimChars)
+
+  if ($fullBoardRoot -eq $fullProjectRoot) {
+    return "."
+  }
+
+  $projectPrefix = $fullProjectRoot + [System.IO.Path]::DirectorySeparatorChar
+  if ($fullBoardRoot.StartsWith($projectPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return ($fullBoardRoot.Substring($projectPrefix.Length) -replace '\\', '/')
+  }
+
+  return ($fullBoardRoot -replace '\\', '/')
+}
+
 function Build-CodexPrompt {
   param(
     [string]$RouteName,
@@ -140,6 +162,7 @@ function Build-CodexPrompt {
   $workerId = Get-Setting $RouteConfig "WorkerId" $defaultWorkerId
   $triggerLine = if ($HookTriggerPath) { ('- Trigger Path: `{0}`' -f $HookTriggerPath) } else { "- Trigger Path: (none)" }
   $changeLine = if ($HookChangeType) { "- Change Type: $HookChangeType" } else { "- Change Type: (unknown)" }
+  $boardPromptRoot = Get-BoardPromptRoot -ResolvedBoardRoot $ResolvedBoardRoot -ResolvedProjectRoot $ResolvedProjectRoot
 
   switch ($RouteName) {
     "ticket" {
@@ -159,11 +182,11 @@ function Build-CodexPrompt {
         $changeLine
         ""
         "Do exactly one current hook turn:"
-        "1. Read the repo instructions, `autoflow/agents/ticket-owner-agent.md`, and the current board state."
-        "2. Run `autoflow/scripts/start-ticket-owner.ps1` to resume an owned inprogress ticket, claim a ready ticket, adopt a legacy verifier ticket, or create one inprogress ticket from a populated backlog spec."
+        "1. Read the repo instructions, $boardPromptRoot/agents/ticket-owner-agent.md, and the current board state."
+        "2. Run $boardPromptRoot/scripts/start-ticket-owner.ps1 to resume an owned inprogress ticket, claim a ready ticket, adopt a legacy verifier ticket, or create one inprogress ticket from a populated backlog spec."
         "3. Keep the same owner responsible for mini-plan, implementation, verification command execution, evidence recording, and done/reject movement. Do not split the work across planner/todo/verifier roles."
         "4. Implement only within the ticket's Allowed Paths and record durable progress in Notes, Result, and Resume Context."
-        "5. When ready, run `autoflow/scripts/verify-ticket-owner.ps1 <ticket-id>` to write command/output/evidence, then `autoflow/scripts/finish-ticket-owner.ps1 <ticket-id> pass ""<summary>""` or `fail ""<concrete reason>""`."
+        "5. When ready, run $boardPromptRoot/scripts/verify-ticket-owner.ps1 <ticket-id> to write command/output/evidence, then $boardPromptRoot/scripts/finish-ticket-owner.ps1 <ticket-id> pass ""<summary>"" or fail ""<concrete reason>""."
         "6. Treat local verification commands, board file moves, worktree integration, and local git commit on pass as pre-authorized inside the current project/board. Never git push."
         "7. If there is no actionable work, leave the runner idle with a concise reason."
         "8. Exit after the current hook turn is complete."
@@ -186,13 +209,13 @@ function Build-CodexPrompt {
         ""
         "Do exactly one current hook turn:"
         "1. Read the repo instructions and Autoflow board files."
-        '2. Inspect `autoflow/tickets/backlog/`, `autoflow/tickets/plan/`, `autoflow/tickets/reject/`, and the current ticket state.'
+        "2. Inspect $boardPromptRoot/tickets/backlog/, $boardPromptRoot/tickets/plan/, $boardPromptRoot/tickets/reject/, and the current ticket state."
         "3. If a populated spec has no real plan or only a placeholder plan, create or update the matching plan draft."
         "4. If a plan is actionable, generate todo tickets as appropriate."
-        '5. If `reject_NNN.md` files exist, fold each `## Reject Reason` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under `autoflow/tickets/done/<project-key>/`.'
-        '6. If this hook was triggered by a pass into `autoflow/tickets/done/<project-key>/`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.'
+        "5. If reject_NNN.md files exist, fold each ## Reject Reason back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under $boardPromptRoot/tickets/done/<project-key>/."
+        "6. If this hook was triggered by a pass into $boardPromptRoot/tickets/done/<project-key>/, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting."
         "7. Do not stop at the first generated plan if another populated backlog spec still lacks a real plan or only has a placeholder plan. Drain the backlog for planning work as far as this current hook turn reasonably can."
-        "8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from `autoflow/` rather than chat history."
+        "8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from $boardPromptRoot/ rather than chat history."
         "9. Do not claim todo work, do not implement code, do not verify, do not commit, and do not push."
         "10. Exit after the current hook turn is complete."
       ) -join [Environment]::NewLine
@@ -216,10 +239,10 @@ function Build-CodexPrompt {
         "1. Read the repo instructions and Autoflow board files."
         '2. Resume any existing inprogress ticket owned by `$workerId` if one exists; otherwise claim one todo ticket.'
         "3. Implement only within each ticket's Allowed Paths."
-        "4. If you resume an existing inprogress ticket, refresh the active ticket context with `powershell -ExecutionPolicy Bypass -File autoflow/scripts/set-thread-context.ps1 todo <worker-id> <ticket-id> executing <ticket-path>` on Windows, or `autoflow/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` in Bash-only environments, before continuing."
+        "4. If you resume an existing inprogress ticket, refresh the active ticket context with powershell -ExecutionPolicy Bypass -File $boardPromptRoot/scripts/set-thread-context.ps1 todo <worker-id> <ticket-id> executing <ticket-path> on Windows, or $boardPromptRoot/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path> in Bash-only environments, before continuing."
         "5. Update Notes, Last Updated, Next Action, and Resume Context as you work."
-        '5. Board stage is authoritative. If a ticket is in `autoflow/tickets/todo/` or `autoflow/tickets/inprogress/`, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification.'
-        '6. If Done When is satisfied, fill Result.Summary and run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/handoff-todo.ps1 <ticket-id-or-path>` on Windows, or `autoflow/scripts/handoff-todo.sh <ticket-id-or-path>` in Bash-only environments. The handoff runtime moves the ticket to `autoflow/tickets/verifier/`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.'
+        "5. Board stage is authoritative. If a ticket is in $boardPromptRoot/tickets/todo/ or $boardPromptRoot/tickets/inprogress/, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification."
+        "6. If Done When is satisfied, fill Result.Summary and run powershell -ExecutionPolicy Bypass -File $boardPromptRoot/scripts/handoff-todo.ps1 <ticket-id-or-path> on Windows, or $boardPromptRoot/scripts/handoff-todo.sh <ticket-id-or-path> in Bash-only environments. The handoff runtime moves the ticket to $boardPromptRoot/tickets/verifier/, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket."
         "7. Keep chat output short; durable context belongs in Resume Context, Notes, Result, and Obsidian links."
         "8. Do not verify, do not commit, and do not push."
         "9. Exit after the current hook turn is complete."
@@ -243,15 +266,15 @@ function Build-CodexPrompt {
         ""
         "Do exactly one current hook turn:"
         "1. Read the repo instructions and Autoflow board files."
-        '2. Pick one ticket from `autoflow/tickets/verifier/`.'
+        "2. Pick one ticket from $boardPromptRoot/tickets/verifier/."
         "3. Verify it against the referenced spec and verifier rules."
         "4. Treat local verification commands, browser checks, ticket/log file moves, and local git commit inside the current project/board as pre-authorized. Do not ask the user for permission."
         "5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open."
-        '6. Write or update `autoflow/tickets/inprogress/verify_NNN.md`, then let `write-verifier-log` archive it beside the final ticket when the verification finishes.'
-        '7. Write a verifier completion log under `autoflow/logs/`.'
-        '8. Pass: move the ticket to the matching `autoflow/tickets/done/<project-key>/` folder and make a local git commit if the project uses git. Use commit message format `[ticket title] concise change summary`; take the bracket text from the ticket `Title` and keep the summary to one short line.'
-        '9. Fail: append `## Reject Reason` and move the ticket to `autoflow/tickets/reject/reject_NNN.md`.'
-        "10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; prefer `write-verifier-log.ps1` on Windows and use `.sh` only in Bash-only environments. Rely on Obsidian links and board files for the next verification target."
+        "6. Write or update $boardPromptRoot/tickets/inprogress/verify_NNN.md, then let write-verifier-log archive it beside the final ticket when the verification finishes."
+        "7. Write a verifier completion log under $boardPromptRoot/logs/."
+        "8. Pass: move the ticket to the matching $boardPromptRoot/tickets/done/<project-key>/ folder and make a local git commit if the project uses git. Use commit message format [ticket title] concise change summary; take the bracket text from the ticket Title and keep the summary to one short line."
+        "9. Fail: append ## Reject Reason and move the ticket to $boardPromptRoot/tickets/reject/reject_NNN.md."
+        "10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; prefer write-verifier-log.ps1 on Windows and use .sh only in Bash-only environments. Rely on Obsidian links and board files for the next verification target."
         "11. Never git push."
         "12. Exit after the current hook turn is complete."
       ) -join [Environment]::NewLine

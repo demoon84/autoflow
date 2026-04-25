@@ -11,7 +11,7 @@ Usage:
 
 Examples:
   echo "Build a runner dashboard" | spec-project.sh create /path/to/project --title "Runner dashboard"
-  spec-project.sh create /path/to/project autoflow --from-file handoff.md
+  spec-project.sh create /path/to/project .autoflow --from-file handoff.md
 EOF
 }
 
@@ -141,7 +141,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 project_root_input="${positionals[0]:-.}"
-board_dir_name="${positionals[1]:-autoflow}"
+board_dir_name="${positionals[1]:-.autoflow}"
 project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
 

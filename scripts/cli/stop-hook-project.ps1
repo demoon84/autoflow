@@ -8,7 +8,7 @@ param(
   [string]$ProjectRoot = ".",
 
   [Parameter(Position = 2)]
-  [string]$BoardDirName = "autoflow"
+  [string]$BoardDirName = ".autoflow"
 )
 
 Set-StrictMode -Version Latest

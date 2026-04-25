@@ -47,7 +47,7 @@ if [ $# -gt 3 ]; then
 fi
 
 project_root_input="${1:-.}"
-board_dir_name="${2:-autoflow}"
+board_dir_name="${2:-.autoflow}"
 config_path_input="${3:-}"
 
 project_root="$(resolve_project_root_or_die "$project_root_input")"

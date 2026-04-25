@@ -41,6 +41,16 @@ git -C "$project_dir" config user.name "Autoflow Smoke"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
 
+if [ ! -d "${project_dir}/.autoflow" ]; then
+  echo "Expected default board directory at ${project_dir}/.autoflow" >&2
+  exit 1
+fi
+
+if [ -e "${project_dir}/autoflow" ]; then
+  echo "Unexpected legacy default board directory at ${project_dir}/autoflow" >&2
+  exit 1
+fi
+
 spec_output="${project_dir}/spec.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
@@ -90,7 +100,7 @@ SPEC
 require_line "$spec_output" "status=created"
 
 (
-  cd "${project_dir}/autoflow"
+  cd "${project_dir}/.autoflow"
   AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/start-ticket-owner.sh
 ) >"$start_output"
 require_line "$start_output" "status=ok"
@@ -100,7 +110,7 @@ require_line "$start_output" "stage=planning"
 : >"${project_dir}/owner-done.txt"
 
 (
-  cd "${project_dir}/autoflow"
+  cd "${project_dir}/.autoflow"
   AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/verify-ticket-owner.sh 001
 ) >"$verify_output"
 require_line "$verify_output" "status=pass"
@@ -108,7 +118,7 @@ require_line "$verify_output" "ticket_id=001"
 require_line "$verify_output" "exit_code=0"
 
 (
-  cd "${project_dir}/autoflow"
+  cd "${project_dir}/.autoflow"
   AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified"
 ) >"$finish_output"
 require_line "$finish_output" "status=done"

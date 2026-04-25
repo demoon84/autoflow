@@ -85,7 +85,7 @@ function Find-BoardRoot {
     $effectiveBoardDirName = $env:AUTOFLOW_BOARD_DIR_NAME
   }
   if ([string]::IsNullOrWhiteSpace($effectiveBoardDirName)) {
-    $effectiveBoardDirName = "autoflow"
+    $effectiveBoardDirName = ".autoflow"
   }
 
   $current = Resolve-ProjectRoot

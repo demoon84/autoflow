@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld("autoflow", {
   controlRunner: (options) => ipcRenderer.invoke("autoflow:controlRunner", options),
   listRunnerArtifacts: (options) => ipcRenderer.invoke("autoflow:listRunnerArtifacts", options),
   runRole: (options) => ipcRenderer.invoke("autoflow:runRole", options),
-  createSpec: (options) => ipcRenderer.invoke("autoflow:createSpec", options),
   configureRunner: (options) => ipcRenderer.invoke("autoflow:configureRunner", options),
   createRunner: (options) => ipcRenderer.invoke("autoflow:createRunner", options),
   controlWiki: (options) => ipcRenderer.invoke("autoflow:controlWiki", options),

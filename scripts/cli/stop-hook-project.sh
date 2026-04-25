@@ -15,7 +15,7 @@ fi
 
 action="$1"
 project_root_input="${2:-.}"
-board_dir_name="${3:-autoflow}"
+board_dir_name="${3:-.autoflow}"
 
 case "$action" in
   install|remove|status)
