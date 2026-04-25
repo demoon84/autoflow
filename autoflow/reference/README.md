@@ -14,6 +14,8 @@
 제품 방향:
 
 - Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트를 위한 local work harness 다.
-- `tickets/` 는 spec 부터 verifier 까지의 실행 원장이다.
+- `tickets/` 는 spec 부터 Ticket Owner 검증 / done-reject 까지의 실행 원장이다.
 - 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다.
-- `#autoflow` 는 Codex/Claude 대화창에서 spec 만 넘기는 handoff alias 다. 기존 `#spec`, `#plan`, `#todo`, `#veri` 흐름은 그대로 유지한다.
+- `#autoflow` 는 Codex/Claude 대화창에서 spec 만 넘기는 handoff alias 다.
+- 기본 실행은 `autoflow run ticket` 또는 Owner runner 가 spec 이후 mini-plan, 구현, 검증, evidence, done/reject 를 한 번에 이어받는 흐름이다.
+- `#plan`, `#todo`, `#veri` 는 legacy role-pipeline 호환 트리거로 유지한다.
