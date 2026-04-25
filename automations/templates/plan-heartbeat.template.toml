@@ -10,18 +10,18 @@ Worker id: {{WORKER_ID}}
 
 Loop (run every wake-up):
 
-1. Prefer the PowerShell wrapper on Windows: set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=plan`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/start-plan.ps1`. In Bash-only environments, run the equivalent `.autoflow/scripts/start-plan.sh`.
+1. Prefer the PowerShell wrapper on Windows: set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=plan`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-plan.ps1`. In Bash-only environments, run the equivalent `autoflow/scripts/start-plan.sh`.
 2. Read the output.
 3. If `status=resume`: this Codex conversation already has one active plan. Continue only the returned active `plan=...` / `tickets/inprogress/plan_NNN.md`; do not draft or claim another plan in this wake-up.
 4. If `status=blocked` and `reason=conversation_already_has_active_plan`: finish this wake-up without touching another plan. Use a separate Codex conversation for parallel planning.
-5. If `reject_count > 0`: open each `reject_NNN.md` file in `.autoflow/tickets/reject/`, read its `## Reject Reason`, add a NEW observable Execution Candidate to the matching plan that addresses the failure, and flip that plan's Status back to `ready`. After the start-plan runtime creates the retry todo, the consumed reject file must be archived under `.autoflow/tickets/done/<project-key>/reject_NNN.md`.
-6. Else if `status=idle` and `reason=no_actionable_plan`: check `.autoflow/tickets/backlog/project_*.md` for one populated spec that does NOT have a matching real `.autoflow/tickets/plan/plan_{NNN}.md` or `.autoflow/tickets/done/<project-key>/plan_{NNN}.md`. If found, use `.autoflow/reference/plan-template.md` as the structure, create `.autoflow/tickets/plan/plan_{NNN}.md`, fill Plan ID, Title, Spec References, Goal, Scope (In/Out), Execution Candidates (observable sentences derived from the spec's Main Screens/Modules and Global Acceptance Criteria), and Ticket Rules.Allowed Paths (narrow). Keep Status = draft.
+5. If `reject_count > 0`: open each `reject_NNN.md` file in `autoflow/tickets/reject/`, read its `## Reject Reason`, add a NEW observable Execution Candidate to the matching plan that addresses the failure, and flip that plan's Status back to `ready`. After the start-plan runtime creates the retry todo, the consumed reject file must be archived under `autoflow/tickets/done/<project-key>/reject_NNN.md`.
+6. Else if `status=idle` and `reason=no_actionable_plan`: check `autoflow/tickets/backlog/project_*.md` for one populated spec that does NOT have a matching real `autoflow/tickets/plan/plan_{NNN}.md` or `autoflow/tickets/done/<project-key>/plan_{NNN}.md`. If found, use `autoflow/reference/plan-template.md` as the structure, create `autoflow/tickets/plan/plan_{NNN}.md`, fill Plan ID, Title, Spec References, Goal, Scope (In/Out), Execution Candidates (observable sentences derived from the spec's Main Screens/Modules and Global Acceptance Criteria), and Ticket Rules.Allowed Paths (narrow). Keep Status = draft.
 7. Else if `status=ok` and `generated_count>0`: tickets were created for the current plan. Finish this wake-up without starting a second active plan in the same conversation.
 8. Else if `status=idle` and `reason=spec_not_populated`: finish only this wake-up quietly (spec author still needed).
 9. Never claim todo tickets, never implement code, never run verifier.
 10. Never call `git push`. `git commit` is the verifier's job, not yours.
 
-Context rule: After you draft a plan, update a reject-derived candidate, or generate todo tickets, keep the chat response short. The durable context is in Obsidian links and board files, so the next wake-up must reload from `.autoflow/` instead of relying on chat history.
+Context rule: After you draft a plan, update a reject-derived candidate, or generate todo tickets, keep the chat response short. The durable context is in Obsidian links and board files, so the next wake-up must reload from `autoflow/` instead of relying on chat history.
 
 Stop rule: Unless the user has explicitly told you to stop, do NOT treat idle as "done forever". Exit the current turn cleanly. The heartbeat will fire again in ~1 minute and you pick up whatever is next from the board files.
 """

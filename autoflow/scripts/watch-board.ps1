@@ -7,6 +7,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function New-AutoflowTempFile {
+  $tempRoot = [System.IO.Path]::GetTempPath()
+  $path = Join-Path $tempRoot ("autoflow-" + [System.Guid]::NewGuid().ToString("N") + ".tmp")
+  New-Item -ItemType File -Path $path -Force | Out-Null
+  return $path
+}
+
 function Resolve-BoardRoot {
   param([string]$InputPath)
 
@@ -96,8 +103,8 @@ function Invoke-Route {
 
   $runHookScript = Join-Path $ResolvedBoardRoot "scripts/run-hook.ps1"
   $powershellExe = (Get-Process -Id $PID).Path
-  $stdoutFile = [System.IO.Path]::GetTempFileName()
-  $stderrFile = [System.IO.Path]::GetTempFileName()
+  $stdoutFile = New-AutoflowTempFile
+  $stderrFile = New-AutoflowTempFile
 
   try {
     $argList = @(

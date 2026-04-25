@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 
 project_root_input="${1:-.}"
-board_dir_name="${2:-.autoflow}"
+board_dir_name="${2:-autoflow}"
 
 project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
@@ -32,6 +32,11 @@ ticket_ready_for_verification_count="0"
 ticket_verifying_count="0"
 ticket_blocked_count="0"
 verify_run_count="0"
+runner_scaffold_present="false"
+wiki_scaffold_present="false"
+metrics_scaffold_present="false"
+conversation_scaffold_present="false"
+adapter_scaffold_present="false"
 summary_status="missing_board"
 package_version="$(package_version_value)"
 board_version=""
@@ -83,6 +88,37 @@ if [ -d "$board_root" ]; then
     $(count_matching_files "${board_root}/tickets/done" 'verify_*.md') + \
     $(count_matching_files "${board_root}/tickets/runs" 'verify_*.md') \
   ))"
+  if [ -d "${board_root}/runners" ] && \
+     [ -d "${board_root}/runners/state" ] && \
+     [ -d "${board_root}/runners/logs" ] && \
+     [ -f "${board_root}/runners/config.toml" ]; then
+    runner_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/wiki" ] && \
+     [ -f "${board_root}/wiki/index.md" ] && \
+     [ -f "${board_root}/wiki/log.md" ] && \
+     [ -f "${board_root}/wiki/project-overview.md" ] && \
+     [ -d "${board_root}/rules/wiki" ]; then
+    wiki_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/metrics" ] && \
+     [ -f "${board_root}/metrics/README.md" ] && \
+     [ -f "${board_root}/metrics/.gitignore" ]; then
+    metrics_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/conversations" ] && \
+     [ -f "${board_root}/conversations/README.md" ]; then
+    conversation_scaffold_present="true"
+  fi
+  if [ -d "${board_root}/agents/adapters" ] && \
+     [ -f "${board_root}/agents/adapters/README.md" ] && \
+     [ -f "${board_root}/agents/adapters/shell.md" ] && \
+     [ -f "${board_root}/agents/adapters/codex-cli.md" ] && \
+     [ -f "${board_root}/agents/adapters/claude-cli.md" ] && \
+     [ -f "${board_root}/agents/adapters/opencode.md" ] && \
+     [ -f "${board_root}/agents/adapters/gemini-cli.md" ]; then
+    adapter_scaffold_present="true"
+  fi
   board_version="$(board_version_value "$board_root" || true)"
   version_status="$(board_version_status "$board_root")"
 fi
@@ -117,3 +153,9 @@ print_status_summary \
   "$package_version" \
   "$board_version" \
   "$version_status"
+
+printf 'runner_scaffold_present=%s\n' "$runner_scaffold_present"
+printf 'wiki_scaffold_present=%s\n' "$wiki_scaffold_present"
+printf 'metrics_scaffold_present=%s\n' "$metrics_scaffold_present"
+printf 'conversation_scaffold_present=%s\n' "$conversation_scaffold_present"
+printf 'adapter_scaffold_present=%s\n' "$adapter_scaffold_present"

@@ -12,22 +12,24 @@ Loop (run every wake-up):
 
 1. Prefer the PowerShell wrapper on Windows: set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=verifier`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-verifier.ps1`. In Bash-only environments, run the equivalent `autoflow/scripts/start-verifier.sh`.
 2. If `status=idle`, finish only this wake-up quietly until next wake-up.
-3. If `status=ok`, the script prepared `verify=...` (ticket file in `autoflow/tickets/verifier/`), `run=...` (verification record), `working_root=...`, and `integration_command=...`. Run the verification defined by the spec's `Verification.Command` from `working_root` (ticket worktree when present, otherwise host project root), plus any manual checks in the spec's Global Acceptance Criteria.
-4. Browser policy:
+3. If `status=resume`, this Codex conversation already has one active verifier ticket. Continue only the returned `verify=...` / `run=...`; do not pick another verifier ticket in this wake-up.
+4. If `status=blocked` and `reason=conversation_already_has_active_verification`, finish this wake-up without touching another verifier ticket. Use a separate Codex conversation for parallel verification.
+5. If `status=ok`, the script prepared `verify=...` (ticket file in `autoflow/tickets/verifier/`), `run=...` (verification record), `working_root=...`, and `integration_command=...`. Run the verification defined by the spec's `Verification.Command` from `working_root` (ticket worktree when present, otherwise host project root), plus any manual checks in the spec's Global Acceptance Criteria.
+6. Browser policy:
    a. Prefer non-browser checks first (HTTP response, logs, build output, DOM/string inspection).
    b. If real rendering is required, do not use Playwright. Use the current agent's browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool.
    c. If you open an agent browser tool tab during this wake-up, close it before the wake-up ends unless the user explicitly asked to keep it open.
-5. Verification in the ticket worktree / host `PROJECT_ROOT` / `autoflow/` is pre-authorized for this role. Do not ask the user for permission before running local verification commands, browser checks, ticket/log file moves, worktree integration, or local `git add` / `git commit`. Only stop if the action would go outside the project/board scope or would require `git push`.
-6. Decide pass or fail strictly against `Done When` and Acceptance Criteria. Borderline is fail.
-7. **PASS**:
+7. Verification in the ticket worktree / host `PROJECT_ROOT` / `autoflow/` is pre-authorized for this role. Do not ask the user for permission before running local verification commands, browser checks, ticket/log file moves, worktree integration, or local `git add` / `git commit`. Only stop if the action would go outside the project/board scope or would require `git push`.
+8. Decide pass or fail strictly against `Done When` and Acceptance Criteria. Borderline is fail.
+9. **PASS**:
    a0. If `worktree_path` is set, run `integration_command` first. This brings the ticket worktree code changes into the central PROJECT_ROOT without committing. If this reports dirty non-board files or a cherry-pick conflict, fail/block the verification instead of mixing unrelated changes.
    a. Update the run file: `Status: pass`, Findings, no Blockers.
    b. Update the ticket: `Stage: done`, fill `Result.Summary`.
    c. `mv` ticket from `autoflow/tickets/verifier/` to the matching `autoflow/tickets/done/<project-key>/` folder.
-   d. Run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/write-verifier-log.ps1 "<moved done ticket path>" "autoflow/tickets/runs/verify_NNN.md" pass` on Windows, or the equivalent `autoflow/scripts/write-verifier-log.sh` in Bash-only environments, and update the ticket `Verification` block with the produced `logs/verifier_*.md` path. This also clears the active runtime context; rely on Obsidian links and board files for the next wake-up.
+   d. Run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/write-verifier-log.ps1 "<moved done ticket path>" "autoflow/tickets/inprogress/verify_NNN.md" pass` on Windows, or the equivalent `autoflow/scripts/write-verifier-log.sh` in Bash-only environments. This archives the verification record to `autoflow/tickets/done/<project-key>/verify_NNN.md`, updates the ticket `Verification` block with the final run/log paths, and clears the active runtime context for the next wake-up.
    e. From the central host project root: `git add . && git commit -m "[ticket title] concise change summary"` (local commit only; use the ticket `Title` in brackets and a short one-line summary from `Result.Summary` or the verified change). This final commit must include both integrated code changes and Autoflow ticket/run/log updates.
    f. **DO NOT run `git push`.** Push is absolutely forbidden from any automation. Remote syncing is a manual action only a human may perform.
-8. **FAIL**:
+10. **FAIL**:
    a. Update the run file: `Status: fail`, Findings, Blockers, Next Fix Hint.
    b. Append `## Reject Reason` section to the ticket with:
       - Verifier: {{WORKER_ID}}
@@ -36,13 +38,13 @@ Loop (run every wake-up):
       - 재계획 힌트: <what the planner should add as the next Execution Candidate>
    c. Update ticket: `Stage: rejected`, `Result.Summary: reject: <one-line>`.
    d. `mv` ticket from `autoflow/tickets/verifier/tickets_NNN.md` to `autoflow/tickets/reject/reject_NNN.md`.
-   e. Run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/write-verifier-log.ps1 "autoflow/tickets/reject/reject_NNN.md" "autoflow/tickets/runs/verify_NNN.md" fail` on Windows, or the equivalent `autoflow/scripts/write-verifier-log.sh` in Bash-only environments, and update the ticket `Verification` block with the produced `logs/verifier_*.md` path. This also clears the active runtime context; rely on Obsidian links and board files for the next wake-up.
+   e. Run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/write-verifier-log.ps1 "autoflow/tickets/reject/reject_NNN.md" "autoflow/tickets/inprogress/verify_NNN.md" fail` on Windows, or the equivalent `autoflow/scripts/write-verifier-log.sh` in Bash-only environments. This archives the verification record to `autoflow/tickets/reject/verify_NNN.md`, updates the ticket `Verification` block with the final run/log paths, and clears the active runtime context for the next wake-up.
    f. Do NOT commit. The ticket worktree is left as-is for the planner + next todo cycle to inspect.
-9. Never modify source code. If verification reveals a fix, it still goes through the planner → todo cycle.
-10. If this ticket reaches `autoflow/tickets/done/<project-key>/`, treat that as completion of the current ticket only. If backlog still has another populated spec, planner automation or the `done/` hook will continue with the next plan.
-11. Never call `git push`.
+11. Never modify source code. If verification reveals a fix, it still goes through the planner → todo cycle.
+12. If this ticket reaches `autoflow/tickets/done/<project-key>/`, treat that as completion of the current ticket only. If backlog still has another populated spec, planner automation or the `done/` hook will continue with the next plan.
+13. Never call `git push`.
 
-Context rule: Keep the chat response short after each ticket. The durable context is in Obsidian links, tickets, runs, and logs; do not carry long summaries in chat.
+Context rule: Keep the chat response short after each ticket. The durable context is in Obsidian links, tickets, verification records, and logs; do not carry long summaries in chat. At the end of every wake-up, leave only role/worker context and clear active ticket context. The Stop hook also enforces this for verifier wake-ups, so the next tick reloads from `tickets/verifier/`, `tickets/inprogress/verify_NNN.md`, and logs.
 
 Stop rule: Unless the user has explicitly told you to stop, do NOT self-terminate. Exit the current turn cleanly. The heartbeat fires again in ~1 minute and picks up the next verification target from the board files.
 """

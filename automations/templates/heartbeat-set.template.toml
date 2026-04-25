@@ -2,7 +2,7 @@ format = 1
 kind = "autoflow_heartbeat_set"
 set_name = "{{SET_NAME}}"
 target_thread_id = "{{THREAD_ID}}"
-board_root = ".autoflow/"
+board_root = "autoflow/"
 
 planner_workers = ["plan-1"]
 todo_workers = ["todo-1"]

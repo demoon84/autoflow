@@ -2,7 +2,9 @@
 
 ## Mission
 
-Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지는 대화로 프로젝트/기능 의도를 **대화창 안에서 먼저 초안으로 보여준 뒤**, 사용자가 명시적으로 확정하면 `tickets/backlog/project_{번호}.md` 에 저장한다. **plan 파일은 절대 쓰지 않는다** — planner heartbeat 이 spec 을 읽고 별도로 plan 을 만든다.
+Codex/Claude 대화창에서 사용자가 `#spec` 또는 `#autoflow` 라고 말하면, 이어지는 대화로 프로젝트/기능 의도를 **대화창 안에서 먼저 초안으로 보여준 뒤**, 사용자가 명시적으로 확정하면 `tickets/backlog/project_{번호}.md` 에 저장한다. **plan 파일은 절대 쓰지 않는다** — planner heartbeat 이 spec 을 읽고 별도로 plan 을 만든다.
+
+`#autoflow` 는 같은 원칙을 따르는 spec handoff 전용 alias 다. 대화창은 요구사항을 정리하는 입력면이고, 이후 plan / todo / verifier 실행은 Autoflow 보드와 runner 가 이어받는다.
 
 ## Why This Agent Exists
 
@@ -20,7 +22,8 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 
 ## Outputs
 
-- 확정 시에만 저장되는 `tickets/backlog/project_{번호}.md` — 사용자 의도를 반영한 스펙 (유일한 산출물)
+- 확정 시에만 저장되는 `tickets/backlog/project_{번호}.md` — 사용자 의도를 반영한 실행 기준 스펙
+- Desktop/CLI handoff 저장이 켜졌거나 사용자가 명시적으로 대화 보관을 요청했을 때만 추가되는 `conversations/project_{번호}/spec-handoff.md` — 긴 대화의 compact summary
 
 ## Rules
 
@@ -45,6 +48,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 - `#spec`
 - `#spec 003`
 - `#spec project_003`
+- `#autoflow` (spec handoff only)
 
 번호 해석 규칙:
 
@@ -75,6 +79,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 - [ ] 기존 spec 과 중복되지 않는다.
 - [ ] `Global Acceptance Criteria` 가 관찰 가능한 문장이다.
 - [ ] `Main Screens / Modules` 또는 `Core Scope → In Scope` 에서 대상 파일/경로가 구체적이다.
+- [ ] handoff archive 를 남긴다면 같은 `project_{번호}` 아래에 spec 과 연결했다.
 - [ ] `tickets/plan/` 을 건드리지 않았다.
 
 ## Boundaries

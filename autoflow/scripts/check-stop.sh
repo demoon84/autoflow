@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+trap 'exit 0' ERR
 
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
@@ -198,6 +199,14 @@ verifier_hook_reason() {
   return 1
 }
 
+compact_tick_context() {
+  case "${hook_role:-}" in
+    todo|verifier)
+      clear_active_ticket_context_record >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
 if stop_bypass_enabled; then
   exit 0
 fi
@@ -223,6 +232,8 @@ case "$hook_role" in
     exit 0
     ;;
 esac
+
+compact_tick_context
 
 if [ -z "$reason" ]; then
   exit 0

@@ -2,7 +2,9 @@
 
 ## Mission
 
-Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지는 대화로 프로젝트/기능 의도를 **대화창 안에서 먼저 초안으로 보여준 뒤**, 사용자가 명시적으로 확정하면 `tickets/backlog/project_{번호}.md` 에 저장한다. **plan 파일은 절대 쓰지 않는다** — planner heartbeat 이 spec 을 읽고 별도로 plan 을 만든다.
+Codex/Claude 대화창에서 사용자가 `#spec` 또는 `#autoflow` 라고 말하면, 이어지는 대화로 프로젝트/기능 의도를 **대화창 안에서 먼저 초안으로 보여준 뒤**, 사용자가 명시적으로 확정하면 `tickets/backlog/project_{번호}.md` 에 저장한다. **plan 파일은 절대 쓰지 않는다** — planner heartbeat 이 spec 을 읽고 별도로 plan 을 만든다.
+
+`#autoflow` 는 같은 원칙을 따르는 spec handoff 전용 alias 다. 대화창은 요구사항을 정리하는 입력면이고, 이후 plan / todo / verifier 실행은 Autoflow 보드와 runner 가 이어받는다.
 
 ## Why This Agent Exists
 
@@ -20,11 +22,14 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 
 ## Outputs
 
-- 확정 시에만 저장되는 `tickets/backlog/project_{번호}.md` — 사용자 의도를 반영한 스펙 (유일한 산출물)
+- 확정 시에만 저장되는 `tickets/backlog/project_{번호}.md` — 사용자 의도를 반영한 실행 기준 스펙
+- Desktop/CLI handoff 저장이 켜졌거나 사용자가 명시적으로 대화 보관을 요청했을 때만 추가되는 `conversations/project_{번호}/spec-handoff.md` — 긴 대화의 compact summary
 
 ## Rules
 
 1. `scripts/start-spec.sh` 를 실행해 대상 경로 (`spec_file`, `spec_id`, `spec_template`) 를 확인한다. 스크립트는 사용자 확정 전에는 파일을 만들지 않는다.
+   - `status=resume` 이면 이 대화창에 이미 active spec 이 있다는 뜻이다. 새 spec 번호를 잡지 말고 반환된 `spec_file` 초안을 계속 정리한다.
+   - `status=blocked` / `reason=conversation_already_has_active_spec` 이면 다른 spec 은 새 Codex 대화창에서 시작한다.
 2. **대화창에서 초안을 먼저 제시한다.** 파일에 실제 내용을 쓰기 전에 전체 spec 초안을 fenced markdown 블록으로 대화에 붙여서 사용자가 바로 읽을 수 있게 한다. 요약만 보여주지 말고 진짜 저장될 전문을 보여야 한다.
 3. **사용자 명시 확정 없이 파일을 쓰지 않는다.** 확정으로 볼 문구 예: `저장`, `저장해`, `확정`, `OK 저장`, `save`, `go`, `ready`, `yes save`, `좋아 저장해`. 이런 단어가 명시적으로 나오기 전에는 `tickets/backlog/` 에 새 파일을 만들지 않는다.
 4. 사용자가 수정 요청 (예: "scope 좁혀", "이 항목 빼", "owner 수정", "검증 명령 추가") 을 하면 **대화창 안에서만 초안을 수정**해서 다시 보여준다. 파일에는 아직 쓰지 않는다. 사용자가 확정할 때까지 반복.
@@ -43,6 +48,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 - `#spec`
 - `#spec 003`
 - `#spec project_003`
+- `#autoflow` (spec handoff only)
 
 번호 해석 규칙:
 
@@ -52,6 +58,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 ## Recommended Procedure
 
 1. `scripts/start-spec.sh` 실행. `spec_file`, `spec_is_placeholder`, `spec_id` 확인.
+   - 같은 대화창에서 이미 spec 작성 중이면 `status=resume` 으로 같은 `project_NNN.md` 슬롯을 반환한다. Codex 대화창 하나는 한 번에 spec 하나만 작성한다.
 2. 호스트 루트 `AGENTS.md` 와 기존 `tickets/backlog/*.md` 훑어서 제약/중복 파악.
 3. 사용자에게 부족한 정보 질문 (Goal, In/Out Scope, 관련 파일·모듈, 완료 기준, 검증 방법).
 4. 수집된 내용으로 **대화창 안에** 전체 spec 초안을 fenced markdown 으로 보여준다:
@@ -62,7 +69,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 5. 끝에 명시적으로 확인 요청: "이 내용으로 저장할까요? (`저장` / `바꿔` / `취소`)".
 6. 사용자가 수정 요청하면 초안을 업데이트해 4번부터 반복.
 7. 사용자가 확정 문구 (`저장`, `OK 저장`, `확정` 등) 를 내리면 그때만 `tickets/backlog/project_{번호}.md` 를 실제로 덮어쓴다.
-8. 저장 후 대화창에 최종 파일 경로 + "`#plan` 으로 planner heartbeat 를 시작하면 이어서 plan 을 도출합니다" 한 줄 안내.
+8. 저장 후 `scripts/clear-thread-context.* --active-only` 로 active spec context 를 비우고, 대화창에 최종 파일 경로 + "`#plan` 으로 planner heartbeat 를 시작하면 이어서 plan 을 도출합니다" 한 줄 안내.
 
 ## Checklist (확정 저장 전에 반드시)
 
@@ -72,6 +79,7 @@ Codex/Claude 대화창에서 사용자가 `#spec` 이라고 말하면, 이어지
 - [ ] 기존 spec 과 중복되지 않는다.
 - [ ] `Global Acceptance Criteria` 가 관찰 가능한 문장이다.
 - [ ] `Main Screens / Modules` 또는 `Core Scope → In Scope` 에서 대상 파일/경로가 구체적이다.
+- [ ] handoff archive 를 남긴다면 같은 `project_{번호}` 아래에 spec 과 연결했다.
 - [ ] `tickets/plan/` 을 건드리지 않았다.
 
 ## Boundaries

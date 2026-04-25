@@ -10,7 +10,7 @@ Usage: render-heartbeats.sh [project-root] [board-dir-name]
 
 Defaults:
   project-root   current directory
-  board-dir-name .autoflow
+  board-dir-name autoflow
 EOF
 }
 
@@ -20,7 +20,7 @@ if [ $# -gt 2 ]; then
 fi
 
 project_root_input="${1:-.}"
-board_dir_name="${2:-.autoflow}"
+board_dir_name="${2:-autoflow}"
 
 project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"

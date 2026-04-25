@@ -7,7 +7,7 @@
 - `verifier/`: 구현 완료, 검증 대기 티켓
 - `done/`: 검증 pass + local commit 완료된 티켓 (`done/<project-key>/tickets_NNN.md`)
 - `reject/`: 검증 fail, `## Reject Reason` 기록된 `reject_NNN.md` 티켓 (planner 가 재계획 대상으로 감시)
-- `runs/`: pass/fail 기록 파일 (`verify_NNN.md`) — 상태 폴더와 별개
+- `verify_NNN.md`: verifier 가 시작 시 `inprogress/` 에 만들고, 완료 시 final ticket 옆으로 같이 이동하는 검증 기록 파일
 - `backlog/`: 아직 plan 전인 spec 입력 큐
 - `plan/`: 아직 ticket 생성 전이거나 대기 중인 실제 plan 문서
 - `inprogress/plan_*.md`: planner 가 ticket 생성 중인 plan 문서
@@ -39,7 +39,7 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
 
 위 경로는 예시 번호 `001` 을 쓴 형식이다. 실제 번호는 각 보드가 직접 발급한다.
 
-`tickets/runs/` 는 위 상태 폴더와 별개로 검증 기록 (`verify_NNN.md`) 을 남기는 결과 폴더다. 실패 기록도 지우지 않는다. verifier 가 처리를 마치면 별도로 `BOARD_ROOT/logs/` 에 completion log 도 남긴다.
+검증 기록 (`verify_NNN.md`) 은 verifier 시작 시 `tickets/inprogress/` 아래에 생긴다. verifier 가 pass 하면 `tickets/done/<project-key>/verify_NNN.md`, fail 하면 `tickets/reject/verify_NNN.md` 로 같이 이동한다. verifier 가 처리를 마치면 별도로 `BOARD_ROOT/logs/` 에 completion log 도 남긴다.
 
 ## State Rules
 
@@ -51,6 +51,8 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
 - `inprogress/`
   - `plan_*.md` 는 planner 가 ticket 생성 작업을 점유한 상태다.
   - `tickets_*.md` 는 todo worker 가 claim 해 현재 구현 중인 상태다.
+  - Codex 대화 하나는 한 번에 `plan_*.md` 하나만 활성 처리한다. 같은 대화가 이미 가진 active plan 이 있으면 새 plan 대신 그 plan 을 재개한다.
+  - Codex 대화 하나는 한 번에 `tickets_*.md` 하나만 활성 처리한다. 같은 worker 가 이미 가진 `inprogress` 티켓이 있으면 새 claim 대신 그 티켓을 재개한다.
   - `tickets_*.md` 에는 `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Owner`, `Worktree`, `Last Updated`, `Next Action`, `Resume Context` 필수
   - git 저장소에서는 `start-todo.sh` 가 티켓별 worktree 를 만들고 todo worker 는 그 worktree 에서 구현한다.
   - worker runtime context 는 역할 문맥과 현재 ticket 문맥을 따로 가진다. 기능 단위 작업 완료 시 전체 context 삭제 대신 active ticket 문맥만 비우고, 다음 tick 은 Obsidian links / References / Resume Context 를 다시 읽는다.
@@ -59,25 +61,26 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
 - `verifier/`
   - 구현 완료, 검증 대기
   - verifier heartbeat 가 여기서 한 개씩 집어 `start-verifier.sh` 가 출력한 `working_root` 에서 검증 명령 실행
+  - Codex 대화 하나는 한 번에 verifier 티켓 하나만 활성 처리한다. 같은 worker 가 이미 맡은 verifier 티켓이 있으면 새 티켓 대신 그 티켓을 재개한다.
   - pass 시 `integrate-worktree.sh` 가 ticket worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 무커밋 통합한 뒤 board 변경과 함께 local commit
 - `done/`
   - 검증 pass + local git commit 완료
   - 티켓은 `project_###` 같은 프로젝트 키별 하위 폴더로 모은다
-  - `Result`, 검증 기록 경로 (`tickets/runs/verify_NNN.md`), completion log (`logs/verifier_*.md`) 연결
+  - `Result`, 검증 기록 경로 (`tickets/done/<project-key>/verify_NNN.md`), completion log (`logs/verifier_*.md`) 연결
 - `reject/`
   - 검증 fail
   - `## Reject Reason` 섹션 (Verifier, 일시, 원인, 재계획 힌트) 필수
   - planner heartbeat 가 감시해 원인을 새 Execution Candidate 로 반영 후 Status: ready 로 되돌림
   - 파일명은 `reject_NNN.md`
   - 재시도 todo 가 생성되면 `done/<project-key>/reject_NNN.md` 로 이동해 기록으로 남긴다
-- `runs/`
-  - 실행 기록과 검증 기록을 남기는 결과 폴더
-  - 실패 기록도 지우지 않음
-  - starter template 은 두지 않음
-  - 실제 검증 명령은 `working_root` 에서 실행, 결과 문서만 `BOARD_ROOT/tickets/runs/` 에 남김
+- `inprogress/verify_NNN.md`
+  - verifier 의 활성 실행 기록과 검증 기록 파일
+  - 실제 검증 명령은 `working_root` 에서 실행, 결과 문서는 먼저 `BOARD_ROOT/tickets/inprogress/verify_NNN.md` 에 남김
+  - 완료 후에는 티켓 최종 상태에 따라 `done/<project-key>/verify_NNN.md` 또는 `reject/verify_NNN.md` 로 이동
 - `backlog/`
   - 아직 plan 전인 spec 입력 큐
   - `#spec` 이 이 폴더의 `project_*.md` 를 채운다
+  - Codex 대화 하나는 한 번에 `project_*.md` 하나만 active authoring 한다. 같은 대화에 active spec 이 있으면 새 번호 대신 그 spec 을 재개한다.
   - 실제 todo ticket 이 만들어지면 대응 spec 은 `done/<project-key>/` 로 이동한다
 - `plan/`
   - 아직 ticket 생성 전이거나 대기 중인 실제 plan 문서
@@ -113,7 +116,7 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
 - `Allowed Paths` 는 repo-relative 경로이며, 구현 중에는 티켓 worktree 루트 기준으로 해석한다. worktree 가 없으면 `PROJECT_ROOT` 기준으로 fallback 한다.
 - 같은 번호 티켓은 여러 상태 폴더에 동시에 두지 않는다. reject 재시도는 **새** 번호로 발급한다.
 - `todo/`, `inprogress/`, `verifier/`, `done/`, `reject/` 디렉터리는 상태 보드 자체이며 하위 README 없이 빈 폴더로 유지돼도 된다.
-- `done/<project-key>/` 티켓은 `tickets/runs/` 아래 검증 기록과 연결돼 있어야 한다.
+- `done/<project-key>/` 티켓은 같은 폴더의 `verify_NNN.md` 검증 기록과 연결돼 있어야 한다.
 - verifier 완료 후에는 `BOARD_ROOT/logs/` 아래 completion log 가 하나 이상 있어야 한다.
 - plan / ticket / verification note 는 `## Obsidian Links` 로 서로 연결하는 편이 좋다.
 - heartbeat worker 는 스스로 멈추지 않는다. `status=idle` 도 정상 상태.

@@ -5,11 +5,12 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 
 usage() {
-  echo "Usage: $(basename "$0") [--background|--stop] [project-root] [board-dir-name] [config-path]" >&2
+  echo "Usage: $(basename "$0") [--background|--stop|--status] [project-root] [board-dir-name] [config-path]" >&2
 }
 
 background_mode="false"
 stop_mode="false"
+status_mode="false"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -21,11 +22,24 @@ while [ $# -gt 0 ]; do
       stop_mode="true"
       shift
       ;;
+    --status)
+      status_mode="true"
+      shift
+      ;;
     *)
       break
       ;;
   esac
 done
+
+mode_count=0
+[ "$background_mode" = "true" ] && mode_count=$((mode_count + 1))
+[ "$stop_mode" = "true" ] && mode_count=$((mode_count + 1))
+[ "$status_mode" = "true" ] && mode_count=$((mode_count + 1))
+if [ "$mode_count" -gt 1 ]; then
+  usage
+  exit 1
+fi
 
 if [ $# -gt 3 ]; then
   usage
@@ -63,6 +77,26 @@ if [ -n "$config_path_input" ]; then
   config_path="$(cd "$(dirname "$config_path")" && pwd)/$(basename "$config_path")"
 else
   config_path=""
+fi
+
+if [ "$status_mode" = "true" ]; then
+  printf 'board_root=%s\n' "$board_root"
+  printf 'pid_file=%s\n' "$pid_file"
+  if [ ! -f "$pid_file" ]; then
+    printf 'status=not_running\n'
+    exit 0
+  fi
+
+  watch_pid="$(tr -d '\r\n' < "$pid_file")"
+  printf 'pid=%s\n' "$watch_pid"
+  if [ -n "$watch_pid" ] && kill -0 "$watch_pid" 2>/dev/null; then
+    printf 'status=running\n'
+    printf 'stdout=%s\n' "${hooks_log_dir}/watch-board.stdout.log"
+    printf 'stderr=%s\n' "${hooks_log_dir}/watch-board.stderr.log"
+  else
+    printf 'status=stale_pid\n'
+  fi
+  exit 0
 fi
 
 if [ "$stop_mode" = "true" ]; then

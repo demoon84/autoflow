@@ -18,4 +18,4 @@
 - todo / verifier worker 는 이 폴더를 읽을 수 있지만, plan 수정은 planner 영역이다.
 - reject 티켓이 생기면 planner 가 `## Reject Reason` 을 반영해 이 폴더의 해당 plan 에 새 Execution Candidate 를 추가한다.
 
-즉 흐름은 `tickets/backlog -> tickets/plan -> tickets/inprogress/plan_NNN.md -> tickets/todo -> tickets/inprogress/tickets_NNN.md -> tickets/verifier -> tickets/runs -> logs -> tickets/done/<project-key>` 이다.
+즉 흐름은 `tickets/backlog -> tickets/plan -> tickets/inprogress/plan_NNN.md -> tickets/todo -> tickets/inprogress/tickets_NNN.md -> tickets/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done/<project-key>/verify_NNN.md` 이다.

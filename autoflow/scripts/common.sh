@@ -4,9 +4,40 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+AUTOFLOW_TMP_FILES=()
+AUTOFLOW_TMP_REGISTRY="${TMPDIR:-/tmp}/autoflow-tmp-registry.$$"
+
+autoflow_mktemp() {
+  local tmp
+
+  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow.XXXXXX")"
+  AUTOFLOW_TMP_FILES+=("$tmp")
+  printf '%s\n' "$tmp" >> "$AUTOFLOW_TMP_REGISTRY"
+  printf '%s' "$tmp"
+}
+
+autoflow_cleanup_tmp() {
+  local tmp
+
+  if [ -f "$AUTOFLOW_TMP_REGISTRY" ]; then
+    while IFS= read -r tmp; do
+      [ -n "$tmp" ] || continue
+      rm -f "$tmp" 2>/dev/null || true
+    done < "$AUTOFLOW_TMP_REGISTRY"
+    rm -f "$AUTOFLOW_TMP_REGISTRY" 2>/dev/null || true
+  fi
+
+  for tmp in "${AUTOFLOW_TMP_FILES[@]:-}"; do
+    [ -n "$tmp" ] || continue
+    rm -f "$tmp" 2>/dev/null || true
+  done
+}
+
+trap autoflow_cleanup_tmp EXIT
+
 normalize_runtime_path() {
   local raw="${1:-}"
-  local drive rest
+  local drive rest flavor
 
   case "$raw" in
     [A-Za-z]:[\\/]*)
@@ -14,7 +45,19 @@ normalize_runtime_path() {
       rest="${raw#?:}"
       rest="${rest//\\//}"
       rest="${rest#/}"
-      printf '/mnt/%s/%s' "$drive" "$rest"
+      flavor="${AUTOFLOW_BASH_FLAVOR:-}"
+      if [ -z "$flavor" ]; then
+        case "$(uname -s 2>/dev/null || true)" in
+          MINGW*|MSYS*) flavor="msys" ;;
+          CYGWIN*) flavor="cygwin" ;;
+          *) flavor="wsl" ;;
+        esac
+      fi
+      case "$flavor" in
+        msys) printf '/%s/%s' "$drive" "$rest" ;;
+        cygwin) printf '/cygdrive/%s/%s' "$drive" "$rest" ;;
+        *) printf '/mnt/%s/%s' "$drive" "$rest" ;;
+      esac
       ;;
     *)
       printf '%s' "$raw"
@@ -263,7 +306,7 @@ write_context_snapshot() {
   fi
 
   current_file="$(current_context_path)"
-  temp_file="$(mktemp)"
+  temp_file="$(autoflow_mktemp)"
   timestamp="$(now_iso)"
   active_updated_at=""
   if [ -n "$active_ticket_id" ] || [ -n "$active_ticket_path" ] || [ -n "$active_stage" ]; then
@@ -455,6 +498,8 @@ extract_numeric_id() {
 list_matching_files() {
   local dir="$1"
   local pattern="$2"
+
+  [ -d "$dir" ] || return 0
   find "$dir" -maxdepth 1 -type f -name "$pattern" | sort
 }
 
@@ -567,7 +612,7 @@ replace_scalar_field_in_section() {
   local field="$3"
   local value="$4"
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
   awk -v heading="$heading" -v field="$field" -v value="$value" '
     BEGIN {
       in_target = 0
@@ -611,8 +656,8 @@ replace_section_block() {
   local heading="$2"
   local block="$3"
   local tmp block_file
-  tmp="$(mktemp)"
-  block_file="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
+  block_file="$(autoflow_mktemp)"
   printf '%s\n' "$block" > "$block_file"
   awk -v heading="$heading" -v block_file="$block_file" '
     BEGIN {
@@ -659,7 +704,7 @@ append_note() {
   local file="$1"
   local note="$2"
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
   awk -v note="$note" '
     BEGIN { in_notes=0; inserted=0 }
     $0 == "## Notes" {
@@ -692,7 +737,7 @@ append_generated_ticket() {
   local file="$1"
   local entry="$2"
   local tmp
-  tmp="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
   awk -v entry="$entry" '
     BEGIN { insert_next=0; inserted=0 }
     $0 == "## Generated Tickets" {
@@ -1010,7 +1055,7 @@ verification_note_name_for_ticket() {
 
 pending_run_path() {
   local ticket_id="$1"
-  printf '%s/tickets/runs/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 done_dir_for_project_key() {
@@ -1120,6 +1165,99 @@ done_reject_path_for_reject_file() {
   printf '%s/reject_%s.md' "$(done_dir_for_project_key "$project_key")" "$reject_id"
 }
 
+archive_reject_file_to_done() {
+  local reject_file="$1"
+  local reject_id target_file target_run_file source_run_file timestamp timestamp_slug
+
+  [ -f "$reject_file" ] || return 1
+
+  reject_id="$(extract_numeric_id "$reject_file")"
+  target_file="$(done_reject_path_for_reject_file "$reject_file")"
+  source_run_file="${BOARD_ROOT}/tickets/reject/verify_${reject_id}.md"
+  target_run_file="$(done_run_path_for_ticket_file "$reject_file")"
+  timestamp="$(now_iso)"
+  timestamp_slug="$(printf '%s' "$timestamp" | tr -d ':-')"
+
+  mkdir -p "$(dirname "$target_file")"
+  replace_scalar_field_in_section "$reject_file" "## Ticket" "Stage" "replanned"
+  replace_scalar_field_in_section "$reject_file" "## Ticket" "Last Updated" "$timestamp"
+
+  if [ -f "$source_run_file" ]; then
+    mkdir -p "$(dirname "$target_run_file")"
+    replace_literal_in_file_runtime "$reject_file" "$(board_relative_path "$source_run_file")" "$(board_relative_path "$target_run_file")" || true
+    if [ "$source_run_file" != "$target_run_file" ]; then
+      if [ -f "$target_run_file" ]; then
+        if cmp -s "$source_run_file" "$target_run_file"; then
+          rm -f "$source_run_file"
+        else
+          target_run_file="${target_run_file%.md}.${timestamp_slug}.duplicate.md"
+          mv "$source_run_file" "$target_run_file"
+        fi
+      else
+        mv "$source_run_file" "$target_run_file"
+      fi
+    fi
+  fi
+
+  append_note "$reject_file" "Archived to done after planner created or found a retry candidate at ${timestamp}"
+
+  if [ "$reject_file" != "$target_file" ]; then
+    if [ -f "$target_file" ]; then
+      if cmp -s "$reject_file" "$target_file"; then
+        rm -f "$reject_file"
+      else
+        target_file="${target_file%.md}.${timestamp_slug}.duplicate.md"
+        mv "$reject_file" "$target_file"
+      fi
+    else
+      mv "$reject_file" "$target_file"
+    fi
+  fi
+
+  printf '%s' "$target_file"
+}
+
+archive_orphan_reject_runs() {
+  local run_file run_id project_key target_run_file timestamp_slug done_reject_file old_ref new_ref
+
+  [ -d "${BOARD_ROOT}/tickets/reject" ] || return 0
+
+  while IFS= read -r run_file; do
+    [ -n "$run_file" ] || continue
+    run_id="$(extract_numeric_id "$run_file")"
+
+    if [ -f "${BOARD_ROOT}/tickets/reject/reject_${run_id}.md" ] || [ -f "${BOARD_ROOT}/tickets/reject/tickets_${run_id}.md" ]; then
+      continue
+    fi
+
+    project_key="$(extract_scalar_field_in_section "$run_file" "Meta" "Project Key")"
+    if [ -z "$project_key" ]; then
+      continue
+    fi
+
+    target_run_file="$(done_dir_for_project_key "$project_key")/verify_${run_id}.md"
+    mkdir -p "$(dirname "$target_run_file")"
+    if [ -f "$target_run_file" ]; then
+      if cmp -s "$run_file" "$target_run_file"; then
+        rm -f "$run_file"
+      else
+        timestamp_slug="$(printf '%s' "$(now_iso)" | tr -d ':-')"
+        target_run_file="${target_run_file%.md}.${timestamp_slug}.duplicate.md"
+        mv "$run_file" "$target_run_file"
+      fi
+    else
+      mv "$run_file" "$target_run_file"
+    fi
+    done_reject_file="$(done_dir_for_project_key "$project_key")/reject_${run_id}.md"
+    if [ -f "$done_reject_file" ]; then
+      old_ref="tickets/reject/verify_${run_id}.md"
+      new_ref="$(board_relative_path "$target_run_file")"
+      replace_literal_in_file_runtime "$done_reject_file" "$old_ref" "$new_ref" || true
+    fi
+    printf 'archived_orphan_reject_run=%s\n' "$target_run_file"
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/reject" 'verify_[0-9][0-9][0-9].md')
+}
+
 done_run_path_for_ticket_file() {
   local ticket_file="$1"
   local ticket_id project_key
@@ -1169,7 +1307,7 @@ replace_literal_in_file_runtime() {
   [ -f "$file" ] || return 1
   before_escaped="$(printf '%s' "$before" | sed 's/[\/&]/\\&/g')"
   after_escaped="$(printf '%s' "$after" | sed 's/[\/&]/\\&/g')"
-  tmp="$(mktemp)"
+  tmp="$(autoflow_mktemp)"
   sed "s/${before_escaped}/${after_escaped}/g" "$file" > "$tmp"
   if cmp -s "$tmp" "$file"; then
     rm -f "$tmp"
@@ -1236,7 +1374,7 @@ update_ticket_plan_source_refs() {
 
 archive_replanned_rejects_for_plan() {
   local plan_id="$1"
-  local reject_file target_file old_ref new_ref timestamp timestamp_slug
+  local reject_file target_file old_ref new_ref
 
   while IFS= read -r reject_file; do
     [ -n "$reject_file" ] || continue
@@ -1244,30 +1382,9 @@ archive_replanned_rejects_for_plan() {
       continue
     fi
 
-    target_file="$(done_reject_path_for_reject_file "$reject_file")"
     old_ref="$(board_relative_path "$reject_file")"
+    target_file="$(archive_reject_file_to_done "$reject_file")"
     new_ref="$(board_relative_path "$target_file")"
-    timestamp="$(now_iso)"
-    timestamp_slug="$(printf '%s' "$timestamp" | tr -d ':-')"
-
-    mkdir -p "$(dirname "$target_file")"
-    replace_scalar_field_in_section "$reject_file" "## Ticket" "Stage" "replanned"
-    replace_scalar_field_in_section "$reject_file" "## Ticket" "Last Updated" "$timestamp"
-    append_note "$reject_file" "Archived to done after planner created a retry candidate at ${timestamp}"
-
-    if [ "$reject_file" != "$target_file" ]; then
-      if [ -f "$target_file" ]; then
-        if cmp -s "$reject_file" "$target_file"; then
-          rm -f "$reject_file"
-        else
-          target_file="${target_file%.md}.${timestamp_slug}.duplicate.md"
-          mv "$reject_file" "$target_file"
-          new_ref="$(board_relative_path "$target_file")"
-        fi
-      else
-        mv "$reject_file" "$target_file"
-      fi
-    fi
 
     update_ticket_plan_source_refs "$plan_id" "$old_ref" "$new_ref"
     printf 'archived_reject=%s\n' "$target_file"
@@ -1364,7 +1481,7 @@ ticket_exists_for_plan_candidate() {
   while IFS= read -r ticket; do
     [ -n "$ticket" ] || continue
     if ticket_belongs_to_plan_id "$ticket" "$plan_id" && \
-       grep -qsF -- "- 이번 작업의 목표: ${candidate}" "$ticket"; then
+       grep -qsF -- "- Plan Candidate: ${candidate}" "$ticket"; then
       return 0
     fi
   done < <(list_ticket_record_files_under "${BOARD_ROOT}/tickets")
@@ -1378,7 +1495,7 @@ ensure_runs_file() {
 
   file="$(pending_run_path "$ticket_id")"
   if [ ! -f "$file" ]; then
-    mkdir -p "${BOARD_ROOT}/tickets/runs"
+    mkdir -p "${BOARD_ROOT}/tickets/inprogress"
     template_file="${BOARD_ROOT}/rules/verifier/verification-template.md"
     if [ ! -f "$template_file" ]; then
       template_file="${BOARD_ROOT}/verifier/templates/verification-template.md"

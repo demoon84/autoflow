@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="e1e573c9-8712-4968-abc6-1985d6a47388" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/autoflow.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/agents/plan-to-ticket-agent.md" beforeDir="false" afterPath="$PROJECT_DIR$/agents/plan-to-ticket-agent.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/.autoflow-version" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/.project-root" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/AGENTS.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/agents/plan-to-ticket-agent.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/agents/spec-author-agent.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/agents/todo-queue-agent.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/agents/verifier-agent.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/file-watch.psd1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/heartbeat-set.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/state/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/state/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/templates/heartbeat-set.template.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/templates/plan-heartbeat.template.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/templates/todo-heartbeat.template.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/automations/templates/verifier-heartbeat.template.toml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/backlog-processed.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/backlog.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/feature-spec-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/hook-logs.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/logs.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/plan-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/plan.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/project-spec-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/roadmap.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/ticket-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/reference/tickets-board.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/rules/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/rules/verifier/README.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/rules/verifier/checklist-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/rules/verifier/verification-template.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/check-stop.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/check-stop.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/clear-thread-context.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/clear-thread-context.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/common.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/file-watch-common.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/handoff-todo.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/handoff-todo.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/install-stop-hook.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/install-stop-hook.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/integrate-worktree.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/integrate-worktree.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/invoke-runtime-sh.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/run-hook.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/run-hook.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/set-thread-context.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/set-thread-context.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-plan.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-plan.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-spec.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-spec.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-todo.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-todo.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-verifier.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/start-verifier.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/watch-board.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/watch-board.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/write-verifier-log.ps1" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/scripts/write-verifier-log.sh" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/tickets/backlog/autoflow-cli-spec.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/tickets/backlog/autoflow-package-spec.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/tickets/backlog/public-distribution-spec.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/autoflow/tickets/plan/plan_004.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/automations/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/automations/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/automations/templates/heartbeat-set.template.toml" beforeDir="false" afterPath="$PROJECT_DIR$/automations/templates/heartbeat-set.template.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/automations/templates/plan-heartbeat.template.toml" beforeDir="false" afterPath="$PROJECT_DIR$/automations/templates/plan-heartbeat.template.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/automations/templates/todo-heartbeat.template.toml" beforeDir="false" afterPath="$PROJECT_DIR$/automations/templates/todo-heartbeat.template.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/automations/templates/verifier-heartbeat.template.toml" beforeDir="false" afterPath="$PROJECT_DIR$/automations/templates/verifier-heartbeat.template.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plan.done.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/reference/project-spec-template.md" beforeDir="false" afterPath="$PROJECT_DIR$/reference/project-spec-template.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/reference/ticket-template.md" beforeDir="false" afterPath="$PROJECT_DIR$/reference/ticket-template.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/doctor-project.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/doctor-project.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/doctor-project.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/doctor-project.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/package-board-common.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/package-board-common.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/render-heartbeats.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/render-heartbeats.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/scaffold-project.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/scaffold-project.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/status-project.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/status-project.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/upgrade-project.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/upgrade-project.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/cli/watch-project.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/cli/watch-project.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/runtime/check-stop.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/runtime/check-stop.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/runtime/common.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/runtime/common.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/runtime/invoke-runtime-sh.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/runtime/invoke-runtime-sh.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/runtime/run-hook.ps1" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/runtime/run-hook.ps1" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/runtime/start-plan.sh" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/runtime/start-plan.sh" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/board/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/templates/board/AGENTS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/board/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/templates/board/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/board/automations/heartbeat-set.toml" beforeDir="false" afterPath="$PROJECT_DIR$/templates/board/automations/heartbeat-set.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/host-AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/templates/host-AGENTS.md" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="106" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;demoon84&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/demoon84/autoflow.git&quot;,
+    &quot;accountId&quot;: &quot;2bd19921-b54a-4330-b9ad-62f774fd73e0&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3ClPtkHca4yxnSeCd7kCKMAZerb" />
+  <component name="ProjectViewState">
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Git.Working.Tree.Tab.closed.by.user": "closed",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/demoon/Documents/project/autoflow",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "settings.sync",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration default="true" type="JetRunConfigurationType">
+      <module name="autoflowLab" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration default="true" type="KotlinStandaloneScriptRunConfigurationType">
+      <module name="autoflowLab" />
+      <option name="filePath" />
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="e1e573c9-8712-4968-abc6-1985d6a47388" name="Changes" comment="" />
+      <created>1776957399607</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1776957399607</updated>
+      <workItem from="1776957400657" duration="126000" />
+      <workItem from="1776962497475" duration="47000" />
+      <workItem from="1777036179188" duration="266000" />
+      <workItem from="1777036480922" duration="128000" />
+      <workItem from="1777037621747" duration="437000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="CUSTOM_BOOLEAN_PROPERTIES">
+                <map>
+                  <entry key="Show.Git.Branches" value="false" />
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

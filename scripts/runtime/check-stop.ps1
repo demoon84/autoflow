@@ -4,102 +4,476 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Write-HookDiagnostic {
-  param([string]$Message)
-
-  try {
-    $logRoot = Join-Path $env:USERPROFILE ".codex\log"
-    if (-not (Test-Path -LiteralPath $logRoot)) {
-      New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
-    }
-
-    $timestamp = (Get-Date).ToString("o")
-    Add-Content -LiteralPath (Join-Path $logRoot "autoflow-stop-hook.log") -Value "[$timestamp] $Message"
+function Get-BoardRoot {
+  $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $scriptDirName = Split-Path -Leaf $scriptDir
+  if ($scriptDirName -eq "runtime") {
+    return (Resolve-Path (Join-Path $scriptDir "..\..")).Path
   }
-  catch {
-    # Stop hook diagnostics are best-effort.
-  }
+
+  return (Resolve-Path (Join-Path $scriptDir "..")).Path
 }
 
-function Convert-ToBashPath {
-  param([string]$PathValue)
+function Get-FileContentRawSafe {
+  param([string]$Path)
 
-  if ($PathValue -match '^[A-Za-z]:[\\/](.*)$') {
-    $drive = $PathValue.Substring(0, 1).ToLowerInvariant()
-    $rest = ($PathValue.Substring(2) -replace '\\', '/').TrimStart('/')
-    return "/mnt/$drive/$rest"
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    return ""
   }
 
-  return ($PathValue -replace '\\', '/')
+  return [System.IO.File]::ReadAllText($Path)
 }
 
-function Convert-ToBashLiteral {
+function Normalize-PointerToken {
   param([string]$Value)
 
-  $escaped = $Value.Replace("'", "'\''")
-  return "'" + $escaped + "'"
+  if (-not $Value) {
+    return ""
+  }
+
+  $token = $Value.ToLowerInvariant() -replace '[^a-z0-9._-]+', '-'
+  $token = $token.Trim('-')
+  $token = $token -replace '-{2,}', '-'
+  return $token
 }
 
-function Invoke-BashScript {
-  param(
-    [string]$BoardRootValue,
-    [string]$BashScriptPath,
-    [string[]]$ScriptArguments
-  )
+function Get-CurrentThreadKey {
+  $fromAutoflow = Normalize-PointerToken $env:AUTOFLOW_THREAD_KEY
+  if ($fromAutoflow) {
+    return $fromAutoflow
+  }
 
-  $envAssignments = @(
-    "AUTOFLOW_BOARD_ROOT=$(Convert-ToBashLiteral $BoardRootValue)"
-  )
+  return (Normalize-PointerToken $env:CODEX_THREAD_ID)
+}
 
-  foreach ($name in @("AUTOFLOW_THREAD_KEY", "CODEX_THREAD_ID", "AUTOFLOW_ROLE", "AUTOFLOW_WORKER_ID", "AUTOFLOW_EXECUTION_POOL", "AUTOFLOW_VERIFIER_POOL", "AUTOFLOW_PROJECT_ROOT", "AUTOFLOW_BACKGROUND", "AUTOFLOW_STOP_BYPASS")) {
-    $item = Get-Item -Path ("Env:" + $name) -ErrorAction SilentlyContinue
-    if ($null -ne $item -and $null -ne $item.Value -and "$($item.Value)" -ne "") {
-      $envAssignments += ("{0}={1}" -f $name, (Convert-ToBashLiteral $item.Value))
+function Get-StateRoot {
+  param([string]$BoardRoot)
+
+  return (Join-Path $BoardRoot "automations/state")
+}
+
+function Get-ThreadContextPath {
+  param([string]$BoardRoot, [string]$ThreadKey)
+
+  if (-not $ThreadKey) {
+    return ""
+  }
+
+  return (Join-Path (Join-Path (Get-StateRoot $BoardRoot) "threads") "$ThreadKey.context")
+}
+
+function Get-CurrentContextPath {
+  param([string]$BoardRoot)
+
+  return (Join-Path (Get-StateRoot $BoardRoot) "current.context")
+}
+
+function Get-ContextValue {
+  param([string]$Path, [string]$Key)
+
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    return ""
+  }
+
+  foreach ($line in (Get-Content -LiteralPath $Path)) {
+    if ($line -match ('^{0}=(.*)$' -f [regex]::Escape($Key))) {
+      return $matches[1]
     }
   }
 
-  $commandParts = @()
-  $envPrefix = $envAssignments -join " "
-  if ($envPrefix) {
-    $commandParts += $envPrefix
-  }
-  $commandParts += (Convert-ToBashLiteral $BashScriptPath)
-  foreach ($argument in $ScriptArguments) {
-    $commandParts += (Convert-ToBashLiteral $argument)
+  return ""
+}
+
+function Resolve-ContextPath {
+  param([string]$BoardRoot)
+
+  $threadPath = Get-ThreadContextPath -BoardRoot $BoardRoot -ThreadKey (Get-CurrentThreadKey)
+  if ($threadPath -and (Test-Path -LiteralPath $threadPath -PathType Leaf)) {
+    return $threadPath
   }
 
-  try {
-    if (-not (Get-Command -Name bash -ErrorAction SilentlyContinue)) {
-      Write-HookDiagnostic "bash executable was not found for board stop hook."
-      exit 0
+  $currentPath = Get-CurrentContextPath -BoardRoot $BoardRoot
+  if (Test-Path -LiteralPath $currentPath -PathType Leaf) {
+    return $currentPath
+  }
+
+  return ""
+}
+
+function Get-SectionLines {
+  param([string]$FilePath, [string]$Heading)
+
+  if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+    return @()
+  }
+
+  $target = "## $Heading"
+  $inSection = $false
+  $result = New-Object System.Collections.Generic.List[string]
+  foreach ($line in (Get-Content -LiteralPath $FilePath)) {
+    if ($line -eq $target) {
+      $inSection = $true
+      continue
     }
 
-    & bash -lc ($commandParts -join " ")
-    if ($LASTEXITCODE -ne 0) {
-      Write-HookDiagnostic "check-stop.sh exited with code $LASTEXITCODE."
+    if ($inSection -and $line.StartsWith("## ")) {
+      break
     }
-    exit 0
+
+    if ($inSection) {
+      [void]$result.Add($line)
+    }
   }
-  catch {
-    Write-HookDiagnostic "check-stop.ps1 failed open: $($_.Exception.Message)"
-    exit 0
-  }
+
+  return $result.ToArray()
 }
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$scriptDirName = Split-Path -Leaf $scriptDir
-if ($scriptDirName -eq "runtime") {
-  $boardRoot = (Resolve-Path (Join-Path $scriptDir "..\\..")).Path
-}
-else {
-  $boardRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
-}
-$bashScript = Convert-ToBashPath (Join-Path $scriptDir "check-stop.sh")
+function Get-MarkdownFieldValue {
+  param([string]$FilePath, [string]$Heading, [string]$Field)
 
-try {
-  Invoke-BashScript -BoardRootValue (Convert-ToBashPath $boardRoot) -BashScriptPath $bashScript -ScriptArguments @()
+  $prefix = "- $Field:"
+  foreach ($line in (Get-SectionLines -FilePath $FilePath -Heading $Heading)) {
+    if ($line.StartsWith($prefix)) {
+      return $line.Substring($prefix.Length).Trim()
+    }
+  }
+
+  return ""
 }
-catch {
-  Write-HookDiagnostic "check-stop.ps1 failed open: $($_.Exception.Message)"
+
+function Test-SpecFilePlaceholder {
+  param([string]$Path)
+
+  $content = Get-FileContentRawSafe $Path
+  if (-not $content) {
+    return $false
+  }
+
+  return $content.Contains("<!-- AUTOFLOW_STARTER_SPEC_PLACEHOLDER -->") -or $content.Contains("Replace with your project name")
+}
+
+function Test-PlanFilePlaceholder {
+  param([string]$Path)
+
+  $content = Get-FileContentRawSafe $Path
+  if (-not $content) {
+    return $false
+  }
+
+  return $content.Contains("<!-- AUTOFLOW_STARTER_PLAN_PLACEHOLDER -->") -or
+    $content.Contains("첫 구현 티켓 후보를 관찰 가능한 문장으로 적기") -or
+    $content.Contains("- Title: Initial project bootstrap")
+}
+
+function Test-FieldUnassigned {
+  param([string]$Value)
+
+  $normalized = ""
+  if ($null -ne $Value) {
+    $normalized = $Value.Trim().ToLowerInvariant()
+  }
+
+  return @("", "unassigned", "unclaimed", "none") -contains $normalized
+}
+
+function Get-ListMatchingFiles {
+  param([string]$Directory, [string]$Filter)
+
+  if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
+    return @()
+  }
+
+  return @(Get-ChildItem -LiteralPath $Directory -File -Filter $Filter | Sort-Object FullName)
+}
+
+function Get-RejectTicketFiles {
+  param([string]$BoardRoot)
+
+  $rejectRoot = Join-Path $BoardRoot "tickets/reject"
+  if (-not (Test-Path -LiteralPath $rejectRoot -PathType Container)) {
+    return @()
+  }
+
+  return @(Get-ChildItem -LiteralPath $rejectRoot -File |
+      Where-Object { $_.Name -match '^(reject|tickets)_[0-9][0-9][0-9]\.md$' } |
+      Sort-Object FullName)
+}
+
+function Get-PlanRootPath {
+  param([string]$BoardRoot)
+
+  $planRoot = Join-Path $BoardRoot "tickets/plan"
+  if (Test-Path -LiteralPath $planRoot -PathType Container) {
+    return $planRoot
+  }
+
+  $legacyRoot = Join-Path $BoardRoot "rules/plan"
+  if (Test-Path -LiteralPath $legacyRoot -PathType Container) {
+    return $legacyRoot
+  }
+
+  return $planRoot
+}
+
+function Strip-MarkdownCodeTicks {
+  param([string]$Value)
+
+  if (-not $Value) {
+    return ""
+  }
+
+  $raw = $Value.Trim()
+  if ($raw -match '^\[[^]]+\]\(([^)]+)\)$') {
+    return $matches[1]
+  }
+
+  if ($raw -match '^\[\[([^]|]+)(\|[^]]+)?\]\]$') {
+    return $matches[1]
+  }
+
+  if ($raw.StartsWith('`') -and $raw.EndsWith('`') -and $raw.Length -ge 2) {
+    return $raw.Substring(1, $raw.Length - 2)
+  }
+
+  return $raw
+}
+
+function Get-ExecutionCandidates {
+  param([string]$FilePath)
+
+  $inSection = $false
+  $result = New-Object System.Collections.Generic.List[string]
+  foreach ($line in (Get-Content -LiteralPath $FilePath)) {
+    if ($line -eq "## Execution Candidates") {
+      $inSection = $true
+      continue
+    }
+
+    if ($inSection -and $line.StartsWith("## ")) {
+      break
+    }
+
+    if ($inSection -and $line -match '^\s*- \[ \] (.+)$') {
+      [void]$result.Add($matches[1])
+    }
+  }
+
+  return $result.ToArray()
+}
+
+function Get-TicketStage {
+  param([string]$FilePath)
+
+  return (Get-MarkdownFieldValue -FilePath $FilePath -Heading "Ticket" -Field "Stage")
+}
+
+function Get-TicketField {
+  param([string]$FilePath, [string]$Field)
+
+  return (Get-MarkdownFieldValue -FilePath $FilePath -Heading "Ticket" -Field $Field)
+}
+
+function Test-ExecutionStageCandidate {
+  param([string]$Stage)
+
+  return @("", "claimed", "executing", "blocked") -contains $Stage
+}
+
+function Get-ExecutionLoadForOwner {
+  param([string]$BoardRoot, [string]$Owner)
+
+  $count = 0
+  foreach ($ticket in (Get-ListMatchingFiles -Directory (Join-Path $BoardRoot "tickets/inprogress") -Filter "tickets_*.md")) {
+    if ((Get-TicketField -FilePath $ticket.FullName -Field "Execution Owner") -ne $Owner) {
+      continue
+    }
+
+    if (Test-ExecutionStageCandidate (Get-TicketStage $ticket.FullName)) {
+      $count += 1
+    }
+  }
+
+  return $count
+}
+
+function Test-ExecutionPoolHasCapacity {
+  param([string]$BoardRoot, [string]$PoolCsv, [string]$LimitRaw)
+
+  if (-not $PoolCsv) {
+    return $true
+  }
+
+  $limit = 1
+  if ($LimitRaw) {
+    $limit = [int]$LimitRaw
+  }
+
+  foreach ($candidate in ($PoolCsv -split ',')) {
+    $trimmed = $candidate.Trim()
+    if (-not $trimmed) {
+      continue
+    }
+
+    if ((Get-ExecutionLoadForOwner -BoardRoot $BoardRoot -Owner $trimmed) -lt $limit) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Emit-Block {
+  param([string]$Reason)
+
+  $escaped = $Reason.Replace('\', '\\').Replace('"', '\"')
+  Write-Output "{"
+  Write-Output '  "hookSpecificOutput": {'
+  Write-Output '    "hookEventName": "Stop",'
+  Write-Output '    "decision": "block",'
+  Write-Output ('    "reason": "{0}"' -f $escaped)
+  Write-Output "  }"
+  Write-Output "}"
+}
+
+$boardRoot = Get-BoardRoot
+
+switch ($env:AUTOFLOW_STOP_BYPASS) {
+  "1" { exit 0 }
+  "true" { exit 0 }
+  "TRUE" { exit 0 }
+  "yes" { exit 0 }
+  "YES" { exit 0 }
+  "on" { exit 0 }
+  "ON" { exit 0 }
+}
+
+$hookRole = $env:AUTOFLOW_ROLE
+$hookWorkerId = $env:AUTOFLOW_WORKER_ID
+$hookExecutionPool = $env:AUTOFLOW_EXECUTION_POOL
+$hookVerifierPool = $env:AUTOFLOW_VERIFIER_POOL
+$contextPath = Resolve-ContextPath -BoardRoot $boardRoot
+
+if ($contextPath) {
+  if (-not $hookRole) { $hookRole = Get-ContextValue -Path $contextPath -Key "role" }
+  if (-not $hookWorkerId) { $hookWorkerId = Get-ContextValue -Path $contextPath -Key "worker_id" }
+  if (-not $hookExecutionPool) { $hookExecutionPool = Get-ContextValue -Path $contextPath -Key "execution_pool" }
+  if (-not $hookVerifierPool) { $hookVerifierPool = Get-ContextValue -Path $contextPath -Key "verifier_pool" }
+}
+
+if (-not $hookRole) {
   exit 0
 }
+
+$reason = ""
+
+switch ($hookRole) {
+  "plan" {
+    $rejectFile = Get-RejectTicketFiles -BoardRoot $boardRoot | Select-Object -First 1
+    if ($rejectFile) {
+      $reason = "planner work remains: reject ticket $($rejectFile.Name) still needs replanning."
+      break
+    }
+
+    $specRoot = Join-Path $boardRoot "tickets/backlog"
+    if (Test-Path -LiteralPath $specRoot -PathType Container) {
+      foreach ($specFile in (Get-ChildItem -LiteralPath $specRoot -File -Filter "project_*.md" | Sort-Object FullName)) {
+        if (Test-SpecFilePlaceholder $specFile.FullName) {
+          continue
+        }
+
+        if ($specFile.BaseName -match '_(\d{3})$') {
+          $planId = $matches[1]
+        }
+        else {
+          continue
+        }
+
+        $planFile = Join-Path (Get-PlanRootPath -BoardRoot $boardRoot) ("plan_{0}.md" -f $planId)
+        if (-not (Test-Path -LiteralPath $planFile -PathType Leaf) -or (Test-PlanFilePlaceholder $planFile)) {
+          $reason = "planner work remains: populated backlog spec $($specFile.Name) still needs a real plan."
+          break
+        }
+      }
+    }
+
+    if (-not $reason) {
+      foreach ($planFile in (Get-ListMatchingFiles -Directory (Get-PlanRootPath -BoardRoot $boardRoot) -Filter "plan_*.md")) {
+        if (Test-PlanFilePlaceholder $planFile.FullName) {
+          continue
+        }
+
+        $status = Get-MarkdownFieldValue -FilePath $planFile.FullName -Heading "Plan" -Field "Status"
+        if ($status -eq "ready") {
+          $reason = "planner work remains: plan $($planFile.Name) is ready to generate todo tickets."
+          break
+        }
+
+        if ($status -eq "draft") {
+          $specRef = Strip-MarkdownCodeTicks (Get-MarkdownFieldValue -FilePath $planFile.FullName -Heading "Spec References" -Field "Project Spec")
+          $candidates = Get-ExecutionCandidates -FilePath $planFile.FullName
+          $specPath = if ($specRef) { Join-Path $boardRoot $specRef } else { "" }
+          if ($specPath -and (Test-Path -LiteralPath $specPath -PathType Leaf) -and (-not (Test-SpecFilePlaceholder $specPath)) -and $candidates.Count -gt 0) {
+            $reason = "planner work remains: draft plan $($planFile.Name) can be auto-flipped and ticketed."
+            break
+          }
+        }
+      }
+    }
+  }
+  "todo" {
+    if (-not $hookWorkerId) {
+      break
+    }
+
+    foreach ($ticket in (Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/inprogress") -Filter "tickets_*.md")) {
+      $stage = Get-TicketStage $ticket.FullName
+      $executionOwner = Get-TicketField -FilePath $ticket.FullName -Field "Execution Owner"
+      $owner = Get-TicketField -FilePath $ticket.FullName -Field "Owner"
+
+      $ownedByWorker = ($executionOwner -eq $hookWorkerId) -or
+        ($owner -eq $hookWorkerId) -or
+        ((Test-FieldUnassigned $executionOwner) -and $owner -eq $hookWorkerId)
+
+      if ($ownedByWorker -and (@("", "claimed", "executing") -contains $stage)) {
+        $reason = "todo work remains: worker $hookWorkerId still has inprogress ticket $($ticket.Name)."
+        break
+      }
+    }
+
+    if (-not $reason -and (Test-ExecutionPoolHasCapacity -BoardRoot $boardRoot -PoolCsv $hookExecutionPool -LimitRaw $env:AUTOFLOW_MAX_EXECUTION_LOAD_PER_WORKER)) {
+      $todoTicket = Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/todo") -Filter "tickets_*.md" | Select-Object -First 1
+      if ($todoTicket) {
+        $reason = "todo work remains: claimable todo ticket $($todoTicket.Name) is waiting."
+      }
+    }
+  }
+  "verifier" {
+    if (-not $hookWorkerId) {
+      break
+    }
+
+    foreach ($ticket in (Get-ListMatchingFiles -Directory (Join-Path $boardRoot "tickets/verifier") -Filter "tickets_*.md")) {
+      $verifierOwner = Get-TicketField -FilePath $ticket.FullName -Field "Verifier Owner"
+      $owner = Get-TicketField -FilePath $ticket.FullName -Field "Owner"
+
+      $ownedByVerifier = ($verifierOwner -eq $hookWorkerId) -or
+        ((Test-FieldUnassigned $verifierOwner) -and $owner -eq $hookWorkerId) -or
+        (Test-FieldUnassigned $verifierOwner)
+
+      if ($ownedByVerifier) {
+        $reason = "verifier work remains: ticket $($ticket.Name) is awaiting verification."
+        break
+      }
+    }
+  }
+  default {
+    exit 0
+  }
+}
+
+if (-not $reason) {
+  exit 0
+}
+
+Emit-Block -Reason $reason
+exit 0

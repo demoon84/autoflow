@@ -1,6 +1,6 @@
 # Automations
 
-이 폴더는 `PROJECT_ROOT/.autoflow/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
+이 폴더는 `PROJECT_ROOT/autoflow/` 안에서 쓰는 자동화 훅 규칙을 정의한다.
 
 ## Reference Model
 
@@ -9,12 +9,12 @@
 핵심 해석:
 
 - 자동화 자체가 상태를 저장하지 않는다.
-- source of truth 는 항상 `.autoflow/` 보드 파일이다.
+- source of truth 는 항상 `autoflow/` 보드 파일이다.
 - 할 일이 없으면 해당 wake-up 턴만 `status=idle` 로 끝난다.
 - `status=idle` 은 자동화 종료가 아니라 다음 1분 wake-up 대기다.
 - 사용자가 명시적으로 "멈춰"라고 하기 전까지 자동화는 pause / delete / self-stop 하지 않는다.
 
-별도로, `Autoflow` 는 OS 파일 이벤트를 받는 file-watch hook 모드도 지원한다. 이 모드는 `scripts/watch-board.ps1` 가 폴더 변경을 감지해 route 별 one-shot 훅을 실행하는 구조이며, watcher 프로세스 자체는 사용자가 멈출 때까지 계속 살아 있다.
+별도로, `Autoflow` 는 OS 파일 이벤트를 받는 file-watch hook 모드도 지원한다. Bash/macOS/Linux 에서는 `scripts/watch-board.sh`, Windows 에서는 `scripts/watch-board.ps1` 가 폴더 변경을 감지해 route 별 one-shot 훅을 실행하며, watcher 프로세스 자체는 사용자가 멈출 때까지 계속 살아 있다.
 
 ## Trigger Contract
 
@@ -55,7 +55,7 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 - 권장 주기:
   - 1분
 - source of truth:
-  - `.autoflow/` 보드 파일
+  - `autoflow/` 보드 파일
 
 주의:
 
@@ -64,21 +64,34 @@ Codex 자동화를 쓴다면 기본 모델은 아래다.
 - 보드에 할 일이 없으면 현재 wake-up 만 종료하는 것이 맞다.
 - 서로 다른 자동화는 각자 자기 역할만 수행해야 한다.
 
-## Stop Hook Guard
+## Optional Stop Hook
 
-Codex Stop hook 은 Autoflow 자체 dispatcher 인 `scripts/codex-stop-hook.ps1` 를 전역 hook 으로 연결한다.
+`autopilot` 스킬처럼 "턴이 끝날 때도 아직 남은 role work 가 있으면 계속 이어가기"가 필요하면, 현재 보드 `check-stop.*` 를 Codex Stop hook 에 연결할 수 있다.
 
-- dispatcher 는 `CODEX_PROJECT_DIR`, `AUTOFLOW_BOARD_ROOT`, 현재 작업 폴더를 기준으로 활성 보드의 `scripts/check-stop.ps1` 를 찾는다.
-- 보드 내부 판정은 `check-stop.ps1` / `check-stop.sh` 가 맡고, 현재 thread context 의 role 에 따라 plan / todo / verifier 잔여 작업만 block 한다.
-- 보드가 없거나 hook 내부 오류가 나면 `%USERPROFILE%\.codex\log\autoflow-stop-hook.log` 에 진단만 남기고 통과한다.
-- 따라서 hook 실패 때문에 Codex UI 에 `Stop hook failed` 가 떠서는 안 된다.
+- 설치:
+  - Bash: `autoflow/scripts/install-stop-hook.sh install`
+  - Windows PowerShell: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/install-stop-hook.ps1 install`
+- 제거:
+  - Bash: `autoflow/scripts/install-stop-hook.sh remove`
+  - Windows PowerShell: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/install-stop-hook.ps1 remove`
+- 상태 확인:
+  - Bash: `autoflow/scripts/install-stop-hook.sh status`
+  - Windows PowerShell: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/install-stop-hook.ps1 status`
+
+원칙:
+
+- Stop hook 은 현재 보드 `automations/state/threads/*.context` 를 읽어 plan / todo / verifier 역할에 남은 work 가 있으면 너무 이른 종료를 막는다.
+- Stop hook 은 heartbeat 나 watcher 를 대체하지 않는다. 남은 현재 role work 를 같은 스레드에서 더 밀어주는 보조 장치다.
+- install / remove 는 Codex global manifest (`~/.codex/hooks.json`) 를 현재 보드 command 기준으로 idempotent 하게 패치한다.
+- 여러 보드가 같은 사용자 홈에 공존해도 된다. 보드별 `check-stop.*` command 가 각각 Stop hook 으로 함께 등록될 수 있고, active context 가 없는 보드는 조용히 통과한다.
 
 ## File Watch Mode
 
 heartbeat 가 외부 사유로 자주 끊기거나, 폴더에 파일이 올라오자마자 바로 반응해야 하면 file-watch hook 모드를 같이 둔다.
 
 - watcher:
-  - `scripts/watch-board.ps1`
+  - Bash/macOS/Linux: `scripts/watch-board.sh`
+  - Windows: `scripts/watch-board.ps1`
 - 설정:
   - `automations/file-watch.psd1`
 - 로그:
@@ -105,10 +118,23 @@ Windows 에서는 보드 루트에서 아래처럼 직접 실행할 수 있다.
 powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 ```
 
+macOS/Linux 에서는 보드 루트에서 아래처럼 직접 실행할 수 있다.
+
+```bash
+./scripts/watch-board.sh
+```
+
 일상 운영에서는 패키지 CLI 의 백그라운드 모드를 권장한다. 이 모드는 새 터미널 창을 띄우지 않고 PID 파일과 로그만 남긴다.
+
+```bash
+./bin/autoflow watch-bg /path/to/project
+./bin/autoflow watch-status /path/to/project
+./bin/autoflow watch-stop /path/to/project
+```
 
 ```powershell
 .\bin\autoflow.ps1 watch-bg D:\project\astra
+.\bin\autoflow.ps1 watch-status D:\project\astra
 .\bin\autoflow.ps1 watch-stop D:\project\astra
 ```
 
@@ -142,8 +168,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
   - 참고: `agents/todo-queue-agent.md`
 
 - `#veri` (heartbeat)
-- 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/inprogress/verify_*.md`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
-  완료된 검증 기록은 `tickets/done/<project-key>/verify_*.md` 또는 `tickets/reject/verify_*.md` 로 정리된다.
+  - 대상: `BOARD_ROOT/rules/verifier/`, `BOARD_ROOT/tickets/verifier/`, `BOARD_ROOT/tickets/runs/`, `BOARD_ROOT/logs/`, `BOARD_ROOT/tickets/done/`, `BOARD_ROOT/tickets/reject/`
   - 역할: `tickets/verifier/` 의 티켓을 검증해 **pass → `tickets/done/<project-key>/` + local commit**, **fail → `tickets/reject/reject_NNN.md` + `## Reject Reason`**, 그리고 완료 로그를 `logs/` 에 남김
   - Windows 진입점: `scripts/start-verifier.ps1`
   - Bash 진입점: `scripts/start-verifier.sh`
@@ -167,9 +192,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
 
 - `#spec`: heartbeat 를 만들지 않고 active ticket context 도 만들지 않는다.
 - `#plan`: `start-plan.*` 가 role=`plan` 을 남기되 active ticket 은 비워 둔다. planner 는 다음 tick 에 backlog / reject / plan 파일을 다시 읽는다.
-- `#todo`: tick 중에는 claim / resume 대상 티켓을 active ticket 으로 잡을 수 있다. tick 이 끝나면 Stop hook 이 active ticket context 를 비우고, 다음 tick 은 `tickets/inprogress/`, `Resume Context`, `Next Action`, `Notes` 를 다시 읽는다.
-- `#veri`: tick 중에는 검증 대상 티켓을 active ticket 으로 잡을 수 있다. tick 이 끝나면 Stop hook 이 active ticket context 를 비우고, 다음 tick 은 `tickets/verifier/`, `tickets/inprogress/verify_NNN.md`, `logs/` 를 다시 읽는다.
-- 전체 context 삭제는 사용자가 `멈춰` 라고 해서 heartbeat / stop hook 연속성을 끝낼 때만 쓴다. 평소에는 role / worker context 를 유지하고 active ticket 만 비운다.
+- `#todo`: `start-todo.*` 가 claim 한 티켓을 active ticket 으로 남긴다. 구현 완료 시 `handoff-todo.*` 가 `tickets/inprogress/ → tickets/verifier/` 이동과 `active-only` clear 를 함께 처리한다.
+- `#veri`: `start-verifier.*` 가 검증 대상 티켓을 active ticket 으로 남긴다. pass/fail 완료 시 `write-verifier-log.*` 가 completion log 를 쓰고 active ticket context 를 비운다.
+- 전체 context 삭제는 사용자가 `멈춰` 라고 해서 heartbeat / stop hook 연속성을 끝낼 때만 쓴다. 평소에는 role context 를 유지하고 active ticket 만 비운다.
 
 ## Worker Identity Contract
 
@@ -240,10 +265,10 @@ worker 수를 고정하지 않는다. 기본 형태는 아래처럼 읽는다.
   - 트리거와 정책 문서
   - 생성된 보드의 `automations/heartbeat-set.toml`
   - `automations/templates/` 아래 role별 heartbeat TOML template
+  - `scripts/install-stop-hook.*` 를 통한 optional Stop hook wiring helper
   - `autoflow render-heartbeats` 로 만든 `automations/rendered/<set-name>/` 출력물
 - 아직 없음:
   - 실제 Codex automation 등록 스크립트
-  - stop hook 자동 등록 CLI
 
 ## Template Files
 

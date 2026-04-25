@@ -87,7 +87,11 @@ if [ "$dirty_outside_board" -ne 0 ]; then
   exit 1
 fi
 
-mapfile -t allowed_paths < <(extract_ticket_allowed_paths "$ticket_file")
+allowed_paths=()
+while IFS= read -r allowed_path; do
+  [ -n "$allowed_path" ] || continue
+  allowed_paths+=("$allowed_path")
+done < <(extract_ticket_allowed_paths "$ticket_file")
 if [ "${#allowed_paths[@]}" -eq 0 ]; then
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_missing_allowed_paths"
   append_note "$ticket_file" "Worktree integration blocked at ${timestamp}: Allowed Paths was empty."
@@ -95,7 +99,18 @@ if [ "${#allowed_paths[@]}" -eq 0 ]; then
   exit 1
 fi
 
-git -C "$worktree_path" add -A -- "${allowed_paths[@]}"
+add_paths=()
+for allowed_path in "${allowed_paths[@]}"; do
+  if [ -e "${worktree_path}/${allowed_path}" ] || git -C "$worktree_path" ls-files --error-unmatch -- "$allowed_path" >/dev/null 2>&1; then
+    add_paths+=("$allowed_path")
+  else
+    append_note "$ticket_file" "Allowed path was not present in worktree during integration at ${timestamp}, so it was skipped: ${allowed_path}"
+  fi
+done
+
+if [ "${#add_paths[@]}" -gt 0 ]; then
+  git -C "$worktree_path" add -A -- "${add_paths[@]}"
+fi
 
 if git -C "$worktree_path" diff --cached --quiet; then
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "no_code_changes"
