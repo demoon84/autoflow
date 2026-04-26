@@ -7,10 +7,10 @@
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_008/prd_008.md
 - Title: Ticket owner work for prd_008
 - Stage: done
-- AI: owner-2
-- Claimed By: owner-2
-- Execution AI: owner-2
-- Verifier AI: owner-2
+- AI: AI-2
+- Claimed By: AI-2
+- Execution AI: AI-2
+- Verifier AI: AI-2
 - Last Updated: 2026-04-26T02:00:47Z
 
 ## Goal
@@ -78,10 +78,10 @@
 
 ## Notes
 
-- Created by owner-2 from tickets/done/prd_008/prd_008.md at 2026-04-26T01:46:09Z.
+- Created by AI-2 from tickets/done/prd_008/prd_008.md at 2026-04-26T01:46:09Z.
 
-- Ticket owner owner-2 prepared spec at 2026-04-26T01:46:09Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_008.md
-- Ticket owner owner-2 prepared resume at 2026-04-26T01:47:15Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_008.md
+- AI-2 prepared spec at 2026-04-26T01:46:09Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_008.md
+- AI-2 prepared resume at 2026-04-26T01:47:15Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_008.md
 - Mini-plan (2026-04-26T02:10:00Z):
   1. Add reject retry helpers in `runtime/board-scripts/common.sh` and mirror them to `.autoflow/scripts/common.sh`, preserving ticket notes while resetting machine-owned state for replan.
   2. Extend `start-ticket-owner.sh` to scan `tickets/reject/` before backlog spec claim, emit `source=replan` and skip metadata, and leave the replanned ticket in `todo` for the next owner claim.
@@ -89,7 +89,7 @@
 - Implementation checkpoint (2026-04-26T02:18:00Z): added bounded reject retry helpers plus `source=replan` / `replan_skipped.*` output in the owner runtime, updated the owner docs and reject card copy, and fixed smoke harness isolation by unsetting inherited `AUTOFLOW_BOARD_ROOT` / `AUTOFLOW_PROJECT_ROOT` during temp-board runtime checks.
 - Ticket owner verification passed at 2026-04-26T02:00:27Z: command exited 0
 - No worktree path recorded at 2026-04-26T02:00:47Z; verifier will commit board-only changes from PROJECT_ROOT.
-- Ticket owner owner-2 marked pass at 2026-04-26T02:00:47Z.
+- AI-2 marked pass at 2026-04-26T02:00:47Z.
 ## Verification
 - Run file: `tickets/done/prd_008/verify_008.md`
 - Log file: `logs/verifier_008_20260426_020047Z_pass.md`

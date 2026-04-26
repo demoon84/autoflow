@@ -26,8 +26,8 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:05:45Z
-- Finished At: 2026-04-26T03:05:45Z
+- Started At: 2026-04-26T03:10:09Z
+- Finished At: 2026-04-26T03:10:10Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 1
@@ -56,24 +56,23 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 ## Evidence
 - Result: failed
 - Exit Code: 1
-- Completed At: 2026-04-26T03:05:45Z
+- Completed At: 2026-04-26T03:10:10Z
 
 ## Findings
-- blocker: Verification command exited 1 in the assigned worktree before reaching `node scripts/check-syntax.mjs` or the smoke script.
-- finding: The refreshed worktree matches current `main` for tracked files, but it still has no `node_modules/` or `apps/desktop/node_modules/`, so `npx tsc --noEmit` cannot resolve the installed TypeScript compiler there.
-- finding: `PROJECT_ROOT` passes both `cd apps/desktop && npx tsc --noEmit` and `cd apps/desktop && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`, which isolates the remaining failure to the ticket-owner worktree runtime environment rather than the PRD wording scope.
+- blocker: Verification command exited 1
+- warning:
 
 ## Blockers
 
-- Blocker: Ticket-owner verification is contractually tied to the assigned worktree, but that worktree cannot currently access the installed desktop dependencies needed by the required command.
+- Blocker:
 
 ## Next Fix Hint
-- Fix the runtime/worktree dependency strategy outside this ticket's Allowed Paths, then rerun `scripts/verify-ticket-owner.sh 005`; otherwise finish this ticket with a reject reason that points to the runtime gap rather than the PRD wording scope.
+- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 005 fail "<reason>"`.
 
 ## Result
 
-- Verdict: fail
-- Summary: Verification still fails only in the assigned worktree because installed desktop dependencies are missing there, while the same checks pass from `PROJECT_ROOT`.
+- Verdict: pending
+- Summary:
 
 ## Checks
 - [x] spec reference confirmed

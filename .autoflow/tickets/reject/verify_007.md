@@ -26,40 +26,39 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:04:31Z
-- Finished At: 2026-04-26T03:04:31Z
+- Started At: 2026-04-26T03:09:55Z
+- Finished At: 2026-04-26T03:09:55Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Exit Code: 1
+- Exit Code: 254
 
 ## Output
 ### stdout
 
 ```text
 
-[41m                                                                               [0m
-[41m[37m                This is not the tsc command you are looking for                [0m
-[41m                                                                               [0m
-
-To get access to the TypeScript compiler, [34mtsc[0m, from the command line either:
-
-- Use [1mnpm install typescript[0m to first add TypeScript to your project [1mbefore[0m using npx
-- Use [1myarn[0m to avoid accidentally running code from un-installed packages
 ```
 
 ### stderr
 
 ```text
-
+npm error code ENOENT
+npm error syscall lstat
+npm error path /Users/demoon/Documents/project/autoflow/apps/desktop/lib
+npm error errno -2
+npm error enoent ENOENT: no such file or directory, lstat '/Users/demoon/Documents/project/autoflow/apps/desktop/lib'
+npm error enoent This is related to npm not being able to find a file.
+npm error enoent
+npm error A complete log of this run can be found in: /Users/demoon/.npm/_logs/2026-04-26T03_09_55_257Z-debug-0.log
 ```
 
 ## Evidence
 - Result: failed
-- Exit Code: 1
-- Completed At: 2026-04-26T03:04:31Z
+- Exit Code: 254
+- Completed At: 2026-04-26T03:09:55Z
 
 ## Findings
-- blocker: Verification command exited 1
+- blocker: Verification command exited 254
 - warning:
 
 ## Blockers

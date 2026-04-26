@@ -7,10 +7,10 @@
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_002/prd_002.md
 - Title: Ticket owner work for prd_002
 - Stage: done
-- AI: owner-4
-- Claimed By: owner-4
-- Execution AI: owner-4
-- Verifier AI: owner-4
+- AI: AI-4
+- Claimed By: AI-4
+- Execution AI: AI-4
+- Verifier AI: AI-4
 - Last Updated: 2026-04-26T02:06:42Z
 
 ## Goal
@@ -68,27 +68,27 @@
 
 ## Resume Context
 
-- 현재 상태 요약: `owner-4` 가 `start-ticket-owner.sh` 로 `tickets_002` 를 project root fallback 에서 정상 재개했고, runner state 의 `active_*` 필드는 `bin/autoflow runners list .` 출력에서 채워진 것이 확인됐다.
+- 현재 상태 요약: `AI-4` 가 `start-ticket-owner.sh` 로 `tickets_002` 를 project root fallback 에서 정상 재개했고, runner state 의 `active_*` 필드는 `bin/autoflow runners list .` 출력에서 채워진 것이 확인됐다.
 - 직전 작업: `bin/autoflow wiki query . --term runner --term ticket --term desktop` 로 원 spec/prior context 를 다시 확인했고, `node scripts/check-syntax.mjs`, `npx tsc --noEmit`, `bash tests/smoke/ticket-owner-smoke.sh`, runtime/live script diff 가 모두 green 인지 점검했다.
 - 재개 시 먼저 볼 것: `tickets/inprogress/verify_002.md` 의 latest combined verification evidence 와 finish 결과 로그.
 
 ## Notes
 
-- Created by owner-2 from tickets/done/prd_002/prd_002.md at 2026-04-25T23:46:02Z.
+- Created by AI-2 from tickets/done/prd_002/prd_002.md at 2026-04-25T23:46:02Z.
 
-- Ticket owner owner-2 prepared spec at 2026-04-25T23:46:02Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_002.md
+- AI-2 prepared spec at 2026-04-25T23:46:02Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_002.md
 - Mini-plan at 2026-04-26T00:00:00Z:
   1. Populate and clear `active_item` plus `active_ticket_id`, `active_ticket_title`, `active_stage`, `active_spec_ref` in both live and scaffold ticket-owner scripts.
   2. Preserve those keys in runner state writes except on explicit stop/finish clear paths, and expose them in `autoflow runners list`.
   3. Extend desktop runner typing + IPC parsing, then render a Korean "지금 처리 중" line with clickable ticket preview and human-friendly idle text.
   4. Run the required desktop/smoke/diff verification and finish pass only if all evidence is green.
 
-- Ticket owner owner-2 prepared resume at 2026-04-25T23:53:40Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
-- Ticket owner owner-2 prepared resume at 2026-04-25T23:54:01Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
+- AI-2 prepared resume at 2026-04-25T23:53:40Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
+- AI-2 prepared resume at 2026-04-25T23:54:01Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
 - Ticket owner verification failed at 2026-04-25T23:56:57Z: command exited 1
-- Ticket owner owner-2 prepared resume at 2026-04-26T00:36:33Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
-- Ticket owner owner-2 prepared resume at 2026-04-26T00:59:28Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
-- Ticket owner owner-2 prepared resume at 2026-04-26T01:05:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
+- AI-2 prepared resume at 2026-04-26T00:36:33Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
+- AI-2 prepared resume at 2026-04-26T00:59:28Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
+- AI-2 prepared resume at 2026-04-26T01:05:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002; run=tickets/inprogress/verify_002.md
 - Runtime checkpoint (2026-04-26T10:09:00+09:00):
   - `start-ticket-owner.sh` resumed `tickets_002` with `worktree_path=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002`.
   - `bin/autoflow wiki query . --term runner --term adapter --term runtime` returned `tickets/done/prd_002/prd_002.md` as the top prior reference for this work.
@@ -96,16 +96,16 @@
   - The declared worktree contains `scripts/cli/runners-project.sh`, `scripts/runtime/start-ticket-owner.sh`, `scripts/runtime/finish-ticket-owner.sh`, and `autoflow/scripts/*`, while this ticket's `Allowed Paths` point at `packages/cli/*`, `runtime/board-scripts/*`, and `.autoflow/scripts/*` in the product repo.
   - `apps/desktop/node_modules` exists in project root, but not inside the declared worktree, which explains the prior `npx tsc` registry lookup failure from `verify_002.md`.
 - Blocked handoff (2026-04-26T10:09:00+09:00): this ticket cannot be verified safely in the current owner runtime because the worktree repository layout and dependency state do not match the ticket contract.
-- Ticket owner owner-2 marked fail at 2026-04-26T01:07:51Z.
+- AI-2 marked fail at 2026-04-26T01:07:51Z.
 - Ticket automatically replanned from tickets/reject/reject_002.md at 2026-04-26T02:02:01Z; retry_count=1
-- Ticket owner owner-4 prepared todo at 2026-04-26T02:05:10Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_002.md
+- AI-4 prepared todo at 2026-04-26T02:05:10Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_002.md
 - Runtime checkpoint (2026-04-26T11:16:00+09:00):
   - `bin/autoflow runners list .` 에서 `owner-4.active_ticket_id=tickets_002`, `owner-4.active_stage=executing`, `owner-4.active_spec_ref=tickets/done/prd_002/prd_002.md` 를 확인했다.
   - `bin/autoflow wiki query . --term runner --term ticket --term desktop` top hit 은 `tickets/done/prd_002/prd_002.md` 였고, spec 의 intended workflow text 와 현재 ticket scope 가 일치했다.
   - Pre-verification probes passed: `cd apps/desktop && node scripts/check-syntax.mjs`, `cd apps/desktop && npx tsc --noEmit`, `bash tests/smoke/ticket-owner-smoke.sh`, `diff -q runtime/board-scripts/start-ticket-owner.sh .autoflow/scripts/start-ticket-owner.sh`, `diff -q runtime/board-scripts/finish-ticket-owner.sh .autoflow/scripts/finish-ticket-owner.sh`.
 - Ticket owner verification passed at 2026-04-26T02:06:38Z: command exited 0
 - No worktree path recorded at 2026-04-26T02:06:42Z; verifier will commit board-only changes from PROJECT_ROOT.
-- Ticket owner owner-4 marked pass at 2026-04-26T02:06:42Z.
+- AI-4 marked pass at 2026-04-26T02:06:42Z.
 ## Verification
 - Run file: `tickets/done/prd_002/verify_002.md`
 - Log file: `logs/verifier_002_20260426_020642Z_pass.md`

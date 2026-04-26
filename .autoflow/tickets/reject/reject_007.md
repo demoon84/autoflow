@@ -6,12 +6,12 @@
 - PRD Key: prd_007
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_007/prd_007.md
 - Title: Ticket owner work for prd_007
-- Stage: todo
-- AI: 
-- Claimed By: 
-- Execution AI: 
-- Verifier AI: 
-- Last Updated: 2026-04-26T03:06:53Z
+- Stage: rejected
+- AI: AI-1
+- Claimed By: AI-1
+- Execution AI: AI-1
+- Verifier AI: AI-1
+- Last Updated: 2026-04-26T03:10:19Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit:
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
+- Branch: autoflow/tickets_007
+- Base Commit: 983bf6515ac926a0f31d5576797940113bc1015c
 - Worktree Commit:
-- Integration Status: pending_claim
+- Integration Status: pending
 
 ## Done When
 
@@ -57,7 +57,7 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: 가장 최근 Reject History 를 반영해 mini-plan 을 다시 적고 구현을 재개한다.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
@@ -80,10 +80,10 @@
 - Ticket owner 019dc756-3524-78f1-a3d2-525465d7f66a marked fail at 2026-04-26T01:15:00Z.
 - Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T02:26:06Z; retry_count=1
 - Runtime auto-blocked: shared_allowed_path_conflict at 2026-04-26T02:29:26Z; blockers=tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css, tickets_003:apps/desktop/src/renderer/main.tsx, tickets_003:apps/desktop/src/renderer/styles.css, tickets_004:apps/desktop/src/renderer/main.tsx, tickets_004:apps/desktop/src/renderer/styles.css
-- AI owner-5 prepared resume at 2026-04-26T02:41:14Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- AI-5 prepared resume at 2026-04-26T02:41:14Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
 - Auto-recovery at 2026-04-26T02:42:32Z: shared Allowed Path blockers cleared; retrying claim
 - Auto-recovery at 2026-04-26T02:42:32Z: cleared blocked worktree fields, retrying claim
-- AI owner-5 prepared resume at 2026-04-26T02:42:32Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- AI-5 prepared resume at 2026-04-26T02:42:32Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
 - Mini-plan refresh (2026-04-26T02:43:17Z):
   1. Treat the existing `RunnerConsole` diff as the candidate implementation and validate it against the current spec instead of restarting from the stale `AiProgressRow` wording.
   2. Keep changes limited to `apps/desktop/src/renderer/main.tsx` and `styles.css`, only fixing gaps that block the required 3-line meta and progress label behavior.
@@ -92,16 +92,16 @@
 - Diff checkpoint (2026-04-26T02:43:17Z): the isolated worktree already contains only the two Allowed Paths modified, and the current diff replaces the left runner meta with `runner-agent-meta`, `runner-agent-id`, and `runner-agent-rate` lines while preserving the right-side status/timestamp area.
 - Ticket owner verification failed at 2026-04-26T02:43:51Z: command exited 1
 - Dependency checkpoint (2026-04-26T02:44:31Z): `apps/desktop/package.json` still declares `typescript` in `devDependencies`, but the isolated worktree currently has neither `apps/desktop/node_modules/typescript` nor `apps/desktop/node_modules/.bin/tsc`, so the required `npx tsc --noEmit` verification cannot succeed without out-of-scope environment/dependency setup.
-- AI owner-5 marked fail at 2026-04-26T02:45:07Z.
+- AI-5 marked fail at 2026-04-26T02:45:07Z.
 - Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T02:45:11Z; retry_count=2
-- AI owner-1 prepared todo at 2026-04-26T02:45:52Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- AI-1 prepared todo at 2026-04-26T02:45:52Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
 - Ticket owner verification failed at 2026-04-26T02:46:23Z: command exited 1
 - Owner-1 safe turn (2026-04-26T02:46:23Z):
   - `start-ticket-owner.sh` claimed `tickets_007` with `worktree_status=ready`, so this turn used the isolated worktree instead of project-root fallback.
   - `bin/autoflow wiki query . --term runner --term progress --term desktop` again surfaced `tickets/done/prd_002/*` as adjacent workflow-card context and `tickets/done/prd_007/prd_007.md` as the direct spec source.
   - `git status --short` in the worktree still shows only `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css` modified.
   - `verify-ticket-owner.sh 007` failed before syntax or smoke checks because `npx tsc --noEmit` cannot find a local TypeScript compiler in the isolated worktree. No product files were edited in this turn.
-- AI owner-1 marked fail at 2026-04-26T02:46:54Z.
+- AI-1 marked fail at 2026-04-26T02:46:54Z.
 - Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T03:02:53Z; retry_count=1
 - AI 019dc7bd-24e0-7421-b232-530294fa940a prepared todo at 2026-04-26T03:02:57Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
 - Mini-plan refresh (2026-04-26T03:18:00Z):
@@ -116,10 +116,14 @@
 - Ticket owner verification failed at 2026-04-26T03:04:31Z: command exited 1
 - AI 019dc7bd-24e0-7421-b232-530294fa940a marked fail at 2026-04-26T03:04:41Z.
 - Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T03:06:53Z; retry_count=2
+- AI-1 prepared todo at 2026-04-26T03:08:48Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- AI-1 prepared resume at 2026-04-26T03:09:18Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- Ticket owner verification failed at 2026-04-26T03:09:55Z: command exited 254
+- AI-1 marked fail at 2026-04-26T03:10:19Z.
 ## Verification
-- Run file:
-- Log file:
-- Result: pending
+- Run file: `tickets/reject/verify_007.md`
+- Log file: `logs/verifier_007_20260426_031019Z_fail.md`
+- Result: failed
 
 ## Result
 - Summary:

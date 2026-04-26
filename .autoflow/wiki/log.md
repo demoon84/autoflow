@@ -11,7 +11,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T03:08:14Z
+- Last rebuilt: 2026-04-26T03:14:37Z
 
 ### Completed Tickets
 
@@ -38,8 +38,8 @@ Each entry should cite its source ticket or log.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_022426Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_024319Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_030806Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_005_20260426_031112Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_006_20260426_011008Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_006_20260426_024510Z_fail.md`.
 
 ### Reject Records
 
@@ -47,6 +47,7 @@ Each entry should cite its source ticket or log.
 - reject_004. Source: `tickets/reject/reject_004.md`.
 - reject_005. Source: `tickets/reject/reject_005.md`.
 - reject_006. Source: `tickets/reject/reject_006.md`.
+- reject_007. Source: `tickets/reject/reject_007.md`.
 
 ### Conversation Handoffs
 

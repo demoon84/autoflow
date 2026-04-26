@@ -71,7 +71,7 @@ project_root=/Users/demoon/Documents/project/autoflow
 - Completed At: 2026-04-26T00:37:01Z
 
 ## Findings
-- blocker: Verification command exited 1 because the smoke harness mutated the live board and created `tickets_004` / `verify_004.md` for `prd_004` under `owner-smoke`, then failed on `ticket_id=001` mismatch.
+- blocker: Verification command exited 1 because the smoke harness mutated the live board and created `tickets_004` / `verify_004.md` for `prd_004` under `AI-smoke`, then failed on `ticket_id=001` mismatch.
 - warning:
 
 ## Blockers
