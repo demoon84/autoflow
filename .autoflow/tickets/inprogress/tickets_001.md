@@ -6,12 +6,12 @@
 - PRD Key: prd_001
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_001/prd_001.md
 - Title: Ticket owner work for prd_001
-- Stage: executing
+- Stage: blocked
 - Owner: owner-3
 - Claimed By: owner-3
 - Execution Owner: owner-3
 - Verifier Owner: owner-3
-- Last Updated: 2026-04-26T01:50:54Z
+- Last Updated: 2026-04-26T02:05:35Z
 
 ## Goal
 
@@ -39,7 +39,7 @@
 ## Worktree
 - Path:
 - Branch:
-- Base Commit: aadf973ec6300c5a964baf012491b90dd88f0b68
+- Base Commit: 88f10d4f8e7f3715e8a7a935d83776ba74e85c35
 - Worktree Commit:
 - Integration Status: project_root_fallback
 
@@ -64,9 +64,9 @@
 
 ## Resume Context
 
-- 현재 상태 요약: owner-3 가 2026-04-26T00:37:01Z 에 smoke 를 다시 실행했지만 이번에는 temp board 대신 live board 에서 `tickets_004` 를 생성해 버려, required verification 이 prd_001 범위를 벗어난 보드 mutation 으로 실패했다.
-- 직전 작업: `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` 로 관련 prior spec 을 확인했고, 이어서 `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner bash tests/smoke/ticket-owner-smoke.sh` 를 실행해 `ticket_id=004` mismatch 를 재현했다.
-- 재개 시 먼저 볼 것: `tickets/inprogress/verify_001.md` stderr, 새로 생성된 `tickets/inprogress/tickets_004.md`, 그리고 `current.context` 가 `owner-smoke` 로 덮인 흔적.
+- 현재 상태 요약: owner-3 가 runtime resume 를 다시 확인했고, `start-ticket-owner.sh` 는 계속 `tickets_001` 을 복원하지만 allowed path 더티 상태(`apps/desktop/src/renderer/styles.css`) 때문에 worktree 대신 project root fallback 으로 실행된다.
+- 직전 작업: `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` 를 재실행해 `tickets/done/prd_001/prd_001.md` 와 `tickets/done/prd_003/prd_003.md` 를 관련 prior record 로 확인했고, 이어서 `verify-ticket-owner.sh 001` 를 실행해 full verification chain 이 `exit 0` 으로 통과함을 확인했다.
+- 재개 시 먼저 볼 것: `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css .autoflow/agents/wiki-maintainer-agent.md scaffold/board/agents/wiki-maintainer-agent.md`, 그리고 `tickets_003` 이 같은 allowed paths 를 점유한 상태인지 여부. 검증은 통과했지만 commit scope 가 분리되지 않으면 `finish-ticket-owner.sh 001 pass ...` 는 아직 안전하지 않다.
 
 ## Notes
 
@@ -96,14 +96,25 @@
 - Ticket owner owner-3 marked fail at 2026-04-26T00:38:37Z.
 - Ticket automatically replanned from tickets/reject/reject_001.md at 2026-04-26T01:50:40Z; retry_count=1
 - Ticket owner owner-3 prepared todo at 2026-04-26T01:50:54Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
+- Resume checkpoint (2026-04-26T02:17:00Z):
+  - `start-ticket-owner.sh` returned `status=resume` for `tickets_001` and kept this turn on the same ticket.
+  - Worktree fallback reason is still `dirty_allowed_path:apps/desktop/src/renderer/styles.css`, so this turn should avoid broad file edits and focus on evidence.
+  - Wiki query reconfirmed `tickets/done/prd_001/prd_001.md` as the primary spec reference and `tickets/done/prd_003/prd_003.md` as adjacent UI context.
+- Ticket owner owner-3 prepared resume at 2026-04-26T02:01:34Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
+- Ticket owner verification passed at 2026-04-26T02:02:24Z: command exited 0
+- Safe-stop checkpoint (2026-04-26T02:03:10Z):
+  - `verify_001.md` now records a fully passing verification chain including `bash tests/smoke/ticket-owner-smoke.sh`.
+  - This owner turn intentionally stopped before `finish-ticket-owner.sh` because the current repo state still has shared allowed-path dirtiness and another in-progress ticket (`tickets_003`) targeting `apps/desktop/src/renderer/main.tsx` / `styles.css`.
+  - Finishing now would risk bundling unrelated changes into one local commit, so the ticket remains blocked pending path isolation.
+- Ticket owner owner-3 prepared resume at 2026-04-26T02:05:35Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
 ## Verification
 - Run file: `tickets/inprogress/verify_001.md`
 - Log file: pending
 - Result: pending ticket-owner by owner-3
 
 ## Result
-- Summary:
-- Remaining risk:
+- Summary: Required verification now passes again, but this safe turn stopped before done routing because the current repo state cannot isolate this ticket's allowed-path changes into a clean local commit.
+- Remaining risk: `finish-ticket-owner.sh` would stage shared allowed paths (`main.tsx`, `styles.css`, wiki-maintainer mirrors) while another in-progress ticket also targets the same files, so passing this ticket now could mix unrelated work into one commit.
 
 ## Reject Reason
 

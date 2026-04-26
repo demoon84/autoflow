@@ -3527,10 +3527,10 @@ function TicketBoard({
     .filter((file) => file.name.startsWith("reject_"))
     .map((file) => ({ ...file, stateLabel: "반려", stateTone: "destructive" } as WorkflowFileEntry));
   const backlogSpecs = (board?.tickets.backlog || [])
-    .filter((file) => file.name.startsWith("project_"))
+    .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
-    .filter((file) => file.name.startsWith("project_"))
+    .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort((a, b) =>
     b.modifiedAt.localeCompare(a.modifiedAt)
@@ -3555,11 +3555,11 @@ function TicketBoard({
           files={rejectFiles}
           options={options}
           pinTitle={`반려 ${rejectFiles.length}건 보류`}
-          pinSubtitle="자동 재시도 범위를 넘기기 전까지는 owner 가 다시 todo 로 되돌립니다. 클릭해 세부 내용을 확인하세요."
+          pinSubtitle="자동 재시도 범위를 넘기기 전까지는 AI 가 다시 todo 로 되돌립니다. 클릭해 세부 내용을 확인하세요."
           pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
           variant="destructive"
           layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
-          layerHelpText="ticket-owner 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
+          layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
         />
       ) : null}
       {runners.length ? (
@@ -3656,7 +3656,7 @@ function isMachineRunnerLog(value: string) {
 }
 
 function displayWorkflowRunnerId(value: string) {
-  return value.replace(/^owner-/, "worker-");
+  return value.replace(/^owner-/, "AI-").replace(/^worker-/, "AI-");
 }
 
 function projectKeyFromSpecRef(value: string) {

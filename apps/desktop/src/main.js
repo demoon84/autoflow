@@ -1,10 +1,12 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
-const defaultBoardDirName = ".autoflow";
+const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 
 const allowedCommands = new Set([
   "init",
@@ -21,7 +23,7 @@ const allowedCommands = new Set([
 const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
-const allowedWikiActions = new Set(["update", "lint"]);
+const allowedWikiActions = new Set(["update", "lint", "query"]);
 const allowedRunRoles = new Set([
   "ticket",
   "ticket-owner",
@@ -46,7 +48,129 @@ const allowedRunnerConfigKeys = new Set([
 ]);
 const safeIdPattern = /^[A-Za-z0-9_.-]+$/;
 const boardFileReadLimitBytes = 196 * 1024;
-const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl"]);
+const metricsHistoryReadLimitBytes = 512 * 1024;
+const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl", ".json"]);
+const metricSnapshotKeys = [
+  "spec_total",
+  "ticket_total",
+  "ticket_done_count",
+  "active_ticket_count",
+  "reject_count",
+  "verifier_pass_count",
+  "verifier_fail_count",
+  "handoff_count",
+  "runner_total_count",
+  "runner_running_count",
+  "runner_idle_count",
+  "runner_stopped_count",
+  "runner_blocked_count",
+  "runner_enabled_count",
+  "runner_disabled_count",
+  "runner_invalid_config_count",
+  "runner_artifact_ok_count",
+  "runner_artifact_warning_count",
+  "runner_artifact_not_applicable_count",
+  "autoflow_commit_count",
+  "autoflow_code_files_changed_count",
+  "autoflow_code_insertions_count",
+  "autoflow_code_deletions_count",
+  "autoflow_code_volume_count",
+  "verification_pass_rate_percent",
+  "completion_rate_percent"
+];
+
+function stripTomlComment(line) {
+  let quote = "";
+  let escaped = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+
+    if (char === "\"" || char === "'") {
+      quote = char;
+    } else if (char === "#") {
+      return line.slice(0, index);
+    }
+  }
+
+  return line;
+}
+
+function parseTomlStringValue(rawValue) {
+  const value = rawValue.trim();
+  const quotedMatch = value.match(/^"((?:\\"|[^"])*)"|^'([^']*)'/);
+  if (quotedMatch) {
+    return (quotedMatch[1] || quotedMatch[2] || "").replace(/\\"/g, "\"");
+  }
+
+  return value.split(/\s+/)[0] || "";
+}
+
+function supportedCodexProfile(model, reasoning) {
+  let supportedModel = model;
+
+  if (supportedModel === "gpt-5.5") {
+    supportedModel = "gpt-5.4";
+  }
+
+  return {
+    model: supportedModel,
+    reasoning
+  };
+}
+
+function scaffoldManifestValue(section, name, fallback) {
+  try {
+    const content = fsSync.readFileSync(scaffoldManifestPath, "utf8");
+    let currentSection = "";
+
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = stripTomlComment(rawLine).trim();
+      if (!line) {
+        continue;
+      }
+
+      const sectionMatch = line.match(/^\[([^\]]+)\]$/);
+      if (sectionMatch) {
+        currentSection = sectionMatch[1].trim();
+        continue;
+      }
+
+      if (currentSection !== section) {
+        continue;
+      }
+
+      const valueMatch = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+      if (valueMatch && valueMatch[1] === name) {
+        const parsed = parseTomlStringValue(valueMatch[2]);
+        return parsed || fallback;
+      }
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+}
+
+const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
+
+function appConfig() {
+  return {
+    defaultBoardDirName
+  };
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -55,7 +179,9 @@ function createWindow() {
     minWidth: 1040,
     minHeight: 720,
     title: "코덱스 작업 흐름",
-    backgroundColor: "#f4f6f8",
+    backgroundColor: "#f7f7f7",
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -155,7 +281,7 @@ function runAutoflowArgs(args, options = {}) {
 
     child.on("close", (code) => {
       resolve({
-        ok: code === 0,
+        ok: isSuccessfulAutoflowResult(code, stdout),
         command: label,
         code,
         stdout,
@@ -163,6 +289,15 @@ function runAutoflowArgs(args, options = {}) {
       });
     });
   });
+}
+
+function isSuccessfulAutoflowResult(code, stdout) {
+  if (code !== 0) {
+    return false;
+  }
+
+  const status = parseKeyValueOutput(stdout).status;
+  return status !== "blocked" && status !== "fail" && status !== "error";
 }
 
 function runAutoflow(command, options = {}) {
@@ -180,6 +315,89 @@ function parseKeyValueOutput(output) {
     values[line.slice(0, index)] = line.slice(index + 1);
   }
   return values;
+}
+
+function commandExists(command) {
+  return new Promise((resolve) => {
+    const child = spawn("bash", ["-lc", `command -v ${command}`], {
+      cwd: repoRoot,
+      env: process.env,
+      windowsHide: true
+    });
+
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
+}
+
+async function readJsonIfExists(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+async function readInstalledAgentProfiles() {
+  const home = os.homedir();
+  const [codexInstalled, claudeInstalled, geminiInstalled] = await Promise.all([
+    commandExists("codex"),
+    commandExists("claude"),
+    commandExists("gemini")
+  ]);
+
+  const codexConfigPath = path.join(home, ".codex", "config.toml");
+  const claudeSettingsPath = path.join(home, ".claude", "settings.json");
+  const geminiSettingsPath = path.join(home, ".gemini", "settings.json");
+
+  const [claudeSettings, geminiSettings] = await Promise.all([
+    readJsonIfExists(claudeSettingsPath),
+    readJsonIfExists(geminiSettingsPath)
+  ]);
+
+  let detectedCodexModel = "";
+  let detectedCodexReasoning = "";
+  if (codexInstalled) {
+    try {
+      const codexToml = fsSync.readFileSync(codexConfigPath, "utf8");
+      for (const rawLine of codexToml.split(/\r?\n/)) {
+        const line = stripTomlComment(rawLine).trim();
+        const valueMatch = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+        if (!valueMatch) {
+          continue;
+        }
+        if (valueMatch[1] === "model") {
+          detectedCodexModel = parseTomlStringValue(valueMatch[2]);
+        }
+        if (valueMatch[1] === "model_reasoning_effort") {
+          detectedCodexReasoning = parseTomlStringValue(valueMatch[2]);
+        }
+      }
+    } catch {}
+  }
+  const codexProfile = supportedCodexProfile(detectedCodexModel, detectedCodexReasoning);
+
+  return {
+    codex: {
+      installed: codexInstalled,
+      model: codexProfile.model,
+      reasoning: codexProfile.reasoning,
+      supportsReasoning: true
+    },
+    claude: {
+      installed: claudeInstalled,
+      model: typeof claudeSettings?.model === "string" ? claudeSettings.model : "",
+      reasoning: typeof claudeSettings?.effort === "string" ? claudeSettings.effort : "",
+      supportsReasoning: true
+    },
+    gemini: {
+      installed: geminiInstalled,
+      model: typeof geminiSettings?.model === "string" ? geminiSettings.model : "",
+      reasoning: "",
+      supportsReasoning: false
+    }
+  };
 }
 
 function parseRunnerListOutput(output) {
@@ -203,6 +421,10 @@ function parseRunnerListOutput(output) {
       commandPreview: values[`${prefix}command_preview`] || "",
       stateStatus: values[`${prefix}state_status`] || "idle",
       activeItem: values[`${prefix}active_item`] || "",
+      activeTicketId: values[`${prefix}active_ticket_id`] || "",
+      activeTicketTitle: values[`${prefix}active_ticket_title`] || "",
+      activeStage: values[`${prefix}active_stage`] || "",
+      activeSpecRef: values[`${prefix}active_spec_ref`] || "",
       pid: values[`${prefix}pid`] || "",
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
@@ -366,6 +588,73 @@ async function listTextFiles(directory, extensions, recursive = false) {
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function normalizeMetricSnapshot(rawSnapshot) {
+  if (!rawSnapshot || typeof rawSnapshot !== "object") {
+    return null;
+  }
+
+  const timestamp = typeof rawSnapshot.timestamp === "string" ? rawSnapshot.timestamp : "";
+  if (!timestamp) {
+    return null;
+  }
+
+  const snapshot = { timestamp };
+  for (const key of metricSnapshotKeys) {
+    const value = Number(rawSnapshot[key]);
+    snapshot[key] = Number.isFinite(value) ? value : 0;
+  }
+
+  return snapshot;
+}
+
+async function readMetricsHistory(boardRoot) {
+  const snapshotPath = path.join(boardRoot, "metrics", "daily.jsonl");
+
+  try {
+    const stat = await fs.stat(snapshotPath);
+    if (!stat.isFile()) {
+      return [];
+    }
+
+    const bytesToRead = Math.min(stat.size, metricsHistoryReadLimitBytes);
+    const start = Math.max(0, stat.size - bytesToRead);
+    const buffer = Buffer.alloc(bytesToRead);
+    const handle = await fs.open(snapshotPath, "r");
+
+    try {
+      const { bytesRead } = await handle.read(buffer, 0, bytesToRead, start);
+      let content = buffer.subarray(0, bytesRead).toString("utf8");
+      if (start > 0) {
+        const firstLineBreak = content.indexOf("\n");
+        content = firstLineBreak >= 0 ? content.slice(firstLineBreak + 1) : "";
+      }
+
+      const snapshots = [];
+      for (const line of content.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        try {
+          const snapshot = normalizeMetricSnapshot(JSON.parse(trimmed));
+          if (snapshot) {
+            snapshots.push(snapshot);
+          }
+        } catch {
+          // Ignore one malformed metrics line instead of dropping the whole report history.
+        }
+      }
+
+      return snapshots.slice(-90);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return [];
+  }
+}
+
 async function readBoardFile(options = {}) {
   if (!options.projectRoot) {
     return {
@@ -512,6 +801,7 @@ async function readBoard({ projectRoot, boardDirName }) {
   const runnerLogs = await listTextFiles(path.join(boardRoot, "runners", "logs"), [".log"], true);
   const wikiFiles = await listMarkdownFiles(path.join(boardRoot, "wiki"), true);
   const metricsFiles = await listTextFiles(path.join(boardRoot, "metrics"), [".jsonl", ".json"], true);
+  const metricsHistory = exists ? await readMetricsHistory(boardRoot) : [];
   const conversationFiles = await listMarkdownFiles(path.join(boardRoot, "conversations"), true);
 
   return {
@@ -543,6 +833,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     metricsFiles: metricsFiles
       .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
       .slice(0, 8),
+    metricsHistory,
     conversationFiles: conversationFiles
       .filter((file) => file.name.toLowerCase() !== "readme.md")
       .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
@@ -847,6 +1138,36 @@ function controlWiki(options = {}) {
   if (action === "update" && options.dryRun === true) {
     args.push("--dry-run");
   }
+  if (action === "query") {
+    const rawTerms = Array.isArray(options.terms) ? options.terms : [];
+    const terms = rawTerms
+      .map((term) => (typeof term === "string" ? term.trim() : ""))
+      .filter((term) => term.length > 0);
+    if (terms.length === 0) {
+      return Promise.resolve({
+        ok: false,
+        command: "wiki query",
+        code: -1,
+        stdout: "",
+        stderr: "검색어를 한 개 이상 입력하세요."
+      });
+    }
+    for (const term of terms) {
+      args.push("--term", term);
+    }
+    if (typeof options.limit === "number" && Number.isFinite(options.limit) && options.limit > 0) {
+      args.push("--limit", String(Math.floor(options.limit)));
+    }
+    if (options.includeTickets === false) {
+      args.push("--no-tickets");
+    }
+    if (options.includeHandoffs === false) {
+      args.push("--no-handoffs");
+    }
+    if (options.includeSnippets === false) {
+      args.push("--no-snippets");
+    }
+  }
 
   return runAutoflowArgs(args, options);
 }
@@ -941,6 +1262,8 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
+  ipcMain.handle("autoflow:getConfig", () => appConfig());
+  ipcMain.handle("autoflow:listInstalledAgentProfiles", () => readInstalledAgentProfiles());
   ipcMain.handle("autoflow:readBoard", (_event, options) => readBoard(options || {}));
   ipcMain.handle("autoflow:installBoard", (_event, options) => installBoard(options || {}));
   ipcMain.handle("autoflow:listRunners", (_event, options) => listRunners(options || {}));

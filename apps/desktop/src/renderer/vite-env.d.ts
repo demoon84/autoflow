@@ -31,6 +31,10 @@ type AutoflowRunner = {
   commandPreview: string;
   stateStatus: string;
   activeItem: string;
+  activeTicketId: string;
+  activeTicketTitle: string;
+  activeStage: string;
+  activeSpecRef: string;
   pid: string;
   startedAt: string;
   lastEventAt: string;
@@ -60,6 +64,36 @@ type AutoflowRunnerListResult = AutoflowRunResult & {
   runners: AutoflowRunner[];
 };
 
+type AutoflowMetricSnapshot = {
+  timestamp: string;
+  spec_total: number;
+  ticket_total: number;
+  ticket_done_count: number;
+  active_ticket_count: number;
+  reject_count: number;
+  verifier_pass_count: number;
+  verifier_fail_count: number;
+  handoff_count: number;
+  runner_total_count: number;
+  runner_running_count: number;
+  runner_idle_count: number;
+  runner_stopped_count: number;
+  runner_blocked_count: number;
+  runner_enabled_count: number;
+  runner_disabled_count: number;
+  runner_invalid_config_count: number;
+  runner_artifact_ok_count: number;
+  runner_artifact_warning_count: number;
+  runner_artifact_not_applicable_count: number;
+  autoflow_commit_count: number;
+  autoflow_code_files_changed_count: number;
+  autoflow_code_insertions_count: number;
+  autoflow_code_deletions_count: number;
+  autoflow_code_volume_count: number;
+  verification_pass_rate_percent: number;
+  completion_rate_percent: number;
+};
+
 type AutoflowBoardSnapshot = {
   repoRoot: string;
   boardRoot: string;
@@ -81,6 +115,7 @@ type AutoflowBoardSnapshot = {
   runnerLogs: AutoflowFilePreview[];
   wikiFiles: AutoflowFilePreview[];
   metricsFiles: AutoflowFilePreview[];
+  metricsHistory: AutoflowMetricSnapshot[];
   conversationFiles: AutoflowFilePreview[];
 };
 
@@ -95,8 +130,23 @@ type AutoflowFileContentResult = {
   stderr: string;
 };
 
+type AutoflowAppConfig = {
+  defaultBoardDirName: string;
+};
+
+type AutoflowInstalledAgentProfile = {
+  installed: boolean;
+  model: string;
+  reasoning: string;
+  supportsReasoning: boolean;
+};
+
+type AutoflowInstalledAgentProfiles = Record<string, AutoflowInstalledAgentProfile>;
+
 interface Window {
   autoflow: {
+    getConfig: () => Promise<AutoflowAppConfig>;
+    listInstalledAgentProfiles: () => Promise<AutoflowInstalledAgentProfiles>;
     selectProject: () => Promise<string>;
     readBoard: (options: {
       projectRoot: string;
@@ -142,10 +192,15 @@ interface Window {
       config: AutoflowRunnerConfigUpdate;
     }) => Promise<AutoflowRunResult>;
     controlWiki: (options: {
-      action: "update" | "lint";
+      action: "update" | "lint" | "query";
       dryRun?: boolean;
       projectRoot: string;
       boardDirName: string;
+      terms?: string[];
+      limit?: number;
+      includeTickets?: boolean;
+      includeHandoffs?: boolean;
+      includeSnippets?: boolean;
     }) => Promise<AutoflowRunResult>;
     writeMetricsSnapshot: (options: {
       projectRoot: string;
