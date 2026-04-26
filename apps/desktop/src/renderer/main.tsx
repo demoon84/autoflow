@@ -4020,8 +4020,10 @@ function AiProgressRow({
   const flowStages = flowStagesForRunner(runner);
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
-  const progressRatio = flowStages.length <= 1 ? 0 : Math.max(0, stageIndex) / (flowStages.length - 1);
-  const progressValue = progressRatio <= 0 ? "0px" : `${progressRatio * 82}%`;
+  const dotCenterPercent =
+    flowStages.length > 0 && stageIndex >= 0 ? ((stageIndex + 0.5) / flowStages.length) * 100 : 0;
+  const progressFillPercent = Math.max(0, dotCenterPercent - 9);
+  const progressValue = progressFillPercent <= 0 ? "0px" : `${progressFillPercent}%`;
   const status = runner.stateStatus || "idle";
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
@@ -4108,7 +4110,7 @@ function AiProgressRow({
 
         <div
           className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
-          style={{ "--progress-value": progressValue } as React.CSSProperties}
+          style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
           aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
         >
           {flowStages.map((step) => {

@@ -1908,15 +1908,60 @@ pre {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 2px;
   width: fit-content;
   max-width: 100%;
+  min-height: 38px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
 .ticket-workspace-tab-trigger {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
+}
+
+.ticket-workspace-tab-trigger:hover {
+  background: color-mix(in srgb, var(--accent) 82%, var(--card));
+  color: var(--foreground);
+}
+
+.ticket-workspace-tab-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ring) 80%, transparent);
+  outline-offset: 2px;
+}
+
+.ticket-workspace-tab-trigger[data-state="active"] {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 1px 2px rgba(27, 31, 29, 0.08);
+}
+
+.ticket-workspace-tab-trigger[data-state="active"] .af-badge-secondary {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--primary);
 }
 
 .ticket-workspace-tab-copy {
@@ -2403,10 +2448,11 @@ pre {
 
 .ai-progress-track {
   --progress-value: 0%;
+  --stage-count: 6;
 
   position: relative;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--stage-count), minmax(0, 1fr));
   gap: 8px;
   min-width: 0;
   padding-top: 14px;
@@ -3271,23 +3317,11 @@ pre {
   min-height: 100%;
 }
 
-.knowledge-preview-pane--hidden {
-  display: none;
-}
-
 .knowledge-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.knowledge-preview-toggle {
-  flex: 0 0 auto;
-}
-
-.knowledge-preview-close {
-  flex: 0 0 auto;
 }
 
 .log-list {
@@ -3310,10 +3344,6 @@ pre {
 .knowledge-sources {
   min-width: 0;
   flex: 0 0 auto;
-}
-
-.knowledge-sources[open] .knowledge-sources-chevron {
-  transform: rotate(180deg);
 }
 
 .knowledge-actions {
@@ -3492,16 +3522,7 @@ pre {
 
 .knowledge-sources-toggle {
   list-style: none;
-  cursor: pointer;
-}
-
-.knowledge-sources-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.knowledge-sources-chevron {
-  flex: 0 0 auto;
-  color: var(--muted-foreground);
+  cursor: default;
 }
 
 .knowledge-source-header {
@@ -4341,7 +4362,7 @@ pre {
   }
 
   .ai-progress-track {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--stage-count), minmax(0, 1fr));
   }
 
   .runner-grid {
@@ -4449,7 +4470,7 @@ pre {
   }
 
   .ai-progress-track {
-    grid-template-columns: repeat(6, minmax(64px, 1fr));
+    grid-template-columns: repeat(var(--stage-count), minmax(64px, 1fr));
     overflow-x: auto;
     padding-bottom: 4px;
   }
