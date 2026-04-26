@@ -3907,16 +3907,16 @@ function runnerStageKey(runner: AutoflowRunner): string {
     /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateText);
 
   if (role === "merge-bot" || role === "merge") {
-    if (isFailLike || /\bmerge[-_]?blocked\b|\b(persistent|blocked)\b/.test(stateText)) return "blocked";
-    if (hasActiveTicket || status === "running") return "merging";
-    if (/post_merge_cleanup|\bdone\b|loop_waiting_exit_0/.test(stateText)) return "done";
+    if (isFailLike || /\bmerge[-_]?blocked\b|\b_persistent\b|\bblocked_(?:cherry_pick|rebase|dirty_scope|missing_)/.test(stateText)) return "blocked";
+    if (hasActiveTicket) return "merging";
+    if (/event=post_merge_cleanup|\bstatus=done\b|\bintegrated\b/.test(stateText)) return "done";
     return "idle";
   }
 
   if (role.includes("wiki")) {
     if (isFailLike) return "blocked";
-    if (status === "running") return "syncing";
-    if (/\bdone\b|\bok\b|adapter_exit_0|loop_waiting_exit_0/.test(stateText)) return "done";
+    if (status === "running" && (hasActiveTicket || /event=adapter_start|\bstatus=running\b/.test(stateText))) return "syncing";
+    if (/event=adapter_finish.*status=ok|\bwiki_(?:updated|sync_ok)\b/.test(stateText)) return "done";
     return "idle";
   }
 
