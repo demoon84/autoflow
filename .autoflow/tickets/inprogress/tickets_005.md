@@ -11,7 +11,7 @@
 - Claimed By: AI-2
 - Execution AI: AI-2
 - Verifier AI: AI-2
-- Last Updated: 2026-04-26T04:02:21Z
+- Last Updated: 2026-04-26T04:08:14Z
 
 ## Goal
 
@@ -53,7 +53,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
 - Branch: autoflow/tickets_005
-- Base Commit: 23e6373b1ae12bf4ce112db60acd9d65a5498d4e
+- Base Commit: 0bcb9b9b954905b97cf0b8fdaf3c1bb843105196
 - Worktree Commit:
 - Integration Status: pending
 
@@ -77,6 +77,8 @@
 
 ## Resume Context
 
+- Current checkpoint (2026-04-26T04:06:38Z): `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` still resumes `tickets_005` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`. `bin/autoflow wiki query . --term autoflow --term prd --term alias` again surfaced `tickets/done/prd_005/prd_005.md` as the governing artifact. `git status --short` in `PROJECT_ROOT` still shows unrelated board/wiki churn (`tickets_001`, `tickets_003`, `tickets_009`, `reject_004`, `reject_006`, `.autoflow/wiki/*`, extra log artifacts), and `.autoflow/scripts/finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale before commit. `verify_005.md` remains pass-evidence-ready; do not rerun verification and do not call pass finish in this turn. `bin/autoflow metrics .` at 2026-04-26T04:06:25Z reports `completion_rate_percent=22.2`.
+- Current checkpoint (2026-04-26T04:02:59Z): `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_005` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`, and `bin/autoflow wiki query . --term PRD --term spec --term alias` again ranked `tickets/done/prd_005/prd_005.md` as the governing prior artifact. `git status --short` in `PROJECT_ROOT` still shows unrelated board/wiki churn (`tickets_001`, `tickets_003`, `tickets_009`, `reject_006`, `.autoflow/wiki/*`), while the ticket worktree still has only the runtime-provided untracked dependency links. `verify_005.md` remains pass-evidence-ready, but finish is still unsafe because the current pass runtime would mix those unrelated board changes into the local commit. Keep `Stage: blocked`. `bin/autoflow metrics` at 2026-04-26T04:02:47Z reports `completion_rate_percent=22.2`.
 - Current checkpoint (2026-04-26T04:00:14Z): `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` correctly resumed `tickets_005`, but only in `project_root_fallback` mode because `AGENTS.md` is already dirty in `PROJECT_ROOT`. `git status --short` still shows unrelated tracked edits in `AGENTS.md`, `CLAUDE.md`, `scaffold/board/AGENTS.md`, `.autoflow/scripts/finish-ticket-owner.sh`, `runtime/board-scripts/finish-ticket-owner.sh`, and `apps/desktop/src/components/ui/markdown-viewer.tsx`. `verify_005.md` remains pass-evidence-ready from 2026-04-26T03:18:27Z, and `bin/autoflow metrics` now reports `completion_rate_percent=22.2`. This turn must stay blocked-safe only; do not rerun finish until commit scope is isolated.
 - Current status: `owner-2` verified the hydrated worktree successfully on 2026-04-26; the required command exited 0 and the PRD alias/help/scaffold spot-checks also passed without any in-scope product diff.
 - Last action: stopped before `finish-ticket-owner.sh 005 pass ...` because `PROJECT_ROOT` currently has unrelated dirty board/wiki files and that finish runtime stages `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` broadly, which would create an unsafe mixed local commit.
@@ -84,6 +86,16 @@
 
 ## Notes
 
+- Safe ticket turn checkpoint (2026-04-26T04:06:38Z):
+  - Re-ran `start-ticket-owner.sh` as owner-2 and confirmed the runtime still resumes `tickets_005` with a ready isolated worktree instead of claiming new work.
+  - Re-ran `bin/autoflow wiki query . --term autoflow --term prd --term alias`; it again points to `tickets/done/prd_005/prd_005.md` and does not introduce any new in-scope implementation requirement.
+  - Rechecked the blocker evidence: `git status --short` in `PROJECT_ROOT` still contains unrelated `.autoflow/tickets`, `.autoflow/wiki/*`, reject, and log churn, while `.autoflow/scripts/finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale before commit.
+  - Decision: normalize this ticket to `Stage: blocked`, make no Allowed Paths edits, do not rerun verification, and do not call `finish-ticket-owner.sh` in this turn.
+- Safe ticket turn checkpoint (2026-04-26T04:02:59Z):
+  - Re-ran `start-ticket-owner.sh` as owner-2 and confirmed the runtime still resumes `tickets_005` with a ready worktree instead of claiming new work.
+  - Re-ran `bin/autoflow wiki query . --term PRD --term spec --term alias`; it again points to `tickets/done/prd_005/prd_005.md` and does not introduce a new scope change.
+  - Rechecked `git status --short` in `PROJECT_ROOT` and the ticket worktree. The ticket worktree remains clean except for runtime dependency links, but root still contains unrelated `.autoflow/tickets`, `reject_006`, and `.autoflow/wiki/*` changes that a pass finish would sweep into one commit.
+  - Decision: no implementation edits, no verification rerun, no finish call. Leave the ticket blocked with pass-ready evidence and updated board context only.
 - Safe ticket turn checkpoint (2026-04-26T04:00:14Z):
   - Re-ran `start-ticket-owner.sh` as owner-2 and confirmed the runtime still resumes `tickets_005` rather than claiming new work.
   - Rechecked prior context with `bin/autoflow wiki query . --term worker --term AI --term markdown`; it surfaced mostly adjacent worker-ID tickets and did not change the PRD scope or the existing finish blocker.
@@ -175,14 +187,21 @@
 - Auto-recovery at 2026-04-26T04:01:41Z: cleared blocked worktree fields, retrying claim
 - AI AI-2 prepared resume at 2026-04-26T04:01:41Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 - AI AI-2 prepared resume at 2026-04-26T04:02:21Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Auto-recovery at 2026-04-26T04:05:16Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T04:05:16Z: cleared blocked worktree fields, retrying claim
+- AI AI-2 prepared resume at 2026-04-26T04:05:16Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-2 prepared resume at 2026-04-26T04:06:01Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Auto-recovery at 2026-04-26T04:08:14Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T04:08:14Z: cleared blocked worktree fields, retrying claim
+- AI AI-2 prepared resume at 2026-04-26T04:08:14Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 ## Verification
 - Run file: `tickets/inprogress/verify_005.md`
 - Log file: pending
 - Result: pending ticket-owner by AI-2
 
 ## Result
-- Summary: Verification now passes with the hydrated worktree, and the current branch appears to satisfy the PRD without new code edits in Allowed Paths.
-- Remaining risk: `finish-ticket-owner.sh` currently stages broad board/wiki paths, so completing pass from the dirty repository root would create a mixed local commit across unrelated tickets.
+- Summary: Verification evidence still passes with the hydrated worktree and the current branch still appears to satisfy the PRD without new code edits in Allowed Paths, but this turn intentionally stopped before finish.
+- Remaining risk: `finish-ticket-owner.sh` would still mix unrelated `.autoflow/tickets`, `reject_006`, and `.autoflow/wiki/*` changes from `PROJECT_ROOT` into the same local commit, so the ticket remains blocked until commit scope is isolated.
 
 ## Reject Reason
 

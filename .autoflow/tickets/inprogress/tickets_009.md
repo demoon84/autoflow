@@ -6,12 +6,12 @@
 - PRD Key: prd_009
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_009/prd_009.md
 - Title: AI work for prd_009
-- Stage: executing
+- Stage: blocked
 - AI: AI-1
 - Claimed By: AI-1
 - Execution AI: AI-1
 - Verifier AI: AI-1
-- Last Updated: 2026-04-26T04:03:08Z
+- Last Updated: 2026-04-26T04:07:17Z
 
 ## Goal
 
@@ -55,7 +55,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009`
 - Branch: autoflow/tickets_009
-- Base Commit: 23e6373b1ae12bf4ce112db60acd9d65a5498d4e
+- Base Commit: 0bcb9b9b954905b97cf0b8fdaf3c1bb843105196
 - Worktree Commit:
 - Integration Status: pending
 
@@ -74,10 +74,11 @@
 - [ ] `diff -q runtime/board-scripts/start-ticket-owner.sh .autoflow/scripts/start-ticket-owner.sh` 출력 없음.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다.
+- 다음에 바로 이어서 할 일: unrelated root dirt 가 정리되거나 `finish-ticket-owner.sh` 의 commit scope 가 ticket-local 로 좁혀진 뒤, 같은 owner 가 이 ticket 을 resume 해서 `scripts/finish-ticket-owner.sh 009 pass "<short summary>"` 만 수행한다.
 
 ## Resume Context
 
+- Current checkpoint (2026-04-26T04:07:17Z): `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` again resumed `tickets_009` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009`. `bin/autoflow wiki query . --term AI --term worker --term markdown` again surfaced `tickets/done/prd_009/prd_009.md` as the governing scope. This turn rechecked `git status --short` in `PROJECT_ROOT` and confirmed unrelated dirty board/wiki files remain (`tickets_001`, `tickets_003`, `tickets_005`, `reject_004`, `wiki/*`, plus ticket_006/reject_007 churn), while both `runtime/board-scripts/finish-ticket-owner.sh` and `.autoflow/scripts/finish-ticket-owner.sh` still stage `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale in `stage_ticket_commit_scope`. Keep `Stage: blocked`; do not rerun verification and do not call pass finish in this turn.
 - Current checkpoint (2026-04-26T04:01:34Z): `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_009` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009`. `bin/autoflow wiki query . --term AI --term worker --term markdown` succeeded and surfaced `tickets/done/prd_009/prd_009.md` as the governing spec plus prior owner/reject records showing the same worker-display normalization theme. `git status --short` in project root still shows unrelated dirty ticket files (`tickets_003`, `tickets_005`, `tickets_006`) alongside this ticket and `verify_009.md`, while `.autoflow/scripts/finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale inside `stage_ticket_commit_scope`. Keep this ticket blocked; do not rerun verification and do not call pass finish in this turn.
 - Current checkpoint (2026-04-26T03:29:26Z): implementation and automated verification passed for the AI-N display changes. This ticket is blocked only on safe finish routing: `finish-ticket-owner.sh pass` currently stages broad board/wiki paths, and the project root already contains unrelated dirty board changes that should not be swept into this ticket's local commit.
 - Current checkpoint (2026-04-26T03:31:00Z): owner-1 resumed this ticket in project-root fallback mode. `autoflow wiki query` is unavailable in this environment, so this turn is using existing wiki files and ticket history directly. Runtime already has unrelated in-flight edits for worktree hydration / adoptable inprogress handling; preserve those edits and layer the AI-N display work on top.
@@ -89,6 +90,11 @@
 
 ## Notes
 
+- Safe ticket turn checkpoint (2026-04-26T04:07:17Z):
+  - Re-ran `start-ticket-owner.sh` under `owner-1` and confirmed the runtime still resumes `tickets_009` into the same ready isolated worktree.
+  - Re-ran `bin/autoflow wiki query . --term AI --term worker --term markdown`; `tickets/done/prd_009/prd_009.md` remains the direct governing record for this ticket.
+  - Rechecked finish safety in project root: `git status --short` still includes unrelated dirty tracked board/wiki files and untracked verifier/ticket artifacts from other work, while both finish scripts still stage broad `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` paths.
+  - Decision: no implementation changes, no verification rerun, and no finish call. Leave durable state as blocked until finish commit scope or root dirt isolation is addressed outside this ticket.
 - Safe ticket turn checkpoint (2026-04-26T04:01:34Z):
   - Re-ran `start-ticket-owner.sh` under `owner-1` and confirmed the runtime still resumes `tickets_009` into a ready isolated worktree.
   - Re-ran `bin/autoflow wiki query . --term AI --term worker --term markdown`; `tickets/done/prd_009/prd_009.md` remains the direct governing context for this ticket's AI-N display scope.
@@ -131,6 +137,8 @@
 - Auto-recovery at 2026-04-26T04:03:08Z: shared Allowed Path blockers cleared; retrying claim
 - Auto-recovery at 2026-04-26T04:03:08Z: cleared blocked worktree fields, retrying claim
 - AI AI-1 prepared resume at 2026-04-26T04:03:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009; run=tickets/inprogress/verify_009.md
+- AI AI-1 prepared resume at 2026-04-26T04:06:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009; run=tickets/inprogress/verify_009.md
+- AI AI-1 prepared resume at 2026-04-26T04:06:49Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009; run=tickets/inprogress/verify_009.md
 ## Verification
 - Run file: `tickets/inprogress/verify_009.md`
 - Log file: pending

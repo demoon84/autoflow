@@ -176,14 +176,47 @@ stage_ticket_commit_scope() {
   local git_root="$1"
   local ticket_file="$2"
   local run_file="$3"
-  local allowed_path
+  local allowed_path ticket_id project_key done_root spec_archive
 
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  project_key="$(project_key_from_ticket_file "$ticket_file" 2>/dev/null || true)"
+
+  # Stage ONLY paths produced by this specific ticket — not the whole board.
+  # This avoids pulling in other tickets' / logs' dirty changes when multiple
+  # AIs share the same git working tree (worktree fallback).
+
+  # 1. The ticket file itself (and its origin if it was moved to done/reject).
   stage_git_path_if_present "$git_root" "$ticket_file"
-  stage_git_path_if_present "$git_root" "$run_file"
-  stage_git_path_if_present "$git_root" "${BOARD_ROOT}/tickets"
-  stage_git_path_if_present "$git_root" "${BOARD_ROOT}/logs"
-  stage_git_path_if_present "$git_root" "${BOARD_ROOT}/wiki"
+  if [ -n "${reject_target:-}" ]; then
+    stage_git_path_if_present "$git_root" "$reject_target"
+  fi
+  if [ -n "${done_target:-}" ]; then
+    stage_git_path_if_present "$git_root" "$done_target"
+  fi
 
+  # 2. Run / verify evidence file for this ticket.
+  stage_git_path_if_present "$git_root" "$run_file"
+
+  # 3. Done destination directory for this project key (spec + ticket archive).
+  if [ -n "$project_key" ]; then
+    done_root="${BOARD_ROOT}/tickets/done/${project_key}"
+    stage_git_path_if_present "$git_root" "$done_root"
+  fi
+
+  # 4. Verifier completion log for this ticket id only.
+  if [ -n "$ticket_id" ]; then
+    while IFS= read -r log_file; do
+      [ -n "$log_file" ] || continue
+      stage_git_path_if_present "$git_root" "$log_file"
+    done < <(find "${BOARD_ROOT}/logs" -maxdepth 1 -type f -name "verifier_${ticket_id}_*.md" 2>/dev/null)
+  fi
+
+  # 5. Wiki managed sections updated by auto_update_wiki (index/log/overview).
+  for wiki_file in index.md log.md project-overview.md; do
+    stage_git_path_if_present "$git_root" "${BOARD_ROOT}/wiki/${wiki_file}"
+  done
+
+  # 6. Allowed Paths (product code under this ticket's scope).
   while IFS= read -r allowed_path; do
     [ -n "$allowed_path" ] || continue
     allowed_path_is_concrete_repo_path "$allowed_path" || continue

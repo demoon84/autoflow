@@ -26,8 +26,8 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:17:44Z
-- Finished At: 2026-04-26T03:17:45Z
+- Started At: 2026-04-26T04:04:03Z
+- Finished At: 2026-04-26T04:04:04Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 127
@@ -48,7 +48,7 @@ bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory
 ## Evidence
 - Result: failed
 - Exit Code: 127
-- Completed At: 2026-04-26T03:17:45Z
+- Completed At: 2026-04-26T04:04:04Z
 
 ## Findings
 - blocker: Verification command exited 127

@@ -23,9 +23,9 @@ List unresolved questions with owner or source when known.
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
 - Done tickets: 2
 - Reject records: 2
-- Verifier logs: 32
+- Verifier logs: 35
 - Conversation handoffs: 0
-- Last updated: 2026-04-26T04:02:58Z
+- Last updated: 2026-04-26T04:08:42Z
 
 ## Latest Completed Work
 

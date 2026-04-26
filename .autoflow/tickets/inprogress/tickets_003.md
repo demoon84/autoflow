@@ -11,7 +11,7 @@
 - Claimed By: AI-5
 - Execution AI: AI-5
 - Verifier AI: AI-5
-- Last Updated: 2026-04-26T04:01:09Z
+- Last Updated: 2026-04-26T04:06:56Z
 
 ## Goal
 
@@ -37,7 +37,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
 - Branch: autoflow/tickets_003
-- Base Commit: 23e6373b1ae12bf4ce112db60acd9d65a5498d4e
+- Base Commit: 0bcb9b9b954905b97cf0b8fdaf3c1bb843105196
 - Worktree Commit:
 - Integration Status: pending
 
@@ -59,9 +59,9 @@
 ## Resume Context
 
 - Current status: implementation in Allowed Paths is unchanged from the verified worktree, and `tickets/inprogress/verify_003.md` still records a passing verification chain from `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`.
-- Last action: at 2026-04-26T03:55:36Z, `AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-5 .autoflow/scripts/finish-ticket-owner.sh 003 pass "knowledge preview split verified and general log preview routing preserved"` was retried from `PROJECT_ROOT`. It did not reach done routing. `integrate-worktree.sh` is still blocked because `PROJECT_ROOT` has unrelated dirty files outside `.autoflow/` (`AGENTS.md`, `CLAUDE.md`, `apps/desktop/src/components/ui/markdown-viewer.tsx`, `packages/cli/run-role.sh`, `runtime/board-scripts/common.sh`, `runtime/board-scripts/finish-ticket-owner.sh`, `runtime/board-scripts/handoff-todo.sh`, `runtime/board-scripts/start-ticket-owner.sh`, `runtime/board-scripts/start-todo.sh`, `runtime/board-scripts/start-verifier.sh`, `runtime/board-scripts/verify-ticket-owner.sh`, `runtime/board-scripts/write-verifier-log.sh`, `scaffold/board/AGENTS.md`).
-- Extra blocker: the retry also reproduced a runtime-script defect outside this ticket scope. `finish-ticket-owner.sh` crashed with `awk: newline in string` while trying to record the multi-line dirty-path blocker, so the ticket had to be normalized manually back to a resumable `blocked` state.
-- Next resume step: do not edit the renderer again. First clear or commit the unrelated `PROJECT_ROOT` dirty files outside `.autoflow/`, then rerun the same finish-pass command. If the root is clean and the script still crashes, fix the runtime script in a separate ticket before retrying `tickets_003`.
+- Last action: at 2026-04-26T04:02:15Z, `AUTOFLOW_WORKER_ID=owner-5 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_003` in the same ready worktree. `bin/autoflow wiki query . --term Wiki --term LogPreview --term preview` again surfaced `tickets/done/prd_003/prd_003.md` as the direct governing record, and `git status --short` in `PROJECT_ROOT` no longer showed non-board dirt outside `.autoflow/`.
+- Current blocker: root dirt is now limited to unrelated board files (`tickets_001`, `tickets_005`, `tickets_006`, `tickets_009`, `verify_006`, `verify_009`), but `finish-ticket-owner.sh` still calls `stage_ticket_commit_scope` with `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale. Running pass finish in this state would sweep unrelated board changes into this ticket's local commit, which is outside `tickets_003` ownership. The earlier `awk: newline in string` crash in the finish script also remains unresolved outside this ticket scope.
+- Next resume step: do not edit the renderer or rerun verification. Resume only after unrelated board dirt is isolated or the finish-pass commit scope is narrowed in a separate ticket, then retry the same `finish-ticket-owner.sh 003 pass ...` command from `PROJECT_ROOT`.
 
 ## Notes
 
@@ -146,14 +146,23 @@
 - Auto-recovery at 2026-04-26T03:59:58Z: cleared blocked worktree fields, retrying claim
 - AI AI-5 prepared resume at 2026-04-26T03:59:58Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
 - AI AI-5 prepared resume at 2026-04-26T04:01:09Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- Safe ticket turn checkpoint (2026-04-26T04:02:15Z):
+  - `start-ticket-owner.sh` resumed `tickets_003` in the same ready worktree and `verify_003.md` still shows the full verification chain passing at 2026-04-26T03:25:41Z.
+  - `git status --short` in `PROJECT_ROOT` no longer shows the older non-board dirty blocker, but unrelated board edits remain in other in-progress tickets and verification notes.
+  - `.autoflow/scripts/finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale, so a pass finish would still bundle unrelated board changes into this ticket's commit.
+  - Decision: keep `tickets_003` blocked, make no renderer edits, do not rerun verification, and end this turn with durable state only. Progress snapshot: `completion_rate_percent=22.2`.
+- Auto-recovery at 2026-04-26T04:06:09Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T04:06:09Z: cleared blocked worktree fields, retrying claim
+- AI AI-5 prepared resume at 2026-04-26T04:06:09Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- AI AI-5 prepared resume at 2026-04-26T04:06:56Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
 ## Verification
 - Run file: `tickets/inprogress/verify_003.md`
 - Log file: pending
 - Result: pending ticket-owner by AI-5
 
 ## Result
-- Summary: renderer changes are already verified in the assigned worktree, but done routing is still blocked because `PROJECT_ROOT` has unrelated dirty files outside `.autoflow/`, and the current `finish-ticket-owner.sh` crashes while recording that multi-line blocker.
-- Remaining risk: until `PROJECT_ROOT` is clean outside `.autoflow/`, this ticket cannot integrate its worktree commit or create the required local pass commit.
+- Summary: renderer changes remain verified in the assigned worktree, and this turn confirmed the remaining blocker is no longer non-board root dirt. Pass finish is still unsafe because `finish-ticket-owner.sh` stages `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` wholesale while unrelated board changes from other tickets are present.
+- Remaining risk: until unrelated board dirt is isolated or the finish-pass commit scope is narrowed in a separate ticket, this ticket cannot safely create the required local pass commit.
 
 ## Retry
 - Retry Count: 3

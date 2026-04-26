@@ -26,11 +26,11 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:09:55Z
-- Finished At: 2026-04-26T03:09:55Z
+- Started At: 2026-04-26T04:03:58Z
+- Finished At: 2026-04-26T04:03:59Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Exit Code: 254
+- Exit Code: 127
 
 ## Output
 ### stdout
@@ -42,23 +42,16 @@
 ### stderr
 
 ```text
-npm error code ENOENT
-npm error syscall lstat
-npm error path /Users/demoon/Documents/project/autoflow/apps/desktop/lib
-npm error errno -2
-npm error enoent ENOENT: no such file or directory, lstat '/Users/demoon/Documents/project/autoflow/apps/desktop/lib'
-npm error enoent This is related to npm not being able to find a file.
-npm error enoent
-npm error A complete log of this run can be found in: /Users/demoon/.npm/_logs/2026-04-26T03_09_55_257Z-debug-0.log
+bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory
 ```
 
 ## Evidence
 - Result: failed
-- Exit Code: 254
-- Completed At: 2026-04-26T03:09:55Z
+- Exit Code: 127
+- Completed At: 2026-04-26T04:03:59Z
 
 ## Findings
-- blocker: Verification command exited 254
+- blocker: Verification command exited 127
 - warning:
 
 ## Blockers

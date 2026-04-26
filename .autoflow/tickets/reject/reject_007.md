@@ -6,12 +6,12 @@
 - PRD Key: prd_007
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_007/prd_007.md
 - Title: Ticket owner work for prd_007
-- Stage: todo
-- AI: 
-- Claimed By: 
-- Execution AI: 
-- Verifier AI: 
-- Last Updated: 2026-04-26T04:02:58Z
+- Stage: rejected
+- AI: AI-3
+- Claimed By: AI-3
+- Execution AI: AI-3
+- Verifier AI: AI-3
+- Last Updated: 2026-04-26T04:04:12Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit:
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
+- Branch: autoflow/tickets_007
+- Base Commit: 0bcb9b9b954905b97cf0b8fdaf3c1bb843105196
 - Worktree Commit:
-- Integration Status: pending_claim
+- Integration Status: pending
 
 ## Done When
 
@@ -57,13 +57,13 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: 가장 최근 Reject History 를 반영해 mini-plan 을 다시 적고 구현을 재개한다.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
-- Current state: owner-3 claimed `tickets_007` in the isolated worktree and confirmed the existing product diff is still limited to the two Allowed Paths.
-- Last action: reran `bin/autoflow wiki query . --term runner --term progress --term desktop`, reread `tickets/done/prd_007/prd_007.md`, and rechecked the worktree. The candidate UI diff still matches the spec, but the configured verification chain is inconsistent with the current environment: `apps/desktop` in the worktree has no local `node_modules/.bin/tsc`, and the PRD command references `tests/smoke/ticket-owner-smoke.sh` while this repo currently contains `scripts/tests/ticket-owner-smoke.sh`.
-- Resume next: run `scripts/verify-ticket-owner.sh 007` once more to capture the current failure in `verify_007.md`, then finish the safe turn with a concrete reject reason covering both the missing local TypeScript compiler and the stale smoke-script path.
+- Current state: `tickets_007` is rejected after a fresh owner verification run moved the ticket and evidence into `tickets/reject/`.
+- Last action: owner-3 reran `scripts/verify-ticket-owner.sh 007` from the isolated worktree after runtime dependency hydration. `npx tsc --noEmit` no longer blocked first; the configured smoke step failed instead because the PRD still calls `bash tests/smoke/ticket-owner-smoke.sh` while this repo currently exposes `scripts/tests/ticket-owner-smoke.sh`.
+- Resume next: replan this ticket with a verification command that matches the current repo layout, then rerun owner verification against the same two Allowed Paths if the renderer diff is still the intended implementation.
 
 ## Notes
 
@@ -121,18 +121,23 @@
 - Ticket owner verification failed at 2026-04-26T03:09:55Z: command exited 254
 - AI-1 marked fail at 2026-04-26T03:10:19Z.
 - Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T04:02:58Z; retry_count=3
+- Runtime hydrated worktree dependency at 2026-04-26T04:03:33Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T04:03:33Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-3 prepared todo at 2026-04-26T04:03:33Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
+- Ticket owner verification failed by AI-3 at 2026-04-26T04:03:59Z: command exited 127
+- AI AI-3 marked fail at 2026-04-26T04:04:12Z.
 ## Verification
-- Run file:
-- Log file:
-- Result: pending
+- Run file: `tickets/reject/verify_007.md`
+- Log file: `logs/verifier_007_20260426_040412Z_fail.md`
+- Result: failed
 
 ## Result
-- Summary:
-- Remaining risk:
+- Summary: Existing renderer changes remain limited to `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`, but the owner verification chain failed before acceptance because the configured smoke-script path is stale.
+- Remaining risk: Until the PRD/ticket verification command is corrected to the current repo path, future retries can reject again without exercising the in-scope UI behavior.
 
 ## Reject Reason
 
-- Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
+- Verification is blocked outside Allowed Paths by a stale configured smoke path: after runtime dependency hydration, the owner command reached `bash tests/smoke/ticket-owner-smoke.sh`, but this repo currently provides `scripts/tests/ticket-owner-smoke.sh`, so verification exited 127 before the in-scope UI changes could be accepted.
 
 ## Retry
 - Retry Count: 3
