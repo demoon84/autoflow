@@ -1,0 +1,92 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_010
+- PRD Key: prd_010
+- Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_010/prd_010.md
+- Title: AI work for prd_010
+- Stage: done
+- AI: AI-2
+- Claimed By: AI-2
+- Execution AI: AI-2
+- Verifier AI: AI-2
+- Last Updated: 2026-04-26T06:22:33Z
+
+## Goal
+
+- 이번 작업의 목표: Implement the approved spec for prd_010.
+
+## References
+
+- PRD: tickets/done/prd_010/prd_010.md
+- Feature Spec:
+- Plan Source: direct-ticket-owner
+
+## Obsidian Links
+
+- Project Note: [[prd_010]]
+- Plan Note:
+- Ticket Note: [[tickets_010]]
+
+## Allowed Paths
+
+- apps/desktop/src/renderer/main.tsx
+- apps/desktop/src/renderer/styles.css
+
+## Worktree
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_010`
+- Branch: autoflow/tickets_010
+- Base Commit: 272a178fbba29002897d9e77bc43f0f7f8aa079f
+- Worktree Commit: 939f63ed42818367dc77c348b1eb4bb3dfe56024
+- Integration Status: integrated
+
+## Done When
+
+- [ ] 사이드바에 "티켓 보드" 항목이 추가되어 있고, lucide `KanbanSquare` (또는 동등) 아이콘으로 보인다.
+- [ ] 클릭 시 6개 컬럼(`PRD 대기` / `실행 대기` / `구현` / `검증` / `완료` / `반려`)이 가로로 펼쳐진다. 빈 컬럼도 헤더와 카운트(0)는 노출된다.
+- [ ] 각 컬럼 헤더의 카운트 배지가 board snapshot 의 실제 파일 수와 일치한다.
+- [ ] 각 카드는 식별자(`PRD-NNN` / `tickets_NNN` / `Reject-NNN`), 제목 한 줄, project key, 마지막 수정 시각을 포함한다.
+- [ ] 컬럼별 좌측 3px 보더 색상이 단계 톤(todo=muted, inprogress=primary, verifier/done=chart-2, reject=destructive)으로 구분된다.
+- [ ] 카드 클릭 시 shadcn Dialog 가 열리고 본문이 `MarkdownViewer` 로 렌더된다. ESC / outside click / 닫기 버튼으로 닫힌다.
+- [ ] 다른 메뉴(작업 흐름 / Wiki / 처리 지표 / 자동화 / 도움말 / AI 관리)의 동작·라벨·렌더에 회귀가 없다.
+- [ ] `cd apps/desktop && npx tsc --noEmit` exit 0.
+- [ ] `cd apps/desktop && node scripts/check-syntax.mjs` exit 0.
+- [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
+- [ ] 가로 스크롤이 좁은 창에서 동작하고, 컬럼 폭이 작아도 카드 내용이 ellipsis 처리된다.
+
+## Next Action
+- 완료됨: ticket-owner pass 처리와 evidence log 기록 완료.
+
+## Resume Context
+
+- 현재 상태 요약: owner-2 resumed `tickets_010`; runtime-reported worktree path is prunable, so implementation uses PROJECT_ROOT fallback within Allowed Paths.
+- 직전 작업: role instructions, board state, PRD, and existing renderer/dialog patterns were reviewed; wiki query found only the current PRD and `--synth` skipped due missing adapter.
+- 재개 시 먼저 볼 것: `apps/desktop/src/renderer/main.tsx`, `apps/desktop/src/renderer/styles.css`, verification command in PRD, and finish runtime routes.
+
+## Notes
+
+- Created by AI-2 from tickets/done/prd_010/prd_010.md at 2026-04-26T06:15:36Z.
+
+- Runtime hydrated worktree dependency at 2026-04-26T06:15:37Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T06:15:37Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-2 prepared spec at 2026-04-26T06:15:36Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_010; run=tickets/inprogress/verify_010.md
+- 2026-04-26T15:18+09:00 mini-plan:
+  - Add `kanban` navigation between `progress` and `knowledge` using `KanbanSquare`.
+  - Reuse board snapshot + `readBoardFile` + `MarkdownViewer` with a dedicated kanban dialog, not a new IPC surface.
+  - Render six fixed columns from `board.tickets.*`, keep empty columns visible, sort cards by `modifiedAt`, and normalize visible AI labels with existing helpers when present.
+  - Keep help text inside the kanban empty state / section copy and avoid touching unrelated menu behavior.
+  - Verify with desktop type/syntax checks plus `tests/smoke/ticket-owner-smoke.sh`, then finish via owner runtime.
+- AI AI-2 prepared resume at 2026-04-26T06:16:36Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_010; run=tickets/inprogress/verify_010.md
+- Ticket owner verification passed by AI-2 at 2026-04-26T06:22:25Z: command exited 0
+- Integrated worktree commit 939f63ed42818367dc77c348b1eb4bb3dfe56024 into PROJECT_ROOT without committing at 2026-04-26T06:22:33Z; verifier should now include board + code changes in one local commit.
+- AI AI-2 marked pass at 2026-04-26T06:22:33Z.
+## Verification
+- Run file: `tickets/done/prd_010/verify_010.md`
+- Log file: `logs/verifier_010_20260426_062234Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Add desktop tickets kanban view with dialog preview and board counts
+- Remaining risk:

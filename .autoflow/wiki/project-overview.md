@@ -21,16 +21,17 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon/Documents/project/autoflow`
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
-- Done tickets: 2
-- Reject records: 1
-- Verifier logs: 98
+- Done tickets: 3
+- Reject records: 2
+- Verifier logs: 109
 - Conversation handoffs: 0
-- Last updated: 2026-04-26T06:10:00Z
+- Last updated: 2026-04-26T06:22:34Z
 
 ## Latest Completed Work
 
 - `tickets_007` - AI work for prd_007. Update AI workflow card meta to 3-line agent/id/progress display Source: `tickets/done/prd_007/tickets_007.md`.
 - `tickets_008` - AI work for prd_008. Add bounded reject auto-replan flow for ticket-owner runtime Source: `tickets/done/prd_008/tickets_008.md`.
+- `tickets_010` - AI work for prd_010. Add desktop tickets kanban view with dialog preview and board counts Source: `tickets/done/prd_010/tickets_010.md`.
 
 ## Recent Handoffs
 
