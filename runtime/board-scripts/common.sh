@@ -249,7 +249,6 @@ ticket_shared_allowed_path_blockers() {
   local other_path found=false
 
   [ -f "$ticket_file" ] || return 1
-  ticket_uses_project_root_workspace "$ticket_file" || return 1
 
   ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
   [ -n "$ticket_id" ] || return 1
@@ -268,7 +267,6 @@ ticket_shared_allowed_path_blockers() {
 
     other_stage="$(ticket_stage "$other_file")"
     ticket_project_root_conflict_stage "$other_stage" || continue
-    ticket_uses_project_root_workspace "$other_file" || continue
 
     while IFS= read -r other_path; do
       [ -n "$other_path" ] || continue

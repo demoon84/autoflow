@@ -281,6 +281,34 @@ merge_ticket_worktree() {
     return 1
   fi
 
+  local project_root_head new_worktree_head rebase_log_file rebase_tail
+  project_root_head="$(git_head_commit "$git_root" 2>/dev/null || true)"
+  if [ -n "$project_root_head" ] && [ -n "$worktree_path" ] && [ -d "$worktree_path" ]; then
+    if ! git -C "$worktree_path" merge-base --is-ancestor "$project_root_head" "$worktree_commit" 2>/dev/null; then
+      rebase_log_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-mergebot-rebase.XXXXXX")"
+      if git -C "$worktree_path" rebase --autostash "$project_root_head" >"$rebase_log_file" 2>&1; then
+        new_worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
+        if [ -n "$new_worktree_head" ] && [ "$new_worktree_head" != "$worktree_commit" ]; then
+          replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$new_worktree_head"
+          append_note "$ticket_file" "Merge-bot rebased worktree onto PROJECT_ROOT HEAD ${project_root_head} at ${timestamp} (Worktree Commit: ${worktree_commit} -> ${new_worktree_head})."
+          worktree_commit="$new_worktree_head"
+        fi
+        rm -f "$rebase_log_file"
+      else
+        git -C "$worktree_path" rebase --abort >/dev/null 2>&1 || true
+        rebase_tail="$(tail -3 "$rebase_log_file" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+        replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_rebase_conflict"
+        append_note "$ticket_file" "Merge-bot rebase onto PROJECT_ROOT HEAD ${project_root_head} failed at ${timestamp}; ticket-owner must resolve conflicts in ${worktree_path} (e.g. \`git -C ${worktree_path} rebase ${project_root_head}\`) before re-queuing. Tail: ${rebase_tail}"
+        rm -f "$rebase_log_file"
+        printf 'status=blocked\n'
+        printf 'reason=rebase_conflict\n'
+        printf 'project_root_head=%s\n' "$project_root_head"
+        printf 'worktree_commit=%s\n' "$worktree_commit"
+        return 1
+      fi
+    fi
+  fi
+
   while IFS= read -r allowed_path; do
     [ -n "$allowed_path" ] || continue
     allowed_paths+=("$allowed_path")
@@ -623,16 +651,49 @@ if [ ! -f "$run_file" ]; then
   run_file="$(ensure_runs_file "$ticket_id")"
 fi
 
+merge_retry_state_file="${BOARD_ROOT}/runners/state/merge-retry-${ticket_id}.txt"
+merge_retry_threshold="${AUTOFLOW_MERGE_BLOCKED_THRESHOLD:-5}"
+
 merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
   merge_reason="$(printf '%s\n' "$merge_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; found=1; exit } END { exit(found ? 0 : 1) }' 2>/dev/null || true)"
+  current_reason="${merge_reason:-unknown}"
   case "$merge_reason" in
-    cherry_pick_conflict|invalid_worktree_commit_scope|missing_worktree_commit|missing_allowed_paths)
-      ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$merge_reason")"
+    cherry_pick_conflict|invalid_worktree_commit_scope|missing_worktree_commit|missing_allowed_paths|rebase_conflict)
+      ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$current_reason")"
       run_file="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
+      rm -f "$merge_retry_state_file"
       ;;
     *)
-      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-      append_note "$ticket_file" "Merge-bot ${display_id} blocked at ${timestamp}: ${merge_reason:-unknown}."
+      prior_reason=""
+      prior_count=0
+      if [ -f "$merge_retry_state_file" ]; then
+        prior_reason="$(awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' "$merge_retry_state_file" 2>/dev/null || true)"
+        prior_count="$(awk -F= '$1 == "count" { sub(/^[^=]*=/, "", $0); print; exit }' "$merge_retry_state_file" 2>/dev/null || true)"
+        case "$prior_count" in *[!0-9]*|"") prior_count=0 ;; esac
+      fi
+      if [ "$current_reason" = "$prior_reason" ]; then
+        retry_count=$((prior_count + 1))
+      else
+        retry_count=1
+      fi
+      mkdir -p "$(dirname "$merge_retry_state_file")"
+      {
+        printf 'reason=%s\n' "$current_reason"
+        printf 'count=%d\n' "$retry_count"
+        printf 'last=%s\n' "$timestamp"
+      } >"$merge_retry_state_file"
+
+      if [ "$retry_count" -ge "$merge_retry_threshold" ]; then
+        escalated_reason="${current_reason}_persistent"
+        ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$escalated_reason")"
+        run_file="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
+        append_note "$ticket_file" "Merge-bot escalated to merge-blocked at ${timestamp}: ${current_reason} persisted for ${retry_count} consecutive attempts (threshold=${merge_retry_threshold})."
+        rm -f "$merge_retry_state_file"
+        merge_reason="$escalated_reason"
+      else
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+        append_note "$ticket_file" "Merge-bot ${display_id} blocked at ${timestamp}: ${current_reason} (attempt ${retry_count}/${merge_retry_threshold})."
+      fi
       ;;
   esac
   printf 'status=blocked\n'
@@ -645,6 +706,8 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   exit 0
 }
+
+rm -f "$merge_retry_state_file"
 
 done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
 mkdir -p "$(dirname "$done_target")"

@@ -262,6 +262,36 @@ prepare_ticket_worktree_for_merge() {
     return 1
   fi
 
+  local project_root_git project_root_head worktree_head rebase_log_file rebase_tail
+  project_root_git="$(git_root_path 2>/dev/null || true)"
+  if [ -n "$project_root_git" ]; then
+    project_root_head="$(git_head_commit "$project_root_git" 2>/dev/null || true)"
+    worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
+    if [ -n "$project_root_head" ] && [ -n "$worktree_head" ] && [ "$project_root_head" != "$worktree_head" ]; then
+      if git -C "$worktree_path" merge-base --is-ancestor "$project_root_head" "$worktree_head" 2>/dev/null; then
+        :
+      else
+        rebase_log_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-prefinish-rebase.XXXXXX")"
+        if git -C "$worktree_path" rebase --autostash "$project_root_head" >"$rebase_log_file" 2>&1; then
+          append_note "$ticket_file" "Rebased worktree onto PROJECT_ROOT HEAD ${project_root_head} at ${timestamp} for clean merge."
+        else
+          git -C "$worktree_path" rebase --abort >/dev/null 2>&1 || true
+          rebase_tail="$(tail -3 "$rebase_log_file" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+          replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_rebase_conflict"
+          append_note "$ticket_file" "Worktree rebase onto PROJECT_ROOT HEAD ${project_root_head} failed at ${timestamp}; ticket-owner must resolve conflicts in ${worktree_path} (e.g. \`git -C ${worktree_path} rebase ${project_root_head}\`) and re-run finish. Tail: ${rebase_tail}"
+          rm -f "$rebase_log_file"
+          echo "Worktree rebase failed for ticket ${ticket_id}; see ticket Notes for resolution path." >&2
+          printf 'status=blocked_rebase_conflict\n'
+          printf 'reason=rebase_against_project_root\n'
+          printf 'ticket_id=%s\n' "$ticket_id"
+          printf 'project_root_head=%s\n' "$project_root_head"
+          return 1
+        fi
+        rm -f "$rebase_log_file"
+      fi
+    fi
+  fi
+
   allowed_paths=()
   while IFS= read -r allowed_path; do
     [ -n "$allowed_path" ] || continue
