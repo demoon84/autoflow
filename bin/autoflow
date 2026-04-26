@@ -10,7 +10,8 @@ while [ -L "$source" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$source")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_BOARD_DIR_NAME=".autoflow"
+source "${REPO_ROOT}/packages/cli/cli-common.sh"
+DEFAULT_BOARD_DIR_NAME="$(default_board_dir_name)"
 
 usage() {
   cat <<'EOF'
@@ -25,7 +26,8 @@ Usage:
   autoflow watch-bg [project-root] [board-dir-name] [config-path]
   autoflow watch-status [project-root] [board-dir-name]
   autoflow watch-stop [project-root] [board-dir-name]
-  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
   autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
@@ -33,6 +35,7 @@ Usage:
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name]
+  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets]
   autoflow runners list [project-root] [board-dir-name]
   autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
   autoflow runners remove <runner-id> [project-root] [board-dir-name]
@@ -54,10 +57,11 @@ Examples:
   autoflow init /path/to/project .autoflow
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
-  echo "Build the local runner harness" | autoflow spec create /path/to/project --title "Runner harness"
+  echo "Build the local runner harness" | autoflow prd create /path/to/project --title "Runner harness"
   autoflow run ticket /path/to/project --runner owner-1
   autoflow run planner /path/to/project --runner planner-1
   autoflow wiki update /path/to/project
+  autoflow wiki query /path/to/project --term auth --term session --limit 5
   autoflow runners list /path/to/project
   autoflow runners add todo-2 todo /path/to/project agent=codex model=gpt-5.2
   autoflow runners set todo-1 /path/to/project agent=codex model=gpt-5.2
@@ -76,85 +80,85 @@ case "$cmd" in
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/scaffold-project.sh" "$target_root" "$board_dir_name"
     ;;
   install-stop-hook)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" install "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/stop-hook-project.sh" install "$target_root" "$board_dir_name"
     ;;
   remove-stop-hook)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" remove "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/stop-hook-project.sh" remove "$target_root" "$board_dir_name"
     ;;
   stop-hook-status)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/stop-hook-project.sh" status "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/stop-hook-project.sh" status "$target_root" "$board_dir_name"
     ;;
   watch)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/watch-project.sh" "$@"
     ;;
   watch-bg)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --background "$@"
+    exec "${REPO_ROOT}/packages/cli/watch-project.sh" --background "$@"
     ;;
   watch-status)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --status "$@"
+    exec "${REPO_ROOT}/packages/cli/watch-project.sh" --status "$@"
     ;;
   watch-stop)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/watch-project.sh" --stop "$@"
+    exec "${REPO_ROOT}/packages/cli/watch-project.sh" --stop "$@"
     ;;
-  spec)
+  prd|spec)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/spec-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/spec-project.sh" "$@"
     ;;
   run)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/run-role.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/run-role.sh" "$@"
     ;;
   wiki)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/wiki-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/wiki-project.sh" "$@"
     ;;
   runners)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/runners-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/runners-project.sh" "$@"
     ;;
   metrics)
     shift || true
-    exec "${REPO_ROOT}/scripts/cli/metrics-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/metrics-project.sh" "$@"
     ;;
   status)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/status-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/status-project.sh" "$target_root" "$board_dir_name"
     ;;
   render-heartbeats)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/render-heartbeats.sh" "$target_root" "$board_dir_name"
     ;;
   doctor)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/doctor-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/doctor-project.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
-    exec "${REPO_ROOT}/scripts/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
+    exec "${REPO_ROOT}/packages/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
     ;;
   help|-h|--help)
     usage

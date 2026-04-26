@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("autoflow", {
+  getConfig: () => ipcRenderer.invoke("autoflow:getConfig"),
+  listInstalledAgentProfiles: () => ipcRenderer.invoke("autoflow:listInstalledAgentProfiles"),
   selectProject: () => ipcRenderer.invoke("dialog:selectProject"),
   readBoard: (options) => ipcRenderer.invoke("autoflow:readBoard", options),
   installBoard: (options) => ipcRenderer.invoke("autoflow:installBoard", options),

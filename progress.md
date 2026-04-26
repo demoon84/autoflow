@@ -22,3 +22,32 @@
 - 2026-04-24 23:59 — Removed the editable flow-folder control so changing the project path always resolves against `PROJECT_ROOT/.autoflow/`.
 - 2026-04-24 23:59 — Rebuilt the empty/setup state as an Obsidian-like screen with recent projects on the left and create/open actions on the right.
 - 2026-04-24 23:59 — Reverted the Obsidian-like setup screen back to the earlier board-first layout with a bottom project selector and `.autoflow` setup button.
+- 2026-04-25 13:39 — Started LangGraph feasibility review and separated it from the completed Electron visualizer plan.
+- 2026-04-25 13:42 — Read root README, board AGENTS guidance, generated board README, and root package scripts.
+- 2026-04-25 13:47 — Inspected CLI dispatch, runner invocation, ticket-owner runtime, verification/finish runtime, watcher dispatch, status/metrics, and desktop IPC/read boundaries.
+- 2026-04-25 13:53 — Checked official LangGraph docs for overview, Graph API, persistence, durable execution, interrupts, functional API, JS v1 notes, and GitHub security advisories; checked current npm versions for relevant JS packages.
+- 2026-04-25 13:56 — Ran current board status and read runner config, ticket-owner agent contract, and watcher route settings.
+- 2026-04-25 14:00 — Completed recommendation: optional LangGraph-backed ticket-owner runner is viable; replacing the file-based board is not recommended.
+- 2026-04-25 16:05 — Tokenized scaffold board path references with `{{BOARD_DIR}}` and verified init renders them to `.autoflow/`.
+- 2026-04-25 16:08 — Reworded README execution guidance around chat-authored specs, Ticket Owner default flow, and Desktop Flow Viewer runner controls.
+- 2026-04-25 16:10 — Verified custom board directory init/status with `.teamflow` and clarified README/CLI docs that `BOARD_ROOT` is configurable.
+- 2026-04-25 16:12 — Added a README source-path responsibility table separating CLI/app source, scaffold source, runtime source, tests, and dogfood board state.
+- 2026-04-25 16:19 — Replaced the old public spec handoff chat command with `#af`, leaving `#af` and `#autoflow` as the documented handoff triggers.
+- 2026-04-25 18:33 — Started desktop tabs layout change; current UI uses a two-column `workspace-layout` with `settings-area` sidebar and `dashboard-area` progress content.
+- 2026-04-25 18:35 — Converted desktop layout to `진행 상태` and `설정` tabs, rebuilt `apps/desktop/dist/renderer`, and visually verified both tabs in Electron.
+- 2026-04-25 20:54 — Started essential-decision UI simplification after user feedback that the service has too many unnecessary UI features.
+- 2026-04-25 20:55 — Read Autoflow board rules, ticket-owner guidance, current planning files, session catchup, and dirty worktree summary before editing UI.
+- 2026-04-25 20:58 — Mapped desktop UI controls and identified operational controls to remove from the visible renderer surface.
+- 2026-04-25 21:03 — User clarified the sidebar UI must remain; restored the renderer root to the existing sidebar-based `App` and rebuilt desktop assets.
+- 2026-04-25 21:05 — Verification passed: `npm --prefix apps/desktop run build`, `npm --prefix apps/desktop run check`, and targeted `git diff --check`.
+- 2026-04-25 21:11 — User provided the target Codex-style UI screenshot; updated direction to keep the sidebar and simplify the main work pane into a transcript/review surface.
+- 2026-04-25 21:15 — User clarified the reference is for the collapsed state; changed collapsed sidebar width and styling only, then verified build/check/diff-check.
+- 2026-04-25 21:22 — Removed the sidebar collapse feature entirely: no collapse state, no Cmd+B shortcut, no toggle button, no collapsed CSS rules. Verified build/check/diff-check and searched for removed identifiers.
+- 2026-04-25 21:31 — Added desktop renderer hot reload: `npm --prefix apps/desktop run dev` now starts a Vite dev server and launches Electron with `ELECTRON_RENDERER_URL`; old bundled launch remains as `dev:bundle`.
+- 2026-04-26 00:00 — Started reporting metrics dashboard work after user clarified they need visual report material showing how much Autoflow worked, not just a progress snapshot.
+- 2026-04-26 00:00 — Added metrics history parsing from `.autoflow/metrics/daily.jsonl` and renamed the desktop sidebar item to `처리 지표`.
+- 2026-04-26 00:00 — Implemented report cards plus ticket workload, verification result, completion trend, and AI activity charts with lightweight React/CSS/SVG.
+- 2026-04-26 00:00 — Verified `npm --prefix apps/desktop run build`, `npm --prefix apps/desktop run check`, targeted `git diff --check`, and a Computer Use visual check of the Electron report screen.
+- 2026-04-26 00:00 — Extended `autoflow metrics` with Autoflow-specific completion commit counting and code-volume aggregation derived from `tickets/done/**/tickets_*.md` add-commits.
+- 2026-04-26 00:00 — Added `완료 커밋`, `변경 코드량`, and `코드 영향` report surfaces to the desktop `처리 지표` view.
+- 2026-04-26 00:00 — Re-verified CLI metrics output, desktop `npm --prefix apps/desktop run check`, whitespace checks, and visual rendering of the new report cards/charts in Electron.

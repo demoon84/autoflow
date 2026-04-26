@@ -1,0 +1,5 @@
+[   19583ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/@fs/Users/demoon/Documents/project/autoflow/apps/desktop/node_modules/.vite/deps/react-dom_client.js?v=81bfc105:20102
+[   19662ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/favicon.ico:0
+[   30881ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5174/?token=Qv8aE42lNrD4' failed:  @ http://127.0.0.1:5174/@vite/client:801
+[   30882ms] [LOG] [vite] server connection lost. Polling for restart... @ http://127.0.0.1:5174/@vite/client:963
+[   30925ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:5174/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:5174/@vite/client:1034

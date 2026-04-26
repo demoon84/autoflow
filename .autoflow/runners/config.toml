@@ -1,0 +1,60 @@
+# Autoflow runner configuration.
+#
+# The default runner owns one ticket from local planning through verification.
+# Change agent/model fields to claude, opencode, gemini, shell, or a custom
+# command when Codex CLI is not the desired local runner.
+
+[[runners]]
+id = "owner-1"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.4"
+reasoning = "medium"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-2"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.4"
+reasoning = "medium"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-3"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.4"
+reasoning = "medium"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-4"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.4"
+reasoning = "medium"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-5"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.4"
+reasoning = "xhigh"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""

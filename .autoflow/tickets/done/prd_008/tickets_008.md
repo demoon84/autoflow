@@ -7,10 +7,10 @@
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_008/prd_008.md
 - Title: Ticket owner work for prd_008
 - Stage: done
-- Owner: owner-2
+- AI: owner-2
 - Claimed By: owner-2
-- Execution Owner: owner-2
-- Verifier Owner: owner-2
+- Execution AI: owner-2
+- Verifier AI: owner-2
 - Last Updated: 2026-04-26T02:00:47Z
 
 ## Goal

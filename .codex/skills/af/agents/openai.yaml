@@ -1,0 +1,4 @@
+interface:
+  display_name: "AF"
+  short_description: "Shortcut for Autoflow handoff"
+  default_prompt: "Use $af to start a short Autoflow PRD handoff."

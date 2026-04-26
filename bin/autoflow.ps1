@@ -20,7 +20,8 @@ Usage:
   autoflow remove-stop-hook [project-root] [board-dir-name]
   autoflow stop-hook-status [project-root] [board-dir-name]
   autoflow render-heartbeats [project-root] [board-dir-name]
-  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
+  autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
   autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
@@ -28,6 +29,7 @@ Usage:
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name]
+  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets]
   autoflow runners list [project-root] [board-dir-name]
   autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
   autoflow runners remove <runner-id> [project-root] [board-dir-name]
@@ -70,6 +72,7 @@ $cliScriptMap = @{
   "doctor" = "doctor-project.ps1"
   "upgrade" = "upgrade-project.ps1"
   "render-heartbeats" = "render-heartbeats.ps1"
+  "prd" = "spec-project.ps1"
   "spec" = "spec-project.ps1"
   "wiki" = "wiki-project.ps1"
   "runners" = "runners-project.ps1"
@@ -83,32 +86,32 @@ if ($Command -in @("help", "-h", "--help")) {
 }
 
 if ($Command -eq "watch") {
-  $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
+  $watchScript = Join-Path $repoRoot "packages/cli/watch-project.ps1"
   & $watchScript @RemainingArgs
   exit $LASTEXITCODE
 }
 
 if ($Command -eq "watch-bg") {
-  $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
+  $watchScript = Join-Path $repoRoot "packages/cli/watch-project.ps1"
   & $watchScript -Background @RemainingArgs
   exit $LASTEXITCODE
 }
 
 if ($Command -eq "watch-status") {
-  $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
+  $watchScript = Join-Path $repoRoot "packages/cli/watch-project.ps1"
   & $watchScript -Status @RemainingArgs
   exit $LASTEXITCODE
 }
 
 if ($Command -eq "watch-stop") {
-  $watchScript = Join-Path $repoRoot "scripts/cli/watch-project.ps1"
+  $watchScript = Join-Path $repoRoot "packages/cli/watch-project.ps1"
   & $watchScript -Stop @RemainingArgs
   exit $LASTEXITCODE
 }
 
 if ($cliScriptMap.ContainsKey($Command)) {
   $scriptName = $cliScriptMap[$Command]
-  $cliScript = Join-Path $repoRoot ("scripts/cli/" + $scriptName)
+  $cliScript = Join-Path $repoRoot ("packages/cli/" + $scriptName)
 
   switch ($Command) {
     "install-stop-hook" {

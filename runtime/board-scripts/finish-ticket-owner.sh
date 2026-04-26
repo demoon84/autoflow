@@ -285,9 +285,25 @@ case "$outcome" in
       replace_scalar_field_in_section "$ticket_file" "## Result" "Summary" "$message"
     fi
 
+    shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
+    if [ -n "$shared_blockers" ]; then
+      blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
+      replace_scalar_field_in_section "$run_file" "## Meta" "Status" "blocked"
+      mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
+      printf 'status=blocked\n'
+      printf 'reason=shared_allowed_path_conflict\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf 'blockers=%s\n' "$blockers_summary"
+      printf 'next_action=Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically.\n'
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+    fi
+
     integration_output="$("${BOARD_ROOT}/scripts/integrate-worktree.sh" "$ticket_file" 2>&1)" || {
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-      append_note "$ticket_file" "Ticket owner pass finish blocked during integration at ${timestamp}: ${integration_output}"
+      append_note "$ticket_file" "AI pass finish blocked during integration at ${timestamp}: ${integration_output}"
       printf 'status=blocked\n'
       printf 'reason=integration_failed\n'
       printf 'ticket=%s\n' "$ticket_file"
@@ -300,12 +316,12 @@ case "$outcome" in
     done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
     mkdir -p "$(dirname "$done_target")"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "done"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Owner" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution Owner" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier Owner" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- 완료됨: ticket-owner pass 처리와 evidence log 기록 완료."
-    append_note "$ticket_file" "Ticket owner ${worker_id} marked pass at ${timestamp}."
+    append_note "$ticket_file" "AI ${worker_id} marked pass at ${timestamp}."
     if [ "$ticket_file" != "$done_target" ]; then
       mv "$ticket_file" "$done_target"
       ticket_file="$done_target"
@@ -345,12 +361,12 @@ case "$outcome" in
     reject_target="$(reject_ticket_path_for_ticket_file "$ticket_file")"
     mkdir -p "$(dirname "$reject_target")"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "rejected"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Owner" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution Owner" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier Owner" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다."
-    append_note "$ticket_file" "Ticket owner ${worker_id} marked fail at ${timestamp}."
+    append_note "$ticket_file" "AI ${worker_id} marked fail at ${timestamp}."
     if [ "$ticket_file" != "$reject_target" ]; then
       mv "$ticket_file" "$reject_target"
       ticket_file="$reject_target"

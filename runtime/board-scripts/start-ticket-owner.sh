@@ -22,10 +22,10 @@ ticket_owned_by_worker() {
   local file="$1"
   local owner claimed_by execution_owner verifier_owner
 
-  owner="$(ticket_scalar_field "$file" "Owner")"
+  owner="$(ticket_scalar_field "$file" "AI")"
   claimed_by="$(ticket_scalar_field "$file" "Claimed By")"
-  execution_owner="$(ticket_scalar_field "$file" "Execution Owner")"
-  verifier_owner="$(ticket_scalar_field "$file" "Verifier Owner")"
+  execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
+  verifier_owner="$(ticket_scalar_field "$file" "Verifier AI")"
 
   [ "$owner" = "$worker_id" ] ||
     [ "$claimed_by" = "$worker_id" ] ||
@@ -198,10 +198,10 @@ create_ticket_from_spec() {
   allowed_paths="$(extract_spec_allowed_paths "$archived_spec_file")"
   done_when="$(extract_section_checklist "$archived_spec_file" "Global Acceptance Criteria")"
 
-  [ -n "$title" ] || title="Ticket owner work for ${project_key}"
+  [ -n "$title" ] || title="AI work for ${project_key}"
   [ -n "$goal" ] || goal="Implement the approved spec for ${project_key}."
   [ -n "$allowed_paths" ] || allowed_paths="- TODO: define concrete repo-relative paths before editing product code"
-  [ -n "$done_when" ] || done_when="- [ ] Ticket owner writes a concrete mini-plan into this ticket
+  [ -n "$done_when" ] || done_when="- [ ] AI writes a concrete mini-plan into this ticket
 - [ ] Implementation stays inside Allowed Paths
 - [ ] Verification evidence is recorded before done/reject"
 
@@ -216,10 +216,10 @@ create_ticket_from_spec() {
 - Plan Candidate: Direct ticket-owner handoff from ${archived_spec_ref}
 - Title: ${title}
 - Stage: planning
-- Owner: ${worker_id}
+- AI: ${worker_id}
 - Claimed By: ${worker_id}
-- Execution Owner: ${worker_id}
-- Verifier Owner: ${worker_id}
+- Execution AI: ${worker_id}
+- Verifier AI: ${worker_id}
 - Last Updated: ${timestamp}
 
 ## Goal
@@ -375,24 +375,60 @@ prepare_ticket_owner_context() {
   local source_kind="$2"
   local ticket_id timestamp worktree_output implementation_root run_file
   local project_key project_note ticket_note verification_note stage done_target reject_target
+  local pre_stage recovery_attempted=false shared_blockers blockers_summary
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
 
+  pre_stage="$(ticket_stage "$ticket_file")"
+  if [ "$pre_stage" = "blocked" ]; then
+    if auto_recover_blocked_ticket "$ticket_file"; then
+      recovery_attempted=true
+    fi
+  fi
+
+  local worktree_failed=false
   if ! worktree_output="$(ensure_ticket_worktree "$ticket_file" 2>&1)"; then
+    worktree_failed=true
+    if [ "$recovery_attempted" = "false" ] && auto_recover_blocked_ticket "$ticket_file"; then
+      recovery_attempted=true
+      if worktree_output="$(ensure_ticket_worktree "$ticket_file" 2>&1)"; then
+        worktree_failed=false
+      fi
+    fi
+  fi
+  if [ "$worktree_failed" = "true" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Owner" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution Owner" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier Owner" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: worktree 생성 실패를 해결한 뒤 ticket-owner 실행을 재개한다."
-    append_note "$ticket_file" "Ticket owner worktree setup failed at ${timestamp}: ${worktree_output}"
+    append_note "$ticket_file" "AI worktree setup failed at ${timestamp}: ${worktree_output}"
     set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
     printf 'status=blocked\n'
     printf 'reason=worktree_setup_failed\n'
     printf 'ticket=%s\n' "$ticket_file"
     printf '%s\n' "$worktree_output"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    exit 0
+  fi
+
+  shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
+  if [ -n "$shared_blockers" ]; then
+    blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
+    mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
+    set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+    sync_runner_active_state "$ticket_file" "blocked"
+    printf 'status=blocked\n'
+    printf 'reason=shared_allowed_path_conflict\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'blockers=%s\n' "$blockers_summary"
+    printf '%s\n' "$worktree_output"
+    printf 'next_action=Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically.\n'
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     exit 0
@@ -422,16 +458,16 @@ prepare_ticket_owner_context() {
 - Verification Note: ${verification_note}"
 
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "$stage"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Owner" "$worker_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution Owner" "$worker_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier Owner" "$worker_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
 - Result: pending ticket-owner by ${worker_id}"
   replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
-  append_note "$ticket_file" "Ticket owner ${worker_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")"
+  append_note "$ticket_file" "AI ${worker_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")"
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
 

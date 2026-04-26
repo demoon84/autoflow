@@ -62,9 +62,9 @@ if [ -e "${project_dir}/autoflow" ]; then
 fi
 
 require_line "${project_dir}/.claude/skills/autoflow/SKILL.md" "2. If the current project has \`CLAUDE.md\`, \`AGENTS.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
-require_line "${project_dir}/.claude/skills/af/SKILL.md" "1. Treat \`#af\` and \`/af\` as Autoflow spec handoff triggers."
+require_line "${project_dir}/.claude/skills/af/SKILL.md" "1. Treat \`#af\` and \`/af\` as Autoflow PRD handoff triggers."
 require_line "${project_dir}/.codex/skills/autoflow/SKILL.md" "2. If the current project has \`AGENTS.md\`, \`CLAUDE.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
-require_line "${project_dir}/.codex/skills/af/SKILL.md" "1. Treat \`\$af\`, \`#af\`, and \`/af\` as Autoflow spec handoff triggers."
+require_line "${project_dir}/.codex/skills/af/SKILL.md" "1. Treat \`\$af\`, \`#af\`, and \`/af\` as Autoflow PRD handoff triggers."
 require_line "${project_dir}/.codex/skills/autoflow/agents/openai.yaml" "  display_name: \"Autoflow\""
 
 spec_output="${project_dir}/spec.out"

@@ -1,0 +1,11 @@
+[   70211ms] [ERROR] Access to CSS stylesheet at 'file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/assets/index-BXXYoi8z.css' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app. @ file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/index.html:0
+[   70211ms] [ERROR] Failed to load resource: net::ERR_FAILED @ file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/assets/index-BXXYoi8z.css:0
+[   70211ms] [ERROR] Access to script at 'file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/assets/index-CWb-BV8a.js' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome, chrome-extension, chrome-untrusted, data, http, https, isolated-app. @ file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/index.html:0
+[   70211ms] [ERROR] Failed to load resource: net::ERR_FAILED @ file:///Users/demoon/Documents/project/autoflow/apps/desktop/dist/renderer/assets/index-CWb-BV8a.js:0
+[  145447ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ chrome-error://chromewebdata/:0
+[  145455ms] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+    at <anonymous>:92:5
+    at <anonymous>:93:7
+[  145455ms] SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.
+    at <anonymous>:79:5
+    at <anonymous>:80:7

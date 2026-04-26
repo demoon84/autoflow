@@ -145,10 +145,10 @@ if [ -f "${project_dir}/.autoflow/tickets/reject/reject_001.md" ]; then
 fi
 
 require_line "$todo_ticket" "- Stage: todo"
-require_line "$todo_ticket" "- Owner: "
+require_line "$todo_ticket" "- AI: "
 require_line "$todo_ticket" "- Claimed By: "
-require_line "$todo_ticket" "- Execution Owner: "
-require_line "$todo_ticket" "- Verifier Owner: "
+require_line "$todo_ticket" "- Execution AI: "
+require_line "$todo_ticket" "- Verifier AI: "
 require_line "$todo_ticket" "- Integration Status: pending_claim"
 require_pattern "$todo_ticket" '^## Reject History$'
 require_pattern "$todo_ticket" 'seed reject reason'

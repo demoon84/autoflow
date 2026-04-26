@@ -62,3 +62,173 @@ Create a first Electron desktop shell that visualizes how Codex is moving work t
 ## Risks
 - Electron dependency installation may be deferred; syntax checks should not require installed Electron.
 - The existing worktree is dirty from user changes; only new desktop files and intentional docs/package files should be touched.
+
+---
+
+# Task Plan: LangGraph Fit Review
+
+## Goal
+Assess whether LangGraph should be integrated into the Autoflow project, based on the current repository architecture and current LangGraph capabilities.
+
+## Scope
+- Inspect Autoflow's CLI, runner, automation, and desktop boundaries.
+- Identify workflow/state-machine areas where LangGraph would add value.
+- Compare benefits against project risks such as extra runtime dependencies and duplicated orchestration semantics.
+- Produce a recommendation and possible integration path without changing product code.
+
+## Phases
+- [x] Read project guidance and architecture docs.
+- [x] Map current workflow/orchestration model.
+- [x] Check current LangGraph official docs for relevant capabilities.
+- [x] Evaluate fit, risks, and integration options.
+- [x] Deliver concise Korean recommendation.
+
+## Decisions
+- Do not implement LangGraph in this turn; this is an architectural feasibility review.
+- Avoid reverting or modifying unrelated dirty work already present in the repo.
+- Recommendation: do not replace the file-based board with LangGraph; consider an optional LangGraph-backed `ticket-owner` runner/adapter if deeper retry, streaming, or human approval loops become necessary.
+
+## Verification
+- [x] Codebase evidence gathered from local files.
+- [x] LangGraph evidence gathered from official sources.
+
+## Risks
+- The repo currently has substantial dirty work unrelated to this review.
+- LangGraph may duplicate existing shell-based board semantics if introduced too broadly.
+
+---
+
+# Task Plan: Desktop Tabs Layout
+
+## Goal
+Replace the desktop app's left sidebar layout with a tabbed layout that separates progress status from setup/runner controls.
+
+## Scope
+- Update `apps/desktop/src/renderer/main.tsx`.
+- Update `apps/desktop/src/renderer/styles.css`.
+- Rebuild `apps/desktop/dist/renderer` so the running Electron window reflects the change.
+- Avoid reverting unrelated dirty work.
+
+## Phases
+- [x] Inspect current sidebar/dashboard component structure.
+- [x] Move progress content and sidebar controls into separate tabs.
+- [x] Update layout CSS to remove the sidebar grid and style tabs.
+- [x] Build and visually verify the running Electron app.
+
+## Decisions
+- Keep existing control components (`RunnerConsole`, stop hook, watcher, doctor, project setup) and relocate them instead of rewriting their behavior.
+- Use simple in-app state for tabs: `progress` and `settings`.
+
+## Verification
+- [x] `npm --prefix apps/desktop run build`
+- [x] `npm --prefix apps/desktop run check`
+- [x] `git diff --check -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css apps/desktop/dist/renderer`
+- [x] Computer Use visual check of progress tab and settings tab.
+
+---
+
+# Task Plan: Essential Decision UI Simplification
+
+## Goal
+Reduce the desktop service UI to a Codex-like work surface: keep the left sidebar, show progress in a conversation-style main pane, and expose only essential user decisions.
+
+## Scope
+- Inspect the current Electron renderer and IPC surface.
+- Remove or hide UI controls that make users decide internal runner/automation details.
+- Keep essential decisions: choose project, initialize `.autoflow` when missing, refresh/read board state.
+- Preserve read-only board visibility and existing backend behavior.
+- Avoid reverting unrelated dirty work.
+
+## Phases
+- [x] Map current desktop UI controls and classify essential vs. operational/internal.
+- [x] Adjust collapsed sidebar state toward the Codex reference.
+- [x] Remove sidebar collapse feature entirely after user requested deletion.
+- [x] Roll back the attempted sidebar-free renderer entry point after user correction.
+- [x] Build and run desktop checks.
+- [x] Rebuild and verify collapsed-state CSS checks.
+
+## Decisions
+- Treat runner/watch/doctor/stop-hook controls as internal operational UI unless the current code proves they are required for basic user flow.
+- Keep UI text Korean-facing where the current desktop UI is Korean-facing.
+- Sidebar navigation is required and must not be removed.
+- The provided Codex screenshot is the target interaction model: left navigation/projects/chats, main work transcript, compact review card, and minimal explicit controls.
+- Sidebar collapse is no longer part of the product UI; the sidebar remains fixed.
+
+## Verification
+- [x] `npm --prefix apps/desktop run build`
+- [x] `npm --prefix apps/desktop run check`
+- [x] `git diff --check -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css apps/desktop/dist/renderer task_plan.md findings.md progress.md`
+- [x] `git diff --check -- apps/desktop/src/renderer/styles.css apps/desktop/dist/renderer task_plan.md findings.md progress.md`
+- [x] `rg -n "isSidebarCollapsed|toggleSidebar|sidebar-collapse|PanelLeft|settings-page-collapsed|autoflow.sidebarCollapsed" apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css`
+- [ ] Visual check of desktop app after simplification.
+
+## Risks
+- Existing worktree contains large unrelated dirty changes; this task must stay focused on `apps/desktop` and planning notes.
+- A first simplification attempt removed the sidebar from the rendered entry point; this was rolled back after user clarification.
+
+---
+
+# Task Plan: Desktop Renderer Hot Reload
+
+## Goal
+Make desktop UI updates hot reload during development instead of requiring `npm run build` before every Electron launch.
+
+## Scope
+- Update `apps/desktop/package.json`.
+- Add a small local dev launcher under `apps/desktop/scripts/`.
+- Use the existing `ELECTRON_RENDERER_URL` support in `apps/desktop/src/main.js`.
+- Do not add new dependencies.
+
+## Phases
+- [x] Inspect current desktop dev/build scripts and Electron renderer loading.
+- [x] Add Vite dev server + Electron launcher script.
+- [x] Update `dev` script and keep a bundled fallback script.
+- [x] Verify dev server launch, build, check, and diff whitespace.
+
+## Decisions
+- `npm --prefix apps/desktop run dev` now starts Vite on localhost and launches Electron against that URL, enabling Vite HMR for renderer UI changes.
+- `npm --prefix apps/desktop run dev:bundle` keeps the old build-then-launch behavior.
+
+## Verification
+- [x] `npm --prefix apps/desktop run dev` reached `http://127.0.0.1:5173/`, then was stopped.
+- [x] `npm --prefix apps/desktop run build`
+- [x] `npm --prefix apps/desktop run check`
+- [x] `git diff --check -- apps/desktop/package.json apps/desktop/scripts/dev.mjs`
+- [x] Confirmed no dev/Electron HMR process remains running.
+
+---
+
+# Task Plan: Reporting Metrics Dashboard
+
+## Goal
+Turn the desktop `진행 스냅샷` area into a reporting-oriented dashboard that visualizes how much work Autoflow has done, including charts suitable for status reporting.
+
+## Scope
+- Update `apps/desktop/src/renderer/main.tsx`.
+- Update `apps/desktop/src/renderer/styles.css`.
+- Rebuild `apps/desktop/dist/renderer`.
+- Keep board files and CLI metrics as the source of truth.
+- Avoid changing ticket state or unrelated dirty work.
+
+## Phases
+- [x] Inspect available metrics and current renderer data model.
+- [x] Design reporting cards/charts using existing board metrics and file lists.
+- [x] Implement the report dashboard UI.
+- [x] Verify build, type checks, and targeted whitespace.
+- [x] Visually check the desktop UI if feasible.
+
+## Decisions
+- Keep the Korean desktop UI language.
+- Prefer charts based on existing metrics so the report is useful without adding a new backend data model.
+- Treat `.autoflow/metrics/` snapshots as report history, not authoritative state.
+- Define `commit count` as the number of pass-completion commits discoverable from `tickets/done/**/tickets_*.md`, and define `code volume` as the summed `files changed / insertions / deletions` from those commits.
+
+## Verification
+- [x] `npm --prefix apps/desktop run build`
+- [x] `npm --prefix apps/desktop run check`
+- [x] `git diff --check -- apps/desktop/src/main.js apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css apps/desktop/src/renderer/vite-env.d.ts apps/desktop/dist/renderer task_plan.md findings.md progress.md`
+- [x] Computer Use visual check of `처리 지표` in Electron.
+
+## Risks
+- Current worktree is heavily dirty from previous work; edits must stay tightly scoped.
+- Metrics history may be sparse, so charts should degrade gracefully when `daily.jsonl` has few entries.

@@ -2,10 +2,10 @@
   "name": "autoflow",
   "version": "0.1.0",
   "private": true,
-  "description": "Autoflow CLI and desktop operating console.",
+  "description": "Autoflow CLI and desktop dashboard for local AI work boards.",
   "scripts": {
     "desktop:dev": "npm --prefix apps/desktop run dev",
     "desktop:check": "npm --prefix apps/desktop run check",
-    "smoke:ticket-owner": "bash scripts/tests/ticket-owner-smoke.sh"
+    "smoke:ticket-owner": "bash tests/smoke/ticket-owner-smoke.sh"
   }
 }

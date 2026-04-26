@@ -3,14 +3,15 @@
 ## Meta
 
 - Ticket ID: 004
-- PRD Key: prd_004
+- Project Key: project_NNN
 - Verifier:
 - Status: fail
 - Started At:
 - Finished At:
-- Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004
+- Working Root: /Users/demoon/Documents/project/autoflow
 
 - Target: tickets_004.md
+- PRD Key: prd_004
 ## Obsidian Links
 - Project Note: [[prd_004]]
 - Plan Note:
@@ -25,25 +26,19 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T01:09:33Z
-- Finished At: 2026-04-26T01:09:34Z
-- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
+- Started At: 2026-04-26T02:08:58Z
+- Finished At: 2026-04-26T02:09:04Z
+- Working Root: `/Users/demoon/Documents/project/autoflow`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Exit Code: 1
+- Exit Code: 0
 
 ## Output
 ### stdout
 
 ```text
-
-[41m                                                                               [0m
-[41m[37m                This is not the tsc command you are looking for                [0m
-[41m                                                                               [0m
-
-To get access to the TypeScript compiler, [34mtsc[0m, from the command line either:
-
-- Use [1mnpm install typescript[0m to first add TypeScript to your project [1mbefore[0m using npx
-- Use [1myarn[0m to avoid accidentally running code from un-installed packages
+status=ok
+project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.4ObZOihTo1
+commit_hash=602892e66cec09009d8e91850903ff9d627c4c1c
 ```
 
 ### stderr
@@ -53,28 +48,29 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 ```
 
 ## Evidence
-- Result: failed
-- Exit Code: 1
-- Completed At: 2026-04-26T01:09:34Z
+- Result: passed
+- Exit Code: 0
+- Completed At: 2026-04-26T02:09:04Z
 
 ## Findings
-- blocker: Verification command exited 1
-- warning:
+- blocker: Automated command passed, but manual inspection of `apps/desktop/src/renderer/main.tsx` and `styles.css` did not find the required Help implementation.
+- warning: This verification script only proved the build/smoke chain exited 0; it did not validate the PRD-specific UI criteria for `prd_004`.
 
 ## Blockers
 
-- Blocker:
+- Blocker: `settingsNavigation` still ends at `automation` and does not include a `help` entry.
+- Blocker: No `activeSettingsSection === "help"` branch, `HelpSection`, `도움말` UI copy, or `.help-section` / `.help-card` styling exists in the allowed files.
 
 ## Next Fix Hint
-- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 004 fail "<reason>"`.
+- Implement the Help nav item and Help content/styling inside `apps/desktop/src/renderer/main.tsx` and `styles.css`, then rerun owner verification with a manual UI criteria check in addition to the command chain.
 
 ## Result
 
-- Verdict: pending
-- Summary:
+- Verdict: fail
+- Summary: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` exited 0, but manual code inspection showed the `prd_004` Help section was not implemented in the allowed files, so acceptance criteria remain unmet.
 
 ## Checks
 - [x] spec reference confirmed
 - [x] allowed paths respected by ticket scope
 - [x] implementation completed or intentionally unchanged
-- [ ] automated verification passed
+- [x] automated verification passed

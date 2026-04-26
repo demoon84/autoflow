@@ -163,6 +163,124 @@ worktree_auto_fallback_reason() {
   return 1
 }
 
+ticket_uses_project_root_workspace() {
+  local ticket_file="$1"
+  local status path physical_path physical_project_root
+
+  status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
+  path="$(ticket_worktree_path_from_file "$ticket_file")"
+
+  case "$status" in
+    project_root_fallback|disabled|not_git_repo|no_head_commit)
+      return 0
+      ;;
+  esac
+
+  if [ -z "$path" ]; then
+    return 0
+  fi
+
+  if [ -d "$path" ] && [ -d "$PROJECT_ROOT" ]; then
+    physical_path="$(cd "$path" && pwd -P)"
+    physical_project_root="$(cd "$PROJECT_ROOT" && pwd -P)"
+    [ "$physical_path" = "$physical_project_root" ] && return 0
+  fi
+
+  return 1
+}
+
+ticket_project_root_conflict_stage() {
+  case "${1:-}" in
+    planning|claimed|executing|ready_for_verification|verifying|blocked)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ticket_concrete_allowed_paths() {
+  local ticket_file="$1"
+  local allowed_path
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete_repo_path "$allowed_path" || continue
+    printf '%s\n' "$allowed_path"
+  done < <(extract_ticket_allowed_paths "$ticket_file") | sort -u
+}
+
+ticket_shared_allowed_path_blockers() {
+  local ticket_file="$1"
+  local ticket_id ticket_num current_paths other_file other_id other_num other_stage
+  local other_path found=false
+
+  [ -f "$ticket_file" ] || return 1
+  ticket_uses_project_root_workspace "$ticket_file" || return 1
+
+  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
+  [ -n "$ticket_id" ] || return 1
+  ticket_num="$((10#$ticket_id))"
+  current_paths="$(ticket_concrete_allowed_paths "$ticket_file")"
+  [ -n "$current_paths" ] || return 1
+
+  while IFS= read -r other_file; do
+    [ -n "$other_file" ] || continue
+    [ "$other_file" != "$ticket_file" ] || continue
+
+    other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
+    [ -n "$other_id" ] || continue
+    other_num="$((10#$other_id))"
+    [ "$other_num" -lt "$ticket_num" ] || continue
+
+    other_stage="$(ticket_stage "$other_file")"
+    ticket_project_root_conflict_stage "$other_stage" || continue
+    ticket_uses_project_root_workspace "$other_file" || continue
+
+    while IFS= read -r other_path; do
+      [ -n "$other_path" ] || continue
+      if printf '%s\n' "$current_paths" | grep -Fqx -- "$other_path"; then
+        printf 'tickets_%s:%s\n' "$other_id" "$other_path"
+        found=true
+      fi
+    done < <(ticket_concrete_allowed_paths "$other_file")
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+
+  [ "$found" = "true" ]
+}
+
+shared_allowed_path_blockers_summary() {
+  awk '
+    NF > 0 {
+      if (out != "") out = out ", "
+      out = out $0
+    }
+    END { print out }
+  '
+}
+
+mark_ticket_shared_allowed_path_blocked() {
+  local ticket_file="$1"
+  local worker="$2"
+  local timestamp="$3"
+  local blockers="$4"
+  local summary
+
+  summary="$(printf '%s\n' "$blockers" | shared_allowed_path_blockers_summary)"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): ${summary}. Retry automatically when blockers clear."
+
+  if ! grep -Fq "Runtime auto-blocked: shared_allowed_path_conflict" "$ticket_file"; then
+    append_note "$ticket_file" "Runtime auto-blocked: shared_allowed_path_conflict at ${timestamp}; blockers=${summary}"
+  fi
+}
+
 worktree_mode_disabled() {
   case "${AUTOFLOW_WORKTREE_MODE:-auto}" in
     0|off|OFF|false|FALSE|disabled|DISABLED)
@@ -1044,10 +1162,10 @@ replan_reject_to_todo() {
     "${timestamp} | retry_count=${retry_count} | source=\`${reject_origin}\` | log=\`${verification_log:-pending}\` | reason=${reject_reason}"
 
   replace_scalar_field_in_section "$reject_file" "## Ticket" "Stage" "todo"
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Owner" ""
+  replace_scalar_field_in_section "$reject_file" "## Ticket" "AI" ""
   replace_scalar_field_in_section "$reject_file" "## Ticket" "Claimed By" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Execution Owner" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Verifier Owner" ""
+  replace_scalar_field_in_section "$reject_file" "## Ticket" "Execution AI" ""
+  replace_scalar_field_in_section "$reject_file" "## Ticket" "Verifier AI" ""
   replace_scalar_field_in_section "$reject_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$reject_file" "Worktree" "- Path:
 - Branch:
@@ -1068,6 +1186,53 @@ replan_reject_to_todo() {
   fi
 
   printf '%s' "$target_file"
+}
+
+auto_recover_blocked_ticket() {
+  local ticket_file="$1"
+  local stage worktree_branch worktree_path git_root holder_path conflict_branch timestamp
+  local shared_blockers
+
+  [ -f "$ticket_file" ] || return 1
+  stage="$(ticket_stage "$ticket_file")"
+  [ "$stage" = "blocked" ] || return 1
+
+  timestamp="$(now_iso)"
+  shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
+  if [ -n "$shared_blockers" ]; then
+    return 1
+  fi
+
+  if grep -Fq "shared_allowed_path_conflict" "$ticket_file"; then
+    append_note "$ticket_file" "Auto-recovery at ${timestamp}: shared Allowed Path blockers cleared; retrying claim"
+  fi
+
+  worktree_branch="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Branch")")"
+
+  git_root="$(git_root_path || true)"
+  if [ -n "$git_root" ] && [ -n "$worktree_branch" ]; then
+    holder_path="$(git -C "$git_root" worktree list --porcelain 2>/dev/null \
+      | awk -v branch="refs/heads/${worktree_branch}" '
+          /^worktree / { current=$2 }
+          $0 == "branch " branch { print current; exit }
+        ')"
+    if [ -n "$holder_path" ] && [ "$holder_path" != "$git_root" ] && \
+       (! [ -d "$holder_path" ] || [ "$holder_path" != "$(ticket_worktree_path_for_id "$(extract_numeric_id "$ticket_file")")" ]); then
+      conflict_branch="stale-blocked/$(date -u '+%Y%m%dT%H%M%SZ')-${worktree_branch#autoflow/}"
+      git -C "$git_root" branch -m "$worktree_branch" "$conflict_branch" 2>/dev/null || true
+      append_note "$ticket_file" "Auto-recovery at ${timestamp}: renamed conflicting branch ${worktree_branch} -> ${conflict_branch} (held by ${holder_path})"
+    fi
+  fi
+
+  replace_section_block "$ticket_file" "Worktree" "- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: pending_claim"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "executing"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  append_note "$ticket_file" "Auto-recovery at ${timestamp}: cleared blocked worktree fields, retrying claim"
+  return 0
 }
 
 ensure_ticket_worktree() {
@@ -1733,7 +1898,7 @@ count_execution_load_for_owner() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    execution_owner="$(ticket_scalar_field "$file" "Execution Owner")"
+    execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
     [ "$execution_owner" = "$wanted_owner" ] || continue
     stage="$(ticket_stage "$file")"
     if stage_is_execution_candidate "$stage"; then
@@ -1751,7 +1916,7 @@ count_verification_load_for_owner() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
-    verifier_owner="$(ticket_scalar_field "$file" "Verifier Owner")"
+    verifier_owner="$(ticket_scalar_field "$file" "Verifier AI")"
     [ "$verifier_owner" = "$wanted_owner" ] || continue
     stage="$(ticket_stage "$file")"
     case "${stage:-}" in

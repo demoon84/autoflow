@@ -49,7 +49,7 @@ const ticketFolders = ["backlog", "plan", "todo", "inprogress", "verifier", "don
 const ownerFlowStages = [
   { key: "todo", label: "실행 대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
   { key: "plan", label: "계획 생성", meta: "작업 설계", icon: ClipboardList, tone: "flow-plan" },
-  { key: "inprogress", label: "작업 실행", meta: "구현 진행", icon: Activity, tone: "flow-inprogress" },
+  { key: "inprogress", label: "구현", meta: "구현 진행", icon: Activity, tone: "flow-inprogress" },
   { key: "verifier", label: "검증", meta: "증거 확인", icon: ShieldCheck, tone: "flow-verifier" },
   { key: "done", label: "완료", meta: "통과", icon: CheckCircle2, tone: "flow-done" },
   { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "flow-reject" }
@@ -1639,7 +1639,7 @@ function App() {
               )}
 
             {activeSettingsSection === "knowledge" && (
-              <section className="settings-section" aria-label="Wiki">
+              <section className="settings-section knowledge-split" aria-label="Wiki">
                 <div className="tool-panel knowledge-list-pane">
                   <div className="section-heading compact knowledge-heading">
                     <div className="section-kicker">Knowledge</div>
@@ -2328,10 +2328,7 @@ function RunnerConsole({
                 <div className="runner-topbar">
                   <div className="runner-main">
                     <div className="runner-title-line">
-                      <strong>{runner.id}</strong>
-                      <Badge variant={enabled ? "secondary" : "outline"}>
-                        {displayRunnerRole(runner.role || "runner")}
-                      </Badge>
+                      <strong>{displayWorkflowRunnerId(runner.id)}</strong>
                     </div>
                     <span>
                       {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - 반복 실행 / {intervalLabel}s
@@ -3598,33 +3595,37 @@ function flowStepState(stepKey: OwnerFlowStage["key"], currentKey: OwnerFlowStag
 function runnerStageKey(runner: AutoflowRunner): OwnerFlowStage["key"] {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  const hasActiveTicket = Boolean(runner.activeTicketId);
   const stateText = [runner.activeItem, runner.lastResult, runner.lastLogLine].join(" ").toLowerCase();
 
-  if (status === "failed" || status === "blocked" || /fail|failed|error|reject|blocked|adapter_exit_[1-9]/.test(stateText)) {
+  if (status === "failed" || /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) || /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateText)) {
     return "reject";
   }
 
-  if (/done|pass|complete|adapter_exit_0/.test(stateText)) {
-    return "done";
-  }
-
-  if (/verify|verifier|review/.test(stateText) || role.includes("verifier")) {
-    return "verifier";
-  }
-
-  if (/claim|claimed|execut|inprogress|ticket|owner|todo/.test(stateText) || role.includes("ticket") || role.includes("todo")) {
-    return status === "running" ? "inprogress" : "todo";
-  }
-
-  if (/plan|planner|spec/.test(stateText) || role.includes("plan")) {
-    return "plan";
-  }
-
-  if (status === "running") {
+  if (hasActiveTicket) {
+    if (/^(done|pass|complete|completed)$/.test(activeStage)) return "done";
+    if (/^(verifying|verifier|ready_for_verification|review)$/.test(activeStage)) return "verifier";
+    if (/^(planning|plan)$/.test(activeStage)) return "plan";
+    if (/^(claimed|todo|blocked)$/.test(activeStage)) return "todo";
     return "inprogress";
   }
 
+  if (/\bdone\b|\bpass\b|\bcomplete\b|adapter_exit_0/.test(stateText)) return "done";
+  if (/\bverify\b|\bverifier\b|\breview\b/.test(stateText) || role.includes("verifier")) return "verifier";
+  if (/\bplan\b|\bplanner\b|\bspec\b/.test(stateText) || role.includes("plan")) return "plan";
+
   return "todo";
+}
+
+function runnerHeartbeatStale(runner: AutoflowRunner) {
+  if ((runner.stateStatus || "").toLowerCase() !== "running") return false;
+  if (!runner.lastEventAt) return false;
+  const eventTime = new Date(runner.lastEventAt).getTime();
+  if (Number.isNaN(eventTime)) return false;
+  const ageSec = (Date.now() - eventTime) / 1000;
+  const intervalSec = Number(runner.intervalEffectiveSeconds || runner.intervalSeconds || 60) || 60;
+  return ageSec > Math.max(intervalSec * 3, 180);
 }
 
 function runnerProgressDetail(runner: AutoflowRunner) {
@@ -3713,7 +3714,7 @@ function AiProgressRow({
       ? displayRunnerOption(runner.agent || "codex", normalized.reasoning)
       : "";
   const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
-  const metaLabel = `${displayWorkflowRunnerId(runner.id)} · ${displayRunnerRole(runner.role || "runner")}`;
+  const metaLabel = displayWorkflowRunnerId(runner.id);
 
   return (
     <article className={`ai-progress-row ai-progress-${currentKey}`}>
@@ -3766,6 +3767,11 @@ function AiProgressRow({
           </button>
         ) : null}
         {detailText ? <p title={detailText}>{detailText}</p> : null}
+        {runnerHeartbeatStale(runner) ? (
+          <span className="ai-progress-stale-badge" title="3분 이상 새 이벤트가 없습니다 — 어댑터 락 대기 또는 멈춤 가능성">
+            응답 지연
+          </span>
+        ) : null}
         {eventTime ? <time>마지막 활동: {formatDate(eventTime)}</time> : null}
       </div>
     </article>

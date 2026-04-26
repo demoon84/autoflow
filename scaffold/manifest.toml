@@ -1,0 +1,12 @@
+format = 1
+
+[install]
+default_board_dir = ".autoflow"
+
+[sources]
+board = "scaffold/board"
+host = "scaffold/host/AGENTS.md"
+host_claude = "scaffold/host/CLAUDE.md"
+claude_skills = "integrations/claude/skills"
+codex_skills = "integrations/codex/skills"
+runtime_scripts = "runtime/board-scripts"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Autoflow"
+  short_description: "Draft Autoflow handoff specs"
+  default_prompt: "Use $autoflow to draft and save an approved Autoflow backlog PRD."
