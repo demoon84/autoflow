@@ -34,6 +34,8 @@ $planTicketedCount = 0
 $planDoneCount = 0
 $ticketTodoCount = 0
 $ticketInprogressCount = 0
+$ticketReadyToMergeCount = 0
+$ticketMergeBlockedCount = 0
 $ticketDoneCount = 0
 $ticketPlanningCount = 0
 $ticketClaimedCount = 0
@@ -81,6 +83,8 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   $planDoneCount = (Get-CountPlanStatus -PlanRoot $planRoot -WantedStatus "done") + (Get-CountPlanStatus -PlanRoot (Join-Path $boardRoot "tickets/done") -WantedStatus "done" -Recurse)
   $ticketTodoCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/todo") -Filter "tickets_*.md"
   $ticketInprogressCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/inprogress") -Filter "tickets_*.md"
+  $ticketReadyToMergeCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/ready-to-merge") -Filter "tickets_*.md"
+  $ticketMergeBlockedCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/merge-blocked") -Filter "tickets_*.md"
   $ticketDoneCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/done") -Filter "tickets_*.md" -Recurse
   $ticketPlanningCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "planning"
   $ticketClaimedCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "claimed"
@@ -90,6 +94,8 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   $ticketBlockedCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "blocked"
   $verifyRunCount = 0
   $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/inprogress") -Filter "verify_*.md" -Recurse
+  $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/ready-to-merge") -Filter "verify_*.md" -Recurse
+  $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/merge-blocked") -Filter "verify_*.md" -Recurse
   $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/reject") -Filter "verify_*.md" -Recurse
   $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/done") -Filter "verify_*.md" -Recurse
   $verifyRunCount += Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/runs") -Filter "verify_*.md" -Recurse
@@ -163,4 +169,6 @@ Write-KeyValueLine "metrics_scaffold_present" ([string]$metricsScaffoldPresent).
 Write-KeyValueLine "conversation_scaffold_present" ([string]$conversationScaffoldPresent).ToLowerInvariant()
 Write-KeyValueLine "adapter_scaffold_present" ([string]$adapterScaffoldPresent).ToLowerInvariant()
 Write-KeyValueLine "ticket_planning_count" ([string]$ticketPlanningCount)
+Write-KeyValueLine "ticket_ready_to_merge_count" ([string]$ticketReadyToMergeCount)
+Write-KeyValueLine "ticket_merge_blocked_count" ([string]$ticketMergeBlockedCount)
 Write-KeyValueLine "ticket_owner_active_count" ([string]$ticketInprogressCount)

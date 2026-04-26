@@ -49,7 +49,7 @@ resolve_ticket_file() {
   id="$(normalize_id "$ref" || true)"
   [ -n "$id" ] || return 1
 
-  for state in inprogress todo verifier; do
+  for state in inprogress ready-to-merge todo verifier; do
     candidate="$(ticket_path "$state" "$id")"
     [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
   done
@@ -220,16 +220,25 @@ ticket_path_has_worktree_changes() {
   git -C "$worktree_path" status --porcelain --untracked-files=all -- "$repo_rel_path" | grep -q .
 }
 
-integrate_ticket_worktree() {
+prepare_ticket_worktree_for_merge() {
   local ticket_file="$1"
-  local ticket_id worktree_path worktree_commit integration_status timestamp git_root
-  local allowed_paths add_paths allowed_path conflict_paths cherry_pick_output already_in_project_root
+  local ticket_id worktree_path worktree_commit integration_status timestamp
+  local -a allowed_paths=()
+  local -a add_paths=()
+  local allowed_path already_in_project_root
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
   worktree_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Worktree Commit")")"
   integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
   timestamp="$(now_iso)"
+
+  if [ "$integration_status" = "ready_to_merge" ] && [ -n "$worktree_commit" ]; then
+    printf 'status=ready_to_merge\n'
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'worktree_commit=%s\n' "$worktree_commit"
+    return 0
+  fi
 
   if [ "$integration_status" = "integrated" ] && [ -n "$worktree_commit" ]; then
     printf 'status=already_integrated\n'
@@ -240,7 +249,7 @@ integrate_ticket_worktree() {
 
   if [ -z "$worktree_path" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "no_worktree"
-    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; ticket-owner will commit board-only changes from PROJECT_ROOT."
+    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; queued for merge-bot board-only finalization."
     printf 'status=no_worktree\n'
     printf 'ticket_id=%s\n' "$ticket_id"
     return 0
@@ -250,12 +259,6 @@ integrate_ticket_worktree() {
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "worktree_missing"
     append_note "$ticket_file" "Worktree path was missing during integration at ${timestamp}: ${worktree_path}"
     echo "Worktree is not a git worktree: $worktree_path" >&2
-    return 1
-  fi
-
-  git_root="$(git_root_path || true)"
-  if [ -z "$git_root" ]; then
-    echo "PROJECT_ROOT is not inside a git repository: $PROJECT_ROOT" >&2
     return 1
   fi
 
@@ -272,40 +275,30 @@ integrate_ticket_worktree() {
   fi
 
   add_paths=()
-  conflict_paths=()
   for allowed_path in "${allowed_paths[@]}"; do
     if [ -e "${worktree_path}/${allowed_path}" ] || git -C "$worktree_path" ls-files --error-unmatch -- "$allowed_path" >/dev/null 2>&1; then
       ticket_path_has_worktree_changes "$worktree_path" "$allowed_path" || continue
       add_paths+=("$allowed_path")
-      if ticket_path_has_dirty_project_root_conflict "$ticket_file" "$allowed_path" "$git_root"; then
-        conflict_paths+=("$allowed_path")
-      fi
     else
-      append_note "$ticket_file" "Allowed path was not present in worktree during integration at ${timestamp}, so it was skipped: ${allowed_path}"
+      append_note "$ticket_file" "Allowed path was not present in worktree during merge preparation at ${timestamp}, so it was skipped: ${allowed_path}"
     fi
   done
-
-  if [ "${#conflict_paths[@]}" -gt 0 ]; then
-    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_dirty_scope_conflict"
-    append_note "$ticket_file" "Worktree integration blocked at ${timestamp}: PROJECT_ROOT has conflicting dirty changes in Allowed Paths (${conflict_paths[*]})."
-    printf 'conflicting_allowed_path=%s\n' "${conflict_paths[@]}" >&2
-    echo "PROJECT_ROOT has dirty changes that differ from the ticket worktree inside Allowed Paths. Resolve or isolate them before retrying finish." >&2
-    return 1
-  fi
 
   already_in_project_root=1
   if [ "${#add_paths[@]}" -eq 0 ]; then
     already_in_project_root=0
   fi
-  for allowed_path in "${add_paths[@]}"; do
-    if ! project_root_path_matches_worktree "$ticket_file" "$allowed_path"; then
-      already_in_project_root=0
-      break
-    fi
-  done
+  if [ "${#add_paths[@]}" -gt 0 ]; then
+    for allowed_path in "${add_paths[@]}"; do
+      if ! project_root_path_matches_worktree "$ticket_file" "$allowed_path"; then
+        already_in_project_root=0
+        break
+      fi
+    done
+  fi
   if [ "$already_in_project_root" -eq 1 ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "already_in_project_root"
-    append_note "$ticket_file" "Skipped worktree cherry-pick at ${timestamp}: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes."
+    append_note "$ticket_file" "Queued without worktree commit at ${timestamp}: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes."
     printf 'status=already_in_project_root\n'
     printf 'ticket_id=%s\n' "$ticket_id"
     printf 'worktree_path=%s\n' "$worktree_path"
@@ -319,7 +312,7 @@ integrate_ticket_worktree() {
 
   if git -C "$worktree_path" diff --cached --quiet; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "no_code_changes"
-    append_note "$ticket_file" "No staged code changes found in worktree during integration at ${timestamp}."
+    append_note "$ticket_file" "No staged code changes found in worktree during merge preparation at ${timestamp}."
     printf 'status=no_code_changes\n'
     printf 'ticket_id=%s\n' "$ticket_id"
     printf 'worktree_path=%s\n' "$worktree_path"
@@ -329,28 +322,14 @@ integrate_ticket_worktree() {
   git -C "$worktree_path" commit -m "autoflow ticket ${ticket_id} code snapshot" >/dev/null
   worktree_commit="$(git -C "$worktree_path" rev-parse --verify HEAD)"
 
-  set +e
-  cherry_pick_output="$(git -C "$git_root" cherry-pick --no-commit "$worktree_commit" 2>&1)"
-  if [ "$?" -ne 0 ]; then
-    set -e
-    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
-    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_cherry_pick_conflict"
-    append_note "$ticket_file" "Worktree integration hit a cherry-pick conflict at ${timestamp}: ${worktree_commit}. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying."
-    printf '%s\n' "$cherry_pick_output" >&2
-    echo "Cherry-pick failed. Resolve or abort in PROJECT_ROOT before retrying." >&2
-    return 1
-  fi
-  set -e
-
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "integrated"
-  append_note "$ticket_file" "Integrated worktree commit ${worktree_commit} into PROJECT_ROOT without committing at ${timestamp}; ticket-owner should now include board + code changes in one local commit."
+  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "ready_to_merge"
+  append_note "$ticket_file" "Prepared worktree commit ${worktree_commit} at ${timestamp}; merge-bot should integrate it into PROJECT_ROOT and create the local completion commit."
 
-  printf 'status=integrated\n'
+  printf 'status=ready_to_merge\n'
   printf 'ticket_id=%s\n' "$ticket_id"
   printf 'worktree_path=%s\n' "$worktree_path"
   printf 'worktree_commit=%s\n' "$worktree_commit"
-  printf 'project_root=%s\n' "$PROJECT_ROOT"
 }
 
 stage_ticket_commit_scope() {
@@ -573,6 +552,32 @@ auto_run_wiki_maintainer() {
   printf '%s\n' "$wiki_output" | prefix_wiki_maintainer_output
 }
 
+move_run_file_to_ready_to_merge() {
+  local source_run_file="$1"
+  local ticket_file="$2"
+  local target_run_file timestamp_slug
+
+  target_run_file="$(ready_to_merge_run_path_for_ticket_file "$ticket_file")"
+  if [ "$source_run_file" = "$target_run_file" ]; then
+    printf '%s' "$source_run_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_run_file")"
+  if [ -f "$target_run_file" ]; then
+    if cmp -s "$source_run_file" "$target_run_file"; then
+      rm -f "$source_run_file"
+      printf '%s' "$target_run_file"
+      return 0
+    fi
+    timestamp_slug="$(printf '%s' "$(now_iso)" | tr -d ':-')"
+    target_run_file="${target_run_file%.md}.${timestamp_slug}.duplicate.md"
+  fi
+
+  mv "$source_run_file" "$target_run_file"
+  printf '%s' "$target_run_file"
+}
+
 ticket_file="$(resolve_ticket_file "$ticket_ref" || true)"
 if [ -z "$ticket_file" ] || [ ! -f "$ticket_file" ]; then
   fail_or_idle "Ticket file not found: ${ticket_ref}" "ticket_owner_finish_ticket_missing"
@@ -580,6 +585,10 @@ fi
 
 ticket_id="$(extract_numeric_id "$ticket_file")"
 run_file="$(pending_run_path "$ticket_id")"
+ready_run_file="$(ready_to_merge_run_path_for_ticket_file "$ticket_file")"
+if [ ! -f "$run_file" ] && [ -f "$ready_run_file" ]; then
+  run_file="$ready_run_file"
+fi
 if [ ! -f "$run_file" ]; then
   run_file="$(ensure_runs_file "$ticket_id")"
 fi
@@ -608,50 +617,48 @@ case "$outcome" in
       exit 0
     fi
 
-    integration_output="$(integrate_ticket_worktree "$ticket_file" 2>&1)" || {
-      integration_output_single_line="$(printf '%s' "$integration_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+    merge_prep_output="$(prepare_ticket_worktree_for_merge "$ticket_file" 2>&1)" || {
+      merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-      append_note "$ticket_file" "AI pass finish blocked during integration at ${timestamp}: ${integration_output_single_line}"
+      append_note "$ticket_file" "AI pass finish blocked during merge preparation at ${timestamp}: ${merge_prep_output_single_line}"
       printf 'status=blocked\n'
-      printf 'reason=integration_failed\n'
+      printf 'reason=merge_preparation_failed\n'
       printf 'ticket=%s\n' "$ticket_file"
-      printf '%s\n' "$integration_output"
+      printf '%s\n' "$merge_prep_output"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
       exit 0
     }
 
-    done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
-    mkdir -p "$(dirname "$done_target")"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "done"
+    ready_target="$(ready_to_merge_ticket_path_for_ticket_file "$ticket_file")"
+    mkdir -p "$(dirname "$ready_target")"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready-to-merge"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-    replace_section_block "$ticket_file" "Next Action" "- 완료됨: ticket-owner pass 처리와 evidence log 기록 완료."
-    append_note "$ticket_file" "AI ${display_id} marked pass at ${timestamp}."
-    if [ "$ticket_file" != "$done_target" ]; then
-      mv "$ticket_file" "$done_target"
-      ticket_file="$done_target"
+    replace_section_block "$ticket_file" "Next Action" "- Next: merge-bot should process this ticket from \`tickets/ready-to-merge/\`, integrate the prepared worktree commit into PROJECT_ROOT, archive evidence, and create the local completion commit."
+    append_note "$ticket_file" "AI ${display_id} marked verification pass and queued merge at ${timestamp}."
+    run_file="$(move_run_file_to_ready_to_merge "$run_file" "$ticket_file")"
+    replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
+- Log file: pending merge-bot completion
+- Result: passed by ${display_id} at ${timestamp}"
+    if [ "$ticket_file" != "$ready_target" ]; then
+      mv "$ticket_file" "$ready_target"
+      ticket_file="$ready_target"
     fi
 
-    log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
-    wiki_output="$(auto_update_wiki)"
-    wiki_maintainer_output="$(auto_run_wiki_maintainer)"
-    commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
     clear_active_ticket_context_record || true
     clear_runner_active_state
 
-    printf 'status=done\n'
+    printf 'status=ready_to_merge\n'
     printf 'outcome=pass\n'
     printf 'ticket=%s\n' "$ticket_file"
     printf 'ticket_id=%s\n' "$ticket_id"
-    printf 'run=%s\n' "$(done_run_path_for_ticket_file "$ticket_file")"
-    printf '%s\n' "$integration_output"
-    printf '%s\n' "$log_output"
-    printf '%s\n' "$wiki_output"
-    printf '%s\n' "$wiki_maintainer_output"
-    printf '%s\n' "$commit_output"
+    printf 'run=%s\n' "$run_file"
+    printf '%s\n' "$merge_prep_output"
+    printf 'next_action=Run scripts/merge-ready-ticket.sh %s with AUTOFLOW_ROLE=merge, or let a merge-bot runner process tickets/ready-to-merge.\n' "$ticket_id"
+    printf 'commit_status=not_committed_waiting_for_merge_bot\n'
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     ;;

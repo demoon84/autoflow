@@ -1,0 +1,27 @@
+diff --git a/README.md b/README.md
+index 9915a73..f3082e3 100644
+--- a/README.md
++++ b/README.md
+@@ -42,6 +42,9 @@ tetris/
+ - 설치용 CLI 엔트리포인트
+ - 로컬 프로젝트에 생성되는 `.autoflow/` 보드
+ 
++Codex plugin packaging 은 제거 대상이 아니라 secondary / deferred 경로다.
++즉 공개 배포는 public git repository + installer CLI + project-local generated board 를 우선하고, plugin publication 은 나중에 검토하는 보조 옵션으로 둔다.
++
+ 이 방식의 장점:
+ 
+ - 공개 배포가 쉽다.
+diff --git a/rules/README.md b/rules/README.md
+index 0f3fc94..e6ee1a7 100644
+--- a/rules/README.md
++++ b/rules/README.md
+@@ -28,3 +28,8 @@
+ 1. `reference/backlog.md`
+ 2. `reference/plan.md`
+ 3. `rules/verifier/README.md`
++
++배포 메모:
++
++- 공개 배포의 1순위는 public git repository + installer CLI 다.
++- Codex plugin packaging 은 secondary / deferred 경로로만 취급한다.

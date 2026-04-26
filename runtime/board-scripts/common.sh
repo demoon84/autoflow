@@ -223,7 +223,7 @@ ticket_uses_project_root_workspace() {
 
 ticket_project_root_conflict_stage() {
   case "${1:-}" in
-    planning|claimed|executing|ready_for_verification|verifying|blocked)
+    planning|claimed|executing|ready_for_verification|verifying|blocked|ready-to-merge|merge-blocked)
       return 0
       ;;
     *)
@@ -277,7 +277,11 @@ ticket_shared_allowed_path_blockers() {
         found=true
       fi
     done < <(ticket_concrete_allowed_paths "$other_file")
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(
+    list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md'
+    list_matching_files "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md'
+    list_matching_files "${BOARD_ROOT}/tickets/merge-blocked" 'tickets_*.md'
+  )
 
   [ "$found" = "true" ]
 }
@@ -1530,6 +1534,38 @@ verification_note_name_for_ticket() {
 pending_run_path() {
   local ticket_id="$1"
   printf '%s/tickets/inprogress/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
+}
+
+ready_to_merge_ticket_path_for_ticket_file() {
+  local ticket_file="$1"
+  local ticket_id
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  printf '%s/tickets/ready-to-merge/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+}
+
+ready_to_merge_run_path_for_ticket_file() {
+  local ticket_file="$1"
+  local ticket_id
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  printf '%s/tickets/ready-to-merge/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
+}
+
+merge_blocked_ticket_path_for_ticket_file() {
+  local ticket_file="$1"
+  local ticket_id
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  printf '%s/tickets/merge-blocked/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+}
+
+merge_blocked_run_path_for_ticket_file() {
+  local ticket_file="$1"
+  local ticket_id
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  printf '%s/tickets/merge-blocked/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 done_dir_for_project_key() {

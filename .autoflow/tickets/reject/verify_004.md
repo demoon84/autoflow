@@ -26,32 +26,34 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T04:04:03Z
-- Finished At: 2026-04-26T04:04:04Z
+- Started At: 2026-04-26T07:42:00Z
+- Finished At: 2026-04-26T07:42:03Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Exit Code: 127
+- Exit Code: 2
 
 ## Output
 ### stdout
 
 ```text
-
+src/renderer/main.tsx(2770,18): error TS2339: Property 'conversationPreview' does not exist on type 'AutoflowRunner'.
+src/renderer/main.tsx(2930,5): error TS2353: Object literal may only specify known properties, and 'autoflow_token_usage_count' does not exist in type 'AutoflowMetricSnapshot'.
+src/renderer/main.tsx(3881,46): error TS2339: Property 'createdAt' does not exist on type 'WorkflowFileEntry'.
 ```
 
 ### stderr
 
 ```text
-bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory
+
 ```
 
 ## Evidence
 - Result: failed
-- Exit Code: 127
-- Completed At: 2026-04-26T04:04:04Z
+- Exit Code: 2
+- Completed At: 2026-04-26T07:42:03Z
 
 ## Findings
-- blocker: Verification command exited 127
+- blocker: Verification command exited 2
 - warning:
 
 ## Blockers

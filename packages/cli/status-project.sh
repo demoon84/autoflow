@@ -25,6 +25,8 @@ plan_ticketed_count="0"
 plan_done_count="0"
 ticket_todo_count="0"
 ticket_inprogress_count="0"
+ticket_ready_to_merge_count="0"
+ticket_merge_blocked_count="0"
 ticket_done_count="0"
 ticket_planning_count="0"
 ticket_claimed_count="0"
@@ -77,6 +79,8 @@ if [ -d "$board_root" ]; then
   plan_done_count="$(( $(count_plan_status "$(plan_root_path "$board_root")" "done") + $(count_plan_status_recursive "${board_root}/tickets/done" "done") ))"
   ticket_todo_count="$(count_matching_files "${board_root}/tickets/todo" 'tickets_*.md')"
   ticket_inprogress_count="$(count_matching_files "${board_root}/tickets/inprogress" 'tickets_*.md')"
+  ticket_ready_to_merge_count="$(count_matching_files "${board_root}/tickets/ready-to-merge" 'tickets_*.md')"
+  ticket_merge_blocked_count="$(count_matching_files "${board_root}/tickets/merge-blocked" 'tickets_*.md')"
   ticket_done_count="$(count_matching_files "${board_root}/tickets/done" 'tickets_*.md')"
   ticket_planning_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "planning")"
   ticket_claimed_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "claimed")"
@@ -86,6 +90,8 @@ if [ -d "$board_root" ]; then
   ticket_blocked_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "blocked")"
   verify_run_count="$(( \
     $(count_matching_files "${board_root}/tickets/inprogress" 'verify_*.md') + \
+    $(count_matching_files "${board_root}/tickets/ready-to-merge" 'verify_*.md') + \
+    $(count_matching_files "${board_root}/tickets/merge-blocked" 'verify_*.md') + \
     $(count_matching_files "${board_root}/tickets/reject" 'verify_*.md') + \
     $(count_matching_files "${board_root}/tickets/done" 'verify_*.md') + \
     $(count_matching_files "${board_root}/tickets/runs" 'verify_*.md') \
@@ -162,4 +168,6 @@ printf 'metrics_scaffold_present=%s\n' "$metrics_scaffold_present"
 printf 'conversation_scaffold_present=%s\n' "$conversation_scaffold_present"
 printf 'adapter_scaffold_present=%s\n' "$adapter_scaffold_present"
 printf 'ticket_planning_count=%s\n' "$ticket_planning_count"
+printf 'ticket_ready_to_merge_count=%s\n' "$ticket_ready_to_merge_count"
+printf 'ticket_merge_blocked_count=%s\n' "$ticket_merge_blocked_count"
 printf 'ticket_owner_active_count=%s\n' "$ticket_inprogress_count"

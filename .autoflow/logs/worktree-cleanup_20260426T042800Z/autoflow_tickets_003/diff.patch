@@ -1,0 +1,354 @@
+diff --git a/apps/desktop/src/renderer/main.tsx b/apps/desktop/src/renderer/main.tsx
+index 16f3bad..d88f7c3 100644
+--- a/apps/desktop/src/renderer/main.tsx
++++ b/apps/desktop/src/renderer/main.tsx
+@@ -21,7 +21,8 @@ import {
+   Square,
+   Terminal,
+   Trash2,
+-  TriangleAlert
++  TriangleAlert,
++  X
+ } from "lucide-react";
+ import { Badge } from "@/components/ui/badge";
+ import { Button } from "@/components/ui/button";
+@@ -544,6 +545,8 @@ function App() {
+   const [selectedLogPath, setSelectedLogPath] = React.useState("");
+   const [boardSearch, setBoardSearch] = React.useState("");
+   const [logPreview, setLogPreview] = React.useState<AutoflowFileContentResult | null>(null);
++  const [logSelectionSource, setLogSelectionSource] = React.useState<"general" | "knowledge" | "">("");
++  const [isKnowledgePreviewOpen, setIsKnowledgePreviewOpen] = React.useState(false);
+   const [isReadingLog, setIsReadingLog] = React.useState(false);
+   const [logError, setLogError] = React.useState("");
+   const [setupError, setSetupError] = React.useState("");
+@@ -666,7 +669,9 @@ function App() {
+     const selectedExists = selectableBoardFiles(board).some((file) => file.filePath === selectedLogPath);
+     if (!selectedExists) {
+       setSelectedLogPath("");
++      setLogSelectionSource("");
+       setLogPreview(null);
++      setIsKnowledgePreviewOpen(false);
+       setLogError("");
+     }
+   }, [board, selectedLogPath]);
+@@ -881,11 +886,21 @@ function App() {
+   );
+ 
+   const readLog = React.useCallback(
+-    async (filePath: string) => {
++    async (
++      filePath: string,
++      readOptions?: { openKnowledgePreview?: boolean; source?: "general" | "knowledge" }
++    ) => {
+       if (!options.projectRoot || !filePath) {
+         return;
+       }
+ 
++      const nextSource = readOptions?.source || "general";
++      setLogSelectionSource(nextSource);
++      if (nextSource === "knowledge" && readOptions?.openKnowledgePreview) {
++        setIsKnowledgePreviewOpen(true);
++      } else if (nextSource !== "knowledge") {
++        setIsKnowledgePreviewOpen(false);
++      }
+       setSelectedLogPath(filePath);
+       setIsReadingLog(true);
+       setLogError("");
+@@ -908,6 +923,32 @@ function App() {
+     [options]
+   );
+ 
++  const readGeneralLog = React.useCallback(
++    (filePath: string) => {
++      void readLog(filePath, { source: "general" });
++    },
++    [readLog]
++  );
++
++  const readKnowledgeLog = React.useCallback(
++    (filePath: string) => {
++      void readLog(filePath, { source: "knowledge", openKnowledgePreview: true });
++    },
++    [readLog]
++  );
++
++  const closeKnowledgePreview = React.useCallback(() => {
++    setIsKnowledgePreviewOpen(false);
++  }, []);
++
++  const reopenKnowledgePreview = React.useCallback(() => {
++    if (!selectedLogPath || logSelectionSource !== "knowledge") {
++      return;
++    }
++
++    setIsKnowledgePreviewOpen(true);
++  }, [logSelectionSource, selectedLogPath]);
++
+   const runRunner = React.useCallback(
+     async (runner: AutoflowRunner, dryRun = false) => {
+       if (!options.projectRoot || runnerActionKey) {
+@@ -932,13 +973,13 @@ function App() {
+         await loadBoard();
+         const artifactPath = runArtifactPath(result.stdout);
+         if (artifactPath) {
+-          await readLog(artifactPath);
++          readGeneralLog(artifactPath);
+         }
+       } finally {
+         setRunnerActionKey("");
+       }
+     },
+-    [loadBoard, options, readLog, recordRunnerTerminal, runnerActionKey]
++    [loadBoard, options, readGeneralLog, recordRunnerTerminal, runnerActionKey]
+   );
+ 
+   const updateRunnerDraft = React.useCallback((runnerId: string, field: keyof RunnerDraft, value: string) => {
+@@ -1026,13 +1067,13 @@ function App() {
+         await loadBoard();
+         const updatedFile = outputValue(result.stdout, "updated_file.1");
+         if (updatedFile) {
+-          await readLog(updatedFile);
++          readKnowledgeLog(updatedFile);
+         }
+       } finally {
+         setWikiActionKey("");
+       }
+     },
+-    [loadBoard, options, readLog, recordRunnerTerminal, wikiActionKey]
++    [loadBoard, options, readKnowledgeLog, recordRunnerTerminal, wikiActionKey]
+   );
+ 
+   const writeMetricsSnapshot = React.useCallback(async () => {
+@@ -1053,12 +1094,12 @@ function App() {
+       await loadBoard();
+       const snapshotFile = outputValue(result.stdout, "snapshot_file");
+       if (snapshotFile) {
+-        await readLog(snapshotFile);
++        readGeneralLog(snapshotFile);
+       }
+     } finally {
+       setMetricsActionKey("");
+     }
+-  }, [loadBoard, metricsActionKey, options, readLog, recordRunnerTerminal]);
++  }, [loadBoard, metricsActionKey, options, readGeneralLog, recordRunnerTerminal]);
+ 
+   const boardExists = Boolean(board?.exists);
+   const ticketTotal = countTickets(board);
+@@ -1110,7 +1151,7 @@ function App() {
+           onAddRole={createRunner}
+           onRemove={removeRunner}
+           onArtifacts={listRunnerArtifacts}
+-          onReadLog={readLog}
++          onReadLog={readGeneralLog}
+           onDraftChange={updateRunnerDraft}
+           onConfigure={saveRunnerConfig}
+           onRun={runRunner}
+@@ -1121,7 +1162,7 @@ function App() {
+           actionKey={runnerActionKey || (wikiActionKey ? `wiki:${wikiActionKey}` : metricsActionKey ? "metrics:write" : "")}
+           history={runnerTerminalHistory}
+           onSelect={setRunnerTerminal}
+-          onReadLog={readLog}
++          onReadLog={readGeneralLog}
+         />
+ 
+         <section className="board-section" aria-label="코덱스 작업 흐름">
+@@ -1133,7 +1174,7 @@ function App() {
+               {ticketTotal}개 파일
+             </Badge>
+           </div>
+-          <TicketBoard board={board} selectedPath={selectedLogPath} onSelect={readLog} />
++          <TicketBoard board={board} selectedPath={selectedLogPath} onSelect={readGeneralLog} />
+         </section>
+ 
+         <section className="lower-grid" aria-label="코덱스 진행 로그와 스냅샷">
+@@ -1145,7 +1186,7 @@ function App() {
+               </div>
+               <Clock3 className="h-4 w-4 text-muted-foreground" />
+             </div>
+-            <LogList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
++            <LogList board={board} selectedPath={selectedLogPath} onSelect={readGeneralLog} />
+           </div>
+ 
+           <div className="tool-panel">
+@@ -1203,9 +1244,40 @@ function App() {
+               </div>
+             </div>
+             {wikiError ? <div className="knowledge-error">{wikiError}</div> : null}
+-            <div className="knowledge-stack">
+-              <WikiList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+-              <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
++            <div className={`knowledge-layout${isKnowledgePreviewOpen ? " knowledge-layout-split" : ""}`}>
++              <div className="knowledge-stack">
++                {!isKnowledgePreviewOpen && logSelectionSource === "knowledge" && selectedLogPath ? (
++                  <div className="knowledge-preview-toggle-row">
++                    <Button
++                      type="button"
++                      variant="outline"
++                      size="sm"
++                      className="knowledge-preview-toggle"
++                      onClick={reopenKnowledgePreview}
++                    >
++                      미리보기 열기
++                    </Button>
++                  </div>
++                ) : null}
++                <WikiList
++                  board={board}
++                  selectedPath={selectedLogPath}
++                  onSelect={readKnowledgeLog}
++                />
++                <HandoffList
++                  board={board}
++                  selectedPath={selectedLogPath}
++                  onSelect={readKnowledgeLog}
++                />
++              </div>
++              {isKnowledgePreviewOpen && logSelectionSource === "knowledge" ? (
++                <LogPreview
++                  preview={logPreview}
++                  isLoading={isReadingLog}
++                  error={logError}
++                  onClose={closeKnowledgePreview}
++                />
++              ) : null}
+             </div>
+           </div>
+ 
+@@ -1243,9 +1315,9 @@ function App() {
+               query={boardSearch}
+               selectedPath={selectedLogPath}
+               onQueryChange={setBoardSearch}
+-              onSelect={readLog}
++              onSelect={readGeneralLog}
+             />
+-            <MetricsHistory board={board} selectedPath={selectedLogPath} onSelect={readLog} />
++            <MetricsHistory board={board} selectedPath={selectedLogPath} onSelect={readGeneralLog} />
+             <StopHookPanel
+               board={board}
+               actionKey={stopHookActionKey}
+@@ -1259,7 +1331,11 @@ function App() {
+               onControl={controlWatcher}
+             />
+             <DoctorPanel board={board} />
+-            <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
++            <LogPreview
++              preview={logSelectionSource === "general" ? logPreview : null}
++              isLoading={logSelectionSource === "general" ? isReadingLog : false}
++              error={logSelectionSource === "general" ? logError : ""}
++            />
+           </div>
+         </section>
+       </main>
+@@ -2386,11 +2462,13 @@ function HandoffList({
+ function LogPreview({
+   preview,
+   isLoading,
+-  error
++  error,
++  onClose
+ }: {
+   preview: AutoflowFileContentResult | null;
+   isLoading: boolean;
+   error: string;
++  onClose?: () => void;
+ }) {
+   return (
+     <div className="log-preview">
+@@ -2402,6 +2480,19 @@ function LogPreview({
+             일부만 표시
+           </Badge>
+         ) : null}
++        {onClose ? (
++          <Button
++            type="button"
++            variant="ghost"
++            size="icon"
++            className="log-preview-close"
++            onClick={onClose}
++            aria-label="로그 미리보기 닫기"
++            title="로그 미리보기 닫기"
++          >
++            <X className="h-4 w-4" />
++          </Button>
++        ) : null}
+       </div>
+       {error ? <div className="log-preview-error">{error}</div> : null}
+       {!error && preview ? <pre>{preview.content || "(비어 있음)"}</pre> : null}
+diff --git a/apps/desktop/src/renderer/styles.css b/apps/desktop/src/renderer/styles.css
+index 5378075..f9cd88e 100644
+--- a/apps/desktop/src/renderer/styles.css
++++ b/apps/desktop/src/renderer/styles.css
+@@ -974,6 +974,34 @@ pre {
+   padding-bottom: 10px;
+ }
+ 
++.knowledge-layout {
++  display: grid;
++  min-height: 0;
++}
++
++.knowledge-layout-split {
++  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
++  gap: 10px;
++  padding: 0 10px 10px;
++}
++
++.knowledge-layout-split .knowledge-stack {
++  min-width: 0;
++  padding-bottom: 0;
++}
++
++.knowledge-preview-toggle-row {
++  display: flex;
++  justify-content: flex-start;
++}
++
++.knowledge-preview-toggle {
++  height: 30px !important;
++  border-color: oklch(0.82 0.018 250) !important;
++  background: oklch(0.985 0.002 250) !important;
++  color: oklch(0.32 0.024 255) !important;
++}
++
+ .knowledge-actions {
+   display: flex;
+   align-items: center;
+@@ -1407,6 +1435,14 @@ pre {
+   padding: 12px 14px 14px;
+ }
+ 
++.knowledge-layout-split .log-preview {
++  min-height: 0;
++  border: 1px solid oklch(0.86 0.014 250);
++  border-radius: 10px;
++  background: var(--card);
++  padding: 12px;
++}
++
+ .log-preview-header {
+   display: flex;
+   align-items: center;
+@@ -1436,6 +1472,12 @@ pre {
+   background: var(--card);
+ }
+ 
++.log-preview-close {
++  width: 28px !important;
++  height: 28px !important;
++  color: var(--muted-foreground) !important;
++}
++
+ .log-preview pre {
+   max-height: 284px;
+   margin: 10px 0 0;
+@@ -1611,6 +1653,10 @@ pre {
+     grid-template-columns: minmax(220px, 0.74fr) minmax(220px, 0.76fr) minmax(320px, 1fr);
+   }
+ 
++  .knowledge-layout-split {
++    grid-template-columns: minmax(0, 1fr);
++  }
++
+   .project-switcher {
+     grid-template-columns: 160px minmax(300px, 1fr) auto;
+     gap: 10px;

@@ -1,6 +1,9 @@
 # Autoflow runner configuration.
 #
-# The default runner owns one ticket from local planning through verification.
+# Ships with a fixed set of four ticket-owner AIs plus the system roles
+# (merge-bot, wiki-maintainer) the runtime depends on. The desktop AI 관리
+# page only exposes the ticket-owner runners; add/remove of AIs is disabled
+# by design — edit this file directly if a different layout is required.
 # Change agent/model fields to claude, opencode, gemini, shell, or a custom
 # command when Codex CLI is not the desired local runner.
 
@@ -12,5 +15,60 @@ model = ""
 reasoning = ""
 mode = "one-shot"
 interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-2"
+role = "ticket-owner"
+agent = "codex"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-3"
+role = "ticket-owner"
+agent = "codex"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "owner-4"
+role = "ticket-owner"
+agent = "codex"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "wiki-maintainer-1"
+role = "wiki-maintainer"
+agent = "codex"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 60
+enabled = false
+command = ""
+
+[[runners]]
+id = "merge-1"
+role = "merge-bot"
+agent = "shell"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 30
 enabled = true
 command = ""

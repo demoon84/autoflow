@@ -250,9 +250,21 @@ ticket_owner_hook_reason() {
   return 1
 }
 
+merge_hook_reason() {
+  local ready_file
+
+  ready_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
+  if [ -n "$ready_file" ]; then
+    printf 'merge-bot work remains: ready-to-merge ticket %s is waiting.' "$(basename "$ready_file")"
+    return 0
+  fi
+
+  return 1
+}
+
 compact_tick_context() {
   case "${hook_role:-}" in
-    ticket-owner|ticket|owner|todo|verifier)
+    ticket-owner|ticket|owner|todo|verifier|merge|merge-bot)
       clear_active_ticket_context_record >/dev/null 2>&1 || true
       ;;
   esac
@@ -281,6 +293,9 @@ case "$hook_role" in
     ;;
   verifier)
     reason="$(verifier_hook_reason || true)"
+    ;;
+  merge|merge-bot)
+    reason="$(merge_hook_reason || true)"
     ;;
   *)
     exit 0

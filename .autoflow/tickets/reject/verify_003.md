@@ -26,25 +26,19 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:07:15Z
-- Finished At: 2026-04-26T03:07:15Z
+- Started At: 2026-04-26T05:54:03Z
+- Finished At: 2026-04-26T05:54:08Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Exit Code: 1
+- Exit Code: 0
 
 ## Output
 ### stdout
 
 ```text
-
-[41m                                                                               [0m
-[41m[37m                This is not the tsc command you are looking for                [0m
-[41m                                                                               [0m
-
-To get access to the TypeScript compiler, [34mtsc[0m, from the command line either:
-
-- Use [1mnpm install typescript[0m to first add TypeScript to your project [1mbefore[0m using npx
-- Use [1myarn[0m to avoid accidentally running code from un-installed packages
+status=ok
+project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.XPDiFxNVto
+commit_hash=09e9ed2addfbb8e60befb464d129b827008cee5c
 ```
 
 ### stderr
@@ -54,12 +48,12 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 ```
 
 ## Evidence
-- Result: failed
-- Exit Code: 1
-- Completed At: 2026-04-26T03:07:15Z
+- Result: passed
+- Exit Code: 0
+- Completed At: 2026-04-26T05:54:08Z
 
 ## Findings
-- blocker: Verification command exited 1
+- blocker:
 - warning:
 
 ## Blockers
@@ -78,4 +72,4 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 - [x] spec reference confirmed
 - [x] allowed paths respected by ticket scope
 - [x] implementation completed or intentionally unchanged
-- [ ] automated verification passed
+- [x] automated verification passed

@@ -1,0 +1,12 @@
+ M README.md
+ M agents/verifier-agent.md
+ M autoflow/AGENTS.md
+ M autoflow/README.md
+ M autoflow/reference/README.md
+ M autoflow/reference/logs.md
+ M autoflow/reference/plan.md
+ M autoflow/reference/tickets-board.md
+ M scripts/runtime/run-hook.ps1
+ M scripts/runtime/run-hook.sh
+ M templates/board/AGENTS.md
+ M templates/board/README.md

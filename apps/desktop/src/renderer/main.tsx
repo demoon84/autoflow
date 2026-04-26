@@ -26,7 +26,6 @@ import {
   ShieldCheck,
   Square,
   Terminal,
-  Trash2,
   TriangleAlert,
   PieChart,
   TrendingUp,
@@ -101,21 +100,16 @@ const runnerOptionLabels: Record<string, Record<string, string>> = {
 const runnerModeOptions = ["one-shot", "loop", "watch"] as const;
 const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
-const runnerRoleOptions = [
-  { role: "ticket-owner", label: "AI" }
-] as const;
 
 const settingsNavigation = [
   { key: "progress", label: "작업 흐름", icon: Workflow },
-  { key: "kanban", label: "티켓 보드", icon: KanbanSquare },
+  { key: "kanban", label: "티켓 정보", icon: KanbanSquare },
   { key: "ai", label: "AI 관리", icon: Laptop },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
-  { key: "snapshot", label: "처리 지표", icon: BarChart3 },
-  { key: "automation", label: "자동화 상태", icon: Activity }
+  { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
-type RunnerRole = (typeof runnerRoleOptions)[number]["role"];
 
 type RunnerDraft = {
   agent: string;
@@ -557,35 +551,8 @@ function runnerStatusTone(status: string) {
   return "runner-status-idle";
 }
 
-function runnerIdPrefix(role: string) {
-  if (role === "ticket-owner" || role === "owner" || role === "ticket") {
-    return "owner";
-  }
-
-  if (role === "wiki-maintainer") {
-    return "wiki";
-  }
-
-  return role || "runner";
-}
-
 function runnerIsEnabled(value: string) {
   return value ? value === "true" : true;
-}
-
-function nextRunnerId(runners: AutoflowRunner[], role: string) {
-  const prefix = runnerIdPrefix(role);
-  const matcher = new RegExp(`^${prefix}-(\\d+)$`);
-  let max = 0;
-
-  for (const runner of runners) {
-    const match = runner.id.match(matcher);
-    if (match) {
-      max = Math.max(max, Number.parseInt(match[1], 10));
-    }
-  }
-
-  return `${prefix}-${max + 1}`;
 }
 
 function recentLogs(board: AutoflowBoardSnapshot | null): DisplayLog[] {
@@ -809,10 +776,6 @@ function App() {
   const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
-  const [stopHookActionKey, setStopHookActionKey] = React.useState("");
-  const [stopHookError, setStopHookError] = React.useState("");
-  const [watcherActionKey, setWatcherActionKey] = React.useState("");
-  const [watcherError, setWatcherError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [recentProjects, setRecentProjects] = React.useState(() => readRecentProjects(projectRoot));
   const [projectMenuOpen, setProjectMenuOpen] = React.useState(false);
@@ -821,11 +784,8 @@ function App() {
     if (stored === "logs") {
       return "snapshot";
     }
-    if (stored === "general") {
-      return "automation";
-    }
-    if (stored === "stop-hook" || stored === "watcher" || stored === "doctor") {
-      return "automation";
+    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor") {
+      return "progress";
     }
     return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "progress";
   });
@@ -886,8 +846,6 @@ function App() {
         setRunnerError("");
         setWikiError("");
         setMetricsError("");
-        setStopHookError("");
-        setWatcherError("");
         return;
       }
 
@@ -1233,126 +1191,6 @@ function App() {
     [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKey, runnerDrafts, selectRunner]
   );
 
-  const controlStopHook = React.useCallback(
-    async (action: "install" | "remove" | "status") => {
-      if (!options.projectRoot || stopHookActionKey) {
-        return;
-      }
-
-      setStopHookActionKey(action);
-      setStopHookError("");
-      try {
-        const result = await window.autoflow.controlStopHook({
-          action,
-          ...options
-        });
-        if (!result.ok) {
-          setStopHookError(result.stderr || result.stdout || "중단 방지 훅 작업에 실패했습니다.");
-        }
-
-        await loadBoard();
-      } finally {
-        setStopHookActionKey("");
-      }
-    },
-    [loadBoard, options, stopHookActionKey]
-  );
-
-  const controlWatcher = React.useCallback(
-    async (action: "start" | "stop" | "status") => {
-      if (!options.projectRoot || watcherActionKey) {
-        return;
-      }
-
-      setWatcherActionKey(action);
-      setWatcherError("");
-      try {
-        const result = await window.autoflow.controlWatcher({
-          action,
-          ...options
-        });
-        if (!result.ok) {
-          setWatcherError(result.stderr || result.stdout || "파일 감시기 작업에 실패했습니다.");
-        }
-
-        await loadBoard();
-      } finally {
-        setWatcherActionKey("");
-      }
-    },
-    [loadBoard, options, watcherActionKey]
-  );
-
-  const createRunner = React.useCallback(
-    async (role: RunnerRole) => {
-      if (!options.projectRoot || runnerActionKey) {
-        return;
-      }
-
-      const runnerId = nextRunnerId(board?.runners || [], role);
-      const actionKey = `add:${role}`;
-      selectRunner(runnerId);
-      setRunnerActionKey(actionKey);
-      setRunnerError("");
-      try {
-        const normalized = normalizeRunnerSelections("codex", "", "", installedAgentProfiles);
-        const result = await window.autoflow.createRunner({
-          runnerId,
-          role,
-          ...options,
-          config: {
-            agent: "codex",
-            model: normalized.model,
-            reasoning: normalized.reasoning,
-            mode: "loop",
-            interval_seconds: "60",
-            enabled: "true"
-          }
-        });
-        if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "AI 추가에 실패했습니다.");
-        }
-
-        await loadBoard();
-      } finally {
-        setRunnerActionKey("");
-      }
-    },
-    [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKey, selectRunner]
-  );
-
-  const removeRunner = React.useCallback(
-    async (runner: AutoflowRunner) => {
-      if (!options.projectRoot || runnerActionKey) {
-        return;
-      }
-
-      if (!window.confirm(`${runner.id} AI를 삭제할까요?`)) {
-        return;
-      }
-
-      const actionKey = `remove:${runner.id}`;
-      selectRunner(runner.id);
-      setRunnerActionKey(actionKey);
-      setRunnerError("");
-      try {
-        const result = await window.autoflow.controlRunner({
-          action: "remove",
-          runnerId: runner.id,
-          ...options
-        });
-        if (!result.ok) {
-          setRunnerError(result.stderr || result.stdout || "AI 삭제에 실패했습니다.");
-        }
-
-        await loadBoard();
-      } finally {
-        setRunnerActionKey("");
-      }
-    },
-    [loadBoard, options, runnerActionKey, selectRunner]
-  );
-
   const readLog = React.useCallback(
     async (filePath: string) => {
       if (!options.projectRoot || !filePath) {
@@ -1607,25 +1445,21 @@ function App() {
           </aside>
 
           <section
-            className={`settings-content${activeSettingsSection === "progress" ? " settings-content-progress" : ""}`}
+            className="settings-content settings-content-progress"
             aria-label={`${selectedSettingsItem.label} 화면`}
           >
             <div className="settings-content-header">
               <div className="settings-title-group">
                 <h1>{selectedSettingsItem.label}</h1>
               </div>
-              {isPageRefreshing || activeSettingsSection === "progress" ? (
-                <div className="settings-title-status" aria-live="polite">
-                  {isPageRefreshing ? (
-                    <Loader2 className="page-refresh-spinner h-4 w-4 animate-spin" aria-label="페이지 갱신 중" />
-                  ) : null}
-                  {activeSettingsSection === "progress" ? (
-                    <span className="content-updated-at">
-                      {lastUpdated ? `마지막 업데이트 ${formatDate(lastUpdated)}` : "미표기"}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
+              <div className="settings-title-status" aria-live="polite">
+                {isPageRefreshing ? (
+                  <Loader2 className="page-refresh-spinner h-4 w-4 animate-spin" aria-label="페이지 갱신 중" />
+                ) : null}
+                <span className="content-updated-at">
+                  {lastUpdated ? `마지막 업데이트 ${formatDate(lastUpdated)}` : "미표기"}
+                </span>
+              </div>
             </div>
             <div className="settings-content-body">
               {setupError ? (
@@ -1649,171 +1483,176 @@ function App() {
               )}
 
               {activeSettingsSection === "kanban" && (
-                <section className="settings-section" aria-label="티켓 보드">
-                  <TicketKanban board={board} options={options} />
+                <section className="dashboard-area" aria-label="티켓 정보">
+                  <section className="board-section board-section-flush" aria-label="티켓 정보 보드">
+                    <TicketKanban board={board} options={options} />
+                  </section>
                 </section>
               )}
 
               {activeSettingsSection === "knowledge" && (
-              <section className="settings-section knowledge-split" aria-label="Wiki">
-                <div className="tool-panel knowledge-list-pane">
-                  <div className="section-heading compact knowledge-heading">
-                    <div className="section-kicker">Knowledge</div>
-                    {!isWikiPreviewOpen && selectedLogPath ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="knowledge-preview-toggle"
-                        onClick={() => setIsWikiPreviewOpen(true)}
-                      >
-                        미리보기 열기
-                      </Button>
-                    ) : null}
-                  </div>
-                  {wikiError ? <div className="knowledge-error">{wikiError}</div> : null}
-                  <WikiQueryPanel
-                    query={wikiQueryInput}
-                    onQueryChange={setWikiQueryInput}
-                    onSubmit={runWikiQuery}
-                    isRunning={wikiQueryRunning}
-                    result={wikiQueryResult}
-                    selectedPath={selectedLogPath}
-                    onSelect={readLog}
-                    includeTickets={wikiQueryIncludeTickets}
-                    onIncludeTicketsChange={setWikiQueryIncludeTickets}
-                    includeHandoffs={wikiQueryIncludeHandoffs}
-                    onIncludeHandoffsChange={setWikiQueryIncludeHandoffs}
-                  />
-                  <div className="knowledge-stack">
-                    <WikiList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                    <details className="knowledge-sources" open>
-                      <summary className="panel-subheading knowledge-sources-toggle">
-                        <span>Sources</span>
-                        <ChevronDown className="knowledge-sources-chevron h-4 w-4" />
-                      </summary>
-                      <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                    </details>
-                  </div>
-                </div>
-                <div
-                  className={`knowledge-preview-pane${isWikiPreviewOpen ? "" : " knowledge-preview-pane--hidden"}`}
-                >
-                  <LogPreview
-                    preview={logPreview}
-                    isLoading={isReadingLog}
-                    error={logError}
-                    headerAction={
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="knowledge-preview-close"
-                        aria-label="미리보기 닫기"
-                        title="미리보기 닫기"
-                        onClick={() => setIsWikiPreviewOpen(false)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    }
-                  />
-                </div>
-              </section>
-            )}
+                <section className="dashboard-area" aria-label="Wiki">
+                  <section className="board-section board-section-flush" aria-label="Wiki 본문">
+                    <PageLayout
+                      className="knowledge-page"
+                      header={
+                        <div className="knowledge-page-toolbar">
+                          <div className="workflow-pin-layer-heading">
+                            <BookOpenText className="h-4 w-4" aria-hidden="true" />
+                            <strong>Knowledge</strong>
+                          </div>
+                          {!isWikiPreviewOpen && selectedLogPath ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="knowledge-preview-toggle"
+                              onClick={() => setIsWikiPreviewOpen(true)}
+                            >
+                              미리보기 열기
+                            </Button>
+                          ) : (
+                            <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
+                          )}
+                        </div>
+                      }
+                    >
+                      <div className="knowledge-split">
+                        <div className="tool-panel knowledge-list-pane">
+                          {wikiError ? <div className="knowledge-error">{wikiError}</div> : null}
+                          <WikiQueryPanel
+                            query={wikiQueryInput}
+                            onQueryChange={setWikiQueryInput}
+                            onSubmit={runWikiQuery}
+                            isRunning={wikiQueryRunning}
+                            result={wikiQueryResult}
+                            selectedPath={selectedLogPath}
+                            onSelect={readLog}
+                            includeTickets={wikiQueryIncludeTickets}
+                            onIncludeTicketsChange={setWikiQueryIncludeTickets}
+                            includeHandoffs={wikiQueryIncludeHandoffs}
+                            onIncludeHandoffsChange={setWikiQueryIncludeHandoffs}
+                          />
+                          <div className="knowledge-stack">
+                            <WikiList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                            <details className="knowledge-sources" open>
+                              <summary className="panel-subheading knowledge-sources-toggle">
+                                <span>Sources</span>
+                                <ChevronDown className="knowledge-sources-chevron h-4 w-4" />
+                              </summary>
+                              <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                            </details>
+                          </div>
+                        </div>
+                        <div
+                          className={`knowledge-preview-pane${isWikiPreviewOpen ? "" : " knowledge-preview-pane--hidden"}`}
+                        >
+                          <LogPreview
+                            preview={logPreview}
+                            isLoading={isReadingLog}
+                            error={logError}
+                            headerAction={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="knowledge-preview-close"
+                                aria-label="미리보기 닫기"
+                                title="미리보기 닫기"
+                                onClick={() => setIsWikiPreviewOpen(false)}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                        </div>
+                      </div>
+                    </PageLayout>
+                  </section>
+                </section>
+              )}
 
             {activeSettingsSection === "snapshot" && (
-              <section className="settings-section" aria-label="처리 지표">
-                <div className="snapshot-panel report-panel">
-                  <div className="section-heading compact report-section-heading">
-                    <div>
-                      <div className="section-kicker">Report</div>
-                      <h3>작업량 리포트</h3>
-                    </div>
-                    <div className="snapshot-actions">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="snapshot-action-button"
-                        title="지표 스냅샷 저장"
-                        aria-label="지표 스냅샷 저장"
-                        data-tooltip="지표 스냅샷 저장"
-                        disabled={!boardExists || Boolean(metricsActionKey)}
-                        onClick={writeMetricsSnapshot}
-                      >
-                        {metricsActionKey === "write" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ClipboardCheck className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Badge variant={boardExists ? "default" : options.projectRoot ? "destructive" : "secondary"}>
-                        {boardExists ? "추적 중" : "없음"}
-                      </Badge>
-                    </div>
-                  </div>
-                  {metricsError ? <div className="snapshot-error">{metricsError}</div> : null}
-                  <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
-                  <BoardSearch
-                    board={board}
-                    query={boardSearch}
-                    selectedPath={selectedLogPath}
-                    onQueryChange={setBoardSearch}
-                    onSelect={readLog}
-                  />
-                  <MetricsHistory board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                  <div className="snapshot-subsection">
-                    <div className="section-heading compact">
-                      <div>
-                        <div className="section-kicker">이력</div>
-                        <h3>최근 로그</h3>
+              <section className="dashboard-area" aria-label="통계">
+                <section className="board-section board-section-flush" aria-label="통계 본문">
+                  <PageLayout
+                    className="snapshot-page"
+                    header={
+                      <div className="snapshot-page-toolbar">
+                        <div className="workflow-pin-layer-heading">
+                          <BarChart3 className="h-4 w-4" aria-hidden="true" />
+                          <strong>Report</strong>
+                        </div>
+                        <div className="snapshot-actions">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="snapshot-action-button"
+                            title="지표 스냅샷 저장"
+                            aria-label="지표 스냅샷 저장"
+                            data-tooltip="지표 스냅샷 저장"
+                            disabled={!boardExists || Boolean(metricsActionKey)}
+                            onClick={writeMetricsSnapshot}
+                          >
+                            {metricsActionKey === "write" ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ClipboardCheck className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Badge variant={boardExists ? "default" : options.projectRoot ? "destructive" : "secondary"}>
+                            {boardExists ? "추적 중" : "없음"}
+                          </Badge>
+                        </div>
                       </div>
-                      <Clock3 className="h-4 w-4 text-muted-foreground" />
+                    }
+                  >
+                    <div className="snapshot-panel report-panel">
+                      {metricsError ? <div className="snapshot-error">{metricsError}</div> : null}
+                      <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
+                      <BoardSearch
+                        board={board}
+                        query={boardSearch}
+                        selectedPath={selectedLogPath}
+                        onQueryChange={setBoardSearch}
+                        onSelect={readLog}
+                      />
+                      <MetricsHistory board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                      <div className="snapshot-subsection">
+                        <div className="section-heading compact">
+                          <div>
+                            <div className="section-kicker">이력</div>
+                            <h3>최근 로그</h3>
+                          </div>
+                          <Clock3 className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                        <LogList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                      </div>
+                      <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
                     </div>
-                    <LogList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                  </div>
-                  <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
-                </div>
-              </section>
-            )}
-
-            {activeSettingsSection === "automation" && (
-              <section className="settings-section" aria-label="자동화 상태">
-                <div className="settings-utility-grid">
-                  <StopHookPanel
-                    board={board}
-                    actionKey={stopHookActionKey}
-                    error={stopHookError}
-                    onControl={controlStopHook}
-                  />
-                  <WatcherPanel
-                    board={board}
-                    actionKey={watcherActionKey}
-                    error={watcherError}
-                    onControl={controlWatcher}
-                  />
-                  <DoctorPanel board={board} />
-                </div>
+                  </PageLayout>
+                </section>
               </section>
             )}
 
             {activeSettingsSection === "ai" && (
               <section className="dashboard-area runner-dashboard-area" aria-label="AI 관리">
-                <RunnerConsole
-                  board={board}
-                  defaultBoardDirName={options.boardDirName}
-                  installedAgentProfiles={installedAgentProfiles}
-                  actionKey={runnerActionKey}
-                  error={runnerError}
-                  drafts={runnerDrafts}
-                  selectedRunnerId={selectedRunnerId}
-                  onSelectRunner={selectRunner}
-                  onControl={controlRunner}
-                  onAddRole={createRunner}
-                  onRemove={removeRunner}
-                  onReadLog={readLog}
-                  onDraftChange={updateRunnerDraft}
-                  onConfigure={saveRunnerConfig}
-                />
+                <section className="board-section board-section-flush" aria-label="AI 관리 본문">
+                  <RunnerConsole
+                    board={board}
+                    defaultBoardDirName={options.boardDirName}
+                    installedAgentProfiles={installedAgentProfiles}
+                    actionKey={runnerActionKey}
+                    error={runnerError}
+                    drafts={runnerDrafts}
+                    selectedRunnerId={selectedRunnerId}
+                    onSelectRunner={selectRunner}
+                    onControl={controlRunner}
+                    onReadLog={readLog}
+                    onDraftChange={updateRunnerDraft}
+                    onConfigure={saveRunnerConfig}
+                  />
+                </section>
               </section>
             )}
             </div>
@@ -2221,8 +2060,6 @@ function RunnerConsole({
   selectedRunnerId,
   onSelectRunner,
   onControl,
-  onAddRole,
-  onRemove,
   onReadLog,
   onDraftChange,
   onConfigure
@@ -2236,46 +2073,39 @@ function RunnerConsole({
   selectedRunnerId: string;
   onSelectRunner: (runnerId: string) => void;
   onControl: (action: "start" | "stop" | "restart", runnerId: string) => void;
-  onAddRole: (role: RunnerRole) => void;
-  onRemove: (runner: AutoflowRunner) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner) => void;
 }) {
-  const runners = board?.runners || [];
+  const runners = (board?.runners || []).filter((runner) => runner.role === "ticket-owner");
+  const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
+  const stoppedCount = runners.filter((runner) => (runner.stateStatus || "") === "stopped").length;
+  const blockedCount = runners.filter((runner) =>
+    /blocked|failed|error/.test([runner.stateStatus, runner.activeStage, runner.lastResult].join(" ").toLowerCase())
+  ).length;
 
   return (
     <section className="runner-console" aria-label="Autoflow AI 설정">
-      <div className="runner-add-toolbar" aria-label="AI 추가">
-        <div className="runner-add-actions">
-          {runnerRoleOptions.map(({ role, label }) => (
-            <Button
-              key={role}
-              variant="outline"
-              size="sm"
-              className="runner-add-button"
-              title={`${label} AI 추가`}
-              aria-label={`${label} AI 추가`}
-              disabled={Boolean(actionKey)}
-              onClick={() => onAddRole(role)}
-            >
-              {actionKey === `add:${role}` ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Laptop className="h-4 w-4" />
-              )}
-              <span>AI 추가</span>
-            </Button>
-          ))}
-        </div>
-      </div>
+      <PageLayout
+        className="runner-console-page"
+        header={
+          <div className="runner-page-toolbar">
+            <div className="runner-page-summary">
+              <Badge variant="secondary">AI {runners.length}</Badge>
+              <Badge variant={runningCount ? "default" : "secondary"}>실행 {runningCount}</Badge>
+              {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
+              <Badge variant="outline">중지 {stoppedCount}</Badge>
+            </div>
+            <span className="ticket-workspace-tab-copy">ticket-owner</span>
+          </div>
+        }
+      >
+        <div className="runner-section runner-console-body">
+          {error ? <div className="runner-error">{error}</div> : null}
 
-      <div className="runner-section runner-console-body">
-        {error ? <div className="runner-error">{error}</div> : null}
-
-        <div className="runner-grid">
-          {runners.length ? (
-            runners.map((runner) => {
+          <div className="runner-grid">
+            {runners.length ? (
+              runners.map((runner) => {
             const enabled = runnerIsEnabled(runner.enabled);
             const status = runner.stateStatus || "idle";
             const mode = "loop";
@@ -2283,8 +2113,6 @@ function RunnerConsole({
             const isWorking = actionKey.endsWith(`:${runner.id}`);
             const canStart = mode === "loop";
             const canStop = status === "running" || Boolean(runner.pid);
-            const canRemove = status === "stopped" && !runner.pid;
-            const removeDisabled = !canRemove || Boolean(actionKey);
             const canEditConfig = status !== "running";
             const draft = drafts[runner.id] || {
               agent: runner.agent || "codex",
@@ -2425,25 +2253,6 @@ function RunnerConsole({
                         )}
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="runner-icon-button runner-plain-icon-button runner-delete-button"
-                      title={removeDisabled ? undefined : "AI 삭제"}
-                      data-tooltip={removeDisabled ? undefined : "AI 삭제"}
-                      aria-label={`${runner.id} AI 삭제`}
-                      disabled={removeDisabled}
-                      onClick={() => {
-                        onSelectRunner(runner.id);
-                        onRemove(runner);
-                      }}
-                    >
-                      {isWorking && actionKey.startsWith("remove:") ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" />
-                      )}
-                    </Button>
                   </div>
                 </div>
                 <div className="runner-details">
@@ -2546,10 +2355,16 @@ function RunnerConsole({
                 </div>
               </article>
             );
-            })
-          ) : null}
+              })
+            ) : (
+              <div className="ai-progress-empty runner-empty-state">
+                <strong>AI가 없습니다</strong>
+                <span>ticket-owner runner가 추가되면 여기에 표시됩니다.</span>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </PageLayout>
     </section>
   );
 }
@@ -2715,6 +2530,8 @@ function currentMetricSnapshot(
     autoflow_code_insertions_count: statusNumber(metrics, "autoflow_code_insertions_count"),
     autoflow_code_deletions_count: statusNumber(metrics, "autoflow_code_deletions_count"),
     autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
+    autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
+    autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
     verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent"),
     completion_rate_percent: statusNumber(metrics, "completion_rate_percent")
   };
@@ -3166,164 +2983,6 @@ function MetricsHistory({
         </div>
       ) : (
         <div className="empty-panel metrics-empty">지표 스냅샷이 없습니다</div>
-      )}
-    </div>
-  );
-}
-
-function StopHookPanel({
-  board,
-  actionKey,
-  error,
-  onControl
-}: {
-  board: AutoflowBoardSnapshot | null;
-  actionKey: string;
-  error: string;
-  onControl: (action: "install" | "remove" | "status") => void;
-}) {
-  const stopHook = board?.stopHook || {};
-  const status = statusValue(stopHook, "status", board?.exists ? "unknown" : "-");
-  const installed = status === "installed";
-  const tone = installed ? "stop-hook-installed" : status === "missing" ? "stop-hook-missing" : "stop-hook-unknown";
-
-  return (
-    <div className={`stop-hook-panel ${tone}`}>
-      <div className="stop-hook-main">
-        <div className="stop-hook-title">
-          <ShieldCheck className="h-4 w-4" />
-          <div>
-            <strong>중단 방지 훅</strong>
-            <span>{displayStatus(status)}</span>
-          </div>
-        </div>
-        <div className="stop-hook-actions">
-          <Button
-            variant="outline"
-            size="icon"
-            className="runner-icon-button"
-            title="중단 방지 훅 새로고침"
-            data-tooltip="중단 방지 훅 새로고침"
-            aria-label="중단 방지 훅 새로고침"
-            disabled={!board?.exists || Boolean(actionKey)}
-            onClick={() => onControl("status")}
-          >
-            {actionKey === "status" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            className="stop-hook-button"
-            disabled={!board?.exists || installed || Boolean(actionKey)}
-            onClick={() => onControl("install")}
-          >
-            {actionKey === "install" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-            설치
-          </Button>
-          <Button
-            variant="outline"
-            className="stop-hook-button"
-            disabled={!board?.exists || !installed || Boolean(actionKey)}
-            onClick={() => onControl("remove")}
-          >
-            {actionKey === "remove" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            제거
-          </Button>
-        </div>
-      </div>
-      {error ? <div className="stop-hook-error">{error}</div> : null}
-    </div>
-  );
-}
-
-function WatcherPanel({
-  board,
-  actionKey,
-  error,
-  onControl
-}: {
-  board: AutoflowBoardSnapshot | null;
-  actionKey: string;
-  error: string;
-  onControl: (action: "start" | "stop" | "status") => void;
-}) {
-  const watcher = board?.watcher || {};
-  const status = statusValue(watcher, "status", board?.exists ? "unknown" : "-");
-  const running = status === "running" || status === "already_running" || status === "started";
-  const stale = status === "stale_pid" || status === "stale_pid_removed";
-  const tone = running ? "watcher-running" : stale ? "watcher-stale" : "watcher-idle";
-
-  return (
-    <div className={`watcher-panel ${tone}`}>
-      <div className="watcher-main">
-        <div className="watcher-title">
-          <Activity className="h-4 w-4" />
-          <div>
-            <strong>파일 감시기</strong>
-            <span>{watcher.pid ? `${displayStatus(status)} · PID ${watcher.pid}` : displayStatus(status)}</span>
-          </div>
-        </div>
-        <div className="watcher-actions">
-          <Button
-            variant="outline"
-            size="icon"
-            className="runner-icon-button"
-            title="파일 감시기 새로고침"
-            data-tooltip="파일 감시기 새로고침"
-            aria-label="파일 감시기 새로고침"
-            disabled={!board?.exists || Boolean(actionKey)}
-            onClick={() => onControl("status")}
-          >
-            {actionKey === "status" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="outline"
-            className="watcher-button"
-            disabled={!board?.exists || running || Boolean(actionKey)}
-            onClick={() => onControl("start")}
-          >
-            {actionKey === "start" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            시작
-          </Button>
-          <Button
-            variant="outline"
-            className="watcher-button"
-            disabled={!board?.exists || (!running && !stale) || Boolean(actionKey)}
-            onClick={() => onControl("stop")}
-          >
-            {actionKey === "stop" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
-            중지
-          </Button>
-        </div>
-      </div>
-      {error ? <div className="watcher-error">{error}</div> : null}
-    </div>
-  );
-}
-
-function DoctorPanel({ board }: { board: AutoflowBoardSnapshot | null }) {
-  const doctor = board?.doctor || {};
-  const errors = prefixedValues(doctor, "error.");
-  const warnings = prefixedValues(doctor, "warning.");
-  const messages = [...errors, ...warnings].slice(0, 4);
-  const status = statusValue(doctor, "status", board?.exists ? "unknown" : "-");
-  const tone = errors.length ? "doctor-fail" : warnings.length ? "doctor-warning" : "doctor-ok";
-
-  return (
-    <div className={`doctor-panel ${tone}`}>
-      <div className="doctor-panel-header">
-        <strong>진단</strong>
-        <Badge variant={errors.length ? "destructive" : warnings.length ? "outline" : "secondary"}>
-          {displayStatus(status)}
-        </Badge>
-      </div>
-      {messages.length ? (
-        <ul>
-          {messages.map((message) => (
-            <li key={message}>{message}</li>
-          ))}
-        </ul>
-      ) : (
-        <p>상태 메시지가 없습니다</p>
       )}
     </div>
   );
@@ -3954,130 +3613,133 @@ function TicketKanban({
   }, [options, selectedItem]);
 
   const boardIsEmpty = items.length === 0;
+  const activeTabCopy = ticketWorkspaceTabs.find((tab) => tab.key === activeTab)?.description || "";
+  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
 
   return (
-    <section className="ticket-kanban-board" aria-label="티켓 보드">
-      <div className="ticket-kanban-toolbar">
-        <div>
-          <div className="section-kicker">Board</div>
-          <h3>티켓 보드</h3>
-        </div>
-        <p>PRD와 발급 티켓을 탭으로 나누고, 왼쪽 목록과 오른쪽 본문 리더로 읽습니다.</p>
-      </div>
-
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TicketWorkspaceTabKey)} className="ticket-workspace">
-        <div className="ticket-workspace-toolbar">
-          <TabsList className="ticket-workspace-tabs" aria-label="티켓 보드 탭">
-            {ticketWorkspaceTabs.map((tab) => {
-              const count = ticketWorkspaceItemsForTab(items, tab.key).length;
-              return (
-                <TabsTrigger key={tab.key} value={tab.key} className="ticket-workspace-tab-trigger">
-                  <span>{tab.label}</span>
-                  <Badge variant="secondary">{count}</Badge>
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-          <span className="ticket-workspace-tab-copy">
-            {ticketWorkspaceTabs.find((tab) => tab.key === activeTab)?.description}
-          </span>
-        </div>
-
-        <div className="ticket-workspace-layout">
-          <div className="ticket-workspace-list-pane">
-            {boardIsEmpty ? (
-              <div className="ticket-kanban-empty ticket-workspace-empty">
-                <strong>표시할 PRD 또는 티켓이 없습니다.</strong>
-                <span>보드가 비어 있습니다. 새 PRD를 추가하거나 runner 상태를 확인하세요.</span>
-              </div>
-            ) : (
-              ticketWorkspaceTabs.map((tab) => (
-                <TabsContent key={tab.key} value={tab.key} className="ticket-workspace-tab-panel">
-                  {ticketWorkspaceItemsForTab(items, tab.key).length === 0 ? (
-                    <div className="ticket-workspace-empty">
-                      <strong>이 탭에 표시할 항목이 없습니다.</strong>
-                      <span>{tab.label} 탭에 해당하는 PRD 또는 티켓이 아직 없습니다.</span>
-                    </div>
-                  ) : (
-                    <div className="ticket-workspace-list" aria-label={`${tab.label} 목록`}>
-                      {ticketWorkspaceItemsForTab(items, tab.key).map((item) => {
-                        const selected = item.filePath === selectedFilePath;
-                        return (
-                          <button
-                            key={item.filePath}
-                            type="button"
-                            className={`ticket-workspace-item${selected ? " is-selected" : ""}`}
-                            onClick={() => setSelectedFilePath(item.filePath)}
-                            title={item.title}
-                          >
-                            <div className="ticket-workspace-item-head">
-                              <strong>{item.displayId}</strong>
-                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
-                            </div>
-                            <div className="ticket-workspace-item-title">{item.title}</div>
-                            <div className="ticket-workspace-item-meta">
-                              {item.projectKey ? <span>{item.projectKey}</span> : null}
-                              {item.aiLabel ? <span>{item.aiLabel}</span> : null}
-                              <time>{formatDate(item.modifiedAt)}</time>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </TabsContent>
-              ))
-            )}
-          </div>
-
-          <div className="ticket-workspace-detail-pane">
-            {!selectedItem && !boardIsEmpty ? (
-              <div className="ticket-workspace-empty ticket-workspace-detail-empty">
-                <strong>왼쪽 목록에서 항목을 선택하세요.</strong>
-                <span>선택한 PRD 또는 티켓의 메타데이터와 Markdown 본문이 여기에 표시됩니다.</span>
-              </div>
-            ) : (
-              <>
-                {selectedItem ? (
-                  <header className="ticket-workspace-detail-head">
-                    <div className="ticket-workspace-detail-kicker">
-                      <span>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</span>
-                      <time>{formatDate(selectedItem.modifiedAt)}</time>
-                    </div>
-                    <div className="ticket-workspace-detail-title-row">
-                      <div>
-                        <strong>{selectedItem.displayId}</strong>
-                        <h4>{selectedItem.title}</h4>
+    <section className="ticket-kanban-board" aria-label="티켓 정보">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TicketWorkspaceTabKey)}
+        className="ticket-workspace"
+      >
+        <PageLayout
+          className="ticket-workspace-page"
+          header={
+            <div className="ticket-workspace-toolbar">
+              <TabsList className="ticket-workspace-tabs" aria-label="티켓 정보 탭">
+                {ticketWorkspaceTabs.map((tab) => {
+                  const count = ticketWorkspaceItemsForTab(items, tab.key).length;
+                  return (
+                    <TabsTrigger key={tab.key} value={tab.key} className="ticket-workspace-tab-trigger">
+                      <span>{tab.label}</span>
+                      <Badge variant="secondary">{count}</Badge>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+              <span className="ticket-workspace-tab-copy">{activeTabCopy}</span>
+            </div>
+          }
+        >
+          {boardIsEmpty ? (
+            <div className="ticket-kanban-empty ticket-workspace-empty">
+              <strong>표시할 PRD 또는 티켓이 없습니다.</strong>
+              <span>보드가 비어 있습니다. 새 PRD를 추가하거나 runner 상태를 확인하세요.</span>
+            </div>
+          ) : (
+            <div className="ticket-workspace-layout">
+              <div className="ticket-workspace-list-pane">
+                {ticketWorkspaceTabs.map((tab) => (
+                  <TabsContent key={tab.key} value={tab.key} className="ticket-workspace-tab-panel">
+                    {ticketWorkspaceItemsForTab(items, tab.key).length === 0 ? (
+                      <div className="ticket-workspace-empty">
+                        <strong>이 탭에 표시할 항목이 없습니다.</strong>
+                        <span>{tab.label} 탭에 해당하는 PRD 또는 티켓이 아직 없습니다.</span>
                       </div>
-                      <Badge variant={selectedItem.statusVariant}>{selectedItem.statusLabel}</Badge>
-                    </div>
-                    <div className="ticket-workspace-detail-meta">
-                      {selectedItem.projectKey ? <span>프로젝트 키 · {selectedItem.projectKey}</span> : null}
-                      {selectedItem.aiLabel ? <span>담당 · {selectedItem.aiLabel}</span> : null}
-                      <span>{selectedItem.filePath}</span>
-                    </div>
-                  </header>
-                ) : null}
-                <div className="ticket-workspace-detail-body">
-                  {detailLoading ? (
-                    <div className="workflow-pin-detail-loading">
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      <span>불러오는 중…</span>
-                    </div>
-                  ) : null}
-                  {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
-                  {!detailError && detailContent ? (
-                    detailContent.content ? (
-                      <MarkdownViewer content={detailContent.content} />
                     ) : (
-                      <p className="workflow-pin-detail-empty">(비어 있음)</p>
-                    )
-                  ) : null}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+                      <div className="ticket-workspace-list" aria-label={`${tab.label} 목록`}>
+                        {ticketWorkspaceItemsForTab(items, tab.key).map((item) => {
+                          const selected = item.filePath === selectedFilePath;
+                          const ItemIcon = item.kind === "prd" ? ClipboardCheck : ClipboardList;
+                          const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
+                          return (
+                            <button
+                              key={item.filePath}
+                              type="button"
+                              className={`ticket-workspace-item${selected ? " is-selected" : ""}`}
+                              onClick={() => setSelectedFilePath(item.filePath)}
+                              title={item.title}
+                            >
+                              <span className="ticket-workspace-item-icon" aria-hidden="true">
+                                <ItemIcon className="h-4 w-4" />
+                              </span>
+                              <span className="ticket-workspace-item-main">
+                                <strong>{item.title}</strong>
+                                <span>{metaText || item.filePath}</span>
+                              </span>
+                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                              <time>{formatDate(item.modifiedAt)}</time>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </TabsContent>
+                ))}
+              </div>
+
+              <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
+                {!selectedItem ? (
+                  <div className="ticket-workspace-empty ticket-workspace-detail-empty">
+                    <strong>왼쪽 목록에서 항목을 선택하세요.</strong>
+                    <span>선택한 PRD 또는 티켓의 메타데이터와 Markdown 본문이 여기에 표시됩니다.</span>
+                  </div>
+                ) : (
+                  <>
+                    <header className="workflow-pin-layer-header ticket-workspace-detail-head">
+                      <div className="workflow-pin-layer-heading">
+                        <SelectedDetailIcon className="h-4 w-4" aria-hidden="true" />
+                        <strong>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</strong>
+                      </div>
+                      <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
+                      <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
+                        {selectedItem.statusLabel}
+                      </Badge>
+                    </header>
+                    <div className="ticket-workspace-detail-summary">
+                      <h4>{selectedItem.title}</h4>
+                      <div className="ticket-workspace-detail-meta">
+                        {selectedItem.projectKey ? <span>프로젝트 키 · {selectedItem.projectKey}</span> : null}
+                        {selectedItem.aiLabel ? <span>담당 · {selectedItem.aiLabel}</span> : null}
+                        <time>{formatDate(selectedItem.modifiedAt)}</time>
+                        <span>{selectedItem.filePath}</span>
+                      </div>
+                    </div>
+                    <div className="workflow-pin-detail ticket-workspace-detail-body">
+                      {detailLoading ? (
+                        <div className="workflow-pin-detail-loading">
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          <span>불러오는 중…</span>
+                        </div>
+                      ) : null}
+                      {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
+                      {!detailError && detailContent ? (
+                        <div className="workflow-pin-detail-body">
+                          {detailContent.content ? (
+                            <MarkdownViewer content={detailContent.content} />
+                          ) : (
+                            <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </PageLayout>
       </Tabs>
     </section>
   );

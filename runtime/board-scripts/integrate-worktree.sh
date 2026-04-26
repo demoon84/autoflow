@@ -58,35 +58,6 @@ if [ -z "$git_root" ]; then
   exit 1
 fi
 
-board_rel="$(realpath --relative-to="$git_root" "$BOARD_ROOT" 2>/dev/null || basename "$BOARD_ROOT")"
-board_rel="${board_rel//\\//}"
-board_rel="${board_rel%/}/"
-
-dirty_outside_board=0
-while IFS= read -r status_line; do
-  [ -n "$status_line" ] || continue
-  status_path="${status_line#???}"
-  case "$status_path" in
-    *" -> "*) status_path="${status_path##* -> }" ;;
-  esac
-  status_path="${status_path//\\//}"
-  case "$status_path" in
-    "$board_rel"*|"${board_rel%/}")
-      ;;
-    *)
-      dirty_outside_board=1
-      printf 'dirty_outside_board=%s\n' "$status_path" >&2
-      ;;
-  esac
-done < <(git -C "$git_root" status --porcelain --untracked-files=all)
-
-if [ "$dirty_outside_board" -ne 0 ]; then
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_dirty_project_root"
-  append_note "$ticket_file" "Worktree integration blocked at ${timestamp}: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket."
-  echo "PROJECT_ROOT has dirty files outside ${board_rel}; refusing to mix another ticket into the final commit." >&2
-  exit 1
-fi
-
 allowed_paths=()
 while IFS= read -r allowed_path; do
   [ -n "$allowed_path" ] || continue
@@ -126,9 +97,9 @@ worktree_commit="$(git -C "$worktree_path" rev-parse --verify HEAD)"
 
 if ! git -C "$git_root" cherry-pick --no-commit "$worktree_commit"; then
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_cherry_pick_conflict"
-  append_note "$ticket_file" "Worktree integration hit a cherry-pick conflict at ${timestamp}: ${worktree_commit}. Resolve or abort the cherry-pick in PROJECT_ROOT before retrying."
-  echo "Cherry-pick failed. Resolve or abort in PROJECT_ROOT before retrying." >&2
+  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "merge_required"
+  append_note "$ticket_file" "Worktree integration requires merge resolution at ${timestamp}: ${worktree_commit}. AI must resolve or abort the cherry-pick in PROJECT_ROOT, then rerun finish."
+  echo "Cherry-pick requires merge resolution in PROJECT_ROOT. Resolve or abort before retrying finish." >&2
   exit 1
 fi
 

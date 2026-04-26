@@ -10,6 +10,7 @@ owner_workers = ["owner-1"]
 planner_workers = []
 todo_workers = []
 verifier_workers = []
+merge_workers = ["merge-1"]
 
 execution_pool = ""
 verifier_pool = ""
@@ -32,3 +33,4 @@ idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-up
 ownership_rule = "Every live worker id should be unique. In Ticket Owner Mode each owner owns one active ticket end-to-end."
 thread_binding_rule = "One conversation per worker: fill every [thread_ids] entry with a unique Codex thread id. Shared mode: leave [thread_ids] empty and set target_thread_id only."
 trigger_rule = "`autoflow run ticket` / owner heartbeats should keep running until the user explicitly says stop."
+merge_rule = "`autoflow run merge` should be single-writer; run at most one merge bot for a board."

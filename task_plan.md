@@ -65,6 +65,98 @@ Create a first Electron desktop shell that visualizes how Codex is moving work t
 
 ---
 
+# Task Plan: Blocked Runner Status Debug
+
+## Goal
+Find why the desktop progress view repeatedly shows Ticket Owner runners as `막힘`, then implement a code-level fix that reflects actionable blocked state without hiding real failures.
+
+## Scope
+- Inspect board/runtime contracts, runner state files, desktop state derivation, and ticket files.
+- Reproduce the status derivation from local `.autoflow/` data.
+- Fix the root cause in the smallest safe code surface.
+- Verify with targeted desktop checks and local state inspection.
+- Do not revert unrelated dirty board or desktop changes.
+
+## Phases
+- [x] Read Autoflow board rules and debugging/planning instructions.
+- [x] Gather runner/ticket evidence for the current repeated `막힘` display.
+- [x] Trace the desktop status derivation path from files to Korean UI labels.
+- [x] Stop active owner runners and remove ticket worktrees after archiving their diffs.
+- [x] Move the remaining rejected ticket back to `todo/` for rework.
+- [x] Reset all active inprogress tickets back to `todo/` so PRD work can restart cleanly.
+- [x] Reset `.autoflow/tickets/` to PRD-only backlog state with no generated ticket, done, reject, or verifier files.
+- [x] Reset processing metrics history and verifier completion logs so the desktop `처리 지표` view starts from zero.
+- [x] Identify root cause and add a failing/targeted check if practical.
+- [x] Implement the minimal fix for dirty-root worktree fallback.
+- [x] Reset the current board after the blocked-start reproduction.
+- [x] Verify code checks and local status output.
+
+## Decisions
+- Treat existing dirty `.autoflow/` board changes as evidence, not as changes to revert.
+- Prefer non-browser verification unless rendered behavior must be observed.
+
+## Verification
+- [ ] Targeted unit/script check for status derivation, if available.
+- [ ] `npm --prefix apps/desktop run check`
+- [ ] Targeted whitespace check for changed files.
+- [x] `./bin/autoflow runners list . .autoflow` shows owner-1 through owner-5 stopped with no active ticket metadata.
+- [x] `git worktree list --porcelain` shows only the main project worktree after cleanup.
+- [x] `./bin/autoflow metrics . .autoflow` reports `reject_count=0` and `ticket_todo_count=1`.
+- [x] `./bin/autoflow status . .autoflow` reports `ticket_todo_count=6`, `ticket_inprogress_count=0`, `ticket_executing_count=0`, `ticket_blocked_count=0`, and `ticket_owner_active_count=0`.
+- [x] `./bin/autoflow metrics . .autoflow` reports `reject_count=0`, `runner_running_count=0`, `runner_blocked_count=0`, and `runner_stopped_count=5`.
+- [x] `./bin/autoflow status . .autoflow` reports `spec_count=10`, `ticket_todo_count=0`, `ticket_done_count=0`, `ticket_blocked_count=0`, and `verify_run_count=0` after PRD-only reset.
+- [x] `find .autoflow/tickets -type f ! -path '.autoflow/tickets/backlog/prd_*.md'` returns no files.
+- [x] `./bin/autoflow metrics . .autoflow` reports `ticket_total=0`, `verifier_total=0`, `autoflow_commit_count=0`, `autoflow_code_volume_count=0`, and both percentage metrics at `0.0`.
+- [x] `npm --prefix apps/desktop run check` after the `AI 산출물` report-count correction.
+- [x] `bash tests/smoke/ticket-owner-dirty-root-worktree-smoke.sh`
+- [x] `bash tests/smoke/ticket-owner-shared-path-block-smoke.sh`
+- [x] `bash tests/smoke/ticket-owner-smoke.sh`
+- [x] `diff -q runtime/board-scripts/common.sh .autoflow/scripts/common.sh`
+- [x] `git diff --check -- runtime/board-scripts/common.sh .autoflow/scripts/common.sh tests/smoke/ticket-owner-dirty-root-worktree-smoke.sh tests/smoke/ticket-owner-shared-path-block-smoke.sh task_plan.md findings.md progress.md .autoflow/tickets .autoflow/archive/start-blocked-reset_20260426T045128Z`
+
+## Risks
+- Current board state is actively dirty and may reflect in-flight runner activity.
+- Desktop UI may be showing a derived label rather than the authoritative ticket state.
+
+---
+
+# Task Plan: Processing Metrics Code And Token Usage
+
+## Goal
+Show code change volume and AI token usage in processing metrics.
+
+## Scope
+- Extend `autoflow metrics` output and JSON snapshots.
+- Surface token usage in the desktop `처리 지표` dashboard.
+- Keep existing code-change metrics intact.
+- Avoid reverting unrelated dirty board/runtime/UI work.
+
+## Phases
+- [x] Inspect existing metrics CLI and desktop reporting code.
+- [x] Identify token usage source in runner adapter logs.
+- [x] Implement token aggregation in CLI metrics.
+- [x] Add token fields to desktop metrics history/types/report cards.
+- [x] Update metrics documentation.
+- [x] Add or run targeted verification.
+
+## Decisions
+- Use runner adapter stdout/stderr logs under `runners/logs/` as the token source.
+- Parse Codex CLI's current `tokens used` summary as total token usage; keep the metric agent-agnostic enough to tolerate future `total_tokens` style lines.
+- Keep code-change metrics based on Autoflow completion commits, excluding board markdown/log churn.
+
+## Verification
+- [x] `./bin/autoflow metrics .`
+- [x] `./bin/autoflow metrics . --write` on a disposable board via `tests/smoke/metrics-token-usage-smoke.sh`
+- [x] `npm --prefix apps/desktop run check`
+- [x] `bash tests/smoke/metrics-token-usage-smoke.sh`
+- [x] `git diff --check` on changed files
+
+## Risks
+- Token output formats differ by adapter; this pass reports only token totals that are observable in local runner logs.
+- Current worktree is heavily dirty from active dogfood board work; changes must stay tightly scoped.
+
+---
+
 # Task Plan: LangGraph Fit Review
 
 ## Goal

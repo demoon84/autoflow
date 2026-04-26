@@ -1,0 +1,14 @@
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_002
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006_local
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflowLab/tickets_001
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflowLab/tickets_003
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflowLab/tickets_005
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflowLab/tickets_006
+/Users/demoon/Documents/project/.autoflow-worktrees/autoflowLab/tickets_007

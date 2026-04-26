@@ -1,0 +1,5 @@
+ M scripts/cli/doctor-project.ps1
+ M scripts/cli/package-board-common.ps1
+ M scripts/cli/status-project.ps1
+ M scripts/cli/status-project.sh
+ M scripts/cli/upgrade-project.sh

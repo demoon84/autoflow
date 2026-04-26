@@ -14,6 +14,7 @@ Usage:
   run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  run-role.sh merge [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
 EOF
 }
@@ -80,6 +81,12 @@ case "$requested_role" in
     default_runner_id="verifier-1"
     runtime_script="start-verifier.sh"
     ;;
+  merge|merge-bot)
+    public_role="merge"
+    runtime_role="merge"
+    default_runner_id="merge-1"
+    runtime_script="merge-ready-ticket.sh"
+    ;;
   wiki|wiki-maintainer)
     public_role="wiki"
     runtime_role="wiki"
@@ -104,6 +111,7 @@ project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
 export AUTOFLOW_BOARD_ROOT="$board_root"
 export AUTOFLOW_PROJECT_ROOT="$project_root"
+adapter_working_root="$project_root"
 
 config_path="$(runner_config_path)"
 
@@ -209,6 +217,9 @@ agent_instruction_path() {
     verifier)
       printf '%s/agents/verifier-agent.md' "$board_root"
       ;;
+    merge)
+      printf '%s/agents/merge-bot-agent.md' "$board_root"
+      ;;
     wiki)
       printf '%s/agents/wiki-maintainer-agent.md' "$board_root"
       ;;
@@ -226,6 +237,7 @@ of truth; chat history is not.
 
 Context:
 - Project root: ${project_root}
+- Implementation root: ${adapter_working_root}
 - Board root: ${board_root}
 - Board dir name: ${board_dir_name}
 - Runner id: ${runner_id}
@@ -241,12 +253,14 @@ Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
 3. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-4. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
-5. Do not rely on this prompt as future memory.
-6. Never git push.
+4. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the merge role integrates into PROJECT_ROOT and creates the local completion commit.
+5. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
+6. Do not rely on this prompt as future memory.
+7. Never git push.
 
 Role boundary:
 - ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
+- merge: process exactly one ready-to-merge ticket as the single PROJECT_ROOT writer. Never change verification decisions and never push.
 - planner: create/update plans and todo ticket files only. Do not implement, verify, commit, or push.
 - todo: claim/resume one todo ticket, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
@@ -261,7 +275,13 @@ run_custom_adapter_command() {
   local prompt_file="$1"
 
   command_summary="$command_value"
-  AUTOFLOW_PROMPT_FILE="$prompt_file" bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+  (
+    cd "$adapter_working_root"
+    AUTOFLOW_PROMPT_FILE="$prompt_file" \
+      AUTOFLOW_PROJECT_ROOT="$project_root" \
+      AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
+      bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+  )
 }
 
 run_default_adapter_command() {
@@ -273,7 +293,7 @@ run_default_adapter_command() {
   case "$agent" in
     codex)
       command -v codex >/dev/null 2>&1 || return 127
-      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$project_root")
+      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
       if [ -n "$model" ]; then
         cmd+=(-m "$model")
       fi
@@ -312,7 +332,7 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      "${cmd[@]}" > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     opencode)
       command -v opencode >/dev/null 2>&1 || return 127
@@ -326,7 +346,7 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      "${cmd[@]}" > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     gemini)
       command -v gemini >/dev/null 2>&1 || return 127
@@ -336,7 +356,7 @@ run_default_adapter_command() {
         cmd+=(--model "$model")
       fi
       command_summary="$(command_summary_from_array "${cmd[@]:0:3}") prompt"
-      "${cmd[@]}" > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     *)
       return 127
@@ -370,6 +390,17 @@ persist_run_artifact() {
   printf '%s' "$destination"
 }
 
+prepare_adapter_live_logs() {
+  local live_stamp
+
+  runner_ensure_dirs
+  live_stamp="$(artifact_stamp)"
+  adapter_stdout="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stdout.log"
+  adapter_stderr="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stderr.log"
+  : > "$adapter_stdout"
+  : > "$adapter_stderr"
+}
+
 agent_runtime_preflight_or_exit() {
   local preflight_output preflight_exit preflight_status preflight_reason preflight_log_path
   local started_at finished_at command_status runner_status last_result
@@ -393,11 +424,15 @@ agent_runtime_preflight_or_exit() {
 
   preflight_status="$(awk -F= '$1 == "status" { value=$2; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   preflight_reason="$(awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
+  implementation_root="$(awk -F= '$1 == "implementation_root" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   [ -n "$active_item" ] || active_item="$(runner_active_state_value "active_item")"
   preflight_log_path="$(persist_run_artifact "$preflight_output" "runtime")"
 
   if [ "$preflight_exit" -eq 0 ] && { [ "$preflight_status" = "ok" ] || [ "$preflight_status" = "resume" ]; }; then
+    if [ -n "$implementation_root" ] && [ -d "$implementation_root" ]; then
+      adapter_working_root="$implementation_root"
+    fi
     rm -f "$preflight_output"
     return 0
   fi
@@ -511,7 +546,7 @@ if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|merge:merge|merge:merge-bot|wiki:wiki-maintainer|wiki:wiki)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -559,8 +594,9 @@ case "$agent" in
 
     started_at="$(runner_now_iso)"
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
-    adapter_stdout="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-stdout.XXXXXX")"
-    adapter_stderr="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-stderr.XXXXXX")"
+    adapter_stdout=""
+    adapter_stderr=""
+    prepare_adapter_live_logs
     write_agent_prompt "$instruction_file" > "$prompt_file"
 
     runner_write_state "$runner_id" \
@@ -578,7 +614,9 @@ case "$agent" in
       "pid=$(runner_state_pid_for_start)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${started_at}" \
-      "last_result="
+      "last_result=" \
+      "last_stdout_log=${adapter_stdout}" \
+      "last_stderr_log=${adapter_stderr}"
     runner_append_log "$runner_id" "adapter_start" \
       "role=${public_role}" \
       "runtime_role=${runtime_role}" \
@@ -594,7 +632,7 @@ case "$agent" in
       else
         case "$agent" in
           codex)
-            dry_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$project_root")
+            dry_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
             [ -z "$model" ] || dry_cmd+=(-m "$model")
             [ -z "$reasoning" ] || dry_cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
             dry_cmd+=(-)

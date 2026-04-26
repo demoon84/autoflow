@@ -180,6 +180,7 @@ template_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 template_text|agents/verifier-agent.md|agents/verifier-agent.md
 template_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 template_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
+template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
 template_text|conversations/README.md|conversations/README.md
 template_text|automations/README.md|automations/README.md
@@ -235,6 +236,7 @@ runtime_executable|clear-thread-context.sh|scripts/clear-thread-context.sh
 runtime_executable|start-ticket-owner.sh|scripts/start-ticket-owner.sh
 runtime_executable|verify-ticket-owner.sh|scripts/verify-ticket-owner.sh
 runtime_executable|finish-ticket-owner.sh|scripts/finish-ticket-owner.sh
+runtime_executable|merge-ready-ticket.sh|scripts/merge-ready-ticket.sh
 runtime_executable|update-wiki.sh|scripts/update-wiki.sh
 runtime_executable|start-plan.sh|scripts/start-plan.sh
 runtime_executable|start-todo.sh|scripts/start-todo.sh
@@ -252,6 +254,7 @@ runtime_file|clear-thread-context.ps1|scripts/clear-thread-context.ps1
 runtime_file|start-ticket-owner.ps1|scripts/start-ticket-owner.ps1
 runtime_file|verify-ticket-owner.ps1|scripts/verify-ticket-owner.ps1
 runtime_file|finish-ticket-owner.ps1|scripts/finish-ticket-owner.ps1
+runtime_file|merge-ready-ticket.ps1|scripts/merge-ready-ticket.ps1
 runtime_file|start-spec.ps1|scripts/start-spec.ps1
 runtime_file|start-plan.ps1|scripts/start-plan.ps1
 runtime_file|start-todo.ps1|scripts/start-todo.ps1
@@ -299,6 +302,8 @@ tickets/backlog
 tickets/plan
 tickets/todo
 tickets/inprogress
+tickets/ready-to-merge
+tickets/merge-blocked
 tickets/verifier
 tickets/done
 tickets/reject

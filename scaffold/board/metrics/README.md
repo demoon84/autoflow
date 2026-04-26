@@ -12,6 +12,9 @@ Typical values:
 - reject count,
 - runner counts by state,
 - verifier pass/fail counts,
+- Autoflow completion commit count,
+- product-code files changed, insertions, deletions, and total changed lines,
+- observed AI token usage from runner adapter logs,
 - pass rate,
 - completion rate.
 

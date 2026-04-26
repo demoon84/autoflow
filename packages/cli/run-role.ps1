@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "wiki", "wiki-maintainer")]
+  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "merge", "merge-bot", "wiki", "wiki-maintainer")]
   [string]$Role,
 
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)]

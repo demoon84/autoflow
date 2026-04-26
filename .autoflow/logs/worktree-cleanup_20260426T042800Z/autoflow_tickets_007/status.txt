@@ -1,0 +1,4 @@
+ M apps/desktop/src/renderer/main.tsx
+ M apps/desktop/src/renderer/styles.css
+?? apps/desktop/node_modules
+?? node_modules

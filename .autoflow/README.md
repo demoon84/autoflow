@@ -15,8 +15,9 @@ Use Ticket Owner Mode by default:
 4. The approved spec is saved as `tickets/backlog/prd_NNN.md`.
 5. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
 6. The same owner writes a mini-plan, implements, verifies, records evidence, and finishes pass or fail.
-7. Passed work moves to `tickets/done/<project-key>/` with a local commit.
-8. Failed work moves to `tickets/reject/` with `## Reject Reason`.
+7. Passed owner work moves to `tickets/ready-to-merge/`.
+8. The single merge bot integrates one ready ticket into `PROJECT_ROOT`, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
+9. Failed work moves to `tickets/reject/` with `## Reject Reason`.
 
 Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for compatibility, but it is not the default.
 
@@ -24,6 +25,8 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 - `tickets/backlog/`: approved specs waiting for execution.
 - `tickets/inprogress/`: active Ticket Owner tickets and verification records.
+- `tickets/ready-to-merge/`: verified owner tickets waiting for the single merge bot.
+- `tickets/merge-blocked/`: ready tickets that need ticket-specific merge repair.
 - `tickets/todo/`: legacy implementation queue.
 - `tickets/verifier/`: legacy verification queue.
 - `tickets/done/<project-key>/`: passed tickets, archived specs, archived plans, and verification records.
@@ -44,6 +47,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Codex `$af` / `$autoflow`: spec handoff only.
 - `#af` / `#autoflow`: compatibility aliases for spec handoff only.
 - `autoflow run ticket`: default Ticket Owner execution.
+- `autoflow run merge`: single-writer merge bot for `tickets/ready-to-merge/`.
 - Desktop Owner runner: default Ticket Owner execution from the UI.
 - `#plan`: legacy planner heartbeat.
 - `#todo`: legacy todo heartbeat.
@@ -71,6 +75,7 @@ Ticket Owner work should be narrow and durable:
 - Edit only `Allowed Paths`.
 - Update `Notes`, `Resume Context`, `Verification`, and `Result` as durable state.
 - Use runtime scripts for claim, verification, finish, and context cleanup.
+- On pass, queue for merge bot instead of merging into `PROJECT_ROOT`.
 - Do not push.
 
 ## Verification Rules

@@ -32,6 +32,7 @@ Usage:
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run merge [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]

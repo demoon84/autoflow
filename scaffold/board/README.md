@@ -9,24 +9,27 @@ The chat window can start work, but the board owns work state.
 
 Use Ticket Owner Mode by default:
 
-1. User starts PRD handoff with Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or compatibility aliases `#af` / `#autoflow`.
-2. The agent drafts a full PRD in chat.
+1. User starts spec handoff with Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or compatibility aliases `#af` / `#autoflow`.
+2. The agent drafts a full spec in chat.
 3. The user explicitly approves saving.
-4. The approved PRD is saved as `tickets/backlog/prd_NNN.md`.
+4. The approved spec is saved as `tickets/backlog/prd_NNN.md`.
 5. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
 6. The same owner writes a mini-plan, implements, verifies, records evidence, and finishes pass or fail.
-7. Passed work moves to `tickets/done/<project-key>/` with a local commit.
-8. Failed work moves to `tickets/reject/` with `## Reject Reason`.
+7. Passed owner work moves to `tickets/ready-to-merge/`.
+8. The single merge bot integrates one ready ticket into `PROJECT_ROOT`, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
+9. Failed work moves to `tickets/reject/` with `## Reject Reason`.
 
 Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for compatibility, but it is not the default.
 
 ## Important Directories
 
-- `tickets/backlog/`: approved PRDs waiting for execution.
+- `tickets/backlog/`: approved specs waiting for execution.
 - `tickets/inprogress/`: active Ticket Owner tickets and verification records.
+- `tickets/ready-to-merge/`: verified owner tickets waiting for the single merge bot.
+- `tickets/merge-blocked/`: ready tickets that need ticket-specific merge repair.
 - `tickets/todo/`: legacy implementation queue.
 - `tickets/verifier/`: legacy verification queue.
-- `tickets/done/<project-key>/`: passed tickets, archived PRDs, archived plans, and verification records.
+- `tickets/done/<project-key>/`: passed tickets, archived specs, archived plans, and verification records.
 - `tickets/reject/`: failed tickets with reject reasons.
 - `agents/`: AI role instructions.
 - `automations/`: heartbeat, hook, and context contracts.
@@ -40,25 +43,26 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 ## Trigger Summary
 
-- Claude `/af` / `/autoflow`: PRD handoff only.
-- Codex `$af` / `$autoflow`: PRD handoff only.
-- `#af` / `#autoflow`: compatibility aliases for PRD handoff only.
+- Claude `/af` / `/autoflow`: spec handoff only.
+- Codex `$af` / `$autoflow`: spec handoff only.
+- `#af` / `#autoflow`: compatibility aliases for spec handoff only.
 - `autoflow run ticket`: default Ticket Owner execution.
+- `autoflow run merge`: single-writer merge bot for `tickets/ready-to-merge/`.
 - Desktop Owner runner: default Ticket Owner execution from the UI.
 - `#plan`: legacy planner heartbeat.
 - `#todo`: legacy todo heartbeat.
 - `#veri`: legacy verifier heartbeat.
 
-## PRD Handoff Rules
+## Spec Handoff Rules
 
-PRD handoff never starts implementation.
+Spec handoff never starts implementation.
 
 The agent must:
 
 1. Read `agents/spec-author-agent.md`.
-2. Reserve or resume a PRD slot with `scripts/start-spec.*` when available.
+2. Reserve or resume a spec slot with `scripts/start-spec.*` when available.
 3. Ask for missing goal, scope, allowed paths, acceptance criteria, and verification details.
-4. Show the complete PRD in chat.
+4. Show the complete spec in chat.
 5. Save only after explicit user approval.
 6. Save only to `tickets/backlog/` and optional `conversations/` archive.
 
@@ -71,13 +75,8 @@ Ticket Owner work should be narrow and durable:
 - Edit only `Allowed Paths`.
 - Update `Notes`, `Resume Context`, `Verification`, and `Result` as durable state.
 - Use runtime scripts for claim, verification, finish, and context cleanup.
+- On pass, queue for merge bot instead of merging into `PROJECT_ROOT`.
 - Do not push.
-
-Wiki maintainer follow-up is optional and non-blocking:
-
-- A pass finish may trigger one enabled `wiki-maintainer` runner in one-shot mode.
-- `AUTOFLOW_WIKI_MAINTAINER_AUTO=off` disables the trigger.
-- `autoflow wiki query --synth` and `autoflow wiki lint --semantic` reuse the same adapter path when configured, otherwise they report skipped status without failing the base command.
 
 ## Verification Rules
 

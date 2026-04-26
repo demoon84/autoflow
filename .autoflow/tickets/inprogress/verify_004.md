@@ -5,7 +5,7 @@
 - Ticket ID: 004
 - Project Key: project_NNN
 - Verifier:
-- Status: pending
+- Status: fail
 - Started At:
 - Finished At:
 - Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004
@@ -26,16 +26,19 @@
 - [ ] Verification command was run.
 
 ## Command
-
-- Command:
-- Exit Code:
+- Started At: 2026-04-26T07:45:26Z
+- Finished At: 2026-04-26T07:45:31Z
+- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
+- Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
+- Exit Code: 2
 
 ## Output
-
 ### stdout
 
 ```text
-
+src/renderer/main.tsx(2770,18): error TS2339: Property 'conversationPreview' does not exist on type 'AutoflowRunner'.
+src/renderer/main.tsx(2930,5): error TS2353: Object literal may only specify known properties, and 'autoflow_token_usage_count' does not exist in type 'AutoflowMetricSnapshot'.
+src/renderer/main.tsx(3881,46): error TS2339: Property 'createdAt' does not exist on type 'WorkflowFileEntry'.
 ```
 
 ### stderr
@@ -45,23 +48,28 @@
 ```
 
 ## Evidence
-
-- Result:
-- Observations:
+- Result: failed
+- Exit Code: 2
+- Completed At: 2026-04-26T07:45:31Z
 
 ## Findings
-
-- Finding:
+- blocker: Verification command exited 2
+- warning:
 
 ## Blockers
 
 - Blocker:
 
 ## Next Fix Hint
-
-- Hint:
+- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 004 fail "<reason>"`.
 
 ## Result
 
 - Verdict: pending
 - Summary:
+
+## Checks
+- [x] spec reference confirmed
+- [x] allowed paths respected by ticket scope
+- [x] implementation completed or intentionally unchanged
+- [ ] automated verification passed

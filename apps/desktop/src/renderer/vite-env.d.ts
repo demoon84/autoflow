@@ -15,6 +15,7 @@ type AutoflowFilePreview = {
   name: string;
   title: string;
   modifiedAt: string;
+  createdAt?: string;
 };
 
 type AutoflowRunner = {
@@ -49,6 +50,7 @@ type AutoflowRunner = {
   artifactStdoutStatus: string;
   artifactStderrStatus: string;
   lastLogLine: string;
+  conversationPreview: string;
   statePath: string;
   logPath: string;
 };
@@ -90,6 +92,8 @@ type AutoflowMetricSnapshot = {
   autoflow_code_insertions_count: number;
   autoflow_code_deletions_count: number;
   autoflow_code_volume_count: number;
+  autoflow_token_usage_count: number;
+  autoflow_token_report_count: number;
   verification_pass_rate_percent: number;
   completion_rate_percent: number;
 };

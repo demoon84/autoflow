@@ -49,12 +49,23 @@ enabled = true
 command = ""
 
 [[runners]]
-id = "owner-5"
-role = "ticket-owner"
+id = "merge-1"
+role = "merge-bot"
+agent = "shell"
+model = ""
+reasoning = ""
+mode = "loop"
+interval_seconds = 30
+enabled = true
+command = ""
+
+[[runners]]
+id = "wiki-maintainer-1"
+role = "wiki-maintainer"
 agent = "codex"
-model = "gpt-5.4"
-reasoning = "xhigh"
+model = ""
+reasoning = ""
 mode = "loop"
 interval_seconds = 60
-enabled = true
+enabled = false
 command = ""

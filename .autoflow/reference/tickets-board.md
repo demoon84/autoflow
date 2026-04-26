@@ -4,6 +4,8 @@ This directory is the state board inside `BOARD_ROOT`.
 
 - `todo/`: tickets that are ready but not started.
 - `inprogress/`: claimed `tickets_*.md` files and active verification notes. Legacy planner `plan_*.md` files also use this state while generating tickets.
+- `ready-to-merge/`: Ticket Owner Mode tickets that passed owner verification and wait for the single merge bot.
+- `merge-blocked/`: ready-to-merge tickets that need ticket-specific repair before merge-bot retry.
 - `verifier/`: legacy tickets that finished implementation and wait for verification. Ticket Owner Mode may also resume compatible tickets from this state.
 - `done/`: tickets that passed verification and were committed locally (`done/<project-key>/tickets_NNN.md`).
 - `reject/`: tickets that failed verification and include `## Reject Reason`.
@@ -29,6 +31,8 @@ Default Ticket Owner flow:
 tickets/backlog/prd_001.md
   -> tickets/inprogress/tickets_001.md
   -> tickets/inprogress/verify_001.md
+  -> tickets/ready-to-merge/tickets_001.md
+  -> tickets/ready-to-merge/verify_001.md
   -> tickets/done/prd_001/tickets_001.md
   -> tickets/done/prd_001/prd_001.md
    -> tickets/reject/reject_001.md
@@ -52,7 +56,7 @@ tickets/backlog/prd_001.md
 
 These examples use `001`; each board allocates its own numbers.
 
-Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. On pass it moves to `tickets/done/<project-key>/verify_NNN.md`; on fail it moves to `tickets/reject/verify_NNN.md`. Each completed verification also writes a completion log under `BOARD_ROOT/logs/`.
+Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Ticket Owner Mode, pass moves it first to `tickets/ready-to-merge/verify_NNN.md`, then merge-bot moves it to `tickets/done/<project-key>/verify_NNN.md`. On fail it moves to `tickets/reject/verify_NNN.md`. Each completed verification also writes a completion log under `BOARD_ROOT/logs/`.
 
 ## State Rules
 
@@ -70,12 +74,20 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. On pass
   - In a git repository, the owner works in the ticket worktree when one exists.
   - Runtime context keeps role context and active ticket context separate. Clear only the active ticket context after finishing a ticket.
   - Leave blockers in this state; do not move blocked work back to `todo/`.
-  - Ticket Owner Mode continues implementation and verification in one ticket. Legacy todo updates `Notes`, `Result.Summary`, and `Verification: pending`, then moves the file to `verifier/` with `scripts/handoff-todo.*`.
+  - Ticket Owner Mode continues implementation and verification in one ticket. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and moves the ticket to `ready-to-merge/`. Legacy todo updates `Notes`, `Result.Summary`, and `Verification: pending`, then moves the file to `verifier/` with `scripts/handoff-todo.*`.
+- `ready-to-merge/`
+  - Contains owner-verified tickets waiting for the single merge bot.
+  - The owner has decided verification pass; merge bot must not change that decision.
+  - Merge bot runs `scripts/merge-ready-ticket.*`, integrates the prepared worktree commit into `PROJECT_ROOT`, archives evidence/logs/wiki, and creates the local completion commit.
+  - Transient root blockers, such as an active rebase or conflicting dirty root paths, leave the ticket here for retry.
+- `merge-blocked/`
+  - Contains ready tickets with ticket-specific merge blockers, such as invalid commit scope or cherry-pick conflicts.
+  - Repair the ticket worktree/branch, then move the ticket and run file back to `ready-to-merge/` for merge-bot retry.
 - `verifier/`
   - Contains legacy tickets waiting for verification. Ticket Owner Mode may resume compatible existing tickets here.
   - Legacy verifier heartbeat claims one ticket and runs verification from the `working_root` returned by `start-verifier.sh`.
   - One agent conversation should actively verify one ticket at a time.
-  - On pass, the runtime integrates ticket worktree changes into `PROJECT_ROOT` without a pre-existing commit, then makes one local commit with board changes.
+  - On pass, legacy verifier behavior may integrate ticket worktree changes into `PROJECT_ROOT`; Ticket Owner Mode should use `ready-to-merge/` plus merge bot instead.
 - `done/`
   - Contains work that passed verification and has a local git commit.
   - Group tickets by project key, for example `done/prd_001/`.
@@ -128,9 +140,9 @@ Important:
 - `References` paths are relative to `BOARD_ROOT`.
 - `Allowed Paths` are repository-relative. During implementation, resolve them from the ticket worktree root when present; otherwise resolve them from `PROJECT_ROOT`.
 - A ticket number must exist in only one state folder at a time. Retries after reject receive a new ticket number.
-- `todo/`, `inprogress/`, `verifier/`, `done/`, and `reject/` are the state board. They may stay empty without nested README files.
+- `todo/`, `inprogress/`, `ready-to-merge/`, `merge-blocked/`, `verifier/`, `done/`, and `reject/` are the state board. They may stay empty without nested README files.
 - A `done/<project-key>/` ticket must link its final `verify_NNN.md` evidence.
 - Each completed owner / verifier run should leave at least one completion log under `BOARD_ROOT/logs/`.
 - Link related specs, plans, tickets, and verification notes with `## Obsidian Links`.
 - Heartbeat workers do not stop themselves. `status=idle` is a valid waiting state.
-- Board location is authoritative. In Ticket Owner Mode, the owner decides pass / fail after verification. In the legacy role-pipeline, only verifier mode decides pass / fail.
+- Board location is authoritative. In Ticket Owner Mode, the owner decides pass / fail after verification and merge bot only integrates passed tickets. In the legacy role-pipeline, only verifier mode decides pass / fail.

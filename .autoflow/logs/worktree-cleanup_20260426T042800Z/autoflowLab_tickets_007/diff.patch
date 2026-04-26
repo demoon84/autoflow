@@ -1,0 +1,737 @@
+diff --git a/README.md b/README.md
+index 9915a73..2be4bda 100644
+--- a/README.md
++++ b/README.md
+@@ -4,7 +4,7 @@
+ 
+ 핵심 목표는 이것이다.
+ 
+-- 실제 프로젝트 안에 `.autoflow/` 보드를 생성한다.
++- 실제 프로젝트 안에 `autoflow/` 보드를 생성한다.
+ - 보드 상태는 프로젝트 로컬 파일로 남긴다.
+ - 설치는 공개 저장소의 CLI/스크립트로 수행한다.
+ 
+@@ -13,7 +13,7 @@
+ ```text
+ tetris/
+   AGENTS.md
+-  .autoflow/
++  autoflow/
+     AGENTS.md
+     README.md
+     agents/
+@@ -23,15 +23,14 @@ tetris/
+     scripts/
+     tickets/
+       plan/
+-      inprogress/
+-      done/
+-      reject/
++        inprogress/
++      runs/
+   src/
+   public/
+   package.json
+ ```
+ 
+-여기서 `.autoflow/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
++여기서 `autoflow/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
+ 프로젝트별 온보딩 메모나 테스트 명령 모음은 둘 수 있지만, 상태 폴더에는 실제 작업 문서만 둔다. 설명서와 템플릿은 `reference/` 에 모으고, 검증 기준 문서는 `rules/verifier/` 아래에 둔다. planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동한다. plan / ticket / verification / log 문서는 `[[project_NNN]]`, `[[plan_NNN]]`, `[[tickets_NNN]]`, `[[verify_NNN]]` 형태의 옵시디언 링크도 함께 남겨 서로 연결한다.
+ 
+ ## Distribution Model
+@@ -40,7 +39,7 @@ tetris/
+ 
+ - 공개 Git 저장소
+ - 설치용 CLI 엔트리포인트
+-- 로컬 프로젝트에 생성되는 `.autoflow/` 보드
++- 로컬 프로젝트에 생성되는 `autoflow/` 보드
+ 
+ 이 방식의 장점:
+ 
+@@ -52,7 +51,7 @@ tetris/
+ ## 핵심 개념
+ 
+ - `PROJECT_ROOT`: 실제 제품 코드를 두는 호스트 프로젝트 루트
+-- `BOARD_ROOT`: `PROJECT_ROOT/.autoflow`
++- `BOARD_ROOT`: `PROJECT_ROOT/autoflow`
+ 
+ 이 스캐폴드에서는 아래 원칙을 쓴다.
+ 
+@@ -71,16 +70,16 @@ tetris/
+ 
+ ```text
+ PROJECT_ROOT
+-  -> .autoflow/tickets/backlog
+-  -> .autoflow/tickets/plan
+-  -> .autoflow/tickets/inprogress
+-  -> .autoflow/automations
+-  -> .autoflow/tickets/todo
+-  -> .autoflow/tickets/inprogress
+-  -> .autoflow/rules/verifier
+-  -> .autoflow/tickets/inprogress/verify_NNN.md
+-  -> .autoflow/logs
+-  -> .autoflow/tickets/done/<project-key>/verify_NNN.md
++  -> autoflow/tickets/backlog
++  -> autoflow/tickets/plan
++  -> autoflow/tickets/inprogress
++  -> autoflow/automations
++  -> autoflow/tickets/todo
++  -> autoflow/tickets/inprogress
++  -> autoflow/rules/verifier
++  -> autoflow/tickets/inprogress/verify_NNN.md
++  -> autoflow/logs
++  -> autoflow/tickets/done/<project-key>
+ ```
+ 
+ ## When This Fits
+@@ -88,9 +87,9 @@ PROJECT_ROOT
+ 아래 같은 상황이면 이 구조가 잘 맞는다.
+ 
+ - `tetris` 같은 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
+-- 여러 Codex 대화창이나 heartbeat worker 가 병렬로 작업을 나눠 처리할 때. 단, Codex 대화 하나는 한 번에 `#spec` / `#plan` / `#todo` / `#veri` 각각 active 항목 하나만 처리한다.
++- 여러 Codex 스레드나 heartbeat worker 가 병렬로 티켓을 나눠 처리할 때
+ - 보드 상태와 제품 코드를 물리적으로 분리하고 싶을 때
+-- 사람이 `.autoflow/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
++- 사람이 `autoflow/` 폴더만 열어도 현재 흐름을 빠르게 이해해야 할 때
+ 
+ ## Install
+ 
+@@ -112,7 +111,7 @@ Windows PowerShell 에서는 아래 래퍼를 쓰면 `D:\project\astra` 같은 
+ ./bin/autoflow.ps1 init D:\project\astra
+ ```
+ 
+-기본 보드 폴더 이름은 `.autoflow` 이다.
++기본 보드 폴더 이름은 `autoflow` 이다.
+ 
+ 다른 이름을 시험하고 싶으면:
+ 
+@@ -138,7 +137,7 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell
+ ./bin/autoflow.ps1 watch D:\project\astra
+ ```
+ 
+-창을 띄우지 않고 백그라운드 프로세스로 운영하려면 아래를 쓴다. PID 와 stdout/stderr 는 `.autoflow/logs/hooks/` 에 남는다.
++창을 띄우지 않고 백그라운드 프로세스로 운영하려면 아래를 쓴다. PID 와 stdout/stderr 는 `autoflow/logs/hooks/` 에 남는다.
+ 
+ ```powershell
+ ./bin/autoflow.ps1 watch-bg D:\project\astra
+@@ -162,11 +161,11 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell
+ 
+ 1. `autoflow init` 으로 보드를 만든다.
+ 2. `autoflow status` 와 `autoflow doctor` 로 초기 상태를 확인한다.
+-3. `#spec` 으로 사용자와 대화해 정리된 spec 을 `tickets/backlog/` 에 남긴다. 같은 대화창에 active spec 이 있으면 새 번호를 만들지 않고 그 spec 만 이어 쓴다.
+-4. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 만들고, ticket 생성 시 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 `tickets/todo/` 를 생성한다. 같은 대화창에 active plan 이 있으면 새 plan 을 잡지 않고 그 plan 만 이어 처리한다. 실제 ticket 생성이 끝나면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해 backlog / plan 루트에서는 빠진다.
+-5. `#todo` 로 todo heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다. 같은 Codex 대화/worker 에 기존 `inprogress` 티켓이 있으면 새 claim 대신 그 티켓을 재개한다.
+-   이때 stop-hook runtime context 는 역할 문맥과 현재 ticket 문맥을 나눠 갖고, 각 todo tick 이 끝나면 전체 clear 대신 현재 ticket 문맥만 비운다. 상관관계는 Obsidian links, `References`, `Resume Context`, run/log 파일로 재구성한다.
+-6. `#veri` 로 verifier heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `verifier/` 를 검사해 티켓 `working_root` 에서 검증한다. 같은 대화창에 active verifier 티켓이 있으면 새 티켓을 잡지 않고 그 티켓만 이어 검증한다. pass 면 `integrate-worktree` 런타임으로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동하고, 완료 로그를 `logs/` 에 남긴다.
++3. `#spec` 으로 사용자와 대화해 정리된 spec 을 `tickets/backlog/` 에 남긴다.
++4. `#plan` 으로 planner heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 populated spec 을 읽어 plan 을 만들고, ticket 생성 시 plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 `tickets/todo/` 를 생성한다. 실제 ticket 생성이 끝나면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해 backlog / plan 루트에서는 빠진다.
++5. `#todo` 로 todo heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
++   이때 stop-hook runtime context 는 역할 문맥과 현재 ticket 문맥을 나눠 갖고, 기능 단위 작업이 끝나면 전체 clear 대신 현재 ticket 문맥만 비운다. 상관관계는 Obsidian links, `References`, `Resume Context`, run/log 파일로 재구성한다.
++6. `#veri` 로 verifier heartbeat 를 1분 주기로 생성 또는 재개한다. 이 heartbeat 는 `verifier/` 를 검사해 티켓 `working_root` 에서 검증한다. pass 면 `integrate-worktree` 런타임으로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동하고, 완료 로그를 `logs/` 에 남긴다.
+    브라우저 확인이 필요해도 기본값은 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 이며 Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 쓰고, 현재 턴에서 연 브라우저/탭은 같은 턴에서 닫고 끝내야 한다.
+    이 역할은 `PROJECT_ROOT` / `BOARD_ROOT` / ticket worktree 범위 안의 검증 명령, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 을 추가 허락 없이 바로 수행한다.
+ 7. heartbeat 세트를 파일로 관리하고 싶다면 `automations/heartbeat-set.toml` 을 채우고 `autoflow render-heartbeats` 로 role별 heartbeat TOML 묶음을 만든다.
+@@ -177,10 +176,10 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell
+ 현재 브랜드 전략은 아래와 같다.
+ 
+ - 제품/배포 이름: `Autoflow`
+-- 로컬 보드 폴더: `.autoflow/`
+-- 현재 보드 명령 예시: `init .autoflow`, `#plan` 등 기존 흐름 유지
++- 로컬 보드 폴더: `autoflow/`
++- 현재 보드 명령 예시: `init autoflow`, `#plan` 등 기존 흐름 유지
+ 
+-즉 브랜드는 `Autoflow` 로 가져가되, 실제 프로젝트 경로는 당분간 `.autoflow/` 으로 유지한다.
++즉 브랜드는 `Autoflow` 로 가져가되, 실제 프로젝트 경로는 당분간 `autoflow/` 으로 유지한다.
+ 
+ ## Public Package Layout
+ 
+@@ -197,7 +196,7 @@ autoflow/
+   tickets/
+ ```
+ 
+-`bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `.autoflow/` 아래에 남는다.
++`bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `autoflow/` 아래에 남는다.
+ 
+ 생성 대상은 현재 저장소 전체가 아니라 `templates/board/`, `templates/host-AGENTS.md`, 그리고 선택된 runtime 문서/스크립트다.
+ 즉 새 프로젝트에는 이 저장소의 내부 plan, 샘플 ticket, 플러그인 실험 파일이 들어가지 않는다.
+@@ -206,7 +205,7 @@ autoflow/
+ 
+ ## Script Hooks
+ 
+-생성된 `.autoflow/scripts/` 의 훅은 보드 상태 전환을 맡는다.
++생성된 `autoflow/scripts/` 의 훅은 보드 상태 전환을 맡는다.
+ 
+ - `start-spec.sh`
+ - `start-plan.sh`
+@@ -218,22 +217,17 @@ autoflow/
+ - `start-todo.ps1`
+ - `handoff-todo.ps1`
+ - `start-verifier.ps1`
+-- `check-stop.sh`
+-- `check-stop.ps1`
+-- `codex-stop-hook.ps1`
+ - `run-hook.ps1`
+ - `watch-board.ps1`
+ 
+-Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `bin/autoflow.ps1` 는 top-level CLI 를 `scripts/cli/*.ps1` 로 dispatch 하고, 생성 보드의 runtime 도 `scripts/*.ps1` 래퍼를 우선 쓴다. 이 `.ps1` 래퍼들은 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 구현을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
++Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `.ps1` 래퍼는 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 런타임을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
+ 
+ 이 스크립트들은 결정적인 파일 이동과 상태 갱신을 맡고, 실제 구현 판단은 에이전트가 이어받는다.
+ 
+ `watch-board.ps1` 는 OS 파일 이벤트를 받아 route 별 훅을 한 번씩 dispatch 하는 장기 실행 watcher 다. minute heartbeat 가 외부 사유로 끊기는 환경에서는 이 watcher 를 함께 두는 쪽이 더 안정적이다. 평소에는 `watch-bg` 로 숨김 프로세스 실행을 사용하고, watcher 자체는 사용자가 `watch-stop` 으로 멈출 때까지 계속 살아 있다. 상세 실행 기록은 `logs/hooks/` 에 남긴다.
+ 
+-`codex-stop-hook.ps1` 는 Codex 전역 Stop hook 에 연결하는 Autoflow 자체 dispatcher 다. `CODEX_PROJECT_DIR` 또는 현재 작업 폴더에서 `.autoflow/scripts/check-stop.ps1` 를 찾아 실행하고, 보드가 없거나 내부 오류가 나면 진단 로그만 남긴 뒤 조용히 통과한다.
+-
+-자동화 철학은 "남은 일이 있는데 너무 일찍 멈추지 않게 하기"다. `Autoflow` 는 단일 작업 계획 파일 대신 보드 파일을 source of truth 로 쓰고, Codex 자동화는 필요할 때 1분 heartbeat 형태의 wake-up 계층으로 붙이되 각 heartbeat 는 `plan`, `todo`, `verifier` 중 자기 역할만 수행하는 쪽을 기준으로 한다.
+-`#todo` / `#veri` 는 tick 이 끝날 때 active ticket context 를 비워 토큰 사용을 줄이고, 다음 tick 에는 보드 파일과 Obsidian links 를 다시 읽어 재개한다. role / worker context 는 유지하므로 사용자가 "멈춰"라고 하기 전까지 heartbeat 연속성은 유지된다.
++자동화 철학은 `/Users/demoon/Documents/project/mySkills/skills/autopilot/SKILL.md` 처럼 "남은 일이 있는데 너무 일찍 멈추지 않게 하기"에 가깝다.
++다만 현재 `Autoflow` 는 단일 작업 계획 파일 대신 보드 파일을 source of truth 로 쓰고, Codex 자동화는 필요할 때 1분 heartbeat 형태의 wake-up 계층으로 붙이되 각 heartbeat 는 `plan`, `todo`, `verifier` 중 자기 역할만 수행하는 쪽을 기준으로 한다.
+ 
+ 역할 분리형 운영에서는 아래 환경 변수를 쓰는 편이 좋다.
+ 
+@@ -269,7 +263,7 @@ pool 예시는 숫자가 고정이 아니다.
+ 
+ 24시간 heartbeat 운영에서는 `AUTOFLOW_BACKGROUND=1` 을 주는 편이 좋다. 이 모드에서는 "할 일 없음" 이 실패가 아니라 `status=idle` 로 출력되어 자동화가 조용히 다음 wake-up 을 기다린다.
+ 
+-또한 todo worker 는 execution pool 이 이미 꽉 찼거나 같은 worker 가 기존 `inprogress` 티켓을 갖고 있으면 새 티켓을 claim 하지 않는다. 여기서 execution pool 은 **구현을 진행할 수 있는 todo worker id 목록**을 뜻한다.
++또한 todo worker 는 execution pool 이 이미 꽉 찼으면 새 티켓을 claim 하지 않는다. 여기서 execution pool 은 **구현을 진행할 수 있는 todo worker id 목록**을 뜻한다.
+ 
+ 즉 이 구조는 6개 전용이 아니다.
+ `planner P / todo K / verifier M` 형태로 worker 수를 가변 운영하는 쪽이 기준이다.
+@@ -292,11 +286,10 @@ pool 예시는 숫자가 고정이 아니다.
+ - `tickets/plan/plan_*.md`
+ - `tickets/inprogress/plan_*.md`
+ - `tickets/*/tickets_*.md`
+-- `tickets/inprogress/verify_*.md` while verification is active
+-- `tickets/done/<project-key>/verify_*.md` or `tickets/reject/verify_*.md` after verification is settled
++- `tickets/inprogress/verify_*.md`
+ - `logs/verifier_*.md`
+ 
+-업그레이드 중 변경되는 공용 파일이 이미 수정되어 있으면, 이전 내용은 `BOARD_ROOT/.autoflow-upgrade-backups/<timestamp>/` 아래에 백업한다. 백업은 기본적으로 최신 5개만 보관하고 오래된 timestamp 백업은 업그레이드 끝에 자동 정리한다. 보관 개수는 `AUTOFLOW_UPGRADE_BACKUP_KEEP=10` 처럼 조절할 수 있다.
++업그레이드 중 변경되는 공용 파일이 이미 수정되어 있으면, 이전 내용은 `BOARD_ROOT/.autoflow-upgrade-backups/<timestamp>/` 아래에 백업한다.
+ 
+ ## Path Rules
+ 
+@@ -305,8 +298,7 @@ pool 예시는 숫자가 고정이 아니다.
+ - 보드 문서 참조: `tickets/backlog/project_001.md` 또는 `tickets/done/project_001/project_001.md`
+ - plan 참조: `tickets/plan/plan_001.md`, `tickets/inprogress/plan_001.md`, 또는 `tickets/done/project_001/plan_001.md`
+ - done 티켓 경로: `tickets/done/project_001/tickets_001.md`
+-- 진행 중 검증 기록 참조: `tickets/inprogress/verify_001.md`
+-- 완료 후 검증 기록 참조: `tickets/done/project_001/verify_001.md`
++- 검증 기록 참조: `tickets/inprogress/verify_001.md`
+ - verifier completion log 참조: `logs/verifier_001_<timestamp>_<outcome>.md`
+ - 실제 작업 허용 경로: `src/`, `public/`, `package.json`
+ 
+@@ -321,9 +313,9 @@ pool 예시는 숫자가 고정이 아니다.
+ - 공개 저장소 형태로 쉽게 배포하기
+ - 실제 프로젝트 안에 삽입 가능한 하네스 sidecar 만들기
+ - 보드와 제품 코드를 물리적으로 분리하기
+-- 에이전트가 `.autoflow/` 보드만 읽어도 현재 흐름을 이해하게 하기
++- 에이전트가 `autoflow/` 보드만 읽어도 현재 흐름을 이해하게 하기
+ - 실제 코드 수정 범위는 티켓 worktree 안의 `Allowed Paths` 로 좁히기
+-- 여러 대화창이 동시에 `#spec` / `#plan` / `#todo` / `#veri` 를 실행해도 각 대화창은 자기 active 항목 하나만 처리하게 하기.
++- 여러 대화창이 동시에 `#todo` 를 실행해도 서로 다른 티켓을 점유하게 하기
+ - 대화창이 멈췄다가 다시 시작되어도 `tickets/inprogress/` 기준으로 재개하게 하기
+ - 검증 기준과 검증 결과를 분리하기
+ - todo / verifier heartbeat 가 자기 owner 와 상태 큐를 계속 따라가게 하기
+@@ -332,14 +324,14 @@ pool 예시는 숫자가 고정이 아니다.
+ 
+ - 티켓 파일 이름은 `tickets_001.md` 처럼 번호 기반으로 만든다.
+ - 한 티켓은 한 번에 한 상태 폴더에만 존재한다.
+-- `done/<project-key>/` 으로 옮기기 전에 verifier 가 `tickets/inprogress/verify_*.md` 를 준비해야 하고, 완료 후에는 그 기록도 `done/<project-key>/verify_*.md` 또는 `reject/verify_*.md` 로 정리돼야 한다. verifier completion log 는 `logs/` 에 남아 있어야 한다.
++- `done/<project-key>/` 으로 옮기기 전에 검증 기록이 `tickets/inprogress/verify_NNN.md` 형태로 남아 있어야 하고, verifier completion log 가 `logs/` 에 남아 있어야 한다.
+ - 티켓을 만들기 전에 관련 계획 항목이 `tickets/plan/` 에 있어야 한다.
+ - 티켓 생성 전에는 실제 `tickets/backlog/*.md` 가 있어야 한다.
+ - 티켓 생성이 끝난 spec 과 plan 은 `tickets/done/<project-key>/` 로 이동해야 한다.
+ - `Allowed Paths` 는 repo-relative 경로로 적고, 구현은 티켓 worktree 기준으로 진행한다. worktree 가 없을 때만 `PROJECT_ROOT` 기준으로 fallback 한다.
+ - `#spec`, `#plan`, `#todo`, `#veri` 는 서로 다른 역할을 섞지 않는다.
+ - `#plan`, `#todo`, `#veri` 는 먼저 1분 heartbeat 자동화를 붙이고, 사용자가 멈추라고 하기 전까지 자동화가 계속 살아 있어야 한다.
+-- planner 는 현재 plan 을 ticketed 로 만든 뒤 active context 를 비운다. backlog 에 populated spec 이 남아 있으면 다음 tick 이 보드에서 다시 읽되, 같은 대화창에서 동시에 두 plan 을 active 처리하지 않는다.
++- planner 는 현재 plan 을 ticketed 로 만든 뒤에도 backlog 에 populated spec 이 남아 있으면 다음 plan 으로 계속 이어가야 한다.
+ - `#todo` 는 단순 이동 훅이 아니라 `점유 + 이동 + 구현 + verifier 이동` 훅이다.
+ - 티켓 제목, Goal, Done When 문구가 검증처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 todo worker 가 구현을 진행한다. pass / fail 판정은 verifier 만 한다.
+ - `inprogress/` 티켓에는 항상 재개 가능한 상태 요약이 남아 있어야 한다.
+diff --git a/agents/verifier-agent.md b/agents/verifier-agent.md
+index c810fff..2649484 100644
+--- a/agents/verifier-agent.md
++++ b/agents/verifier-agent.md
+@@ -15,8 +15,6 @@
+ 
+ - `scripts/start-verifier.sh` 출력
+   - `status=ok` 이면 `verify`, `ticket_id`, `ticket_title`, `run`, `working_root`, `integration_command` 경로 제공
+-  - `status=resume` 이면 이 대화창/worker 가 이미 맡은 verifier 티켓을 계속 검증
+-  - `status=blocked` / `reason=conversation_already_has_active_verification` 이면 이 대화창의 active verification 을 먼저 끝내고, 다른 verifier 티켓은 새 Codex 대화창에서 처리
+   - `routing_pass=...`, `routing_fail=...` 로 다음 mv/commit 명령 힌트
+ - 대상 티켓 파일 (`tickets/verifier/tickets_NNN.md`)
+ - 관련 spec 문서 (`tickets/backlog/project_*.md` 또는 `tickets/done/*/project_*.md`)
+@@ -25,7 +23,7 @@
+ 
+ ## Outputs
+ 
+-- 검증 중에는 `tickets/inprogress/verify_NNN.md`, 완료 후에는 final ticket 옆으로 이동된 `verify_NNN.md` (pass/fail 기록)
++- 업데이트된 `tickets/inprogress/verify_NNN.md` (pass/fail 기록)
+ - 업데이트된 `logs/verifier_NNN_*.md` (verifier completion log)
+ - 위 두 문서에는 `## Obsidian Links` 로 `project / plan / ticket / verify` note 연결을 남긴다
+ - 이동된 티켓 파일: `tickets/verifier/ → tickets/done/<project-key>/` (pass) or `tickets/verifier/ → tickets/reject/reject_NNN.md` (fail)
+@@ -45,8 +43,6 @@
+ 10. fail 시 기존 코드 변경은 되돌리지 않는다 — 변경된 working tree 는 그대로 두고 reject 티켓만 남긴다 (planner 가 다음 tick 에 재계획할 때 현 상태를 고려).
+ 11. pass 후에는 먼저 `integration_command` 로 티켓 worktree 의 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한다. 그 다음 `PROJECT_ROOT` 에서 `git add . && git commit` 하여 ticket/log 이동 + 코드 변경을 한 커밋으로 묶는다.
+ 12. pass 또는 fail 한 건을 처리했다고 전체 자동화가 끝난 것은 아니다. backlog 에 다음 populated spec 이 남아 있으면 planner heartbeat 또는 `done/` / `reject/` hook 이 다음 plan 을 이어간다.
+-13. tick 이 끝날 때는 active ticket context 를 비워 다음 tick 이 티켓 / 검증 기록 / 로그에서 다시 읽게 한다. verifier role 과 worker context 는 heartbeat 유지를 위해 남긴다.
+-14. Codex 대화창 하나는 한 번에 verifier 티켓 하나만 활성 검증한다. `start-verifier.*` 가 `status=resume` 을 반환하면 새 검증 티켓을 잡지 말고 반환된 티켓만 이어서 처리한다.
+ 
+ ## Trigger
+ 
+@@ -58,8 +54,6 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
+ 2. `scripts/start-verifier.sh` 실행.
+    - `status=idle` → 현재 wake-up 만 종료.
+    - `status=ok` → `verify`, `run`, `ticket_id`, `ticket_title`, `routing_pass`, `routing_fail` 확보.
+-   - `status=resume` → 기존 active verifier 티켓의 `verify`, `run`, `ticket_id`, `routing_pass`, `routing_fail` 확보 후 이어서 검증.
+-   - `status=blocked` → 같은 대화창의 active verifier 티켓을 먼저 끝내야 하므로 새 티켓 검증을 시작하지 않음.
+ 3. 대상 티켓 읽기 + spec 의 `Global Acceptance Criteria` + `Verification.Command` 확인.
+ 4. `working_root` 에서 검증 명령 실행. 결과 수집.
+    - 이 단계에서 필요한 로컬 명령, 브라우저 확인, ticket/log file 이동, local git commit 은 이미 사용자 승인된 것으로 간주하고 추가 질문 없이 진행한다.
+@@ -69,14 +63,14 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
+    - Codex 에서는 Codex 브라우저 도구를 사용한다.
+    - Claude 에서는 Claude browser tool 을 사용한다.
+    - 브라우저 도구를 열었다면 현재 tick 에서만 열고 검증이 끝나면 바로 닫는다.
+-6. `rules/verifier/verification-template.md` 기준으로 먼저 `tickets/inprogress/verify_NNN.md` 에 결과 기록:
++6. `rules/verifier/verification-template.md` 기준으로 `tickets/inprogress/verify_NNN.md` 에 결과 기록:
+    - `## Meta`: Status = `pass` / `fail`
+    - `## Findings` / `## Blockers` / `## Next Fix Hint` 채움
+ 7. **Pass 인 경우** (`routing_pass` 힌트 따라):
+ - `worktree_path` 가 비어 있지 않으면 먼저 `integration_command` 를 실행해 티켓 worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 가져온다. 이 단계는 commit 하지 않는다.
+ - `mv tickets/verifier/tickets_NNN.md tickets/done/<project-key>/tickets_NNN.md`
+ - 티켓 `Stage = done`, `Result.Summary` 갱신
+-- `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/inprogress/verify_NNN.md pass` 실행 후 검증 기록은 `tickets/done/<project-key>/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
++- `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/inprogress/verify_NNN.md pass` 실행 후 생성된 로그 경로를 티켓 `Verification.Log file` 에 반영. 이 스크립트가 active runtime context 를 비운다
+ - `cd PROJECT_ROOT && git add . && git commit -m "[티켓명] 간략 수정내용"`
+    - **절대 `git push` 하지 않는다.**
+ 8. **Fail 인 경우** (`routing_fail` 힌트 따라):
+@@ -91,13 +85,12 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
+      ```
+    - `mv tickets/verifier/tickets_NNN.md tickets/reject/reject_NNN.md`
+    - 티켓 `Stage = rejected`, `Result.Summary` 갱신 ("reject: <요약>")
+-- `scripts/write-verifier-log.sh tickets/reject/reject_NNN.md tickets/inprogress/verify_NNN.md fail` 실행 후 검증 기록은 `tickets/reject/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
++   - `scripts/write-verifier-log.sh tickets/reject/reject_NNN.md tickets/inprogress/verify_NNN.md fail` 실행 후 생성된 로그 경로를 티켓 `Verification.Log file` 에 반영. 이 스크립트가 active runtime context 를 비운다
+    - worktree 는 삭제하지 않는다. reject 재계획이나 사람이 실패 원인을 확인할 때 참고할 수 있게 남긴다.
+ 9. 브라우저나 탭을 열었다면 pass / fail 처리 전에 정리 상태를 확인한다. 사용자가 유지하라고 하지 않았다면 열린 탭/페이지를 닫고 나서 현재 tick 을 마친다.
+ 10. git commit 은 pass 경로에서만. fail 경로에서는 commit 하지 않는다 (working tree 는 남지만 커밋 시점 판단은 다음 재계획 사이클에서).
+ 11. pass 로 `tickets/done/<project-key>/` 에 도착한 뒤 backlog 잔량이 있으면 planner 가 다음 plan 으로 이어갈 수 있으므로, verifier 는 현재 티켓만 마무리하고 전체 흐름을 끝난 것으로 선언하지 않는다.
+-12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 Obsidian links, ticket `References`, 현재 위치의 `verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
+-13. 현재 tick 을 마칠 때 Stop hook 이 active ticket context 를 비워 토큰 사용을 줄인다. 다음 verifier tick 은 `tickets/verifier/` 와 `tickets/inprogress/verify_NNN.md` 를 다시 읽는다.
++12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 Obsidian links, ticket `References`, `tickets/inprogress/verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
+ 
+ ## Pass / Fail 판정 가이드
+ 
+@@ -117,9 +110,3 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
+ ## Stop Rule
+ 
+ 이 agent 가 스스로 heartbeat 를 stop 시키지 않는다. 대기 티켓이 없으면 idle 로 끝나고 다음 tick 이 깨운다. 사용자가 명시적으로 stop 을 말하지 않는 한 계속 돌아간다.
+-
+-## Context Compaction
+-
+-- tick 중에는 `start-verifier.*` 가 active ticket context 를 잡아도 된다.
+-- tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 verifier 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
+-- pass / fail 완료 시에는 `write-verifier-log.*` 도 active context 를 비운다.
+diff --git a/autoflow/AGENTS.md b/autoflow/AGENTS.md
+index d903e93..f081192 100644
+--- a/autoflow/AGENTS.md
++++ b/autoflow/AGENTS.md
+@@ -6,7 +6,7 @@
+ 
+ ## Canonical Flow
+ 
+-`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/runs -> logs -> tickets/done`
++`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done`
+ 
+ 의미:
+ 
+@@ -21,7 +21,7 @@
+ - `tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
+ - `reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
+ - `rules/verifier/`: 검증 기준과 체크리스트
+-- `tickets/runs/`: 실행과 검증 기록
++- `tickets/inprogress/verify_NNN.md`: 실행과 검증 기록
+ - `logs/`: verifier 완료 이력 로그
+ 
+ ## Read Order
+@@ -65,8 +65,8 @@
+ 14. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
+ 15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. 기능 단위 작업이 끝나면 전체 context 를 지우지 않고 `clear-thread-context.* --active-only` 로 active ticket 문맥만 비운다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
+ 16. 여러 todo worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
+-17. verifier 가 끝나면 `tickets/runs/verify_NNN.md` 와 별도로 `logs/verifier_NNN_*.md` completion log 를 남긴다.
+-18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/runs/verify_NNN.md` 및 생성된 completion log 와 연결한다.
++17. verifier 가 끝나면 `tickets/inprogress/verify_NNN.md` 와 별도로 `logs/verifier_NNN_*.md` completion log 를 남긴다.
++18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/inprogress/verify_NNN.md` 및 생성된 completion log 와 연결한다.
+ 19. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
+ 20. git 저장소에서는 todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, verifier pass 시 `scripts/integrate-worktree.sh` 로 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
+ 21. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
+@@ -177,7 +177,7 @@
+ 해야 하는 일:
+ 
+ - `start-verifier.sh` 가 출력한 `working_root` 에서 spec 의 `Verification.Command` 실행 + Acceptance Criteria 관찰
+-- `tickets/runs/verify_NNN.md` 에 pass/fail 결과 기록
++- `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
+ - `logs/verifier_NNN_*.md` completion log 생성
+ - **Pass**: worktree 가 있으면 `scripts/integrate-worktree.sh` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[티켓명] 간략 수정내용"` (local commit)
+ - **Fail**: 티켓 하단에 `## Reject Reason` 추가 후 `tickets/reject/reject_NNN.md` 로 mv. commit 하지 않음
+@@ -316,7 +316,7 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `V
+ 
+ 1. 티켓의 `Done When` 항목이 충족되었다.
+ 2. `rules/verifier/` 기준으로 검증했다.
+-3. 검증 기록이 `tickets/runs/` 에 있다.
++3. 검증 기록이 `tickets/inprogress/verify_NNN.md` 에 있다.
+ 4. verifier completion log 가 `logs/` 에 있다.
+ 5. 티켓의 `Verification` 항목에 그 기록과 로그가 연결되어 있다.
+ 6. 티켓의 `Result` 가 채워져 있다.
+diff --git a/autoflow/README.md b/autoflow/README.md
+index 772b2b7..1459f29 100644
+--- a/autoflow/README.md
++++ b/autoflow/README.md
+@@ -8,7 +8,7 @@
+ - 순서는 `tickets/plan/`
+ - 실행 단위는 `tickets/`
+ - 검증 기준과 템플릿은 `rules/verifier/`
+-- 검증 증거는 `tickets/runs/`
++- 검증 증거는 `tickets/inprogress/verify_*.md`
+ - verifier 완료 이력은 `logs/`
+ 
+ ## First Use
+@@ -62,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
+ - `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
+ - `tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
+ - `tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
+-- `tickets/runs/`: 검증 기록
++- `tickets/inprogress/verify_*.md`: verifier 가 준비한 검증 기록
+ - `logs/`: verifier 완료 로그
+ - `tickets/done/<project-key>/`: 프로젝트 단위로 모아 둔 완료 티켓, 처리된 spec, ticket 생성 완료 plan
+ - `scripts/`: 보드 runtime 훅
+diff --git a/autoflow/reference/README.md b/autoflow/reference/README.md
+index 6c25bc7..1548308 100644
+--- a/autoflow/reference/README.md
++++ b/autoflow/reference/README.md
+@@ -2,6 +2,6 @@
+ 
+ 이 폴더는 상태 보드 밖에서 관리하는 설명서와 템플릿을 모은다.
+ 
+-- `tickets/backlog/`, `tickets/plan/`, `tickets/todo/`, `tickets/inprogress/`, `tickets/verifier/`, `tickets/done/`, `tickets/reject/`, `tickets/runs/`, `logs/` 같은 상태 폴더에는 실제 작업 문서와 실행 기록만 둔다.
++- `tickets/backlog/`, `tickets/plan/`, `tickets/todo/`, `tickets/inprogress/`, `tickets/verifier/`, `tickets/done/`, `tickets/reject/`, `logs/` 같은 상태 폴더에는 실제 작업 문서와 실행 기록만 둔다. 검증 기록 파일은 `tickets/inprogress/verify_*.md` 형태로 같은 상태 보드 안에 둔다.
+ - 새 spec, plan, ticket 초안이 필요하면 이 폴더의 템플릿을 참고한다.
+ - 생성된 보드에서도 같은 원칙을 유지한다.
+diff --git a/autoflow/reference/logs.md b/autoflow/reference/logs.md
+index e19e855..cf6541e 100644
+--- a/autoflow/reference/logs.md
++++ b/autoflow/reference/logs.md
+@@ -6,7 +6,7 @@
+ - 생성 시점: verifier 가 pass 또는 fail 판정을 끝낸 직후
+ - 목적:
+   - 당시 티켓 상태 스냅샷 보관
+-  - `tickets/runs/verify_NNN.md` 와 별개로 완료 이력 추적
++  - `tickets/inprogress/verify_NNN.md` 와 별개로 완료 이력 추적
+   - done / reject 이동 뒤에도 사람이 빠르게 확인할 수 있는 요약 남김
+ - `hooks/`
+   - file-watch hook 실행 로그 폴더
+@@ -14,6 +14,6 @@
+ 
+ 주의:
+ 
+-- `tickets/runs/` 는 검증 record 자체다.
++- `tickets/inprogress/verify_NNN.md` 는 검증 record 자체다.
+ - `logs/` 는 "이번 verifier 작업이 어떻게 끝났는지"를 남기는 completion log 다.
+ - pass / fail 둘 다 로그를 남긴다.
+diff --git a/autoflow/reference/plan.md b/autoflow/reference/plan.md
+index b64dd19..798c4d0 100644
+--- a/autoflow/reference/plan.md
++++ b/autoflow/reference/plan.md
+@@ -18,4 +18,4 @@
+ - todo / verifier worker 는 이 폴더를 읽을 수 있지만, plan 수정은 planner 영역이다.
+ - reject 티켓이 생기면 planner 가 `## Reject Reason` 을 반영해 이 폴더의 해당 plan 에 새 Execution Candidate 를 추가한다.
+ 
+-즉 흐름은 `tickets/backlog -> tickets/plan -> tickets/inprogress/plan_NNN.md -> tickets/todo -> tickets/inprogress/tickets_NNN.md -> tickets/verifier -> tickets/runs -> logs -> tickets/done/<project-key>` 이다.
++즉 흐름은 `tickets/backlog -> tickets/plan -> tickets/inprogress/plan_NNN.md -> tickets/todo -> tickets/inprogress/tickets_NNN.md -> tickets/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done/<project-key>` 이다.
+diff --git a/autoflow/reference/tickets-board.md b/autoflow/reference/tickets-board.md
+index 8be763e..9ceb75f 100644
+--- a/autoflow/reference/tickets-board.md
++++ b/autoflow/reference/tickets-board.md
+@@ -39,7 +39,7 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
+ 
+ 위 경로는 예시 번호 `001` 을 쓴 형식이다. 실제 번호는 각 보드가 직접 발급한다.
+ 
+-`tickets/runs/` 는 위 상태 폴더와 별개로 검증 기록 (`verify_NNN.md`) 을 남기는 결과 폴더다. 실패 기록도 지우지 않는다. verifier 가 처리를 마치면 별도로 `BOARD_ROOT/logs/` 에 completion log 도 남긴다.
++검증 기록 파일 `verify_NNN.md` 는 별도 `runs/` 폴더가 아니라 `tickets/inprogress/` 안에 남긴다. 실패 기록도 지우지 않는다. verifier 가 처리를 마치면 별도로 `BOARD_ROOT/logs/` 에 completion log 도 남긴다.
+ 
+ ## State Rules
+ 
+@@ -63,18 +63,13 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
+ - `done/`
+   - 검증 pass + local git commit 완료
+   - 티켓은 `project_###` 같은 프로젝트 키별 하위 폴더로 모은다
+-  - `Result`, 검증 기록 경로 (`tickets/runs/verify_NNN.md`), completion log (`logs/verifier_*.md`) 연결
++  - `Result`, 검증 기록 경로 (`tickets/inprogress/verify_NNN.md`), completion log (`logs/verifier_*.md`) 연결
+ - `reject/`
+   - 검증 fail
+   - `## Reject Reason` 섹션 (Verifier, 일시, 원인, 재계획 힌트) 필수
+   - planner heartbeat 가 감시해 원인을 새 Execution Candidate 로 반영 후 Status: ready 로 되돌림
+   - 파일명은 `reject_NNN.md`
+   - 재시도 todo 가 생성되면 `done/<project-key>/reject_NNN.md` 로 이동해 기록으로 남긴다
+-- `runs/`
+-  - 실행 기록과 검증 기록을 남기는 결과 폴더
+-  - 실패 기록도 지우지 않음
+-  - starter template 은 두지 않음
+-  - 실제 검증 명령은 `working_root` 에서 실행, 결과 문서만 `BOARD_ROOT/tickets/runs/` 에 남김
+ - `backlog/`
+   - 아직 plan 전인 spec 입력 큐
+   - `#spec` 이 이 폴더의 `project_*.md` 를 채운다
+@@ -113,7 +108,7 @@ tickets/backlog/project_001.md              (사용자가 #spec 으로 채움)
+ - `Allowed Paths` 는 repo-relative 경로이며, 구현 중에는 티켓 worktree 루트 기준으로 해석한다. worktree 가 없으면 `PROJECT_ROOT` 기준으로 fallback 한다.
+ - 같은 번호 티켓은 여러 상태 폴더에 동시에 두지 않는다. reject 재시도는 **새** 번호로 발급한다.
+ - `todo/`, `inprogress/`, `verifier/`, `done/`, `reject/` 디렉터리는 상태 보드 자체이며 하위 README 없이 빈 폴더로 유지돼도 된다.
+-- `done/<project-key>/` 티켓은 `tickets/runs/` 아래 검증 기록과 연결돼 있어야 한다.
++- `done/<project-key>/` 티켓은 `tickets/inprogress/verify_NNN.md` 검증 기록과 연결돼 있어야 한다.
+ - verifier 완료 후에는 `BOARD_ROOT/logs/` 아래 completion log 가 하나 이상 있어야 한다.
+ - plan / ticket / verification note 는 `## Obsidian Links` 로 서로 연결하는 편이 좋다.
+ - heartbeat worker 는 스스로 멈추지 않는다. `status=idle` 도 정상 상태.
+diff --git a/scripts/runtime/run-hook.ps1 b/scripts/runtime/run-hook.ps1
+index 89208e3..526f25e 100644
+--- a/scripts/runtime/run-hook.ps1
++++ b/scripts/runtime/run-hook.ps1
+@@ -150,13 +150,13 @@ function Build-CodexPrompt {
+         ""
+         "Do exactly one current hook turn:"
+         "1. Read the repo instructions and Autoflow board files."
+-        '2. Inspect `.autoflow/tickets/backlog/`, `.autoflow/tickets/plan/`, `.autoflow/tickets/reject/`, and the current ticket state.'
++        '2. Inspect `autoflow/tickets/backlog/`, `autoflow/tickets/plan/`, `autoflow/tickets/reject/`, and the current ticket state.'
+         "3. If a populated spec has no real plan or only a placeholder plan, create or update the matching plan draft."
+         "4. If a plan is actionable, generate todo tickets as appropriate."
+-        '5. If `reject_NNN.md` files exist, fold each `## Reject Reason` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under `.autoflow/tickets/done/<project-key>/`.'
+-        '6. If this hook was triggered by a pass into `.autoflow/tickets/done/<project-key>/`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.'
++        '5. If `reject_NNN.md` files exist, fold each `## Reject Reason` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under `autoflow/tickets/done/<project-key>/`.'
++        '6. If this hook was triggered by a pass into `autoflow/tickets/done/<project-key>/`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.'
+         "7. Do not stop at the first generated plan if another populated backlog spec still lacks a real plan or only has a placeholder plan. Drain the backlog for planning work as far as this current hook turn reasonably can."
+-        "8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from `.autoflow/` rather than chat history."
++        "8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from `autoflow/` rather than chat history."
+         "9. Do not claim todo work, do not implement code, do not verify, do not commit, and do not push."
+         "10. Exit after the current hook turn is complete."
+       ) -join [Environment]::NewLine
+@@ -180,10 +180,10 @@ function Build-CodexPrompt {
+         "1. Read the repo instructions and Autoflow board files."
+         '2. Resume any existing inprogress ticket owned by `$workerId` if one exists; otherwise claim one todo ticket.'
+         "3. Implement only within each ticket's Allowed Paths."
+-        "4. If you resume an existing inprogress ticket, refresh the active ticket context with `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/set-thread-context.ps1 todo <worker-id> <ticket-id> executing <ticket-path>` on Windows, or `.autoflow/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` in Bash-only environments, before continuing."
++        "4. If you resume an existing inprogress ticket, refresh the active ticket context with `powershell -ExecutionPolicy Bypass -File autoflow/scripts/set-thread-context.ps1 todo <worker-id> <ticket-id> executing <ticket-path>` on Windows, or `autoflow/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` in Bash-only environments, before continuing."
+         "5. Update Notes, Last Updated, Next Action, and Resume Context as you work."
+-        '5. Board stage is authoritative. If a ticket is in `.autoflow/tickets/todo/` or `.autoflow/tickets/inprogress/`, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification.'
+-        '6. If Done When is satisfied, fill Result.Summary and run `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/handoff-todo.ps1 <ticket-id-or-path>` on Windows, or `.autoflow/scripts/handoff-todo.sh <ticket-id-or-path>` in Bash-only environments. The handoff runtime moves the ticket to `.autoflow/tickets/verifier/`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.'
++        '5. Board stage is authoritative. If a ticket is in `autoflow/tickets/todo/` or `autoflow/tickets/inprogress/`, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification.'
++        '6. If Done When is satisfied, fill Result.Summary and run `powershell -ExecutionPolicy Bypass -File autoflow/scripts/handoff-todo.ps1 <ticket-id-or-path>` on Windows, or `autoflow/scripts/handoff-todo.sh <ticket-id-or-path>` in Bash-only environments. The handoff runtime moves the ticket to `autoflow/tickets/verifier/`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.'
+         "7. Keep chat output short; durable context belongs in Resume Context, Notes, Result, and Obsidian links."
+         "8. Do not verify, do not commit, and do not push."
+         "9. Exit after the current hook turn is complete."
+@@ -207,14 +207,14 @@ function Build-CodexPrompt {
+         ""
+         "Do exactly one current hook turn:"
+         "1. Read the repo instructions and Autoflow board files."
+-        '2. Pick one ticket from `.autoflow/tickets/verifier/`.'
++        '2. Pick one ticket from `autoflow/tickets/verifier/`.'
+         "3. Verify it against the referenced spec and verifier rules."
+         "4. Treat local verification commands, browser checks, ticket/log file moves, and local git commit inside the current project/board as pre-authorized. Do not ask the user for permission."
+         "5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open."
+-        '6. Write or update `.autoflow/tickets/inprogress/verify_NNN.md`, then let `write-verifier-log` archive it beside the final ticket when the verification finishes.'
+-        '7. Write a verifier completion log under `.autoflow/logs/`.'
+-        '8. Pass: move the ticket to the matching `.autoflow/tickets/done/<project-key>/` folder and make a local git commit if the project uses git. Use commit message format `[ticket title] concise change summary`; take the bracket text from the ticket `Title` and keep the summary to one short line.'
+-        '9. Fail: append `## Reject Reason` and move the ticket to `.autoflow/tickets/reject/reject_NNN.md`.'
++        '6. Write or update `autoflow/tickets/inprogress/verify_NNN.md`.'
++        '7. Write a verifier completion log under `autoflow/logs/`.'
++        '8. Pass: move the ticket to the matching `autoflow/tickets/done/<project-key>/` folder and make a local git commit if the project uses git. Use commit message format `[ticket title] concise change summary`; take the bracket text from the ticket `Title` and keep the summary to one short line.'
++        '9. Fail: append `## Reject Reason` and move the ticket to `autoflow/tickets/reject/reject_NNN.md`.'
+         "10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; prefer `write-verifier-log.ps1` on Windows and use `.sh` only in Bash-only environments. Rely on Obsidian links and board files for the next verification target."
+         "11. Never git push."
+         "12. Exit after the current hook turn is complete."
+@@ -233,31 +233,39 @@ function Invoke-CapturedProcess {
+     [hashtable]$EnvironmentOverrides
+   )
+ 
+-  $psi = New-Object System.Diagnostics.ProcessStartInfo
+-  $psi.FileName = $FilePath
+-  foreach ($arg in $ArgumentList) {
+-    [void]$psi.ArgumentList.Add($arg)
+-  }
+-  $psi.UseShellExecute = $false
+-  $psi.RedirectStandardOutput = $true
+-  $psi.RedirectStandardError = $true
++  $stdoutFile = [System.IO.Path]::GetTempFileName()
++  $stderrFile = [System.IO.Path]::GetTempFileName()
+ 
+-  foreach ($key in $EnvironmentOverrides.Keys) {
+-    $psi.Environment[$key] = [string]$EnvironmentOverrides[$key]
+-  }
++  try {
++    $psi = New-Object System.Diagnostics.ProcessStartInfo
++    $psi.FileName = $FilePath
++    foreach ($arg in $ArgumentList) {
++      [void]$psi.ArgumentList.Add($arg)
++    }
++    $psi.UseShellExecute = $false
++    $psi.RedirectStandardOutput = $true
++    $psi.RedirectStandardError = $true
+ 
+-  $process = New-Object System.Diagnostics.Process
+-  $process.StartInfo = $psi
+-  [void]$process.Start()
++    foreach ($key in $EnvironmentOverrides.Keys) {
++      $psi.Environment[$key] = [string]$EnvironmentOverrides[$key]
++    }
+ 
+-  $stdout = $process.StandardOutput.ReadToEnd()
+-  $stderr = $process.StandardError.ReadToEnd()
+-  $process.WaitForExit()
++    $process = New-Object System.Diagnostics.Process
++    $process.StartInfo = $psi
++    [void]$process.Start()
+ 
+-  return [pscustomobject]@{
+-    ExitCode = $process.ExitCode
+-    StdOut = $stdout
+-    StdErr = $stderr
++    $stdout = $process.StandardOutput.ReadToEnd()
++    $stderr = $process.StandardError.ReadToEnd()
++    $process.WaitForExit()
++
++    return [pscustomobject]@{
++      ExitCode = $process.ExitCode
++      StdOut = $stdout
++      StdErr = $stderr
++    }
++  }
++  finally {
++    Remove-Item -LiteralPath $stdoutFile, $stderrFile -Force -ErrorAction SilentlyContinue
+   }
+ }
+ 
+diff --git a/scripts/runtime/run-hook.sh b/scripts/runtime/run-hook.sh
+index 5e4c95b..306450e 100755
+--- a/scripts/runtime/run-hook.sh
++++ b/scripts/runtime/run-hook.sh
+@@ -169,7 +169,7 @@ Do exactly one current hook turn:
+ 3. Verify it against the referenced spec and verifier rules.
+ 4. Treat local verification commands, browser checks, ticket/log file moves, and local git commit inside the current project/board as pre-authorized. Do not ask the user for permission.
+ 5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open.
+-6. Write or update \`autoflow/tickets/runs/verify_NNN.md\`.
++6. Write or update \`autoflow/tickets/inprogress/verify_NNN.md\`.
+ 7. Write a verifier completion log under \`autoflow/logs/\`.
+ 8. Pass: move the ticket to the matching \`autoflow/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[ticket title] concise change summary\`; take the bracket text from the ticket \`Title\` and keep the summary to one short line.
+ 9. Fail: append \`## Reject Reason\` and move the ticket to \`autoflow/tickets/reject/reject_NNN.md\`.
+diff --git a/templates/board/AGENTS.md b/templates/board/AGENTS.md
+index 20dac2f..f081192 100644
+--- a/templates/board/AGENTS.md
++++ b/templates/board/AGENTS.md
+@@ -6,7 +6,7 @@
+ 
+ ## Canonical Flow
+ 
+-`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done/<project-key>/verify_NNN.md`
++`tickets/backlog -> tickets/plan -> tickets/inprogress -> automations -> tickets/todo -> tickets/inprogress -> rules/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done`
+ 
+ 의미:
+ 
+@@ -21,7 +21,7 @@
+ - `tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
+ - `reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
+ - `rules/verifier/`: 검증 기준과 체크리스트
+-- `tickets/inprogress/verify_NNN.md`: verifier 가 작업 중일 때 쓰는 임시 검증 기록
++- `tickets/inprogress/verify_NNN.md`: 실행과 검증 기록
+ - `logs/`: verifier 완료 이력 로그
+ 
+ ## Read Order
+@@ -43,7 +43,7 @@
+ 
+ ## Runtime Command Convention
+ 
+-- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File .autoflow/scripts/start-todo.ps1 001`
++- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-todo.ps1 001`
+ - Bash 전용 환경에서는 같은 이름의 `scripts/*.sh` 를 실행한다.
+ - 문서에서 `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
+ 
+@@ -63,10 +63,10 @@
+ 12. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
+ 13. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
+ 14. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
+-15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. `#todo` / `#veri` 는 tick 중에 active ticket context 를 잡아도 tick 이 끝날 때 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
++15. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. 기능 단위 작업이 끝나면 전체 context 를 지우지 않고 `clear-thread-context.* --active-only` 로 active ticket 문맥만 비운다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
+ 16. 여러 todo worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
+-17. verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
+-18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다.
++17. verifier 가 끝나면 `tickets/inprogress/verify_NNN.md` 와 별도로 `logs/verifier_NNN_*.md` completion log 를 남긴다.
++18. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/inprogress/verify_NNN.md` 및 생성된 completion log 와 연결한다.
+ 19. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
+ 20. git 저장소에서는 todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, verifier pass 시 `scripts/integrate-worktree.sh` 로 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
+ 21. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
+@@ -177,7 +177,7 @@
+ 해야 하는 일:
+ 
+ - `start-verifier.sh` 가 출력한 `working_root` 에서 spec 의 `Verification.Command` 실행 + Acceptance Criteria 관찰
+-- 검증 시작 시 `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
++- `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
+ - `logs/verifier_NNN_*.md` completion log 생성
+ - **Pass**: worktree 가 있으면 `scripts/integrate-worktree.sh` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[티켓명] 간략 수정내용"` (local commit)
+ - **Fail**: 티켓 하단에 `## Reject Reason` 추가 후 `tickets/reject/reject_NNN.md` 로 mv. commit 하지 않음
+@@ -214,7 +214,7 @@ tickets/backlog/project_001.md            (사용자가 #spec 으로 채움)
+ - `verifier`: 구현 완료, 검증 대기
+ - `done`: 검증 pass + local commit 완료 티켓, 처리된 spec, ticket 생성 완료 plan 을 프로젝트 단위로 보관
+ - `reject`: 검증 fail + Reject Reason 기록. 파일명은 `reject_NNN.md` 이며 planner 가 재계획 이후 새 ticket 으로 다시 돌리면 프로젝트별 `done` 폴더로 보관
+-- `verify_NNN.md`: verifier 가 시작 시 `inprogress/` 아래에 만들고, 완료 시 final ticket 위치로 같이 이동하는 검증 기록 파일
++- `runs`: pass/fail 기록 파일 (`verify_NNN.md`) — 상태 폴더와 별개
+ 
+ ## Required Ticket Fields
+ 
+@@ -316,7 +316,7 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `V
+ 
+ 1. 티켓의 `Done When` 항목이 충족되었다.
+ 2. `rules/verifier/` 기준으로 검증했다.
+-3. 검증 기록이 최종 티켓과 같은 위치에 있다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md`.
++3. 검증 기록이 `tickets/inprogress/verify_NNN.md` 에 있다.
+ 4. verifier completion log 가 `logs/` 에 있다.
+ 5. 티켓의 `Verification` 항목에 그 기록과 로그가 연결되어 있다.
+ 6. 티켓의 `Result` 가 채워져 있다.
+diff --git a/templates/board/README.md b/templates/board/README.md
+index 5d4d7dd..ccb1b64 100644
+--- a/templates/board/README.md
++++ b/templates/board/README.md
+@@ -8,7 +8,7 @@
+ - 순서는 `tickets/plan/`
+ - 실행 단위는 `tickets/`
+ - 검증 기준과 템플릿은 `rules/verifier/`
+-- 검증 증거는 시작 시 `tickets/inprogress/verify_*.md`, 완료 후에는 final ticket 옆 `verify_*.md`
++- 검증 증거는 `tickets/inprogress/verify_*.md`
+ - verifier 완료 이력은 `logs/`
+ 
+ ## First Use
+@@ -50,8 +50,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
+ - `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
+ - `tickets/plan/`: 아직 ticket 생성 전인 plan 대기열
+ - `tickets/inprogress/`: planner 가 ticket 생성 중인 `plan_*.md` 와 todo worker 가 구현 중인 `tickets_*.md` 를 함께 두는 점유 구역
+-- `tickets/inprogress/verify_*.md`: 진행 중 검증 기록
+-- `tickets/done/<project-key>/verify_*.md`, `tickets/reject/verify_*.md`: 완료 후 정리된 검증 기록
++- `tickets/inprogress/verify_*.md`: verifier 가 준비한 검증 기록
+ - `logs/`: verifier 완료 로그
+ - `tickets/done/<project-key>/`: 프로젝트 단위로 모아 둔 완료 티켓, 처리된 spec, ticket 생성 완료 plan
+ - `scripts/`: 보드 runtime 훅
+@@ -70,17 +69,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\watch-board.ps1
+ - `start-todo.ps1`
+ - `handoff-todo.ps1`
+ - `start-verifier.ps1`
+-- `check-stop.sh`
+-- `check-stop.ps1`
+-- `codex-stop-hook.ps1`
+ - `run-hook.ps1`
+ - `watch-board.ps1`
+ 
+ Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `.ps1` 래퍼는 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 런타임을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
+ 
+-`codex-stop-hook.ps1` 는 Codex 전역 Stop hook 에 연결하는 Autoflow 자체 dispatcher 다. 활성 보드의 `check-stop.ps1` 를 찾아 실행하고, 보드가 없거나 내부 오류가 나면 진단 로그만 남긴 뒤 조용히 통과한다.
+-`#todo` / `#veri` 는 tick 이 끝날 때 active ticket context 를 비워 토큰 사용을 줄이고, 다음 tick 에는 보드 파일과 Obsidian links 를 다시 읽어 재개한다. role / worker context 는 유지하므로 사용자가 "멈춰"라고 하기 전까지 heartbeat 연속성은 유지된다.
+-
+ 역할은 아래처럼 고정한다.
+ 
+ - `#spec`

@@ -249,6 +249,9 @@ runner_role_to_run_role() {
     verifier)
       printf 'verifier'
       ;;
+    merge|merge-bot)
+      printf 'merge'
+      ;;
     wiki|wiki-maintainer)
       printf 'wiki'
       ;;
@@ -423,7 +426,7 @@ runner_allowed_config_key() {
 
 runner_allowed_role() {
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|watcher)
+    ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher)
       return 0
       ;;
     *)
@@ -1211,12 +1214,13 @@ sync_heartbeat_set_workers() {
   set_file="$(runner_heartbeat_set_path)"
   [ -f "$set_file" ] || return 0
 
-  for role in ticket-owner planner todo verifier; do
+  for role in ticket-owner planner todo verifier merge-bot; do
     case "$role" in
       ticket-owner) array_key="owner_workers" ;;
       planner) array_key="planner_workers" ;;
       todo) array_key="todo_workers" ;;
       verifier) array_key="verifier_workers" ;;
+      merge-bot) array_key="merge_workers" ;;
     esac
     ids="$(runner_ids_for_role "$role")"
     updated_array=""

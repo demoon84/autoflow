@@ -1,0 +1,215 @@
+diff --git a/apps/desktop/src/renderer/main.tsx b/apps/desktop/src/renderer/main.tsx
+index 16f3bad..8f58503 100644
+--- a/apps/desktop/src/renderer/main.tsx
++++ b/apps/desktop/src/renderer/main.tsx
+@@ -333,6 +333,82 @@ function runnerIdPrefix(role: string) {
+   return role || "runner";
+ }
+ 
++const ownerFlowStages = ["planning", "claimed", "executing", "verifying", "done"] as const;
++
++function capitalizeAgentName(value: string) {
++  if (!value) {
++    return "";
++  }
++
++  return value.charAt(0).toUpperCase() + value.slice(1);
++}
++
++function displayWorkflowRunnerId(value: string) {
++  const ownerMatch = value.match(/^owner-(\d+)$/);
++  if (ownerMatch) {
++    return `worker-${ownerMatch[1]}`;
++  }
++
++  return value;
++}
++
++function inferRunnerFlowStage(runner: AutoflowRunner) {
++  const fragments = [runner.stateStatus, runner.activeItem, runner.lastResult, runner.lastLogLine]
++    .filter(Boolean)
++    .join(" ")
++    .toLowerCase();
++
++  if (!fragments || runner.stateStatus === "idle") {
++    return "idle";
++  }
++
++  if (/(reject|rejected)/.test(fragments)) {
++    return "rejected";
++  }
++
++  if (/(done|pass|passed|completed|finished)/.test(fragments)) {
++    return "done";
++  }
++
++  if (/(verify|verifying|verifier)/.test(fragments)) {
++    return "verifying";
++  }
++
++  if (/(execut|inprogress|implement)/.test(fragments) || runner.stateStatus === "running") {
++    return "executing";
++  }
++
++  if (/(claim|claimed)/.test(fragments)) {
++    return "claimed";
++  }
++
++  if (/(plan|planning|prepare|spec)/.test(fragments)) {
++    return "planning";
++  }
++
++  return "idle";
++}
++
++function runnerProgressLabel(runner: AutoflowRunner) {
++  const stage = inferRunnerFlowStage(runner);
++
++  if (stage === "rejected") {
++    return "공정률: 거절";
++  }
++
++  if (stage === "idle") {
++    return "공정률: 0%";
++  }
++
++  const stageIndex = ownerFlowStages.indexOf(stage as (typeof ownerFlowStages)[number]);
++  if (stageIndex < 0) {
++    return "공정률: 0%";
++  }
++
++  const progressPercent = Math.round((stageIndex / (ownerFlowStages.length - 1)) * 100);
++  return `공정률: ${progressPercent}%`;
++}
++
+ function runnerIsEnabled(value: string) {
+   return value ? value === "true" : true;
+ }
+@@ -1385,7 +1461,6 @@ function RunnerConsole({
+             const enabled = runnerIsEnabled(runner.enabled);
+             const status = runner.stateStatus || "idle";
+             const mode = runner.mode || "one-shot";
+-            const intervalLabel = runner.intervalSeconds || runner.intervalEffectiveSeconds || "60";
+             const isWorking = actionKey.endsWith(`:${runner.id}`);
+             const canRun = enabled && mode === "one-shot" && runnableRunnerAgents.has(runner.agent || "shell");
+             const canStart = enabled && mode === "loop";
+@@ -1435,21 +1510,17 @@ function RunnerConsole({
+             const showRoleHealth = roleHealth === "warning";
+             const showEnabledHealth = enabledHealth === "warning";
+             const runnerEvent = runner.activeItem || runner.lastResult || runner.lastEventAt || "이벤트 없음";
++            const runnerMeta = [capitalizeAgentName(runner.agent || ""), runner.model || "", runner.reasoning || ""]
++              .filter(Boolean)
++              .join(" ");
+ 
+             return (
+               <article key={runner.id} className="runner-row">
+                 <div className={`runner-status-dot ${runnerStatusTone(status)}`} aria-hidden="true" />
+-                <div className="runner-main">
+-                  <div className="runner-title-line">
+-                    <strong>{runner.id}</strong>
+-                    <Badge variant={enabled ? "secondary" : "outline"}>
+-                      {displayRunnerRole(runner.role || "runner")}
+-                    </Badge>
+-                  </div>
+-                  <span>
+-                    {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - {displayRunnerMode(mode)}
+-                    {mode === "loop" ? ` / ${intervalLabel}s` : ""}
+-                  </span>
++                <div className="runner-main runner-main-meta">
++                  <strong className="runner-agent-meta">{runnerMeta || capitalizeAgentName(runner.agent || "shell")}</strong>
++                  <span className="runner-agent-id">{displayWorkflowRunnerId(runner.id)}</span>
++                  <span className="runner-agent-rate">{runnerProgressLabel(runner)}</span>
+                   <div className="runner-health-line">
+                     {showRoleHealth ? (
+                       <span className={`runner-health-pill ${runnerHealthTone(roleHealth)}`}>
+@@ -1485,7 +1556,12 @@ function RunnerConsole({
+                   </div>
+                 </div>
+                 <div className="runner-state">
+-                  <strong>{displayStatus(status)}</strong>
++                  <div className="runner-state-header">
++                    <Badge variant={enabled ? "secondary" : "outline"}>
++                      {displayRunnerRole(runner.role || "runner")}
++                    </Badge>
++                    <strong>{displayStatus(status)}</strong>
++                  </div>
+                   <span>{runnerEvent}</span>
+                   {runner.lastResult && runner.lastEventAt ? (
+                     <span className="runner-state-muted">{runner.lastEventAt}</span>
+diff --git a/apps/desktop/src/renderer/styles.css b/apps/desktop/src/renderer/styles.css
+index 5378075..c9b9824 100644
+--- a/apps/desktop/src/renderer/styles.css
++++ b/apps/desktop/src/renderer/styles.css
+@@ -461,15 +461,15 @@ pre {
+   min-width: 0;
+ }
+ 
+-.runner-title-line {
+-  display: flex;
+-  align-items: center;
+-  gap: 8px;
+-  min-width: 0;
++.runner-main-meta {
++  display: grid;
++  align-content: start;
++  gap: 4px;
+ }
+ 
+-.runner-title-line strong,
+-.runner-main > span,
++.runner-agent-meta,
++.runner-agent-id,
++.runner-agent-rate,
+ .runner-state strong,
+ .runner-state span {
+   display: block;
+@@ -478,23 +478,27 @@ pre {
+   white-space: nowrap;
+ }
+ 
+-.runner-title-line strong {
++.runner-agent-meta {
+   font-size: 13px;
+   line-height: 1.2;
+ }
+ 
+-.runner-main > span {
+-  margin-top: 7px;
++.runner-agent-id,
++.runner-agent-rate {
+   color: var(--muted-foreground);
+   font-size: 12px;
+   font-weight: 650;
+ }
+ 
++.runner-agent-rate {
++  color: oklch(0.35 0.09 196);
++}
++
+ .runner-health-line {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 5px;
+-  margin-top: 8px;
++  margin-top: 10px;
+   min-width: 0;
+ }
+ 
+@@ -544,6 +548,17 @@ pre {
+   text-transform: uppercase;
+ }
+ 
++.runner-state-header {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  min-width: 0;
++}
++
++.runner-state-header .inline-flex {
++  flex-shrink: 0;
++}
++
+ .runner-state span {
+   margin-top: 7px;
+   color: var(--muted-foreground);

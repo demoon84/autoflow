@@ -1,0 +1,4 @@
+ M autoflow/scripts/common.sh
+ M autoflow/scripts/run-hook.ps1
+ M autoflow/scripts/run-hook.sh
+ M autoflow/scripts/start-verifier.sh

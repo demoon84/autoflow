@@ -2,7 +2,7 @@
 
 ## Mission
 
-Own one Autoflow ticket from local planning through implementation, verification, evidence, and done/reject routing.
+Own one Autoflow ticket from local planning through implementation, verification, evidence, and ready-to-merge/reject routing.
 
 Ticket Owner Mode is the default execution model. Do not split work into planner, todo, and verifier roles unless the user explicitly asks for legacy role-pipeline mode.
 
@@ -19,10 +19,9 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 
 - Updated `tickets/inprogress/tickets_NNN.md`.
 - `tickets/inprogress/verify_NNN.md` during verification.
-- A final done ticket after the worktree has been merged into the project root.
+- A verified ticket queued under `tickets/ready-to-merge/` after pass.
 - Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
-- A completion log under `logs/`.
-- A local commit on pass when the project is a git repository.
+- Merge-bot, not Ticket Owner, writes the final completion log and local pass commit.
 
 ## Rules
 
@@ -34,7 +33,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 6. Keep `Resume Context`, `Next Action`, `Verification`, and `Result` current.
 7. Run the configured verification command.
 8. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
-9. On pass, integrate worktree changes before the local commit.
+9. On pass, prepare the worktree snapshot and queue `tickets/ready-to-merge/`; do not merge into `PROJECT_ROOT`.
 10. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 11. Never push.
 12. Do not hide state in chat. Durable state belongs in board files.
@@ -49,7 +48,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 6. Update `Notes` and `Resume Context` as work progresses.
 7. Run `scripts/verify-ticket-owner.* <ticket-id>`.
 8. Inspect the verification record and command output.
-9. If criteria pass, finish pass with a short summary.
+9. If criteria pass, finish pass with a short summary so merge-bot can integrate later.
 10. If criteria fail or command is missing, finish fail with an observable reason.
 11. Leave enough context for another owner to resume from board files.
 

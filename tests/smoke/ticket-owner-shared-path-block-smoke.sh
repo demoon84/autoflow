@@ -112,19 +112,20 @@ write_spec "project_002" "Shared path second ticket" >/dev/null
 start_one_output="${project_dir}/start-one.out"
 start_two_output="${project_dir}/start-two.out"
 finish_one_output="${project_dir}/finish-one.out"
+merge_one_output="${project_dir}/merge-one.out"
 resume_two_output="${project_dir}/resume-two.out"
 finish_two_block_output="${project_dir}/finish-two-block.out"
 runner_block_output="${project_dir}/runner-block.out"
 fake_bin="${project_dir}/fake-bin"
 fake_codex_marker="${project_dir}/codex-called"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
 require_line "$start_one_output" "ticket_id=001"
 require_line "$start_one_output" "worktree_status=project_root_fallback"
 require_line "$start_one_output" "worktree_fallback_reason=dirty_allowed_path:shared.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$start_two_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$start_two_output"
 require_line "$start_two_output" "status=blocked"
 require_line "$start_two_output" "reason=shared_allowed_path_conflict"
 require_line "$start_two_output" "ticket_id=002"
@@ -141,7 +142,7 @@ FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
 "${REPO_ROOT}/bin/autoflow" runners set owner-2 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
-PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-2 >"$runner_block_output"
+AUTOFLOW_WORKTREE_MODE=project-root-on-dirty PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-2 >"$runner_block_output"
 require_line "$runner_block_output" "status=blocked"
 require_line "$runner_block_output" "runner_status=blocked"
 require_line "$runner_block_output" "runtime_status=blocked"
@@ -151,16 +152,20 @@ if [ -e "$fake_codex_marker" ]; then
   exit 1
 fi
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/finish-ticket-owner.sh 002 pass "should wait" >"$finish_two_block_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/finish-ticket-owner.sh 002 pass "should wait" >"$finish_two_block_output"
 require_line "$finish_two_block_output" "status=blocked"
 require_line "$finish_two_block_output" "reason=shared_allowed_path_conflict"
 require_line "$finish_two_block_output" "blockers=tickets_001:shared.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "first ticket complete" >"$finish_one_output"
-require_line "$finish_one_output" "status=done"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "first ticket complete" >"$finish_one_output"
+require_line "$finish_one_output" "status=ready_to_merge"
 require_line "$finish_one_output" "outcome=pass"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$resume_two_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=merge-1 ./scripts/merge-ready-ticket.sh 001 >"$merge_one_output"
+require_line "$merge_one_output" "status=done"
+require_line "$merge_one_output" "outcome=pass"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$resume_two_output"
 require_line "$resume_two_output" "status=resume"
 require_line "$resume_two_output" "ticket_id=002"
 require_line "$resume_two_output" "stage=executing"

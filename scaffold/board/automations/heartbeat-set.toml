@@ -10,6 +10,7 @@ owner_workers = ["owner-1"]
 planner_workers = []
 todo_workers = []
 verifier_workers = []
+merge_workers = ["merge-1"]
 
 execution_pool = ""
 verifier_pool = ""
@@ -32,3 +33,4 @@ edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] 
 scaling_rule = "Scale Ticket Owner Mode by adding owner_workers and matching [thread_ids] entries. Use legacy planner/todo/verifier arrays only for role-pipeline compatibility."
 single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
 trigger_rule = "`autoflow run ticket` / owner heartbeats should keep running until the user explicitly says stop."
+merge_rule = "`autoflow run merge` should be single-writer; run at most one merge bot for a board."

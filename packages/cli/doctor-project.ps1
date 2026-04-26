@@ -105,12 +105,12 @@ function Add-RunnerAdapterCheck {
   [void]$checkLines.Add(("runner.{0}.agent={1}" -f $checkId, $agent))
   [void]$checkLines.Add(("runner.{0}.interval_seconds={1}" -f $checkId, $intervalSeconds))
 
-  if ($role -in @("ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "watcher")) {
+  if ($role -in @("ticket-owner", "owner", "planner", "todo", "verifier", "merge", "merge-bot", "wiki-maintainer", "watcher")) {
     Add-Check "${checkId}_role" "ok"
   }
   else {
     Add-Check "${checkId}_role" "warning"
-    Add-WarningLine "runner $runnerId has unsupported role=$role; expected ticket-owner, planner, todo, verifier, wiki-maintainer, or watcher"
+    Add-WarningLine "runner $runnerId has unsupported role=$role; expected ticket-owner, planner, todo, verifier, merge-bot, wiki-maintainer, or watcher"
   }
 
   if ($enabled -in @("true", "false")) {
@@ -397,7 +397,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
     }
   }
 
-  foreach ($ticketDir in @("todo", "inprogress", "verifier", "done", "reject")) {
+  foreach ($ticketDir in @("todo", "inprogress", "ready-to-merge", "merge-blocked", "verifier", "done", "reject")) {
     $dirPath = Join-Path $boardRoot "tickets/$ticketDir"
     if (Test-Path -LiteralPath $dirPath -PathType Container) {
       Add-Check ("tickets_{0}" -f $ticketDir) "ok"
@@ -532,6 +532,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
       "start-ticket-owner.sh",
       "verify-ticket-owner.sh",
       "finish-ticket-owner.sh",
+      "merge-ready-ticket.sh",
       "update-wiki.sh",
       "start-plan.sh",
       "start-todo.sh",
@@ -574,6 +575,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
       "start-ticket-owner.ps1",
       "verify-ticket-owner.ps1",
       "finish-ticket-owner.ps1",
+      "merge-ready-ticket.ps1",
       "start-spec.ps1",
       "start-plan.ps1",
       "start-todo.ps1",
@@ -719,7 +721,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
   }
 
   $ticketLocations = @{}
-  foreach ($ticketStateDir in @("todo", "inprogress", "verifier", "done")) {
+  foreach ($ticketStateDir in @("todo", "inprogress", "ready-to-merge", "merge-blocked", "verifier", "done")) {
     $stateRoot = Join-Path $boardRoot "tickets/$ticketStateDir"
     if (-not (Test-Path -LiteralPath $stateRoot -PathType Container)) {
       continue

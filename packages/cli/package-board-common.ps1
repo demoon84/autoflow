@@ -87,6 +87,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/verifier-agent.md"; TargetRel = "agents/verifier-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/spec-author-agent.md"; TargetRel = "agents/spec-author-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/ticket-owner-agent.md"; TargetRel = "agents/ticket-owner-agent.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/merge-bot-agent.md"; TargetRel = "agents/merge-bot-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "agents/wiki-maintainer-agent.md"; TargetRel = "agents/wiki-maintainer-agent.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "conversations/README.md"; TargetRel = "conversations/README.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "automations/README.md"; TargetRel = "automations/README.md" }
@@ -142,6 +143,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "start-ticket-owner.sh"; TargetRel = "scripts/start-ticket-owner.sh" }
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "verify-ticket-owner.sh"; TargetRel = "scripts/verify-ticket-owner.sh" }
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "finish-ticket-owner.sh"; TargetRel = "scripts/finish-ticket-owner.sh" }
+    [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "merge-ready-ticket.sh"; TargetRel = "scripts/merge-ready-ticket.sh" }
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "update-wiki.sh"; TargetRel = "scripts/update-wiki.sh" }
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "start-plan.sh"; TargetRel = "scripts/start-plan.sh" }
     [pscustomobject]@{ Kind = "runtime_executable"; SourceRel = "start-todo.sh"; TargetRel = "scripts/start-todo.sh" }
@@ -159,6 +161,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "start-ticket-owner.ps1"; TargetRel = "scripts/start-ticket-owner.ps1" }
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "verify-ticket-owner.ps1"; TargetRel = "scripts/verify-ticket-owner.ps1" }
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "finish-ticket-owner.ps1"; TargetRel = "scripts/finish-ticket-owner.ps1" }
+    [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "merge-ready-ticket.ps1"; TargetRel = "scripts/merge-ready-ticket.ps1" }
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "start-spec.ps1"; TargetRel = "scripts/start-spec.ps1" }
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "start-plan.ps1"; TargetRel = "scripts/start-plan.ps1" }
     [pscustomobject]@{ Kind = "runtime_file"; SourceRel = "start-todo.ps1"; TargetRel = "scripts/start-todo.ps1" }
@@ -206,6 +209,8 @@ function Get-ManagedBoardDirectoryEntries {
     "tickets/plan"
     "tickets/todo"
     "tickets/inprogress"
+    "tickets/ready-to-merge"
+    "tickets/merge-blocked"
     "tickets/verifier"
     "tickets/done"
     "tickets/reject"

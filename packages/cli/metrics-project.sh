@@ -42,6 +42,14 @@ json_escape() {
   '
 }
 
+file_size_bytes() {
+  wc -c < "$1" | tr -d '[:space:]'
+}
+
+file_mtime_epoch() {
+  stat -f '%m' "$1" 2>/dev/null || stat -c '%Y' "$1" 2>/dev/null || printf '0'
+}
+
 write_snapshot() {
   local metrics_root="$1"
   local snapshot_file="$2"
@@ -72,14 +80,16 @@ write_snapshot() {
   local autoflow_code_insertions_count="${27}"
   local autoflow_code_deletions_count="${28}"
   local autoflow_code_volume_count="${29}"
-  local verification_pass_rate_percent="${30}"
-  local completion_rate_percent="${31}"
+  local autoflow_token_usage_count="${30}"
+  local autoflow_token_report_count="${31}"
+  local verification_pass_rate_percent="${32}"
+  local completion_rate_percent="${33}"
   local escaped_project escaped_board
 
   mkdir -p "$metrics_root"
   escaped_project="$(printf '%s' "$project_root" | json_escape)"
   escaped_board="$(printf '%s' "$board_root" | json_escape)"
-  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"verifier_pass_count":%s,"verifier_fail_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"verification_pass_rate_percent":%s,"completion_rate_percent":%s}\n' \
+  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"verifier_pass_count":%s,"verifier_fail_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"verification_pass_rate_percent":%s,"completion_rate_percent":%s}\n' \
     "$timestamp" \
     "$escaped_project" \
     "$escaped_board" \
@@ -107,6 +117,8 @@ write_snapshot() {
     "$autoflow_code_insertions_count" \
     "$autoflow_code_deletions_count" \
     "$autoflow_code_volume_count" \
+    "$autoflow_token_usage_count" \
+    "$autoflow_token_report_count" \
     "$verification_pass_rate_percent" \
     "$completion_rate_percent" >> "$snapshot_file"
 }
@@ -182,7 +194,7 @@ count_runner_states() {
         if [ "$in_runner" -eq 1 ] && [ -n "$id" ]; then
           runner_total_count=$((runner_total_count + 1))
           case "$role" in
-            ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|watcher) ;;
+            ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher) ;;
             *) invalid_config="true" ;;
           esac
           case "$enabled" in
@@ -304,6 +316,138 @@ count_autoflow_commit_metrics() {
   autoflow_code_volume_count=$((autoflow_code_insertions_count + autoflow_code_deletions_count))
 }
 
+token_usage_from_file() {
+  local file="$1"
+
+  awk '
+    function strip_ansi(value) {
+      gsub(/\033\[[0-9;?;]*[A-Za-z]/, "", value)
+      return value
+    }
+
+    function number_from_text(value, cleaned, candidate) {
+      cleaned = strip_ansi(value)
+      gsub(/\r/, "", cleaned)
+      gsub(/,/, "", cleaned)
+      if (match(cleaned, /[0-9]+/)) {
+        candidate = substr(cleaned, RSTART, RLENGTH)
+        return candidate + 0
+      }
+      return -1
+    }
+
+    function number_after_marker(value, marker, lower_value, marker_index, after) {
+      lower_value = tolower(value)
+      marker_index = index(lower_value, marker)
+      if (marker_index == 0) {
+        return -1
+      }
+      after = substr(value, marker_index + length(marker))
+      return number_from_text(after)
+    }
+
+    BEGIN {
+      waiting_for_token_count = 0
+      total = 0
+      reports = 0
+    }
+
+    {
+      clean = strip_ansi($0)
+      gsub(/\r/, "", clean)
+      lower = tolower(clean)
+
+      if (waiting_for_token_count) {
+        value = number_from_text(clean)
+        if (value >= 0) {
+          total += value
+          reports += 1
+          waiting_for_token_count = 0
+          next
+        }
+        if (clean !~ /^[[:space:]]*$/) {
+          waiting_for_token_count = 0
+        }
+      }
+
+      if (lower ~ /tokens[[:space:]]+used/) {
+        value = number_after_marker(clean, "tokens used")
+        if (value >= 0) {
+          total += value
+          reports += 1
+        } else {
+          waiting_for_token_count = 1
+        }
+      } else if (lower ~ /total[_ -]?tokens/) {
+        value = number_after_marker(clean, "total_tokens")
+        if (value < 0) {
+          value = number_after_marker(clean, "total tokens")
+        }
+        if (value >= 0) {
+          total += value
+          reports += 1
+        }
+      }
+    }
+
+    END {
+      printf "%d %d\n", total, reports
+    }
+  ' "$file"
+}
+
+count_autoflow_token_metrics() {
+  local token_file token_result token_count report_count token_cache_file token_cache_next
+  local token_file_size token_file_mtime cached_result
+
+  autoflow_token_usage_count=0
+  autoflow_token_report_count=0
+
+  [ -d "${board_root}/runners/logs" ] || return 0
+
+  mkdir -p "$metrics_root"
+  token_cache_file="${metrics_root}/token-cache.tsv"
+  token_cache_next="$(mktemp "${TMPDIR:-/tmp}/autoflow-token-cache.XXXXXX")"
+
+  while IFS= read -r token_file; do
+    [ -n "$token_file" ] || continue
+    token_file_size="$(file_size_bytes "$token_file")"
+    token_file_mtime="$(file_mtime_epoch "$token_file")"
+
+    cached_result=""
+    if [ -f "$token_cache_file" ]; then
+      cached_result="$(
+        awk -F '\t' \
+          -v target_path="$token_file" \
+          -v target_size="$token_file_size" \
+          -v target_mtime="$token_file_mtime" \
+          '$1 == target_path && $2 == target_size && $3 == target_mtime { print $4 " " $5; found = 1; exit } END { if (!found) exit 1 }' \
+          "$token_cache_file" 2>/dev/null || true
+      )"
+    fi
+
+    if [ -n "$cached_result" ]; then
+      token_result="$cached_result"
+    else
+      token_result="$(token_usage_from_file "$token_file" 2>/dev/null || printf '0 0')"
+    fi
+
+    token_count="${token_result%% *}"
+    report_count="${token_result##* }"
+    case "$token_count" in
+      ''|*[!0-9]*) token_count=0 ;;
+    esac
+    case "$report_count" in
+      ''|*[!0-9]*) report_count=0 ;;
+    esac
+    autoflow_token_usage_count=$((autoflow_token_usage_count + token_count))
+    autoflow_token_report_count=$((autoflow_token_report_count + report_count))
+    printf '%s\t%s\t%s\t%s\t%s\n' "$token_file" "$token_file_size" "$token_file_mtime" "$token_count" "$report_count" >> "$token_cache_next"
+  done < <(find "${board_root}/runners/logs" -type f \( -name '*_stdout.log' -o -name '*_stderr.log' \) ! -name '*_live_*' | sort)
+
+  mv "$token_cache_next" "$token_cache_file"
+}
+
 write="false"
 positionals=()
 while [ "$#" -gt 0 ]; do
@@ -346,13 +490,15 @@ spec_total="$((spec_backlog_count + spec_done_count))"
 ticket_todo_count="$(count_matching_files "${board_root}/tickets/todo" 'tickets_*.md')"
 ticket_inprogress_count="$(count_matching_files "${board_root}/tickets/inprogress" 'tickets_*.md')"
 ticket_planning_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "planning")"
+ticket_ready_to_merge_count="$(count_matching_files "${board_root}/tickets/ready-to-merge" 'tickets_*.md')"
+ticket_merge_blocked_count="$(count_matching_files "${board_root}/tickets/merge-blocked" 'tickets_*.md')"
 ticket_verifier_count="$(count_matching_files "${board_root}/tickets/verifier" 'tickets_*.md')"
 ticket_done_count="$(count_matching_files "${board_root}/tickets/done" 'tickets_*.md')"
 ticket_reject_count="$(count_matching_files "${board_root}/tickets/reject" 'reject_*.md')"
 ticket_done_reject_count="$(count_matching_files "${board_root}/tickets/done" 'reject_*.md')"
 reject_count="$((ticket_reject_count + ticket_done_reject_count))"
-ticket_total="$((ticket_todo_count + ticket_inprogress_count + ticket_verifier_count + ticket_done_count + ticket_reject_count))"
-active_ticket_count="$((ticket_todo_count + ticket_inprogress_count + ticket_verifier_count))"
+ticket_total="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_merge_count + ticket_merge_blocked_count + ticket_verifier_count + ticket_done_count + ticket_reject_count))"
+active_ticket_count="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_merge_count + ticket_merge_blocked_count + ticket_verifier_count))"
 ticket_owner_active_count="$ticket_inprogress_count"
 
 verifier_pass_count="$(count_matching_files "${board_root}/logs" 'verifier_*_pass.md')"
@@ -363,6 +509,7 @@ verification_pass_rate_percent="$(percent_value "$verifier_pass_count" "$verifie
 completion_rate_percent="$(percent_value "$ticket_done_count" "$ticket_total")"
 count_runner_states
 count_autoflow_commit_metrics
+count_autoflow_token_metrics
 
 if [ "$write" = "true" ]; then
   write_snapshot \
@@ -395,6 +542,8 @@ if [ "$write" = "true" ]; then
     "$autoflow_code_insertions_count" \
     "$autoflow_code_deletions_count" \
     "$autoflow_code_volume_count" \
+    "$autoflow_token_usage_count" \
+    "$autoflow_token_report_count" \
     "$verification_pass_rate_percent" \
     "$completion_rate_percent"
 fi
@@ -414,6 +563,8 @@ printf 'ticket_total=%s\n' "$ticket_total"
 printf 'ticket_todo_count=%s\n' "$ticket_todo_count"
 printf 'ticket_inprogress_count=%s\n' "$ticket_inprogress_count"
 printf 'ticket_planning_count=%s\n' "$ticket_planning_count"
+printf 'ticket_ready_to_merge_count=%s\n' "$ticket_ready_to_merge_count"
+printf 'ticket_merge_blocked_count=%s\n' "$ticket_merge_blocked_count"
 printf 'ticket_verifier_count=%s\n' "$ticket_verifier_count"
 printf 'ticket_done_count=%s\n' "$ticket_done_count"
 printf 'reject_count=%s\n' "$reject_count"
@@ -439,5 +590,7 @@ printf 'autoflow_code_files_changed_count=%s\n' "$autoflow_code_files_changed_co
 printf 'autoflow_code_insertions_count=%s\n' "$autoflow_code_insertions_count"
 printf 'autoflow_code_deletions_count=%s\n' "$autoflow_code_deletions_count"
 printf 'autoflow_code_volume_count=%s\n' "$autoflow_code_volume_count"
+printf 'autoflow_token_usage_count=%s\n' "$autoflow_token_usage_count"
+printf 'autoflow_token_report_count=%s\n' "$autoflow_token_report_count"
 printf 'verification_pass_rate_percent=%s\n' "$verification_pass_rate_percent"
 printf 'completion_rate_percent=%s\n' "$completion_rate_percent"

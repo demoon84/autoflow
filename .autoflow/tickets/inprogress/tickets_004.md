@@ -5,13 +5,13 @@
 - ID: tickets_004
 - PRD Key: prd_004
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_004/prd_004.md
-- Title: Ticket owner work for prd_004
+- Title: AI work for prd_004
 - Stage: executing
-- AI: 019dc7f9-4594-7a40-b375-2d724c5a111b
-- Claimed By: 019dc7f9-4594-7a40-b375-2d724c5a111b
-- Execution AI: 019dc7f9-4594-7a40-b375-2d724c5a111b
-- Verifier AI: 019dc7f9-4594-7a40-b375-2d724c5a111b
-- Last Updated: 2026-04-26T04:08:42Z
+- AI: AI-1
+- Claimed By: AI-1
+- Execution AI: AI-1
+- Verifier AI: AI-1
+- Last Updated: 2026-04-26T07:45:31Z
 
 ## Goal
 
@@ -37,7 +37,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
 - Branch: autoflow/tickets_004
-- Base Commit: 0bcb9b9b954905b97cf0b8fdaf3c1bb843105196
+- Base Commit: 1f27217b9cb56ab309c66fc63c2117a1f1890926
 - Worktree Commit:
 - Integration Status: pending
 
@@ -60,124 +60,235 @@
 
 ## Resume Context
 
-- Current checkpoint (2026-04-26T04:04:04Z): `owner-1` resumed the isolated worktree at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, reran `bin/autoflow wiki query . --term Help --term settings --term sidebar`, rechecked the allowed files, and reran the declared owner verification command unchanged. The PRD still requires a `settingsNavigation` help item and `activeSettingsSection === "help"` branch, but the live renderer at `apps/desktop/src/renderer/main.tsx:1101-1265` is still the dashboard console layout with `SummaryGrid`, `RunnerConsole`, `RunnerTerminalPanel`, `TicketBoard`, log/wiki/snapshot panels and no matching help/settings hooks. Automated verification still fails at the final smoke step with `bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory` (exit 127). No product files were edited in this turn.
-- Current checkpoint (2026-04-26T03:18:30Z): `owner-1` resumed the isolated worktree at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, reran `bin/autoflow wiki query . --term Help --term settings --term sidebar`, and rechecked the allowed files before deciding whether a safe in-scope implementation exists. The wiki query still points back to `tickets/done/prd_004/prd_004.md` as the governing spec, but the live renderer in `apps/desktop/src/renderer/main.tsx:1101-1262` remains a dashboard flow (`SummaryGrid`, `RunnerConsole`, `RunnerTerminalPanel`, `TicketBoard`, log/wiki/snapshot panels) with no `settingsNavigation`, `activeSettingsSection`, Help branch, or Help CSS hooks in the allowed files. The worktree remains unchanged for product files; only hydrated `node_modules` links appear as runtime artifacts.
-- Last action: resumed with `./.autoflow/scripts/start-ticket-owner.sh`, ran `bin/autoflow wiki query . --term Help --term settings --term sidebar`, `rg -n "settingsNavigation|activeSettingsSection|HelpSection|도움말|help-section|help-card|sidebar|자동화 상태|처리 지표"` across the allowed files, inspected `apps/desktop/src/renderer/main.tsx:1101-1262`, and reran `./.autoflow/scripts/verify-ticket-owner.sh 004`. The command now fails at the final smoke step with `bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory` (exit 127), while the manual acceptance mismatch against the missing settings/help architecture still stands.
-- Resume next: finish this retry with `./.autoflow/scripts/finish-ticket-owner.sh 004 fail "<reason>"` unless the PRD is replanned against the current dashboard renderer and the smoke-script path is corrected first.
+- Current safe-turn status at 2026-04-26T07:25:23Z: `autoflow/tickets_004` was repaired back into a real git worktree rooted at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` on base `3ad69acb74bc9c60b80ed9a4b53667435dac1476`, and the usual `node_modules` / `apps/desktop/node_modules` symlinks were rehydrated so verification could run again. This turn also restored the Help sidebar item plus static Help section patch inside the worktree-only copies of `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
+- Fresh owner verification at 2026-04-26T07:24:42Z now fails for a different reason than the previous reject history: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` exits 2 on preexisting renderer/type drift in the current repo snapshot (`AutoflowRunner.conversationPreview`, `AutoflowMetricSnapshot.autoflow_token_usage_count`, `WorkflowFileEntry.createdAt`). Those failing lines are outside this turn's Help patch diff.
+- `PROJECT_ROOT` still has overlapping dirty copies of the same Allowed Paths, so even with the worktree repaired a pass finish would remain unsafe in this turn. Board progress snapshot at 2026-04-26T07:25:23Z: `completion_rate_percent=36.4`, `ticket_inprogress_count=6`, `ticket_done_count=4`, `reject_count=1`.
+- Current safe-turn status at 2026-04-26T06:54:36Z: `start-ticket-owner.sh` resumed `tickets_004`, but the claimed worktree is still unusable for execution. `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` still does not register `tickets_004`, `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short --branch` still fails with `fatal: not a git repository`, `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` still points to unrelated `prd_009` commit `07a05bb0162134d69c2a2d0c4960de327fd3d587`, and the claimed path still contains only a `node_modules` symlink. `PROJECT_ROOT` still has both Allowed Paths dirty, with `git diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` now at `100 insertions(+), 65 deletions(-)`. `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, `ticket_done_count=3`, and `spec_backlog_count=1`. This turn made no product-file changes and intentionally did not rerun owner verification or finish.
+- Current safe-turn status: no product files changed in this turn. `start-ticket-owner.sh` still resumed `tickets_004`, but the claimed worktree remains unusable: `git worktree list --porcelain` still omits `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short --branch` still fails with `fatal: not a git repository`, and `git branch --list 'autoflow/tickets_004' --verbose --verbose` still points to unrelated `prd_009` commit `07a05bb0162134d69c2a2d0c4960de327fd3d587`. `PROJECT_ROOT` also still has both Allowed Paths dirty, so rerunning `verify-ticket-owner.sh 004` or `finish-ticket-owner.sh 004 ...` would be unsafe. Board progress at this checkpoint remains `completion_rate_percent=30.0`.
+- 직전 작업: owner-4 가 `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` 로 `tickets_004` 를 재개해 `status=resume` 을 확인했다. 이어서 `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain`, `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose`, `ls -la /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css`, `./bin/autoflow metrics .` 를 실행해 worktree registration corruption, root overlap, board snapshot(`completion_rate_percent=30.0`, `ticket_inprogress_count=6`, `ticket_done_count=3`)을 재확인했다.
+- 재개 시 먼저 볼 것: `autoflow/tickets_004` branch/worktree registration 을 ticket 004 내용으로 복구할 수 있는지 확인한다. 최소한 (1) `tickets_004` worktree path 를 실제 git worktree 로 재생성하고 (2) branch head 가 prd_004 Help UI patch 를 가리키는지 검증해야 한다. 그 전에는 `finish-ticket-owner.sh 004 pass ...` 를 다시 시도하지 말고, root 쪽 competing renderer edits 도 분리 또는 정리한 뒤 authoritative patch 를 다시 선택한다.
 
 ## Notes
 
-- Created by AI-smoke from tickets/done/prd_004/prd_004.md at 2026-04-26T00:37:01Z.
+- Created by AI-4 from tickets/done/prd_004/prd_004.md at 2026-04-26T04:53:11Z.
 
-- AI-smoke prepared spec at 2026-04-26T00:37:01Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_004.md
-- AI-smoke prepared resume at 2026-04-26T00:37:56Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_004.md
-- Ticket owner 019dc753-e930-7812-96c6-373bc7d62a9a prepared todo at 2026-04-26T01:08:10Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Mini-plan at 2026-04-26T01:20:00Z:
-  1. Compare the approved help-section spec with the current desktop renderer structure inside the allowed files.
-  2. Implement only if the current code still exposes the required sidebar/settings entry points without broad unplanned UI refactor.
-  3. Run owner verification to capture evidence about spec drift and environment drift before deciding pass/fail.
-- Observation at 2026-04-26T01:20:00Z: the current `main.tsx` renders a dashboard-style console and does not contain `settingsNavigation`, `activeSettingsSection`, or an existing settings sidebar section to extend.
-- Observation at 2026-04-26T01:20:00Z: the ticket worktree does not contain `tests/smoke/ticket-owner-smoke.sh`, so the required smoke command in Done When cannot complete as written from the claimed implementation root.
-- Ticket owner verification failed at 2026-04-26T01:09:34Z: command exited 1
-- Ticket owner 019dc753-e930-7812-96c6-373bc7d62a9a marked fail at 2026-04-26T01:09:48Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T02:07:43Z; retry_count=1
-- AI-1 prepared todo at 2026-04-26T02:07:53Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_004.md
-- Mini-plan at 2026-04-26T02:10:00Z:
-  1. Revalidate the reject reason against the current renderer and spec because prior observations referenced an older UI shape.
-  2. If the Help nav/section can be added cleanly inside `main.tsx` + `styles.css` without touching unrelated dirty changes, implement the smallest complete Help section and run the full owner verification chain.
-  3. If shared allowed-path dirtiness prevents an isolated commit, record that evidence and fail the ticket with a concrete rerun hint instead of mixing unrelated work.
-- Evidence checkpoint at 2026-04-26T02:10:00Z:
-  - `bin/autoflow wiki query . --term Help --term settings --term sidebar` surfaced `tickets/done/prd_004/prd_004.md` plus `tickets/done/prd_003/prd_003.md` as the main adjacent UI context.
-  - `rg -n "settingsNavigation|activeSettingsSection|help|Wiki|LogPreview"` on `apps/desktop/src/renderer/main.tsx` confirmed the current code still uses the settings navigation model from the spec, so the original "no settingsNavigation" reject reason is no longer accurate.
-  - `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` showed `styles.css` is already modified before this turn, which keeps the runtime on project-root fallback and raises commit-scope risk for any Help-section styling work.
-- Ticket owner verification passed at 2026-04-26T02:09:04Z: command exited 0
-- AI-1 marked fail at 2026-04-26T02:09:51Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T02:23:14Z; retry_count=2
-- AI-1 prepared todo at 2026-04-26T02:25:46Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_004.md
-- AI-1 prepared resume at 2026-04-26T02:25:57Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_004.md
-- Runtime auto-blocked: shared_allowed_path_conflict at 2026-04-26T02:31:18Z; blockers=tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css
-- Safe-turn evidence checkpoint (2026-04-26T02:31:33Z):
-  - `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` returned `status=resume`, then `status=blocked`, `reason=shared_allowed_path_conflict`, and only listed `tickets_001` as the live blocker for both allowed paths.
-  - `bin/autoflow wiki query . --term Help --term settings --term sidebar` again surfaced `tickets/done/prd_004/prd_004.md` as the primary spec context and `tickets/done/prd_003/prd_003.md` as adjacent renderer context.
-  - `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both allowed files modified in project root, and focused `rg` output confirms `settingsNavigation` / `activeSettingsSection` exist while the required Help implementation (`help` nav branch, `도움말`, `.help-section`, `.help-card`) is still absent.
-  - Decision: no product edits in this turn. The ticket remains blocked until the overlapping lower-number ticket clears or the runtime can provide an isolated worktree.
-- AI-1 prepared resume at 2026-04-26T02:41:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Auto-recovery at 2026-04-26T02:41:51Z: shared Allowed Path blockers cleared; retrying claim
-- Auto-recovery at 2026-04-26T02:41:51Z: cleared blocked worktree fields, retrying claim
-- AI-1 prepared resume at 2026-04-26T02:41:51Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Safe-turn evidence checkpoint (2026-04-26T03:00:00Z):
-  - `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` returned `status=resume` with `worktree_status=ready` and `worktree_path=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, so the earlier shared-path blocker is no longer the limiting factor.
-  - `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short` returned no output, and `git diff -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is empty. This turn starts from a clean isolated worktree.
-  - `rg -n "settingsNavigation|activeSettingsSection|도움말|HelpSection|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer -S` returned exit 1 with no matches, which directly contradicts the PRD's required entry points and Help copy.
-  - `sed -n '1080,1320p' apps/desktop/src/renderer/main.tsx` shows the live UI still renders the dashboard console sections (`작업 티켓 흐름`, `최근 로그`, `위키와 인수인계`, `진행 스냅샷`) rather than a settings sidebar/navigation model.
-  - Decision: do not fabricate the missing sidebar architecture inside a narrow Help-only retry. Run the declared verification command for evidence, then reject with a concrete replan hint tied to current renderer structure.
-- Ticket owner verification failed at 2026-04-26T02:43:24Z: command exited 1
-- AI-1 marked fail at 2026-04-26T02:43:50Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T03:00:41Z; retry_count=1
-- AI-4 prepared resume at 2026-04-26T03:01:52Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Auto-recovery at 2026-04-26T03:02:24Z: shared Allowed Path blockers cleared; retrying claim
-- Auto-recovery at 2026-04-26T03:02:24Z: cleared blocked worktree fields, retrying claim
-- AI-4 prepared resume at 2026-04-26T03:02:24Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Mini-plan at 2026-04-26T03:03:16Z:
-  1. Re-read `prd_004` and verify whether the required Help sidebar entry points still exist in the current allowed files.
-  2. Run the owner verification command unchanged to capture live evidence before any finish decision.
-  3. Reject only if both the renderer structure and the verification prerequisite still contradict the PRD in ways that exceed a safe Help-only patch.
-- Safe-turn evidence checkpoint (2026-04-26T03:03:16Z):
-  - `bin/autoflow wiki query` in this checkout does not provide the documented `query` action, so prior-knowledge lookup was unavailable through the expected command path for this turn.
-  - `nl -ba apps/desktop/src/renderer/main.tsx | sed -n '1100,1235p'` shows the main view is a dashboard composed of `SummaryGrid`, `RunnerConsole`, `RunnerTerminalPanel`, `TicketBoard`, log/wiki panels, and snapshot panels. There is no settings sidebar branch where a last-position Help item could be added without broader restructuring.
-  - `rg -n "settingsNavigation|activeSettingsSection|HelpSection|도움말|help-section|help-card" apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css -S` returned no matches in the allowed files.
-  - `./.autoflow/scripts/verify-ticket-owner.sh 004` recorded exit code 1 because `npx tsc --noEmit` could not run the TypeScript compiler in the isolated worktree.
-  - Decision: no product-file edits in this turn. Finish this retry as reject with a replan hint tied to the current dashboard renderer and the missing verification prerequisite.
-- Ticket owner verification failed at 2026-04-26T03:03:04Z: command exited 1
-- AI-4 marked fail at 2026-04-26T03:04:18Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T03:06:00Z; retry_count=2
-- AI-2 prepared todo at 2026-04-26T03:06:16Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- AI-2 prepared resume at 2026-04-26T03:06:47Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Mini-plan at 2026-04-26T03:07:20Z:
-  1. Reconfirm prior context with `bin/autoflow wiki query . --term Help --term settings --term sidebar`.
-  2. Revalidate the allowed files against the PRD's required Help navigation entry points before making any code change.
-  3. If the renderer still lacks the settings-sidebar architecture, rerun owner verification for fresh evidence and reject with a concrete replan hint instead of fabricating a broad refactor inside this narrow ticket.
-- Safe-turn evidence checkpoint (2026-04-26T03:07:20Z):
-  - `bin/autoflow wiki query . --term Help --term settings --term sidebar` returned `status=ok` and again surfaced `tickets/done/prd_004/prd_004.md` as the direct spec reference, with `tickets/done/prd_003/prd_003.md` as adjacent UI context.
-  - `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short` returned no output, so this turn starts from a clean isolated worktree.
-  - `rg -n "settingsNavigation|activeSettingsSection|HelpSection|도움말|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css -S` returned exit 1 with no matches in the allowed files.
-  - `nl -ba apps/desktop/src/renderer/main.tsx | sed -n '1080,1265p'` shows the live UI is the dashboard console layout, not a settings-sidebar flow with a last-position Help item.
-  - Decision before verification: no product-file edits in this turn unless the declared verification output reveals contrary evidence, because the approved spec no longer matches the live renderer architecture.
-- Ticket owner verification failed at 2026-04-26T03:07:49Z: command exited 1
-- AI-2 marked fail at 2026-04-26T03:08:13Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T03:16:42Z; retry_count=3
-- Runtime hydrated worktree dependency at 2026-04-26T03:16:44Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
-- Runtime hydrated worktree dependency at 2026-04-26T03:16:44Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
-- AI owner-1 prepared todo at 2026-04-26T03:16:44Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- AI owner-1 prepared resume at 2026-04-26T03:17:18Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Mini-plan at 2026-04-26T03:18:30Z:
-  1. Reconfirm the governing PRD via wiki query and compare it against the current allowed-file renderer structure.
-  2. Rerun the declared owner verification command unchanged to capture fresh command evidence for this turn.
-  3. If the renderer still lacks the Help/settings architecture or verification still fails out of scope, reject with a concrete replan hint instead of forcing a broader refactor.
-- Safe-turn evidence checkpoint (2026-04-26T04:04:04Z):
-  - `bin/autoflow wiki query . --term Help --term settings --term sidebar` again surfaced `tickets/done/prd_004/prd_004.md` as the governing spec, including the required `settingsNavigation` help entry and `activeSettingsSection === "help"` branch.
-  - `rg -n "settingsNavigation|activeSettingsSection|HelpSection|도움말|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css -S` still returned no matches in the allowed files.
-  - `nl -ba apps/desktop/src/renderer/main.tsx | sed -n '1080,1265p'` still shows the dashboard console layout rather than a settings sidebar.
-  - `./.autoflow/scripts/verify-ticket-owner.sh 004` returned `status=fail` with `exit_code=127`; `verify_004.md` records `bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory`.
-  - Decision: no in-scope product edit is possible without replanning the PRD against the current renderer and repairing the smoke verification path first.
-- Safe-turn evidence checkpoint (2026-04-26T03:18:30Z):
-  - `bin/autoflow wiki query . --term Help --term settings --term sidebar` returned `status=ok` and again surfaced `tickets/done/prd_004/prd_004.md` as the direct governing spec, with the PRD snippets still requiring `settingsNavigation`, `activeSettingsSection === "help"`, and a dedicated Help section.
-  - `rg -n "settingsNavigation|activeSettingsSection|HelpSection|도움말|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css -S` returned exit 1 with no matches in the allowed files.
-  - `nl -ba apps/desktop/src/renderer/main.tsx | sed -n '1080,1265p'` shows the live UI is still the dashboard console layout, not a settings sidebar where a last-position Help item could be added without broader restructuring.
-  - `./.autoflow/scripts/verify-ticket-owner.sh 004` returned `status=fail` with `exit_code=127`; `verify_004.md` now records `bash: tests/smoke/ticket-owner-smoke.sh: No such file or directory`.
-  - Decision: no product-file edits in this turn. The current ticket should reject again until both the PRD is replanned against the live renderer and the smoke verification path is repaired.
-- Ticket owner verification failed at 2026-04-26T03:17:45Z: command exited 127
-- AI owner-1 marked fail at 2026-04-26T03:19:05Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T04:03:33Z; retry_count=4
-- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared todo at 2026-04-26T04:03:37Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
-- Ticket owner verification failed by 019dc74d-bd73-78c3-8fc1-ba6f06e44355 at 2026-04-26T04:04:04Z: command exited 127
-- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 marked fail at 2026-04-26T04:04:45Z.
-- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T04:08:38Z; retry_count=5
-- AI 019dc7f9-4594-7a40-b375-2d724c5a111b prepared todo at 2026-04-26T04:08:42Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Runtime hydrated worktree dependency at 2026-04-26T04:53:11Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T04:53:11Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-4 prepared spec at 2026-04-26T04:53:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T04:53:46Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Mini-plan at 2026-04-26T05:02:00Z:
+  1. Extend `settingsNavigation` with a final `help` item using a lucide help icon, preserving existing order and section state handling.
+  2. Add a static `HelpSection` in `apps/desktop/src/renderer/main.tsx` that renders overview, 5 menu guide cards, glossary, trigger guide, and data-flow summary using shadcn `Card`.
+  3. Add isolated `.help-*` styles in `apps/desktop/src/renderer/styles.css` so Help follows the existing settings shell without regressing Wiki/metrics layouts.
+- Wiki/ticket findings influencing approach:
+  - `tickets/done/prd_001/prd_001.md` confirms the current sidebar labels/order, especially `Wiki`.
+  - `tickets/done/prd_003/prd_003.md` confirms section-specific layout should be isolated instead of changing shared `.settings-section`.
+  - `tickets/done/prd_004/prd_004.md` is the source spec for the exact Help content contract.
+- Ticket owner verification passed by AI-4 at 2026-04-26T04:56:58Z: command exited 0
+- Worktree integration blocked at 2026-04-26T04:57:12Z: PROJECT_ROOT has non-board dirty files. Commit/stash unrelated changes before integrating this ticket.
+- Finish pass retry at 2026-04-26T04:57:12Z also exposed a runtime bug: `finish-ticket-owner.sh` passes multiline integration stderr into `append_note`, causing `awk: newline in string` before done/reject routing. The ticket state above is authoritative; do not treat that script error as failed verification.
+- Auto-recovery at 2026-04-26T04:59:13Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T04:59:13Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:00:03Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:00:30Z blocker review by AI-4:
+  - `start-ticket-owner.sh` resumed `tickets_004` cleanly for owner-4 and confirmed the same worktree root and verification record.
+  - `PROJECT_ROOT` is still dirty across many unrelated paths, including the same allowed renderer files this ticket must integrate.
+  - The claimed worktree is also still dirty in `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`, so forcing finish now would mix independent root edits with this ticket patch.
+- Auto-recovery at 2026-04-26T05:02:30Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:02:30Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:03:12Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:03:27Z blocker confirmation by AI-4:
+  - `start-ticket-owner.sh` resumed `tickets_004` for owner-4 with `status=resume`, `source=resume`, and the same claimed worktree.
+  - `PROJECT_ROOT` still has unrelated dirty paths, including `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
+  - Diff stat still conflicts on the same allowed files: root has 26 insertions / 12 deletions while the claimed worktree has 355 insertions / 1 deletion, so `finish-ticket-owner.sh` is still unsafe in this turn.
+- Auto-recovery at 2026-04-26T05:05:48Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:05:48Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:06:35Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:07:17Z blocker review by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` reconfirmed `tickets/done/prd_004/prd_004.md` as the governing PRD for this Help section work.
+  - `verify_004.md` still shows the declared verification command passed with exit code 0 at 2026-04-26T04:56:58Z.
+  - `PROJECT_ROOT` remains broadly dirty and still includes `apps/desktop/src/renderer/main.tsx` plus `apps/desktop/src/renderer/styles.css`.
+  - The claimed worktree is also still dirty on those same two allowed files, so finish/integration would mix concurrent root edits into this ticket.
+- Auto-recovery at 2026-04-26T05:09:40Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:09:40Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:10:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:10:51Z blocker confirmation by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git status --short` in `PROJECT_ROOT` still includes broad unrelated churn and the same Allowed Paths files for this ticket.
+  - `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short` still shows both Allowed Paths dirty in the claimed worktree.
+  - `git diff --stat` for root is `94 insertions(+), 14 deletions(-)` while worktree `git diff --stat` is `355 insertions(+), 1 deletion(-)` on the same two files, so this turn stops without finish/integration.
+- Auto-recovery at 2026-04-26T05:13:00Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:13:00Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:22:22Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:22:56Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:23:24Z blocker confirmation by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing spec.
+  - `PROJECT_ROOT` diff on the two Allowed Paths is now 130 insertions / 46 deletions and is focused on progress-board / runner console behavior, not Help content.
+  - The claimed worktree diff on the same two Allowed Paths is still 355 insertions / 1 deletion and is focused on the Help sidebar item plus Help section UI.
+  - Because both roots modify the same files for different features, this turn leaves the ticket blocked instead of attempting unsafe integration or finish.
+- Auto-recovery at 2026-04-26T05:25:19Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:25:19Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:25:57Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:27:06Z safe-turn checkpoint by AI-4:
+  - `start-ticket-owner.sh` resumed `tickets_004` for owner-4 with the same claimed worktree and verification record.
+  - `PROJECT_ROOT` still has both Allowed Paths dirty, and `git diff --stat` there is `145 insertions(+), 46 deletions(-)`.
+  - The claimed worktree still has both Allowed Paths dirty, and `git diff --stat` there is `355 insertions(+), 1 deletion(-)`.
+  - Because those numbers still reflect different features on the same files, this turn records the blocker and stops without running integration or finish.
+- AI AI-4 prepared resume at 2026-04-26T05:28:46Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:29:33Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:29:39Z safe-turn checkpoint by AI-4:
+  - `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same ready worktree/run file.
+  - `PROJECT_ROOT` still has both Allowed Paths dirty, and `git diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is `161 insertions(+), 47 deletions(-)`.
+  - The claimed worktree still has both Allowed Paths dirty, and `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is `355 insertions(+), 1 deletion(-)`.
+  - Because those numbers still reflect different features on the same files, this owner turn records fresh blocker evidence and stops without running integration or finish.
+- AI AI-4 prepared resume at 2026-04-26T05:32:17Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:32:46Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:34:08Z safe-turn checkpoint by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `PROJECT_ROOT` still has both Allowed Paths dirty, and `git diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `189 insertions(+), 80 deletions(-)`.
+  - The claimed worktree still has both Allowed Paths dirty, and `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)`.
+  - Root `main.tsx` / `styles.css` changes are focused on progress-board and runner-console behavior, while the claimed worktree still contains the Help sidebar item plus Help section UI. Because those features overlap on the same two files, this owner turn records fresh blocker evidence and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T05:36:51Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:36:51Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:41:44Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:46:30Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:46:57Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:47:38Z safe-turn checkpoint by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` again returned `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `PROJECT_ROOT` still has both Allowed Paths dirty, and `git diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `193 insertions(+), 80 deletions(-)`.
+  - The claimed worktree still has both Allowed Paths dirty, and `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)`.
+  - Because those numbers still reflect different features on the same two files, this owner turn leaves the ticket blocked and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T05:49:42Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:49:42Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:50:15Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:51:30Z safe-turn checkpoint by AI-4:
+  - `bin/autoflow wiki query . --term help --term sidebar --term prd_004` again returned `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both Allowed Paths dirty in `PROJECT_ROOT`.
+  - `git -C /Users/demoon/Documents/project/autoflow diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `269 insertions(+), 79 deletions(-)`, while `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)`.
+  - Because those diffs still represent different features on the same two files, this ticket is left blocked in `inprogress/` and this owner turn stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T05:52:45Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:52:45Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:56:10Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T05:57:05Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T05:57:31Z safe-turn checkpoint by AI-4:
+  - `start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same ready worktree/run file.
+  - `bin/autoflow wiki query . --term ticket-owner --term state --term prd_004` surfaced `tickets/done/prd_004/prd_004.md` plus runner-state related PRDs as the governing context for this Help-section ticket.
+  - `git -C /Users/demoon/Documents/project/autoflow diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `279 insertions(+), 79 deletions(-)` in `PROJECT_ROOT`, while `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)` in the claimed worktree.
+  - Because those diffs still reflect different features on the same two Allowed Paths, this owner turn records fresh blocker evidence, leaves the ticket in `blocked`, and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T05:59:49Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T05:59:49Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:00:31Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:00:53Z safe-turn checkpoint by AI-4:
+  - `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same ready worktree/run file.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again returned `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `275 insertions(+), 80 deletions(-)` in `PROJECT_ROOT`, while `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)` in the claimed worktree.
+  - Because those diffs still reflect different features on the same two Allowed Paths, this owner turn records fresh blocker evidence, keeps the ticket blocked, and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T06:03:44Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T06:03:44Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:11:09Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:11:39Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:12:03Z safe-turn checkpoint by AI-4:
+  - `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same ready worktree/run file.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=5`, and `ticket_done_count=3`.
+  - `git -C /Users/demoon/Documents/project/autoflow diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `153 insertions(+), 31 deletions(-)` in `PROJECT_ROOT`, while `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` remains `355 insertions(+), 1 deletion(-)` in the claimed worktree.
+  - Because those diffs still reflect different features on the same two Allowed Paths, this owner turn records fresh blocker evidence, keeps the ticket blocked, and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T06:14:35Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T06:14:35Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:15:29Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:16:03Z safe-turn checkpoint by AI-4:
+  - `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same recorded worktree/run file.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=5`, and `ticket_done_count=3`.
+  - `git -C /Users/demoon/Documents/project/autoflow diff --stat -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is now `218 insertions(+), 48 deletions(-)` in `PROJECT_ROOT`.
+  - `test -d /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 || echo missing` returned `missing`, so the claimed worktree cannot currently be used for safe integration or finish.
+  - Because the root patch still overlaps the ticket's Allowed Paths and the claimed worktree path is absent, this owner turn records fresh blocker evidence, keeps the ticket blocked, and stops without rerunning verification or attempting unsafe integration.
+- Auto-recovery at 2026-04-26T06:22:07Z: cleared blocked worktree fields, retrying claim
+- Runtime hydrated worktree dependency at 2026-04-26T06:22:07Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-4 prepared resume at 2026-04-26T06:22:06Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:23:30Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:23:45Z blocked safe-turn review by AI-4:
+  - `start-ticket-owner.sh` resumed `tickets_004` but printed `fatal: '/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004' already exists` before still returning `worktree_status=ready`, so the runtime currently overstates the health of the claimed worktree.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `./bin/autoflow metrics .` at 2026-04-26T06:23:45Z reported `completion_rate_percent=30.0`, `ticket_inprogress_count=5`, and `ticket_done_count=3`.
+  - `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 rev-parse --show-toplevel` still fails because the claimed path is only a plain directory, while `PROJECT_ROOT` still has competing edits on the same two Allowed Paths.
+  - This safe turn therefore leaves the ticket blocked without rerunning verification or attempting unsafe integration/finish.
+- Auto-recovery at 2026-04-26T06:27:05Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T06:27:05Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T06:29:12Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:30:04Z safe-turn checkpoint by AI-4:
+  - `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same claimed worktree path.
+  - `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` reported `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` as `prunable gitdir file points to non-existent location`.
+  - `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` showed branch head `07a05bb0162134d69c2a2d0c4960de327fd3d587` with subject `[AI work for prd_009] Implemented AI-N display normalization and reverified ticket 009`, proving the ticket 004 worktree registration has drifted to unrelated ticket 009 history.
+  - `ls -la /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` showed only a `node_modules` symlink, and `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still showed root-level modifications on both Allowed Paths.
+  - `./bin/autoflow metrics .` recorded `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, and `ticket_done_count=3`.
+  - This owner turn therefore stops without rerunning verification or attempting finish, because the claimed ticket branch/worktree is no longer trustworthy and root overlap on the same allowed files remains unresolved.
+- AI AI-4 marked fail at 2026-04-26T06:30:59Z.
+- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T06:32:32Z; retry_count=1
+- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared todo at 2026-04-26T06:37:16Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:37:54Z safe-turn checkpoint by AI-2:
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` still reports `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` as `prunable gitdir file points to non-existent location`.
+  - `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` still shows branch head `07a05bb0162134d69c2a2d0c4960de327fd3d587` with subject `[AI work for prd_009] Implemented AI-N display normalization and reverified ticket 009`.
+  - `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both Allowed Paths dirty in `PROJECT_ROOT`.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, and `ticket_done_count=3`.
+  - This owner turn leaves the ticket blocked and idle without rerunning verification or attempting integration, because the claimed worktree identity is corrupted and the same Allowed Paths are concurrently dirty in `PROJECT_ROOT`.
+- Auto-recovery at 2026-04-26T06:39:11Z: cleared blocked worktree fields, retrying claim
+- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared resume at 2026-04-26T06:39:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared resume at 2026-04-26T06:39:35Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:40:20Z safe-turn checkpoint by AI-3:
+  - `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with `status=resume`, `source=resume`, and the same claimed worktree path.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` still reports `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` as `prunable gitdir file points to non-existent location`.
+  - `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` still shows branch head `07a05bb0162134d69c2a2d0c4960de327fd3d587` with subject `[AI work for prd_009] Implemented AI-N display normalization and reverified ticket 009`.
+  - `ls -la /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` shows only a `node_modules` symlink, so the claimed path is not a usable git worktree.
+  - `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both Allowed Paths dirty in `PROJECT_ROOT`.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, and `ticket_done_count=3`.
+  - This owner turn stops without rerunning verification or attempting finish, because the claimed ticket branch/worktree is still corrupted and root overlap on the same allowed files remains unresolved.
+- Auto-recovery at 2026-04-26T06:46:13Z: cleared blocked worktree fields, retrying claim
+- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared resume at 2026-04-26T06:46:13Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:47:13Z blocked safe-turn checkpoint by AI-1:
+  - `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` but still printed `fatal: '/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004' already exists` before returning `worktree_status=ready`.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` still omits `tickets_004`, `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short --branch` still fails because the path is not a git repository, and `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` still points to unrelated `prd_009` history.
+  - `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both Allowed Paths dirty in `PROJECT_ROOT`.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, and `spec_backlog_count=1`.
+  - This turn recorded durable blocker evidence only and intentionally did not rerun verification or finish.
+- Auto-recovery at 2026-04-26T06:53:39Z: cleared blocked worktree fields, retrying claim
+- AI 019dc74d-bd73-78c3-8fc1-ba6f06e44355 prepared resume at 2026-04-26T06:53:39Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T06:54:36Z blocked safe-turn checkpoint by AI-1:
+  - `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` resumed `tickets_004` with the same claimed worktree path, but still printed `fatal: '/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004' already exists` before returning `worktree_status=ready`.
+  - `./bin/autoflow wiki query . --term help --term sidebar --term prd_004` again surfaced `tickets/done/prd_004/prd_004.md` as the governing Help spec.
+  - `git -C /Users/demoon/Documents/project/autoflow worktree list --porcelain` still does not register `tickets_004`, `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short --branch` still fails because the path is not a git repository, and `git -C /Users/demoon/Documents/project/autoflow branch --list 'autoflow/tickets_004' --verbose --verbose` still points to unrelated `prd_009` history.
+  - `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both Allowed Paths dirty in `PROJECT_ROOT`, and the current root diff stat is `100 insertions(+), 65 deletions(-)`.
+  - `./bin/autoflow metrics .` reported `completion_rate_percent=30.0`, `ticket_inprogress_count=6`, `ticket_done_count=3`, and `spec_backlog_count=1`.
+  - This turn left the ticket blocked and idle without rerunning verification or attempting finish.
+- Auto-recovery at 2026-04-26T07:01:09Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared adopted-inprogress at 2026-04-26T07:01:09Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T07:03:54Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T07:07:05Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-4 prepared resume at 2026-04-26T07:12:03Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-5 prepared adopted-inprogress at 2026-04-26T07:15:52Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- AI AI-5 prepared resume at 2026-04-26T07:16:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- 2026-04-26T07:25:23Z repair + verify checkpoint by AI-5:
+  - Reset the stray `autoflow/tickets_004` branch back to `main`, recreated `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004` as a real git worktree, and rehydrated the expected `node_modules` symlinks.
+  - Restored the Help sidebar item plus static Help section patch in the ticket worktree's `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
+  - Reran the declared verification command through `scripts/verify-ticket-owner.sh 004`; it failed with exit code 2 on preexisting renderer/type drift at `src/renderer/main.tsx(2770,18)`, `(2930,5)`, and `(3881,46)`.
+  - `PROJECT_ROOT` still has overlapping dirty copies of the same Allowed Paths, so pass finish remained unsafe even after the worktree repair.
+- Ticket owner verification failed by AI-5 at 2026-04-26T07:24:42Z: command exited 2
+- AI AI-5 marked fail at 2026-04-26T07:26:44Z.
+- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T07:40:36Z; retry_count=2
+- AI AI-1 prepared todo at 2026-04-26T07:41:19Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Ticket owner verification failed by AI-1 at 2026-04-26T07:42:03Z: command exited 2
+- AI AI-1 marked fail at 2026-04-26T07:42:28Z.
+- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T07:43:56Z; retry_count=3
+- AI AI-1 prepared todo at 2026-04-26T07:44:45Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Ticket owner verification failed by AI-1 at 2026-04-26T07:45:31Z: command exited 2
 ## Verification
 - Run file: `tickets/inprogress/verify_004.md`
 - Log file: pending
-- Result: pending ticket-owner by 019dc7f9-4594-7a40-b375-2d724c5a111b
+- Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
+- Result: failed by AI-1 at 2026-04-26T07:45:31Z
 
 ## Result
 - Summary:
@@ -185,17 +296,13 @@
 
 ## Reject Reason
 
-- Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
+- Claimed worktree corruption was repaired in this turn, but fresh owner verification still fails out of scope because the current repo snapshot has preexisting renderer/type drift (`AutoflowRunner.conversationPreview`, `AutoflowMetricSnapshot.autoflow_token_usage_count`, `WorkflowFileEntry.createdAt`) and `PROJECT_ROOT` still has overlapping dirty edits on `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
 
 ## Retry
-- Retry Count: 5
+- Retry Count: 3
 - Max Retries: 10
 
 ## Reject History
-- 2026-04-26T02:07:43Z | retry_count=1 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_010948Z_fail.md`` | reason=Spec/code drift: current desktop renderer has no settingsNavigation or activeSettingsSection entry points for the requested Help sidebar flow, and the ticket verification command is stale in this worktree (npx tsc unavailable; tests/smoke/ticket-owner-smoke.sh missing). Replan prd_004 against the current desktop layout and live verification paths.
-- 2026-04-26T02:23:14Z | retry_count=2 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_020951Z_fail.md`` | reason=Verification command passes, but manual acceptance review still fails: `settingsNavigation` ends at `automation`, there is no `help` nav entry or `activeSettingsSection === "help"` render branch, and the allowed files do not contain the required Help-section text/classes (`도움말`, `HelpSection`, `.help-section`, `.help-card`). Re-run this ticket only after implementing the Help UI and validating criteria beyond command exit codes.
-- 2026-04-26T03:00:41Z | retry_count=1 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_024350Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
-- 2026-04-26T03:06:00Z | retry_count=2 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_030418Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
-- 2026-04-26T03:16:42Z | retry_count=3 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_030813Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
-- 2026-04-26T04:03:33Z | retry_count=4 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_031905Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
-- 2026-04-26T04:08:38Z | retry_count=5 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_040445Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
+- 2026-04-26T06:32:32Z | retry_count=1 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_063059Z_fail.md`` | reason=Claimed worktree registration is corrupted: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 is not a git worktree, branch autoflow/tickets_004 now points to prd_009 commit 07a05bb0162134d69c2a2d0c4960de327fd3d587, and PROJECT_ROOT still has overlapping edits on apps/desktop/src/renderer/main.tsx and styles.css.
+- 2026-04-26T07:40:36Z | retry_count=2 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_072644Z_fail.md`` | reason=Claimed worktree corruption was repaired in this turn, but fresh owner verification still fails out of scope because the current repo snapshot has preexisting renderer/type drift (`AutoflowRunner.conversationPreview`, `AutoflowMetricSnapshot.autoflow_token_usage_count`, `WorkflowFileEntry.createdAt`) and `PROJECT_ROOT` still has overlapping dirty edits on `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
+- 2026-04-26T07:43:56Z | retry_count=3 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_074228Z_fail.md`` | reason=Claimed worktree corruption was repaired in this turn, but fresh owner verification still fails out of scope because the current repo snapshot has preexisting renderer/type drift (`AutoflowRunner.conversationPreview`, `AutoflowMetricSnapshot.autoflow_token_usage_count`, `WorkflowFileEntry.createdAt`) and `PROJECT_ROOT` still has overlapping dirty edits on `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.

@@ -1,0 +1,15 @@
+autoflow/tickets_001|d5c735a5def24ece578a930c51f7175e010d6495|Rebrand spec→PRD, owner→AI, ship parallel runner UX + workflow polish|
+autoflow/tickets_002|aadf973ec6300c5a964baf012491b90dd88f0b68|Default installed board to .autoflow|
+autoflow/tickets_003|aadf973ec6300c5a964baf012491b90dd88f0b68|Default installed board to .autoflow|
+autoflow/tickets_004|aadf973ec6300c5a964baf012491b90dd88f0b68|Default installed board to .autoflow|
+autoflow/tickets_005|ea1174e84030dd5a6b66e1fb5c64ca159565220a|Markdown viewer for pin layer detail + drop pin subtitle copy|
+autoflow/tickets_006|aadf973ec6300c5a964baf012491b90dd88f0b68|Default installed board to .autoflow|
+autoflow/tickets_007|aadf973ec6300c5a964baf012491b90dd88f0b68|Default installed board to .autoflow|
+autoflow/tickets_009|983bf6515ac926a0f31d5576797940113bc1015c|Auto-sync heartbeat-set.toml owner_workers / thread_ids on runner add+remove|
+codex/autoflow-tickets-006|33009eeda530c14fb6298915ab277a0c24ac78bc|Upgrade existing boards with runner and wiki scaffold|
+main|07a05bb0162134d69c2a2d0c4960de327fd3d587|[AI work for prd_009] Implemented AI-N display normalization and reverified ticket 009|/Users/demoon/Documents/project/autoflow
+stale-autoflowLab/tickets_001|30f9b3a872bbadf4c3047b1e693a4906122d19b8|Self-host autoflow/ board, extend CLI, resolve symlinks|
+stale-autoflowLab/tickets_003|30f9b3a872bbadf4c3047b1e693a4906122d19b8|Self-host autoflow/ board, extend CLI, resolve symlinks|
+stale-autoflowLab/tickets_005|30f9b3a872bbadf4c3047b1e693a4906122d19b8|Self-host autoflow/ board, extend CLI, resolve symlinks|
+stale-autoflowLab/tickets_006|30f9b3a872bbadf4c3047b1e693a4906122d19b8|Self-host autoflow/ board, extend CLI, resolve symlinks|
+stale-autoflowLab/tickets_007|30f9b3a872bbadf4c3047b1e693a4906122d19b8|Self-host autoflow/ board, extend CLI, resolve symlinks|

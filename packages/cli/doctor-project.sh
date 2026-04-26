@@ -79,12 +79,12 @@ record_runner_adapter_check() {
   printf 'runner.%s.interval_seconds=%s\n' "$check_id" "$interval_seconds" >> "$check_output"
 
   case "$role" in
-    ticket-owner|owner|planner|todo|verifier|wiki-maintainer|watcher)
+      ticket-owner|owner|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher)
       record_check "${check_id}_role" "ok"
       ;;
     *)
       record_check "${check_id}_role" "warning"
-      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, wiki-maintainer, or watcher"
+      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, merge-bot, wiki-maintainer, or watcher"
       ;;
   esac
 
@@ -356,7 +356,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for ticket_dir in todo inprogress verifier done reject; do
+  for ticket_dir in todo inprogress ready-to-merge merge-blocked verifier done reject; do
     if [ -d "${board_root}/tickets/${ticket_dir}" ]; then
       record_check "tickets_${ticket_dir}" "ok"
     else
@@ -513,7 +513,7 @@ if [ -d "$board_root" ]; then
     record_warning "adapter scaffold is missing or incomplete; run autoflow upgrade to add agents/adapters docs"
   fi
 
-  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh update-wiki.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
+  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh merge-ready-ticket.sh update-wiki.sh start-plan.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -530,7 +530,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_ps1 in invoke-runtime-sh.ps1 runner-common.ps1 codex-stop-hook.ps1 check-stop.ps1 install-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-ticket-owner.ps1 verify-ticket-owner.ps1 finish-ticket-owner.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
+  for runtime_ps1 in invoke-runtime-sh.ps1 runner-common.ps1 codex-stop-hook.ps1 check-stop.ps1 install-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-ticket-owner.ps1 verify-ticket-owner.ps1 finish-ticket-owner.ps1 merge-ready-ticket.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
     if [ -f "${board_root}/scripts/${runtime_ps1}" ]; then
       record_check "script_${runtime_ps1}" "ok"
     else
@@ -646,7 +646,7 @@ if [ -d "$board_root" ]; then
   fi
 
   : > "$ticket_locations_output"
-  for ticket_state_dir in todo inprogress verifier done; do
+  for ticket_state_dir in todo inprogress ready-to-merge merge-blocked verifier done; do
     if [ ! -d "${board_root}/tickets/${ticket_state_dir}" ]; then
       continue
     fi

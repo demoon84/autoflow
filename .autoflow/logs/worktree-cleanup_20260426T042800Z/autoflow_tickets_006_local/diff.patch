@@ -1,0 +1,158 @@
+diff --git a/autoflow/runners/README.md b/autoflow/runners/README.md
+index dbe9cfc..cb49d81 100644
+--- a/autoflow/runners/README.md
++++ b/autoflow/runners/README.md
+@@ -18,3 +18,14 @@ runners/
+ 
+ `tickets/` remains the source of truth for work state. Runner files describe
+ process state only.
++
++`config.toml` uses a small `[[runners]]` subset:
++
++- `id`: stable runner id, for example `todo-1`
++- `role`: `planner`, `todo`, `verifier`, `wiki-maintainer`, or `watcher`
++- `agent`: `shell`, `manual`, `codex-cli`, `claude-cli`, `opencode`, or `gemini-cli`
++- `mode`: `one-shot`, `loop`, or `watch`
++- `enabled`: `true` or `false`
++
++Runtime state files use key/value snapshots under `state/<runner-id>.state`.
++Lifecycle diagnostics append to `logs/<runner-id>.log`.
+diff --git a/autoflow/runners/config.toml b/autoflow/runners/config.toml
+index 0d98cbe..734de90 100644
+--- a/autoflow/runners/config.toml
++++ b/autoflow/runners/config.toml
+@@ -1,13 +1,44 @@
+ # Autoflow runner configuration.
+ #
+-# This file is intentionally minimal until `autoflow runners` is implemented.
+-# Example:
+-#
+-# [[runners]]
+-# id = "todo-1"
+-# role = "todo"
+-# agent = "shell"
+-# model = ""
+-# reasoning = ""
+-# mode = "one-shot"
+-# enabled = true
++# These default runners are shell/manual placeholders. They describe local
++# runner slots without invoking Codex, Claude, OpenCode, Gemini, or remote Git.
++
++[[runners]]
++id = "planner-1"
++role = "planner"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "todo-1"
++role = "todo"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "verifier-1"
++role = "verifier"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "wiki-1"
++role = "wiki-maintainer"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
+diff --git a/templates/board/runners/README.md b/templates/board/runners/README.md
+index dbe9cfc..cb49d81 100644
+--- a/templates/board/runners/README.md
++++ b/templates/board/runners/README.md
+@@ -18,3 +18,14 @@ runners/
+ 
+ `tickets/` remains the source of truth for work state. Runner files describe
+ process state only.
++
++`config.toml` uses a small `[[runners]]` subset:
++
++- `id`: stable runner id, for example `todo-1`
++- `role`: `planner`, `todo`, `verifier`, `wiki-maintainer`, or `watcher`
++- `agent`: `shell`, `manual`, `codex-cli`, `claude-cli`, `opencode`, or `gemini-cli`
++- `mode`: `one-shot`, `loop`, or `watch`
++- `enabled`: `true` or `false`
++
++Runtime state files use key/value snapshots under `state/<runner-id>.state`.
++Lifecycle diagnostics append to `logs/<runner-id>.log`.
+diff --git a/templates/board/runners/config.toml b/templates/board/runners/config.toml
+index 0d98cbe..734de90 100644
+--- a/templates/board/runners/config.toml
++++ b/templates/board/runners/config.toml
+@@ -1,13 +1,44 @@
+ # Autoflow runner configuration.
+ #
+-# This file is intentionally minimal until `autoflow runners` is implemented.
+-# Example:
+-#
+-# [[runners]]
+-# id = "todo-1"
+-# role = "todo"
+-# agent = "shell"
+-# model = ""
+-# reasoning = ""
+-# mode = "one-shot"
+-# enabled = true
++# These default runners are shell/manual placeholders. They describe local
++# runner slots without invoking Codex, Claude, OpenCode, Gemini, or remote Git.
++
++[[runners]]
++id = "planner-1"
++role = "planner"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "todo-1"
++role = "todo"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "verifier-1"
++role = "verifier"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""
++
++[[runners]]
++id = "wiki-1"
++role = "wiki-maintainer"
++agent = "shell"
++model = ""
++reasoning = ""
++mode = "one-shot"
++enabled = true
++command = ""

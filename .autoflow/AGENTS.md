@@ -78,23 +78,23 @@ At the start of work, read in this order:
 1. Do not create plans or tickets without an approved spec.
 2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are spec handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
-4. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with done or reject.
+4. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 5. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 6. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
 7. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
 8. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
 9. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-10. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, move board files, integrate worktrees, and create local commits inside `PROJECT_ROOT` without asking again.
+10. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Only merge-bot integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
 11. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 12. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
 13. There must not be two copies of the same `tickets_NNN.md` in different state folders.
 14. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
 15. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Obsidian Links`, run files, and logs.
 16. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
-17. Verification records start as `tickets/inprogress/verify_NNN.md` and move beside the final ticket: done path for pass, reject path for fail.
+17. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after merge-bot completion. Failed records move to `tickets/reject/verify_NNN.md`.
 18. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Ticket finish automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
 19. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
-20. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, integrate with `scripts/integrate-worktree.sh`, then commit code and board changes together locally.
+20. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; merge-bot is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
 21. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 22. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 23. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.

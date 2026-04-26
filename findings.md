@@ -131,3 +131,34 @@
 - Need GitHub issue/PR integration if competing with Agent HQ/SWE-agent-style background task workflows.
 - Need packaged installation, onboarding, templates, and docs that make value obvious within 5 minutes.
 - Need security/sandbox permissions story comparable to Open Cowork / GitHub Actions-backed agents.
+
+---
+
+# Blocked Runner Status Debug Findings
+
+- User screenshot shows multiple Codex Ticket Owner runners displayed as `실행 중`, current item `tickets_003`, `tickets_005`, `tickets_007`, `tickets_004`, with the visible pill `막힘`; one runner for `tickets_001` is at `구현 중`.
+- Initial git status shows several `.autoflow/tickets/inprogress/*.md`, verification files, reject files, wiki files, and desktop renderer/main files are already dirty before this debug pass.
+- Relevant board contract: `inprogress` tickets may remain blocked, but ticket owner mode should continue implementation and verification, and runner state should not replace ticket stage state.
+- Runner evidence before cleanup: owner-1 through owner-5 were loop workers with live PIDs and active tickets; owner-1/2/3/5 had `active_stage=blocked`, owner-4 had `active_stage=executing`.
+- Repeated `막힘` is backed by real ticket state, not only a renderer label: tickets 003/004/005/007 carry `Stage: blocked` with `shared_allowed_path_conflict`; logs also show worktree dependency hydration and stale verification path failures.
+- Worktree cleanup archive: `.autoflow/logs/worktree-cleanup_20260426T042800Z/` contains status/diff/staged/untracked records for each removed worktree. Non-empty diffs existed for `autoflow_tickets_003`, `autoflow_tickets_006_local`, `autoflow_tickets_007`, and stale `autoflowLab_*` worktrees.
+- After cleanup, `git worktree list --porcelain` shows only `/Users/demoon/Documents/project/autoflow`; all Autoflow project owner runners are `stopped` with empty active ticket metadata.
+- One unrelated loop worker remains for another project: `owner-6` on `/Users/demoon/Documents/project/tetris`; it was intentionally not stopped during the Autoflow project cleanup.
+- The only remaining reject ticket was `.autoflow/tickets/reject/reject_006.md`; it was replanned with the runtime's existing `replan_reject_to_todo` logic and moved to `.autoflow/tickets/todo/tickets_006.md` with `Stage: todo`, blank owner fields, `Integration Status: pending_claim`, and `Retry Count: 7`.
+- Manual PRD restart reset moved active tickets 001, 003, 004, 005, and 007 from `inprogress/` to `todo/` with `Stage: todo`, blank owner fields, `Integration Status: pending_claim`, and pending verification/result fields. Existing `verify_001.md`, `verify_003.md`, `verify_005.md`, and `verify_007.md` were archived under `.autoflow/logs/requeue-inprogress_20260426T043110Z/`.
+- Full tickets reset preserved every PRD document by moving PRDs 001 through 010 into `.autoflow/tickets/backlog/`, then removed generated ticket, done, reject, and verifier files from `.autoflow/tickets/`. The previous ticket tree was archived under `.autoflow/logs/tickets-reset_20260426T043324Z/tickets-before-reset/`.
+- The desktop `처리 지표` view also depends on `.autoflow/metrics/daily.jsonl` and verifier completion logs. The previous metrics history and 39 verifier completion logs were archived under `.autoflow/archive/metrics-reset_20260426T043803Z/`, and the report card calculation was corrected so runners without artifacts no longer count as `AI 산출물`.
+- New start-blocked reproduction: after the PRD-only reset, starting five owner runners moved PRDs 001-005 into `tickets/done/prd_*/` and created five inprogress tickets. `tickets_001` reached `planning`, while `tickets_002` through `tickets_005` immediately became `Stage: blocked` with `Runtime auto-blocked: shared_allowed_path_conflict`.
+- Root cause: `ensure_ticket_worktree` calls `worktree_auto_fallback_reason` before creating or reusing a ticket worktree. In default `AUTOFLOW_WORKTREE_MODE=auto`, any dirty root Allowed Path such as `apps/desktop/src/renderer/main.tsx` forces `Integration Status: project_root_fallback`. Once one fallback ticket holds a shared path, later tickets with overlapping Allowed Paths are blocked before implementation starts.
+- The repository rules say ticket worktrees are preferred in git repositories and fallback should happen only when no ticket worktree exists. Dirty root paths are not a worktree-unavailable condition; treating them as fallback input creates the visible start-blocked behavior.
+- Fix: default `auto` mode no longer uses dirty Allowed Paths as a project-root fallback trigger. The old behavior remains available only through explicit `AUTOFLOW_WORKTREE_MODE=project-root-on-dirty` / `fallback-on-dirty`, and the shared-path block smoke test now opts into that legacy mode.
+- Current board reset after reproduction: PRDs 001-010 are back under `.autoflow/tickets/backlog/`; generated blocked tickets and `verify_001.md` from the failed start were archived under `.autoflow/archive/start-blocked-reset_20260426T045128Z/`.
+
+---
+
+# Processing Metrics Code And Token Usage Findings
+
+- `packages/cli/metrics-project.sh` already emits Autoflow completion commit and code-volume fields: `autoflow_commit_count`, `autoflow_code_files_changed_count`, `autoflow_code_insertions_count`, `autoflow_code_deletions_count`, and `autoflow_code_volume_count`.
+- Desktop `처리 지표` already reads those code-volume fields through `apps/desktop/src/main.js`, `apps/desktop/src/renderer/vite-env.d.ts`, and `apps/desktop/src/renderer/main.tsx`.
+- Codex adapter stdout logs contain a stable local usage summary in the form `tokens used` followed by a comma-formatted number such as `95,413`.
+- Runner adapter artifacts are persisted under `.autoflow/runners/logs/*_stdout.log` and `*_stderr.log`; live and loop logs should be ignored to avoid duplicate or incomplete readings.

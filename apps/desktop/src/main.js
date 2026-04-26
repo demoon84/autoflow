@@ -49,6 +49,7 @@ const allowedRunnerConfigKeys = new Set([
 const safeIdPattern = /^[A-Za-z0-9_.-]+$/;
 const boardFileReadLimitBytes = 196 * 1024;
 const metricsHistoryReadLimitBytes = 512 * 1024;
+const runnerTerminalPreviewLimitBytes = 32 * 1024;
 const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl", ".json"]);
 const metricSnapshotKeys = [
   "spec_total",
@@ -75,6 +76,8 @@ const metricSnapshotKeys = [
   "autoflow_code_insertions_count",
   "autoflow_code_deletions_count",
   "autoflow_code_volume_count",
+  "autoflow_token_usage_count",
+  "autoflow_token_report_count",
   "verification_pass_rate_percent",
   "completion_rate_percent"
 ];
@@ -165,6 +168,8 @@ function scaffoldManifestValue(section, name, fallback) {
 }
 
 const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
+const readBoardDiagnosticCacheTtlMs = 60 * 1000;
+const readBoardDiagnosticCache = new Map();
 
 function appConfig() {
   return {
@@ -302,6 +307,67 @@ function isSuccessfulAutoflowResult(code, stdout) {
 
 function runAutoflow(command, options = {}) {
   return runAutoflowArgs(scopedArgs(command, options), options);
+}
+
+function readBoardDiagnosticCacheKey(command, options = {}) {
+  return [
+    command,
+    options.projectRoot || "",
+    options.boardDirName || defaultBoardDirName
+  ].join("\0");
+}
+
+function cloneRunResult(result) {
+  return result ? { ...result } : result;
+}
+
+function startCachedAutoflowRefresh(command, options, key, entry) {
+  const targetEntry =
+    entry || {
+      result: null,
+      updatedAt: 0,
+      promise: null
+    };
+
+  targetEntry.promise = runAutoflow(command, options)
+    .then((result) => {
+      targetEntry.result = result;
+      targetEntry.updatedAt = Date.now();
+      return result;
+    })
+    .finally(() => {
+      targetEntry.promise = null;
+    });
+
+  readBoardDiagnosticCache.set(key, targetEntry);
+  return targetEntry.promise;
+}
+
+function runAutoflowCached(command, options = {}, ttlMs = readBoardDiagnosticCacheTtlMs) {
+  const key = readBoardDiagnosticCacheKey(command, options);
+  const entry = readBoardDiagnosticCache.get(key);
+  const now = Date.now();
+
+  if (entry?.result && now - entry.updatedAt < ttlMs) {
+    return Promise.resolve(cloneRunResult(entry.result));
+  }
+
+  if (entry?.result) {
+    if (!entry.promise) {
+      void startCachedAutoflowRefresh(command, options, key, entry);
+    }
+    return Promise.resolve(cloneRunResult(entry.result));
+  }
+
+  if (entry?.promise) {
+    return entry.promise.then(cloneRunResult);
+  }
+
+  return startCachedAutoflowRefresh(command, options, key).then(cloneRunResult);
+}
+
+function clearReadBoardDiagnosticCache(command, options = {}) {
+  readBoardDiagnosticCache.delete(readBoardDiagnosticCacheKey(command, options));
 }
 
 function parseKeyValueOutput(output) {
@@ -450,6 +516,100 @@ function parseRunnerListOutput(output) {
   };
 }
 
+const conversationDropPatterns = [
+  /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
+  /\bcodex_core::plugins::manifest: ignoring interface\.defaultPrompt\b/i,
+  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i
+];
+
+function extractAgentConversation(text, maxChars = 4000) {
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+
+  const kept = [];
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    const matchTarget = line.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").trim();
+    if (conversationDropPatterns.some((pattern) => pattern.test(matchTarget))) continue;
+    kept.push(line);
+  }
+
+  while (kept.length && !kept[0].trim()) kept.shift();
+  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+
+  let conversation = kept.join("\n");
+  if (conversation.length > maxChars) {
+    conversation = `…\n${conversation.slice(conversation.length - maxChars)}`;
+  }
+  return conversation;
+}
+
+async function readTailText(filePath, limitBytes = runnerTerminalPreviewLimitBytes) {
+  try {
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile() || stat.size <= 0) {
+      return "";
+    }
+
+    const bytesToRead = Math.min(stat.size, limitBytes);
+    const handle = await fs.open(filePath, "r");
+    try {
+      const buffer = Buffer.alloc(bytesToRead);
+      await handle.read(buffer, 0, bytesToRead, stat.size - bytesToRead);
+      return buffer.toString("utf8");
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return "";
+  }
+}
+
+function runnerLiveLogPaths(runner, boardRoot) {
+  if (!runner.id || !safeIdPattern.test(runner.id)) {
+    return [];
+  }
+
+  return [
+    path.join(boardRoot, "runners", "logs", `${runner.id}.loop.stdout.log`),
+    path.join(boardRoot, "runners", "logs", `${runner.id}.loop.stderr.log`)
+  ];
+}
+
+function runnerArtifactLogPaths(runner) {
+  return [runner.lastStdoutLog, runner.lastStderrLog, runner.lastRuntimeLog, runner.logPath].filter(Boolean);
+}
+
+async function runnerConversationPreview(runner, boardRoot) {
+  const candidatePaths = [
+    runner.lastStdoutLog,
+    runner.lastRuntimeLog,
+    ...runnerLiveLogPaths(runner, boardRoot),
+    runner.lastStderrLog
+  ].filter(Boolean);
+
+  const seen = new Set();
+  for (const candidatePath of candidatePaths) {
+    if (seen.has(candidatePath)) continue;
+    seen.add(candidatePath);
+    const absolutePath = path.isAbsolute(candidatePath) ? candidatePath : path.join(boardRoot, candidatePath);
+    const text = await readTailText(absolutePath);
+    if (!text) continue;
+    const conversation = extractAgentConversation(text);
+    if (conversation) return conversation;
+  }
+  return "";
+}
+
+async function enrichRunnerTerminalPreviews(runners, boardRoot) {
+  return Promise.all(
+    runners.map(async (runner) => ({
+      ...runner,
+      conversationPreview: await runnerConversationPreview(runner, boardRoot)
+    }))
+  );
+}
+
 async function pathExists(filePath) {
   try {
     await fs.access(filePath);
@@ -511,18 +671,22 @@ async function readMarkdownPreview(filePath) {
   try {
     const content = await fs.readFile(filePath, "utf8");
     const name = path.basename(filePath);
+    const stat = await fs.stat(filePath);
+    const birthMs = stat.birthtimeMs && stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.ctimeMs || stat.mtimeMs;
     return {
       filePath,
       name,
       title: markdownPreviewTitle(content, name),
-      modifiedAt: (await fs.stat(filePath)).mtime.toISOString()
+      modifiedAt: stat.mtime.toISOString(),
+      createdAt: new Date(birthMs).toISOString()
     };
   } catch {
     return {
       filePath,
       name: path.basename(filePath),
       title: path.basename(filePath),
-      modifiedAt: ""
+      modifiedAt: "",
+      createdAt: ""
     };
   }
 }
@@ -775,10 +939,10 @@ async function readBoard({ projectRoot, boardDirName }) {
     ? await listRunners({ projectRoot, boardDirName: normalizedBoardDirName })
     : null;
   const doctorResult = exists
-    ? await runAutoflow("doctor", { projectRoot, boardDirName: normalizedBoardDirName })
+    ? await runAutoflowCached("doctor", { projectRoot, boardDirName: normalizedBoardDirName })
     : null;
   const metricsResult = exists
-    ? await runAutoflow("metrics", { projectRoot, boardDirName: normalizedBoardDirName })
+    ? await runAutoflowCached("metrics", { projectRoot, boardDirName: normalizedBoardDirName })
     : null;
   const stopHookResult = exists
     ? await runAutoflow("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName })
@@ -857,11 +1021,13 @@ async function listRunners(options = {}) {
   const args = ["runners", "list", options.projectRoot, boardDirName];
   const result = await runAutoflowArgs(args, options);
   const parsed = parseRunnerListOutput(result.stdout);
+  const boardRoot = path.join(options.projectRoot, boardDirName);
+  const runners = await enrichRunnerTerminalPreviews(parsed.runners, boardRoot);
 
   return {
     ...result,
     values: parsed.values,
-    runners: parsed.runners
+    runners
   };
 }
 
@@ -1097,18 +1263,44 @@ function configureRunner(options = {}) {
   return runAutoflowArgs(["runners", "set", runnerId, options.projectRoot, boardDirName, ...updates], options);
 }
 
-function installBoard(options = {}) {
+async function installBoard(options = {}) {
   if (!options.projectRoot) {
-    return Promise.resolve({
+    return {
       ok: false,
       command: "init",
       code: -1,
       stdout: "",
       stderr: "Project root is required."
-    });
+    };
   }
 
-  return runAutoflow("init", options);
+  const initResult = await runAutoflow("init", options);
+  if (!initResult.ok) {
+    return initResult;
+  }
+
+  const followUpStdout = [];
+  const followUpStderr = [];
+
+  const hookResult = await runAutoflow("install-stop-hook", options);
+  followUpStdout.push(`[install-stop-hook]\n${hookResult.stdout || ""}`.trimEnd());
+  if (hookResult.stderr) {
+    followUpStderr.push(`[install-stop-hook]\n${hookResult.stderr}`.trimEnd());
+  }
+
+  const watcherResult = await runAutoflow("watch-bg", options);
+  followUpStdout.push(`[watch-bg]\n${watcherResult.stdout || ""}`.trimEnd());
+  if (watcherResult.stderr) {
+    followUpStderr.push(`[watch-bg]\n${watcherResult.stderr}`.trimEnd());
+  }
+
+  return {
+    ok: true,
+    command: "init+install-stop-hook+watch-bg",
+    code: initResult.code,
+    stdout: [initResult.stdout, ...followUpStdout].filter(Boolean).join("\n\n"),
+    stderr: [initResult.stderr, ...followUpStderr].filter(Boolean).join("\n\n")
+  };
 }
 
 function controlWiki(options = {}) {
@@ -1184,7 +1376,10 @@ function writeMetricsSnapshot(options = {}) {
   }
 
   const boardDirName = options.boardDirName || defaultBoardDirName;
-  return runAutoflowArgs(["metrics", options.projectRoot, boardDirName, "--write"], options);
+  return runAutoflowArgs(["metrics", options.projectRoot, boardDirName, "--write"], options).then((result) => {
+    clearReadBoardDiagnosticCache("metrics", { projectRoot: options.projectRoot, boardDirName });
+    return result;
+  });
 }
 
 function controlStopHook(options = {}) {

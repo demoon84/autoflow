@@ -1,0 +1,419 @@
+diff --git a/scripts/cli/doctor-project.ps1 b/scripts/cli/doctor-project.ps1
+index 544598e..5043003 100644
+--- a/scripts/cli/doctor-project.ps1
++++ b/scripts/cli/doctor-project.ps1
+@@ -118,7 +118,6 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
+       "tickets/backlog",
+       "rules/verifier",
+       "logs/hooks",
+-      "tickets/runs",
+       "tickets/plan",
+       "automations/state",
+       "automations/state/threads"
+diff --git a/scripts/cli/package-board-common.ps1 b/scripts/cli/package-board-common.ps1
+index 747ca64..12804c5 100644
+--- a/scripts/cli/package-board-common.ps1
++++ b/scripts/cli/package-board-common.ps1
+@@ -129,7 +129,6 @@ function Get-ManagedBoardDirectoryEntries {
+     "tickets/verifier"
+     "tickets/done"
+     "tickets/reject"
+-    "tickets/runs"
+   )
+ }
+ 
+diff --git a/scripts/cli/status-project.ps1 b/scripts/cli/status-project.ps1
+index 44418bb..c08fac5 100644
+--- a/scripts/cli/status-project.ps1
++++ b/scripts/cli/status-project.ps1
+@@ -77,7 +77,7 @@ if (Test-Path -LiteralPath $boardRoot -PathType Container) {
+   $ticketReadyForVerificationCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "ready_for_verification"
+   $ticketVerifyingCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "verifying"
+   $ticketBlockedCount = Get-CountTicketStage -TicketRoot (Join-Path $boardRoot "tickets/inprogress") -WantedStage "blocked"
+-  $verifyRunCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/runs") -Filter "verify_*.md"
++  $verifyRunCount = Get-CountMatchingFiles -SearchRoot (Join-Path $boardRoot "tickets/inprogress") -Filter "verify_*.md"
+   $boardVersion = Get-BoardVersionValue $boardRoot
+   if (-not $boardVersion) {
+     $boardVersion = ""
+diff --git a/scripts/cli/status-project.sh b/scripts/cli/status-project.sh
+index 0e3e073..d2e020b 100755
+--- a/scripts/cli/status-project.sh
++++ b/scripts/cli/status-project.sh
+@@ -5,7 +5,7 @@ set -euo pipefail
+ source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
+ 
+ project_root_input="${1:-.}"
+-board_dir_name="${2:-.autoflow}"
++board_dir_name="${2:-autoflow}"
+ 
+ project_root="$(resolve_project_root_or_die "$project_root_input")"
+ board_root="$(board_root_path "$project_root" "$board_dir_name")"
+@@ -77,12 +77,7 @@ if [ -d "$board_root" ]; then
+   ticket_ready_for_verification_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "ready_for_verification")"
+   ticket_verifying_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "verifying")"
+   ticket_blocked_count="$(count_ticket_stage "${board_root}/tickets/inprogress" "blocked")"
+-  verify_run_count="$(( \
+-    $(count_matching_files "${board_root}/tickets/inprogress" 'verify_*.md') + \
+-    $(count_matching_files "${board_root}/tickets/reject" 'verify_*.md') + \
+-    $(count_matching_files "${board_root}/tickets/done" 'verify_*.md') + \
+-    $(count_matching_files "${board_root}/tickets/runs" 'verify_*.md') \
+-  ))"
++  verify_run_count="$(count_matching_files "${board_root}/tickets/inprogress" 'verify_*.md')"
+   board_version="$(board_version_value "$board_root" || true)"
+   version_status="$(board_version_status "$board_root")"
+ fi
+diff --git a/scripts/cli/upgrade-project.sh b/scripts/cli/upgrade-project.sh
+index 85c870c..dcd4f7d 100755
+--- a/scripts/cli/upgrade-project.sh
++++ b/scripts/cli/upgrade-project.sh
+@@ -14,7 +14,7 @@ if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+ fi
+ 
+ TARGET_PROJECT_ROOT="$1"
+-BOARD_DIR_NAME="${2:-.autoflow}"
++BOARD_DIR_NAME="${2:-autoflow}"
+ TARGET_PROJECT_ROOT="$(normalize_input_path "$TARGET_PROJECT_ROOT")"
+ 
+ if [ ! -d "$TARGET_PROJECT_ROOT" ]; then
+@@ -46,50 +46,6 @@ managed_created_count=0
+ managed_updated_count=0
+ managed_unchanged_count=0
+ backup_count=0
+-pruned_backup_count=0
+-
+-upgrade_backup_keep_count() {
+-  local keep="${AUTOFLOW_UPGRADE_BACKUP_KEEP:-5}"
+-
+-  case "$keep" in
+-    ""|*[!0-9]*)
+-      keep=5
+-      ;;
+-  esac
+-
+-  if [ "$keep" -lt 1 ]; then
+-    keep=1
+-  fi
+-
+-  printf '%s' "$keep"
+-}
+-
+-prune_upgrade_backups() {
+-  local backups_root="${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups"
+-  local keep_count seen backup_dir
+-
+-  [ -d "$backups_root" ] || return 0
+-
+-  keep_count="$(upgrade_backup_keep_count)"
+-  seen=0
+-
+-  while IFS= read -r backup_dir; do
+-    [ -n "$backup_dir" ] || continue
+-    seen=$((seen + 1))
+-    if [ "$seen" -le "$keep_count" ]; then
+-      continue
+-    fi
+-
+-    case "$backup_dir" in
+-      "${backups_root}/20"[0-9][0-9][0-9][0-9][0-9][0-9]"T"[0-9][0-9][0-9][0-9][0-9][0-9]"Z")
+-        rm -rf -- "$backup_dir"
+-        pruned_backup_count=$((pruned_backup_count + 1))
+-        ;;
+-    esac
+-  done < <(find "$backups_root" -mindepth 1 -maxdepth 1 -type d -name '20??????T??????Z' | sort -r)
+-
+-  rmdir "$backups_root" 2>/dev/null || true
+-}
+ 
+ record_sync_action() {
+   local action="$1"
+@@ -254,7 +210,7 @@ replace_scalar_field_in_section_in_file() {
+   local value="$4"
+   local tmp
+ 
+-  tmp="$(autoflow_mktemp)"
++  tmp="$(mktemp)"
+   awk -v heading="$heading" -v field="$field" -v value="$value" '
+     BEGIN {
+       in_target = 0
+@@ -299,8 +255,8 @@ replace_section_block_in_file() {
+   local block="$3"
+   local tmp block_file
+ 
+-  tmp="$(autoflow_mktemp)"
+-  block_file="$(autoflow_mktemp)"
++  tmp="$(mktemp)"
++  block_file="$(mktemp)"
+   printf '%s\n' "$block" > "$block_file"
+   awk -v heading="$heading" -v block_file="$block_file" '
+     BEGIN {
+@@ -360,7 +316,7 @@ replace_board_literal_if_present() {
+ 
+ ticket_state_files_for_upgrade() {
+   find "$TARGET_BOARD_ROOT/tickets" \
+-    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" -o -path "${TARGET_BOARD_ROOT}/tickets/runs" -o -path "${TARGET_BOARD_ROOT}/tickets/runs/*" \) -prune -o \
++    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" \) -prune -o \
+     -type f \( -name 'tickets_[0-9][0-9][0-9].md' -o -name 'reject_[0-9][0-9][0-9].md' \) -print | sort
+ }
+ 
+@@ -637,7 +593,7 @@ migrate_done_tickets_to_project_dirs() {
+ 
+ ticket_files_for_obsidian_upgrade() {
+   find "$TARGET_BOARD_ROOT/tickets" \
+-    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" -o -path "${TARGET_BOARD_ROOT}/tickets/runs" -o -path "${TARGET_BOARD_ROOT}/tickets/runs/*" \) -prune -o \
++    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" \) -prune -o \
+     -type f \( -name 'tickets_[0-9][0-9][0-9].md' -o -name 'reject_[0-9][0-9][0-9].md' \) -print | sort
+ }
+ 
+@@ -651,7 +607,7 @@ hydrate_plan_obsidian_links() {
+     plan_note="$(note_name_from_board_ref_for_upgrade "$plan_file")"
+     block="- Project Note: [[${project_key}]]
+ - Plan Note: [[${plan_note}]]"
+-    temp_file="$(autoflow_mktemp)"
++    temp_file="$(mktemp)"
+     cp "$plan_file" "$temp_file"
+     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
+ 
+@@ -682,7 +638,7 @@ hydrate_ticket_obsidian_links() {
+     block="- Project Note: [[${project_key}]]
+ - Plan Note: [[${plan_note}]]
+ - Ticket Note: [[${ticket_note}]]"
+-    temp_file="$(autoflow_mktemp)"
++    temp_file="$(mktemp)"
+     cp "$ticket_file" "$temp_file"
+     replace_scalar_field_in_section_in_file "$temp_file" "## Ticket" "Project Key" "$project_key"
+     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
+@@ -701,14 +657,14 @@ ticket_file_for_id_for_upgrade() {
+   local ticket_id="$1"
+ 
+   find "${TARGET_BOARD_ROOT}/tickets" \
+-    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" -o -path "${TARGET_BOARD_ROOT}/tickets/runs" -o -path "${TARGET_BOARD_ROOT}/tickets/runs/*" \) -prune -o \
++    \( -path "${TARGET_BOARD_ROOT}/tickets/backlog" -o -path "${TARGET_BOARD_ROOT}/tickets/backlog/*" -o -path "${TARGET_BOARD_ROOT}/tickets/plan" -o -path "${TARGET_BOARD_ROOT}/tickets/plan/*" \) -prune -o \
+     -type f \( -name "tickets_${ticket_id}.md" -o -name "reject_${ticket_id}.md" \) -print | sort | head -n 1
+ }
+ 
+-  hydrate_run_obsidian_links() {
+-    local run_file ticket_id ticket_file project_key plan_ref plan_note ticket_note verification_note block relative_file temp_file
++hydrate_run_obsidian_links() {
++  local run_file ticket_id ticket_file project_key plan_ref plan_note ticket_note verification_note block relative_file temp_file
+ 
+-    while IFS= read -r run_file; do
++  while IFS= read -r run_file; do
+     [ -n "$run_file" ] || continue
+     ticket_id="$(printf '%s' "$(basename "$run_file")" | sed -n 's/^verify_\([0-9][0-9][0-9]\)\.md$/\1/p')"
+     [ -n "$ticket_id" ] || continue
+@@ -726,7 +682,7 @@ ticket_file_for_id_for_upgrade() {
+ - Plan Note: [[${plan_note}]]
+ - Ticket Note: [[${ticket_note}]]
+ - Verification Note: [[${verification_note}]]"
+-    temp_file="$(autoflow_mktemp)"
++    temp_file="$(mktemp)"
+     cp "$run_file" "$temp_file"
+     replace_scalar_field_in_section_in_file "$temp_file" "## Meta" "Project Key" "$project_key"
+     replace_section_block_in_file "$temp_file" "Obsidian Links" "$block"
+@@ -737,112 +693,8 @@ ticket_file_for_id_for_upgrade() {
+       mv "$temp_file" "$run_file"
+     else
+       rm -f "$temp_file"
+-      fi
+-    done < <(
+-      {
+-        find "${TARGET_BOARD_ROOT}/tickets/inprogress" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-        find "${TARGET_BOARD_ROOT}/tickets/reject" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-        find "${TARGET_BOARD_ROOT}/tickets/done" -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-        find "${TARGET_BOARD_ROOT}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-      } | sort -u
+-    )
+-  }
+-
+-  final_run_path_for_ticket_for_upgrade() {
+-    local ticket_file="$1"
+-    local ticket_id project_key
+-
+-    ticket_id="$(printf '%s' "$(basename "$ticket_file")" | sed -n 's/^[^_]*_\([0-9][0-9][0-9]\)\.md$/\1/p')"
+-    [ -n "$ticket_id" ] || return 1
+-
+-    case "$ticket_file" in
+-      "${TARGET_BOARD_ROOT}/tickets/done/"*)
+-        project_key="$(project_key_from_ticket_for_upgrade "$ticket_file")"
+-        printf '%s/tickets/done/%s/verify_%s.md' "$TARGET_BOARD_ROOT" "$project_key" "$ticket_id"
+-        ;;
+-      "${TARGET_BOARD_ROOT}/tickets/reject/"*)
+-        printf '%s/tickets/reject/verify_%s.md' "$TARGET_BOARD_ROOT" "$ticket_id"
+-        ;;
+-      *)
+-        printf '%s/tickets/inprogress/verify_%s.md' "$TARGET_BOARD_ROOT" "$ticket_id"
+-        ;;
+-    esac
+-  }
+-
+-  archive_finalized_run_files() {
+-    local run_file ticket_id ticket_file target_file old_ref new_ref
+-
+-    while IFS= read -r run_file; do
+-      [ -n "$run_file" ] || continue
+-      ticket_id="$(printf '%s' "$(basename "$run_file")" | sed -n 's/^verify_\([0-9][0-9][0-9]\)\.md$/\1/p')"
+-      [ -n "$ticket_id" ] || continue
+-
+-      ticket_file="$(ticket_file_for_id_for_upgrade "$ticket_id")"
+-      [ -n "$ticket_file" ] || continue
+-
+-      case "$ticket_file" in
+-        "${TARGET_BOARD_ROOT}/tickets/done/"*|"${TARGET_BOARD_ROOT}/tickets/reject/"*)
+-          target_file="$(final_run_path_for_ticket_for_upgrade "$ticket_file")"
+-          ;;
+-        *)
+-          continue
+-          ;;
+-      esac
+-
+-      [ -n "$target_file" ] || continue
+-      old_ref="$(board_relative_target_path "$run_file")"
+-      new_ref="$(board_relative_target_path "$target_file")"
+-
+-      if [ "$run_file" != "$target_file" ]; then
+-        record_backup_once_for_path "$old_ref"
+-        mkdir -p "$(dirname "$target_file")"
+-        if [ -f "$target_file" ]; then
+-          record_backup_once_for_path "$new_ref"
+-          rm -f "$target_file"
+-        fi
+-        mv "$run_file" "$target_file"
+-      fi
+-
+-      while IFS= read -r board_file; do
+-        [ -n "$board_file" ] || continue
+-        replace_board_literal_if_present "$board_file" "\`${old_ref}\`" "\`${new_ref}\`"
+-        replace_board_literal_if_present "$board_file" "$old_ref" "$new_ref"
+-      done < <(
+-        find "$TARGET_BOARD_ROOT" \
+-          \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
+-          -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+-      )
+-    done < <(
+-      {
+-        find "${TARGET_BOARD_ROOT}/tickets/inprogress" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-        find "${TARGET_BOARD_ROOT}/tickets/runs" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' 2>/dev/null
+-      } | sort -u
+-    )
+-  }
+-
+-migrate_legacy_run_files_to_inprogress() {
+-  local legacy_run_root="${TARGET_BOARD_ROOT}/tickets/runs"
+-  local target_root="${TARGET_BOARD_ROOT}/tickets/inprogress"
+-  local legacy_file target_file
+-
+-  [ -d "$legacy_run_root" ] || return 0
+-  mkdir -p "$target_root"
+-
+-  while IFS= read -r legacy_file; do
+-    [ -n "$legacy_file" ] || continue
+-    target_file="${target_root}/$(basename "$legacy_file")"
+-
+-    record_backup_once_for_path "$legacy_file"
+-    if [ -f "$target_file" ]; then
+-      record_backup_once_for_path "$target_file"
+-      rm -f "$legacy_file"
+-      continue
+     fi
+-
+-    mv "$legacy_file" "$target_file"
+-  done < <(find "$legacy_run_root" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' | sort)
+-
+-  rmdir "$legacy_run_root" 2>/dev/null || true
++  done < <(find "${TARGET_BOARD_ROOT}/tickets/inprogress" -maxdepth 1 -type f -name 'verify_[0-9][0-9][0-9].md' | sort)
+ }
+ 
+ migrate_spec_root_to_backlog() {
+@@ -946,9 +798,9 @@ rewrite_spec_references_to_backlog() {
+       replace_literal_in_file "$file" "rules/spec/" "tickets/backlog/" || true
+     fi
+ 
+-    if grep -qsF -- ".autoflow/rules/spec/" "$file"; then
++    if grep -qsF -- "autoflow/rules/spec/" "$file"; then
+       record_backup_once_for_path "$file"
+-      replace_literal_in_file "$file" ".autoflow/rules/spec/" ".autoflow/tickets/backlog/" || true
++      replace_literal_in_file "$file" "autoflow/rules/spec/" "autoflow/tickets/backlog/" || true
+     fi
+ 
+     if grep -qsF -- "tickets/spec/" "$file"; then
+@@ -968,9 +820,9 @@ rewrite_plan_references_to_ticket_plan() {
+   while IFS= read -r file; do
+     [ -n "$file" ] || continue
+ 
+-    if grep -qsF -- ".autoflow/rules/plan/" "$file"; then
++    if grep -qsF -- "autoflow/rules/plan/" "$file"; then
+       record_backup_once_for_path "$file"
+-      replace_literal_in_file "$file" ".autoflow/rules/plan/" ".autoflow/tickets/plan/" || true
++      replace_literal_in_file "$file" "autoflow/rules/plan/" "autoflow/tickets/plan/" || true
+     fi
+ 
+     if grep -qsF -- "rules/plan/" "$file"; then
+@@ -984,28 +836,6 @@ rewrite_plan_references_to_ticket_plan() {
+   )
+ }
+ 
+-rewrite_run_references_to_ticket_inprogress() {
+-  local file
+-
+-  while IFS= read -r file; do
+-    [ -n "$file" ] || continue
+-
+-    if grep -qsF -- ".autoflow/tickets/runs/" "$file"; then
+-      record_backup_once_for_path "$file"
+-      replace_literal_in_file "$file" ".autoflow/tickets/runs/" ".autoflow/tickets/inprogress/" || true
+-    fi
+-
+-    if grep -qsF -- "tickets/runs/" "$file"; then
+-      record_backup_once_for_path "$file"
+-      replace_literal_in_file "$file" "tickets/runs/" "tickets/inprogress/" || true
+-    fi
+-  done < <(
+-    find "$TARGET_BOARD_ROOT" \
+-      \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
+-      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+-  )
+-}
+-
+ rewrite_legacy_browser_tool_references() {
+   local file
+ 
+@@ -1048,16 +878,13 @@ migrate_plan_root_to_ticket_plan
+ migrate_legacy_ticket_spec_view_to_backlog
+ rewrite_spec_references_to_backlog
+ rewrite_plan_references_to_ticket_plan
+-rewrite_run_references_to_ticket_inprogress
+ rewrite_legacy_browser_tool_references
+ migrate_legacy_reject_ticket_names
+-  migrate_ticketed_specs_and_plans_to_done
+-  migrate_legacy_plan_inprogress_to_ticket_inprogress
+-  migrate_legacy_run_files_to_inprogress
+-  archive_finalized_run_files
+-  migrate_processed_specs_to_done
+-  remove_legacy_state_reference_files
+-  migrate_done_tickets_to_project_dirs
++migrate_ticketed_specs_and_plans_to_done
++migrate_legacy_plan_inprogress_to_ticket_inprogress
++migrate_processed_specs_to_done
++remove_legacy_state_reference_files
++migrate_done_tickets_to_project_dirs
+ hydrate_plan_obsidian_links
+ hydrate_ticket_obsidian_links
+ hydrate_run_obsidian_links
+@@ -1078,8 +905,6 @@ if [ "$backup_count" -eq 0 ] && [ -d "$backup_root" ]; then
+   rmdir "$(dirname "$backup_root")" 2>/dev/null || true
+ fi
+ 
+-prune_upgrade_backups
+-
+ current_board_version="$(board_version_value "$TARGET_BOARD_ROOT" || package_version)"
+ 
+ printf 'project_root=%s\n' "$TARGET_PROJECT_ROOT"
+@@ -1094,8 +919,6 @@ printf 'managed_files_created=%s\n' "$managed_created_count"
+ printf 'managed_files_updated=%s\n' "$managed_updated_count"
+ printf 'managed_files_unchanged=%s\n' "$managed_unchanged_count"
+ printf 'backups_created=%s\n' "$backup_count"
+-printf 'backup_keep_count=%s\n' "$(upgrade_backup_keep_count)"
+-printf 'backups_pruned=%s\n' "$pruned_backup_count"
+ if [ "$backup_count" -gt 0 ]; then
+   printf 'backup_root=%s\n' "$backup_root"
+ else
