@@ -1818,8 +1818,13 @@ pre {
   min-width: 0;
 }
 
+.ai-progress-agent-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .ai-progress-agent strong,
-.ai-progress-agent p,
 .ai-progress-agent span {
   display: block;
   overflow: hidden;
@@ -1827,26 +1832,25 @@ pre {
   white-space: nowrap;
 }
 
-.ai-progress-agent strong {
+.ai-progress-agent-meta {
   color: var(--foreground);
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.1;
+  line-height: 1.25;
 }
 
-.ai-progress-agent p {
-  margin-top: 6px;
+.ai-progress-agent-id {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.ai-progress-agent-rate {
   color: var(--foreground);
   font-size: 12px;
   font-weight: 420;
   line-height: 1.2;
-}
-
-.ai-progress-agent span {
-  margin-top: 5px;
-  color: var(--muted-foreground);
-  font-size: 12px;
-  font-weight: 400;
 }
 
 .ai-progress-track {

@@ -21,17 +21,15 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon/Documents/project/autoflow`
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
-- Done tickets: 3
-- Reject records: 2
-- Verifier logs: 36
+- Done tickets: 1
+- Reject records: 1
+- Verifier logs: 95
 - Conversation handoffs: 0
-- Last updated: 2026-04-26T04:10:20Z
+- Last updated: 2026-04-26T06:05:55Z
 
 ## Latest Completed Work
 
-- `tickets_002` - Ticket owner work for prd_002. Surface runner active ticket metadata through CLI and desktop workflow view Source: `tickets/done/prd_002/tickets_002.md`.
-- `tickets_008` - Ticket owner work for prd_008. added bounded reject auto-replan with owner smoke coverage Source: `tickets/done/prd_008/tickets_008.md`.
-- `tickets_009` - AI work for prd_009. Implemented AI-N display normalization and reverified ticket 009 Source: `tickets/done/prd_009/tickets_009.md`.
+- `tickets_007` - AI work for prd_007. Update AI workflow card meta to 3-line agent/id/progress display Source: `tickets/done/prd_007/tickets_007.md`.
 
 ## Recent Handoffs
 

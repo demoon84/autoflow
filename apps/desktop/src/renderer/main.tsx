@@ -3676,6 +3676,14 @@ function displayWorkflowRunnerId(value: string) {
   return value.replace(/^owner-/, "AI-").replace(/^worker-/, "AI-");
 }
 
+function capitalizeAgentName(value: string) {
+  if (!value) {
+    return value;
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function projectKeyFromSpecRef(value: string) {
   return value.match(/(prd_\d+|project_\d+)/)?.[1] || "";
 }
@@ -3717,28 +3725,27 @@ function AiProgressRow({
   const ticketPath = activeTicketPath(runner);
   const activeStageLabel = runner.activeStage ? displayStatus(runner.activeStage) : stage.label;
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
-  const agentLabel = runner.agent || "AI";
+  const agentLabel = capitalizeAgentName(runner.agent || "AI");
   const normalized = normalizeRunnerSelections(
     runner.agent || "codex",
     runner.model || "",
     runner.reasoning || "",
     installedAgentProfiles || {}
   );
-  const modelLabel = normalized.model ? displayRunnerOption(runner.agent || "codex", normalized.model) : "";
-  const reasoningLabel =
-    normalized.supportsReasoning && normalized.reasoning
-      ? displayRunnerOption(runner.agent || "codex", normalized.reasoning)
-      : "";
-  const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
+  const agentMetaLabel = [agentLabel, normalized.model, normalized.supportsReasoning ? normalized.reasoning : ""]
+    .filter(Boolean)
+    .join(" ");
   const metaLabel = displayWorkflowRunnerId(runner.id);
+  const progressLabel =
+    currentKey === "reject" ? "공정률: 거절" : `공정률: ${status === "idle" ? 0 : Math.round(progressRatio * 100)}%`;
 
   return (
     <article className={`ai-progress-row ai-progress-${currentKey}`}>
       <div className="ai-progress-agent">
-        <div>
-          <strong>{agentLabel}</strong>
-          {modelMetaLabel ? <p>{modelMetaLabel}</p> : null}
-          <span>{metaLabel}</span>
+        <div className="ai-progress-agent-copy">
+          <strong className="ai-progress-agent-meta">{agentMetaLabel}</strong>
+          <span className="ai-progress-agent-id">{metaLabel}</span>
+          <span className="ai-progress-agent-rate">{progressLabel}</span>
         </div>
       </div>
 
