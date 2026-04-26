@@ -232,3 +232,31 @@ Turn the desktop `진행 스냅샷` area into a reporting-oriented dashboard tha
 ## Risks
 - Current worktree is heavily dirty from previous work; edits must stay tightly scoped.
 - Metrics history may be sparse, so charts should degrade gracefully when `daily.jsonl` has few entries.
+
+---
+
+# Task Plan: GitHub Competitive Review
+
+## Goal
+Assess whether Autoflow is competitive against similar GitHub-hosted AI coding agent and agent-harness projects.
+
+## Scope
+- Research current GitHub projects in adjacent categories: coding agents, IDE agents, desktop agent workspaces, PRD/task managers, and GitHub-native agent workflows.
+- Compare positioning against Autoflow's repo-local board, ticket-owner runner, verification evidence, and desktop operations console.
+- Identify gaps needed for competitiveness.
+- No product code changes.
+
+## Phases
+- [x] Confirm Autoflow's local harness positioning from repository docs and runtime.
+- [x] Search GitHub and related official sources for similar active projects.
+- [x] Pull current GitHub repository metadata for major comparables.
+- [x] Categorize competitors and identify Autoflow's defensible wedge.
+- [x] Produce a Korean recommendation.
+
+## Decisions
+- Treat Autoflow as a work-harness layer, not a direct replacement for Aider/Cline/Roo/OpenHands style coding agents.
+- The closest strategic competitors are OpenAgents Workspace, Open Cowork, Task Master AI, and GitHub Agent HQ because they manage multi-agent work or task handoff, not just code editing.
+
+## Verification
+- [x] GitHub repo pages and GitHub API metadata checked on 2026-04-26.
+- [x] Local `desktop:check` and `smoke:ticket-owner` still pass from the preceding harness diagnosis.

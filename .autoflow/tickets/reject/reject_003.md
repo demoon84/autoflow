@@ -6,12 +6,12 @@
 - PRD Key: prd_003
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_003/prd_003.md
 - Title: Ticket owner work for prd_003
-- Stage: blocked
-- AI: owner-1
-- Claimed By: owner-1
-- Execution AI: owner-1
-- Verifier AI: owner-1
-- Last Updated: 2026-04-26T03:00:44Z
+- Stage: rejected
+- AI: owner-4
+- Claimed By: owner-4
+- Execution AI: owner-4
+- Verifier AI: owner-4
+- Last Updated: 2026-04-26T03:07:56Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit: efd16cada97d38fe50ad78c22dea9bd53d9387d6
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
+- Branch: autoflow/tickets_003
+- Base Commit: ea1174e84030dd5a6b66e1fb5c64ca159565220a
 - Worktree Commit:
-- Integration Status: project_root_fallback
+- Integration Status: pending
 
 ## Done When
 
@@ -54,13 +54,13 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css. Retry automatically when blockers clear.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
-- 현재 상태 요약: owner-2 가 `tickets_003` 을 isolated worktree (`.autoflow-worktrees/.../tickets_003`) 로 정상 resume 했지만, owner verification 은 구현 회귀가 아니라 worktree toolchain 부족 때문에 첫 단계에서 다시 중단됐다.
-- 직전 작업: `bin/autoflow wiki query . --term wiki --term preview --term knowledge` 로 `tickets/done/prd_003/prd_003.md` 를 재확인한 뒤 `./.autoflow/scripts/verify-ticket-owner.sh 003` 를 재실행했다. 검증 명령은 `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` 이고, 실제 실패는 `npx tsc --noEmit` 의 `This is not the tsc command you are looking for` 메시지였다.
-- 재개 시 먼저 볼 것: 1) assigned worktree 에 `apps/desktop/node_modules/typescript` 와 `.bin/tsc` 가 복구됐는지, 2) 그 뒤 같은 verification chain 이 syntax/smoke 단계까지 진행되는지, 3) 필요하면 ticket scope 또는 runtime/worktree provisioning 을 재계획해야 하는지.
+- 현재 상태 요약: Wiki split/preview 구현 diff 는 assigned worktree 에 남아 있지만, owner verification 은 여전히 Allowed Paths 밖의 worktree/toolchain provisioning 문제 때문에 `tsc` 단계 진입 전에 중단된다.
+- 직전 작업: `bin/autoflow wiki query . --term wiki --term preview --term knowledge` 로 `tickets/done/prd_003/prd_003.md` 를 다시 확인했고, `AUTOFLOW_*` env 를 준 프로젝트 루트의 `.autoflow/scripts/verify-ticket-owner.sh 003` 로 공식 검증 기록을 다시 남겼다. worktree 직접 실행은 `./.autoflow/scripts/verify-ticket-owner.sh` 파일 부재로 불가능했고, assigned worktree 에서 `cd apps/desktop && npx tsc --noEmit` 를 직접 재현하면 `This is not the tsc command you are looking for` 로 종료한다.
+- 재개 시 먼저 볼 것: 1) assigned worktree 의 `apps/desktop/node_modules/typescript` 와 `.bin/tsc` 가 실제로 provisioning 되는지, 2) worktree 에 `.autoflow/` runtime mirror 가 필요한지, 3) 환경 복구 후에만 syntax/smoke 와 wiki preview reset 기준까지 다시 확인할 것.
 
 ## Notes
 
@@ -100,10 +100,25 @@
 - AI owner-2 marked fail at 2026-04-26T02:47:11Z.
 - Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-26T03:00:30Z; retry_count=1
 - Runtime auto-blocked: shared_allowed_path_conflict at 2026-04-26T03:00:41Z; blockers=tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css
+- AI owner-1 prepared resume at 2026-04-26T03:01:45Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- Auto-recovery at 2026-04-26T03:02:15Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T03:02:15Z: cleared blocked worktree fields, retrying claim
+- AI owner-1 prepared resume at 2026-04-26T03:02:15Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- Ticket owner verification failed at 2026-04-26T03:03:21Z: command exited 254
+- AI owner-1 marked fail at 2026-04-26T03:04:02Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-26T03:05:32Z; retry_count=2
+- AI owner-4 prepared todo at 2026-04-26T03:05:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- AI owner-4 prepared resume at 2026-04-26T03:06:29Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- Ticket owner verification failed at 2026-04-26T03:07:15Z: command exited 1
+- Resume update at 2026-04-26T03:08:00Z:
+  1. `bin/autoflow wiki query . --term wiki --term preview --term knowledge` 는 계속 `tickets/done/prd_003/prd_003.md` 를 직접 근거로 반환했고, 구현 의도 자체는 변하지 않았다.
+  2. Assigned worktree 에는 `apps/desktop/src/renderer/main.tsx` 와 `styles.css` diff 가 남아 있지만, `cd apps/desktop && npx tsc --noEmit` 는 `This is not the tsc command you are looking for` 로 실패해 verification chain 이 첫 단계에서 멈춘다.
+  3. 같은 worktree 에 `./.autoflow/scripts/verify-ticket-owner.sh` 도 없어서 runtime script 는 프로젝트 루트에서만 실행 가능했다. 다음 retry 는 UI 코드가 아니라 worktree/runtime provisioning 복구가 선행되어야 한다.
+- AI owner-4 marked fail at 2026-04-26T03:07:56Z.
 ## Verification
-- Run file:
-- Log file:
-- Result: pending
+- Run file: `tickets/reject/verify_003.md`
+- Log file: `logs/verifier_003_20260426_030756Z_fail.md`
+- Result: failed
 
 ## Result
 - Summary:
@@ -111,13 +126,14 @@
 
 ## Reject Reason
 
-- Verification is blocked outside Allowed Paths: the assigned worktree for `tickets_003` does not contain `apps/desktop/node_modules/typescript` or `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 with `This is not the tsc command you are looking for` before syntax or smoke checks can run. Replan or fix worktree/runtime provisioning before retrying this ticket.
+- Verification is blocked outside Allowed Paths: rerunning `./.autoflow/scripts/verify-ticket-owner.sh 003` from the assigned worktree still fails before syntax/smoke checks, now with `npm error enoent ENOENT: no such file or directory, lstat '/Users/demoon/Documents/project/autoflow/apps/desktop/lib'` during `cd apps/desktop && npx tsc --noEmit`. This indicates broken npm/worktree provisioning rather than a renderer-only regression. Repair the ticket worktree/toolchain outside this ticket's Allowed Paths, then rerun the full verification chain before retrying.
 
 ## Retry
-- Retry Count: 1
+- Retry Count: 2
 - Max Retries: 2
 
 ## Reject History
 - 2026-04-26T01:51:28Z | retry_count=1 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_010456Z_fail.md`` | reason=Verification failed in smoke harness: `bash tests/smoke/ticket-owner-smoke.sh` exited 1 because the temp harness expected `.claude/skills/autoflow/SKILL.md` and the referenced skill file was missing. Renderer changes for the wiki split/preview flow were implemented in Allowed Paths, but this ticket cannot pass until the smoke fixture or skill path expectation is fixed and verification is rerun.
 - 2026-04-26T02:36:03Z | retry_count=2 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_023011Z_fail.md`` | reason=Verification failed in smoke harness: `bash tests/smoke/ticket-owner-smoke.sh` exited 1 because the temp harness expected `.claude/skills/autoflow/SKILL.md` and the referenced skill file was missing. Renderer changes for the wiki split/preview flow were implemented in Allowed Paths, but this ticket cannot pass until the smoke fixture or skill path expectation is fixed and verification is rerun.
 - 2026-04-26T03:00:30Z | retry_count=1 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_024711Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: the assigned worktree for `tickets_003` does not contain `apps/desktop/node_modules/typescript` or `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 with `This is not the tsc command you are looking for` before syntax or smoke checks can run. Replan or fix worktree/runtime provisioning before retrying this ticket.
+- 2026-04-26T03:05:32Z | retry_count=2 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_030402Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: rerunning `./.autoflow/scripts/verify-ticket-owner.sh 003` from the assigned worktree still fails before syntax/smoke checks, now with `npm error enoent ENOENT: no such file or directory, lstat '/Users/demoon/Documents/project/autoflow/apps/desktop/lib'` during `cd apps/desktop && npx tsc --noEmit`. This indicates broken npm/worktree provisioning rather than a renderer-only regression. Repair the ticket worktree/toolchain outside this ticket's Allowed Paths, then rerun the full verification chain before retrying.

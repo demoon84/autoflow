@@ -4,7 +4,7 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = ".autoflow/"
 
-owner_workers = ["owner-1"]
+owner_workers = ["owner-1", "owner-2", "owner-3", "owner-4", "owner-5"]
 
 # Legacy role-pipeline workers. Leave these empty for Ticket Owner Mode.
 planner_workers = []
@@ -26,7 +26,10 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 # missing at render time.
 [thread_ids]
 owner-1 = "REPLACE_WITH_OWNER_1_THREAD_ID"
-
+owner-2 = "REPLACE_WITH_OWNER_2_THREAD_ID"
+owner-3 = "REPLACE_WITH_OWNER_3_THREAD_ID"
+owner-4 = "REPLACE_WITH_OWNER_4_THREAD_ID"
+owner-5 = "REPLACE_WITH_OWNER_5_THREAD_ID"
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
 scaling_rule = "Scale Ticket Owner Mode by adding owner_workers and matching [thread_ids] entries. Use legacy planner/todo/verifier arrays only for role-pipeline compatibility."

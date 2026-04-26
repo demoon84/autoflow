@@ -26,8 +26,8 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T02:46:22Z
-- Finished At: 2026-04-26T02:46:23Z
+- Started At: 2026-04-26T03:04:31Z
+- Finished At: 2026-04-26T03:04:31Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 1
@@ -56,7 +56,7 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 ## Evidence
 - Result: failed
 - Exit Code: 1
-- Completed At: 2026-04-26T02:46:23Z
+- Completed At: 2026-04-26T03:04:31Z
 
 ## Findings
 - blocker: Verification command exited 1

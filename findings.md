@@ -100,3 +100,34 @@
 - No charting dependency is installed. Use lightweight React/SVG/CSS charts to avoid expanding the dependency surface for this focused report view.
 - For commit-based reporting, the most stable Autoflow-specific anchor is the `done` ticket path. Each pass flow creates one local commit after moving a ticket into `tickets/done/**/tickets_*.md`, so the git commit that first adds that done ticket path can identify the Autoflow completion commit without mixing in arbitrary user commits.
 - `변경 코드량` should exclude board-side markdown/log churn. Summing `git show --numstat` for those completion commits while filtering out paths under `BOARD_ROOT` keeps the metric focused on product code changes.
+
+---
+
+# GitHub Competitive Review Findings
+
+## Comparable Projects Checked
+- Direct coding agents: Aider, OpenHands, Cline, Roo Code, OpenCode/Crush, Continue, SWE-agent.
+- Agent workspace / desktop orchestration: OpenAgents Workspace, Open Cowork, OpenClaudia, Hermes Agent Desktop.
+- PRD/task systems: Task Master AI.
+- GitHub-native background agents: GitHub Copilot Agents / Agent HQ with Claude and Codex.
+
+## Market Signal
+- Large incumbents are already strong for direct editing: OpenHands (~72k stars), Cline (~61k), Aider (~44k), Continue (~33k), Task Master AI (~27k), Roo Code (~23k), SWE-agent (~19k).
+- Newer orchestration/workspace tools are smaller but closer to Autoflow's category: OpenAgents (~3.3k), Open Cowork (~1k), OpenClaudia (<100).
+- GitHub itself now frames the category as an agent mission-control problem: assign background tasks, track progress, get PRs, and choose Copilot/Claude/Codex/custom agents.
+
+## Autoflow Positioning
+- Autoflow should not compete head-on as "the best code editor agent." That lane is crowded and mature.
+- Its best wedge is a repo-local source-of-truth harness: `.autoflow/tickets/` as execution ledger, ticket-owner lifecycle, evidence records, local worktree isolation, no-push guard, and metrics/reporting.
+- This is closer to "agent operations for local repos" than "AI coding UI."
+
+## Competitiveness
+- Competitive if positioned for teams or power users who need auditable local agent work across Codex/Claude/OpenCode/Gemini and want work state in git.
+- Not competitive yet as a consumer-friendly desktop agent app: competitors have installers, marketplaces/skills, IDE/native workflows, sandbox stories, remote collaboration, and GitHub PR automation.
+
+## Gaps
+- Reliable worktree provisioning and dependency hydration are critical; current dogfood tickets repeatedly fail because isolated worktrees lack expected toolchains or current repo layout.
+- Need a clearer "mission control" UX for blocked tickets, evidence, runner artifacts, and next safe action.
+- Need GitHub issue/PR integration if competing with Agent HQ/SWE-agent-style background task workflows.
+- Need packaged installation, onboarding, templates, and docs that make value obvious within 5 minutes.
+- Need security/sandbox permissions story comparable to Open Cowork / GitHub Actions-backed agents.

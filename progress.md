@@ -51,3 +51,4 @@
 - 2026-04-26 00:00 — Extended `autoflow metrics` with Autoflow-specific completion commit counting and code-volume aggregation derived from `tickets/done/**/tickets_*.md` add-commits.
 - 2026-04-26 00:00 — Added `완료 커밋`, `변경 코드량`, and `코드 영향` report surfaces to the desktop `처리 지표` view.
 - 2026-04-26 00:00 — Re-verified CLI metrics output, desktop `npm --prefix apps/desktop run check`, whitespace checks, and visual rendering of the new report cards/charts in Electron.
+- 2026-04-26 12:13 — Completed GitHub competitive scan across direct coding agents, desktop/agent workspace apps, PRD task managers, and GitHub Agent HQ. Conclusion: Autoflow is not competitive as a direct coding agent UI, but has a viable wedge as a repo-local agent work harness if worktree reliability, blocked-ticket UX, GitHub integration, packaging, and sandbox story are strengthened.

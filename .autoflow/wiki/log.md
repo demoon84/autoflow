@@ -11,7 +11,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T03:01:09Z
+- Last rebuilt: 2026-04-26T03:08:14Z
 
 ### Completed Tickets
 
@@ -27,23 +27,26 @@ Each entry should cite its source ticket or log.
 - # Verifier Completion Log Source: `logs/verifier_003_20260426_010456Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_003_20260426_023011Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_003_20260426_024711Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_003_20260426_030402Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_003_20260426_030756Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_004_20260426_010948Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_004_20260426_020951Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_004_20260426_024350Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_004_20260426_030418Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_004_20260426_030813Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_010719Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_022426Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_005_20260426_024319Z_fail.md`.
+- # Verifier Completion Log Source: `logs/verifier_005_20260426_030806Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_006_20260426_011008Z_fail.md`.
 - # Verifier Completion Log Source: `logs/verifier_006_20260426_024510Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_006_20260426_024826Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_007_20260426_011500Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_007_20260426_024507Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_007_20260426_024654Z_fail.md`.
-- # Verifier Completion Log Source: `logs/verifier_008_20260426_020047Z_pass.md`.
 
 ### Reject Records
 
-- reject_007. Source: `tickets/reject/reject_007.md`.
+- reject_003. Source: `tickets/reject/reject_003.md`.
+- reject_004. Source: `tickets/reject/reject_004.md`.
+- reject_005. Source: `tickets/reject/reject_005.md`.
+- reject_006. Source: `tickets/reject/reject_006.md`.
 
 ### Conversation Handoffs
 

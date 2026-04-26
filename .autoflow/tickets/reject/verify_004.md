@@ -26,8 +26,8 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T02:43:24Z
-- Finished At: 2026-04-26T02:43:24Z
+- Started At: 2026-04-26T03:07:48Z
+- Finished At: 2026-04-26T03:07:49Z
 - Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 1
@@ -56,23 +56,24 @@ To get access to the TypeScript compiler, [34mtsc[0m, from the command line ei
 ## Evidence
 - Result: failed
 - Exit Code: 1
-- Completed At: 2026-04-26T02:43:24Z
+- Completed At: 2026-04-26T03:07:49Z
 
 ## Findings
 - blocker: Verification command exited 1
-- warning:
+- warning: Manual acceptance review in the allowed files still finds no `settingsNavigation`, `activeSettingsSection`, Help render branch, or Help CSS classes required by `prd_004`.
 
 ## Blockers
 
-- Blocker:
+- Blocker: `cd apps/desktop && npx tsc --noEmit` exits 1 in the isolated worktree because no local TypeScript compiler is available.
+- Blocker: `apps/desktop/src/renderer/main.tsx:1101-1262` remains a dashboard console layout, so the PRD's Help-sidebar acceptance criteria do not match the live renderer architecture.
 
 ## Next Fix Hint
-- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 004 fail "<reason>"`.
+- Replan `prd_004` against the current dashboard renderer or broaden scope to restore the missing settings-sidebar model first, then fix the local TypeScript verification prerequisite before retrying this Help feature ticket.
 
 ## Result
 
-- Verdict: pending
-- Summary:
+- Verdict: fail
+- Summary: Automated verification still fails immediately at `npx tsc --noEmit`, and manual review of the allowed files still shows renderer/spec drift that exceeds a safe Help-only patch.
 
 ## Checks
 - [x] spec reference confirmed
