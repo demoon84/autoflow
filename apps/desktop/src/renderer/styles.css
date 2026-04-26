@@ -3657,7 +3657,21 @@ pre {
 
 .knowledge-sources-toggle {
   list-style: none;
-  cursor: default;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.knowledge-sources-chevron {
+  transition: transform 0.15s ease;
+}
+
+.knowledge-sources-chevron-closed {
+  transform: rotate(-90deg);
 }
 
 .knowledge-source-header {

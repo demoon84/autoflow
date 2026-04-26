@@ -8,6 +8,7 @@ import {
   BookOpenText,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ClipboardCheck,
   ClipboardList,
@@ -854,6 +855,7 @@ function App() {
   const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
   const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
   const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
+  const [sourcesOpen, setSourcesOpen] = React.useState(true);
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
@@ -1628,10 +1630,18 @@ function App() {
                           <div className="knowledge-stack">
                             <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                             <section className="knowledge-sources" aria-label="Sources">
-                              <div className="panel-subheading knowledge-sources-toggle">
+                              <button
+                                type="button"
+                                className="panel-subheading knowledge-sources-toggle"
+                                onClick={() => setSourcesOpen((prev) => !prev)}
+                                aria-expanded={sourcesOpen}
+                              >
+                                <ChevronDown className={`h-4 w-4 knowledge-sources-chevron${sourcesOpen ? "" : " knowledge-sources-chevron-closed"}`} aria-hidden="true" />
                                 <span>Sources</span>
-                              </div>
-                              <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
+                              </button>
+                              {sourcesOpen && (
+                                <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
+                              )}
                             </section>
                           </div>
                         </div>
