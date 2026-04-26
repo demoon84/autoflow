@@ -727,6 +727,31 @@ commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
 clear_active_ticket_context_record || true
 clear_runner_active_state
 
+cleanup_worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+cleanup_branch="autoflow/tickets_${ticket_id}"
+cleanup_status_parts=()
+if [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
+  if git -C "$git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
+    cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
+  else
+    cleanup_status_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
+  fi
+fi
+if git -C "$git_root" rev-parse --verify --quiet "refs/heads/${cleanup_branch}" >/dev/null 2>&1; then
+  if git -C "$git_root" branch -D "$cleanup_branch" >/dev/null 2>&1; then
+    cleanup_status_parts+=("deleted_branch=${cleanup_branch}")
+  else
+    cleanup_status_parts+=("branch_delete_failed=${cleanup_branch}")
+  fi
+fi
+if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
+  cleanup_summary="${cleanup_status_parts[*]}"
+  append_note "$ticket_file" "Merge-bot post-merge cleanup at ${timestamp}: ${cleanup_summary}."
+  runner_append_log "$worker_id" "post_merge_cleanup" \
+    "ticket_id=${ticket_id}" \
+    "${cleanup_status_parts[@]}" 2>/dev/null || true
+fi
+
 printf 'status=done\n'
 printf 'outcome=pass\n'
 printf 'ticket=%s\n' "$ticket_file"
