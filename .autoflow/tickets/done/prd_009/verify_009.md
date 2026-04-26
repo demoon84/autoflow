@@ -5,7 +5,7 @@
 - Ticket ID: 009
 - Project Key: prd_009
 - Verifier: AI-1
-- Status: pending
+- Status: pass
 - Started At:
 - Finished At:
 - Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009
@@ -26,9 +26,9 @@
 - [x] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T03:29:21Z
-- Finished At: 2026-04-26T03:29:26Z
-- Working Root: `/Users/demoon/Documents/project/autoflow`
+- Started At: 2026-04-26T04:10:06Z
+- Finished At: 2026-04-26T04:10:14Z
+- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_009`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh && diff -q runtime/board-scripts/common.sh .autoflow/scripts/common.sh && diff -q runtime/board-scripts/start-ticket-owner.sh .autoflow/scripts/start-ticket-owner.sh && diff -q runtime/board-scripts/finish-ticket-owner.sh .autoflow/scripts/finish-ticket-owner.sh`
 - Exit Code: 0
 
@@ -37,8 +37,8 @@
 
 ```text
 status=ok
-project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.NFHAERNtxz
-commit_hash=5dd487017fb6ae93a445a39abbc912da90ef7722
+project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.PmltqktI2m
+commit_hash=4695b8e04a3eb31288b26b11a80ac6d9259b9b19
 ```
 
 ### stderr
@@ -50,18 +50,18 @@ commit_hash=5dd487017fb6ae93a445a39abbc912da90ef7722
 ## Evidence
 - Result: passed
 - Exit Code: 0
-- Completed At: 2026-04-26T03:29:26Z
+- Completed At: 2026-04-26T04:10:14Z
 
 ## Findings
-- blocker: none during automated verification
-- warning: `finish-ticket-owner.sh pass` was not run in this turn because its current commit scope would stage unrelated pre-existing board/wiki changes from the dirty project root.
+- blocker:
+- warning:
 
 ## Blockers
 
 - Blocker: Existing unrelated dirty files under `.autoflow/tickets/`, `.autoflow/wiki/`, and other project paths make the current `finish-ticket-owner.sh` commit scope unsafe for a pass finish in this turn.
 
 ## Next Fix Hint
-- Isolate unrelated dirty board/wiki changes or narrow the finish commit scope, then resume this same ticket and run `scripts/finish-ticket-owner.sh 009 pass "<short summary>"`.
+- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 009 fail "<reason>"`.
 
 ## Result
 

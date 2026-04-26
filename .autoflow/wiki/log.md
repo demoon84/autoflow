@@ -11,12 +11,13 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T04:08:42Z
+- Last rebuilt: 2026-04-26T04:10:20Z
 
 ### Completed Tickets
 
 - `tickets_002` - Ticket owner work for prd_002. Surface runner active ticket metadata through CLI and desktop workflow view Source: `tickets/done/prd_002/tickets_002.md`.
 - `tickets_008` - Ticket owner work for prd_008. added bounded reject auto-replan with owner smoke coverage Source: `tickets/done/prd_008/tickets_008.md`.
+- `tickets_009` - AI work for prd_009. Implemented AI-N display normalization and reverified ticket 009 Source: `tickets/done/prd_009/tickets_009.md`.
 
 ### Verifier Logs
 
