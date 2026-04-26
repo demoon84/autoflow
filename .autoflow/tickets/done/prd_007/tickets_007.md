@@ -61,9 +61,8 @@
 
 ## Resume Context
 
-- 현재 상태 요약: worktree 커밋 `3ac04f928b0e5171baeaed5baad0f61088afcfba` 와 검증 통과는 유지된다. 다만 `PROJECT_ROOT` 의 동일 허용 경로 2개 파일에는 ticket 007 변경과 다른 로컬 수정이 이미 있어 finish integration 을 안전하게 재시도할 수 없다.
-- 직전 작업: `PROJECT_ROOT` 와 ticket worktree diff 를 비교한 결과, worktree 는 `AiProgressRow` 3-line 메타 출력 변경만 담고 있지만 project root 는 workflow layout, runner console, reporting dashboard, conversation panel 등 추가 변경을 함께 포함하고 있었다.
-- 재개 시 먼저 볼 것: `/Users/demoon/Documents/project/autoflow` 에서 `git diff 07a05bb0162134d69c2a2d0c4960de327fd3d587 -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` 로 현재 로컬 수정 범위를 확인하고, ticket 007 변경을 분리 또는 수동 병합한 뒤 finish 를 재실행한다.
+- 완료 상태: ticket-owner pass, verification evidence, done 이동, local commit 이 모두 끝났다.
+- 후속 참고: `PROJECT_ROOT` 의 동일 파일들에 있던 다른 로컬 수정은 ticket 007 commit 이후 working tree 변경으로 복원해 두었다.
 
 ## Notes
 
@@ -97,4 +96,4 @@
 ## Result
 
 - Summary: Update AI workflow card meta to 3-line agent/id/progress display
-- Remaining risk: `PROJECT_ROOT` local edits on the same allowed paths must be reconciled before finish can merge and commit ticket 007 safely.
+- Remaining risk: none for this ticket; unrelated local edits on the same files remain restored as uncommitted working-tree changes in `PROJECT_ROOT`.

@@ -20,10 +20,10 @@
 
 ## Criteria Checked
 
-- [ ] Done When items were checked.
-- [ ] Acceptance criteria were checked.
-- [ ] Allowed Paths were checked.
-- [ ] Verification command was run.
+- [x] Done When items were checked.
+- [x] Acceptance criteria were checked.
+- [x] Allowed Paths were checked.
+- [x] Verification command was run.
 
 ## Command
 - Started At: 2026-04-26T06:01:05Z
@@ -53,20 +53,20 @@ commit_hash=2159987b9c43d6b55b26a6f971966a44c8e48e10
 - Completed At: 2026-04-26T06:01:12Z
 
 ## Findings
-- blocker: `PROJECT_ROOT` has uncommitted changes on `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css` that include broader local edits outside ticket 007 scope, so owner finish integration cannot be retried safely yet.
+- blocker:
 - warning:
 
 ## Blockers
 
-- Blocker: reconcile or isolate the project-root local edits on the two allowed paths before rerunning `scripts/finish-ticket-owner.sh 007 pass "<summary>"`.
+- Blocker: none
 
 ## Next Fix Hint
 - If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 007 fail "<reason>"`.
 
 ## Result
 
-- Verdict: pending
-- Summary: Verification command passed, but overall owner pass is blocked on safe integration into `PROJECT_ROOT`.
+- Verdict: pass
+- Summary: Verification command passed, and ticket-owner finish completed after isolating unrelated `PROJECT_ROOT` edits from the ticket commit scope.
 
 ## Checks
 - [x] spec reference confirmed
