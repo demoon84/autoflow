@@ -6,12 +6,12 @@
 - PRD Key: prd_006
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_006/prd_006.md
 - Title: Ticket owner work for prd_006
-- Stage: blocked
+- Stage: rejected
 - AI: owner-4
 - Claimed By: owner-4
 - Execution AI: owner-4
 - Verifier AI: owner-4
-- Last Updated: 2026-04-26T02:39:07Z
+- Last Updated: 2026-04-26T02:48:26Z
 
 ## Goal
 
@@ -52,11 +52,11 @@
 - tests/smoke
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit: 37c0c14033aa2293d28d6e1c10f692f860303347
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006`
+- Branch: autoflow/tickets_006
+- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
 - Worktree Commit:
-- Integration Status: project_root_fallback
+- Integration Status: pending
 
 ## Done When
 
@@ -77,13 +77,13 @@
 - [ ] `diff -q .autoflow/scripts/finish-ticket-owner.sh runtime/board-scripts/finish-ticket-owner.sh` 출력 없음.
 
 ## Next Action
-- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:.autoflow/agents/wiki-maintainer-agent.md, tickets_001:scaffold/board/agents/wiki-maintainer-agent.md, tickets_005:AGENTS.md, tickets_005:CLAUDE.md, tickets_005:README.md, tickets_005:bin/autoflow, tickets_005:bin/autoflow.ps1, tickets_005:scaffold/board/AGENTS.md, tickets_005:scaffold/board/README.md. Retry automatically when blockers clear.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
-- 현재 상태 요약: spec 의 Allowed Paths 가 현재 checkout 구조와 맞지 않아 구현을 시작하지 못한 blocked 티켓.
-- 직전 작업: `bin/autoflow wiki query . --term wiki --term maintainer --term synth` 로 prior context 를 확인했고, worktree 에서 `packages/cli`, `runtime/board-scripts`, `.autoflow/...`, `tests/smoke` 부재를 재현했다.
-- 재개 시 먼저 볼 것: `tickets/done/prd_006/prd_006.md`, 현재 repo tree (`scripts/cli`, `autoflow/scripts`, `rules/wiki`, `scripts/tests`), Reject Reason.
+- 현재 상태 요약: `owner-4` revalidated `tickets_006` in `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006` and confirmed the ticket is still out of contract for implementation.
+- 직전 작업: reran `bin/autoflow wiki query . --term wiki --term maintainer --term synth`, rechecked the claimed worktree paths, then reran `scripts/verify-ticket-owner.sh 006`. The same mismatch remains: Allowed Paths point at `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, while this checkout exposes `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`.
+- 재개 시 먼저 볼 것: `tickets/reject/reject_006.md` and its paired verifier log from this turn, then either replan the PRD against the current repo layout or claim the checkout that actually contains the PRD paths and desktop TypeScript toolchain.
 
 ## Notes
 
@@ -102,22 +102,42 @@
 - Ticket automatically replanned from tickets/reject/reject_006.md at 2026-04-26T02:14:04Z; retry_count=1
 - Ticket owner owner-4 prepared todo at 2026-04-26T02:14:11Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_006.md
 - Runtime auto-blocked: shared_allowed_path_conflict at 2026-04-26T02:34:03Z; blockers=tickets_001:.autoflow/agents/wiki-maintainer-agent.md, tickets_001:scaffold/board/agents/wiki-maintainer-agent.md
+- AI owner-4 prepared resume at 2026-04-26T02:41:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006; run=tickets/inprogress/verify_006.md
+- Auto-recovery at 2026-04-26T02:41:38Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T02:41:38Z: cleared blocked worktree fields, retrying claim
+- AI owner-4 prepared resume at 2026-04-26T02:41:38Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006; run=tickets/inprogress/verify_006.md
+- Safe-turn checkpoint at 2026-04-26T03:05:00Z:
+  - `start-ticket-owner.sh` now returns `worktree_status=ready` for `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006`, so the shared-path blocker is gone for this owner.
+  - The ticket is still not implementable safely: the claimed worktree contains `scripts/cli/wiki-project.sh`, `scripts/runtime/finish-ticket-owner.sh`, `autoflow/agents/wiki-maintainer-agent.md`, `rules/wiki/README.md`, and `scripts/tests/ticket-owner-smoke.sh`, but the Allowed Paths still point at different repo-relative locations.
+  - Decision: do not edit code under guessed substitute paths. Capture the mismatch in verification evidence and reject the ticket so it can be replanned against the current repo layout.
+- Ticket owner verification failed at 2026-04-26T02:43:17Z: command exited 1
+- AI owner-4 marked fail at 2026-04-26T02:45:10Z.
+- Ticket automatically replanned from tickets/reject/reject_006.md at 2026-04-26T02:46:32Z; retry_count=2
+- AI owner-4 prepared todo at 2026-04-26T02:47:00Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006; run=tickets/inprogress/verify_006.md
+- Ticket owner verification failed at 2026-04-26T02:47:33Z: command exited 1
+- Safe-turn checkpoint at 2026-04-26T02:47:33Z:
+  - `bin/autoflow wiki query . --term wiki --term maintainer --term synth` again surfaced `tickets/done/prd_006/prd_006.md` as the direct spec context.
+  - Path audit still fails the contract: `packages/cli/wiki-project.sh`, `runtime/board-scripts/finish-ticket-owner.sh`, `.autoflow/agents/wiki-maintainer-agent.md`, and `tests/smoke/ticket-owner-smoke.sh` are absent from the claimed worktree, while similarly named files exist only under `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, and `scripts/tests/*`.
+  - `scripts/verify-ticket-owner.sh 006` failed immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, which confirms the checkout also lacks the local TypeScript toolchain expected by the PRD verification command.
+  - Decision: reject instead of guessing substitute paths or mutating files outside the repo-relative `Allowed Paths`.
+- AI owner-4 marked fail at 2026-04-26T02:48:26Z.
 ## Verification
-- Run file: `tickets/inprogress/verify_006.md`
-- Log file: pending
-- Result: pending ticket-owner by owner-4
+- Run file: `tickets/reject/verify_006.md`
+- Log file: `logs/verifier_006_20260426_024826Z_fail.md`
+- Result: failed
 
 ## Result
-- Summary:
-- Remaining risk:
+- Summary: Verification re-confirmed this retry is not safely implementable in the claimed checkout.
+- Remaining risk: Re-running against the same checkout will keep failing until the PRD Allowed Paths and the actual repo layout/toolchain are aligned.
 
 ## Reject Reason
 
-- Spec paths are stale for this checkout: Allowed Paths reference packages/cli, runtime/board-scripts, .autoflow/... and tests/smoke, but the claimed worktree only has scripts/cli, scripts/runtime, autoflow/... and scripts/tests. Verification also failed with ENOENT under apps/desktop/lib. Replan against the current repo layout or claim the correct checkout before retrying.
+- Spec and checkout are still mismatched after the final retry. Allowed Paths require `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, but the claimed worktree exposes only `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`. The required verification command also fails immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, so this checkout does not provide the local TypeScript toolchain expected by the PRD. Replan the ticket against the current repo layout or claim the correct checkout before retrying.
 
 ## Retry
-- Retry Count: 1
+- Retry Count: 2
 - Max Retries: 2
 
 ## Reject History
 - 2026-04-26T02:14:04Z | retry_count=1 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_011008Z_fail.md`` | reason=Spec paths are stale for this checkout: Allowed Paths reference packages/cli, runtime/board-scripts, .autoflow/... and tests/smoke, but the claimed worktree only has scripts/cli, scripts/runtime, autoflow/... and scripts/tests. Verification also failed with ENOENT under apps/desktop/lib. Replan against the current repo layout or claim the correct checkout before retrying.
+- 2026-04-26T02:46:32Z | retry_count=2 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_024510Z_fail.md`` | reason=Spec paths are stale for this checkout: Allowed Paths reference packages/cli, runtime/board-scripts, .autoflow/... and tests/smoke, but the claimed worktree only has scripts/cli, scripts/runtime, autoflow/... and scripts/tests. Verification also failed with ENOENT under apps/desktop/lib. Replan against the current repo layout or claim the correct checkout before retrying.

@@ -6,12 +6,12 @@
 - PRD Key: prd_004
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_004/prd_004.md
 - Title: Ticket owner work for prd_004
-- Stage: blocked
+- Stage: rejected
 - AI: owner-1
 - Claimed By: owner-1
 - Execution AI: owner-1
 - Verifier AI: owner-1
-- Last Updated: 2026-04-26T02:39:07Z
+- Last Updated: 2026-04-26T02:43:50Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit: 37c0c14033aa2293d28d6e1c10f692f860303347
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
+- Branch: autoflow/tickets_004
+- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
 - Worktree Commit:
-- Integration Status: project_root_fallback
+- Integration Status: pending
 
 ## Done When
 
@@ -56,13 +56,13 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css. Retry automatically when blockers clear.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
-- 현재 상태 요약: `owner-1` resumed `tickets_004`, but `start-ticket-owner.sh` immediately returned `status=blocked` with `reason=shared_allowed_path_conflict`. The board context now points at `tickets_001` as the active lower-number blocker for both allowed renderer paths.
-- 직전 작업: reread `tickets/done/prd_004/prd_004.md`, reran `bin/autoflow wiki query . --term Help --term settings --term sidebar`, checked `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css`, and reran a focused `rg` over the allowed files. The spec is still current, the renderer still has `settingsNavigation` / `activeSettingsSection`, and the required Help UI is still missing, but this turn intentionally stopped before implementation because both allowed files are already dirty in project root while `tickets_001` holds the same paths.
-- 재개 시 먼저 볼 것: rerun `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh`. If the shared-path blocker clears, implement the missing Help nav/section in `main.tsx` and `styles.css`; if it does not, keep waiting instead of mixing changes into the shared fallback checkout.
+- 현재 상태 요약: `owner-1` regained an isolated worktree for `tickets_004`, but the current desktop renderer no longer contains the PRD's required `settingsNavigation` / `activeSettingsSection` sidebar architecture. The ticket is now a spec/code drift case again rather than a simple missing Help tab.
+- 직전 작업: reread `tickets/done/prd_004/prd_004.md`, reran `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh`, confirmed a clean isolated worktree with `git status --short`, and searched the renderer with `rg -n "settingsNavigation|activeSettingsSection|도움말|HelpSection|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer -S`. The search returned no matches, while `main.tsx` still renders the dashboard console sections (`작업 티켓 흐름`, `최근 로그`, `위키와 인수인계`, `진행 스냅샷`) instead of a settings sidebar that could accept a last-position Help item.
+- 재개 시 먼저 볼 것: read `tickets/done/prd_004/prd_004.md` against the live renderer layout before attempting another retry. A future retry needs either a re-planned PRD that targets the current dashboard structure or a broader UI refactor ticket that explicitly reintroduces the settings-sidebar model inside Allowed Paths.
 
 ## Notes
 
@@ -100,18 +100,30 @@
   - `bin/autoflow wiki query . --term Help --term settings --term sidebar` again surfaced `tickets/done/prd_004/prd_004.md` as the primary spec context and `tickets/done/prd_003/prd_003.md` as adjacent renderer context.
   - `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` still shows both allowed files modified in project root, and focused `rg` output confirms `settingsNavigation` / `activeSettingsSection` exist while the required Help implementation (`help` nav branch, `도움말`, `.help-section`, `.help-card`) is still absent.
   - Decision: no product edits in this turn. The ticket remains blocked until the overlapping lower-number ticket clears or the runtime can provide an isolated worktree.
+- AI owner-1 prepared resume at 2026-04-26T02:41:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Auto-recovery at 2026-04-26T02:41:51Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T02:41:51Z: cleared blocked worktree fields, retrying claim
+- AI owner-1 prepared resume at 2026-04-26T02:41:51Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004; run=tickets/inprogress/verify_004.md
+- Safe-turn evidence checkpoint (2026-04-26T03:00:00Z):
+  - `AUTOFLOW_WORKER_ID=owner-1 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` returned `status=resume` with `worktree_status=ready` and `worktree_path=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`, so the earlier shared-path blocker is no longer the limiting factor.
+  - `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004 status --short` returned no output, and `git diff -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css` is empty. This turn starts from a clean isolated worktree.
+  - `rg -n "settingsNavigation|activeSettingsSection|도움말|HelpSection|help-section|help-card|sidebar|자동화 상태|처리 지표" apps/desktop/src/renderer -S` returned exit 1 with no matches, which directly contradicts the PRD's required entry points and Help copy.
+  - `sed -n '1080,1320p' apps/desktop/src/renderer/main.tsx` shows the live UI still renders the dashboard console sections (`작업 티켓 흐름`, `최근 로그`, `위키와 인수인계`, `진행 스냅샷`) rather than a settings sidebar/navigation model.
+  - Decision: do not fabricate the missing sidebar architecture inside a narrow Help-only retry. Run the declared verification command for evidence, then reject with a concrete replan hint tied to current renderer structure.
+- Ticket owner verification failed at 2026-04-26T02:43:24Z: command exited 1
+- AI owner-1 marked fail at 2026-04-26T02:43:50Z.
 ## Verification
-- Run file: `tickets/inprogress/verify_004.md`
-- Log file: pending
-- Result: pending ticket-owner by owner-1
+- Run file: `tickets/reject/verify_004.md`
+- Log file: `logs/verifier_004_20260426_024350Z_fail.md`
+- Result: failed
 
 ## Result
-- Summary: Safe ticket-owner turn only. Reconfirmed that `prd_004` still needs real Help-section implementation, but the runtime currently blocks this owner from editing because `tickets_001` already holds the same allowed renderer paths in project-root fallback mode.
-- Remaining risk: Any direct edit to `apps/desktop/src/renderer/main.tsx` or `styles.css` now would mix unfinished work across tickets in one shared checkout and make a later local commit unsafe. Wait for the blocker to clear or for a clean worktree before implementing.
+- Summary: Safe ticket-owner turn only. The blocker has shifted from path contention to spec drift: `prd_004` still assumes a settings-sidebar Help flow, but the live renderer in this isolated worktree no longer contains that sidebar/navigation architecture at all.
+- Remaining risk: Implementing a compliant Help feature now would require unplanned UI restructuring beyond a narrow "add one sidebar item and one section" change. Retrying without a refreshed PRD will keep producing false negatives or partial UI work that does not satisfy the original acceptance criteria.
 
 ## Reject Reason
 
-- Verification command passes, but manual acceptance review still fails: `settingsNavigation` ends at `automation`, there is no `help` nav entry or `activeSettingsSection === "help"` render branch, and the allowed files do not contain the required Help-section text/classes (`도움말`, `HelpSection`, `.help-section`, `.help-card`). Re-run this ticket only after implementing the Help UI and validating criteria beyond command exit codes.
+- Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
 
 ## Retry
 - Retry Count: 2

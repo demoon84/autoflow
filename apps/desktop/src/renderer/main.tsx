@@ -34,6 +34,12 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -3340,9 +3346,18 @@ function WorkflowPinLayer({
   }, []);
 
   React.useEffect(() => {
-    if (!layerOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+    if (files.length === 0 && layerOpen) {
+      closeLayer();
+    }
+  }, [closeLayer, files.length, layerOpen]);
+
+  const handleOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (open) {
+        setLayerOpen(true);
+        return;
+      }
+      // Radix asks to close: if currently in detail view, go back to list instead
       if (detailFile) {
         setDetailFile(null);
         setDetailContent(null);
@@ -3350,16 +3365,9 @@ function WorkflowPinLayer({
         return;
       }
       closeLayer();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [closeLayer, detailFile, layerOpen]);
-
-  React.useEffect(() => {
-    if (files.length === 0 && layerOpen) {
-      closeLayer();
-    }
-  }, [closeLayer, files.length, layerOpen]);
+    },
+    [closeLayer, detailFile]
+  );
 
   const handleOpenDetail = React.useCallback(
     async (file: WorkflowFileEntry) => {
@@ -3417,91 +3425,96 @@ function WorkflowPinLayer({
           세부 보기
         </span>
       </button>
-      {layerOpen ? (
-        <div
-          className={`workflow-pin-layer workflow-pin-layer-${variant}`}
-          role="dialog"
-          aria-modal="false"
-          aria-label={layerHeading}
+      <Dialog open={layerOpen} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className={`workflow-pin-layer-panel workflow-pin-layer-${variant}`}
+          overlayClassName="workflow-pin-layer-overlay"
+          aria-describedby={undefined}
         >
-          <div className="workflow-pin-layer-panel">
-            <div className="workflow-pin-layer-header">
-              {detailFile ? (
-                <button
-                  type="button"
-                  className="workflow-pin-layer-back"
-                  onClick={handleBackToList}
-                  aria-label="목록으로 돌아가기"
-                >
-                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                  <span>이전</span>
-                </button>
-              ) : (
-                <div className="workflow-pin-layer-heading">
-                  {pinIcon}
-                  <strong>{layerHeading}</strong>
-                </div>
-              )}
-              <strong className="workflow-pin-layer-title">
-                {detailFile ? workflowFileDisplayName(detailFile.name) : ""}
-              </strong>
+          <div className="workflow-pin-layer-header">
+            {detailFile ? (
               <button
                 type="button"
-                className="workflow-pin-layer-close"
-                onClick={closeLayer}
-                aria-label="닫기"
+                className="workflow-pin-layer-back"
+                onClick={handleBackToList}
+                aria-label="목록으로 돌아가기"
               >
-                ✕
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                <span>이전</span>
               </button>
-            </div>
-            {detailFile ? (
-              <div className="workflow-pin-detail">
-                {detailLoading ? (
-                  <div className="workflow-pin-detail-loading">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    <span>불러오는 중…</span>
-                  </div>
-                ) : null}
-                {detailError ? (
-                  <div className="workflow-pin-detail-error">{detailError}</div>
-                ) : null}
-                {!detailError && detailContent ? (
-                  <pre className="workflow-pin-detail-body">
-                    {detailContent.content || "(비어 있음)"}
-                  </pre>
-                ) : null}
-              </div>
             ) : (
-              <>
-                <p className="workflow-pin-layer-help">{layerHelpText}</p>
-                <ul className="workflow-pin-list">
-                  {files.map((file) => (
-                    <li key={file.filePath}>
-                      <button
-                        type="button"
-                        className="workflow-pin-item"
-                        onClick={() => handleOpenDetail(file)}
-                        title={file.title || file.name}
-                      >
-                        <strong>{workflowFileDisplayName(file.name)}</strong>
-                        {file.title ? <span>{file.title}</span> : null}
-                        {file.stateLabel ? (
-                          <span
-                            className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
-                          >
-                            {file.stateLabel}
-                          </span>
-                        ) : null}
-                        <time>{formatDate(file.modifiedAt)}</time>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <div className="workflow-pin-layer-heading">
+                {pinIcon}
+                <DialogTitle asChild>
+                  <strong>{layerHeading}</strong>
+                </DialogTitle>
+              </div>
             )}
+            {detailFile ? (
+              <DialogTitle asChild>
+                <strong className="workflow-pin-layer-title">
+                  {workflowFileDisplayName(detailFile.name)}
+                </strong>
+              </DialogTitle>
+            ) : null}
+            <button
+              type="button"
+              className="workflow-pin-layer-close"
+              onClick={closeLayer}
+              aria-label="닫기"
+            >
+              ✕
+            </button>
           </div>
-        </div>
-      ) : null}
+          {detailFile ? (
+            <div className="workflow-pin-detail">
+              {detailLoading ? (
+                <div className="workflow-pin-detail-loading">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <span>불러오는 중…</span>
+                </div>
+              ) : null}
+              {detailError ? (
+                <div className="workflow-pin-detail-error">{detailError}</div>
+              ) : null}
+              {!detailError && detailContent ? (
+                <pre className="workflow-pin-detail-body">
+                  {detailContent.content || "(비어 있음)"}
+                </pre>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <DialogDescription className="workflow-pin-layer-help">
+                {layerHelpText}
+              </DialogDescription>
+              <ul className="workflow-pin-list">
+                {files.map((file) => (
+                  <li key={file.filePath}>
+                    <button
+                      type="button"
+                      className="workflow-pin-item"
+                      onClick={() => handleOpenDetail(file)}
+                      title={file.title || file.name}
+                    >
+                      <strong>{workflowFileDisplayName(file.name)}</strong>
+                      {file.title ? <span>{file.title}</span> : null}
+                      {file.stateLabel ? (
+                        <span
+                          className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
+                        >
+                          {file.stateLabel}
+                        </span>
+                      ) : null}
+                      <time>{formatDate(file.modifiedAt)}</time>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

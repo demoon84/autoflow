@@ -8,7 +8,7 @@
 - Status: fail
 - Started At:
 - Finished At:
-- Working Root: /Users/demoon/Documents/project/autoflow
+- Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005
 
 - Target: tickets_005.md
 - PRD Key: prd_005
@@ -26,9 +26,9 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T02:23:13Z
-- Finished At: 2026-04-26T02:23:17Z
-- Working Root: `/Users/demoon/Documents/project/autoflow`
+- Started At: 2026-04-26T02:42:22Z
+- Finished At: 2026-04-26T02:42:22Z
+- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 1
 
@@ -37,51 +37,46 @@
 
 ```text
 
+[41m                                                                               [0m
+[41m[37m                This is not the tsc command you are looking for                [0m
+[41m                                                                               [0m
+
+To get access to the TypeScript compiler, [34mtsc[0m, from the command line either:
+
+- Use [1mnpm install typescript[0m to first add TypeScript to your project [1mbefore[0m using npx
+- Use [1myarn[0m to avoid accidentally running code from un-installed packages
 ```
 
 ### stderr
 
 ```text
-Expected line not found: 1. Treat `#af` and `/af` as Autoflow spec handoff triggers.
---- /var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.aXEesfwFV2/.claude/skills/af/SKILL.md ---
----
-name: af
-description: Short alias for the Autoflow PRD handoff skill. Use when the user says "#af", invokes "/af", or wants to start an Autoflow handoff quickly.
----
 
-# Autoflow Short Alias
-
-Follow the same workflow as the `autoflow` skill:
-
-1. Treat `#af` and `/af` as Autoflow PRD handoff triggers.
-2. Draft the full PRD in chat first.
-3. Save only after explicit user confirmation.
-4. Save only to the Autoflow backlog PRD queue.
-5. Do not plan, create tickets, implement, verify, commit, or push.
-
-If the `autoflow` skill file is available, read it and follow its fuller instructions.
 ```
 
 ## Evidence
 - Result: failed
 - Exit Code: 1
-- Completed At: 2026-04-26T02:23:17Z
+- Completed At: 2026-04-26T02:42:22Z
+- Observation: verification ran from `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`, whose root layout differs from the current Autoflow repo root.
+- Observation: the worktree root is missing PRD-required paths such as `.autoflow/agents`, `.claude/skills`, `integrations/*`, `scaffold/board/*`, and `tests/smoke/ticket-owner-smoke.sh`.
 
 ## Findings
-- blocker: Verification command exited 1 because `tests/smoke/ticket-owner-smoke.sh` still expects legacy `spec handoff` lines inside generated `.claude/.codex` skill files.
+- blocker: Verification command exited 1
+- blocker: `npx tsc --noEmit` reported no local TypeScript compiler in the assigned worktree, which indicates the worktree snapshot does not contain the current desktop toolchain layout.
+- warning: this ticket cannot be safely completed in the current worktree because the verification root is not the same repository shape described by `prd_005`.
 - warning:
 
 ## Blockers
 
-- Blocker:
+- Blocker: Recreate or rebind `tickets_005` to a fresh worktree cloned from the current project root before attempting implementation or verification again.
 
 ## Next Fix Hint
-- Either expand the ticket scope to update `tests/smoke/ticket-owner-smoke.sh` for PRD wording, or intentionally keep legacy `spec handoff` lines in generated skills for backward-compatible smoke expectations before rerunning verification.
+- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with `scripts/finish-ticket-owner.sh 005 fail "<reason>"`.
 
 ## Result
 
-- Verdict: pending
-- Summary:
+- Verdict: fail
+- Summary: Verification failed in the assigned worktree because the worktree is an outdated repo snapshot without the current TypeScript/tooling and smoke-test layout required by `prd_005`.
 
 ## Checks
 - [x] spec reference confirmed

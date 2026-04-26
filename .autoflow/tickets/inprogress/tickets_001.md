@@ -6,12 +6,12 @@
 - PRD Key: prd_001
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_001/prd_001.md
 - Title: Ticket owner work for prd_001
-- Stage: executing
+- Stage: blocked
 - AI: owner-3
 - Claimed By: owner-3
 - Execution AI: owner-3
 - Verifier AI: owner-3
-- Last Updated: 2026-04-26T02:39:14Z
+- Last Updated: 2026-04-26T02:51:50Z
 
 ## Goal
 
@@ -39,7 +39,7 @@
 ## Worktree
 - Path:
 - Branch:
-- Base Commit: 37c0c14033aa2293d28d6e1c10f692f860303347
+- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
 - Worktree Commit:
 - Integration Status: project_root_fallback
 
@@ -60,13 +60,15 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다.
+- 다음에 바로 이어서 할 일: `finish-ticket-owner.sh` 의 pass staging scope 가 `tickets_001` 관련 산출물과 이 티켓 Allowed Paths 로 좁혀졌는지 확인한 뒤에만 owner-3 가 verification evidence 재확인 후 finish 를 재시도한다.
 
 ## Resume Context
 
-- 현재 상태 요약: owner-3 가 2026-04-26T02:36:35Z 에 `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` 를 실행했지만, runtime 은 새 replan todo `tickets_003` 대신 다시 `status=resume`, `ticket_id=001`, `stage=executing`, `worktree_status=project_root_fallback`, `worktree_fallback_reason=dirty_allowed_path:apps/desktop/src/renderer/main.tsx` 를 반환했다. runtime 이 stage 를 `executing` 으로 되돌렸어도 durable board state 는 `blocked` 로 유지한다.
-- 직전 작업: 먼저 `tickets/todo/tickets_003.md` 와 그 replan 히스토리를 확인했고 latest reject reason 이 여전히 smoke-harness fixture 문제라는 점을 재확인했다. 하지만 owner rule 1 때문에 새 todo 를 claim 할 수 없었고, `start-ticket-owner.sh` 재실행 결과도 `tickets_001` resume 을 강제했다.
-- 재개 시 먼저 볼 것: `tickets_001` 을 unblock 할 수 있을 만큼 renderer / wiki-maintainer mirror 변경분이 격리됐는지 다시 확인한다. `verify_001.md` verification chain 은 이미 `exit 0` 이므로, 다음 turn 은 구현보다 commit-scope isolation 확인이 우선이다.
+- Current checkpoint (2026-04-26T02:51:50Z): `start-ticket-owner.sh` now falls back to `implementation_root=/Users/demoon/Documents/project/autoflow` because `apps/desktop/src/renderer/main.tsx` is already dirty in project root. `bin/autoflow metrics` reports `completion_rate_percent=25.0` and `ticket_inprogress_count=1`, while `git status --short` still shows unrelated board deletes/modifies plus wiki edits and reject logs for other ticket ids. `finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale (`rg -n "stage_ticket_commit_scope|BOARD_ROOT" .autoflow/scripts/finish-ticket-owner.sh`), so pass finish remains unsafe.
+- Current checkpoint (2026-04-26T02:48:29Z): `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` still resumes `tickets_001` with `worktree_status=ready` and isolated `worktree_path=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001`, so the older shared-worktree blocker is no longer the issue. `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` again surfaced `tickets/done/prd_001/prd_001.md` as the direct spec reference. The remaining blocker is finish safety: `finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale, while current `git status --short` shows unrelated deletes/modifies and new reject logs for other tickets (`003/004/005/006/007`). This ticket should not run `finish-ticket-owner.sh ... pass` until commit scope is isolated.
+- 현재 상태 요약: owner-3 가 2026-04-26T02:43:50Z 에 `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` 를 다시 실행했고, 이번에는 `status=resume`, `ticket_id=001`, `stage=executing`, `worktree_status=ready`, `worktree_path=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001` 를 반환했다. 동시에 `.autoflow/automations/state/current.context` 는 `active_ticket_id=` 빈 값으로 정리됐고, ticket allowed paths 대상 `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css .autoflow/agents/wiki-maintainer-agent.md scaffold/board/agents/wiki-maintainer-agent.md` 도 출력이 없었다.
+- 직전 작업: pass evidence 자체는 여전히 충분하다고 판단했다. `verify_001.md` 는 2026-04-26T02:02:24Z 기준 `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` exit 0 를 유지하고, `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` 는 `tickets/done/prd_001/prd_001.md` 를 상위 관련 기록으로 다시 보여줬다. 그러나 `scripts/finish-ticket-owner.sh` 의 `stage_ticket_commit_scope` 는 pass 시 이 ticket 파일뿐 아니라 `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, `${BOARD_ROOT}/wiki` 전체 변경분을 stage 하므로, 현재 repo 의 다른 runner 변경과 함께 커밋될 위험이 남아 있다.
+- 재개 시 먼저 볼 것: 1) repo 전체 `git status --short` 에서 다른 runner 의 board 변경이 정리됐는지, 2) `finish-ticket-owner.sh` commit scope 가 이 ticket 관련 파일만 포함하도록 좁혀졌는지 또는 동등한 격리 수단이 생겼는지, 3) 그 뒤에도 `verify_001.md` 의 pass evidence 가 최신인지 확인한 다음에만 pass finish 를 검토한다.
 
 ## Notes
 
@@ -136,14 +138,43 @@
   - 이번 turn 은 제품 파일 수정 없이 종료한다. board priority 는 `tickets_003` 진행이 아니라 `tickets_001` blocker 해소다.
 - Auto-recovery at 2026-04-26T02:39:14Z: cleared blocked worktree fields, retrying claim
 - AI owner-3 prepared resume at 2026-04-26T02:39:14Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
+- AI owner-3 prepared resume at 2026-04-26T02:39:56Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
+- Safe ticket turn checkpoint (2026-04-26T02:40:16Z):
+  - `start-ticket-owner.sh` 를 owner-3 환경으로 재실행했지만 이번에도 `tickets_001` 만 `status=resume` 으로 복구했고, fallback reason 은 그대로 `dirty_allowed_path:apps/desktop/src/renderer/main.tsx` 였다.
+  - 동시에 shared runtime pointer 는 일관되지 않았다. `automations/state/current.context` 는 `worker_id=owner-2`, `active_ticket_id=005`, `active_stage=blocked` 를 가리켜 owner-3 active ticket 과 충돌한다.
+  - `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css .autoflow/agents/wiki-maintainer-agent.md scaffold/board/agents/wiki-maintainer-agent.md` 는 이전과 동일하게 shared renderer dirtiness 와 wiki-maintainer mirror adds 를 보여줬다.
+  - 결정: 제품 파일 수정이나 `finish-ticket-owner.sh` 실행 없이 종료한다. 이번 턴은 board evidence 갱신 전용 safe blocked turn 이다.
+- Auto-recovery at 2026-04-26T02:42:59Z: cleared blocked worktree fields, retrying claim
+- AI owner-3 prepared resume at 2026-04-26T02:42:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- AI owner-3 prepared resume at 2026-04-26T02:44:00Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- Safe ticket turn checkpoint (2026-04-26T02:44:37Z):
+  - `start-ticket-owner.sh` now returns a real isolated worktree for `tickets_001`, and the earlier blockers from `current.context` collision plus project-root allowed-path dirtiness are no longer observed.
+  - The remaining blocker is the pass commit path itself: `finish-ticket-owner.sh` stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale, while the repo still contains unrelated board edits from other tickets/runners.
+  - Decision: do not rerun verification and do not call `finish-ticket-owner.sh 001 pass ...` in this turn. Verification evidence is already green; the unsafe part is commit attribution, not implementation correctness.
+- Auto-recovery at 2026-04-26T02:47:38Z: cleared blocked worktree fields, retrying claim
+- AI owner-3 prepared resume at 2026-04-26T02:47:38Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- AI owner-3 prepared resume at 2026-04-26T02:48:04Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- Safe ticket turn checkpoint (2026-04-26T02:48:29Z):
+  - Re-ran `start-ticket-owner.sh`, confirmed `tickets_001` still resumes with an isolated worktree, and rechecked prior context via `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations`.
+  - Re-read `finish-ticket-owner.sh`: pass flow still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale before commit.
+  - Rechecked repo status. Unrelated board churn is still present: deletes in `tickets/inprogress` for other ticket ids, multiple modified reject verification files, new reject logs, and wiki file edits not attributable to `tickets_001`.
+  - Decision: keep this ticket in `blocked` stage and end the turn without rerunning verification or calling `finish-ticket-owner.sh`.
+- Auto-recovery at 2026-04-26T02:50:45Z: cleared blocked worktree fields, retrying claim
+- AI owner-3 prepared resume at 2026-04-26T02:50:45Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- AI owner-3 prepared resume at 2026-04-26T02:51:15Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_001.md
+- Safe ticket turn checkpoint (2026-04-26T02:51:50Z):
+  - Re-ran `start-ticket-owner.sh` and confirmed the active ticket is still `tickets_001`, but the runtime has regressed from isolated worktree resume to `project_root_fallback` due to `dirty_allowed_path:apps/desktop/src/renderer/main.tsx`.
+  - Re-ran `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations`, which still points to `tickets/done/prd_001/prd_001.md` as the direct governing PRD. No new product-scope information changed.
+  - Reconfirmed the pass blocker directly from code and board state: `finish-ticket-owner.sh` still stages broad board directories, and `git status --short` still includes unrelated `.autoflow/wiki/*`, reject logs, and other ticket state churn. No product files were edited in this turn.
+  - Decision: keep `tickets_001` blocked. Verification remains green; commit attribution remains unsafe.
 ## Verification
 - Run file: `tickets/inprogress/verify_001.md`
 - Log file: pending
 - Result: pending ticket-owner by owner-3
 
 ## Result
-- Summary: Safe owner turn only. Replan candidate `tickets_003` exists, but owner-3 is still bound to `tickets_001`; rerunning `start-ticket-owner.sh` resumed `tickets_001` again and confirmed the active blocker remains shared project-root dirtiness on this ticket's allowed paths.
-- Remaining risk: if owner-3 bypasses this resume rule and starts `tickets_003` now, renderer overlap and project-root fallback would make both ticket attribution and a later local commit unsafe. `tickets_001` must clear first.
+- Summary: Safe owner turn only. `tickets_001` remains verification-green, but pass finish is still unsafe because the runtime fell back to project root and `finish-ticket-owner.sh` still stages broad board directories while unrelated board/wiki/reject churn remains in the repo.
+- Remaining risk: implementation correctness is not the blocker. Commit attribution is. Until pass staging is limited to `tickets_001` artifacts plus its allowed product paths, this ticket should stay blocked.
 
 ## Reject Reason
 

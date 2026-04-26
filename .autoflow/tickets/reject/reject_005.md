@@ -6,12 +6,12 @@
 - PRD Key: prd_005
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_005/prd_005.md
 - Title: Ticket owner work for prd_005
-- Stage: blocked
+- Stage: rejected
 - AI: owner-2
 - Claimed By: owner-2
 - Execution AI: owner-2
 - Verifier AI: owner-2
-- Last Updated: 2026-04-26T02:39:37Z
+- Last Updated: 2026-04-26T02:43:19Z
 
 ## Goal
 
@@ -51,11 +51,11 @@
 - integrations/codex/skills
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit: 37c0c14033aa2293d28d6e1c10f692f860303347
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
+- Branch: autoflow/tickets_005
+- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
 - Worktree Commit:
-- Integration Status: project_root_fallback
+- Integration Status: pending
 
 ## Done When
 
@@ -73,13 +73,13 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0 (기존 spec 명령 흐름이 깨지지 않음을 확인).
 
 ## Next Action
-- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_004:apps/desktop/src/renderer/main.tsx. Retry automatically when blockers clear.
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
 
 ## Resume Context
 
-- 현재 상태 요약: owner-2 claimed `tickets_005`, but `start-ticket-owner.sh` immediately moved it into `blocked` because `apps/desktop/src/renderer/main.tsx` is already held in project-root fallback by lower-number in-progress tickets `tickets_001` and `tickets_004`.
-- 직전 작업: `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh` returned `status=ok` followed by `status=blocked`, `reason=shared_allowed_path_conflict`, `ticket_id=005`, and `worktree_fallback_reason=dirty_allowed_path:apps/desktop/src/renderer/main.tsx`. No product files were edited in this turn.
-- 재개 시 먼저 볼 것: rerun `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/start-ticket-owner.sh`; if `tickets_001` / `tickets_004` still own `apps/desktop/src/renderer/main.tsx`, keep waiting instead of mixing PRD wording changes into the shared fallback checkout.
+- Current status: `owner-2` resumed `tickets_005` after the shared-path blocker cleared, but the assigned worktree still points at an older repository snapshot whose top-level layout does not match the current project root.
+- Last action: `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner .autoflow/scripts/verify-ticket-owner.sh 005` failed immediately with exit code 1 because `cd apps/desktop && npx tsc --noEmit` ran inside `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`, where `npx` could not find a local TypeScript compiler and later PRD-required paths such as `.autoflow/agents`, `.claude/skills`, `integrations/*`, `scaffold/board`, and `tests/smoke/ticket-owner-smoke.sh` are absent from the worktree root.
+- Next resume step: do not implement in this worktree. Recreate or rebind the ticket to a worktree cloned from the current repo layout, then rerun the ticket-owner loop against that fresh root.
 
 ## Notes
 
@@ -111,14 +111,25 @@
   - `owner-2` is now the active owner for `tickets_005`, but this turn stopped at claim time because the runtime detected a live overlap on `apps/desktop/src/renderer/main.tsx`.
   - `start-ticket-owner.sh` reported `worktree_status=project_root_fallback`, so editing now would risk bundling PRD wording work with unresolved renderer changes from lower-number tickets.
   - Decision: leave the ticket blocked and preserve the current board state until the overlapping renderer tickets finish or an isolated worktree becomes available.
+- AI owner-2 prepared resume at 2026-04-26T02:40:38Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Auto-recovery at 2026-04-26T02:41:23Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T02:41:23Z: cleared blocked worktree fields, retrying claim
+- AI owner-2 prepared resume at 2026-04-26T02:41:23Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Ticket owner verification failed at 2026-04-26T02:42:22Z: command exited 1
+- Root cause investigation at 2026-04-26T02:43:00Z:
+  1. `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005 status --short` returned clean, so this failure is not caused by uncommitted work.
+  2. The worktree root contains legacy top-level folders such as `agents/`, `autoflow/`, `reference/`, and `rules/`, while the live repo expects `.autoflow/agents`, `.autoflow/reference`, `.claude/skills`, `integrations/*`, and `scaffold/board/*` at the root.
+  3. `verify-ticket-owner.sh 005` reproduced the failure in board evidence: `npx tsc --noEmit` printed "This is not the tsc command you are looking for", which means the worktree snapshot is missing the desktop toolchain needed by the PRD verification command.
+  4. Because the required smoke path `tests/smoke/ticket-owner-smoke.sh` also does not exist in this worktree root, the ticket cannot be safely implemented or verified without rebuilding the worktree from the current repository layout.
+- AI owner-2 marked fail at 2026-04-26T02:43:19Z.
 ## Verification
-- Run file:
-- Log file:
-- Result: pending
+- Run file: `tickets/reject/verify_005.md`
+- Log file: `logs/verifier_005_20260426_024319Z_fail.md`
+- Result: failed
 
 ## Result
-- Summary: Safe ticket-owner turn only. `owner-2` claimed `tickets_005`, but the runtime immediately blocked execution because lower-number in-progress tickets still hold an overlapping allowed renderer path in project-root fallback mode.
-- Remaining risk: Any edit that touches `apps/desktop/src/renderer/main.tsx` before `tickets_001` and `tickets_004` clear would mix this PRD terminology ticket with unrelated shared-checkout UI work and make later verification or commit attribution unsafe.
+- Summary: Safe ticket-owner turn only. `owner-2` resumed `tickets_005`, reproduced the verification failure, and confirmed that the assigned worktree is an outdated repository snapshot rather than the current Autoflow repo layout required by the PRD.
+- Remaining risk: Editing inside `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005` would target the wrong file tree, so any implementation or verification result would be non-authoritative for the actual project root.
 
 ## Reject Reason
 

@@ -8,7 +8,7 @@
 - Status: fail
 - Started At:
 - Finished At:
-- Working Root: /Users/demoon/Documents/project/autoflow
+- Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003
 
 - Target: tickets_003.md
 - PRD Key: prd_003
@@ -26,9 +26,9 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T02:29:39Z
-- Finished At: 2026-04-26T02:29:43Z
-- Working Root: `/Users/demoon/Documents/project/autoflow`
+- Started At: 2026-04-26T02:45:47Z
+- Finished At: 2026-04-26T02:45:47Z
+- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
 - Exit Code: 1
 
@@ -37,35 +37,26 @@
 
 ```text
 
+[41m                                                                               [0m
+[41m[37m                This is not the tsc command you are looking for                [0m
+[41m                                                                               [0m
+
+To get access to the TypeScript compiler, [34mtsc[0m, from the command line either:
+
+- Use [1mnpm install typescript[0m to first add TypeScript to your project [1mbefore[0m using npx
+- Use [1myarn[0m to avoid accidentally running code from un-installed packages
 ```
 
 ### stderr
 
 ```text
-Expected line not found: 1. Treat `#af` and `/af` as Autoflow spec handoff triggers.
---- /var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.OFdjP3pche/.claude/skills/af/SKILL.md ---
----
-name: af
-description: Short alias for the Autoflow PRD handoff skill. Use when the user says "#af", invokes "/af", or wants to start an Autoflow handoff quickly.
----
 
-# Autoflow Short Alias
-
-Follow the same workflow as the `autoflow` skill:
-
-1. Treat `#af` and `/af` as Autoflow PRD handoff triggers.
-2. Draft the full PRD in chat first.
-3. Save only after explicit user confirmation.
-4. Save only to the Autoflow backlog PRD queue.
-5. Do not plan, create tickets, implement, verify, commit, or push.
-
-If the `autoflow` skill file is available, read it and follow its fuller instructions.
 ```
 
 ## Evidence
 - Result: failed
 - Exit Code: 1
-- Completed At: 2026-04-26T02:29:43Z
+- Completed At: 2026-04-26T02:45:47Z
 
 ## Findings
 - blocker: Verification command exited 1
