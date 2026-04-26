@@ -8,7 +8,6 @@ import {
   BookOpenText,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ClipboardCheck,
   ClipboardList,
@@ -29,8 +28,7 @@ import {
   TriangleAlert,
   PieChart,
   TrendingUp,
-  Workflow,
-  X
+  Workflow
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +61,27 @@ const ownerFlowStages = [
   { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "flow-reject" }
 ] as const;
 
-type OwnerFlowStage = (typeof ownerFlowStages)[number];
+const mergeBotFlowStages = [
+  { key: "idle", label: "대기", meta: "ready-to-merge 감시", icon: Layers3, tone: "flow-todo" },
+  { key: "merging", label: "머지", meta: "PROJECT_ROOT 통합", icon: Activity, tone: "flow-inprogress" },
+  { key: "done", label: "완료", meta: "통합 + 정리", icon: CheckCircle2, tone: "flow-done" },
+  { key: "blocked", label: "정체", meta: "merge-blocked", icon: TriangleAlert, tone: "flow-reject" }
+] as const;
+
+const wikiBotFlowStages = [
+  { key: "idle", label: "대기", meta: "다음 동기화 대기", icon: Layers3, tone: "flow-todo" },
+  { key: "syncing", label: "동기화", meta: "Wiki 갱신", icon: Activity, tone: "flow-inprogress" },
+  { key: "done", label: "완료", meta: "갱신 완료", icon: CheckCircle2, tone: "flow-done" },
+  { key: "blocked", label: "오류", meta: "어댑터 오류", icon: TriangleAlert, tone: "flow-reject" }
+] as const;
+
+type FlowStageDef = {
+  readonly key: string;
+  readonly label: string;
+  readonly meta: string;
+  readonly icon: typeof Layers3;
+  readonly tone: string;
+};
 
 const fallbackFlowFolder = ".autoflow";
 const runnerAgentOptions = ["codex", "claude", "gemini"] as const;
@@ -773,7 +791,6 @@ function App() {
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
   const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
   const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
-  const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
@@ -1032,7 +1049,6 @@ function App() {
       setSelectedLogPath("");
       setLogPreview(null);
       setLogError("");
-      setIsWikiPreviewOpen(false);
     }
 
     previousSettingsSectionRef.current = activeSettingsSection;
@@ -1212,14 +1228,11 @@ function App() {
         }
 
         setLogPreview(result);
-        if (activeSettingsSection === "knowledge") {
-          setIsWikiPreviewOpen(true);
-        }
       } finally {
         setIsReadingLog(false);
       }
     },
-    [activeSettingsSection, options]
+    [options]
   );
 
   const runRunner = React.useCallback(
@@ -1501,19 +1514,7 @@ function App() {
                             <BookOpenText className="h-4 w-4" aria-hidden="true" />
                             <strong>Knowledge</strong>
                           </div>
-                          {!isWikiPreviewOpen && selectedLogPath ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="knowledge-preview-toggle"
-                              onClick={() => setIsWikiPreviewOpen(true)}
-                            >
-                              미리보기 열기
-                            </Button>
-                          ) : (
-                            <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
-                          )}
+                          <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
                         </div>
                       }
                     >
@@ -1535,36 +1536,16 @@ function App() {
                           />
                           <div className="knowledge-stack">
                             <WikiList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                            <details className="knowledge-sources" open>
-                              <summary className="panel-subheading knowledge-sources-toggle">
+                            <section className="knowledge-sources" aria-label="Sources">
+                              <div className="panel-subheading knowledge-sources-toggle">
                                 <span>Sources</span>
-                                <ChevronDown className="knowledge-sources-chevron h-4 w-4" />
-                              </summary>
+                              </div>
                               <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                            </details>
+                            </section>
                           </div>
                         </div>
-                        <div
-                          className={`knowledge-preview-pane${isWikiPreviewOpen ? "" : " knowledge-preview-pane--hidden"}`}
-                        >
-                          <LogPreview
-                            preview={logPreview}
-                            isLoading={isReadingLog}
-                            error={logError}
-                            headerAction={
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="knowledge-preview-close"
-                                aria-label="미리보기 닫기"
-                                title="미리보기 닫기"
-                                onClick={() => setIsWikiPreviewOpen(false)}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
+                        <div className="knowledge-preview-pane">
+                          <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
                         </div>
                       </div>
                     </PageLayout>
@@ -3066,8 +3047,8 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketWorkspaceTabKey = "all" | "prd" | "issued" | "inprogress" | "closed" | "reject";
-type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "verifier" | "done" | "reject";
+type TicketWorkspaceTabKey = "all" | "prd" | "issued" | "inprogress" | "blocked" | "closed" | "reject";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "blocked" | "verifier" | "done" | "reject";
 type TicketWorkspaceItemKind = "prd" | "ticket";
 
 type TicketWorkspaceItemMeta = {
@@ -3094,6 +3075,7 @@ const ticketWorkspaceTabs: Array<{
   { key: "prd", label: "PRD", description: "backlog와 보관된 PRD" },
   { key: "issued", label: "발급 티켓", description: "전체 티켓 흐름" },
   { key: "inprogress", label: "진행 중", description: "현재 구현 중인 티켓" },
+  { key: "blocked", label: "막힘", description: "처리가 멈춰 확인이 필요한 티켓" },
   { key: "closed", label: "검증/완료", description: "검증 대기와 완료 티켓" },
   { key: "reject", label: "반려", description: "검증 실패 후 재시도 대상" }
 ] as const;
@@ -3177,12 +3159,16 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return boardPath(file.filePath).includes("/tickets/backlog/") ? "PRD" : "보관 PRD";
   }
 
+  if (statusKey === "blocked") {
+    return "막힘";
+  }
+
   if (statusKey === "inprogress") {
     const stage = markdownScalar(content, ["Stage"]).toLowerCase();
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "blocked">, string> = {
     todo: "발급됨",
     verifier: "검증",
     done: "완료",
@@ -3192,7 +3178,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
 }
 
 function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
-  if (statusKey === "reject") {
+  if (statusKey === "blocked" || statusKey === "reject") {
     return "destructive" as const;
   }
 
@@ -3206,7 +3192,9 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
 function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string): TicketWorkspaceItemMeta {
   const claimedBy = markdownScalar(content, ["Execution AI", "AI", "Claimed By"]);
   const title = markdownScalar(content, ["Title"]) || file.title || file.name;
-  const statusKey = ticketWorkspaceStatusForFile(file) || "todo";
+  const fileStatusKey = ticketWorkspaceStatusForFile(file) || "todo";
+  const stage = markdownScalar(content, ["Stage"]).toLowerCase();
+  const statusKey = fileStatusKey === "inprogress" && stage === "blocked" ? "blocked" : fileStatusKey;
   return {
     title,
     projectKey: projectKeyFromBoardFile(file, content),
@@ -3241,6 +3229,8 @@ function ticketWorkspaceItemsForTab(items: TicketWorkspaceItem[], tab: TicketWor
       return items.filter((item) => item.kind === "ticket");
     case "inprogress":
       return items.filter((item) => item.statusKey === "inprogress");
+    case "blocked":
+      return items.filter((item) => item.statusKey === "blocked");
     case "closed":
       return items.filter((item) => item.statusKey === "verifier" || item.statusKey === "done");
     case "reject":
@@ -3874,35 +3864,63 @@ function AiConversationPanel({
   );
 }
 
-function flowStepState(stepKey: OwnerFlowStage["key"], currentKey: OwnerFlowStage["key"]) {
-  if (currentKey === "reject") {
-    if (stepKey === "reject") {
+function flowStepState(
+  stepKey: string,
+  currentKey: string,
+  stages: readonly FlowStageDef[] = ownerFlowStages
+) {
+  const terminalKeys = new Set(["reject", "blocked"]);
+  if (terminalKeys.has(currentKey)) {
+    if (terminalKeys.has(stepKey)) {
       return "active";
     }
 
     return stepKey === "done" ? "idle" : "complete";
   }
 
-  const currentIndex = ownerFlowStages.findIndex((stage) => stage.key === currentKey);
-  const stepIndex = ownerFlowStages.findIndex((stage) => stage.key === stepKey);
+  const currentIndex = stages.findIndex((stage) => stage.key === currentKey);
+  const stepIndex = stages.findIndex((stage) => stage.key === stepKey);
 
-  if (stepKey === "reject" || stepIndex > currentIndex) {
+  if (terminalKeys.has(stepKey) || stepIndex > currentIndex) {
     return "idle";
   }
 
   return stepIndex === currentIndex ? "active" : "complete";
 }
 
-function runnerStageKey(runner: AutoflowRunner): OwnerFlowStage["key"] {
+function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
+  const role = (runner.role || "").toLowerCase();
+  if (role === "merge-bot" || role === "merge") return mergeBotFlowStages;
+  if (role.includes("wiki")) return wikiBotFlowStages;
+  return ownerFlowStages;
+}
+
+function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
   const hasActiveTicket = Boolean(runner.activeTicketId);
   const stateText = [runner.activeItem, runner.lastResult, runner.lastLogLine].join(" ").toLowerCase();
+  const isFailLike =
+    status === "failed" ||
+    /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
+    /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateText);
 
-  if (status === "failed" || /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) || /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateText)) {
-    return "reject";
+  if (role === "merge-bot" || role === "merge") {
+    if (isFailLike || /\bmerge[-_]?blocked\b|\b(persistent|blocked)\b/.test(stateText)) return "blocked";
+    if (hasActiveTicket || status === "running") return "merging";
+    if (/post_merge_cleanup|\bdone\b|loop_waiting_exit_0/.test(stateText)) return "done";
+    return "idle";
   }
+
+  if (role.includes("wiki")) {
+    if (isFailLike) return "blocked";
+    if (status === "running") return "syncing";
+    if (/\bdone\b|\bok\b|adapter_exit_0|loop_waiting_exit_0/.test(stateText)) return "done";
+    return "idle";
+  }
+
+  if (isFailLike) return "reject";
 
   if (hasActiveTicket) {
     if (/^(done|pass|complete|completed)$/.test(activeStage)) return "done";
@@ -3958,7 +3976,15 @@ function isMachineRunnerLog(value: string) {
 }
 
 function displayWorkflowRunnerId(value: string) {
-  return value.replace(/^owner-/, "AI-").replace(/^worker-/, "AI-");
+  if (!value) return value;
+  if (/^owner-/.test(value)) return value.replace(/^owner-/, "AI-");
+  if (/^worker-/.test(value)) return value.replace(/^worker-/, "AI-");
+  if (value === "merge-1") return "머지봇";
+  if (/^merge-\d+$/.test(value)) return value.replace(/^merge-/, "머지봇-");
+  if (value === "wiki-maintainer-1" || value === "wiki-1") return "위키봇";
+  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키봇-");
+  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키봇-");
+  return value;
 }
 
 function projectKeyFromSpecRef(value: string) {
@@ -3991,9 +4017,10 @@ function AiProgressRow({
   options?: { projectRoot: string; boardDirName: string };
 }) {
   const currentKey = runnerStageKey(runner);
-  const stage = ownerFlowStages.find((candidate) => candidate.key === currentKey) || ownerFlowStages[1];
-  const stageIndex = ownerFlowStages.findIndex((candidate) => candidate.key === currentKey);
-  const progressRatio = Math.max(0, stageIndex) / (ownerFlowStages.length - 1);
+  const flowStages = flowStagesForRunner(runner);
+  const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
+  const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
+  const progressRatio = flowStages.length <= 1 ? 0 : Math.max(0, stageIndex) / (flowStages.length - 1);
   const progressValue = progressRatio <= 0 ? "0px" : `${progressRatio * 82}%`;
   const status = runner.stateStatus || "idle";
   const detail = runnerProgressDetail(runner);
@@ -4080,12 +4107,12 @@ function AiProgressRow({
         </div>
 
         <div
-          className={`ai-progress-track ${currentKey === "reject" ? "ai-progress-track-reject" : ""}`}
+          className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
           style={{ "--progress-value": progressValue } as React.CSSProperties}
           aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
         >
-          {ownerFlowStages.map((step) => {
-            const stepState = flowStepState(step.key, currentKey);
+          {flowStages.map((step) => {
+            const stepState = flowStepState(step.key, currentKey, flowStages);
             return (
               <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
                 <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
