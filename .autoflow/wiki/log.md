@@ -11,10 +11,11 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T07:39:10Z
+- Last rebuilt: 2026-04-26T07:48:13Z
 
 ### Completed Tickets
 
+- `tickets_002` - AI work for prd_002. test Source: `tickets/done/prd_002/tickets_002.md`.
 - `tickets_006` - AI work for prd_006. allow unrelated dirty root paths while preserving Allowed Paths conflict checks Source: `tickets/done/prd_006/tickets_006.md`.
 - `tickets_007` - AI work for prd_007. Update AI workflow card meta to 3-line agent/id/progress display Source: `tickets/done/prd_007/tickets_007.md`.
 - `tickets_008` - AI work for prd_008. Add bounded reject auto-replan flow for ticket-owner runtime Source: `tickets/done/prd_008/tickets_008.md`.
@@ -47,7 +48,6 @@ Each entry should cite its source ticket or log.
 ### Reject Records
 
 - reject_003. Source: `tickets/reject/reject_003.md`.
-- reject_004. Source: `tickets/reject/reject_004.md`.
 
 ### Conversation Handoffs
 
