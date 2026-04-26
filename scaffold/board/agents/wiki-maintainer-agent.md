@@ -30,13 +30,15 @@ The wiki is not the source of truth. Tickets, verification records, and logs rem
 4. Do not mark work done based on wiki content.
 5. Do not edit tickets to fit the wiki.
 6. Keep entries short and searchable.
+7. Converge to the same output when the same done ticket / handoff inputs are processed again.
 
 ## Procedure
 
-1. Run or inspect `autoflow wiki update` when available. The update step now also surfaces conversation handoff and reject record counts in the managed sections.
-2. Read changed wiki pages.
-3. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
-4. Treat conversation handoffs as raw ingest material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
-5. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text>` instead of grepping by hand. Cite the returned `result.N.path` in any new entity or concept page.
-6. Fix missing citations, orphan pages, or stale generated summaries.
-7. Leave a concise summary of updated pages.
+1. Identify the input set for this run: latest done ticket, related verification log, conversation handoff, and any existing wiki page under `wiki/decisions/`, `wiki/features/`, `wiki/architecture/`, or `wiki/learnings/` that already covers the same topic.
+2. Run or inspect `autoflow wiki update` when available, then create or merge focused entity/concept pages from those inputs instead of copying ticket prose directly.
+3. Keep the run idempotent: same sources should converge to the same managed content, duplicate headings should be merged, and repeated runs should not append near-identical bullets.
+4. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
+5. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
+6. Treat conversation handoffs as raw ingest material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
+7. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text>` instead of grepping by hand. Cite the returned `result.N.path` in any new entity or concept page.
+8. Leave a concise summary of updated pages.

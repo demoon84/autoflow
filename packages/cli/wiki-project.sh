@@ -3,18 +3,19 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
+source "$(runtime_scripts_root)/runner-common.sh"
 
 usage() {
   cat <<'EOF' >&2
 Usage:
   wiki-project.sh update [project-root] [board-dir-name] [--dry-run]
-  wiki-project.sh lint [project-root] [board-dir-name]
-  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs]
+  wiki-project.sh lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
+  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--runner RUNNER_ID]
 
 Examples:
   wiki-project.sh update /path/to/project
-  wiki-project.sh lint /path/to/project .autoflow
-  wiki-project.sh query /path/to/project --term auth --term session --limit 5
+  wiki-project.sh lint /path/to/project .autoflow --semantic
+  wiki-project.sh query /path/to/project --term auth --term session --limit 5 --synth
 EOF
 }
 
@@ -329,6 +330,264 @@ trim_text() {
   printf '%s' "$input"
 }
 
+wiki_output_escape() {
+  printf '%s' "$1" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'
+}
+
+find_wiki_runner() {
+  local board_root="$1"
+  local explicit_runner_id="${2:-}"
+  local config_path runner_block runner_id runner_role runner_enabled
+
+  export AUTOFLOW_BOARD_ROOT="$board_root"
+  config_path="$(runner_config_path)"
+  [ -f "$config_path" ] || return 1
+
+  if [ -n "$explicit_runner_id" ]; then
+    runner_block="$(runner_config_block "$explicit_runner_id" "$config_path" 2>/dev/null || true)"
+    [ -n "$runner_block" ] || return 1
+    runner_role="$(printf '%s\n' "$runner_block" | awk -F= '$1 == "role" { print $2; exit }')"
+    runner_enabled="$(printf '%s\n' "$runner_block" | awk -F= '$1 == "enabled" { print $2; exit }')"
+    case "$runner_role" in
+      wiki|wiki-maintainer) ;;
+      *) return 1 ;;
+    esac
+    [ "${runner_enabled:-true}" = "true" ] || return 1
+    printf '%s' "$explicit_runner_id"
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    case "$line" in
+      runner_begin)
+        runner_id=""
+        runner_role=""
+        runner_enabled="true"
+        ;;
+      id=*)
+        runner_id="${line#id=}"
+        ;;
+      role=*)
+        runner_role="${line#role=}"
+        ;;
+      enabled=*)
+        runner_enabled="${line#enabled=}"
+        ;;
+      runner_end)
+        case "$runner_role" in
+          wiki|wiki-maintainer)
+            if [ "$runner_enabled" = "true" ] && [ -n "$runner_id" ]; then
+              printf '%s' "$runner_id"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  done < <(runner_list_config "$config_path")
+
+  return 1
+}
+
+wiki_runner_field() {
+  local board_root="$1"
+  local runner_id="$2"
+  local field="$3"
+
+  export AUTOFLOW_BOARD_ROOT="$board_root"
+  runner_config_field "$runner_id" "$field" "$(runner_config_path)" 2>/dev/null || true
+}
+
+run_wiki_adapter_prompt() {
+  local project_root="$1"
+  local board_root="$2"
+  local runner_id="$3"
+  local prompt_file="$4"
+  local stdout_file="$5"
+  local stderr_file="$6"
+  local agent model reasoning command_value
+  local cmd=()
+
+  agent="$(wiki_runner_field "$board_root" "$runner_id" "agent")"
+  model="$(wiki_runner_field "$board_root" "$runner_id" "model")"
+  reasoning="$(wiki_runner_field "$board_root" "$runner_id" "reasoning")"
+  command_value="$(wiki_runner_field "$board_root" "$runner_id" "command")"
+
+  case "${agent:-}" in
+    ""|manual|shell)
+      return 127
+      ;;
+  esac
+
+  if [ -n "$command_value" ]; then
+    AUTOFLOW_PROMPT_FILE="$prompt_file" bash -lc "$command_value" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
+    return $?
+  fi
+
+  case "$agent" in
+    codex)
+      command -v codex >/dev/null 2>&1 || return 127
+      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$project_root")
+      [ -z "$model" ] || cmd+=(-m "$model")
+      [ -z "$reasoning" ] || cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
+      cmd+=(-)
+      "${cmd[@]}" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
+      ;;
+    claude)
+      command -v claude >/dev/null 2>&1 || return 127
+      cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+      [ -z "$model" ] || cmd+=(--model "$model")
+      [ -z "$reasoning" ] || cmd+=(--effort "$reasoning")
+      cmd+=("$(cat "$prompt_file")")
+      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      ;;
+    opencode)
+      command -v opencode >/dev/null 2>&1 || return 127
+      cmd=(opencode run)
+      [ -z "$model" ] || cmd+=(--model "$model")
+      [ -z "$reasoning" ] || cmd+=(--variant "$reasoning")
+      cmd+=("$(cat "$prompt_file")")
+      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      ;;
+    gemini)
+      command -v gemini >/dev/null 2>&1 || return 127
+      cmd=(gemini --approval-mode auto_edit --prompt "$(cat "$prompt_file")")
+      [ -z "$model" ] || cmd+=(--model "$model")
+      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      ;;
+    *)
+      return 127
+      ;;
+  esac
+}
+
+run_query_synth() {
+  local project_root="$1"
+  local board_root="$2"
+  local terms_file="$3"
+  local synth_results_file="$4"
+  local explicit_runner_id="${5:-}"
+  local runner_id prompt_file stdout_file stderr_file adapter_exit
+  local answer citations_file citations_count=0 line
+
+  runner_id="$(find_wiki_runner "$board_root" "$explicit_runner_id" || true)"
+  if [ -z "$runner_id" ]; then
+    printf 'synth_status=skipped_no_adapter\n'
+    return 0
+  fi
+
+  prompt_file="$(autoflow_mktemp)"
+  stdout_file="$(autoflow_mktemp)"
+  stderr_file="$(autoflow_mktemp)"
+  citations_file="$(autoflow_mktemp)"
+
+  {
+    printf 'You answer Autoflow wiki queries using only the supplied search results.\n'
+    printf 'Return plain text with this exact format:\n'
+    printf 'synth_answer=<one concise answer line>\n'
+    printf 'synth_citation.1=<board-relative path>\n'
+    printf 'Add more synth_citation.N lines only for paths you actually used. Do not invent paths.\n\n'
+    printf 'Query terms:\n'
+    sed 's/^/- /' "$terms_file"
+    printf '\nSearch results:\n'
+    cat "$synth_results_file"
+  } > "$prompt_file"
+
+  set +e
+  run_wiki_adapter_prompt "$project_root" "$board_root" "$runner_id" "$prompt_file" "$stdout_file" "$stderr_file"
+  adapter_exit=$?
+  set -e
+
+  if [ "$adapter_exit" -eq 127 ]; then
+    printf 'synth_status=skipped_no_adapter\n'
+    return 0
+  fi
+
+  if [ "$adapter_exit" -ne 0 ]; then
+    printf 'synth_status=failed\n'
+    printf 'synth_runner=%s\n' "$runner_id"
+    printf 'synth_exit_code=%s\n' "$adapter_exit"
+    return 0
+  fi
+
+  answer="$(awk -F= '/^synth_answer=/ { sub(/^[^=]*=/, "", $0); print; exit }' "$stdout_file")"
+  grep -E '^synth_citation\.[0-9]+=' "$stdout_file" > "$citations_file" || true
+  citations_count="$(wc -l < "$citations_file" | tr -d '[:space:]')"
+
+  printf 'synth_status=ok\n'
+  printf 'synth_runner=%s\n' "$runner_id"
+  printf 'synth_answer=%s\n' "$(wiki_output_escape "${answer:-No grounded answer produced.}")"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf '%s\n' "$line"
+  done < "$citations_file"
+  printf 'synth_citation_count=%s\n' "${citations_count:-0}"
+}
+
+run_semantic_lint() {
+  local project_root="$1"
+  local board_root="$2"
+  local wiki_root="$3"
+  local explicit_runner_id="${4:-}"
+  local runner_id prompt_file stdout_file stderr_file adapter_exit
+  local pages_file line
+
+  runner_id="$(find_wiki_runner "$board_root" "$explicit_runner_id" || true)"
+  if [ -z "$runner_id" ]; then
+    printf 'semantic_status=skipped_no_adapter\n'
+    return 0
+  fi
+
+  pages_file="$(autoflow_mktemp)"
+  prompt_file="$(autoflow_mktemp)"
+  stdout_file="$(autoflow_mktemp)"
+  stderr_file="$(autoflow_mktemp)"
+
+  find "$wiki_root" -type f -name '*.md' ! -name 'README.md' | sort > "$pages_file"
+  {
+    printf 'You review Autoflow wiki pages for contradictions, stale claims, and missing links.\n'
+    printf 'Return plain text lines only in this format:\n'
+    printf 'semantic_finding.1.page=<board-relative path>\n'
+    printf 'semantic_finding.1.kind=contradiction|stale_claim|missing_link\n'
+    printf 'semantic_finding.1.summary=<one concise sentence>\n'
+    printf 'If there are no semantic issues, return exactly: semantic_finding.none=true\n\n'
+    while IFS= read -r page; do
+      [ -n "$page" ] || continue
+      printf '--- PAGE: %s ---\n' "$(relative_to_board "$board_root" "$page")"
+      sed -n '1,220p' "$page"
+      printf '\n'
+    done < "$pages_file"
+  } > "$prompt_file"
+
+  set +e
+  run_wiki_adapter_prompt "$project_root" "$board_root" "$runner_id" "$prompt_file" "$stdout_file" "$stderr_file"
+  adapter_exit=$?
+  set -e
+
+  if [ "$adapter_exit" -eq 127 ]; then
+    printf 'semantic_status=skipped_no_adapter\n'
+    return 0
+  fi
+
+  if [ "$adapter_exit" -ne 0 ]; then
+    printf 'semantic_status=failed\n'
+    printf 'semantic_runner=%s\n' "$runner_id"
+    printf 'semantic_exit_code=%s\n' "$adapter_exit"
+    return 0
+  fi
+
+  printf 'semantic_status=ok\n'
+  printf 'semantic_runner=%s\n' "$runner_id"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      semantic_finding.none=true|semantic_finding.[0-9]*.page=*|semantic_finding.[0-9]*.kind=*|semantic_finding.[0-9]*.summary=*)
+        printf '%s\n' "$(wiki_output_escape "$line")"
+        ;;
+    esac
+  done < "$stdout_file"
+}
+
 run_query() {
   local project_root="$1"
   local board_dir_name="$2"
@@ -337,8 +596,10 @@ run_query() {
   local include_tickets="$5"
   local include_handoffs="$6"
   local with_snippets="$7"
+  local synth_mode="${8:-false}"
+  local synth_runner_id="${9:-}"
 
-  local board_root wiki_root candidates scores sorted
+  local board_root wiki_root candidates scores sorted synth_results
   local term_count=0 result_count=0 emitted=0
 
   board_root="$(board_root_path "$project_root" "$board_dir_name")"
@@ -364,6 +625,7 @@ run_query() {
   candidates="$(autoflow_mktemp)"
   scores="$(autoflow_mktemp)"
   sorted="$(autoflow_mktemp)"
+  synth_results="$(autoflow_mktemp)"
 
   if [ -d "$wiki_root" ]; then
     find "$wiki_root" -type f -name '*.md' ! -name 'README.md' >> "$candidates"
@@ -423,7 +685,12 @@ run_query() {
 
   printf 'result_count=%s\n' "$result_count"
 
-  [ "$result_count" -gt 0 ] || return 0
+  if [ "$result_count" -eq 0 ]; then
+    if [ "$synth_mode" = "true" ]; then
+      run_query_synth "$project_root" "$board_root" "$terms_file" "$synth_results" "$synth_runner_id"
+    fi
+    return 0
+  fi
 
   while IFS=$'\t' read -r score file; do
     [ -n "$file" ] || continue
@@ -440,6 +707,12 @@ run_query() {
     printf 'result.%d.title=%s\n' "$emitted" "$title"
     printf 'result.%d.kind=%s\n' "$emitted" "$kind"
     printf 'result.%d.score=%s\n' "$emitted" "$score"
+    {
+      printf 'path=%s\n' "$rel"
+      printf 'title=%s\n' "$title"
+      printf 'kind=%s\n' "$kind"
+      printf 'score=%s\n' "$score"
+    } >> "$synth_results"
 
     [ "$with_snippets" = "true" ] || continue
 
@@ -464,9 +737,15 @@ run_query() {
       snippet_text="$(trim_text "$linetext")"
       printf 'result.%d.snippet.%d.line=%s\n' "$emitted" "$snippet_idx" "$lineno"
       printf 'result.%d.snippet.%d.text=%s\n' "$emitted" "$snippet_idx" "$snippet_text"
+      printf 'snippet.%d=%s:%s\n' "$snippet_idx" "$lineno" "$snippet_text" >> "$synth_results"
     done < "$snippets"
     printf 'result.%d.snippet_count=%s\n' "$emitted" "$snippet_idx"
+    printf -- '--\n' >> "$synth_results"
   done < "$sorted"
+
+  if [ "$synth_mode" = "true" ]; then
+    run_query_synth "$project_root" "$board_root" "$terms_file" "$synth_results" "$synth_runner_id"
+  fi
 }
 
 run_update() {
@@ -589,6 +868,8 @@ run_update() {
 run_lint() {
   local project_root="$1"
   local board_dir_name="$2"
+  local semantic_mode="${3:-false}"
+  local semantic_runner_id="${4:-}"
   local board_root wiki_root index_file pages_file
   local page_count=0 orphan_count=0 citation_gap_count=0 stale_reference_count=0
   local file rel stem content
@@ -686,6 +967,10 @@ run_lint() {
   printf 'orphan_count=%s\n' "$orphan_count"
   printf 'citation_gap_count=%s\n' "$citation_gap_count"
   printf 'stale_reference_count=%s\n' "$stale_reference_count"
+
+  if [ "$semantic_mode" = "true" ]; then
+    run_semantic_lint "$project_root" "$board_root" "$wiki_root" "$semantic_runner_id"
+  fi
 }
 
 action="${1:-}"
@@ -700,6 +985,9 @@ query_limit="10"
 query_include_tickets="true"
 query_include_handoffs="true"
 query_with_snippets="true"
+query_synth="false"
+lint_semantic="false"
+wiki_runner_id=""
 query_terms_file=""
 positionals=()
 while [ "$#" -gt 0 ]; do
@@ -735,6 +1023,24 @@ while [ "$#" -gt 0 ]; do
     --no-snippets)
       query_with_snippets="false"
       ;;
+    --synth)
+      query_synth="true"
+      ;;
+    --semantic)
+      lint_semantic="true"
+      ;;
+    --runner)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --runner" >&2
+        usage
+        exit 1
+      fi
+      wiki_runner_id="$1"
+      ;;
+    --runner=*)
+      wiki_runner_id="${1#--runner=}"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -755,7 +1061,7 @@ case "$action" in
     run_update "$project_root" "$board_dir_name" "$dry_run"
     ;;
   lint)
-    run_lint "$project_root" "$board_dir_name"
+    run_lint "$project_root" "$board_dir_name" "$lint_semantic" "$wiki_runner_id"
     ;;
   query)
     if [ -z "$query_terms_file" ]; then
@@ -766,7 +1072,8 @@ case "$action" in
       exit 1
     fi
     run_query "$project_root" "$board_dir_name" "$query_terms_file" "$query_limit" \
-      "$query_include_tickets" "$query_include_handoffs" "$query_with_snippets"
+      "$query_include_tickets" "$query_include_handoffs" "$query_with_snippets" \
+      "$query_synth" "$wiki_runner_id"
     ;;
   help|-h|--help)
     usage

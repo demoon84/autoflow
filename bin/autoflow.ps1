@@ -28,8 +28,8 @@ Usage:
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
-  autoflow wiki lint [project-root] [board-dir-name]
-  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets]
+  autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
+  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
   autoflow runners list [project-root] [board-dir-name]
   autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
   autoflow runners remove <runner-id> [project-root] [board-dir-name]

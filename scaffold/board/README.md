@@ -73,6 +73,12 @@ Ticket Owner work should be narrow and durable:
 - Use runtime scripts for claim, verification, finish, and context cleanup.
 - Do not push.
 
+Wiki maintainer follow-up is optional and non-blocking:
+
+- A pass finish may trigger one enabled `wiki-maintainer` runner in one-shot mode.
+- `AUTOFLOW_WIKI_MAINTAINER_AUTO=off` disables the trigger.
+- `autoflow wiki query --synth` and `autoflow wiki lint --semantic` reuse the same adapter path when configured, otherwise they report skipped status without failing the base command.
+
 ## Verification Rules
 
 Verification must be evidence-based:

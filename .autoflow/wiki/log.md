@@ -11,10 +11,11 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T06:22:34Z
+- Last rebuilt: 2026-04-26T07:09:35Z
 
 ### Completed Tickets
 
+- `tickets_006` - AI work for prd_006. allow unrelated dirty root paths while preserving Allowed Paths conflict checks Source: `tickets/done/prd_006/tickets_006.md`.
 - `tickets_007` - AI work for prd_007. Update AI workflow card meta to 3-line agent/id/progress display Source: `tickets/done/prd_007/tickets_007.md`.
 - `tickets_008` - AI work for prd_008. Add bounded reject auto-replan flow for ticket-owner runtime Source: `tickets/done/prd_008/tickets_008.md`.
 - `tickets_010` - AI work for prd_010. Add desktop tickets kanban view with dialog preview and board counts Source: `tickets/done/prd_010/tickets_010.md`.
@@ -34,18 +35,18 @@ Each entry should cite its source ticket or log.
 - # Owner Completion Log Source: `logs/owner_002_20260426T060918Z_blocked.md`.
 - # Owner Completion Log Source: `logs/owner_002_20260426T061328Z_blocked.md`.
 - # Owner Completion Log Source: `logs/owner_002_20260426T061837Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_004_20260426T051051Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_004_20260426T052939Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_004_20260426T053408Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_005_20260426T051352Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_005_20260426T051806Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_005_20260426T052529Z_blocked.md`.
-- # Owner Completion Log Source: `logs/owner_005_20260426T053013Z_blocked.md`.
+- # Owner Completion Log Source: `logs/owner_002_20260426T062531Z_blocked.md`.
+- # Owner Completion Log Source: `logs/owner_002_20260426T062909Z_blocked.md`.
+- # Owner Completion Log Source: `logs/owner_002_20260426T063253Z_blocked.md`.
+- # Ticket Owner Log Source: `logs/owner_002_20260426T064124Z_blocked.md`.
+- # Ticket Owner Log Source: `logs/owner_002_20260426T064629Z_blocked.md`.
+- # Owner Turn Log Source: `logs/owner_002_20260426T064954Z_blocked.md`.
+- # Owner Turn Log Source: `logs/owner_002_20260426T065501Z_blocked.md`.
 
 ### Reject Records
 
 - reject_003. Source: `tickets/reject/reject_003.md`.
-- reject_009. Source: `tickets/reject/reject_009.md`.
+- reject_005. Source: `tickets/reject/reject_005.md`.
 
 ### Conversation Handoffs
 

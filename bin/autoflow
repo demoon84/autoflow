@@ -34,8 +34,8 @@ Usage:
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
-  autoflow wiki lint [project-root] [board-dir-name]
-  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets]
+  autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
+  autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
   autoflow runners list [project-root] [board-dir-name]
   autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
   autoflow runners remove <runner-id> [project-root] [board-dir-name]
@@ -61,7 +61,7 @@ Examples:
   autoflow run ticket /path/to/project --runner owner-1
   autoflow run planner /path/to/project --runner planner-1
   autoflow wiki update /path/to/project
-  autoflow wiki query /path/to/project --term auth --term session --limit 5
+  autoflow wiki query /path/to/project --term auth --term session --limit 5 --synth
   autoflow runners list /path/to/project
   autoflow runners add todo-2 todo /path/to/project agent=codex model=gpt-5.2
   autoflow runners set todo-1 /path/to/project agent=codex model=gpt-5.2
