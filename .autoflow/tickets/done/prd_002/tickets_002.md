@@ -121,7 +121,7 @@
 
 ## Retry
 - Retry Count: 1
-- Max Retries: 2
+- Max Retries: 10
 
 ## Reject History
 - 2026-04-26T02:02:01Z | retry_count=1 | source=`tickets/reject/reject_002.md` | log=``logs/verifier_002_20260426_010751Z_fail.md`` | reason=Owner runtime resumed tickets_002 in a scaffold-style worktree that does not contain the ticket's Allowed Paths or desktop dependencies, so required verification cannot run against the declared scope safely.

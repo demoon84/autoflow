@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 ensure_expected_role "todo"
 
 worker_id="$(owner_id)"
+display_claimed_by="$(display_worker_id "$worker_id")"
 set_thread_context_record "todo" "$worker_id" "" "" ""
 
 find_owned_inprogress() {
@@ -18,8 +19,8 @@ find_owned_inprogress() {
     owner="$(ticket_scalar_field "$file" "AI")"
     execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
 
-    if [ "$execution_owner" = "$wanted_owner" ] || \
-       { field_is_unassigned "$execution_owner" && [ "$owner" = "$wanted_owner" ]; }; then
+    if worker_id_matches_field "$execution_owner" "$wanted_owner" || \
+       { field_is_unassigned "$execution_owner" && worker_id_matches_field "$owner" "$wanted_owner"; }; then
       printf '%s' "$file"
       return 0
     fi
@@ -86,15 +87,18 @@ execution_owner="$(resolve_execution_owner_for_claim)"
 verifier_owner="$(resolve_verifier_owner_for_claim)"
 primary_owner="$execution_owner"
 worktree_output=""
+display_execution_owner="$(display_worker_id "$execution_owner")"
+display_verifier_owner="$(display_worker_id "$verifier_owner")"
 
 if field_is_unassigned "$primary_owner"; then
   primary_owner="$claimed_by"
 fi
+display_primary_owner="$(display_worker_id "$primary_owner")"
 
 if ! worktree_output="$(ensure_ticket_worktree "$claimed" 2>&1)"; then
   replace_scalar_field_in_section "$claimed" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$claimed" "## Ticket" "AI" "$claimed_by"
-  replace_scalar_field_in_section "$claimed" "## Ticket" "Claimed By" "$claimed_by"
+  replace_scalar_field_in_section "$claimed" "## Ticket" "AI" "$display_claimed_by"
+  replace_scalar_field_in_section "$claimed" "## Ticket" "Claimed By" "$display_claimed_by"
   replace_scalar_field_in_section "$claimed" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$claimed" "Next Action" "- 다음에 바로 이어서 할 일: worktree 생성 실패를 확인하고, 안전한 티켓별 작업 루트를 확보한 뒤 구현을 재개"
   append_note "$claimed" "Worktree setup failed at ${timestamp}: ${worktree_output}"
@@ -111,17 +115,17 @@ fi
 implementation_root="$(ticket_working_root "$claimed")"
 
 replace_scalar_field_in_section "$claimed" "## Ticket" "Stage" "executing"
-replace_scalar_field_in_section "$claimed" "## Ticket" "AI" "$primary_owner"
-replace_scalar_field_in_section "$claimed" "## Ticket" "Claimed By" "$claimed_by"
-replace_scalar_field_in_section "$claimed" "## Ticket" "Execution AI" "$execution_owner"
-replace_scalar_field_in_section "$claimed" "## Ticket" "Verifier AI" "$verifier_owner"
+replace_scalar_field_in_section "$claimed" "## Ticket" "AI" "$display_primary_owner"
+replace_scalar_field_in_section "$claimed" "## Ticket" "Claimed By" "$display_claimed_by"
+replace_scalar_field_in_section "$claimed" "## Ticket" "Execution AI" "$display_execution_owner"
+replace_scalar_field_in_section "$claimed" "## Ticket" "Verifier AI" "$display_verifier_owner"
 replace_scalar_field_in_section "$claimed" "## Ticket" "Last Updated" "$timestamp"
 replace_section_block "$claimed" "Next Action" "- 다음에 바로 이어서 할 일: Worktree Path 의 작업 루트에서 Allowed Paths 범위 안으로 Goal 을 구현하고, 완료되면 \`scripts/handoff-todo.*\` 런타임으로 중앙 보드의 이 티켓 파일을 \`tickets/verifier/\` 로 넘긴다."
 replace_section_block "$claimed" "Resume Context" "- 현재 상태 요약: todo 에서 점유되어 inprogress 로 이동. 같은 todo worker 가 구현까지 책임진다.
 - 직전 작업: scripts/start-todo.sh 로 claim 완료
 - 재개 시 먼저 볼 것: Worktree, Goal, Allowed Paths, Done When, Notes 의 진행 로그
 - 구현 작업 루트: \`${implementation_root}\`"
-append_note "$claimed" "Claimed by ${claimed_by} at ${timestamp}; execution=${execution_owner}; verifier=${verifier_owner}; worktree=${implementation_root}"
+append_note "$claimed" "Claimed by ${display_claimed_by} at ${timestamp}; execution=${display_execution_owner}; verifier=${display_verifier_owner}; worktree=${implementation_root}"
 set_thread_context_record "todo" "$claimed_by" "$ticket_id" "executing" "$(board_relative_path "$claimed")"
 
 printf 'status=ok\n'

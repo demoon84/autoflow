@@ -6,12 +6,12 @@
 - PRD Key: prd_006
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_006/prd_006.md
 - Title: Ticket owner work for prd_006
-- Stage: rejected
-- AI: AI-2
-- Claimed By: AI-2
-- Execution AI: AI-2
-- Verifier AI: AI-2
-- Last Updated: 2026-04-26T03:04:56Z
+- Stage: blocked
+- AI: AI-3
+- Claimed By: AI-3
+- Execution AI: AI-3
+- Verifier AI: AI-3
+- Last Updated: 2026-04-26T03:59:25Z
 
 ## Goal
 
@@ -52,11 +52,11 @@
 - tests/smoke
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006`
-- Branch: autoflow/tickets_006
-- Base Commit: ea1174e84030dd5a6b66e1fb5c64ca159565220a
+- Path:
+- Branch:
+- Base Commit: 673b2b7a622e68f2f175741fe6a6e0423e2d21cc
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: project_root_fallback
 
 ## Done When
 
@@ -77,7 +77,7 @@
 - [ ] `diff -q .autoflow/scripts/finish-ticket-owner.sh runtime/board-scripts/finish-ticket-owner.sh` 출력 없음.
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_005:AGENTS.md, tickets_005:CLAUDE.md, tickets_005:README.md, tickets_005:bin/autoflow, tickets_005:bin/autoflow.ps1, tickets_005:scaffold/board/AGENTS.md, tickets_005:scaffold/board/README.md. Retry automatically when blockers clear.
 
 ## Resume Context
 
@@ -141,10 +141,14 @@
 - AI-2 prepared todo at 2026-04-26T03:04:27Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006; run=tickets/inprogress/verify_006.md
 - Ticket owner verification failed at 2026-04-26T03:04:45Z: command exited 1
 - AI-2 marked fail at 2026-04-26T03:04:56Z.
+- Ticket automatically replanned from tickets/reject/reject_006.md at 2026-04-26T03:17:32Z; retry_count=3
+- Runtime hydrated worktree dependency at 2026-04-26T03:19:26Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T03:19:26Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI owner-3 prepared todo at 2026-04-26T03:19:26Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_006; run=tickets/inprogress/verify_006.md
 ## Verification
-- Run file: `tickets/reject/verify_006.md`
-- Log file: `logs/verifier_006_20260426_030457Z_fail.md`
-- Result: failed
+- Run file: `tickets/inprogress/verify_006.md`
+- Log file: pending
+- Result: pending ticket-owner by owner-3
 
 ## Result
 - Summary:
@@ -155,11 +159,12 @@
 - Spec and checkout are still mismatched after the final retry. Allowed Paths require `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, but the claimed worktree exposes only `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`. The required verification command also fails immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, so this checkout does not provide the local TypeScript toolchain expected by the PRD. Replan the ticket against the current repo layout or claim the correct checkout before retrying.
 
 ## Retry
-- Retry Count: 2
-- Max Retries: 2
+- Retry Count: 3
+- Max Retries: 10
 
 ## Reject History
 - 2026-04-26T02:14:04Z | retry_count=1 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_011008Z_fail.md`` | reason=Spec paths are stale for this checkout: Allowed Paths reference packages/cli, runtime/board-scripts, .autoflow/... and tests/smoke, but the claimed worktree only has scripts/cli, scripts/runtime, autoflow/... and scripts/tests. Verification also failed with ENOENT under apps/desktop/lib. Replan against the current repo layout or claim the correct checkout before retrying.
 - 2026-04-26T02:46:32Z | retry_count=2 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_024510Z_fail.md`` | reason=Spec paths are stale for this checkout: Allowed Paths reference packages/cli, runtime/board-scripts, .autoflow/... and tests/smoke, but the claimed worktree only has scripts/cli, scripts/runtime, autoflow/... and scripts/tests. Verification also failed with ENOENT under apps/desktop/lib. Replan against the current repo layout or claim the correct checkout before retrying.
 - 2026-04-26T03:01:08Z | retry_count=1 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_024826Z_fail.md`` | reason=Spec and checkout are still mismatched after the final retry. Allowed Paths require `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, but the claimed worktree exposes only `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`. The required verification command also fails immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, so this checkout does not provide the local TypeScript toolchain expected by the PRD. Replan the ticket against the current repo layout or claim the correct checkout before retrying.
 - 2026-04-26T03:03:52Z | retry_count=2 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_030237Z_fail.md`` | reason=Spec and checkout are still mismatched after the final retry. Allowed Paths require `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, but the claimed worktree exposes only `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`. The required verification command also fails immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, so this checkout does not provide the local TypeScript toolchain expected by the PRD. Replan the ticket against the current repo layout or claim the correct checkout before retrying.
+- 2026-04-26T03:17:32Z | retry_count=3 | source=`tickets/reject/reject_006.md` | log=``logs/verifier_006_20260426_030457Z_fail.md`` | reason=Spec and checkout are still mismatched after the final retry. Allowed Paths require `packages/cli/*`, `runtime/board-scripts/*`, `.autoflow/*`, and `tests/smoke`, but the claimed worktree exposes only `scripts/cli/*`, `scripts/runtime/*`, `autoflow/*`, `rules/wiki/*`, and `scripts/tests/*`. The required verification command also fails immediately at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`, so this checkout does not provide the local TypeScript toolchain expected by the PRD. Replan the ticket against the current repo layout or claim the correct checkout before retrying.

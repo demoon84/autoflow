@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 ensure_expected_role "verifier"
 
 worker_id="$(owner_id)"
+display_id="$(display_worker_id "$worker_id")"
 worker_role_value="$(worker_role)"
 [ -n "$worker_role_value" ] || worker_role_value="verifier"
 requested_id="${1:-}"
@@ -52,8 +53,8 @@ find_owned_verification_target() {
     candidate_owner="$(ticket_scalar_field "$candidate_file" "AI")"
     candidate_stage="$(ticket_stage "$candidate_file")"
 
-    if [ "$candidate_verifier_owner" = "$worker_id" ] || \
-       { field_is_unassigned "$candidate_verifier_owner" && [ "$candidate_owner" = "$worker_id" ] && [ "$candidate_stage" = "verifying" ]; }; then
+    if worker_id_matches_field "$candidate_verifier_owner" "$worker_id" || \
+       { field_is_unassigned "$candidate_verifier_owner" && worker_id_matches_field "$candidate_owner" "$worker_id" && [ "$candidate_stage" = "verifying" ]; }; then
       printf '%s' "$candidate_file"
       return 0
     fi
@@ -119,8 +120,8 @@ select_verification_target() {
     if [ "$worker_role_value" = "verifier" ]; then
       candidate_verifier_owner="$(ticket_scalar_field "$candidate_file" "Verifier AI")"
       candidate_owner="$(ticket_scalar_field "$candidate_file" "AI")"
-      if [ "$candidate_verifier_owner" = "$worker_id" ] || \
-         { field_is_unassigned "$candidate_verifier_owner" && [ "$candidate_owner" = "$worker_id" ]; } || \
+      if worker_id_matches_field "$candidate_verifier_owner" "$worker_id" || \
+         { field_is_unassigned "$candidate_verifier_owner" && worker_id_matches_field "$candidate_owner" "$worker_id"; } || \
          field_is_unassigned "$candidate_verifier_owner"; then
         printf '%s' "$candidate_file"
         return 0
@@ -144,7 +145,7 @@ fi
 current_verifier_owner="$(ticket_scalar_field "$target_file" "Verifier AI")"
 if [ "$worker_role_value" = "verifier" ] && \
    ! field_is_unassigned "$current_verifier_owner" && \
-   [ "$current_verifier_owner" != "$worker_id" ]; then
+   ! worker_id_matches_field "$current_verifier_owner" "$worker_id"; then
   fail_or_idle "Ticket is assigned to a different verifier owner: ${current_verifier_owner}" "verifier_owner_mismatch"
 fi
 
@@ -184,18 +185,18 @@ replace_section_block "$run_file" "Obsidian Links" "- Project Note: ${project_no
 - Ticket Note: ${ticket_note}
 - Verification Note: ${verification_note}"
 replace_scalar_field_in_section "$target_file" "## Ticket" "Stage" "verifying"
-replace_scalar_field_in_section "$target_file" "## Ticket" "AI" "$worker_id"
+replace_scalar_field_in_section "$target_file" "## Ticket" "AI" "$display_id"
 if field_is_unassigned "$current_verifier_owner"; then
-  replace_scalar_field_in_section "$target_file" "## Ticket" "Verifier AI" "$worker_id"
+  replace_scalar_field_in_section "$target_file" "## Ticket" "Verifier AI" "$display_id"
 fi
 replace_scalar_field_in_section "$target_file" "## Ticket" "Last Updated" "$timestamp"
 replace_section_block "$target_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
-- Result: pending verifier by ${worker_id}"
+- Result: pending verifier by ${display_id}"
 if [ "$resume_mode" = "true" ]; then
-  append_note "$target_file" "Verifier resumed by ${worker_id} via scripts/start-verifier.sh at ${timestamp}"
+  append_note "$target_file" "Verifier resumed by ${display_id} via scripts/start-verifier.sh at ${timestamp}"
 else
-  append_note "$target_file" "Verifier prepared by ${worker_id} via scripts/start-verifier.sh at ${timestamp}"
+  append_note "$target_file" "Verifier prepared by ${display_id} via scripts/start-verifier.sh at ${timestamp}"
 fi
 set_thread_context_record "verifier" "$worker_id" "$ticket_id" "verifying" "$(board_relative_path "$target_file")"
 

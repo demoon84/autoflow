@@ -6,12 +6,12 @@
 - PRD Key: prd_005
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_005/prd_005.md
 - Title: Ticket owner work for prd_005
-- Stage: rejected
-- AI: AI-3
-- Claimed By: AI-3
-- Execution AI: AI-3
-- Verifier AI: AI-3
-- Last Updated: 2026-04-26T03:11:12Z
+- Stage: executing
+- AI: AI-2
+- Claimed By: AI-2
+- Execution AI: AI-2
+- Verifier AI: AI-2
+- Last Updated: 2026-04-26T03:59:55Z
 
 ## Goal
 
@@ -51,11 +51,11 @@
 - integrations/codex/skills
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
-- Branch: autoflow/tickets_005
-- Base Commit: 983bf6515ac926a0f31d5576797940113bc1015c
+- Path:
+- Branch:
+- Base Commit: 673b2b7a622e68f2f175741fe6a6e0423e2d21cc
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: project_root_fallback
 
 ## Done When
 
@@ -73,13 +73,13 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0 (기존 spec 명령 흐름이 깨지지 않음을 확인).
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다.
 
 ## Resume Context
 
-- Current status: `AI-3` reran owner verification on 2026-04-26 and confirmed the same environment blocker remains: the ticket worktree still has no `node_modules`, so `verify-ticket-owner.sh 005` fails immediately at `cd apps/desktop && npx tsc --noEmit`.
-- Last action: `.autoflow/scripts/verify-ticket-owner.sh 005` wrote fresh failure evidence to `tickets/inprogress/verify_005.md`, while the same command sequence run from `PROJECT_ROOT` passed through `tests/smoke/ticket-owner-smoke.sh` with `status=ok`.
-- Next resume step: do not retry this PRD wording ticket until the ticket-owner runtime can supply desktop dependencies inside worktrees or verify from an equivalent dependency-aware root; further attempts would reproduce the same out-of-scope failure.
+- Current status: `owner-2` verified the hydrated worktree successfully on 2026-04-26; the required command exited 0 and the PRD alias/help/scaffold spot-checks also passed without any in-scope product diff.
+- Last action: stopped before `finish-ticket-owner.sh 005 pass ...` because `PROJECT_ROOT` currently has unrelated dirty board/wiki files and that finish runtime stages `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` broadly, which would create an unsafe mixed local commit.
+- Next resume step: isolate or clear unrelated board/wiki changes in `PROJECT_ROOT`, then rerun the pass finish command for this ticket so it can move to `done/prd_005/` with a ticket-scoped commit.
 
 ## Notes
 
@@ -147,25 +147,44 @@
   3. The same verification sequence passed in `PROJECT_ROOT`: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` returned `status=ok`.
   4. Conclusion: this turn is blocked by ticket-owner runtime dependency provisioning, not by remaining PRD wording/code scope inside `Allowed Paths`.
 - AI-3 marked fail at 2026-04-26T03:11:12Z.
+- Ticket automatically replanned from tickets/reject/reject_005.md at 2026-04-26T03:17:05Z; retry_count=3
+- Runtime hydrated worktree dependency at 2026-04-26T03:17:13Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T03:17:13Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI owner-2 prepared todo at 2026-04-26T03:17:13Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Mini-plan at 2026-04-26T03:24:00Z:
+  1. Treat the latest Reject History as a runtime constraint, not an implementation cue: verify first now that the worktree has dependency links.
+  2. If the required verification command passes, confirm the current branch already satisfies the PRD wording and alias criteria inside Allowed Paths before deciding whether code edits are still necessary.
+  3. If verification still fails, capture the exact new failure mode and finish fail without inventing product changes outside scope.
+- Ticket owner verification passed at 2026-04-26T03:18:27Z: command exited 0
+- Safe turn result at 2026-04-26T03:20:30Z:
+  1. `verify-ticket-owner.sh 005` passed in the worktree once the runtime linked `node_modules` and `apps/desktop/node_modules`.
+  2. Additional spot-checks passed: `./bin/autoflow help` shows `autoflow prd create` first with `autoflow spec create` as a legacy alias; both `prd create` and `spec create` returned `status=created` after `autoflow init`; scaffold mirrors matched with `diff -qr`.
+  3. No tracked Allowed Path diff is currently needed for this ticket, but the owner did not run pass finish because the repository root contains unrelated board/wiki edits that would be swept into the same local commit by the current finish runtime.
+- Auto-recovery at 2026-04-26T03:22:11Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T03:22:11Z: cleared blocked worktree fields, retrying claim
+- AI owner-2 prepared resume at 2026-04-26T03:22:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-2 prepared resume at 2026-04-26T03:59:25Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_005.md
+- AI AI-2 prepared resume at 2026-04-26T03:59:55Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_005.md
 ## Verification
-- Run file: `tickets/reject/verify_005.md`
-- Log file: `logs/verifier_005_20260426_031112Z_fail.md`
-- Result: failed
+- Run file: `tickets/inprogress/verify_005.md`
+- Log file: pending
+- Result: pending ticket-owner by AI-2
 
 ## Result
-- Summary: Owner verification still fails only because the worktree lacks installed desktop dependencies; project-root verification passes, so no in-scope code delta is justified in this ticket turn.
-- Remaining risk: Until worktree dependency access is fixed in the runtime, any retry of `tickets_005` will fail before exercising the PRD wording acceptance criteria.
+- Summary: Verification now passes with the hydrated worktree, and the current branch appears to satisfy the PRD without new code edits in Allowed Paths.
+- Remaining risk: `finish-ticket-owner.sh` currently stages broad board/wiki paths, so completing pass from the dirty repository root would create a mixed local commit across unrelated tickets.
 
 ## Reject Reason
 
 - Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.
 
 ## Retry
-- Retry Count: 2
-- Max Retries: 2
+- Retry Count: 3
+- Max Retries: 10
 
 ## Reject History
 - 2026-04-26T02:08:08Z | retry_count=1 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_010719Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
 - 2026-04-26T02:31:37Z | retry_count=2 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_022426Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
 - 2026-04-26T03:00:42Z | retry_count=1 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_024319Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
 - 2026-04-26T03:09:19Z | retry_count=2 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_030806Z_fail.md`` | reason=Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.
+- 2026-04-26T03:17:05Z | retry_count=3 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_031112Z_fail.md`` | reason=Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.

@@ -7,6 +7,7 @@ source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 ensure_expected_role "ticket-owner"
 
 worker_id="$(owner_id)"
+display_id="$(display_worker_id "$worker_id")"
 requested_id="${1:-}"
 requested_normalized=""
 if [ -n "$requested_id" ]; then
@@ -27,10 +28,10 @@ ticket_owned_by_worker() {
   execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
   verifier_owner="$(ticket_scalar_field "$file" "Verifier AI")"
 
-  [ "$owner" = "$worker_id" ] ||
-    [ "$claimed_by" = "$worker_id" ] ||
-    [ "$execution_owner" = "$worker_id" ] ||
-    [ "$verifier_owner" = "$worker_id" ]
+  worker_id_matches_field "$owner" "$worker_id" ||
+    worker_id_matches_field "$claimed_by" "$worker_id" ||
+    worker_id_matches_field "$execution_owner" "$worker_id" ||
+    worker_id_matches_field "$verifier_owner" "$worker_id"
 }
 
 find_active_context_ticket() {
@@ -66,6 +67,41 @@ find_owned_inprogress_ticket() {
       printf '%s' "$file"
       return 0
     fi
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+
+  return 1
+}
+
+ticket_referenced_by_runner_state() {
+  local ticket_file="$1"
+  local ticket_id rel_path state_file active_id active_path
+
+  ticket_id="tickets_$(extract_numeric_id "$ticket_file")"
+  rel_path="$(board_relative_path "$ticket_file")"
+
+  while IFS= read -r state_file; do
+    [ -n "$state_file" ] || continue
+    active_id="$(awk -F= '$1 == "active_ticket_id" { print $2; exit }' "$state_file")"
+    active_path="$(awk -F= '$1 == "active_ticket_path" { print $2; exit }' "$state_file")"
+    [ "$active_id" = "$ticket_id" ] && return 0
+    [ "$active_path" = "$rel_path" ] && return 0
+    [ -n "$active_path" ] && [ "${BOARD_ROOT}/${active_path}" = "$ticket_file" ] && return 0
+  done < <(list_matching_files "${BOARD_ROOT}/runners/state" '*.state')
+
+  return 1
+}
+
+find_adoptable_inprogress_ticket() {
+  local file stage
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    ticket_owned_by_worker "$file" && continue
+    ticket_referenced_by_runner_state "$file" && continue
+    stage="$(ticket_stage "$file")"
+    stage_is_execution_candidate "$stage" || continue
+    printf '%s' "$file"
+    return 0
   done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
 
   return 1
@@ -216,10 +252,10 @@ create_ticket_from_spec() {
 - Plan Candidate: Direct ticket-owner handoff from ${archived_spec_ref}
 - Title: ${title}
 - Stage: planning
-- AI: ${worker_id}
-- Claimed By: ${worker_id}
-- Execution AI: ${worker_id}
-- Verifier AI: ${worker_id}
+- AI: ${display_id}
+- Claimed By: ${display_id}
+- Execution AI: ${display_id}
+- Verifier AI: ${display_id}
 - Last Updated: ${timestamp}
 
 ## Goal
@@ -266,7 +302,7 @@ ${done_when}
 
 ## Notes
 
-- Created by ${worker_id} from ${archived_spec_ref} at ${timestamp}.
+- Created by ${display_id} from ${archived_spec_ref} at ${timestamp}.
 
 ## Verification
 
@@ -399,13 +435,13 @@ prepare_ticket_owner_context() {
   fi
   if [ "$worktree_failed" = "true" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: worktree 생성 실패를 해결한 뒤 ticket-owner 실행을 재개한다."
-    append_note "$ticket_file" "AI worktree setup failed at ${timestamp}: ${worktree_output}"
+    append_note "$ticket_file" "AI ${display_id} worktree setup failed at ${timestamp}: ${worktree_output}"
     set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
     printf 'status=blocked\n'
     printf 'reason=worktree_setup_failed\n'
@@ -458,16 +494,16 @@ prepare_ticket_owner_context() {
 - Verification Note: ${verification_note}"
 
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "$stage"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
-- Result: pending ticket-owner by ${worker_id}"
+- Result: pending ticket-owner by ${display_id}"
   replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
-  append_note "$ticket_file" "AI ${worker_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")"
+  append_note "$ticket_file" "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")"
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
 
@@ -514,6 +550,15 @@ if [ -n "$owned_file" ]; then
   printf 'status=resume\n'
   prepare_ticket_owner_context "$owned_file" "resume"
   exit 0
+fi
+
+if [ -z "$requested_normalized" ]; then
+  adoptable_ticket="$(find_adoptable_inprogress_ticket || true)"
+  if [ -n "$adoptable_ticket" ]; then
+    printf 'status=resume\n'
+    prepare_ticket_owner_context "$adoptable_ticket" "adopted-inprogress"
+    exit 0
+  fi
 fi
 
 if [ -n "$requested_normalized" ]; then

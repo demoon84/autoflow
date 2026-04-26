@@ -16,3 +16,5 @@ When the user invokes `/af`, `/autoflow`, `#af`, or `#autoflow`, treat it as an 
 6. After saving, tell the user that `autoflow run ticket` or the Desktop Owner runner can continue from the saved PRD.
 
 Ticket-owner runtime note: once execution starts, `start-ticket-owner.*` may automatically replan a rejected ticket back to `todo` up to `AUTOFLOW_REJECT_MAX_RETRIES` times unless `AUTOFLOW_REJECT_AUTO_REPLAN=off`.
+
+User-visible worker notation rule: ticket / verification / log markdown and desktop previews should render runner ids as `AI-N`. Keep storage ids such as `owner-1`, runtime role keys, and runner state filenames unchanged.

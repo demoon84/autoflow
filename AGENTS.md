@@ -42,7 +42,8 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 13. local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 별도 단계로 추가한다. 기본 자동화는 Claude `/af` / `/autoflow` 또는 Codex `$af` / `$autoflow` skill handoff 뒤 `autoflow run ticket` 또는 Owner runner 로 이어지고, `#af` / `#autoflow` 는 호환 alias 로 유지한다. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거로 유지한다.
 14. heartbeat / runner tick 이 종료될 때는 현재 공정률을 표기한다. 가능하면 `autoflow metrics` 또는 보드의 PRD/ticket 집계를 기준으로 한 percent 를 tick 의 마지막 대화/로그 요약에 남긴다.
 15. 문서 언어 정책: AI / runner 가 주로 읽는 Markdown 문서 (`.autoflow/agents/`, `rules/`, `reference/`, ticket, verification, log, runtime contract)는 영어 또는 AI 친화적인 구조로 작성한다. 사람이 읽어야 하는 문서 (제품 README, 데스크톱 UI 문구, 사용자 가이드, 사용자 대상 릴리스 노트)는 기본적으로 한국어로 작성한다. 두 독자가 함께 보는 문서는 AI용 계약은 영어로, 사람용 설명은 한국어로 분리한다.
-16. 데스크톱 UI 컴포넌트(`apps/desktop/src/components/ui/` + 그 위 화면)는 **shadcn/ui 컴포넌트(또는 동일한 Radix 기반 wrapper)를 우선** 사용한다. modal/dialog/sheet/popover/tooltip/dropdown/command/toast 등 인터랙션 패턴이 있으면 직접 `<div>` + custom CSS 로 짓지 말고 shadcn 의 표준 컴포넌트를 추가(또는 추가 후 wrap)해 그 위에서 스타일·variant 만 확장한다. shadcn 에 없는 정말 도메인 특수 컴포넌트만 자체 구현이 허용되며, 그 경우에도 ARIA / focus trap / keyboard escape 같은 접근성 요건을 충족한다. 기존 자체 구현이 같은 패턴을 다루고 있다면 shadcn 으로 점진 마이그레이션한다.
+16. 사용자 노출 worker 표기(`ticket`, `verification`, `log`, desktop markdown preview`)는 storage 식별자 `owner-N` / `worker-*` 를 그대로 노출하지 말고 `AI-N` 형태로 정규화한다. runner state 파일 이름, runtime role 키, config 상의 실제 worker id 는 바꾸지 않는다.
+17. 데스크톱 UI 컴포넌트(`apps/desktop/src/components/ui/` + 그 위 화면)는 **shadcn/ui 컴포넌트(또는 동일한 Radix 기반 wrapper)를 우선** 사용한다. modal/dialog/sheet/popover/tooltip/dropdown/command/toast 등 인터랙션 패턴이 있으면 직접 `<div>` + custom CSS 로 짓지 말고 shadcn 의 표준 컴포넌트를 추가(또는 추가 후 wrap)해 그 위에서 스타일·variant 만 확장한다. shadcn 에 없는 정말 도메인 특수 컴포넌트만 자체 구현이 허용되며, 그 경우에도 ARIA / focus trap / keyboard escape 같은 접근성 요건을 충족한다. 기존 자체 구현이 같은 패턴을 다루고 있다면 shadcn 으로 점진 마이그레이션한다.
 
 ## Trigger Interpretation
 

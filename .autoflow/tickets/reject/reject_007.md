@@ -135,7 +135,7 @@
 
 ## Retry
 - Retry Count: 2
-- Max Retries: 2
+- Max Retries: 10
 
 ## Reject History
 - 2026-04-26T02:26:06Z | retry_count=1 | source=`tickets/reject/reject_007.md` | log=``logs/verifier_007_20260426_011500Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: apps/desktop npx tsc --noEmit cannot find a local TypeScript compiler, and scripts/tests/ticket-owner-smoke.sh returns status=idle because the current repo board has no actionable smoke ticket/spec.

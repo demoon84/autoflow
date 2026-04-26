@@ -18,6 +18,7 @@ ensure_expected_role "ticket-owner"
 ticket_ref="$1"
 command_override="${2:-}"
 worker_id="$(owner_id)"
+display_id="$(display_worker_id "$worker_id")"
 
 resolve_ticket_file() {
   local ref="$1"
@@ -141,7 +142,7 @@ replace_section_block "$run_file" "Command" "- Started At: ${timestamp_start}
 replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
 - Command: \`${verification_command}\`
-- Result: running ticket-owner verification by ${worker_id}"
+- Result: running ticket-owner verification by ${display_id}"
 
 set +e
 (
@@ -197,9 +198,9 @@ replace_section_block "$run_file" "Next Fix Hint" "- If failed, fix in the same 
 replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
 - Log file: pending
 - Command: \`${verification_command}\`
-- Result: ${result_line} by ${worker_id} at ${timestamp_finish}"
+- Result: ${result_line} by ${display_id} at ${timestamp_finish}"
 replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp_finish"
-append_note "$ticket_file" "Ticket owner verification ${result_line} at ${timestamp_finish}: command exited ${exit_code}"
+append_note "$ticket_file" "Ticket owner verification ${result_line} by ${display_id} at ${timestamp_finish}: command exited ${exit_code}"
 
 printf 'status=%s\n' "$outcome"
 printf 'ticket=%s\n' "$ticket_file"

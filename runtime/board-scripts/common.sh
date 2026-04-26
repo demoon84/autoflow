@@ -65,6 +65,38 @@ normalize_runtime_path() {
   esac
 }
 
+display_worker_id() {
+  local raw="${1:-}"
+  local prefix suffix
+
+  [ -n "$raw" ] || return 0
+
+  prefix="${raw%%-*}"
+  if [ "$prefix" = "$raw" ]; then
+    printf '%s' "$raw"
+    return 0
+  fi
+
+  suffix="${raw#*-}"
+  case "$prefix" in
+    owner|worker|ai|AI)
+      printf 'AI-%s' "$suffix"
+      ;;
+    *)
+      printf '%s' "$raw"
+      ;;
+  esac
+}
+
+worker_id_matches_field() {
+  local field_value="${1:-}"
+  local worker_value="${2:-}"
+
+  [ -n "$field_value" ] || return 1
+  [ -n "$worker_value" ] || return 1
+  [ "$(display_worker_id "$field_value")" = "$(display_worker_id "$worker_value")" ]
+}
+
 BOARD_ROOT="$(normalize_runtime_path "${AUTOFLOW_BOARD_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}")"
 
 resolve_project_root() {
@@ -265,14 +297,15 @@ mark_ticket_shared_allowed_path_blocked() {
   local worker="$2"
   local timestamp="$3"
   local blockers="$4"
-  local summary
+  local summary display_worker
 
+  display_worker="$(display_worker_id "$worker")"
   summary="$(printf '%s\n' "$blockers" | shared_allowed_path_blockers_summary)"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Next Action" "- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): ${summary}. Retry automatically when blockers clear."
 
@@ -319,6 +352,53 @@ ticket_worktree_path_for_id() {
   git_root="$(git_root_path)" || return 1
   parent_root="$(worktree_parent_root "$git_root")"
   printf '%s/tickets_%s' "$parent_root" "$ticket_id"
+}
+
+hydrate_ticket_worktree_dependencies() {
+  local ticket_file="$1"
+  local worktree_path="$2"
+  local project_root_normalized dep_dir rel_path target_path target_parent timestamp linked_any=false
+
+  [ -d "$worktree_path" ] || return 0
+  [ -d "$PROJECT_ROOT" ] || return 0
+
+  project_root_normalized="${PROJECT_ROOT%/}"
+  case "$worktree_path" in
+    "$project_root_normalized")
+      return 0
+      ;;
+  esac
+
+  timestamp="$(now_iso)"
+  while IFS= read -r dep_dir; do
+    [ -n "$dep_dir" ] || continue
+    case "$dep_dir" in
+      "$project_root_normalized/"*)
+        rel_path="${dep_dir#${project_root_normalized}/}"
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    target_path="${worktree_path}/${rel_path}"
+    target_parent="$(dirname "$target_path")"
+    [ -d "$target_parent" ] || continue
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+      continue
+    fi
+
+    ln -s "$dep_dir" "$target_path"
+    append_note "$ticket_file" "Runtime hydrated worktree dependency at ${timestamp}: linked ${rel_path} -> ${dep_dir}"
+    printf 'worktree_dependency_link=%s\n' "$rel_path"
+    linked_any=true
+  done < <(find "$project_root_normalized" -maxdepth 4 -type d -name node_modules -prune 2>/dev/null | sort)
+
+  if [ "$linked_any" = "true" ]; then
+    printf 'worktree_dependency_status=linked\n'
+  else
+    printf 'worktree_dependency_status=unchanged\n'
+  fi
 }
 
 owner_id() {
@@ -692,7 +772,7 @@ reject_auto_replan_enabled() {
 }
 
 reject_max_retries() {
-  local raw="${AUTOFLOW_REJECT_MAX_RETRIES:-2}"
+  local raw="${AUTOFLOW_REJECT_MAX_RETRIES:-10}"
 
   raw="${raw//[^0-9]/}"
   if [ -z "$raw" ]; then
@@ -700,6 +780,19 @@ reject_max_retries() {
   fi
 
   printf '%s' "$((10#$raw))"
+}
+
+ticket_max_retries() {
+  local file="$1"
+  local value
+
+  value="$(extract_scalar_field_in_section "$file" "Retry" "Max Retries" | tr -cd '0-9')"
+  if [ -z "$value" ]; then
+    reject_max_retries
+    return 0
+  fi
+
+  printf '%s' "$((10#$value))"
 }
 
 list_reject_tickets_for_replan() {
@@ -717,10 +810,10 @@ find_replannable_reject() {
 
   reject_auto_replan_enabled || return 1
 
-  max_retries="$(reject_max_retries)"
   while IFS=$'\t' read -r _ file; do
     [ -n "$file" ] || continue
     retry_count="$(ticket_retry_count "$file")"
+    max_retries="$(ticket_max_retries "$file")"
     if [ "$retry_count" -lt "$max_retries" ]; then
       printf '%s' "$file"
       return 0
@@ -1108,7 +1201,7 @@ bump_ticket_retry_count() {
   local next_count max_retries
 
   next_count="$(( $(ticket_retry_count "$file") + 1 ))"
-  max_retries="$(reject_max_retries)"
+  max_retries="$(ticket_max_retries "$file")"
   replace_section_block "$file" "Retry" "- Retry Count: ${next_count}
 - Max Retries: ${max_retries}"
   printf '%s' "$next_count"
@@ -1309,6 +1402,7 @@ ensure_ticket_worktree() {
   printf 'worktree_path=%s\n' "$worktree_path"
   printf 'worktree_branch=%s\n' "$branch"
   printf 'worktree_base=%s\n' "$base_commit"
+  hydrate_ticket_worktree_dependencies "$ticket_file" "$worktree_path"
 }
 
 stage_is_execution_candidate() {

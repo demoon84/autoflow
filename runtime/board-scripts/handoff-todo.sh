@@ -64,7 +64,7 @@ resolve_ticket_path() {
     execution_owner="$(ticket_scalar_field "$candidate" "Execution AI")"
     owner="$(ticket_scalar_field "$candidate" "AI")"
     claimed_by="$(ticket_scalar_field "$candidate" "Claimed By")"
-    if [ "$execution_owner" = "$worker_id" ] || [ "$owner" = "$worker_id" ] || [ "$claimed_by" = "$worker_id" ]; then
+    if worker_id_matches_field "$execution_owner" "$worker_id" || worker_id_matches_field "$owner" "$worker_id" || worker_id_matches_field "$claimed_by" "$worker_id"; then
       printf '%s' "$candidate"
       return 0
     fi
