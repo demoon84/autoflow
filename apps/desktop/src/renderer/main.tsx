@@ -50,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import "./styles.css";
 
 const ticketFolders = ["backlog", "plan", "todo", "inprogress", "verifier", "done", "reject"] as const;
@@ -2554,7 +2555,7 @@ function RunnerConsole({
 }
 
 function runnerConversationText(runner: AutoflowRunner) {
-  return (runner.conversationPreview || "").trim();
+  return (runner.lastLogLine || "").trim();
 }
 
 function shouldShowConversation(runner: AutoflowRunner) {
@@ -2714,8 +2715,6 @@ function currentMetricSnapshot(
     autoflow_code_insertions_count: statusNumber(metrics, "autoflow_code_insertions_count"),
     autoflow_code_deletions_count: statusNumber(metrics, "autoflow_code_deletions_count"),
     autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
-    autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
-    autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
     verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent"),
     completion_rate_percent: statusNumber(metrics, "completion_rate_percent")
   };
@@ -3408,25 +3407,36 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketKanbanColumnKey = "backlog" | "todo" | "inprogress" | "verifier" | "done" | "reject";
+type TicketWorkspaceTabKey = "all" | "prd" | "issued" | "inprogress" | "closed" | "reject";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "verifier" | "done" | "reject";
+type TicketWorkspaceItemKind = "prd" | "ticket";
 
-type TicketKanbanCardMeta = {
+type TicketWorkspaceItemMeta = {
+  title: string;
   projectKey: string;
   aiLabel: string;
+  statusKey: TicketWorkspaceStatusKey;
+  statusLabel: string;
+  statusVariant: "default" | "secondary" | "destructive";
 };
 
-const ticketKanbanColumns: Array<{
-  key: TicketKanbanColumnKey;
+type TicketWorkspaceItem = AutoflowFilePreview &
+  TicketWorkspaceItemMeta & {
+    kind: TicketWorkspaceItemKind;
+    displayId: string;
+  };
+
+const ticketWorkspaceTabs: Array<{
+  key: TicketWorkspaceTabKey;
   label: string;
-  badgeVariant: "default" | "secondary" | "destructive";
-  tone: "backlog" | "todo" | "inprogress" | "verifier" | "done" | "reject";
+  description: string;
 }> = [
-  { key: "backlog", label: "PRD 대기", badgeVariant: "secondary", tone: "backlog" },
-  { key: "todo", label: "실행 대기", badgeVariant: "secondary", tone: "todo" },
-  { key: "inprogress", label: "구현", badgeVariant: "default", tone: "inprogress" },
-  { key: "verifier", label: "검증", badgeVariant: "default", tone: "verifier" },
-  { key: "done", label: "완료", badgeVariant: "default", tone: "done" },
-  { key: "reject", label: "반려", badgeVariant: "destructive", tone: "reject" }
+  { key: "all", label: "전체", description: "PRD와 발급된 티켓 전체" },
+  { key: "prd", label: "PRD", description: "backlog와 보관된 PRD" },
+  { key: "issued", label: "발급 티켓", description: "전체 티켓 흐름" },
+  { key: "inprogress", label: "진행 중", description: "현재 구현 중인 티켓" },
+  { key: "closed", label: "검증/완료", description: "검증 대기와 완료 티켓" },
+  { key: "reject", label: "반려", description: "검증 실패 후 재시도 대상" }
 ] as const;
 
 function workflowFileDisplayName(name: string) {
@@ -3447,25 +3457,139 @@ function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
   return [...files].sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
 }
 
-function ticketKanbanFileGroups(board: AutoflowBoardSnapshot | null) {
-  return {
-    backlog: sortFilesByModifiedAt((board?.tickets.backlog || []).filter((file) => /^pr(?:d|oject)_\d+\.md$/.test(file.name))),
-    todo: sortFilesByModifiedAt((board?.tickets.todo || []).filter((file) => /^tickets_\d+\.md$/.test(file.name))),
-    inprogress: sortFilesByModifiedAt((board?.tickets.inprogress || []).filter((file) => /^tickets_\d+\.md$/.test(file.name))),
-    verifier: sortFilesByModifiedAt((board?.tickets.verifier || []).filter((file) => /^tickets_\d+\.md$/.test(file.name))),
-    done: sortFilesByModifiedAt((board?.tickets.done || []).filter((file) => /^tickets_\d+\.md$/.test(file.name))),
-    reject: sortFilesByModifiedAt((board?.tickets.reject || []).filter((file) => /^reject_\d+\.md$/.test(file.name)))
-  } satisfies Record<TicketKanbanColumnKey, AutoflowFilePreview[]>;
+function boardPath(value: string) {
+  return value.replace(/\\/g, "/");
 }
 
-function extractTicketKanbanMeta(content: string) {
-  const projectKeyMatch = content.match(/^- (?:PRD Key|Project Key):\s*(.+)$/im);
-  const claimedByMatch = content.match(/^- Claimed By:\s*(.+)$/im);
-  const aiMatch = content.match(/^- AI:\s*(.+)$/im);
-  return {
-    projectKey: projectKeyMatch?.[1]?.trim() || "",
-    aiLabel: displayWorkflowRunnerId((aiMatch?.[1] || claimedByMatch?.[1] || "").trim())
+function isPrdBoardFile(file: AutoflowFilePreview) {
+  return /^pr(?:d|oject)_\d+\.md$/i.test(file.name);
+}
+
+function isTicketBoardFile(file: AutoflowFilePreview) {
+  return /^tickets_\d+\.md$/i.test(file.name);
+}
+
+function isRejectBoardFile(file: AutoflowFilePreview) {
+  return /^reject_\d+\.md$/i.test(file.name);
+}
+
+function markdownScalar(content: string, labels: string[]) {
+  const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const match = content.match(new RegExp(`^- (?:${escaped.join("|")}):\\s*(.+)$`, "im"));
+  return match?.[1]?.trim() || "";
+}
+
+function projectKeyFromBoardFile(file: AutoflowFilePreview, content: string) {
+  return (
+    markdownScalar(content, ["Project Key", "PRD Key"]) ||
+    projectKeyFromSpecRef(file.filePath) ||
+    projectKeyFromSpecRef(file.name)
+  );
+}
+
+function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspaceStatusKey | null {
+  const normalized = boardPath(file.filePath);
+  if (isPrdBoardFile(file)) {
+    return "prd";
+  }
+  if (isRejectBoardFile(file)) {
+    return "reject";
+  }
+  if (!isTicketBoardFile(file)) {
+    return null;
+  }
+  if (normalized.includes("/tickets/todo/")) {
+    return "todo";
+  }
+  if (normalized.includes("/tickets/inprogress/")) {
+    return "inprogress";
+  }
+  if (normalized.includes("/tickets/verifier/")) {
+    return "verifier";
+  }
+  if (normalized.includes("/tickets/done/")) {
+    return "done";
+  }
+  return null;
+}
+
+function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: AutoflowFilePreview, content: string) {
+  if (statusKey === "prd") {
+    return boardPath(file.filePath).includes("/tickets/backlog/") ? "PRD" : "보관 PRD";
+  }
+
+  if (statusKey === "inprogress") {
+    const stage = markdownScalar(content, ["Stage"]).toLowerCase();
+    return displayStatus(stage || "executing");
+  }
+
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress">, string> = {
+    todo: "발급됨",
+    verifier: "검증",
+    done: "완료",
+    reject: "반려"
   };
+  return labels[statusKey];
+}
+
+function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
+  if (statusKey === "reject") {
+    return "destructive" as const;
+  }
+
+  if (statusKey === "inprogress" || statusKey === "verifier" || statusKey === "done") {
+    return "default" as const;
+  }
+
+  return "secondary" as const;
+}
+
+function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string): TicketWorkspaceItemMeta {
+  const claimedBy = markdownScalar(content, ["Execution AI", "AI", "Claimed By"]);
+  const title = markdownScalar(content, ["Title"]) || file.title || file.name;
+  const statusKey = ticketWorkspaceStatusForFile(file) || "todo";
+  return {
+    title,
+    projectKey: projectKeyFromBoardFile(file, content),
+    aiLabel: displayWorkflowRunnerId(claimedBy),
+    statusKey,
+    statusLabel: ticketWorkspaceStatusLabel(statusKey, file, content),
+    statusVariant: ticketWorkspaceStatusVariant(statusKey)
+  };
+}
+
+function ticketWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
+  const prdFiles = [
+    ...((board?.tickets.backlog || []).filter(isPrdBoardFile) || []),
+    ...((board?.tickets.done || []).filter(isPrdBoardFile) || [])
+  ];
+  const issuedFiles = [
+    ...((board?.tickets.todo || []).filter(isTicketBoardFile) || []),
+    ...((board?.tickets.inprogress || []).filter(isTicketBoardFile) || []),
+    ...((board?.tickets.verifier || []).filter(isTicketBoardFile) || []),
+    ...((board?.tickets.done || []).filter(isTicketBoardFile) || []),
+    ...((board?.tickets.reject || []).filter(isRejectBoardFile) || [])
+  ];
+
+  return sortFilesByModifiedAt([...prdFiles, ...issuedFiles]);
+}
+
+function ticketWorkspaceItemsForTab(items: TicketWorkspaceItem[], tab: TicketWorkspaceTabKey) {
+  switch (tab) {
+    case "prd":
+      return items.filter((item) => item.kind === "prd");
+    case "issued":
+      return items.filter((item) => item.kind === "ticket");
+    case "inprogress":
+      return items.filter((item) => item.statusKey === "inprogress");
+    case "closed":
+      return items.filter((item) => item.statusKey === "verifier" || item.statusKey === "done");
+    case "reject":
+      return items.filter((item) => item.statusKey === "reject");
+    case "all":
+    default:
+      return items;
+  }
 }
 
 function WorkflowPinLayer({
@@ -3665,7 +3789,7 @@ function WorkflowPinLayer({
                           {file.stateLabel}
                         </span>
                       ) : null}
-                      <time>{formatDate(file.createdAt || file.modifiedAt)}</time>
+                      <time>{formatDate(file.modifiedAt)}</time>
                     </button>
                   </li>
                 ))}
@@ -3685,10 +3809,10 @@ function TicketKanban({
   board: AutoflowBoardSnapshot | null;
   options?: { projectRoot: string; boardDirName: string };
 }) {
-  const fileGroups = React.useMemo(() => ticketKanbanFileGroups(board), [board]);
-  const allCards = React.useMemo(() => ticketKanbanColumns.flatMap((column) => fileGroups[column.key]), [fileGroups]);
-  const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketKanbanCardMeta>>({});
-  const [detailFile, setDetailFile] = React.useState<AutoflowFilePreview | null>(null);
+  const files = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
+  const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
+  const [activeTab, setActiveTab] = React.useState<TicketWorkspaceTabKey>("all");
+  const [selectedFilePath, setSelectedFilePath] = React.useState("");
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
@@ -3697,16 +3821,16 @@ function TicketKanban({
     let cancelled = false;
 
     const loadMeta = async () => {
-      if (!options?.projectRoot || allCards.length === 0) {
+      if (!options?.projectRoot || files.length === 0) {
         if (!cancelled) {
           setMetaByPath({});
         }
         return;
       }
 
-      const nextMeta: Record<string, TicketKanbanCardMeta> = {};
+      const nextMeta: Record<string, TicketWorkspaceItemMeta> = {};
       const results = await Promise.all(
-        allCards.map(async (file) => {
+        files.map(async (file) => {
           const result = await window.autoflow.readBoardFile({
             ...options,
             filePath: file.filePath
@@ -3717,8 +3841,15 @@ function TicketKanban({
 
       for (const { file, result } of results) {
         nextMeta[file.filePath] = result.ok
-          ? extractTicketKanbanMeta(result.content || "")
-          : { projectKey: "", aiLabel: "" };
+          ? extractTicketWorkspaceMeta(file, result.content || "")
+          : {
+              title: file.title || file.name,
+              projectKey: projectKeyFromBoardFile(file, ""),
+              aiLabel: "",
+              statusKey: ticketWorkspaceStatusForFile(file) || "todo",
+              statusLabel: ticketWorkspaceStatusLabel(ticketWorkspaceStatusForFile(file) || "todo", file, ""),
+              statusVariant: ticketWorkspaceStatusVariant(ticketWorkspaceStatusForFile(file) || "todo")
+            };
       }
 
       if (!cancelled) {
@@ -3731,45 +3862,98 @@ function TicketKanban({
     return () => {
       cancelled = true;
     };
-  }, [allCards, options]);
+  }, [files, options]);
 
-  const closeDialog = React.useCallback(() => {
-    setDetailFile(null);
-    setDetailContent(null);
-    setDetailError("");
-  }, []);
+  const items = React.useMemo<TicketWorkspaceItem[]>(
+    () =>
+      files.map((file) => {
+        const meta = metaByPath[file.filePath];
+        const statusKey = meta?.statusKey || ticketWorkspaceStatusForFile(file) || "todo";
+        return {
+          ...file,
+          kind: isPrdBoardFile(file) ? "prd" : "ticket",
+          displayId: workflowFileDisplayName(file.name),
+          title: meta?.title || file.title || file.name,
+          projectKey: meta?.projectKey || projectKeyFromBoardFile(file, ""),
+          aiLabel: meta?.aiLabel || "",
+          statusKey,
+          statusLabel: meta?.statusLabel || ticketWorkspaceStatusLabel(statusKey, file, ""),
+          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
+        };
+      }),
+    [files, metaByPath]
+  );
 
-  const openDetail = React.useCallback(
-    async (file: AutoflowFilePreview) => {
-      setDetailFile(file);
+  const visibleItems = React.useMemo(() => ticketWorkspaceItemsForTab(items, activeTab), [activeTab, items]);
+  const selectedItem = React.useMemo(
+    () => visibleItems.find((item) => item.filePath === selectedFilePath) || null,
+    [selectedFilePath, visibleItems]
+  );
+
+  React.useEffect(() => {
+    if (visibleItems.length === 0) {
+      setSelectedFilePath("");
       setDetailContent(null);
       setDetailError("");
+      return;
+    }
+
+    if (!visibleItems.some((item) => item.filePath === selectedFilePath)) {
+      setSelectedFilePath(visibleItems[0].filePath);
+    }
+  }, [selectedFilePath, visibleItems]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    const loadDetail = async () => {
+      setDetailContent(null);
+      setDetailError("");
+      if (!selectedItem) {
+        return;
+      }
       if (!options?.projectRoot) {
-        setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
+        if (!cancelled) {
+          setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
+        }
         return;
       }
 
-      setDetailLoading(true);
+      if (!cancelled) {
+        setDetailLoading(true);
+      }
       try {
         const result = await window.autoflow.readBoardFile({
           ...options,
-          filePath: file.filePath
+          filePath: selectedItem.filePath
         });
+        if (cancelled) {
+          return;
+        }
         if (!result.ok) {
           setDetailError(result.stderr || "파일 미리보기에 실패했습니다.");
           return;
         }
         setDetailContent(result);
       } catch (error) {
-        setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
+        if (!cancelled) {
+          setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
+        }
       } finally {
-        setDetailLoading(false);
+        if (!cancelled) {
+          setDetailLoading(false);
+        }
       }
-    },
-    [options]
-  );
+    };
 
-  const boardIsEmpty = ticketKanbanColumns.every((column) => fileGroups[column.key].length === 0);
+    void loadDetail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options, selectedItem]);
+
+  const boardIsEmpty = items.length === 0;
 
   return (
     <section className="ticket-kanban-board" aria-label="티켓 보드">
@@ -3778,100 +3962,123 @@ function TicketKanban({
           <div className="section-kicker">Board</div>
           <h3>티켓 보드</h3>
         </div>
-        <p>backlog · todo · inprogress · verifier · done · reject 상태를 한 화면에서 확인합니다.</p>
+        <p>PRD와 발급 티켓을 탭으로 나누고, 왼쪽 목록과 오른쪽 본문 리더로 읽습니다.</p>
       </div>
 
-      {boardIsEmpty ? (
-        <div className="ticket-kanban-empty">
-          <strong>처리할 티켓이 없습니다</strong>
-          <span>보드가 비어 있습니다. AI 관리 메뉴에서 runner 상태를 확인하거나 새 PRD를 추가하세요.</span>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TicketWorkspaceTabKey)} className="ticket-workspace">
+        <div className="ticket-workspace-toolbar">
+          <TabsList className="ticket-workspace-tabs" aria-label="티켓 보드 탭">
+            {ticketWorkspaceTabs.map((tab) => {
+              const count = ticketWorkspaceItemsForTab(items, tab.key).length;
+              return (
+                <TabsTrigger key={tab.key} value={tab.key} className="ticket-workspace-tab-trigger">
+                  <span>{tab.label}</span>
+                  <Badge variant="secondary">{count}</Badge>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+          <span className="ticket-workspace-tab-copy">
+            {ticketWorkspaceTabs.find((tab) => tab.key === activeTab)?.description}
+          </span>
         </div>
-      ) : null}
 
-      <div className="ticket-kanban-scroll" aria-label="티켓 보드 컬럼">
-        {ticketKanbanColumns.map((column) => {
-          const files = fileGroups[column.key];
-          return (
-            <section key={column.key} className={`ticket-kanban-column ticket-kanban-column-${column.tone}`} aria-label={column.label}>
-              <header className="ticket-kanban-column-head">
-                <strong>{column.label}</strong>
-                <Badge variant={column.badgeVariant}>{files.length}</Badge>
-              </header>
-              <div className="ticket-kanban-column-body">
-                {files.length ? (
-                  files.map((file) => {
-                    const meta = metaByPath[file.filePath];
-                    return (
-                      <button
-                        key={file.filePath}
-                        type="button"
-                        className="ticket-kanban-card"
-                        onClick={() => void openDetail(file)}
-                        title={file.title || file.name}
-                      >
-                        <strong>{workflowFileDisplayName(file.name)}</strong>
-                        <span className="ticket-kanban-card-title">{file.title || file.name}</span>
-                        <div className="ticket-kanban-card-meta">
-                          <span>{meta?.aiLabel || " "}</span>
-                          <span>{meta?.projectKey || "project key 없음"}</span>
-                          <time>{formatDate(file.modifiedAt)}</time>
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="ticket-kanban-column-empty">
-                    <span>비어 있음</span>
-                  </div>
-                )}
+        <div className="ticket-workspace-layout">
+          <div className="ticket-workspace-list-pane">
+            {boardIsEmpty ? (
+              <div className="ticket-kanban-empty ticket-workspace-empty">
+                <strong>표시할 PRD 또는 티켓이 없습니다.</strong>
+                <span>보드가 비어 있습니다. 새 PRD를 추가하거나 runner 상태를 확인하세요.</span>
               </div>
-            </section>
-          );
-        })}
-      </div>
+            ) : (
+              ticketWorkspaceTabs.map((tab) => (
+                <TabsContent key={tab.key} value={tab.key} className="ticket-workspace-tab-panel">
+                  {ticketWorkspaceItemsForTab(items, tab.key).length === 0 ? (
+                    <div className="ticket-workspace-empty">
+                      <strong>이 탭에 표시할 항목이 없습니다.</strong>
+                      <span>{tab.label} 탭에 해당하는 PRD 또는 티켓이 아직 없습니다.</span>
+                    </div>
+                  ) : (
+                    <div className="ticket-workspace-list" aria-label={`${tab.label} 목록`}>
+                      {ticketWorkspaceItemsForTab(items, tab.key).map((item) => {
+                        const selected = item.filePath === selectedFilePath;
+                        return (
+                          <button
+                            key={item.filePath}
+                            type="button"
+                            className={`ticket-workspace-item${selected ? " is-selected" : ""}`}
+                            onClick={() => setSelectedFilePath(item.filePath)}
+                            title={item.title}
+                          >
+                            <div className="ticket-workspace-item-head">
+                              <strong>{item.displayId}</strong>
+                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                            </div>
+                            <div className="ticket-workspace-item-title">{item.title}</div>
+                            <div className="ticket-workspace-item-meta">
+                              {item.projectKey ? <span>{item.projectKey}</span> : null}
+                              {item.aiLabel ? <span>{item.aiLabel}</span> : null}
+                              <time>{formatDate(item.modifiedAt)}</time>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+              ))
+            )}
+          </div>
 
-      <Dialog open={Boolean(detailFile)} onOpenChange={(open) => (!open ? closeDialog() : undefined)}>
-        <DialogContent
-          className="workflow-pin-layer-panel workflow-pin-layer-default"
-          overlayClassName="workflow-pin-layer-overlay"
-          aria-describedby={undefined}
-        >
-          <div className="workflow-pin-layer-header">
-            <div className="workflow-pin-layer-heading">
-              <KanbanSquare className="h-4 w-4" aria-hidden="true" />
-              <DialogTitle asChild>
-                <strong>{detailFile ? workflowFileDisplayName(detailFile.name) : "티켓 보드"}</strong>
-              </DialogTitle>
-            </div>
-            <button
-              type="button"
-              className="workflow-pin-layer-close"
-              onClick={closeDialog}
-              aria-label="닫기"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="workflow-pin-detail">
-            {detailLoading ? (
-              <div className="workflow-pin-detail-loading">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                <span>불러오는 중…</span>
+          <div className="ticket-workspace-detail-pane">
+            {!selectedItem && !boardIsEmpty ? (
+              <div className="ticket-workspace-empty ticket-workspace-detail-empty">
+                <strong>왼쪽 목록에서 항목을 선택하세요.</strong>
+                <span>선택한 PRD 또는 티켓의 메타데이터와 Markdown 본문이 여기에 표시됩니다.</span>
               </div>
-            ) : null}
-            {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
-            {!detailError && detailContent ? (
-              <div className="workflow-pin-detail-body">
-                {detailContent.content ? (
-                  <MarkdownViewer content={detailContent.content} />
-                ) : (
-                  <p className="workflow-pin-detail-empty">(비어 있음)</p>
-                )}
-              </div>
-            ) : null}
+            ) : (
+              <>
+                {selectedItem ? (
+                  <header className="ticket-workspace-detail-head">
+                    <div className="ticket-workspace-detail-kicker">
+                      <span>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</span>
+                      <time>{formatDate(selectedItem.modifiedAt)}</time>
+                    </div>
+                    <div className="ticket-workspace-detail-title-row">
+                      <div>
+                        <strong>{selectedItem.displayId}</strong>
+                        <h4>{selectedItem.title}</h4>
+                      </div>
+                      <Badge variant={selectedItem.statusVariant}>{selectedItem.statusLabel}</Badge>
+                    </div>
+                    <div className="ticket-workspace-detail-meta">
+                      {selectedItem.projectKey ? <span>프로젝트 키 · {selectedItem.projectKey}</span> : null}
+                      {selectedItem.aiLabel ? <span>담당 · {selectedItem.aiLabel}</span> : null}
+                      <span>{selectedItem.filePath}</span>
+                    </div>
+                  </header>
+                ) : null}
+                <div className="ticket-workspace-detail-body">
+                  {detailLoading ? (
+                    <div className="workflow-pin-detail-loading">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>불러오는 중…</span>
+                    </div>
+                  ) : null}
+                  {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
+                  {!detailError && detailContent ? (
+                    detailContent.content ? (
+                      <MarkdownViewer content={detailContent.content} />
+                    ) : (
+                      <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                    )
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </Tabs>
     </section>
   );
 }
@@ -3907,43 +4114,49 @@ function TicketBoard({
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
 
-  const runnersWithConversation = runners.filter((runner) => shouldShowConversation(runner));
+  const hasHeader = Boolean(specFiles.length || rejectFiles.length);
 
   return (
-    <div className="workflow-progress-layout">
-      {specFiles.length || rejectFiles.length ? (
-        <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
-          {specFiles.length ? (
-            <WorkflowPinLayer
-              files={specFiles}
-              options={options}
-              pinTitle={`PRD ${specFiles.length}건`}
-              pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
-              variant="default"
-              layerHeading={`PRD ${specFiles.length}건`}
-              layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
-            />
-          ) : null}
-          {rejectFiles.length ? (
-            <WorkflowPinLayer
-              files={rejectFiles}
-              options={options}
-              pinTitle={`반려 ${rejectFiles.length}건 보류`}
-              pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
-              variant="destructive"
-              layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
-              layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
-            />
-          ) : null}
-        </div>
-      ) : null}
-      {(specFiles.length || rejectFiles.length) && runners.length ? (
-        <hr className="workflow-progress-divider" aria-hidden="true" />
-      ) : null}
+    <PageLayout
+      header={
+        hasHeader ? (
+          <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
+            {specFiles.length ? (
+              <WorkflowPinLayer
+                files={specFiles}
+                options={options}
+                pinTitle={`PRD ${specFiles.length}건`}
+                pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
+                variant="default"
+                layerHeading={`PRD ${specFiles.length}건`}
+                layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
+              />
+            ) : null}
+            {rejectFiles.length ? (
+              <WorkflowPinLayer
+                files={rejectFiles}
+                options={options}
+                pinTitle={`반려 ${rejectFiles.length}건 보류`}
+                pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
+                variant="destructive"
+                layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
+                layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
+              />
+            ) : null}
+          </div>
+        ) : null
+      }
+    >
       <div className="ai-progress-board" aria-label="AI별 작업 진행률">
         {runners.length ? (
           runners.map((runner) => (
-            <AiProgressRow key={runner.id} runner={runner} onSelect={onSelect} installedAgentProfiles={installedAgentProfiles} />
+            <AiProgressRow
+              key={runner.id}
+              runner={runner}
+              onSelect={onSelect}
+              installedAgentProfiles={installedAgentProfiles}
+              options={options}
+            />
           ))
         ) : (
           <div className="ai-progress-empty">
@@ -3952,25 +4165,33 @@ function TicketBoard({
           </div>
         )}
       </div>
-      {runnersWithConversation.length ? (
-        <section className="ai-conversation-board" aria-label="AI 처리 내용">
-          {runnersWithConversation.map((runner) => (
-            <AiConversationPanel
-              key={runner.id}
-              runner={runner}
-              runnerLabel={displayWorkflowRunnerId(runner.id)}
-              agentLabel={runner.agent || "AI"}
-              text={runnerConversationText(runner)}
-            />
-          ))}
-        </section>
+    </PageLayout>
+  );
+}
+
+function PageLayout({
+  header,
+  children,
+  className
+}: {
+  header?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`page-layout${className ? ` ${className}` : ""}`}>
+      {header ? (
+        <>
+          <div className="page-layout-header">{header}</div>
+          <hr className="page-layout-divider" aria-hidden="true" />
+        </>
       ) : null}
+      <div className="page-layout-body">{children}</div>
     </div>
   );
 }
 
 function AiConversationPanel({
-  runner,
   runnerLabel,
   agentLabel,
   text
@@ -3980,33 +4201,12 @@ function AiConversationPanel({
   agentLabel: string;
   text: string;
 }) {
-  const currentKey = runnerStageKey(runner);
-  const stage = ownerFlowStages.find((candidate) => candidate.key === currentKey) || ownerFlowStages[1];
-  const stageIndex = ownerFlowStages.findIndex((candidate) => candidate.key === currentKey);
-  const progressRatio = Math.max(0, stageIndex) / (ownerFlowStages.length - 1);
-  const progressValue = progressRatio <= 0 ? "0px" : `${progressRatio * 82}%`;
-
   return (
     <article className="ai-conversation-panel" aria-label={`${runnerLabel} 처리 내용`}>
       <header className="ai-conversation-panel-head">
         <strong>{runnerLabel}</strong>
         <span>{agentLabel}</span>
       </header>
-      <div
-        className={`ai-progress-track ${currentKey === "reject" ? "ai-progress-track-reject" : ""}`}
-        style={{ "--progress-value": progressValue } as React.CSSProperties}
-        aria-label={`${runnerLabel} 현재 단계 ${stage.label}`}
-      >
-        {ownerFlowStages.map((step) => {
-          const stepState = flowStepState(step.key, currentKey);
-          return (
-            <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
-              <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
-              <span>{step.label}</span>
-            </div>
-          );
-        })}
-      </div>
       <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} />
     </article>
   );
@@ -4119,12 +4319,14 @@ function activeTicketPath(runner: AutoflowRunner) {
 
 function AiProgressRow({
   runner,
-  onSelect,
-  installedAgentProfiles
+  onSelect: _onSelect,
+  installedAgentProfiles,
+  options
 }: {
   runner: AutoflowRunner;
   onSelect: (filePath: string) => void;
   installedAgentProfiles?: InstalledAgentProfiles;
+  options?: { projectRoot: string; boardDirName: string };
 }) {
   const currentKey = runnerStageKey(runner);
   const stage = ownerFlowStages.find((candidate) => candidate.key === currentKey) || ownerFlowStages[1];
@@ -4154,6 +4356,55 @@ function AiProgressRow({
       : "";
   const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
   const metaLabel = displayWorkflowRunnerId(runner.id);
+  const conversationText = runnerConversationText(runner);
+  const showConversation = shouldShowConversation(runner);
+
+  const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
+  const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
+  const [ticketLoading, setTicketLoading] = React.useState(false);
+  const [ticketError, setTicketError] = React.useState("");
+
+  const openTicketDialog = React.useCallback(async () => {
+    if (!runner.activeTicketId) return;
+    setTicketDialogOpen(true);
+    setTicketContent(null);
+    setTicketError("");
+    if (!options?.projectRoot) {
+      setTicketError("프로젝트 루트가 설정되어 있지 않습니다.");
+      return;
+    }
+    const boardDir = options.boardDirName || ".autoflow";
+    const projectRoot = options.projectRoot.replace(/[\\/]+$/, "");
+    const ticketFile = `${runner.activeTicketId}.md`;
+    const candidatePaths = [
+      `${projectRoot}/${boardDir}/tickets/inprogress/${ticketFile}`,
+      `${projectRoot}/${boardDir}/tickets/todo/${ticketFile}`,
+      `${projectRoot}/${boardDir}/tickets/verifier/${ticketFile}`,
+      `${projectRoot}/${boardDir}/tickets/reject/${ticketFile}`
+    ];
+    setTicketLoading(true);
+    try {
+      let lastError = "";
+      for (const candidate of candidatePaths) {
+        const result = await window.autoflow.readBoardFile({
+          projectRoot: options.projectRoot,
+          boardDirName: options.boardDirName,
+          filePath: candidate
+        });
+        if (result.ok) {
+          setTicketContent(result);
+          setTicketError("");
+          return;
+        }
+        lastError = result.stderr || lastError;
+      }
+      setTicketError(lastError || "티켓 파일을 찾을 수 없습니다.");
+    } catch (error) {
+      setTicketError(error instanceof Error ? error.message : "티켓을 불러오지 못했습니다.");
+    } finally {
+      setTicketLoading(false);
+    }
+  }, [options, runner.activeTicketId]);
 
   return (
     <article className={`ai-progress-row ai-progress-${currentKey}`}>
@@ -4184,37 +4435,84 @@ function AiProgressRow({
       </div>
 
       <div className="ai-progress-current">
-        <span>{displayStatus(status)}</span>
-        {ticketSummary ? (
-          <button
-            type="button"
-            onClick={() => onSelect(ticketPath)}
-            style={{
-              display: "inline-flex",
-              maxWidth: "100%",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: "6px",
-              border: "0",
-              padding: 0,
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer"
-            }}
-            title={ticketSummary}
-          >
-            <span>지금 처리 중: {ticketSummary}</span>
-            <Badge variant="outline">{activeStageLabel}</Badge>
-          </button>
-        ) : null}
+        <Badge variant="secondary" className="ai-progress-status-badge">
+          {displayStatus(status)}
+        </Badge>
         {detailText ? <p title={detailText}>{detailText}</p> : null}
         {runnerHeartbeatStale(runner) ? (
-          <span className="ai-progress-stale-badge" title="3분 이상 새 이벤트가 없습니다 — 어댑터 락 대기 또는 멈춤 가능성">
+          <Badge
+            variant="destructive"
+            className="ai-progress-stale-badge"
+            title="3분 이상 새 이벤트가 없습니다 — 어댑터 락 대기 또는 멈춤 가능성"
+          >
             응답 지연
-          </span>
+          </Badge>
         ) : null}
-        {eventTime ? <time>마지막 활동: {formatDate(eventTime)}</time> : null}
+        {runner.activeTicketId ? (
+          <button
+            type="button"
+            className="ai-progress-active-ticket-button"
+            onClick={openTicketDialog}
+            title={`#${runner.activeTicketId} 티켓 보기`}
+          >
+            <Badge variant="outline" className="ai-progress-active-ticket">
+              #{runner.activeTicketId}
+            </Badge>
+          </button>
+        ) : null}
       </div>
+      {showConversation ? (
+        <ConversationStream label={`${metaLabel} 최근 터미널 출력`} text={conversationText} />
+      ) : null}
+      <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
+        <DialogContent
+          className="workflow-pin-layer-panel workflow-pin-layer-default"
+          overlayClassName="workflow-pin-layer-overlay"
+          aria-describedby={undefined}
+        >
+          <div className="workflow-pin-layer-header">
+            <div className="workflow-pin-layer-heading">
+              <KanbanSquare className="h-4 w-4" aria-hidden="true" />
+              <DialogTitle asChild>
+                <strong>
+                  {runner.activeTicketId
+                    ? workflowFileDisplayName(`${runner.activeTicketId}.md`)
+                    : "티켓"}
+                  {runner.activeTicketTitle ? (
+                    <span className="ai-ticket-dialog-subtitle"> · {runner.activeTicketTitle}</span>
+                  ) : null}
+                </strong>
+              </DialogTitle>
+            </div>
+            <button
+              type="button"
+              className="workflow-pin-layer-close"
+              onClick={() => setTicketDialogOpen(false)}
+              aria-label="닫기"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="workflow-pin-detail">
+            {ticketLoading ? (
+              <div className="workflow-pin-detail-loading">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span>불러오는 중…</span>
+              </div>
+            ) : null}
+            {ticketError ? <div className="workflow-pin-detail-error">{ticketError}</div> : null}
+            {!ticketError && ticketContent ? (
+              <div className="workflow-pin-detail-body">
+                {ticketContent.content ? (
+                  <MarkdownViewer content={ticketContent.content} />
+                ) : (
+                  <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }

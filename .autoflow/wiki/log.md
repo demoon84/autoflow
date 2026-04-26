@@ -11,7 +11,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-26T07:09:35Z
+- Last rebuilt: 2026-04-26T07:39:10Z
 
 ### Completed Tickets
 
@@ -19,6 +19,7 @@ Each entry should cite its source ticket or log.
 - `tickets_007` - AI work for prd_007. Update AI workflow card meta to 3-line agent/id/progress display Source: `tickets/done/prd_007/tickets_007.md`.
 - `tickets_008` - AI work for prd_008. Add bounded reject auto-replan flow for ticket-owner runtime Source: `tickets/done/prd_008/tickets_008.md`.
 - `tickets_010` - AI work for prd_010. Add desktop tickets kanban view with dialog preview and board counts Source: `tickets/done/prd_010/tickets_010.md`.
+- `tickets_011` - AI work for prd_011. Replace ticket board with tabbed PRD/ticket workspace Source: `tickets/done/prd_011/tickets_011.md`.
 
 ### Verifier Logs
 
@@ -46,7 +47,7 @@ Each entry should cite its source ticket or log.
 ### Reject Records
 
 - reject_003. Source: `tickets/reject/reject_003.md`.
-- reject_005. Source: `tickets/reject/reject_005.md`.
+- reject_004. Source: `tickets/reject/reject_004.md`.
 
 ### Conversation Handoffs
 
