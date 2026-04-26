@@ -116,7 +116,7 @@
 - Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
 
 ## Retry
-- Retry Count: 2
+- Retry Count: 0
 - Max Retries: 2
 
 ## Reject History

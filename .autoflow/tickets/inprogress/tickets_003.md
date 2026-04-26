@@ -6,12 +6,12 @@
 - PRD Key: prd_003
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_003/prd_003.md
 - Title: Ticket owner work for prd_003
-- Stage: rejected
-- AI: owner-2
-- Claimed By: owner-2
-- Execution AI: owner-2
-- Verifier AI: owner-2
-- Last Updated: 2026-04-26T02:47:11Z
+- Stage: blocked
+- AI: owner-1
+- Claimed By: owner-1
+- Execution AI: owner-1
+- Verifier AI: owner-1
+- Last Updated: 2026-04-26T03:00:44Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
-- Branch: autoflow/tickets_003
-- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
+- Path:
+- Branch:
+- Base Commit: efd16cada97d38fe50ad78c22dea9bd53d9387d6
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: project_root_fallback
 
 ## Done When
 
@@ -54,7 +54,7 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css. Retry automatically when blockers clear.
 
 ## Resume Context
 
@@ -98,23 +98,26 @@
 - Wiki query checkpoint (2026-04-26T02:45:47Z): `bin/autoflow wiki query . --term wiki --term preview --term knowledge` again surfaced `tickets/done/prd_003/prd_003.md` as the direct spec reference and `tickets/done/prd_001/prd_001.md` as adjacent Wiki panel context.
 - Toolchain probe (2026-04-26T02:45:47Z): `ls apps/desktop/node_modules/.bin/tsc apps/desktop/node_modules/typescript` inside the assigned worktree exited 1, confirming the failure is a missing local TypeScript compiler in the worktree snapshot rather than a renderer regression inside Allowed Paths.
 - AI owner-2 marked fail at 2026-04-26T02:47:11Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-26T03:00:30Z; retry_count=1
+- Runtime auto-blocked: shared_allowed_path_conflict at 2026-04-26T03:00:41Z; blockers=tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css
 ## Verification
-- Run file: `tickets/reject/verify_003.md`
-- Log file: `logs/verifier_003_20260426_024711Z_fail.md`
-- Result: failed
+- Run file:
+- Log file:
+- Result: pending
 
 ## Result
-- Summary: Renderer changes remain limited to the two Allowed Paths in the isolated worktree, but the ticket cannot pass because owner verification stops at `cd apps/desktop && npx tsc --noEmit` before syntax or smoke checks run.
-- Remaining risk: The current `tickets_003` worktree lacks the local TypeScript toolchain expected by the PRD verification command, so reruns will continue to fail until worktree/runtime provisioning is fixed or the ticket is replanned against the current environment.
+- Summary:
+- Remaining risk:
 
 ## Reject Reason
 
 - Verification is blocked outside Allowed Paths: the assigned worktree for `tickets_003` does not contain `apps/desktop/node_modules/typescript` or `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 with `This is not the tsc command you are looking for` before syntax or smoke checks can run. Replan or fix worktree/runtime provisioning before retrying this ticket.
 
 ## Retry
-- Retry Count: 2
+- Retry Count: 1
 - Max Retries: 2
 
 ## Reject History
 - 2026-04-26T01:51:28Z | retry_count=1 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_010456Z_fail.md`` | reason=Verification failed in smoke harness: `bash tests/smoke/ticket-owner-smoke.sh` exited 1 because the temp harness expected `.claude/skills/autoflow/SKILL.md` and the referenced skill file was missing. Renderer changes for the wiki split/preview flow were implemented in Allowed Paths, but this ticket cannot pass until the smoke fixture or skill path expectation is fixed and verification is rerun.
 - 2026-04-26T02:36:03Z | retry_count=2 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_023011Z_fail.md`` | reason=Verification failed in smoke harness: `bash tests/smoke/ticket-owner-smoke.sh` exited 1 because the temp harness expected `.claude/skills/autoflow/SKILL.md` and the referenced skill file was missing. Renderer changes for the wiki split/preview flow were implemented in Allowed Paths, but this ticket cannot pass until the smoke fixture or skill path expectation is fixed and verification is rerun.
+- 2026-04-26T03:00:30Z | retry_count=1 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_024711Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: the assigned worktree for `tickets_003` does not contain `apps/desktop/node_modules/typescript` or `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 with `This is not the tsc command you are looking for` before syntax or smoke checks can run. Replan or fix worktree/runtime provisioning before retrying this ticket.

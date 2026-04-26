@@ -2458,18 +2458,158 @@ pre {
 
 .workflow-pin-detail-body {
   flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--foreground);
+}
+
+.workflow-pin-detail-empty {
   margin: 0;
-  padding: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.markdown-viewer {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--foreground);
+}
+
+.markdown-viewer > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-viewer > *:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-viewer h1,
+.markdown-viewer h2,
+.markdown-viewer h3,
+.markdown-viewer h4 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.markdown-viewer h1 {
+  font-size: 18px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.markdown-viewer h2 {
+  font-size: 15px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  padding-bottom: 4px;
+}
+
+.markdown-viewer h3 {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.markdown-viewer h4 {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.markdown-viewer p {
+  margin: 8px 0;
+}
+
+.markdown-viewer ul,
+.markdown-viewer ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.markdown-viewer li {
+  margin: 3px 0;
+}
+
+.markdown-viewer li > input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--primary);
+}
+
+.markdown-viewer code {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+}
+
+.markdown-viewer pre {
+  margin: 10px 0;
+  padding: 10px 12px;
   overflow: auto;
   background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.markdown-viewer pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 11.5px;
+}
+
+.markdown-viewer blockquote {
+  margin: 10px 0;
+  padding: 4px 12px;
+  border-left: 3px solid color-mix(in srgb, var(--primary) 50%, var(--border));
+  background: color-mix(in srgb, var(--primary) 4%, var(--card));
+  color: var(--muted-foreground);
+}
+
+.markdown-viewer a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-viewer table {
+  display: block;
+  overflow: auto;
+  width: 100%;
+  margin: 10px 0;
+  border-collapse: collapse;
   font-size: 12px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--foreground);
+}
+
+.markdown-viewer th,
+.markdown-viewer td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.markdown-viewer th {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.markdown-viewer hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.markdown-viewer img {
+  max-width: 100%;
+  border-radius: 6px;
 }
 
 .ai-progress-empty {

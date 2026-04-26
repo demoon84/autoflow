@@ -6,12 +6,12 @@
 - PRD Key: prd_005
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_005/prd_005.md
 - Title: Ticket owner work for prd_005
-- Stage: rejected
-- AI: owner-2
-- Claimed By: owner-2
-- Execution AI: owner-2
-- Verifier AI: owner-2
-- Last Updated: 2026-04-26T02:43:19Z
+- Stage: blocked
+- AI: owner-5
+- Claimed By: owner-5
+- Execution AI: owner-5
+- Verifier AI: owner-5
+- Last Updated: 2026-04-26T03:01:00Z
 
 ## Goal
 
@@ -51,11 +51,11 @@
 - integrations/codex/skills
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
-- Branch: autoflow/tickets_005
-- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
+- Path:
+- Branch:
+- Base Commit: efd16cada97d38fe50ad78c22dea9bd53d9387d6
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: project_root_fallback
 
 ## Done When
 
@@ -73,7 +73,7 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0 (기존 spec 명령 흐름이 깨지지 않음을 확인).
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_003:apps/desktop/src/renderer/main.tsx, tickets_004:apps/desktop/src/renderer/main.tsx. Retry automatically when blockers clear.
 
 ## Resume Context
 
@@ -122,23 +122,25 @@
   3. `verify-ticket-owner.sh 005` reproduced the failure in board evidence: `npx tsc --noEmit` printed "This is not the tsc command you are looking for", which means the worktree snapshot is missing the desktop toolchain needed by the PRD verification command.
   4. Because the required smoke path `tests/smoke/ticket-owner-smoke.sh` also does not exist in this worktree root, the ticket cannot be safely implemented or verified without rebuilding the worktree from the current repository layout.
 - AI owner-2 marked fail at 2026-04-26T02:43:19Z.
+- Ticket automatically replanned from tickets/reject/reject_005.md at 2026-04-26T03:00:42Z; retry_count=1
 ## Verification
-- Run file: `tickets/reject/verify_005.md`
-- Log file: `logs/verifier_005_20260426_024319Z_fail.md`
-- Result: failed
+- Run file:
+- Log file:
+- Result: pending
 
 ## Result
-- Summary: Safe ticket-owner turn only. `owner-2` resumed `tickets_005`, reproduced the verification failure, and confirmed that the assigned worktree is an outdated repository snapshot rather than the current Autoflow repo layout required by the PRD.
-- Remaining risk: Editing inside `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005` would target the wrong file tree, so any implementation or verification result would be non-authoritative for the actual project root.
+- Summary:
+- Remaining risk:
 
 ## Reject Reason
 
 - Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
 
 ## Retry
-- Retry Count: 2
+- Retry Count: 1
 - Max Retries: 2
 
 ## Reject History
 - 2026-04-26T02:08:08Z | retry_count=1 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_010719Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
 - 2026-04-26T02:31:37Z | retry_count=2 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_022426Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.
+- 2026-04-26T03:00:42Z | retry_count=1 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_024319Z_fail.md`` | reason=Verification environment drift: worktree lacks a runnable TypeScript compiler for 'cd apps/desktop && npx tsc --noEmit' and the required smoke path 'tests/smoke/ticket-owner-smoke.sh' does not exist in the ticket worktree. Replan the ticket against the current repo layout before implementation.

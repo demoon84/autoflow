@@ -23,10 +23,10 @@ Tickets, verification records, and logs remain authoritative.
 ## Autoflow Work Map
 
 - Done tickets: 2
-- Reject records: 5
+- Reject records: 1
 - Verifier logs: 20
 - Conversation handoffs: 0
-- Last updated: 2026-04-26T02:51:58Z
+- Last updated: 2026-04-26T03:01:09Z
 
 ## Completed Tickets
 

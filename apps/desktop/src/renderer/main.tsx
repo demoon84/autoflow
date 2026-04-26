@@ -41,6 +41,7 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { MarkdownViewer } from "@/components/ui/markdown-viewer";
 import {
   Select,
   SelectContent,
@@ -3326,7 +3327,7 @@ function WorkflowPinLayer({
   files: WorkflowFileEntry[];
   options?: { projectRoot: string; boardDirName: string };
   pinTitle: string;
-  pinSubtitle: string;
+  pinSubtitle?: string;
   pinIcon: React.ReactNode;
   variant: "default" | "destructive";
   layerHeading: string;
@@ -3419,7 +3420,7 @@ function WorkflowPinLayer({
         <span className="workflow-pin-icon">{pinIcon}</span>
         <span className="workflow-pin-body">
           <strong>{pinTitle}</strong>
-          <span>{pinSubtitle}</span>
+          {pinSubtitle ? <span>{pinSubtitle}</span> : null}
         </span>
         <span className="workflow-pin-cta" aria-hidden="true">
           세부 보기
@@ -3478,9 +3479,13 @@ function WorkflowPinLayer({
                 <div className="workflow-pin-detail-error">{detailError}</div>
               ) : null}
               {!detailError && detailContent ? (
-                <pre className="workflow-pin-detail-body">
-                  {detailContent.content || "(비어 있음)"}
-                </pre>
+                <div className="workflow-pin-detail-body">
+                  {detailContent.content ? (
+                    <MarkdownViewer content={detailContent.content} />
+                  ) : (
+                    <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                  )}
+                </div>
               ) : null}
             </div>
           ) : (
@@ -3553,7 +3558,6 @@ function TicketBoard({
           files={specFiles}
           options={options}
           pinTitle={`PRD ${specFiles.length}건`}
-          pinSubtitle={`대기 ${backlogSpecs.length} · 완료 ${doneSpecs.length} — 클릭해 목록을 펼치고 본문을 봅니다.`}
           pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
           variant="default"
           layerHeading={`PRD ${specFiles.length}건`}
@@ -3565,7 +3569,6 @@ function TicketBoard({
           files={rejectFiles}
           options={options}
           pinTitle={`반려 ${rejectFiles.length}건 보류`}
-          pinSubtitle="자동 재시도 범위를 넘기기 전까지는 AI 가 다시 todo 로 되돌립니다. 클릭해 세부 내용을 확인하세요."
           pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
           variant="destructive"
           layerHeading={`반려 ${rejectFiles.length}건 보류 중`}

@@ -6,12 +6,12 @@
 - PRD Key: prd_004
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_004/prd_004.md
 - Title: Ticket owner work for prd_004
-- Stage: rejected
-- AI: owner-1
-- Claimed By: owner-1
-- Execution AI: owner-1
-- Verifier AI: owner-1
-- Last Updated: 2026-04-26T02:43:50Z
+- Stage: blocked
+- AI: owner-4
+- Claimed By: owner-4
+- Execution AI: owner-4
+- Verifier AI: owner-4
+- Last Updated: 2026-04-26T03:00:51Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_004`
-- Branch: autoflow/tickets_004
-- Base Commit: d5c735a5def24ece578a930c51f7175e010d6495
+- Path:
+- Branch:
+- Base Commit: efd16cada97d38fe50ad78c22dea9bd53d9387d6
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: project_root_fallback
 
 ## Done When
 
@@ -56,7 +56,7 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): tickets_001:apps/desktop/src/renderer/main.tsx, tickets_001:apps/desktop/src/renderer/styles.css, tickets_003:apps/desktop/src/renderer/main.tsx, tickets_003:apps/desktop/src/renderer/styles.css. Retry automatically when blockers clear.
 
 ## Resume Context
 
@@ -112,23 +112,25 @@
   - Decision: do not fabricate the missing sidebar architecture inside a narrow Help-only retry. Run the declared verification command for evidence, then reject with a concrete replan hint tied to current renderer structure.
 - Ticket owner verification failed at 2026-04-26T02:43:24Z: command exited 1
 - AI owner-1 marked fail at 2026-04-26T02:43:50Z.
+- Ticket automatically replanned from tickets/reject/reject_004.md at 2026-04-26T03:00:41Z; retry_count=1
 ## Verification
-- Run file: `tickets/reject/verify_004.md`
-- Log file: `logs/verifier_004_20260426_024350Z_fail.md`
-- Result: failed
+- Run file:
+- Log file:
+- Result: pending
 
 ## Result
-- Summary: Safe ticket-owner turn only. The blocker has shifted from path contention to spec drift: `prd_004` still assumes a settings-sidebar Help flow, but the live renderer in this isolated worktree no longer contains that sidebar/navigation architecture at all.
-- Remaining risk: Implementing a compliant Help feature now would require unplanned UI restructuring beyond a narrow "add one sidebar item and one section" change. Retrying without a refreshed PRD will keep producing false negatives or partial UI work that does not satisfy the original acceptance criteria.
+- Summary:
+- Remaining risk:
 
 ## Reject Reason
 
 - Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
 
 ## Retry
-- Retry Count: 2
+- Retry Count: 1
 - Max Retries: 2
 
 ## Reject History
 - 2026-04-26T02:07:43Z | retry_count=1 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_010948Z_fail.md`` | reason=Spec/code drift: current desktop renderer has no settingsNavigation or activeSettingsSection entry points for the requested Help sidebar flow, and the ticket verification command is stale in this worktree (npx tsc unavailable; tests/smoke/ticket-owner-smoke.sh missing). Replan prd_004 against the current desktop layout and live verification paths.
 - 2026-04-26T02:23:14Z | retry_count=2 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_020951Z_fail.md`` | reason=Verification command passes, but manual acceptance review still fails: `settingsNavigation` ends at `automation`, there is no `help` nav entry or `activeSettingsSection === "help"` render branch, and the allowed files do not contain the required Help-section text/classes (`도움말`, `HelpSection`, `.help-section`, `.help-card`). Re-run this ticket only after implementing the Help UI and validating criteria beyond command exit codes.
+- 2026-04-26T03:00:41Z | retry_count=1 | source=`tickets/reject/reject_004.md` | log=``logs/verifier_004_20260426_024350Z_fail.md`` | reason=Verification failed in two observable ways on 2026-04-26: the automated command stops at `cd apps/desktop && npx tsc --noEmit` with exit 1 because the worktree does not have a local TypeScript compiler installed, and manual acceptance review still fails because the live renderer no longer contains the PRD's required settings-sidebar architecture (`settingsNavigation`, `activeSettingsSection`, `help` nav branch, `HelpSection`, `.help-section`, `.help-card`, `도움말`). Re-run only after replanning `prd_004` against the current dashboard-style renderer or explicitly broadening scope to restore that sidebar model, and after fixing the live verification prerequisites.
