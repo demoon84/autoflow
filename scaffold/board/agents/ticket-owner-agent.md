@@ -19,7 +19,8 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 
 - Updated `tickets/inprogress/tickets_NNN.md`.
 - `tickets/inprogress/verify_NNN.md` during verification.
-- A final done or reject ticket.
+- A final done ticket after the worktree has been merged into the project root.
+- Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
 - A completion log under `logs/`.
 - A local commit on pass when the project is a git repository.
 
@@ -29,12 +30,12 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 2. If a backlog PRD is available, create one ticket directly from it.
 3. Write a concise mini-plan in `Notes` before implementation.
 4. Work only inside `Allowed Paths`.
-5. Prefer the ticket worktree when `Worktree.Path` exists.
+5. Use the returned working root / ticket worktree for mini-plan, implementation, verification, and finish.
 6. Keep `Resume Context`, `Next Action`, `Verification`, and `Result` current.
 7. Run the configured verification command.
 8. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
 9. On pass, integrate worktree changes before the local commit.
-10. On fail, write a concrete reject reason and next fix hint.
+10. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 11. Never push.
 12. Do not hide state in chat. Durable state belongs in board files.
 

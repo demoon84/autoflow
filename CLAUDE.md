@@ -17,4 +17,6 @@ When the user invokes `/af`, `/autoflow`, `#af`, or `#autoflow`, treat it as an 
 
 Ticket-owner runtime note: once execution starts, `start-ticket-owner.*` may automatically replan a rejected ticket back to `todo` up to `AUTOFLOW_REJECT_MAX_RETRIES` times unless `AUTOFLOW_REJECT_AUTO_REPLAN=off`.
 
+Wiki maintainer note: a pass finish may also auto-run one enabled `wiki-maintainer` runner as a non-blocking one-shot follow-up. `autoflow wiki query --synth` and `autoflow wiki lint --semantic` reuse the same adapter path when available and gracefully report skipped status when no adapter is configured.
+
 User-visible worker notation rule: ticket / verification / log markdown and desktop previews should render runner ids as `AI-N`. Keep storage ids such as `owner-1`, runtime role keys, and runner state filenames unchanged.

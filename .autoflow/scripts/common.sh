@@ -175,7 +175,7 @@ worktree_auto_fallback_reason() {
   local allowed_path status
 
   case "${AUTOFLOW_WORKTREE_MODE:-auto}" in
-    auto|"")
+    project-root-on-dirty|PROJECT_ROOT_ON_DIRTY|fallback-on-dirty|FALLBACK_ON_DIRTY)
       ;;
     *)
       return 1

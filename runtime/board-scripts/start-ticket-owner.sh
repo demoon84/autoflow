@@ -606,16 +606,22 @@ if [ -n "$replanned_reject" ]; then
   fi
 
   printf 'status=ok\n'
-  printf 'ticket=%s\n' "$replanned_ticket"
-  printf 'ticket_id=%s\n' "$(extract_numeric_id "$replanned_ticket")"
-  printf 'stage=todo\n'
-  printf 'source=replan\n'
   printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
   printf 'retry_count=%s\n' "$(ticket_retry_count "$replanned_ticket")"
   emit_replan_skipped_metadata "$replan_skipped_file"
+  printf 'ticket=%s\n' "$replanned_ticket"
+  printf 'ticket_id=%s\n' "$(extract_numeric_id "$replanned_ticket")"
+  printf 'owner=%s\n' "$worker_id"
+  printf 'stage=todo\n'
+  printf 'source=replan\n'
+  printf 'worktree_status=pending_claim\n'
+  printf 'implementation_root=%s\n' "$PROJECT_ROOT"
+  printf 'run=%s\n' "$(ensure_runs_file "$(extract_numeric_id "$replanned_ticket")")"
+  printf 'done_target=%s\n' "$(done_ticket_path_for_ticket_file "$replanned_ticket")"
+  printf 'reject_target=%s\n' "$(reject_ticket_path_for_ticket_file "$replanned_ticket")"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Run scripts/start-ticket-owner.sh again to claim the replanned todo ticket. The next mini-plan must address the latest Reject History entry.\n'
+  printf 'next_action=Replanned reject moved back to todo. The next ticket-owner start should claim tickets_%s from todo and continue with a mini-plan that addresses the latest Reject History entry.\n' "$(extract_numeric_id "$replanned_ticket")"
   exit 0
 fi
 

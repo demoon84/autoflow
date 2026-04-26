@@ -120,8 +120,9 @@ require_line "$spec_output" "status=created"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
-require_line "$runner_list_output" "runner_count=1"
+require_line "$runner_list_output" "runner_count=2"
 require_line "$runner_list_output" "runner.1.id=owner-1"
+require_line "$runner_list_output" "runner.2.id=wiki-maintainer-1"
 
 "${REPO_ROOT}/bin/autoflow" runners set owner-1 "$project_dir" agent=shell model=smoke-model >"$runner_set_output"
 require_line "$runner_set_output" "status=ok"
@@ -148,6 +149,8 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_
 require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
 require_line "$finish_output" "wiki.status=updated"
+require_line "$finish_output" "wiki_maintainer.status=failed"
+require_line "$finish_output" "wiki_maintainer.reason=autoflow_cli_missing"
 require_line "$finish_output" "commit_status=committed"
 require_pattern "$finish_output" '^commit_hash=[0-9a-f]{40}$'
 require_line "${project_dir}/.autoflow/wiki/index.md" "<!-- AUTOFLOW:BEGIN work-map -->"

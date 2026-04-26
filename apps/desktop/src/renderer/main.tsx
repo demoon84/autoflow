@@ -19,7 +19,6 @@ import {
   Loader2,
   Play,
   RefreshCw,
-  Repeat,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -1633,7 +1632,7 @@ function App() {
 
               {activeSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
-                  <section className="board-section" aria-label="코덱스 작업 흐름">
+                  <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
                     <TicketBoard
                       board={board}
                       installedAgentProfiles={installedAgentProfiles}
@@ -2163,7 +2162,7 @@ function EssentialApp() {
               </section>
             ) : (
               <section className="dashboard-area" aria-label="Autoflow 진행 상태">
-                <section className="board-section" aria-label="코덱스 작업 흐름">
+                <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
                   <div className="section-heading">
                     <div>
                       <h3>작업 흐름</h3>
@@ -2274,6 +2273,8 @@ function RunnerConsole({
             const isWorking = actionKey.endsWith(`:${runner.id}`);
             const canStart = mode === "loop";
             const canStop = status === "running" || Boolean(runner.pid);
+            const canRemove = status === "stopped" && !runner.pid;
+            const removeDisabled = !canRemove || Boolean(actionKey);
             const canEditConfig = status !== "running";
             const draft = drafts[runner.id] || {
               agent: runner.agent || "codex",
@@ -2322,7 +2323,6 @@ function RunnerConsole({
               ? (runnerEventTime ? formatDate(runnerEventTime) : "이벤트 없음")
               : runnerEventRaw;
             const selected = selectedRunnerId === runner.id;
-
             return (
               <article
                 key={runner.id}
@@ -2411,18 +2411,18 @@ function RunnerConsole({
                         {isWorking && actionKey.startsWith("start:") ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                          <Repeat className="h-4 w-4" />
+                          <Play className="h-4 w-4" />
                         )}
                       </Button>
                     )}
                     <Button
                       variant="outline"
                       size="icon"
-                      className="runner-icon-button runner-plain-icon-button"
-                      title="AI 삭제"
-                      data-tooltip="AI 삭제"
+                      className="runner-icon-button runner-plain-icon-button runner-delete-button"
+                      title={removeDisabled ? undefined : "AI 삭제"}
+                      data-tooltip={removeDisabled ? undefined : "AI 삭제"}
                       aria-label={`${runner.id} AI 삭제`}
-                      disabled={Boolean(actionKey)}
+                      disabled={removeDisabled}
                       onClick={() => {
                         onSelectRunner(runner.id);
                         onRemove(runner);
@@ -2544,6 +2544,37 @@ function RunnerConsole({
   );
 }
 
+function runnerConversationText(runner: AutoflowRunner) {
+  return (runner.conversationPreview || "").trim();
+}
+
+function shouldShowConversation(runner: AutoflowRunner) {
+  return Boolean(runnerConversationText(runner));
+}
+
+function ConversationStream({ label, text }: { label: string; text: string }) {
+  const ref = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    const node = ref.current;
+    if (node) {
+      node.scrollTop = node.scrollHeight;
+    }
+  }, [text]);
+
+  return (
+    <div
+      ref={ref}
+      className="ai-progress-conversation"
+      role="log"
+      aria-live="polite"
+      aria-label={label}
+    >
+      <pre>{text}</pre>
+    </div>
+  );
+}
+
 function SnapshotGrid({
   board,
   lastUpdated,
@@ -2640,6 +2671,8 @@ function currentMetricSnapshot(
     autoflow_code_insertions_count: statusNumber(metrics, "autoflow_code_insertions_count"),
     autoflow_code_deletions_count: statusNumber(metrics, "autoflow_code_deletions_count"),
     autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
+    autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
+    autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
     verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent"),
     completion_rate_percent: statusNumber(metrics, "completion_rate_percent")
   };
@@ -2823,13 +2856,14 @@ function ReportingDashboard({
   const completionRate = statusNumber(metrics, "completion_rate_percent");
   const artifactOk = statusNumber(metrics, "runner_artifact_ok_count");
   const artifactWarning = statusNumber(metrics, "runner_artifact_warning_count");
-  const artifactNotApplicable = statusNumber(metrics, "runner_artifact_not_applicable_count");
-  const artifactTotal = artifactOk + artifactWarning + artifactNotApplicable;
+  const artifactTotal = artifactOk + artifactWarning;
   const commitCount = statusNumber(metrics, "autoflow_commit_count");
   const codeFilesChangedCount = statusNumber(metrics, "autoflow_code_files_changed_count");
   const codeInsertionsCount = statusNumber(metrics, "autoflow_code_insertions_count");
   const codeDeletionsCount = statusNumber(metrics, "autoflow_code_deletions_count");
   const codeVolumeCount = statusNumber(metrics, "autoflow_code_volume_count");
+  const tokenUsageCount = statusNumber(metrics, "autoflow_token_usage_count");
+  const tokenReportCount = statusNumber(metrics, "autoflow_token_report_count");
   const runnerRunning = statusNumber(metrics, "runner_running_count");
   const runnerIdle = statusNumber(metrics, "runner_idle_count");
   const runnerStopped = statusNumber(metrics, "runner_stopped_count");
@@ -2856,6 +2890,15 @@ function ReportingDashboard({
     { label: "변경 파일", value: codeFilesChangedCount, color: reportColors.blue },
     { label: "추가 라인", value: codeInsertionsCount, color: reportColors.green },
     { label: "삭제 라인", value: codeDeletionsCount, color: reportColors.red }
+  ];
+  const aiUsageData: ReportDatum[] = [
+    {
+      label: "사용 토큰",
+      value: tokenUsageCount,
+      color: reportColors.violet,
+      detail: `${formatCount(tokenReportCount)}개 실행 로그`
+    },
+    { label: "AI 산출물", value: artifactTotal, color: reportColors.amber }
   ];
 
   return (
@@ -2888,6 +2931,13 @@ function ReportingDashboard({
           detail={`${formatSignedCount(codeInsertionsCount)} / -${formatCount(codeDeletionsCount)} · ${formatCount(codeFilesChangedCount)}개 파일`}
           icon={ClipboardList}
           tone="report-tone-green"
+        />
+        <ReportMetricCard
+          label="토큰 사용량"
+          value={formatCount(tokenUsageCount)}
+          detail={`${formatCount(tokenReportCount)}개 실행 로그 기준`}
+          icon={Terminal}
+          tone="report-tone-violet"
         />
         <ReportMetricCard
           label="인수인계"
@@ -2948,6 +2998,17 @@ function ReportingDashboard({
             </div>
           </div>
           <ReportBarBreakdown data={codeImpactData} />
+        </section>
+
+        <section className="report-chart-card" aria-label="AI 사용량">
+          <div className="report-chart-heading">
+            <Terminal className="h-4 w-4" />
+            <div>
+              <h3>AI 사용량</h3>
+              <span>{formatCount(tokenUsageCount)} 토큰</span>
+            </div>
+          </div>
+          <ReportBarBreakdown data={aiUsageData} />
         </section>
 
         <section className="report-chart-card" aria-label="AI 가동 상태">
@@ -3511,7 +3572,7 @@ function WorkflowPinLayer({
                           {file.stateLabel}
                         </span>
                       ) : null}
-                      <time>{formatDate(file.modifiedAt)}</time>
+                      <time>{formatDate(file.createdAt || file.modifiedAt)}</time>
                     </button>
                   </li>
                 ))}
@@ -3546,46 +3607,93 @@ function TicketBoard({
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
-    .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
-  const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort((a, b) =>
-    b.modifiedAt.localeCompare(a.modifiedAt)
+    .map((file) => ({ ...file } as WorkflowFileEntry));
+  const specNumericId = (name: string) => {
+    const match = name.match(/(?:prd|project)_(\d+)/);
+    return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
+    (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
 
+  const runnersWithConversation = runners.filter((runner) => shouldShowConversation(runner));
+
   return (
-    <div className="ai-progress-board" aria-label="AI별 작업 진행률">
-      {specFiles.length ? (
-        <WorkflowPinLayer
-          files={specFiles}
-          options={options}
-          pinTitle={`PRD ${specFiles.length}건`}
-          pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
-          variant="default"
-          layerHeading={`PRD ${specFiles.length}건`}
-          layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
-        />
-      ) : null}
-      {rejectFiles.length ? (
-        <WorkflowPinLayer
-          files={rejectFiles}
-          options={options}
-          pinTitle={`반려 ${rejectFiles.length}건 보류`}
-          pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
-          variant="destructive"
-          layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
-          layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
-        />
-      ) : null}
-      {runners.length ? (
-        runners.map((runner) => (
-          <AiProgressRow key={runner.id} runner={runner} onSelect={onSelect} installedAgentProfiles={installedAgentProfiles} />
-        ))
-      ) : (
-        <div className="ai-progress-empty">
-          <strong>AI가 없습니다</strong>
-          <span>AI 관리 메뉴에서 AI를 추가하면 진행 상태가 여기에 표시됩니다.</span>
+    <div className="workflow-progress-layout">
+      {specFiles.length || rejectFiles.length ? (
+        <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
+          {specFiles.length ? (
+            <WorkflowPinLayer
+              files={specFiles}
+              options={options}
+              pinTitle={`PRD ${specFiles.length}건`}
+              pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
+              variant="default"
+              layerHeading={`PRD ${specFiles.length}건`}
+              layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
+            />
+          ) : null}
+          {rejectFiles.length ? (
+            <WorkflowPinLayer
+              files={rejectFiles}
+              options={options}
+              pinTitle={`반려 ${rejectFiles.length}건 보류`}
+              pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
+              variant="destructive"
+              layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
+              layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
+            />
+          ) : null}
         </div>
-      )}
+      ) : null}
+      {(specFiles.length || rejectFiles.length) && runners.length ? (
+        <hr className="workflow-progress-divider" aria-hidden="true" />
+      ) : null}
+      <div className="ai-progress-board" aria-label="AI별 작업 진행률">
+        {runners.length ? (
+          runners.map((runner) => (
+            <AiProgressRow key={runner.id} runner={runner} onSelect={onSelect} installedAgentProfiles={installedAgentProfiles} />
+          ))
+        ) : (
+          <div className="ai-progress-empty">
+            <strong>AI가 없습니다</strong>
+            <span>AI 관리 메뉴에서 AI를 추가하면 진행 상태가 여기에 표시됩니다.</span>
+          </div>
+        )}
+      </div>
+      {runnersWithConversation.length ? (
+        <section className="ai-conversation-board" aria-label="AI 처리 내용">
+          {runnersWithConversation.map((runner) => (
+            <AiConversationPanel
+              key={runner.id}
+              runnerLabel={displayWorkflowRunnerId(runner.id)}
+              agentLabel={runner.agent || "AI"}
+              text={runnerConversationText(runner)}
+            />
+          ))}
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function AiConversationPanel({
+  runnerLabel,
+  agentLabel,
+  text
+}: {
+  runnerLabel: string;
+  agentLabel: string;
+  text: string;
+}) {
+  return (
+    <article className="ai-conversation-panel" aria-label={`${runnerLabel} 처리 내용`}>
+      <header className="ai-conversation-panel-head">
+        <strong>{runnerLabel}</strong>
+        <span>{agentLabel}</span>
+      </header>
+      <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} />
+    </article>
   );
 }
 
@@ -3676,14 +3784,6 @@ function displayWorkflowRunnerId(value: string) {
   return value.replace(/^owner-/, "AI-").replace(/^worker-/, "AI-");
 }
 
-function capitalizeAgentName(value: string) {
-  if (!value) {
-    return value;
-  }
-
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
 function projectKeyFromSpecRef(value: string) {
   return value.match(/(prd_\d+|project_\d+)/)?.[1] || "";
 }
@@ -3725,44 +3825,47 @@ function AiProgressRow({
   const ticketPath = activeTicketPath(runner);
   const activeStageLabel = runner.activeStage ? displayStatus(runner.activeStage) : stage.label;
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
-  const agentLabel = capitalizeAgentName(runner.agent || "AI");
+  const agentLabel = runner.agent || "AI";
   const normalized = normalizeRunnerSelections(
     runner.agent || "codex",
     runner.model || "",
     runner.reasoning || "",
     installedAgentProfiles || {}
   );
-  const agentMetaLabel = [agentLabel, normalized.model, normalized.supportsReasoning ? normalized.reasoning : ""]
-    .filter(Boolean)
-    .join(" ");
+  const modelLabel = normalized.model ? displayRunnerOption(runner.agent || "codex", normalized.model) : "";
+  const reasoningLabel =
+    normalized.supportsReasoning && normalized.reasoning
+      ? displayRunnerOption(runner.agent || "codex", normalized.reasoning)
+      : "";
+  const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
   const metaLabel = displayWorkflowRunnerId(runner.id);
-  const progressLabel =
-    currentKey === "reject" ? "공정률: 거절" : `공정률: ${status === "idle" ? 0 : Math.round(progressRatio * 100)}%`;
 
   return (
     <article className={`ai-progress-row ai-progress-${currentKey}`}>
-      <div className="ai-progress-agent">
-        <div className="ai-progress-agent-copy">
-          <strong className="ai-progress-agent-meta">{agentMetaLabel}</strong>
-          <span className="ai-progress-agent-id">{metaLabel}</span>
-          <span className="ai-progress-agent-rate">{progressLabel}</span>
+      <div className="ai-progress-row-top">
+        <div className="ai-progress-agent">
+          <div>
+            <strong>{agentLabel}</strong>
+            {modelMetaLabel ? <p>{modelMetaLabel}</p> : null}
+            <span>{metaLabel}</span>
+          </div>
         </div>
-      </div>
 
-      <div
-        className={`ai-progress-track ${currentKey === "reject" ? "ai-progress-track-reject" : ""}`}
-        style={{ "--progress-value": progressValue } as React.CSSProperties}
-        aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
-      >
-        {ownerFlowStages.map((step) => {
-          const stepState = flowStepState(step.key, currentKey);
-          return (
-            <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
-              <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
-              <span>{step.label}</span>
-            </div>
-          );
-        })}
+        <div
+          className={`ai-progress-track ${currentKey === "reject" ? "ai-progress-track-reject" : ""}`}
+          style={{ "--progress-value": progressValue } as React.CSSProperties}
+          aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
+        >
+          {ownerFlowStages.map((step) => {
+            const stepState = flowStepState(step.key, currentKey);
+            return (
+              <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
+                <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
+                <span>{step.label}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="ai-progress-current">

@@ -3,7 +3,7 @@
 ## Meta
 
 - Ticket ID: 008
-- PRD Key: prd_008
+- Project Key: project_NNN
 - Verifier:
 - Status: pass
 - Started At:
@@ -11,6 +11,7 @@
 - Working Root: /Users/demoon/Documents/project/autoflow
 
 - Target: tickets_008.md
+- PRD Key: prd_008
 ## Obsidian Links
 - Project Note: [[prd_008]]
 - Plan Note:
@@ -25,8 +26,8 @@
 - [ ] Verification command was run.
 
 ## Command
-- Started At: 2026-04-26T01:59:51Z
-- Finished At: 2026-04-26T02:00:27Z
+- Started At: 2026-04-26T06:09:33Z
+- Finished At: 2026-04-26T06:09:48Z
 - Working Root: `/Users/demoon/Documents/project/autoflow`
 - Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh && bash tests/smoke/ticket-owner-replan-smoke.sh && diff -q runtime/board-scripts/start-ticket-owner.sh .autoflow/scripts/start-ticket-owner.sh && diff -q runtime/board-scripts/common.sh .autoflow/scripts/common.sh && diff -q .autoflow/agents/ticket-owner-agent.md scaffold/board/agents/ticket-owner-agent.md`
 - Exit Code: 0
@@ -36,11 +37,11 @@
 
 ```text
 status=ok
-project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.HRx5mdbuHV
-commit_hash=3338f2d5290b5498970ff1d8a9ee9b9589d0fb0f
+project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.Ue5Q7hL8SC
+commit_hash=4ae0721a1937e5476bce6e88b9f5c171a27e0d6f
 status=ok
-project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.qcMi67R2VS
-commit_hash=03c845d9a8a6d66c5c0b4c3c003633e5cf1e8f27
+project_root=/var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/tmp.YCOWz0ajY7
+commit_hash=0d5cdf85dbfaf6f219c9b9dde4d46f4917a78e13
 ```
 
 ### stderr
@@ -52,7 +53,7 @@ commit_hash=03c845d9a8a6d66c5c0b4c3c003633e5cf1e8f27
 ## Evidence
 - Result: passed
 - Exit Code: 0
-- Completed At: 2026-04-26T02:00:27Z
+- Completed At: 2026-04-26T06:09:48Z
 
 ## Findings
 - blocker:
