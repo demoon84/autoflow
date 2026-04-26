@@ -6,12 +6,12 @@
 - PRD Key: prd_007
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_007/prd_007.md
 - Title: Ticket owner work for prd_007
-- Stage: rejected
-- AI: AI-1
-- Claimed By: AI-1
-- Execution AI: AI-1
-- Verifier AI: AI-1
-- Last Updated: 2026-04-26T03:10:19Z
+- Stage: todo
+- AI: 
+- Claimed By: 
+- Execution AI: 
+- Verifier AI: 
+- Last Updated: 2026-04-26T04:02:58Z
 
 ## Goal
 
@@ -35,11 +35,11 @@
 - apps/desktop/src/renderer/styles.css
 
 ## Worktree
-- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007`
-- Branch: autoflow/tickets_007
-- Base Commit: 983bf6515ac926a0f31d5576797940113bc1015c
+- Path:
+- Branch:
+- Base Commit:
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: pending_claim
 
 ## Done When
 
@@ -57,7 +57,7 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- 다음에 바로 이어서 할 일: 가장 최근 Reject History 를 반영해 mini-plan 을 다시 적고 구현을 재개한다.
 
 ## Resume Context
 
@@ -120,10 +120,11 @@
 - AI-1 prepared resume at 2026-04-26T03:09:18Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_007; run=tickets/inprogress/verify_007.md
 - Ticket owner verification failed at 2026-04-26T03:09:55Z: command exited 254
 - AI-1 marked fail at 2026-04-26T03:10:19Z.
+- Ticket automatically replanned from tickets/reject/reject_007.md at 2026-04-26T04:02:58Z; retry_count=3
 ## Verification
-- Run file: `tickets/reject/verify_007.md`
-- Log file: `logs/verifier_007_20260426_031019Z_fail.md`
-- Result: failed
+- Run file:
+- Log file:
+- Result: pending
 
 ## Result
 - Summary:
@@ -134,7 +135,7 @@
 - Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
 
 ## Retry
-- Retry Count: 2
+- Retry Count: 3
 - Max Retries: 10
 
 ## Reject History
@@ -142,3 +143,4 @@
 - 2026-04-26T02:45:11Z | retry_count=2 | source=`tickets/reject/reject_007.md` | log=``logs/verifier_007_20260426_024507Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
 - 2026-04-26T03:02:53Z | retry_count=1 | source=`tickets/reject/reject_007.md` | log=``logs/verifier_007_20260426_024654Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
 - 2026-04-26T03:06:53Z | retry_count=2 | source=`tickets/reject/reject_007.md` | log=``logs/verifier_007_20260426_030441Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.
+- 2026-04-26T04:02:58Z | retry_count=3 | source=`tickets/reject/reject_007.md` | log=``logs/verifier_007_20260426_031019Z_fail.md`` | reason=Verification is blocked outside Allowed Paths: `apps/desktop/package.json` declares `typescript`, but this isolated worktree currently lacks both `apps/desktop/node_modules/typescript` and `apps/desktop/node_modules/.bin/tsc`, so the required `cd apps/desktop && npx tsc --noEmit` exits 1 before syntax or smoke verification can run.

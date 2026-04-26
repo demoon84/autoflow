@@ -282,9 +282,6 @@ run_default_adapter_command() {
       fi
       cmd+=(-)
       command_summary="$(command_summary_from_array "${cmd[@]}")"
-      if [ "${AUTOFLOW_CODEX_SERIALIZE:-off}" = "on" ]; then
-        adapter_lock_acquire "codex"
-      fi
       if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v script >/dev/null 2>&1 && [ "${AUTOFLOW_CODEX_DISABLE_PTY:-}" != "1" ]; then
         codex_wrapper="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-wrapper.XXXXXX")"
         {
@@ -301,7 +298,6 @@ run_default_adapter_command() {
         "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
       fi
-      adapter_lock_release
       return "$command_exit"
       ;;
     claude)
@@ -464,44 +460,6 @@ agent_runtime_preflight_or_exit() {
     exit "$preflight_exit"
   fi
   exit 0
-}
-
-adapter_lock_dir=""
-
-adapter_lock_acquire() {
-  local lock_name="$1"
-  local lock_root lock_dir lock_pid retry_index
-
-  runner_ensure_dirs
-  lock_root="$(runner_log_dir)/locks"
-  mkdir -p "$lock_root"
-  lock_dir="${lock_root}/${lock_name}.lock"
-
-  while ! mkdir "$lock_dir" 2>/dev/null; do
-    lock_pid=""
-    for retry_index in 1 2 3 4 5; do
-      if [ -f "${lock_dir}/pid" ]; then
-        lock_pid="$(tr -d '\r\n' < "${lock_dir}/pid" 2>/dev/null || true)"
-        [ -n "$lock_pid" ] && break
-      fi
-      sleep 0.2
-    done
-    if [ -n "$lock_pid" ] && ! runner_pid_is_running "$lock_pid"; then
-      rm -rf "$lock_dir" 2>/dev/null || true
-      continue
-    fi
-    sleep 2
-  done
-
-  printf '%s\n' "$$" > "${lock_dir}/pid"
-  adapter_lock_dir="$lock_dir"
-}
-
-adapter_lock_release() {
-  if [ -n "${adapter_lock_dir:-}" ]; then
-    rm -rf "$adapter_lock_dir" 2>/dev/null || true
-    adapter_lock_dir=""
-  fi
 }
 
 if [ ! -f "$config_path" ]; then

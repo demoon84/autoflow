@@ -11,7 +11,7 @@
 - Claimed By: AI-4
 - Execution AI: AI-4
 - Verifier AI: AI-4
-- Last Updated: 2026-04-26T04:00:13Z
+- Last Updated: 2026-04-26T04:03:27Z
 
 ## Goal
 
@@ -39,7 +39,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001`
 - Branch: autoflow/tickets_001
-- Base Commit: 673b2b7a622e68f2f175741fe6a6e0423e2d21cc
+- Base Commit: 23e6373b1ae12bf4ce112db60acd9d65a5498d4e
 - Worktree Commit:
 - Integration Status: pending
 
@@ -64,6 +64,7 @@
 
 ## Resume Context
 
+- Current checkpoint (2026-04-26T04:00:26Z): `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` still resumes `tickets_001` with `worktree_status=ready` and `implementation_root=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001`. `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001 status --short` still shows only untracked linked `node_modules`, but project-root `git status --short` still includes unrelated `.autoflow/scripts/*`, `runtime/board-scripts/*`, wiki files, reject files, and other ticket changes. `sed -n '160,230p' .autoflow/scripts/finish-ticket-owner.sh` still shows `stage_ticket_commit_scope` staging `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale before commit, and `bin/autoflow metrics` at 2026-04-26T04:00:13Z still reports `completion_rate_percent=22.2` with `ticket_inprogress_count=5`. Keep `Stage: blocked`; do not rerun verification and do not call pass finish in this turn.
 - Current checkpoint (2026-04-26T03:20:22Z): `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` again resumed `tickets_001` with `worktree_status=ready` and `implementation_root=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001`. `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001 status --short` still shows only untracked linked `node_modules`, but project-root `git status --short` still includes unrelated `.autoflow/scripts/common.sh`, `.autoflow/scripts/start-ticket-owner.sh`, `runtime/board-scripts/*`, wiki files, reject files, and other inprogress tickets. `sed -n '160,230p' .autoflow/scripts/finish-ticket-owner.sh` still shows `stage_ticket_commit_scope` staging `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale before commit, and `bin/autoflow metrics` now reports `completion_rate_percent=22.2` with `ticket_inprogress_count=5`. Keep `Stage: blocked`; do not rerun verification and do not call pass finish in this turn.
 - Current checkpoint (2026-04-26T03:17:06Z): `AUTOFLOW_WORKER_ID=owner-4 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_001` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001`. `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` still points to `tickets/done/prd_001/prd_001.md` as the direct governing reference. `git -C /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001 status --short` shows no allowed-path implementation delta beyond untracked linked `node_modules`, but project-root `git status --short` still includes unrelated board/wiki changes for other tickets (`tickets_003`, `tickets_004`, reject/wiki/script churn). `finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale at lines 180-184, and `bin/autoflow metrics` now reports `completion_rate_percent=22.2`. Keep this ticket blocked; do not rerun verification and do not call pass finish in this turn.
 - Current checkpoint (2026-04-26T03:07:23Z): `AUTOFLOW_WORKER_ID=owner-3 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` no longer resumed `tickets_001`; it returned `status=ok`, `ticket=/Users/demoon/Documents/project/autoflow/.autoflow/tickets/todo/tickets_007.md`, `ticket_id=007`, `stage=todo`, and `source=replan`, while `.autoflow/runners/state/owner-3.state` still points to `active_ticket_id=tickets_001`. `bin/autoflow wiki query . --term Wiki --term Handoff --term conversations` still surfaces `tickets/done/prd_001/prd_001.md` as the direct reference, `git status --short -- apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css .autoflow/agents/wiki-maintainer-agent.md scaffold/board/agents/wiki-maintainer-agent.md` is now clean, and `bin/autoflow metrics` still reports `completion_rate_percent=25.0`. Because `finish-ticket-owner.sh` still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale, and because the runtime is now proposing a second ticket before reconciling the first owner state, do not claim `tickets_007`, do not rerun verification, and do not finish `tickets_001` in this turn.
@@ -79,6 +80,11 @@
 
 ## Notes
 
+- Safe ticket turn checkpoint (2026-04-26T04:00:26Z):
+  - Re-ran `start-ticket-owner.sh` as owner-4 and confirmed this owner still resumes the same isolated worktree for `tickets_001`.
+  - Rechecked both working trees: the ticket worktree still has no allowed-path implementation delta, while project root still carries unrelated script, wiki, reject, and other ticket churn.
+  - Re-read `.autoflow/scripts/finish-ticket-owner.sh`; pass flow still stages `${BOARD_ROOT}/tickets`, `${BOARD_ROOT}/logs`, and `${BOARD_ROOT}/wiki` wholesale, so commit attribution remains unsafe.
+  - Decision: leave `Stage: blocked`, make no product edits, do not rerun verification, and do not call finish in this turn.
 - Safe ticket turn checkpoint (2026-04-26T03:20:22Z):
   - Re-ran `start-ticket-owner.sh` as owner-4 and confirmed this owner still correctly resumes `tickets_001` into the isolated ticket worktree.
   - Rechecked both sides of the finish decision: the ticket worktree remains effectively clean, but project root still has unrelated board/script/wiki churn from other tickets.
@@ -233,13 +239,16 @@
 - AI owner-4 prepared resume at 2026-04-26T03:22:19Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
 - AI AI-4 prepared resume at 2026-04-26T03:59:25Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
 - AI AI-4 prepared resume at 2026-04-26T04:00:13Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- Auto-recovery at 2026-04-26T04:02:43Z: cleared blocked worktree fields, retrying claim
+- AI AI-4 prepared resume at 2026-04-26T04:02:43Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
+- AI AI-4 prepared resume at 2026-04-26T04:03:27Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_001; run=tickets/inprogress/verify_001.md
 ## Verification
 - Run file: `tickets/inprogress/verify_001.md`
 - Log file: pending
 - Result: pending ticket-owner by AI-4
 
 ## Result
-- Summary: Safe owner turn only. `tickets_001` remains blocked because verification is already green, but pass finish would still stage `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` wholesale while unrelated board/wiki/script changes for other tickets remain dirty in project root.
+- Summary: Safe owner turn only. `tickets_001` remains blocked because verification is already green, but pass finish still stages `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` wholesale while unrelated board/wiki/script changes for other tickets remain dirty in project root as of 2026-04-26T04:00:26Z.
 - Remaining risk: implementation correctness is not the blocker. Commit attribution is. Until pass staging is narrowed to `tickets_001` artifacts plus its allowed product paths, this ticket should stay blocked even with a clean isolated worktree.
 
 ## Reject Reason

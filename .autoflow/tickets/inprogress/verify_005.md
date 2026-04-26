@@ -8,7 +8,7 @@
 - Status: pending
 - Started At: 2026-04-26T03:18:19Z
 - Finished At: 2026-04-26T03:19:08Z
-- Working Root: /Users/demoon/Documents/project/autoflow
+- Working Root: /Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005
 
 - Target: tickets_005.md
 - PRD Key: prd_005

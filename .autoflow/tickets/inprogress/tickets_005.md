@@ -11,7 +11,7 @@
 - Claimed By: AI-2
 - Execution AI: AI-2
 - Verifier AI: AI-2
-- Last Updated: 2026-04-26T03:59:55Z
+- Last Updated: 2026-04-26T04:02:21Z
 
 ## Goal
 
@@ -51,11 +51,11 @@
 - integrations/codex/skills
 
 ## Worktree
-- Path:
-- Branch:
-- Base Commit: 673b2b7a622e68f2f175741fe6a6e0423e2d21cc
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
+- Branch: autoflow/tickets_005
+- Base Commit: 23e6373b1ae12bf4ce112db60acd9d65a5498d4e
 - Worktree Commit:
-- Integration Status: project_root_fallback
+- Integration Status: pending
 
 ## Done When
 
@@ -77,12 +77,18 @@
 
 ## Resume Context
 
+- Current checkpoint (2026-04-26T04:00:14Z): `AUTOFLOW_WORKER_ID=owner-2 AUTOFLOW_ROLE=ticket-owner ./.autoflow/scripts/start-ticket-owner.sh` correctly resumed `tickets_005`, but only in `project_root_fallback` mode because `AGENTS.md` is already dirty in `PROJECT_ROOT`. `git status --short` still shows unrelated tracked edits in `AGENTS.md`, `CLAUDE.md`, `scaffold/board/AGENTS.md`, `.autoflow/scripts/finish-ticket-owner.sh`, `runtime/board-scripts/finish-ticket-owner.sh`, and `apps/desktop/src/components/ui/markdown-viewer.tsx`. `verify_005.md` remains pass-evidence-ready from 2026-04-26T03:18:27Z, and `bin/autoflow metrics` now reports `completion_rate_percent=22.2`. This turn must stay blocked-safe only; do not rerun finish until commit scope is isolated.
 - Current status: `owner-2` verified the hydrated worktree successfully on 2026-04-26; the required command exited 0 and the PRD alias/help/scaffold spot-checks also passed without any in-scope product diff.
 - Last action: stopped before `finish-ticket-owner.sh 005 pass ...` because `PROJECT_ROOT` currently has unrelated dirty board/wiki files and that finish runtime stages `.autoflow/tickets`, `.autoflow/logs`, and `.autoflow/wiki` broadly, which would create an unsafe mixed local commit.
 - Next resume step: isolate or clear unrelated board/wiki changes in `PROJECT_ROOT`, then rerun the pass finish command for this ticket so it can move to `done/prd_005/` with a ticket-scoped commit.
 
 ## Notes
 
+- Safe ticket turn checkpoint (2026-04-26T04:00:14Z):
+  - Re-ran `start-ticket-owner.sh` as owner-2 and confirmed the runtime still resumes `tickets_005` rather than claiming new work.
+  - Rechecked prior context with `bin/autoflow wiki query . --term worker --term AI --term markdown`; it surfaced mostly adjacent worker-ID tickets and did not change the PRD scope or the existing finish blocker.
+  - Rechecked verification status and root dirtiness: `verify_005.md` still shows the required command passing, while `git status --short` in `PROJECT_ROOT` still includes unrelated tracked edits in files outside this ticket's safe finish scope.
+  - Decision: no code edits, no verification rerun, no finish call. Leave the ticket blocked with durable board evidence only.
 - Created by AI-3 from tickets/done/prd_005/prd_005.md at 2026-04-26T00:59:28Z.
 
 - AI-3 prepared spec at 2026-04-26T00:59:28Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
@@ -165,6 +171,10 @@
 - AI owner-2 prepared resume at 2026-04-26T03:22:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 - AI AI-2 prepared resume at 2026-04-26T03:59:25Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_005.md
 - AI AI-2 prepared resume at 2026-04-26T03:59:55Z; worktree=/Users/demoon/Documents/project/autoflow; run=tickets/inprogress/verify_005.md
+- Auto-recovery at 2026-04-26T04:01:41Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T04:01:41Z: cleared blocked worktree fields, retrying claim
+- AI AI-2 prepared resume at 2026-04-26T04:01:41Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-2 prepared resume at 2026-04-26T04:02:21Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 ## Verification
 - Run file: `tickets/inprogress/verify_005.md`
 - Log file: pending
