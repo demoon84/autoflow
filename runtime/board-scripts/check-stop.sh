@@ -255,7 +255,7 @@ merge_hook_reason() {
 
   ready_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
   if [ -n "$ready_file" ]; then
-    printf 'merge-bot work remains: ready-to-merge ticket %s is waiting.' "$(basename "$ready_file")"
+    printf 'coordinator work remains: ready-to-merge ticket %s is waiting.' "$(basename "$ready_file")"
     return 0
   fi
 

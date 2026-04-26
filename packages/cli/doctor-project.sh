@@ -18,9 +18,10 @@ check_output="$(mktemp)"
 detail_output="$(mktemp)"
 ticket_locations_output="$(mktemp)"
 duplicate_ticket_ids_output="$(mktemp)"
+worktree_heads_output="$(mktemp)"
 
 cleanup() {
-  rm -f "$check_output" "$detail_output" "$ticket_locations_output" "$duplicate_ticket_ids_output"
+  rm -f "$check_output" "$detail_output" "$ticket_locations_output" "$duplicate_ticket_ids_output" "$worktree_heads_output"
 }
 trap cleanup EXIT
 
@@ -57,6 +58,389 @@ check_id_fragment() {
   printf '%s' "$1" | sed 's/[^A-Za-z0-9_]/_/g'
 }
 
+trim_markdown_value() {
+  local raw="${1:-}"
+
+  raw="$(printf '%s' "$raw" | tr -d '\r')"
+  raw="$(printf '%s' "$raw" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  if printf '%s' "$raw" | grep -qE '^\[[^]]+\]\([^)]+\)$'; then
+    raw="$(printf '%s' "$raw" | sed -E 's/^\[[^]]+\]\(([^)]+)\)$/\1/')"
+  elif printf '%s' "$raw" | grep -qE '^\[\[[^]]+\]\]$'; then
+    raw="$(printf '%s' "$raw" | sed -E 's/^\[\[([^]|]+)(\|[^]]+)?\]\]$/\1/')"
+  else
+    raw="${raw#\`}"
+    raw="${raw%\`}"
+  fi
+  printf '%s' "$raw"
+}
+
+markdown_scalar_field() {
+  local file="$1"
+  local heading="$2"
+  local field="$3"
+
+  awk -v heading="$heading" -v field="$field" '
+    $0 == "## " heading { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section {
+      pattern = "^[[:space:]]*[-*][[:space:]]*" field ":[[:space:]]*"
+      if ($0 ~ pattern) {
+        sub(pattern, "", $0)
+        print
+        found=1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file" 2>/dev/null || true
+}
+
+ticket_scalar() {
+  markdown_scalar_field "$1" "Ticket" "$2"
+}
+
+ticket_worktree_scalar() {
+  trim_markdown_value "$(markdown_scalar_field "$1" "Worktree" "$2")"
+}
+
+ticket_numeric_id() {
+  local file="$1"
+  local base
+
+  base="$(basename "$file")"
+  case "$base" in
+    tickets_[0-9][0-9][0-9].md)
+      printf '%s' "${base#tickets_}" | sed 's/\.md$//'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ticket_state_folder() {
+  local file="$1"
+  local rel
+
+  rel="${file#${board_root}/tickets/}"
+  printf '%s' "${rel%%/*}"
+}
+
+allowed_path_is_concrete() {
+  local path="${1:-}"
+
+  case "$path" in
+    ""|TODO:*|TODO|todo:*|todo|/*|../*|*/../*|*"*"*|*"?"*|*"["*|*"]"*)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+ticket_allowed_paths() {
+  local file="$1"
+
+  awk '
+    /^## Allowed Paths/ { in_allowed=1; next }
+    /^## / && in_allowed { in_allowed=0 }
+    in_allowed && /^[[:space:]]*[-*] / {
+      sub(/^[[:space:]]*[-*][[:space:]]+/, "", $0)
+      gsub(/`/, "", $0)
+      sub(/^[[:space:]]+/, "", $0)
+      sub(/[[:space:]]+$/, "", $0)
+      if ($0 != "" && $0 != "...") print
+    }
+  ' "$file" 2>/dev/null
+}
+
+ticket_concrete_allowed_paths() {
+  local ticket_file="$1"
+  local allowed_path
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete "$allowed_path" || continue
+    printf '%s\n' "$allowed_path"
+  done < <(ticket_allowed_paths "$ticket_file") | sort -u
+}
+
+join_lines_csv() {
+  awk '
+    NF > 0 {
+      if (out != "") out = out ","
+      out = out $0
+    }
+    END { print out }
+  '
+}
+
+ticket_conflict_stage() {
+  case "${1:-}" in
+    planning|claimed|executing|ready_for_verification|verifying|blocked|ready-to-merge|merge-blocked)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+active_ticket_files() {
+  local active_dir
+
+  for active_dir in inprogress ready-to-merge merge-blocked; do
+    [ -d "${board_root}/tickets/${active_dir}" ] || continue
+    find "${board_root}/tickets/${active_dir}" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md'
+  done | sort
+}
+
+shared_allowed_path_blockers() {
+  local ticket_file="$1"
+  local ticket_id ticket_num current_paths other_file other_id other_num other_stage
+  local other_path found=false
+
+  ticket_id="$(ticket_numeric_id "$ticket_file" 2>/dev/null || true)"
+  [ -n "$ticket_id" ] || return 1
+  ticket_num="$((10#$ticket_id))"
+  current_paths="$(ticket_concrete_allowed_paths "$ticket_file")"
+  [ -n "$current_paths" ] || return 1
+
+  while IFS= read -r other_file; do
+    [ -n "$other_file" ] || continue
+    [ "$other_file" != "$ticket_file" ] || continue
+
+    other_id="$(ticket_numeric_id "$other_file" 2>/dev/null || true)"
+    [ -n "$other_id" ] || continue
+    other_num="$((10#$other_id))"
+    [ "$other_num" -lt "$ticket_num" ] || continue
+
+    other_stage="$(trim_markdown_value "$(ticket_scalar "$other_file" "Stage")")"
+    ticket_conflict_stage "$other_stage" || continue
+
+    while IFS= read -r other_path; do
+      [ -n "$other_path" ] || continue
+      if printf '%s\n' "$current_paths" | grep -Fqx -- "$other_path"; then
+        printf 'tickets_%s:%s\n' "$other_id" "$other_path"
+        found=true
+      fi
+    done < <(ticket_concrete_allowed_paths "$other_file")
+  done < <(active_ticket_files)
+
+  [ "$found" = "true" ]
+}
+
+append_csv_value() {
+  local current="$1"
+  local value="$2"
+
+  if [ -z "$current" ]; then
+    printf '%s' "$value"
+  else
+    printf '%s,%s' "$current" "$value"
+  fi
+}
+
+physical_path_equals() {
+  local left="$1"
+  local right="$2"
+  local left_physical right_physical
+
+  [ -d "$left" ] || return 1
+  [ -d "$right" ] || return 1
+  left_physical="$(cd "$left" && pwd -P)"
+  right_physical="$(cd "$right" && pwd -P)"
+  [ "$left_physical" = "$right_physical" ]
+}
+
+record_active_ticket_diagnostics() {
+  local active_count=0
+  local shared_blocked_count=0
+  local worktree_issue_count=0
+  local dirty_overlap_count=0
+  local risk_hint_count=0
+  local shared_head_group_count=0
+  local operational_issue_count=0
+  local project_is_git=false
+  local ticket_file ticket_id check_id ticket_state stage allowed_paths allowed_summary
+  local blockers blockers_summary dirty_paths allowed_path git_status
+  local worktree_path worktree_branch_expected worktree_branch_actual worktree_head base_commit integration_status
+  local worktree_status head duplicate_ids duplicate_count head_ticket_ids head_ticket_paths
+
+  : > "$worktree_heads_output"
+
+  if git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    project_is_git=true
+  fi
+
+  while IFS= read -r ticket_file; do
+    [ -n "$ticket_file" ] || continue
+    ticket_id="$(ticket_numeric_id "$ticket_file" 2>/dev/null || true)"
+    [ -n "$ticket_id" ] || continue
+    check_id="ticket_${ticket_id}"
+    active_count=$((active_count + 1))
+    ticket_state="$(ticket_state_folder "$ticket_file")"
+    stage="$(trim_markdown_value "$(ticket_scalar "$ticket_file" "Stage")")"
+    allowed_paths="$(ticket_concrete_allowed_paths "$ticket_file")"
+    allowed_summary="$(printf '%s\n' "$allowed_paths" | join_lines_csv)"
+
+    printf 'doctor.ticket.%s.file=%s\n' "$ticket_id" "$ticket_file" >> "$check_output"
+    printf 'doctor.ticket.%s.state=%s\n' "$ticket_id" "$ticket_state" >> "$check_output"
+    printf 'doctor.ticket.%s.stage=%s\n' "$ticket_id" "$stage" >> "$check_output"
+    printf 'doctor.ticket.%s.allowed_paths=%s\n' "$ticket_id" "$allowed_summary" >> "$check_output"
+
+    if [ -z "$allowed_summary" ]; then
+      record_check "${check_id}_allowed_paths" "warning"
+      record_warning "ticket ${ticket_id} has no concrete Allowed Paths; narrow it before editing product code"
+      operational_issue_count=$((operational_issue_count + 1))
+    else
+      record_check "${check_id}_allowed_paths" "ok"
+    fi
+
+    blockers="$(shared_allowed_path_blockers "$ticket_file" || true)"
+    if [ -n "$blockers" ]; then
+      blockers_summary="$(printf '%s\n' "$blockers" | join_lines_csv)"
+      shared_blocked_count=$((shared_blocked_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+      record_check "${check_id}_shared_path_blockers" "warning"
+      printf 'doctor.ticket.%s.blockers=%s\n' "$ticket_id" "$blockers_summary" >> "$check_output"
+      record_warning "ticket ${ticket_id} is blocked by lower-number active ticket Allowed Paths: ${blockers_summary}"
+    else
+      record_check "${check_id}_shared_path_blockers" "ok"
+      printf 'doctor.ticket.%s.blockers=\n' "$ticket_id" >> "$check_output"
+    fi
+
+    dirty_paths=""
+    if [ "$project_is_git" = "true" ]; then
+      while IFS= read -r allowed_path; do
+        [ -n "$allowed_path" ] || continue
+        git_status="$(git -C "$project_root" status --porcelain --untracked-files=all -- "$allowed_path" 2>/dev/null || true)"
+        if [ -n "$git_status" ]; then
+          dirty_paths="$(append_csv_value "$dirty_paths" "$allowed_path")"
+        fi
+      done < <(printf '%s\n' "$allowed_paths")
+    fi
+
+    if [ -n "$dirty_paths" ]; then
+      dirty_overlap_count=$((dirty_overlap_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+      record_check "${check_id}_project_root_dirty_allowed_paths" "warning"
+      printf 'doctor.ticket.%s.project_root_dirty_allowed_paths=%s\n' "$ticket_id" "$dirty_paths" >> "$check_output"
+      record_warning "ticket ${ticket_id} Allowed Paths overlap dirty PROJECT_ROOT paths: ${dirty_paths}"
+    elif [ "$project_is_git" = "true" ] && [ -n "$allowed_summary" ]; then
+      record_check "${check_id}_project_root_dirty_allowed_paths" "ok"
+      printf 'doctor.ticket.%s.project_root_dirty_allowed_paths=\n' "$ticket_id" >> "$check_output"
+    else
+      record_check "${check_id}_project_root_dirty_allowed_paths" "not_applicable"
+      printf 'doctor.ticket.%s.project_root_dirty_allowed_paths=\n' "$ticket_id" >> "$check_output"
+    fi
+
+    worktree_path="$(ticket_worktree_scalar "$ticket_file" "Path")"
+    worktree_branch_expected="$(ticket_worktree_scalar "$ticket_file" "Branch")"
+    base_commit="$(ticket_worktree_scalar "$ticket_file" "Base Commit")"
+    integration_status="$(ticket_worktree_scalar "$ticket_file" "Integration Status")"
+    printf 'doctor.ticket.%s.worktree_path=%s\n' "$ticket_id" "$worktree_path" >> "$check_output"
+    printf 'doctor.ticket.%s.worktree_branch=%s\n' "$ticket_id" "$worktree_branch_expected" >> "$check_output"
+    printf 'doctor.ticket.%s.worktree_base_commit=%s\n' "$ticket_id" "$base_commit" >> "$check_output"
+    printf 'doctor.ticket.%s.integration_status=%s\n' "$ticket_id" "$integration_status" >> "$check_output"
+
+    worktree_status="not_recorded"
+    if [ -z "$worktree_path" ] && { [ "$integration_status" = "project_root_fallback" ] || [ "$integration_status" = "disabled" ] || [ "$integration_status" = "not_git_repo" ] || [ "$integration_status" = "no_head_commit" ]; }; then
+      worktree_status="project_root_workspace"
+      record_check "${check_id}_worktree" "warning"
+      record_warning "ticket ${ticket_id} uses PROJECT_ROOT workspace through Integration Status ${integration_status}; overlapping active tickets will serialize on shared Allowed Paths"
+      worktree_issue_count=$((worktree_issue_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+    elif [ -z "$worktree_path" ]; then
+      record_check "${check_id}_worktree" "warning"
+      record_warning "ticket ${ticket_id} has no Worktree Path recorded"
+      worktree_issue_count=$((worktree_issue_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+    elif [ ! -d "$worktree_path" ]; then
+      worktree_status="missing"
+      record_check "${check_id}_worktree" "warning"
+      record_warning "ticket ${ticket_id} Worktree Path is missing: ${worktree_path}"
+      worktree_issue_count=$((worktree_issue_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+    elif ! git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      worktree_status="not_git_worktree"
+      record_check "${check_id}_worktree" "warning"
+      record_warning "ticket ${ticket_id} Worktree Path is not a git worktree: ${worktree_path}"
+      worktree_issue_count=$((worktree_issue_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+    else
+      worktree_status="ok"
+      worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
+      worktree_branch_actual="$(git -C "$worktree_path" symbolic-ref --short HEAD 2>/dev/null || true)"
+      printf 'doctor.ticket.%s.worktree_head=%s\n' "$ticket_id" "$worktree_head" >> "$check_output"
+      printf 'doctor.ticket.%s.worktree_actual_branch=%s\n' "$ticket_id" "$worktree_branch_actual" >> "$check_output"
+      if [ -n "$worktree_head" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$worktree_head" "$base_commit" "$ticket_id" "$worktree_path" >> "$worktree_heads_output"
+      fi
+      if [ -n "$worktree_branch_expected" ] && [ -n "$worktree_branch_actual" ] && [ "$worktree_branch_expected" != "$worktree_branch_actual" ]; then
+        worktree_status="branch_mismatch"
+        record_warning "ticket ${ticket_id} Worktree Branch ${worktree_branch_expected} does not match actual branch ${worktree_branch_actual}"
+      fi
+      if physical_path_equals "$worktree_path" "$project_root"; then
+        worktree_status="project_root_workspace"
+        record_warning "ticket ${ticket_id} uses PROJECT_ROOT as its worktree; overlapping active tickets will serialize on shared Allowed Paths"
+      fi
+      if [ "$worktree_status" = "ok" ]; then
+        record_check "${check_id}_worktree" "ok"
+      else
+        record_check "${check_id}_worktree" "warning"
+        worktree_issue_count=$((worktree_issue_count + 1))
+        operational_issue_count=$((operational_issue_count + 1))
+      fi
+    fi
+    printf 'doctor.ticket.%s.worktree_status=%s\n' "$ticket_id" "$worktree_status" >> "$check_output"
+
+    if grep -Eiq 'out[- ]of[- ]scope|outside (this ticket'"'"'s )?Allowed Paths|wrong snapshot|shared[- ]head|project_root_fallback|not a git worktree' "$ticket_file"; then
+      risk_hint_count=$((risk_hint_count + 1))
+      operational_issue_count=$((operational_issue_count + 1))
+      record_check "${check_id}_risk_hints" "warning"
+      printf 'doctor.ticket.%s.blocker_hint=out_of_scope_or_snapshot_risk\n' "$ticket_id" >> "$check_output"
+      record_warning "ticket ${ticket_id} contains notes that hint at out-of-scope, shared-head, project-root fallback, or worktree snapshot risk"
+    else
+      record_check "${check_id}_risk_hints" "ok"
+      printf 'doctor.ticket.%s.blocker_hint=\n' "$ticket_id" >> "$check_output"
+    fi
+  done < <(active_ticket_files)
+
+  if [ -s "$worktree_heads_output" ]; then
+    while IFS= read -r head; do
+      [ -n "$head" ] || continue
+      duplicate_ids="$(awk -F '\t' -v head="$head" '$1 == head && $2 != head { print $3 }' "$worktree_heads_output" | join_lines_csv)"
+      duplicate_count="$(awk -F '\t' -v head="$head" '$1 == head && $2 != head { count++ } END { print count + 0 }' "$worktree_heads_output")"
+      if [ "$duplicate_count" -gt 1 ]; then
+        shared_head_group_count=$((shared_head_group_count + 1))
+        operational_issue_count=$((operational_issue_count + 1))
+        head_ticket_paths="$(awk -F '\t' -v head="$head" '$1 == head && $2 != head { print "tickets_" $3 ":" $4 }' "$worktree_heads_output" | join_lines_csv)"
+        printf 'doctor.worktree.shared_nonbase_head.%s.head=%s\n' "$shared_head_group_count" "$head" >> "$check_output"
+        printf 'doctor.worktree.shared_nonbase_head.%s.tickets=%s\n' "$shared_head_group_count" "$duplicate_ids" >> "$check_output"
+        printf 'doctor.worktree.shared_nonbase_head.%s.paths=%s\n' "$shared_head_group_count" "$head_ticket_paths" >> "$check_output"
+        record_warning "multiple active ticket worktrees share non-base HEAD ${head}: ${duplicate_ids}"
+      fi
+    done < <(cut -f1 "$worktree_heads_output" | sort | uniq -d)
+  fi
+
+  printf 'doctor.active_ticket_count=%s\n' "$active_count" >> "$check_output"
+  printf 'doctor.shared_path_blocked_ticket_count=%s\n' "$shared_blocked_count" >> "$check_output"
+  printf 'doctor.worktree_issue_count=%s\n' "$worktree_issue_count" >> "$check_output"
+  printf 'doctor.project_root_dirty_overlap_count=%s\n' "$dirty_overlap_count" >> "$check_output"
+  printf 'doctor.risk_hint_ticket_count=%s\n' "$risk_hint_count" >> "$check_output"
+  printf 'doctor.shared_nonbase_head_group_count=%s\n' "$shared_head_group_count" >> "$check_output"
+
+  if [ "$active_count" -eq 0 ]; then
+    record_check "operational_blockers" "no_active_tickets"
+  elif [ "$operational_issue_count" -gt 0 ]; then
+    record_check "operational_blockers" "warning"
+  else
+    record_check "operational_blockers" "ok"
+  fi
+}
+
 record_runner_adapter_check() {
   local runner_id="$1"
   local role="$2"
@@ -79,12 +463,12 @@ record_runner_adapter_check() {
   printf 'runner.%s.interval_seconds=%s\n' "$check_id" "$interval_seconds" >> "$check_output"
 
   case "$role" in
-      ticket-owner|owner|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher)
+      ticket-owner|owner|planner|todo|verifier|wiki-maintainer|coordinator|doctor|watcher)
       record_check "${check_id}_role" "ok"
       ;;
     *)
       record_check "${check_id}_role" "warning"
-      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, merge-bot, wiki-maintainer, or watcher"
+      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, wiki-maintainer, coordinator, doctor, or watcher"
       ;;
   esac
 
@@ -704,6 +1088,8 @@ if [ -d "$board_root" ]; then
       done
     done < <(find "${board_root}/tickets/inprogress" -maxdepth 1 -type f -name 'tickets_*.md' | sort)
   fi
+
+  record_active_ticket_diagnostics
 
   if board_is_initialized "$board_root"; then
     record_check "board_initialized" "ok"

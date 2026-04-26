@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "merge", "merge-bot", "wiki", "wiki-maintainer")]
+  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "wiki", "wiki-maintainer", "coordinator", "coord", "doctor", "diagnose")]
   [string]$Role,
 
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($Role)) {
-  throw "Role is required. Use ticket, planner, todo, verifier, or wiki."
+  throw "Role is required. Use ticket, planner, todo, verifier, merge, wiki, or coordinator."
 }
 
 $runner = Join-Path $PSScriptRoot "invoke-cli-sh.ps1"

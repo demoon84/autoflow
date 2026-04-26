@@ -249,7 +249,7 @@ prepare_ticket_worktree_for_merge() {
 
   if [ -z "$worktree_path" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "no_worktree"
-    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; queued for merge-bot board-only finalization."
+    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; queued for coordinator board-only finalization."
     printf 'status=no_worktree\n'
     printf 'ticket_id=%s\n' "$ticket_id"
     return 0
@@ -354,7 +354,7 @@ prepare_ticket_worktree_for_merge() {
 
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "ready_to_merge"
-  append_note "$ticket_file" "Prepared worktree commit ${worktree_commit} at ${timestamp}; merge-bot should integrate it into PROJECT_ROOT and create the local completion commit."
+  append_note "$ticket_file" "Prepared worktree commit ${worktree_commit} at ${timestamp}; coordinator should integrate it into PROJECT_ROOT and create the local completion commit."
 
   printf 'status=ready_to_merge\n'
   printf 'ticket_id=%s\n' "$ticket_id"
@@ -505,14 +505,32 @@ auto_update_wiki() {
 }
 
 find_enabled_wiki_maintainer_runner() {
-  local config_path runner_id runner_role runner_enabled
+  local config_path runner_id runner_role runner_enabled fallback_runner_id
 
   config_path="${BOARD_ROOT}/runners/config.toml"
   [ -f "$config_path" ] || return 1
 
+  consider_wiki_runner() {
+    case "$runner_role:$runner_enabled" in
+      wiki-maintainer:true|wiki:true)
+        if [ -n "$runner_id" ]; then
+          printf '%s' "$runner_id"
+          return 0
+        fi
+        ;;
+      coordinator:true|coord:true|doctor:true|diagnose:true)
+        if [ -n "$runner_id" ] && [ -z "${fallback_runner_id:-}" ]; then
+          fallback_runner_id="$runner_id"
+        fi
+        ;;
+    esac
+    return 1
+  }
+
   while IFS= read -r line; do
     case "$line" in
       "[[runners]]")
+        consider_wiki_runner && return 0
         runner_id=""
         runner_role=""
         runner_enabled="true"
@@ -531,16 +549,14 @@ find_enabled_wiki_maintainer_runner() {
         runner_enabled="${line#enabled = }"
         ;;
     esac
-
-    case "$runner_role:$runner_enabled" in
-      wiki-maintainer:true|wiki:true)
-        if [ -n "$runner_id" ]; then
-          printf '%s' "$runner_id"
-          return 0
-        fi
-        ;;
-    esac
   done < "$config_path"
+
+  consider_wiki_runner && return 0
+
+  if [ -n "${fallback_runner_id:-}" ]; then
+    printf '%s' "$fallback_runner_id"
+    return 0
+  fi
 
   return 1
 }
@@ -567,7 +583,7 @@ auto_run_wiki_maintainer() {
 
   board_dir_name="$(basename "$BOARD_ROOT")"
   set +e
-  wiki_output="$("${PROJECT_ROOT}/bin/autoflow" run wiki "$PROJECT_ROOT" "$board_dir_name" --runner "$runner_id" 2>&1)"
+  wiki_output="$(AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "${PROJECT_ROOT}/bin/autoflow" run wiki "$PROJECT_ROOT" "$board_dir_name" --runner "$runner_id" 2>&1)"
   wiki_exit=$?
   set -e
 
@@ -667,11 +683,11 @@ case "$outcome" in
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-    replace_section_block "$ticket_file" "Next Action" "- Next: merge-bot should process this ticket from \`tickets/ready-to-merge/\`, integrate the prepared worktree commit into PROJECT_ROOT, archive evidence, and create the local completion commit."
+    replace_section_block "$ticket_file" "Next Action" "- Next: coordinator should process this ticket from \`tickets/ready-to-merge/\`, integrate the prepared worktree commit into PROJECT_ROOT, archive evidence, and create the local completion commit."
     append_note "$ticket_file" "AI ${display_id} marked verification pass and queued merge at ${timestamp}."
     run_file="$(move_run_file_to_ready_to_merge "$run_file" "$ticket_file")"
     replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
-- Log file: pending merge-bot completion
+- Log file: pending coordinator completion
 - Result: passed by ${display_id} at ${timestamp}"
     if [ "$ticket_file" != "$ready_target" ]; then
       mv "$ticket_file" "$ready_target"
@@ -687,7 +703,7 @@ case "$outcome" in
     printf 'ticket_id=%s\n' "$ticket_id"
     printf 'run=%s\n' "$run_file"
     printf '%s\n' "$merge_prep_output"
-    printf 'next_action=Run scripts/merge-ready-ticket.sh %s with AUTOFLOW_ROLE=merge, or let a merge-bot runner process tickets/ready-to-merge.\n' "$ticket_id"
+    printf 'next_action=Run scripts/merge-ready-ticket.sh %s with AUTOFLOW_ROLE=merge, or let a coordinator runner process tickets/ready-to-merge.\n' "$ticket_id"
     printf 'commit_status=not_committed_waiting_for_merge_bot\n'
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"

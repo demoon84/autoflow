@@ -18,17 +18,20 @@ import {
   Laptop,
   Layers3,
   Loader2,
+  PanelRightOpen,
   Play,
   RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
+  Sparkles,
   Square,
   Terminal,
   TriangleAlert,
   PieChart,
   TrendingUp,
-  Workflow
+  Workflow,
+  X
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,12 +52,14 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import "./styles.css";
+import claudeAppIcon from "./assets/agent-icons/claude.png";
+import codexAppIcon from "./assets/agent-icons/codex.png";
 
 const ticketFolders = ["backlog", "plan", "todo", "inprogress", "verifier", "done", "reject"] as const;
 
 const ownerFlowStages = [
-  { key: "todo", label: "실행 대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
-  { key: "plan", label: "계획 생성", meta: "작업 설계", icon: ClipboardList, tone: "flow-plan" },
+  { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
+  { key: "plan", label: "계획", meta: "작업 설계", icon: ClipboardList, tone: "flow-plan" },
   { key: "inprogress", label: "구현", meta: "구현 진행", icon: Activity, tone: "flow-inprogress" },
   { key: "verifier", label: "검증", meta: "증거 확인", icon: ShieldCheck, tone: "flow-verifier" },
   { key: "done", label: "완료", meta: "통과", icon: CheckCircle2, tone: "flow-done" },
@@ -86,7 +91,7 @@ type FlowStageDef = {
 const fallbackFlowFolder = ".autoflow";
 const runnerAgentOptions = ["codex", "claude", "gemini"] as const;
 const runnerAgentModelOptions: Record<string, string[]> = {
-  codex: ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2", "gpt-5.5"],
+  codex: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"],
   claude: ["opus", "opus-1m", "sonnet", "haiku"],
   gemini: [
     "gemini-3.1-pro-preview",
@@ -291,6 +296,59 @@ function formatCount(value: number) {
   }).format(value);
 }
 
+function useCountUp(target: number, durationMs = 600) {
+  const [display, setDisplay] = React.useState(target);
+  const displayRef = React.useRef(target);
+
+  React.useEffect(() => {
+    const start = displayRef.current;
+    const end = target;
+    if (start === end) return undefined;
+
+    const startTime =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    let frameId = 0;
+
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(start + (end - start) * eased);
+      displayRef.current = current;
+      setDisplay(current);
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick);
+      } else {
+        displayRef.current = end;
+      }
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [target, durationMs]);
+
+  return display;
+}
+
+function formatCompactCount(value: number) {
+  const absolute = Math.abs(value);
+  const formatter = new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: 1
+  });
+
+  if (absolute >= 1_000_000) {
+    return `${formatter.format(value / 1_000_000)}M`;
+  }
+
+  if (absolute >= 1_000) {
+    return `${formatter.format(value / 1_000)}K`;
+  }
+
+  return formatCount(value);
+}
+
 function formatSignedCount(value: number) {
   return `${value >= 0 ? "+" : ""}${formatCount(value)}`;
 }
@@ -353,6 +411,10 @@ const runnerRoleLabels: Record<string, string> = {
   ticket: "AI",
   "wiki-maintainer": "위키 관리자",
   wiki: "위키 관리자",
+  coordinator: "coordinator",
+  coord: "coordinator",
+  doctor: "coordinator",
+  diagnose: "coordinator",
   planner: "플래너",
   plan: "플랜",
   todo: "작업자",
@@ -791,6 +853,7 @@ function App() {
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
   const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
   const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
+  const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
@@ -1049,6 +1112,7 @@ function App() {
       setSelectedLogPath("");
       setLogPreview(null);
       setLogError("");
+      setIsWikiPreviewOpen(false);
     }
 
     previousSettingsSectionRef.current = activeSettingsSection;
@@ -1233,6 +1297,17 @@ function App() {
       }
     },
     [options]
+  );
+
+  const readWikiLog = React.useCallback(
+    async (filePath: string) => {
+      if (!filePath) {
+        return;
+      }
+      setIsWikiPreviewOpen(true);
+      await readLog(filePath);
+    },
+    [readLog]
   );
 
   const runRunner = React.useCallback(
@@ -1514,7 +1589,23 @@ function App() {
                             <BookOpenText className="h-4 w-4" aria-hidden="true" />
                             <strong>Knowledge</strong>
                           </div>
-                          <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
+                          <div className="knowledge-toolbar-trailing">
+                            {!isWikiPreviewOpen && selectedLogPath ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="knowledge-preview-open-toggle"
+                                onClick={() => setIsWikiPreviewOpen(true)}
+                                aria-label="미리보기 열기"
+                                data-tooltip="미리보기 열기"
+                              >
+                                <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+                                <span>미리보기 열기</span>
+                              </Button>
+                            ) : null}
+                            <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
+                          </div>
                         </div>
                       }
                     >
@@ -1528,24 +1619,48 @@ function App() {
                             isRunning={wikiQueryRunning}
                             result={wikiQueryResult}
                             selectedPath={selectedLogPath}
-                            onSelect={readLog}
+                            onSelect={readWikiLog}
                             includeTickets={wikiQueryIncludeTickets}
                             onIncludeTicketsChange={setWikiQueryIncludeTickets}
                             includeHandoffs={wikiQueryIncludeHandoffs}
                             onIncludeHandoffsChange={setWikiQueryIncludeHandoffs}
                           />
                           <div className="knowledge-stack">
-                            <WikiList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                            <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                             <section className="knowledge-sources" aria-label="Sources">
                               <div className="panel-subheading knowledge-sources-toggle">
                                 <span>Sources</span>
                               </div>
-                              <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
+                              <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                             </section>
                           </div>
                         </div>
-                        <div className="knowledge-preview-pane">
-                          <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
+                        <div
+                          className={
+                            isWikiPreviewOpen
+                              ? "knowledge-preview-pane"
+                              : "knowledge-preview-pane knowledge-preview-pane--hidden"
+                          }
+                          aria-hidden={!isWikiPreviewOpen}
+                        >
+                          <LogPreview
+                            preview={logPreview}
+                            isLoading={isReadingLog}
+                            error={logError}
+                            headerAction={
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="log-preview-close"
+                                onClick={() => setIsWikiPreviewOpen(false)}
+                                aria-label="미리보기 닫기"
+                                data-tooltip="미리보기 닫기"
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            }
+                          />
                         </div>
                       </div>
                     </PageLayout>
@@ -2058,11 +2173,13 @@ function RunnerConsole({
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner) => void;
 }) {
-  const runners = (board?.runners || []).filter((runner) => runner.role === "ticket-owner");
+  const runners = (board?.runners || []).filter(
+    (runner) => runner.role === "ticket-owner" || isCoordinatorRole(runner.role)
+  );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
   const stoppedCount = runners.filter((runner) => (runner.stateStatus || "") === "stopped").length;
-  const blockedCount = runners.filter((runner) =>
-    /blocked|failed|error/.test([runner.stateStatus, runner.activeStage, runner.lastResult].join(" ").toLowerCase())
+  const blockedCount = runners.filter(
+    (runner) => (runner.activeStage || "").toLowerCase() === "blocked"
   ).length;
 
   return (
@@ -2077,7 +2194,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">ticket-owner</span>
+            <span className="ticket-workspace-tab-copy">ticket-owner / coordinator</span>
           </div>
         }
       >
@@ -2136,11 +2253,8 @@ function RunnerConsole({
             const showModeHealth = Boolean(modeHealth) && (enabled || runnerHealthNeedsAttention(modeHealth));
             const showIntervalHealth = Boolean(intervalHealth) && (enabled || runnerHealthNeedsAttention(intervalHealth));
             const showPidHealth = Boolean(runner.pid) || runnerHealthNeedsAttention(pidHealth);
-            const runnerEventRaw = runner.activeItem || runner.lastResult || runner.lastEventAt || "이벤트 없음";
-            const runnerEventTime = runner.lastEventAt || timestampFromRunnerLog(runnerEventRaw);
-            const runnerEvent = isMachineRunnerLog(runnerEventRaw)
-              ? (runnerEventTime ? formatDate(runnerEventTime) : "이벤트 없음")
-              : runnerEventRaw;
+            const runnerEventRaw = runner.activeItem || runner.lastResult || "이벤트 없음";
+            const runnerEvent = isMachineRunnerLog(runnerEventRaw) ? "이벤트 없음" : runnerEventRaw;
             const selected = selectedRunnerId === runner.id;
             return (
               <article
@@ -2240,9 +2354,6 @@ function RunnerConsole({
                   <div className="runner-state">
                     <strong>{displayStatus(status)}</strong>
                     <span>{runnerEvent}</span>
-                    {runnerEventTime && !isMachineRunnerLog(runnerEventRaw) ? (
-                      <span className="runner-state-muted">{formatDate(runnerEventTime)}</span>
-                    ) : null}
                     {runner.lastLogLine ? (
                       <span className="runner-log-tail" title={runner.lastLogLine}>
                         {runner.lastLogLine}
@@ -2340,7 +2451,7 @@ function RunnerConsole({
             ) : (
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
-                <span>ticket-owner runner가 추가되면 여기에 표시됩니다.</span>
+                <span>ticket-owner 또는 coordinator runner가 추가되면 여기에 표시됩니다.</span>
               </div>
             )}
           </div>
@@ -2351,7 +2462,7 @@ function RunnerConsole({
 }
 
 function runnerConversationText(runner: AutoflowRunner) {
-  return (runner.lastLogLine || "").trim();
+  return (runner.conversationPreview || runner.lastLogLine || "").trim();
 }
 
 function shouldShowConversation(runner: AutoflowRunner) {
@@ -2383,17 +2494,116 @@ const ansiConverter = new AnsiToHtml({
   }
 });
 
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;"
+};
+
+function escapeHtmlText(value: string) {
+  return value.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
+}
+
+const LOG_TOKEN_REGEX = new RegExp(
+  [
+    "(?<ts>\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b)",
+    "(?<date>\\b\\d{4}-\\d{2}-\\d{2}\\b)",
+    "(?<time>\\b\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\b)",
+    "(?<path>(?:~|\\.{0,2}\\/)[\\w./@\\-]+)",
+    "(?<key>\\b[a-zA-Z][\\w\\-]*(?==))",
+    "(?<str>\"[^\"\\n]*\"|'[^'\\n]*')",
+    "(?<good>\\b(?:ok|ready|pass|passed|done|success|completed|merged|approved|enabled)\\b)",
+    "(?<bad>\\b(?:error|errors|fail|failed|failure|blocked|reject|rejected|aborted|timeout|denied|fatal|panic)\\b)",
+    "(?<warn>\\b(?:idle|pending|waiting|skipped|skip|warn|warning|stale|deprecated)\\b)",
+    "(?<active>\\b(?:working|inprogress|in-progress|running|started|launching|starting)\\b)",
+    "(?<num>\\b\\d+(?:\\.\\d+)?(?:ms|us|ns|s|kb|mb|gb)?\\b)"
+  ].join("|"),
+  "gi"
+);
+
+function highlightLogLine(line: string) {
+  if (!line) return "";
+  let result = "";
+  let lastIndex = 0;
+  LOG_TOKEN_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = LOG_TOKEN_REGEX.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      result += escapeHtmlText(line.slice(lastIndex, match.index));
+    }
+    const groups = match.groups || {};
+    let cls = "";
+    if (groups.ts || groups.date || groups.time) cls = "log-token-ts";
+    else if (groups.path) cls = "log-token-path";
+    else if (groups.key) cls = "log-token-key";
+    else if (groups.str) cls = "log-token-str";
+    else if (groups.good) cls = "log-token-good";
+    else if (groups.bad) cls = "log-token-bad";
+    else if (groups.warn) cls = "log-token-warn";
+    else if (groups.active) cls = "log-token-active";
+    else if (groups.num) cls = "log-token-num";
+    if (cls) {
+      result += `<span class="${cls}">${escapeHtmlText(match[0])}</span>`;
+    } else {
+      result += escapeHtmlText(match[0]);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < line.length) {
+    result += escapeHtmlText(line.slice(lastIndex));
+  }
+  return result;
+}
+
+function highlightLogText(text: string) {
+  const cleaned = text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+  return cleaned.split("\n").map(highlightLogLine).join("\n");
+}
+
+const TYPING_TAIL_CHARS = 400;
+const TYPING_TICK_MS = 16;
+const TYPING_TARGET_CATCHUP_MS = 1500;
+
 function ConversationStream({ label, text }: { label: string; text: string }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
+  const previousTextRef = React.useRef("");
+  const [displayedLength, setDisplayedLength] = React.useState(() =>
+    Math.max(0, text.length - TYPING_TAIL_CHARS)
+  );
+
+  React.useEffect(() => {
+    const previous = previousTextRef.current;
+    if (!text.startsWith(previous)) {
+      setDisplayedLength(Math.max(0, text.length - TYPING_TAIL_CHARS));
+    }
+    previousTextRef.current = text;
+  }, [text]);
+
+  React.useEffect(() => {
+    if (displayedLength >= text.length) return;
+    const remaining = text.length - displayedLength;
+    const charsPerTick = Math.max(
+      1,
+      Math.ceil((remaining * TYPING_TICK_MS) / TYPING_TARGET_CATCHUP_MS)
+    );
+    const id = window.setTimeout(() => {
+      setDisplayedLength((current) => Math.min(text.length, current + charsPerTick));
+    }, TYPING_TICK_MS);
+    return () => window.clearTimeout(id);
+  }, [text, displayedLength]);
+
+  const visibleText = text.slice(0, displayedLength);
 
   const html = React.useMemo(() => {
-    if (!text) return "";
+    if (!visibleText) return "";
     try {
-      return ansiConverter.toHtml(text);
+      return highlightLogText(visibleText);
     } catch {
-      return text.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+      return escapeHtmlText(visibleText.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, ""));
     }
-  }, [text]);
+  }, [visibleText]);
 
   React.useEffect(() => {
     const node = ref.current;
@@ -2461,6 +2671,7 @@ function SnapshotGrid({
 type ReportDatum = {
   label: string;
   value: number;
+  displayValue?: string;
   detail?: string;
   color: string;
 };
@@ -2569,7 +2780,7 @@ function ReportBarBreakdown({ data }: { data: ReportDatum[] }) {
           <div key={item.label} className="report-bar-row">
             <div className="report-bar-row-label">
               <span>{item.label}</span>
-              <strong>{formatCount(item.value)}</strong>
+              <strong>{item.displayValue || formatCount(item.value)}</strong>
             </div>
             <div className="report-bar-track" aria-hidden="true">
               <span
@@ -2622,7 +2833,7 @@ function ReportDonutChart({
           <div key={item.label} className="report-donut-legend-item">
             <span style={{ background: item.color }} aria-hidden="true" />
             <strong>{item.label}</strong>
-            <em>{formatCount(item.value)}</em>
+            <em>{item.displayValue || formatCount(item.value)}</em>
           </div>
         ))}
       </div>
@@ -2737,6 +2948,7 @@ function ReportingDashboard({
     {
       label: "사용 토큰",
       value: tokenUsageCount,
+      displayValue: formatCompactCount(tokenUsageCount),
       color: reportColors.violet,
       detail: `${formatCount(tokenReportCount)}개 실행 로그`
     },
@@ -2791,7 +3003,7 @@ function ReportingDashboard({
         />
         <ReportMetricCard
           label="토큰 사용량"
-          value={formatCount(tokenUsageCount)}
+          value={formatCompactCount(tokenUsageCount)}
           detail={`${formatCount(tokenReportCount)}개 실행 로그 기준`}
           icon={Terminal}
           tone="report-tone-violet"
@@ -2849,7 +3061,7 @@ function ReportingDashboard({
             <Terminal className="h-4 w-4" />
             <div>
               <h3>AI 사용량</h3>
-              <span>{formatCount(tokenUsageCount)} 토큰</span>
+              <span>{formatCompactCount(tokenUsageCount)} 토큰</span>
             </div>
           </div>
           <ReportBarBreakdown data={aiUsageData} />
@@ -3984,7 +4196,46 @@ function displayWorkflowRunnerId(value: string) {
   if (value === "wiki-maintainer-1" || value === "wiki-1") return "위키봇";
   if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키봇-");
   if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키봇-");
+  if (value === "coordinator-1") return "coordinator";
   return value;
+}
+
+function isCoordinatorRole(value: string) {
+  return ["coordinator", "coord", "doctor", "diagnose"].includes((value || "").toLowerCase());
+}
+
+function displayProgressRunnerLabel(runner: AutoflowRunner) {
+  const agent = runner.agent || "AI";
+  return isCoordinatorRole(runner.role) ? `${agent}(coordinator)` : agent;
+}
+
+function AgentAppIcon({ agent }: { agent: string }) {
+  const agentKey = (agent || "").toLowerCase();
+  const iconAsset = agentKey === "codex" ? codexAppIcon : agentKey === "claude" ? claudeAppIcon : "";
+
+  if (iconAsset) {
+    return (
+      <span className="ai-agent-app-icon ai-agent-app-icon-image" aria-hidden="true">
+        <img src={iconAsset} alt="" />
+      </span>
+    );
+  }
+
+  const iconClassName = `ai-agent-app-icon ai-agent-app-icon-${agentKey || "default"}`;
+
+  if (agentKey === "gemini") {
+    return (
+      <span className={iconClassName} aria-hidden="true">
+        <Sparkles size={13} strokeWidth={2.2} />
+      </span>
+    );
+  }
+
+  return (
+    <span className={iconClassName} aria-hidden="true">
+      <Sparkles size={13} strokeWidth={2.2} />
+    </span>
+  );
 }
 
 function projectKeyFromSpecRef(value: string) {
@@ -4017,6 +4268,7 @@ function AiProgressRow({
   options?: { projectRoot: string; boardDirName: string };
 }) {
   const currentKey = runnerStageKey(runner);
+  const hideProgressTrack = isCoordinatorRole(runner.role);
   const flowStages = flowStagesForRunner(runner);
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
@@ -4025,15 +4277,13 @@ function AiProgressRow({
   const progressFillPercent = Math.max(0, dotCenterPercent - 9);
   const progressValue = progressFillPercent <= 0 ? "0px" : `${progressFillPercent}%`;
   const status = runner.stateStatus || "idle";
+  const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
-  const eventTime = runner.lastEventAt || detailTimestamp;
   const ticketSummary = activeTicketSummary(runner);
-  const ticketPath = activeTicketPath(runner);
-  const activeStageLabel = runner.activeStage ? displayStatus(runner.activeStage) : stage.label;
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
-  const agentLabel = runner.agent || "AI";
+  const agentLabel = displayProgressRunnerLabel(runner);
   const normalized = normalizeRunnerSelections(
     runner.agent || "codex",
     runner.model || "",
@@ -4047,6 +4297,11 @@ function AiProgressRow({
       : "";
   const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
   const metaLabel = displayWorkflowRunnerId(runner.id);
+  const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
+  const agentTitle = metaLabel ? `${agentName}(${metaLabel})` : agentName;
+  const tokenUsageValue = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
+  const animatedTokenUsage = useCountUp(tokenUsageValue);
+  const tokenUsageLabel = animatedTokenUsage > 0 ? `${formatCount(animatedTokenUsage)} 토큰 사용` : "";
   const conversationText = runnerConversationText(runner);
   const showConversation = shouldShowConversation(runner);
 
@@ -4098,36 +4353,45 @@ function AiProgressRow({
   }, [options, runner.activeTicketId]);
 
   return (
-    <article className={`ai-progress-row ai-progress-${currentKey}`}>
+    <article className={`ai-progress-row ai-progress-${currentKey}${hideProgressTrack ? " ai-progress-row-no-track" : ""}`}>
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
           <div>
-            <strong>{agentLabel}</strong>
+            <div className="ai-progress-agent-title">
+              <AgentAppIcon agent={runner.agent || ""} />
+              <strong>{agentTitle}</strong>
+            </div>
             {modelMetaLabel ? <p>{modelMetaLabel}</p> : null}
-            <span>{metaLabel}</span>
+            {tokenUsageLabel ? (
+              <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
+            ) : null}
           </div>
         </div>
-
-        <div
-          className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
-          style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
-          aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
-        >
-          {flowStages.map((step) => {
-            const stepState = flowStepState(step.key, currentKey, flowStages);
-            return (
-              <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
-                <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
-                <span>{step.label}</span>
-              </div>
-            );
-          })}
-        </div>
+        {!hideProgressTrack ? (
+          <div
+            className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
+            style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
+            aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
+          >
+            {flowStages.map((step) => {
+              const stepState = flowStepState(step.key, currentKey, flowStages);
+              return (
+                <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
+                  <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
+                  <span>{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div className="ai-progress-current">
-        <Badge variant="secondary" className="ai-progress-status-badge">
-          {displayStatus(status)}
+        <Badge
+          variant={isBlocked ? "destructive" : "secondary"}
+          className="ai-progress-status-badge"
+        >
+          {isBlocked ? "막힘" : displayStatus(status)}
         </Badge>
         {detailText ? <p title={detailText}>{detailText}</p> : null}
         {runnerHeartbeatStale(runner) ? (
@@ -4153,7 +4417,7 @@ function AiProgressRow({
         ) : null}
       </div>
       {showConversation ? (
-        <ConversationStream label={`${metaLabel} 최근 터미널 출력`} text={conversationText} />
+        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} />
       ) : null}
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent

@@ -7,9 +7,9 @@
 [[runners]]
 id = "owner-1"
 role = "ticket-owner"
-agent = "codex"
-model = "gpt-5.4"
-reasoning = "medium"
+agent = "claude"
+model = "opus"
+reasoning = "high"
 mode = "loop"
 interval_seconds = 60
 enabled = true
@@ -18,9 +18,9 @@ command = ""
 [[runners]]
 id = "owner-2"
 role = "ticket-owner"
-agent = "codex"
-model = "gpt-5.4"
-reasoning = "medium"
+agent = "claude"
+model = "opus"
+reasoning = "high"
 mode = "loop"
 interval_seconds = 60
 enabled = true
@@ -29,43 +29,21 @@ command = ""
 [[runners]]
 id = "owner-3"
 role = "ticket-owner"
-agent = "codex"
-model = "gpt-5.4"
-reasoning = "medium"
+agent = "claude"
+model = "opus"
+reasoning = "high"
 mode = "loop"
 interval_seconds = 60
 enabled = true
 command = ""
 
 [[runners]]
-id = "owner-4"
-role = "ticket-owner"
+id = "coordinator-1"
+role = "coordinator"
 agent = "codex"
-model = "gpt-5.4"
-reasoning = "medium"
+model = "gpt-5.5"
+reasoning = "xhigh"
 mode = "loop"
 interval_seconds = 60
 enabled = true
-command = ""
-
-[[runners]]
-id = "merge-1"
-role = "merge-bot"
-agent = "shell"
-model = ""
-reasoning = ""
-mode = "loop"
-interval_seconds = 30
-enabled = true
-command = ""
-
-[[runners]]
-id = "wiki-maintainer-1"
-role = "wiki-maintainer"
-agent = "codex"
-model = ""
-reasoning = ""
-mode = "loop"
-interval_seconds = 60
-enabled = false
 command = ""

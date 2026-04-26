@@ -32,8 +32,8 @@ Usage:
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run merge [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
@@ -61,6 +61,7 @@ Examples:
   echo "Build the local runner harness" | autoflow prd create /path/to/project --title "Runner harness"
   autoflow run ticket /path/to/project --runner owner-1
   autoflow run planner /path/to/project --runner planner-1
+  autoflow run coordinator /path/to/project --runner coordinator-1
   autoflow wiki update /path/to/project
   autoflow wiki query /path/to/project --term auth --term session --limit 5 --synth
   autoflow runners list /path/to/project

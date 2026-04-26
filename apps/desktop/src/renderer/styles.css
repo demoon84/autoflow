@@ -714,7 +714,8 @@ pre {
   align-content: start;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   gap: 20px;
   padding: 0;
 }
@@ -747,9 +748,10 @@ pre {
   display: grid;
   align-content: start;
   gap: 4px;
-  margin-top: 0;
+  margin-top: -5px;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .settings-nav-footer {
@@ -858,7 +860,8 @@ pre {
   gap: 34px;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #ffffff;
   padding: 30px;
 }
@@ -1001,7 +1004,8 @@ pre {
 
 .runner-dashboard-area .runner-console-body .runner-grid {
   align-content: start;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -1278,16 +1282,22 @@ pre {
 
 .runner-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   align-items: start;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .runner-console-body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
   padding: 0;
 }
@@ -1295,7 +1305,11 @@ pre {
 .runner-console-body .runner-grid {
   flex: 1 1 auto;
   align-content: start;
+  box-sizing: border-box;
   min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 4px;
 }
 
 .runner-row {
@@ -1306,6 +1320,9 @@ pre {
   gap: 10px;
   height: auto;
   min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
@@ -1719,7 +1736,7 @@ pre {
 }
 
 .settings-content .runner-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .settings-content .runner-row {
@@ -1800,6 +1817,7 @@ pre {
   gap: 12px;
   min-width: 0;
   min-height: 0;
+  flex: 1 1 0;
 }
 
 .workflow-pin-strip {
@@ -1811,14 +1829,17 @@ pre {
 .ai-progress-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
+  grid-auto-rows: minmax(220px, 1fr);
   gap: 10px;
   min-width: 0;
   min-height: 0;
+  flex: 1 1 0;
 }
 
 .ai-progress-row {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--card);
@@ -2248,9 +2269,14 @@ pre {
 .ai-progress-row-top {
   display: grid;
   grid-template-columns: minmax(128px, 0.22fr) minmax(0, 1fr);
-  align-items: center;
+  align-items: start;
   gap: 12px;
   min-width: 0;
+}
+
+.ai-progress-row-no-track .ai-progress-row-top {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
 }
 
 .ai-progress-agent {
@@ -2276,7 +2302,8 @@ pre {
   display: block;
   width: 100%;
   max-width: 100%;
-  height: 80px;
+  flex: 1 1 0;
+  min-height: 80px;
   overflow-y: auto;
   overflow-x: hidden;
   border: 1px solid var(--border);
@@ -2304,6 +2331,47 @@ pre {
 
 .ai-progress-conversation pre span {
   font: inherit;
+}
+
+.ai-progress-conversation pre .log-token-ts {
+  color: #6b7280;
+}
+
+.ai-progress-conversation pre .log-token-path {
+  color: #0891b2;
+}
+
+.ai-progress-conversation pre .log-token-key {
+  color: #9333ea;
+}
+
+.ai-progress-conversation pre .log-token-str {
+  color: #047857;
+  font-style: italic;
+}
+
+.ai-progress-conversation pre .log-token-num {
+  color: #d97706;
+}
+
+.ai-progress-conversation pre .log-token-good {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.ai-progress-conversation pre .log-token-bad {
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.ai-progress-conversation pre .log-token-warn {
+  color: #ca8a04;
+  font-weight: 500;
+}
+
+.ai-progress-conversation pre .log-token-active {
+  color: #2563eb;
+  font-weight: 500;
 }
 
 .ai-progress-current > div {
@@ -2409,10 +2477,49 @@ pre {
 }
 
 .ai-progress-agent {
+  display: block;
+  min-width: 0;
+}
+
+.ai-progress-agent-title {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.ai-agent-app-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin-top: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--muted);
+  color: var(--foreground);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 34%, transparent);
+}
+
+.ai-agent-app-icon-image {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ai-agent-app-icon-image img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.ai-agent-app-icon-gemini {
+  border-color: color-mix(in srgb, #4f7db8 36%, var(--border));
+  background: color-mix(in srgb, #4f7db8 13%, var(--card));
+  color: #3f6da6;
 }
 
 .ai-progress-agent strong,
@@ -2444,6 +2551,13 @@ pre {
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 400;
+}
+
+.ai-progress-agent span.ai-progress-token-usage {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: keep-all;
 }
 
 .ai-progress-track {
@@ -3315,6 +3429,27 @@ pre {
   border: 1px solid var(--border);
   border-radius: 8px;
   min-height: 100%;
+}
+
+.knowledge-preview-pane--hidden {
+  display: none;
+}
+
+.knowledge-toolbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.knowledge-preview-open-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-preview-close {
+  margin-left: auto;
 }
 
 .knowledge-heading {
@@ -4361,6 +4496,11 @@ pre {
     gap: 10px;
   }
 
+  .ai-progress-row-no-track .ai-progress-row-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
   .ai-progress-track {
     grid-template-columns: repeat(var(--stage-count), minmax(0, 1fr));
   }
@@ -4467,6 +4607,10 @@ pre {
   .ai-progress-row-top {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 8px;
+  }
+
+  .ai-progress-row-no-track .ai-progress-row-top {
+    row-gap: 0;
   }
 
   .ai-progress-track {

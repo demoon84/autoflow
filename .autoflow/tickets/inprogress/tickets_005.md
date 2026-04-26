@@ -7,11 +7,11 @@
 - Plan Candidate: Direct ticket-owner handoff from tickets/done/prd_005/prd_005.md
 - Title: Ticket owner work for prd_005
 - Stage: executing
-- AI: AI-5
-- Claimed By: AI-5
-- Execution AI: AI-5
-- Verifier AI: AI-5
-- Last Updated: 2026-04-26T08:19:07Z
+- AI: AI-2
+- Claimed By: AI-2
+- Execution AI: AI-2
+- Verifier AI: AI-2
+- Last Updated: 2026-04-26T14:28:59Z
 
 ## Goal
 
@@ -53,7 +53,7 @@
 ## Worktree
 - Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`
 - Branch: autoflow/tickets_005
-- Base Commit: 63e460b980fec887c6d25180b062ff339d1e7d8d
+- Base Commit: d85f4e5a79215704f89dbe2c8b3392a35bd6f1b1
 - Worktree Commit:
 - Integration Status: pending
 
@@ -77,6 +77,12 @@
 
 ## Resume Context
 
+- Coordinator checkpoint at 2026-04-26T12:58:56Z: `AUTOFLOW_WORKER_ID=coordinator-1 /Users/demoon/Documents/project/autoflow/packages/cli/coordinator-project.sh /Users/demoon/Documents/project/autoflow .autoflow` returned `status=blocked`, `doctor_status=ok`, `coordinator.ready_to_merge_count=0`, `coordinator.merge_attempted=false`, `coordinator.shared_path_blocked_ticket_count=3`, and `coordinator.shared_nonbase_head_group_count=1`. `tickets_005` remains downstream-blocked by lower-number `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`, and its claimed worktree still shares non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` with `tickets_001` and `tickets_009`. `./bin/autoflow metrics /Users/demoon/Documents/project/autoflow` at this checkpoint reported `completion_rate_percent=54.5`. Do not rerun PRD-scope verification here until the lower-number renderer blockers and shared snapshot contamination clear.
+
+- Coordinator checkpoint at 2026-04-26T12:45:41Z: `packages/cli/coordinator-project.sh /Users/demoon/Documents/project/autoflow .autoflow` returned `status=blocked`, `doctor_status=ok`, `coordinator.ready_to_merge_count=0`, `coordinator.shared_path_blocked_ticket_count=3`, and `coordinator.shared_nonbase_head_group_count=1`. Doctor confirms `tickets_005` is still downstream-blocked by lower-number `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`, while its claimed worktree still shares non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` with `tickets_001` and `tickets_009`. `./bin/autoflow metrics /Users/demoon/Documents/project/autoflow` at the same timestamp reported `completion_rate_percent=54.5`. Do not rerun PRD-scope verification here until the lower-number blockers and shared snapshot contamination clear.
+
+- Coordinator checkpoint at 2026-04-26T12:37:02Z: `packages/cli/coordinator-project.sh /Users/demoon/Documents/project/autoflow .autoflow` returned `status=blocked`, `coordinator.shared_path_blocked_ticket_count=3`, and `coordinator.shared_nonbase_head_group_count=1`. Doctor confirms `tickets_005` is still downstream-blocked by lower-number `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`, while its claimed worktree still shares non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` with `tickets_001` and `tickets_009`. Do not spend another PRD-scope verification turn here until the lower-number blockers and shared snapshot contamination are cleared.
+
 - Current checkpoint (2026-04-26T08:19:07Z): `AUTOFLOW_WORKER_ID=owner-5 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow /Users/demoon/Documents/project/autoflow/.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_005` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`. `./bin/autoflow wiki query /Users/demoon/Documents/project/autoflow --term prd --term alias --term runner` still points back to `tickets/done/prd_005/prd_005.md` as the governing PRD context, and `./bin/autoflow metrics /Users/demoon/Documents/project/autoflow` reports `completion_rate_percent=54.5` at `2026-04-26T08:17:56Z`. Re-running `scripts/verify-ticket-owner.sh 005` again proves the remaining failure is outside Allowed Paths: `cd apps/desktop && npx tsc --noEmit` and `node scripts/check-syntax.mjs` get through, but `tests/smoke/ticket-owner-smoke.sh` still fails because fresh `autoflow init` scaffolds `runner_count=1` / `owner-1` while the smoke test requires `runner_count=2` / `wiki-maintainer-1`. Reject this turn so follow-up work can target the runtime/scaffold mismatch directly instead of forcing more PRD-scope edits.
 - Current checkpoint (2026-04-26T08:12:11Z): `AUTOFLOW_WORKER_ID=owner-5 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow /Users/demoon/Documents/project/autoflow/.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_005` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`. After restoring `apps/desktop/src/renderer/main.tsx` to the current renderer type contract, the declared verification command now gets through `cd apps/desktop && npx tsc --noEmit` and `node scripts/check-syntax.mjs`; it fails only at `bash tests/smoke/ticket-owner-smoke.sh` because temp `autoflow init` still emits `runner_count=1` with only `owner-1`, while the smoke test requires `runner_count=2` and `wiki-maintainer-1`. Separate in-scope checks passed in this turn: `./bin/autoflow help` exposes `autoflow prd create` first with `autoflow spec create` as legacy alias, temp-project `autoflow prd create` and `autoflow spec create` both returned `status=created`, and `diff -q` between `.autoflow/reference/*` and `scaffold/board/reference/*` returned no output. `./bin/autoflow metrics /Users/demoon/Documents/project/autoflow` reports `completion_rate_percent=54.5` at `2026-04-26T08:11:25Z`. Leave `Stage: blocked`; do not queue ready-to-merge until the out-of-scope runner-template/smoke mismatch is fixed.
 - Current checkpoint (2026-04-26T08:00:10Z): `AUTOFLOW_WORKER_ID=owner-5 AUTOFLOW_ROLE=ticket-owner AUTOFLOW_BOARD_ROOT=/Users/demoon/Documents/project/autoflow/.autoflow AUTOFLOW_PROJECT_ROOT=/Users/demoon/Documents/project/autoflow /Users/demoon/Documents/project/autoflow/.autoflow/scripts/start-ticket-owner.sh` resumed `tickets_005` with `worktree_status=ready` at `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005`. `./bin/autoflow wiki query /Users/demoon/Documents/project/autoflow --term onboarding --term workspace --term prd_005` still surfaced `tickets/done/prd_011/{verify_011,tickets_011,prd_011}.md` ahead of `tickets/done/prd_005/prd_005.md`, and `./bin/autoflow metrics /Users/demoon/Documents/project/autoflow` now reports `completion_rate_percent=54.5`, `ticket_inprogress_count=4`, `ticket_done_count=6`, and `reject_count=1`. The claimed worktree still carries 8 tracked Allowed Path diffs, including a stale tabbed-workspace/reporting `apps/desktop/src/renderer/main.tsx` patch that does not belong to `prd_005`, while `git -C /Users/demoon/Documents/project/autoflow status --short -- apps/desktop/src/renderer/main.tsx` has become dirty again in `PROJECT_ROOT`. This turn keeps `Stage: blocked` and skips both verification rerun and finish because root and worktree now diverge on the same Allowed Path again.
@@ -94,6 +100,12 @@
 - Next resume step: isolate or clear unrelated board/wiki changes in `PROJECT_ROOT`, then rerun the pass finish command for this ticket so it can move to `done/prd_005/` with a ticket-scoped commit.
 
 ## Notes
+
+- Coordinator checkpoint at 2026-04-26T12:58:56Z: one coordinator runtime pass returned blocked with no ready-to-merge work and no merge attempt. `tickets_005` remains serialized behind `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`, and the shared non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` with `tickets_001` and `tickets_009` is still a contamination risk. Progress remains `completion_rate_percent=54.5`.
+
+- Coordinator checkpoint at 2026-04-26T12:53:51Z: `packages/cli/coordinator-project.sh /Users/demoon/Documents/project/autoflow .autoflow` returned `status=blocked`, `doctor_status=ok`, `coordinator.ready_to_merge_count=0`, and `coordinator.merge_attempted=false`. Doctor keeps `tickets_005` blocked by lower-number `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`; it also reports dirty `PROJECT_ROOT` overlap on `.autoflow/agents`, `apps/desktop/src/renderer/main.tsx`, `bin/autoflow`, `bin/autoflow.ps1`, `scaffold/board/AGENTS.md`, `scaffold/board/README.md`, and `scaffold/board/agents`, plus shared non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` with `tickets_001` and `tickets_009`. Board progress at this checkpoint: `completion_rate_percent=54.5`. Next safe action: do not rerun PRD-scope verification here until the lower-number renderer blockers and shared snapshot contamination clear.
+
+- Coordinator safe-turn checkpoint at 2026-04-26T12:33:09Z: `coordinator-project.sh /Users/demoon/Documents/project/autoflow .autoflow` returned `status=blocked`, `doctor_status=ok`, `ready_to_merge_count=0`, and no merge attempt. `tickets_005` is still blocked by lower-number active tickets `tickets_001` and `tickets_004` on `apps/desktop/src/renderer/main.tsx`; doctor also reports dirty `PROJECT_ROOT` overlap on `.autoflow/agents`, `apps/desktop/src/renderer/main.tsx`, `bin/autoflow`, `bin/autoflow.ps1`, `scaffold/board/AGENTS.md`, `scaffold/board/README.md`, and `scaffold/board/agents`. Shared non-base `HEAD=edc3f23abb487081dd6f4323091519db7933a7b3` contamination with `tickets_001` and `tickets_009` is still present. Next safe action: resolve the lower-number blocker chain before any owner verify/finish resumes here. Board progress at this checkpoint: `completion_rate_percent=54.5`.
 
 - Safe ticket turn checkpoint (2026-04-26T08:19:07Z):
   - Re-ran `./bin/autoflow wiki query /Users/demoon/Documents/project/autoflow --term prd --term alias --term runner`; it still surfaced `tickets/done/prd_005/prd_005.md` as the governing context and no new in-scope implementation path.
@@ -295,22 +307,54 @@
 - AI AI-5 prepared resume at 2026-04-26T08:16:23Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 - AI AI-5 prepared resume at 2026-04-26T08:17:32Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 - Ticket owner verification failed by AI-5 at 2026-04-26T08:19:07Z: command exited 1
+- AI AI-3 prepared adopted-inprogress at 2026-04-26T11:02:35Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T11:02:51Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T11:03:57Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T11:05:08Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T11:06:16Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T11:07:25Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
+- Auto-recovery at 2026-04-26T13:38:50Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:38:50Z: cleared blocked worktree fields, retrying claim
+- Runtime auto-blocked: shared_nonbase_head_conflict at 2026-04-26T13:38:50Z; blockers=tickets_001:edc3f23abb487081dd6f4323091519db7933a7b3, tickets_009:edc3f23abb487081dd6f4323091519db7933a7b3
+- Auto-recovery at 2026-04-26T13:39:51Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:39:51Z: cleared blocked worktree fields, retrying claim
+- Auto-recovery at 2026-04-26T13:40:52Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:40:52Z: cleared blocked worktree fields, retrying claim
+- Auto-recovery at 2026-04-26T13:41:53Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:41:53Z: cleared blocked worktree fields, retrying claim
+- Auto-recovery at 2026-04-26T13:42:54Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:42:54Z: cleared blocked worktree fields, retrying claim
+- Auto-recovery at 2026-04-26T13:43:54Z: shared Allowed Path blockers cleared; retrying claim
+- Auto-recovery at 2026-04-26T13:43:54Z: cleared blocked worktree fields, retrying claim
+- Coordinator remediated shared_nonbase_head_conflict at 2026-04-26T14:07:05Z: old worktree `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005` branch `autoflow/tickets_005` head `edc3f23abb487081dd6f4323091519db7933a7b3` preserved; replacement worktree `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z` branch `autoflow/tickets_005-remediate-20260426T140708Z` starts at base `d85f4e5a79215704f89dbe2c8b3392a35bd6f1b1`.
+- Runtime hydrated worktree dependency at 2026-04-26T14:08:04Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-26T14:08:04Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-3 prepared resume at 2026-04-26T14:08:04Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:09:11Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:10:21Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:11:30Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:12:42Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:13:55Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- AI AI-3 prepared resume at 2026-04-26T14:14:54Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005-remediate-20260426T140708Z; run=tickets/inprogress/verify_005.md
+- Ticket owner verification failed by AI-3 at 2026-04-26T14:24:40Z: command exited 1
+- AI AI-3 marked fail at 2026-04-26T14:27:44Z.
+- Ticket automatically replanned from tickets/reject/reject_005.md at 2026-04-26T14:28:22Z; retry_count=5
+- AI AI-2 prepared todo at 2026-04-26T14:28:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_005; run=tickets/inprogress/verify_005.md
 ## Verification
 - Run file: `tickets/inprogress/verify_005.md`
 - Log file: pending
-- Command: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh`
-- Result: failed by AI-5 at 2026-04-26T08:19:07Z
+- Result: pending ticket-owner by AI-2
 
 ## Result
-- Summary: At board completion `54.5%`, the owner reran the declared verification from the isolated worktree at `2026-04-26T08:19:07Z`. The in-scope `prd_005` changes still validate: `autoflow prd/spec create` both return `status=created`, help text prefers `autoflow prd`, reference mirrors stay in sync, and the desktop renderer typecheck/syntax steps pass. The only remaining failure is outside Allowed Paths: `tests/smoke/ticket-owner-smoke.sh` still expects temp `autoflow init` to scaffold `runner_count=2` with `wiki-maintainer-1`, while the live default runner template emits only `runner_count=1` / `owner-1`.
-- Remaining risk: `tickets_005` should not spend more PRD-scope turns on this mismatch. Replan against the runtime/scaffold lane that owns fresh-board runner defaults or adjust the verification contract after that lane changes.
+- Summary:
+- Remaining risk:
 
 ## Reject Reason
 
 - Verification still fails outside `tickets_005` Allowed Paths: the required owner smoke `tests/smoke/ticket-owner-smoke.sh` asserts `runner_count=2` and `runner.2.id=wiki-maintainer-1`, but a fresh temp project created by `autoflow init` now reports only `runner_count=1` with `owner-1`. In-scope `prd_005` behavior already passes (`autoflow prd/spec create`, help ordering, reference mirrors, desktop `tsc`, syntax check`), so replan this as a runtime/scaffold alignment fix or update the verification contract only after that lane changes.
 
 ## Retry
-- Retry Count: 4
+- Retry Count: 5
 - Max Retries: 10
 
 ## Reject History
@@ -320,3 +364,4 @@
 - 2026-04-26T03:09:19Z | retry_count=2 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_030806Z_fail.md`` | reason=Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.
 - 2026-04-26T03:17:05Z | retry_count=3 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_031112Z_fail.md`` | reason=Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.
 - 2026-04-26T07:18:39Z | retry_count=4 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_071720Z_fail.md`` | reason=Verification environment gap: after rebinding the ticket worktree to current `main`, the required tracked files are present but the worktree still lacks installed desktop dependencies, so `verify-ticket-owner.sh 005` fails at `cd apps/desktop && npx tsc --noEmit` with `This is not the tsc command you are looking for`. `PROJECT_ROOT` passes the same checks, which shows the remaining issue is the ticket-owner runtime/worktree dependency strategy rather than the PRD wording scope. Replan only after the runtime can provide `node_modules` (or equivalent dependency access) inside ticket worktrees, or after a separate runtime-scope fix lands.
+- 2026-04-26T14:28:22Z | retry_count=5 | source=`tickets/reject/reject_005.md` | log=``logs/verifier_005_20260426_142744Z_fail.md`` | reason=Verification still fails outside `tickets_005` Allowed Paths: the required owner smoke `tests/smoke/ticket-owner-smoke.sh` asserts `runner_count=2` and `runner.2.id=wiki-maintainer-1`, but a fresh temp project created by `autoflow init` now reports only `runner_count=1` with `owner-1`. In-scope `prd_005` behavior already passes (`autoflow prd/spec create`, help ordering, reference mirrors, desktop `tsc`, syntax check`), so replan this as a runtime/scaffold alignment fix or update the verification contract only after that lane changes.

@@ -8,7 +8,7 @@ Default model:
 
 - Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual spec handoff, no heartbeat.
 - `ticket-owner`: one runner owns mini-plan, implementation, verification, and finish.
-- wiki managed sections are updated automatically when ticket-owner finish runs.
+- wiki managed sections are updated automatically when coordinator merge completion runs.
 
 Legacy role-pipeline model:
 
@@ -94,7 +94,7 @@ Recommended map:
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
 - `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no separate wiki route is needed; ticket finish updates wiki managed sections automatically.
+- `tickets/done/`: no separate wiki route is needed; coordinator merge completion updates wiki managed sections automatically.
 
 ## Operating Principle
 

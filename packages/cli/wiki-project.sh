@@ -337,7 +337,7 @@ wiki_output_escape() {
 find_wiki_runner() {
   local board_root="$1"
   local explicit_runner_id="${2:-}"
-  local config_path runner_block runner_id runner_role runner_enabled
+  local config_path runner_block runner_id runner_role runner_enabled fallback_runner_id
 
   export AUTOFLOW_BOARD_ROOT="$board_root"
   config_path="$(runner_config_path)"
@@ -349,7 +349,7 @@ find_wiki_runner() {
     runner_role="$(printf '%s\n' "$runner_block" | awk -F= '$1 == "role" { print $2; exit }')"
     runner_enabled="$(printf '%s\n' "$runner_block" | awk -F= '$1 == "enabled" { print $2; exit }')"
     case "$runner_role" in
-      wiki|wiki-maintainer) ;;
+      wiki|wiki-maintainer|coordinator|coord|doctor|diagnose) ;;
       *) return 1 ;;
     esac
     [ "${runner_enabled:-true}" = "true" ] || return 1
@@ -381,10 +381,20 @@ find_wiki_runner() {
               return 0
             fi
             ;;
+          coordinator|coord|doctor|diagnose)
+            if [ "$runner_enabled" = "true" ] && [ -n "$runner_id" ] && [ -z "${fallback_runner_id:-}" ]; then
+              fallback_runner_id="$runner_id"
+            fi
+            ;;
         esac
         ;;
     esac
   done < <(runner_list_config "$config_path")
+
+  if [ -n "${fallback_runner_id:-}" ]; then
+    printf '%s' "$fallback_runner_id"
+    return 0
+  fi
 
   return 1
 }
@@ -553,7 +563,7 @@ run_semantic_lint() {
     printf 'If there are no semantic issues, return exactly: semantic_finding.none=true\n\n'
     while IFS= read -r page; do
       [ -n "$page" ] || continue
-      printf '--- PAGE: %s ---\n' "$(relative_to_board "$board_root" "$page")"
+      printf -- '--- PAGE: %s ---\n' "$(relative_to_board "$board_root" "$page")"
       sed -n '1,220p' "$page"
       printf '\n'
     done < "$pages_file"

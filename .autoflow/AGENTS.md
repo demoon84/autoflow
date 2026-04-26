@@ -65,7 +65,8 @@ At the start of work, read in this order:
    - legacy planning: `agents/plan-to-ticket-agent.md`
    - legacy todo implementation: `agents/todo-queue-agent.md`
    - legacy verification: `agents/verifier-agent.md`
-   - wiki maintenance: `agents/wiki-maintainer-agent.md`
+   - wiki maintenance: `agents/wiki-maintainer-agent.md` or coordinator-backed wiki turns
+   - coordinator diagnostics / merge / wiki-bot maintenance: `agents/coordinator-agent.md`
 
 ## Runtime Command Convention
 
@@ -84,17 +85,17 @@ At the start of work, read in this order:
 7. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
 8. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
 9. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-10. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Only merge-bot integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
+10. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Coordinator integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
 11. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 12. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
 13. There must not be two copies of the same `tickets_NNN.md` in different state folders.
 14. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
 15. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Obsidian Links`, run files, and logs.
 16. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
-17. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after merge-bot completion. Failed records move to `tickets/reject/verify_NNN.md`.
-18. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Ticket finish automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
+17. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after coordinator/merge completion. Failed records move to `tickets/reject/verify_NNN.md`.
+18. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Coordinator/merge completion automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
 19. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
-20. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; merge-bot is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
+20. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
 21. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 22. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 23. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
@@ -201,6 +202,21 @@ Do:
 - Fail: append `## Reject Reason`, move to reject, write completion log.
 
 Do not fix code, create tickets, or push.
+
+### 6. Coordinator Mode
+
+Purpose: explain board/runtime health, blocked work, process one ready-to-merge ticket when present, and maintain derived wiki knowledge.
+
+Do:
+
+- Outside a coordinator adapter turn, run or resume `autoflow runners start coordinator-1` to keep the long-lived coordinator alive.
+- Inside a coordinator adapter turn, do not start, restart, or run the coordinator recursively. Execute the provided runtime script directly once.
+- Inspect shared Allowed Path blockers, dirty root overlap, worktree health, runner state, and scaffold checks.
+- If `tickets/ready-to-merge/` has a ticket, use the merge runtime for exactly one ready ticket.
+- After merge or during explicit wiki turns, update derived wiki pages from authoritative done tickets, verification records, logs, and conversation handoffs.
+- Recommend the smallest safe next action.
+
+Do not implement, requeue, reset, hand-edit merge results, or push.
 
 ## Required Ticket Fields
 

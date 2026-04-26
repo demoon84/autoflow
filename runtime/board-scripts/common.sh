@@ -246,7 +246,7 @@ ticket_concrete_allowed_paths() {
 ticket_shared_allowed_path_blockers() {
   local ticket_file="$1"
   local ticket_id ticket_num current_paths other_file other_id other_num other_stage
-  local other_path found=false
+  local other_path current_project_root_workspace=false found=false
 
   [ -f "$ticket_file" ] || return 1
 
@@ -255,6 +255,9 @@ ticket_shared_allowed_path_blockers() {
   ticket_num="$((10#$ticket_id))"
   current_paths="$(ticket_concrete_allowed_paths "$ticket_file")"
   [ -n "$current_paths" ] || return 1
+  if ticket_uses_project_root_workspace "$ticket_file"; then
+    current_project_root_workspace=true
+  fi
 
   while IFS= read -r other_file; do
     [ -n "$other_file" ] || continue
@@ -267,6 +270,9 @@ ticket_shared_allowed_path_blockers() {
 
     other_stage="$(ticket_stage "$other_file")"
     ticket_project_root_conflict_stage "$other_stage" || continue
+    if [ "$current_project_root_workspace" != "true" ] && ! ticket_uses_project_root_workspace "$other_file"; then
+      continue
+    fi
 
     while IFS= read -r other_path; do
       [ -n "$other_path" ] || continue
@@ -284,6 +290,48 @@ ticket_shared_allowed_path_blockers() {
   [ "$found" = "true" ]
 }
 
+ticket_shared_nonbase_head_blockers() {
+  local ticket_file="$1"
+  local ticket_id worktree_path base_commit current_head other_file other_id
+  local other_stage other_path other_head found=false
+
+  [ -f "$ticket_file" ] || return 1
+
+  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
+  [ -n "$ticket_id" ] || return 1
+  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  [ -n "$worktree_path" ] && [ -d "$worktree_path" ] || return 1
+
+  base_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Base Commit")")"
+  [ -n "$base_commit" ] || return 1
+  current_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
+  [ -n "$current_head" ] || return 1
+  [ "$current_head" != "$base_commit" ] || return 1
+
+  while IFS= read -r other_file; do
+    [ -n "$other_file" ] || continue
+    [ "$other_file" != "$ticket_file" ] || continue
+
+    other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
+    [ -n "$other_id" ] || continue
+    other_stage="$(ticket_stage "$other_file")"
+    ticket_project_root_conflict_stage "$other_stage" || continue
+    other_path="$(ticket_worktree_path_from_file "$other_file")"
+    [ -n "$other_path" ] && [ -d "$other_path" ] || continue
+    other_head="$(git -C "$other_path" rev-parse --verify HEAD 2>/dev/null || true)"
+    if [ "$other_head" = "$current_head" ]; then
+      printf 'tickets_%s:%s\n' "$other_id" "$current_head"
+      found=true
+    fi
+  done < <(
+    list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md'
+    list_matching_files "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md'
+    list_matching_files "${BOARD_ROOT}/tickets/merge-blocked" 'tickets_*.md'
+  )
+
+  [ "$found" = "true" ]
+}
+
 shared_allowed_path_blockers_summary() {
   awk '
     NF > 0 {
@@ -292,6 +340,29 @@ shared_allowed_path_blockers_summary() {
     }
     END { print out }
   '
+}
+
+shared_nonbase_head_blockers_summary() {
+  shared_allowed_path_blockers_summary
+}
+
+ticket_latest_runtime_block_event() {
+  local ticket_file="$1"
+
+  [ -f "$ticket_file" ] || return 1
+  awk '
+    /Runtime auto-blocked: shared_allowed_path_conflict/ { event="runtime_shared_allowed" }
+    /Runtime auto-blocked: shared_nonbase_head_conflict/ { event="runtime_shared_nonbase" }
+    /Auto-recovery .*shared Allowed Path blockers cleared/ { event="auto_recovered_shared_allowed" }
+    /Auto-recovery .*cleared blocked worktree fields/ { event="auto_recovered" }
+    END {
+      if (event != "") {
+        print event
+        exit 0
+      }
+      exit 1
+    }
+  ' "$ticket_file" 2>/dev/null
 }
 
 mark_ticket_shared_allowed_path_blocked() {
@@ -313,6 +384,28 @@ mark_ticket_shared_allowed_path_blocked() {
 
   if ! grep -Fq "Runtime auto-blocked: shared_allowed_path_conflict" "$ticket_file"; then
     append_note "$ticket_file" "Runtime auto-blocked: shared_allowed_path_conflict at ${timestamp}; blockers=${summary}"
+  fi
+}
+
+mark_ticket_shared_nonbase_head_blocked() {
+  local ticket_file="$1"
+  local worker="$2"
+  local timestamp="$3"
+  local blockers="$4"
+  local summary display_worker
+
+  display_worker="$(display_worker_id "$worker")"
+  summary="$(printf '%s\n' "$blockers" | shared_nonbase_head_blockers_summary)"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: this ticket worktree shares a non-base HEAD with other active ticket(s): ${summary}. Restore an isolated clean snapshot before owner verify/finish resumes."
+
+  if ! grep -Fq "Runtime auto-blocked: shared_nonbase_head_conflict" "$ticket_file"; then
+    append_note "$ticket_file" "Runtime auto-blocked: shared_nonbase_head_conflict at ${timestamp}; blockers=${summary}"
   fi
 }
 
@@ -1286,7 +1379,7 @@ replan_reject_to_todo() {
 auto_recover_blocked_ticket() {
   local ticket_file="$1"
   local stage worktree_branch worktree_path git_root holder_path conflict_branch timestamp
-  local shared_blockers
+  local shared_blockers latest_runtime_event
 
   [ -f "$ticket_file" ] || return 1
   stage="$(ticket_stage "$ticket_file")"
@@ -1297,9 +1390,16 @@ auto_recover_blocked_ticket() {
   if [ -n "$shared_blockers" ]; then
     return 1
   fi
+  latest_runtime_event="$(ticket_latest_runtime_block_event "$ticket_file" || true)"
 
-  if grep -Fq "shared_allowed_path_conflict" "$ticket_file"; then
+  if [ "$latest_runtime_event" = "runtime_shared_allowed" ]; then
     append_note "$ticket_file" "Auto-recovery at ${timestamp}: shared Allowed Path blockers cleared; retrying claim"
+  elif [ -z "$latest_runtime_event" ] && grep -Fq "worktree setup failed" "$ticket_file"; then
+    :
+  elif [ "${AUTOFLOW_OWNER_AUTO_RECOVER_BLOCKED:-}" = "1" ]; then
+    :
+  else
+    return 1
   fi
 
   worktree_branch="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Branch")")"
@@ -1332,7 +1432,7 @@ auto_recover_blocked_ticket() {
 
 ensure_ticket_worktree() {
   local ticket_file="$1"
-  local ticket_id git_root base_commit branch worktree_path parent_root existing_path fallback_reason
+  local ticket_id git_root base_commit branch worktree_path parent_root existing_path existing_branch fallback_reason
 
   if worktree_mode_disabled; then
     replace_section_block "$ticket_file" "Worktree" "- Path:
@@ -1387,6 +1487,8 @@ ensure_ticket_worktree() {
   existing_path="$(ticket_worktree_path_from_file "$ticket_file")"
   if [ -n "$existing_path" ] && git -C "$existing_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     worktree_path="$existing_path"
+    existing_branch="$(git -C "$worktree_path" symbolic-ref --short HEAD 2>/dev/null || true)"
+    [ -n "$existing_branch" ] && branch="$existing_branch"
   elif git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     :
   elif git -C "$git_root" show-ref --verify --quiet "refs/heads/${branch}"; then

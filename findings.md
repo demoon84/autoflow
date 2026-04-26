@@ -162,3 +162,30 @@
 - Desktop `처리 지표` already reads those code-volume fields through `apps/desktop/src/main.js`, `apps/desktop/src/renderer/vite-env.d.ts`, and `apps/desktop/src/renderer/main.tsx`.
 - Codex adapter stdout logs contain a stable local usage summary in the form `tokens used` followed by a comma-formatted number such as `95,413`.
 - Runner adapter artifacts are persisted under `.autoflow/runners/logs/*_stdout.log` and `*_stderr.log`; live and loop logs should be ignored to avoid duplicate or incomplete readings.
+
+---
+
+# Coordinator Agent Findings
+
+- `autoflow doctor` already exists and validates board scaffold, runner config/state, adapter availability, duplicate ticket IDs, starter files, and board version drift.
+- The existing doctor does not inspect active ticket dependency chains, so a user can see several `blocked` pills without a concise root-cause chain.
+- The runtime source of the common blocked case is `ticket_shared_allowed_path_blockers` in `runtime/board-scripts/common.sh`; it compares concrete `Allowed Paths` against lower-number active tickets in conflict stages.
+- `run-role.sh` supports ticket, planner, todo, verifier, merge, and wiki roles, but needs a coordinator role for diagnosis plus ready-to-merge orchestration.
+- `runners-project.sh` role validation needs `coordinator` so `autoflow runners add coordinator-1 coordinator ...` works.
+- New boards should include a looped `coordinator-1` Codex runner for the AI Coordinator path. The raw `autoflow doctor` scanner remains shell-friendly and deterministic.
+- Existing `ticket-owner-smoke` exposed an unrelated merge cleanup bug: `merge-ready-ticket.sh` used `git_root` after completion without defining it in main scope.
+- On macOS, `setsid` is not available. The previous loop start fallback used plain `nohup`, which did not reliably detach from the launching process group in this environment; `coordinator-1` appeared started and then immediately became a stale PID.
+- The first AI coordinator instruction still told the coordinator to run/resume `autoflow runners start coordinator-1`; inside a coordinator adapter turn, that caused recursive coordinator invocations instead of one bounded diagnostic/merge turn.
+- Current live blocker chain is not a ready-to-merge backlog. `ready_to_merge_count=0`, `tickets_001` is the root active owner item, and tickets 004/005/009 are blocked behind lower-number active tickets through shared Allowed Paths.
+- Current doctor evidence also shows dirty `PROJECT_ROOT` overlap and one shared non-base HEAD group (`001,005,009` on `edc3f23abb487081dd6f4323091519db7933a7b3`), so automatic repair would be destructive without an explicit repair policy.
+
+---
+
+# Coordinator Wiki Role Findings
+
+- Current board docs define wiki maintenance as derived knowledge, never as the source of truth for ticket stage, pass/fail, or commits.
+- Current `.autoflow/agents/coordinator-agent.md` covers diagnostics and one ready-to-merge integration, while `.autoflow/agents/wiki-maintainer-agent.md` separately covers wiki update/lint/query behavior.
+- User requested expanding coordinator to include the wiki bot role, so the likely target is to fold wiki-maintainer post-processing and guidance into Coordinator Mode while keeping the wiki derived and idempotent.
+- `merge-ready-ticket.sh` already runs deterministic `update-wiki.sh` after moving a ready ticket to done, then attempts a non-blocking `autoflow run wiki` adapter turn.
+- The existing wiki adapter lookup only accepted `wiki` / `wiki-maintainer`; `query --synth`, `lint --semantic`, and post-merge wiki maintenance therefore needed coordinator fallback support.
+- The old runtime config parser decided on a runner as soon as it saw `role = ...`, before reading a later `enabled = false`; coordinator fallback should evaluate complete `[[runners]]` blocks instead.

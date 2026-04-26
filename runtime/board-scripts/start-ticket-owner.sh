@@ -411,7 +411,8 @@ prepare_ticket_owner_context() {
   local source_kind="$2"
   local ticket_id timestamp worktree_output implementation_root run_file
   local project_key project_note ticket_note verification_note stage done_target reject_target
-  local pre_stage recovery_attempted=false shared_blockers blockers_summary
+  local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
+  local shared_head_blockers shared_head_summary
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
@@ -420,6 +421,37 @@ prepare_ticket_owner_context() {
   if [ "$pre_stage" = "blocked" ]; then
     if auto_recover_blocked_ticket "$ticket_file"; then
       recovery_attempted=true
+    else
+      shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
+      if [ -n "$shared_blockers" ]; then
+        blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
+        mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
+        blocked_next_action="Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically."
+        blocked_reason="shared_allowed_path_conflict"
+      else
+        blocked_next_action="$(
+          extract_section_text "$ticket_file" "Next Action" \
+            | sed -E 's/^[[:space:]]*[-*][[:space:]]*//' \
+            | tr '\n' ' ' \
+            | sed 's/[[:space:]]\+/ /g; s/[[:space:]]*$//'
+        )"
+        [ -n "$blocked_next_action" ] || blocked_next_action="Ticket is blocked; wait for coordinator diagnosis or explicit recovery."
+        blocked_reason="ticket_stage_blocked"
+      fi
+
+      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+      sync_runner_active_state "$ticket_file" "blocked"
+      printf 'status=blocked\n'
+      printf 'reason=%s\n' "$blocked_reason"
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      if [ -n "${blockers_summary:-}" ]; then
+        printf 'blockers=%s\n' "$blockers_summary"
+      fi
+      printf 'next_action=%s\n' "$blocked_next_action"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
     fi
   fi
 
@@ -465,6 +497,24 @@ prepare_ticket_owner_context() {
     printf 'blockers=%s\n' "$blockers_summary"
     printf '%s\n' "$worktree_output"
     printf 'next_action=Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically.\n'
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    exit 0
+  fi
+
+  shared_head_blockers="$(ticket_shared_nonbase_head_blockers "$ticket_file" || true)"
+  if [ -n "$shared_head_blockers" ]; then
+    shared_head_summary="$(printf '%s\n' "$shared_head_blockers" | shared_nonbase_head_blockers_summary)"
+    mark_ticket_shared_nonbase_head_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_head_blockers"
+    set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+    sync_runner_active_state "$ticket_file" "blocked"
+    printf 'status=blocked\n'
+    printf 'reason=shared_nonbase_head_conflict\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'blockers=%s\n' "$shared_head_summary"
+    printf '%s\n' "$worktree_output"
+    printf 'next_action=Restore an isolated clean snapshot for this ticket before owner verify/finish resumes.\n'
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     exit 0
@@ -521,7 +571,7 @@ prepare_ticket_owner_context() {
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   printf 'next_action=Use this same ticket owner turn to update the mini-plan and implement within Allowed Paths. Then run scripts/verify-ticket-owner.sh %s, followed by scripts/finish-ticket-owner.sh %s pass "<summary>" or fail "<reason>". Never split planner/todo/verifier roles and never git push.\n' "$ticket_id" "$ticket_id"
   printf 'routing_verify=Run scripts/verify-ticket-owner.sh %s to execute the ticket/spec verification command from implementation_root and record command/output/evidence in the run file.\n' "$ticket_id"
-  printf 'routing_pass=After verification evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It prepares the worktree snapshot, moves the ticket to ready-to-merge, and clears active context. A merge-bot runner is the only role that integrates into PROJECT_ROOT and creates the local completion commit. Never push.\n' "$ticket_id"
+  printf 'routing_pass=After verification evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It prepares the worktree snapshot, moves the ticket to ready-to-merge, and clears active context. A coordinator runner is the only role that integrates into PROJECT_ROOT and creates the local completion commit. Never push.\n' "$ticket_id"
   printf 'routing_fail=If the owner cannot fix the failure in scope, run scripts/finish-ticket-owner.sh %s fail "<concrete reject reason>". It moves the ticket to reject, writes the verifier log, and does not commit failed work.\n' "$ticket_id"
 }
 

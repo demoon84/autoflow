@@ -290,7 +290,7 @@ merge_ticket_worktree() {
         new_worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
         if [ -n "$new_worktree_head" ] && [ "$new_worktree_head" != "$worktree_commit" ]; then
           replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$new_worktree_head"
-          append_note "$ticket_file" "Merge-bot rebased worktree onto PROJECT_ROOT HEAD ${project_root_head} at ${timestamp} (Worktree Commit: ${worktree_commit} -> ${new_worktree_head})."
+          append_note "$ticket_file" "Coordinator rebased worktree onto PROJECT_ROOT HEAD ${project_root_head} at ${timestamp} (Worktree Commit: ${worktree_commit} -> ${new_worktree_head})."
           worktree_commit="$new_worktree_head"
         fi
         rm -f "$rebase_log_file"
@@ -298,7 +298,7 @@ merge_ticket_worktree() {
         git -C "$worktree_path" rebase --abort >/dev/null 2>&1 || true
         rebase_tail="$(tail -3 "$rebase_log_file" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
         replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_rebase_conflict"
-        append_note "$ticket_file" "Merge-bot rebase onto PROJECT_ROOT HEAD ${project_root_head} failed at ${timestamp}; ticket-owner must resolve conflicts in ${worktree_path} (e.g. \`git -C ${worktree_path} rebase ${project_root_head}\`) before re-queuing. Tail: ${rebase_tail}"
+        append_note "$ticket_file" "Coordinator rebase onto PROJECT_ROOT HEAD ${project_root_head} failed at ${timestamp}; ticket-owner must resolve conflicts in ${worktree_path} (e.g. \`git -C ${worktree_path} rebase ${project_root_head}\`) before re-queuing. Tail: ${rebase_tail}"
         rm -f "$rebase_log_file"
         printf 'status=blocked\n'
         printf 'reason=rebase_conflict\n'
@@ -361,7 +361,7 @@ merge_ticket_worktree() {
     set -e
     git -C "$git_root" cherry-pick --abort >/dev/null 2>&1 || true
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_cherry_pick_conflict"
-    append_note "$ticket_file" "Merge blocked at ${timestamp}: cherry-pick conflict for Worktree Commit ${worktree_commit}. Merge-bot aborted the cherry-pick; resolve the ticket branch or rebase/recreate the worktree before retrying."
+    append_note "$ticket_file" "Merge blocked at ${timestamp}: cherry-pick conflict for Worktree Commit ${worktree_commit}. Coordinator aborted the cherry-pick; resolve the ticket branch or rebase/recreate the worktree before retrying."
     printf 'status=blocked\n'
     printf 'reason=cherry_pick_conflict\n'
     printf 'worktree_commit=%s\n' "$worktree_commit"
@@ -371,7 +371,7 @@ merge_ticket_worktree() {
   set -e
 
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "integrated"
-  append_note "$ticket_file" "Merge-bot ${display_id} integrated worktree commit ${worktree_commit} into PROJECT_ROOT without committing at ${timestamp}."
+  append_note "$ticket_file" "Coordinator ${display_id} integrated worktree commit ${worktree_commit} into PROJECT_ROOT without committing at ${timestamp}."
 
   printf 'status=integrated\n'
   printf 'ticket_id=%s\n' "$ticket_id"
@@ -415,8 +415,8 @@ move_ticket_to_merge_blocked() {
   mkdir -p "$(dirname "$blocked_target")"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merge-blocked"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Next: repair the merge blocker (${reason}), then move this ticket back to \`tickets/ready-to-merge/\` for merge-bot retry."
-  append_note "$ticket_file" "Merge-bot ${display_id} moved this ticket to merge-blocked at ${timestamp}: ${reason}."
+  replace_section_block "$ticket_file" "Next Action" "- Next: repair the merge blocker (${reason}), then move this ticket back to \`tickets/ready-to-merge/\` for coordinator retry."
+  append_note "$ticket_file" "Coordinator ${display_id} moved this ticket to merge-blocked at ${timestamp}: ${reason}."
   move_run_file "$run_file" "$blocked_run_target"
   if [ "$ticket_file" != "$blocked_target" ]; then
     mv "$ticket_file" "$blocked_target"
@@ -560,14 +560,33 @@ auto_update_wiki() {
 }
 
 find_enabled_wiki_maintainer_runner() {
-  local config_path runner_id runner_role runner_enabled
+  local config_path runner_id runner_role runner_enabled fallback_runner_id allow_coordinator_fallback
 
   config_path="${BOARD_ROOT}/runners/config.toml"
   [ -f "$config_path" ] || return 1
+  allow_coordinator_fallback="${AUTOFLOW_WIKI_MAINTAINER_COORDINATOR_FALLBACK:-off}"
+
+  consider_wiki_runner() {
+    case "$runner_role:$runner_enabled" in
+      wiki-maintainer:true|wiki:true)
+        if [ -n "$runner_id" ]; then
+          printf '%s' "$runner_id"
+          return 0
+        fi
+        ;;
+      coordinator:true|coord:true|doctor:true|diagnose:true)
+        if [ "$allow_coordinator_fallback" = "on" ] && [ -n "$runner_id" ] && [ -z "${fallback_runner_id:-}" ]; then
+          fallback_runner_id="$runner_id"
+        fi
+        ;;
+    esac
+    return 1
+  }
 
   while IFS= read -r line; do
     case "$line" in
       "[[runners]]")
+        consider_wiki_runner && return 0
         runner_id=""
         runner_role=""
         runner_enabled="true"
@@ -586,16 +605,14 @@ find_enabled_wiki_maintainer_runner() {
         runner_enabled="${line#enabled = }"
         ;;
     esac
-
-    case "$runner_role:$runner_enabled" in
-      wiki-maintainer:true|wiki:true)
-        if [ -n "$runner_id" ]; then
-          printf '%s' "$runner_id"
-          return 0
-        fi
-        ;;
-    esac
   done < "$config_path"
+
+  consider_wiki_runner && return 0
+
+  if [ -n "${fallback_runner_id:-}" ]; then
+    printf '%s' "$fallback_runner_id"
+    return 0
+  fi
 
   return 1
 }
@@ -613,6 +630,11 @@ auto_run_wiki_maintainer() {
     printf 'wiki_maintainer.status=skipped_no_runner\n'
     return 0
   fi
+  if [ "$runner_id" = "$worker_id" ]; then
+    printf 'wiki_maintainer.status=skipped_current_runner\n'
+    printf 'wiki_maintainer.runner_id=%s\n' "$runner_id"
+    return 0
+  fi
 
   if [ ! -x "${PROJECT_ROOT}/bin/autoflow" ]; then
     printf 'wiki_maintainer.status=failed\n'
@@ -622,7 +644,7 @@ auto_run_wiki_maintainer() {
 
   board_dir_name="$(basename "$BOARD_ROOT")"
   set +e
-  wiki_output="$("${PROJECT_ROOT}/bin/autoflow" run wiki "$PROJECT_ROOT" "$board_dir_name" --runner "$runner_id" 2>&1)"
+  wiki_output="$(AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "${PROJECT_ROOT}/bin/autoflow" run wiki "$PROJECT_ROOT" "$board_dir_name" --runner "$runner_id" 2>&1)"
   wiki_exit=$?
   set -e
 
@@ -687,12 +709,12 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
         escalated_reason="${current_reason}_persistent"
         ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$escalated_reason")"
         run_file="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
-        append_note "$ticket_file" "Merge-bot escalated to merge-blocked at ${timestamp}: ${current_reason} persisted for ${retry_count} consecutive attempts (threshold=${merge_retry_threshold})."
+        append_note "$ticket_file" "Coordinator escalated to merge-blocked at ${timestamp}: ${current_reason} persisted for ${retry_count} consecutive attempts (threshold=${merge_retry_threshold})."
         rm -f "$merge_retry_state_file"
         merge_reason="$escalated_reason"
       else
         replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-        append_note "$ticket_file" "Merge-bot ${display_id} blocked at ${timestamp}: ${current_reason} (attempt ${retry_count}/${merge_retry_threshold})."
+        append_note "$ticket_file" "Coordinator ${display_id} blocked at ${timestamp}: ${current_reason} (attempt ${retry_count}/${merge_retry_threshold})."
       fi
       ;;
   esac
@@ -713,8 +735,8 @@ done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
 mkdir -p "$(dirname "$done_target")"
 replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "done"
 replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-replace_section_block "$ticket_file" "Next Action" "- Complete: merge-bot integrated the verified ticket, archived evidence, and prepared the local completion commit."
-append_note "$ticket_file" "Merge-bot ${display_id} finalized this verified ticket at ${timestamp}."
+replace_section_block "$ticket_file" "Next Action" "- Complete: coordinator integrated the verified ticket, archived evidence, and prepared the local completion commit."
+append_note "$ticket_file" "Coordinator ${display_id} finalized this verified ticket at ${timestamp}."
 if [ "$ticket_file" != "$done_target" ]; then
   mv "$ticket_file" "$done_target"
   ticket_file="$done_target"
@@ -729,16 +751,17 @@ clear_runner_active_state
 
 cleanup_worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
 cleanup_branch="autoflow/tickets_${ticket_id}"
+cleanup_git_root="$(git_root_path 2>/dev/null || true)"
 cleanup_status_parts=()
-if [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
-  if git -C "$git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
+if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
+  if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
     cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
   else
     cleanup_status_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
   fi
 fi
-if git -C "$git_root" rev-parse --verify --quiet "refs/heads/${cleanup_branch}" >/dev/null 2>&1; then
-  if git -C "$git_root" branch -D "$cleanup_branch" >/dev/null 2>&1; then
+if [ -n "$cleanup_git_root" ] && git -C "$cleanup_git_root" rev-parse --verify --quiet "refs/heads/${cleanup_branch}" >/dev/null 2>&1; then
+  if git -C "$cleanup_git_root" branch -D "$cleanup_branch" >/dev/null 2>&1; then
     cleanup_status_parts+=("deleted_branch=${cleanup_branch}")
   else
     cleanup_status_parts+=("branch_delete_failed=${cleanup_branch}")
@@ -746,7 +769,7 @@ if git -C "$git_root" rev-parse --verify --quiet "refs/heads/${cleanup_branch}" 
 fi
 if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
   cleanup_summary="${cleanup_status_parts[*]}"
-  append_note "$ticket_file" "Merge-bot post-merge cleanup at ${timestamp}: ${cleanup_summary}."
+  append_note "$ticket_file" "Coordinator post-merge cleanup at ${timestamp}: ${cleanup_summary}."
   runner_append_log "$worker_id" "post_merge_cleanup" \
     "ticket_id=${ticket_id}" \
     "${cleanup_status_parts[@]}" 2>/dev/null || true

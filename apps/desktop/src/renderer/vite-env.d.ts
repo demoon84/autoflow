@@ -53,6 +53,7 @@ type AutoflowRunner = {
   conversationPreview: string;
   statePath: string;
   logPath: string;
+  tokenUsage?: number;
 };
 
 type AutoflowRunnerConfigUpdate = Partial<

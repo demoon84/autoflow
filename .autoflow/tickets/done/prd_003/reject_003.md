@@ -212,3 +212,21 @@
 - 2026-04-26T05:42:16Z | retry_count=8 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_053940Z_fail.md`` | reason=Automated verification passed in the claimed worktree, but the claimed worktree is still a no-op for the allowed files while `PROJECT_ROOT` keeps unrelated dirty edits on those same paths, so `prd_003` cannot be finished safely from this ticket state.
 - 2026-04-26T05:51:02Z | retry_count=9 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_054507Z_fail.md`` | reason=Automated verification passed in the claimed worktree, but the claimed worktree is still a no-op for the allowed files while `PROJECT_ROOT` keeps unrelated dirty edits on those same paths, so `prd_003` cannot be finished safely from this ticket state.
 - 2026-04-26T05:53:17Z | retry_count=10 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260426_055259Z_fail.md`` | reason=Automated verification passed, but `tickets_003` is still a no-op branch for its allowed renderer files while lower-number `tickets_001` and `tickets_002` already claim the same paths and `PROJECT_ROOT` carries divergent uncommitted edits there, so this retry cannot produce an isolated safe pass result.
+
+## Manual Resolution
+
+- 2026-04-26 manual handoff by Claude (Opus 4.7) at user request ("Reject-003 직접 처리"):
+  - Retry cap (10/10) reached; auto-replan disabled by exhaustion. Implemented `prd_003` scope directly in `PROJECT_ROOT` instead of forcing another no-op worktree integration.
+  - Edits in `apps/desktop/src/renderer/main.tsx`:
+    - Added `isWikiPreviewOpen` React state (default `false`).
+    - Added `readWikiLog` callback that opens the preview before delegating to `readLog`; passed to `WikiQueryPanel`, `WikiList`, `HandoffList` `onSelect` so any list-item click auto-opens.
+    - Wired existing leave-section reset (`activeSettingsSection !== "knowledge"`) to also reset `isWikiPreviewOpen` so re-entering Wiki starts closed.
+    - Added `<X>` close button in `LogPreview` `headerAction` for the Wiki section only.
+    - Added `<PanelRightOpen> 미리보기 열기` toggle in `knowledge-page-toolbar`, visible only when `!isWikiPreviewOpen && selectedLogPath`.
+    - Toggled `knowledge-preview-pane--hidden` class + `aria-hidden` based on `isWikiPreviewOpen`.
+  - Edits in `apps/desktop/src/renderer/styles.css`:
+    - `.knowledge-preview-pane--hidden { display: none; }`.
+    - `.knowledge-toolbar-trailing` for header right cluster, `.knowledge-preview-open-toggle`, `.log-preview-close` styles.
+  - Verification: `cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh` exit 0.
+  - Other settings sections untouched — only the wiki branch (`activeSettingsSection === "knowledge"`) consumes the new state.
+  - Ticket moved to `tickets/done/prd_003/` after this resolution.

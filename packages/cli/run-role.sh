@@ -14,8 +14,8 @@ Usage:
   run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh merge [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
 EOF
 }
 
@@ -81,16 +81,16 @@ case "$requested_role" in
     default_runner_id="verifier-1"
     runtime_script="start-verifier.sh"
     ;;
-  merge|merge-bot)
-    public_role="merge"
-    runtime_role="merge"
-    default_runner_id="merge-1"
-    runtime_script="merge-ready-ticket.sh"
-    ;;
   wiki|wiki-maintainer)
     public_role="wiki"
     runtime_role="wiki"
-    default_runner_id="wiki-1"
+    default_runner_id="coordinator-1"
+    runtime_script=""
+    ;;
+  coordinator|coord|doctor|diagnose)
+    public_role="coordinator"
+    runtime_role="coordinator"
+    default_runner_id="coordinator-1"
     runtime_script=""
     ;;
   *)
@@ -217,11 +217,11 @@ agent_instruction_path() {
     verifier)
       printf '%s/agents/verifier-agent.md' "$board_root"
       ;;
-    merge)
-      printf '%s/agents/merge-bot-agent.md' "$board_root"
-      ;;
     wiki)
       printf '%s/agents/wiki-maintainer-agent.md' "$board_root"
+      ;;
+    coordinator)
+      printf '%s/agents/coordinator-agent.md' "$board_root"
       ;;
   esac
 }
@@ -253,18 +253,19 @@ Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
 3. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-4. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the merge role integrates into PROJECT_ROOT and creates the local completion commit.
-5. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
-6. Do not rely on this prompt as future memory.
-7. Never git push.
+4. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the coordinator/merge runtime integrates into PROJECT_ROOT and creates the local completion commit.
+5. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the merge runtime.
+6. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
+7. Do not rely on this prompt as future memory.
+8. Never git push.
 
 Role boundary:
 - ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- merge: process exactly one ready-to-merge ticket as the single PROJECT_ROOT writer. Never change verification decisions and never push.
 - planner: create/update plans and todo ticket files only. Do not implement, verify, commit, or push.
 - todo: claim/resume one todo ticket, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
-- wiki: update derived wiki pages from done tickets, reject records, and logs. Never treat the wiki as proof of completion.
+- wiki: update derived wiki pages from done tickets, reject records, and logs. A coordinator runner may serve this wiki-bot turn. Never treat the wiki as proof of completion.
+- coordinator: diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. If ready-to-merge work exists, invoke the merge runtime for one ready ticket; the merge runtime may then run the coordinator as the wiki bot. Never implement or push.
 
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.
@@ -282,6 +283,24 @@ run_custom_adapter_command() {
       AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
       bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
   )
+}
+
+normalize_claude_model_alias() {
+  local raw="$1"
+  case "$raw" in
+    opus-1m)
+      printf 'claude-opus-4-7[1m]'
+      ;;
+    sonnet-1m)
+      printf 'claude-sonnet-4-6[1m]'
+      ;;
+    haiku-1m)
+      printf 'claude-haiku-4-5-20251001[1m]'
+      ;;
+    *)
+      printf '%s' "$raw"
+      ;;
+  esac
 }
 
 run_default_adapter_command() {
@@ -325,7 +344,7 @@ run_default_adapter_command() {
       prompt_text="$(cat "$prompt_file")"
       cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
       if [ -n "$model" ]; then
-        cmd+=(--model "$model")
+        cmd+=(--model "$(normalize_claude_model_alias "$model")")
       fi
       if [ -n "$reasoning" ]; then
         cmd+=(--effort "$reasoning")
@@ -537,7 +556,7 @@ if [ "$enabled" != "true" ]; then
   exit 0
 fi
 
-if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ]; then
+if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] && [ "$public_role" != "wiki" ]; then
   write_blocked_state "runner_mode_not_supported_for_run"
   print_run_header "blocked"
   printf 'reason=runner_mode_not_supported_for_run\n'
@@ -546,7 +565,7 @@ if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|merge:merge|merge:merge-bot|wiki:wiki-maintainer|wiki:wiki)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -559,6 +578,8 @@ esac
 
 if [ "$public_role" = "wiki" ]; then
   runtime_path="${SCRIPT_DIR}/wiki-project.sh"
+elif [ "$public_role" = "coordinator" ]; then
+  runtime_path="${SCRIPT_DIR}/coordinator-project.sh"
 elif [ -z "$runtime_script" ]; then
   write_blocked_state "role_run_not_implemented"
   print_run_header "blocked"
@@ -580,6 +601,12 @@ case "$agent" in
   shell|manual)
     ;;
   codex|claude|opencode|gemini)
+    if [ "$public_role" = "coordinator" ]; then
+      # Coordinator diagnostics are deterministic and should not spend an
+      # adapter turn just to re-summarize doctor output. Wiki turns may still
+      # reuse this same configured runner as an adapter.
+      :
+    else
     instruction_file="$(agent_instruction_path)"
     if [ ! -f "$instruction_file" ]; then
       write_blocked_state "agent_instruction_missing"
@@ -766,6 +793,7 @@ case "$agent" in
       exit "$adapter_exit"
     fi
     exit 0
+    fi
     ;;
   *)
     write_blocked_state "agent_run_not_implemented"
@@ -850,6 +878,8 @@ runtime_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-output.XXXXXX")"
 runtime_command=("$runtime_path")
 if [ "$public_role" = "wiki" ]; then
   runtime_command+=("update" "$project_root" "$board_dir_name")
+elif [ "$public_role" = "coordinator" ]; then
+  runtime_command+=("$project_root" "$board_dir_name")
 fi
 set +e
 AUTOFLOW_ROLE="$runtime_role" \
@@ -867,7 +897,13 @@ active_item="$(awk -F= '$1 == "claimed" || $1 == "verify" || $1 == "plan" { sub(
 finished_at="$(runner_now_iso)"
 runtime_output_log_path="$(persist_run_artifact "$runtime_output" "runtime")"
 
-if [ "$runtime_exit" -eq 0 ]; then
+if [ "$runtime_exit" -eq 0 ] && [ "$runtime_status" = "blocked" ]; then
+  command_status="blocked"
+  runner_status="blocked"
+elif [ "$runtime_exit" -eq 0 ] && [ "$runtime_status" = "idle" ]; then
+  command_status="ok"
+  runner_status="idle"
+elif [ "$runtime_exit" -eq 0 ]; then
   command_status="ok"
   runner_status="idle"
 else
@@ -898,18 +934,52 @@ runner_append_log "$runner_id" "run_finish" \
   "exit_code=${runtime_exit}" \
   "runner_status=${runner_status}"
 
+runtime_reason=""
+if [ "$runtime_status" = "blocked" ]; then
+  runtime_reason="$(awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; found=1; exit } END { exit(found ? 0 : 1) }' "$runtime_output" 2>/dev/null || true)"
+fi
+runtime_output_suppressed=""
+if [ "$public_role" = "coordinator" ] && [ "$runtime_reason" = "unchanged_problem" ] && grep -Fqx 'coordinator.diagnosis_cached=true' "$runtime_output"; then
+  runtime_output_suppressed="unchanged_problem"
+fi
+
 print_run_header "$command_status"
 printf 'runner_status=%s\n' "$runner_status"
 printf 'runtime_script=%s\n' "$runtime_path"
 printf 'runtime_status=%s\n' "$runtime_status"
 printf 'runtime_exit_code=%s\n' "$runtime_exit"
+if [ "$runtime_status" = "blocked" ]; then
+  printf 'reason=%s\n' "$runtime_reason"
+fi
 printf 'active_item=%s\n' "$active_item"
 printf 'runtime_output_log_path=%s\n' "$runtime_output_log_path"
 printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
 printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
-printf 'runtime_output_begin\n'
-cat "$runtime_output"
-printf 'runtime_output_end\n'
+if [ -n "$runtime_output_suppressed" ]; then
+  printf 'runtime_output_suppressed=%s\n' "$runtime_output_suppressed"
+  awk -F= '
+    $1 == "doctor_status" ||
+    $1 == "coordinator.problem_detected" ||
+    $1 == "coordinator.problem_reason" ||
+    $1 == "coordinator.diagnosis_attempted" ||
+    $1 == "coordinator.diagnosis_cached" ||
+    $1 == "coordinator.diagnosis_skipped_reason" ||
+    $1 == "coordinator.precheck_active_blocked_ticket_count" ||
+    $1 == "coordinator.precheck_active_blocked_tickets" ||
+    $1 == "coordinator.operational_blockers" ||
+    $1 == "coordinator.shared_path_blocked_ticket_count" ||
+    $1 == "coordinator.worktree_issue_count" ||
+    $1 == "coordinator.project_root_dirty_overlap_count" ||
+    $1 == "coordinator.shared_nonbase_head_group_count" ||
+    $1 == "coordinator.ready_to_merge_count" ||
+    $1 == "coordinator.merge_attempted" ||
+    $1 == "coordinator.next_action" { print }
+  ' "$runtime_output"
+else
+  printf 'runtime_output_begin\n'
+  cat "$runtime_output"
+  printf 'runtime_output_end\n'
+fi
 rm -f "$runtime_output"
 
 if [ "$runtime_exit" -ne 0 ]; then

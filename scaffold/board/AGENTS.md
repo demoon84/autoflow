@@ -23,6 +23,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
    - plan 도출 / reject 재계획이면 `.autoflow/agents/plan-to-ticket-agent.md`
    - todo claim + 구현이면 `.autoflow/agents/todo-queue-agent.md`
    - verifier 검사면 `.autoflow/agents/verifier-agent.md`
+   - coordinator 진단 / merge / wiki-bot 조율이면 `.autoflow/agents/coordinator-agent.md`
 
 ## Root Rules
 
@@ -30,21 +31,22 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Ticket Owner 또는 legacy todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `.autoflow/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
-5. 기본 실행 모델은 `ticket-owner` 다. 한 runner 가 ticket mini-plan, 구현, 검증, evidence, ready-to-merge/reject 이동을 책임지고, pass 통합은 단일 `merge-bot` 이 맡는다.
+5. 기본 실행 모델은 `ticket-owner` 다. 한 runner 가 ticket mini-plan, 구현, 검증, evidence, ready-to-merge/reject 이동을 책임지고, pass 통합과 wiki-bot 후처리는 단일 `coordinator` / merge runtime 이 맡는다.
 5a. `ticket-owner` 시작 런타임은 `tickets/reject/` 를 backlog PRD 앞에서 확인하고, `AUTOFLOW_REJECT_AUTO_REPLAN=off` 가 아니면 반려 티켓을 최대 `AUTOFLOW_REJECT_MAX_RETRIES` 회까지 자동 재시도 대상으로 `todo` 로 되돌릴 수 있다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 역할 분리보다 `autoflow run ticket` / owner runner 를 우선한다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
-8. merge-bot 은 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.
+8. coordinator 는 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.
+8a. coordinator adapter turn 안에서는 coordinator 자기 자신을 `runners start/restart` 하거나 `autoflow run coordinator` 로 재귀 실행하지 않는다. prompt 에 제공된 runtime script 를 한 번 직접 실행하고 결과만 요약한다.
 9. 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
 10. 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
-11. ticket owner 또는 verifier 는 `.autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동에 대해 추가 허락을 묻지 않는다. merge-bot 은 ready-to-merge 티켓의 worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
+11. ticket owner 또는 verifier 는 `.autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동에 대해 추가 허락을 묻지 않는다. coordinator 는 ready-to-merge 티켓의 worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
 12. `tickets/` 는 실행 원장이고, 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다. wiki 문서만으로 done/pass 를 판단하지 않는다.
 13. local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 별도 단계로 추가한다. 기본 자동화는 Claude `/af` / `/autoflow` 또는 Codex `$af` / `$autoflow` skill handoff 뒤 `autoflow run ticket` 또는 Owner runner 로 이어지고, `#af` / `#autoflow` 는 호환 alias 로 유지한다. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거로 유지한다.
 14. heartbeat / runner tick 이 종료될 때는 현재 공정률을 표기한다. 가능하면 `autoflow metrics` 또는 보드의 PRD/ticket 집계를 기준으로 한 percent 를 tick 의 마지막 대화/로그 요약에 남긴다.
 15. 문서 언어 정책: AI / runner 가 주로 읽는 Markdown 문서 (`.autoflow/agents/`, `rules/`, `reference/`, ticket, verification, log, runtime contract)는 영어 또는 AI 친화적인 구조로 작성한다. 사람이 읽어야 하는 문서 (제품 README, 데스크톱 UI 문구, 사용자 가이드, 사용자 대상 릴리스 노트)는 기본적으로 한국어로 작성한다. 두 독자가 함께 보는 문서는 AI용 계약은 영어로, 사람용 설명은 한국어로 분리한다.
 16. 사용자 노출 worker 표기(`ticket`, `verification`, `log`, desktop markdown preview`)는 storage 식별자 `owner-N` / `worker-*` 를 그대로 노출하지 말고 `AI-N` 형태로 정규화한다. runner state 파일 이름, runtime role 키, config 상의 실제 worker id 는 바꾸지 않는다.
 17. 데스크톱 UI 컴포넌트(`apps/desktop/src/components/ui/` + 그 위 화면)는 **shadcn/ui 컴포넌트(또는 동일한 Radix 기반 wrapper)를 우선** 사용한다. modal/dialog/sheet/popover/tooltip/dropdown/command/toast 등 인터랙션 패턴이 있으면 직접 `<div>` + custom CSS 로 짓지 말고 shadcn 의 표준 컴포넌트를 추가(또는 추가 후 wrap)해 그 위에서 스타일·variant 만 확장한다. shadcn 에 없는 정말 도메인 특수 컴포넌트만 자체 구현이 허용되며, 그 경우에도 ARIA / focus trap / keyboard escape 같은 접근성 요건을 충족한다. 기존 자체 구현이 같은 패턴을 다루고 있다면 shadcn 으로 점진 마이그레이션한다.
-18. wiki 자동화 규칙: finish-pass 뒤 enabled `wiki-maintainer` runner 가 있으면 non-blocking 1-shot 후처리를 허용한다. `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 는 같은 adapter 경로를 재사용하며, adapter 부재 시 graceful skip 이어야 한다.
+18. wiki 자동화 규칙: coordinator 가 wiki-bot 역할까지 맡는다. merge 완료 뒤 deterministic wiki rebuild 를 실행하고, enabled `coordinator` runner 를 wiki adapter 로 재사용할 수 있어야 한다. 기존 enabled `wiki-maintainer` runner 가 있으면 호환성상 우선 사용할 수 있다. `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 는 같은 adapter 경로를 재사용하며, adapter 부재 시 graceful skip 이어야 한다.
 
 ## Trigger Interpretation
 

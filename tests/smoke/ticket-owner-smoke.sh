@@ -7,6 +7,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
 cleanup() {
+  if [ -d "${project_dir}/.autoflow" ]; then
+    "${REPO_ROOT}/bin/autoflow" runners stop coordinator-shell-loop "$project_dir" >/dev/null 2>&1 || true
+  fi
   rm -rf "$project_dir"
 }
 trap cleanup EXIT
@@ -76,6 +79,11 @@ status_output="${project_dir}/status.out"
 runner_list_output="${project_dir}/runner-list.out"
 runner_set_output="${project_dir}/runner-set.out"
 runner_dry_run_output="${project_dir}/runner-dry-run.out"
+wiki_runner_dry_run_output="${project_dir}/wiki-runner-dry-run.out"
+runner_loop_start_output="${project_dir}/runner-loop-start.out"
+runner_loop_list_output="${project_dir}/runner-loop-list.out"
+runner_loop_stop_output="${project_dir}/runner-loop-stop.out"
+coordinator_idle_output="${project_dir}/coordinator-idle.out"
 
 "${REPO_ROOT}/bin/autoflow" spec create "$project_dir" --raw <<'SPEC' >"$spec_output"
 # Project Spec
@@ -121,19 +129,50 @@ require_line "$spec_output" "status=created"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
-require_line "$runner_list_output" "runner_count=6"
+require_line "$runner_list_output" "runner_count=4"
 require_line "$runner_list_output" "runner.1.id=owner-1"
-require_line "$runner_list_output" "runner.5.id=wiki-maintainer-1"
-require_line "$runner_list_output" "runner.6.id=merge-1"
+require_line "$runner_list_output" "runner.4.id=coordinator-1"
+require_line "$runner_list_output" "runner.4.mode=loop"
 
-"${REPO_ROOT}/bin/autoflow" runners set owner-1 "$project_dir" agent=shell model=smoke-model >"$runner_set_output"
+"${REPO_ROOT}/bin/autoflow" runners add owner-shell-1 ticket-owner "$project_dir" agent=shell model=smoke-model >"$runner_set_output"
 require_line "$runner_set_output" "status=ok"
-require_line "$runner_set_output" "result=config_updated"
+require_line "$runner_set_output" "result=runner_added"
+require_line "$runner_set_output" "runner_id=owner-shell-1"
+require_line "$runner_set_output" "mode=one-shot"
 require_line "$runner_set_output" "model=smoke-model"
 
-"${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-1 --dry-run >"$runner_dry_run_output"
+"${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-shell-1 --dry-run >"$runner_dry_run_output"
 require_line "$runner_dry_run_output" "status=dry_run"
 require_line "$runner_dry_run_output" "runner_status=idle"
+
+"${REPO_ROOT}/bin/autoflow" runners add coordinator-shell-loop coordinator "$project_dir" agent=shell mode=loop interval_seconds=1 >/dev/null
+AUTOFLOW_RUNNER_LOOP_INTERVAL_SECONDS=1 "${REPO_ROOT}/bin/autoflow" runners start coordinator-shell-loop "$project_dir" >"$runner_loop_start_output"
+require_line "$runner_loop_start_output" "status=ok"
+require_line "$runner_loop_start_output" "result=started"
+require_line "$runner_loop_start_output" "runner_id=coordinator-shell-loop"
+sleep 2
+"${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_loop_list_output"
+require_line "$runner_loop_list_output" "runner.6.id=coordinator-shell-loop"
+require_line "$runner_loop_list_output" "runner.6.state_status=running"
+"${REPO_ROOT}/bin/autoflow" runners stop coordinator-shell-loop "$project_dir" >"$runner_loop_stop_output"
+require_line "$runner_loop_stop_output" "status=ok"
+require_line "$runner_loop_stop_output" "runner_status=stopped"
+
+"${REPO_ROOT}/bin/autoflow" runners add coordinator-codex-direct coordinator "$project_dir" agent=codex command=false >/dev/null
+"${REPO_ROOT}/bin/autoflow" run coordinator "$project_dir" --runner coordinator-codex-direct >"$coordinator_idle_output"
+require_line "$coordinator_idle_output" "status=ok"
+require_line "$coordinator_idle_output" "role=coordinator"
+require_line "$coordinator_idle_output" "runner_id=coordinator-codex-direct"
+require_line "$coordinator_idle_output" "runner_status=idle"
+require_line "$coordinator_idle_output" "runtime_status=idle"
+require_line "$coordinator_idle_output" "reason=no_problem_detected"
+require_line "$coordinator_idle_output" "coordinator.problem_detected=false"
+require_line "$coordinator_idle_output" "coordinator.diagnosis_attempted=false"
+if grep -Fq "doctor_output_begin" "$coordinator_idle_output"; then
+  echo "Coordinator should skip full doctor output when cheap precheck sees no problem" >&2
+  cat "$coordinator_idle_output" >&2
+  exit 1
+fi
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
@@ -152,12 +191,22 @@ require_line "$finish_output" "status=ready_to_merge"
 require_line "$finish_output" "outcome=pass"
 require_line "$finish_output" "commit_status=not_committed_waiting_for_merge_bot"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=merge-smoke ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
-require_line "$merge_output" "status=done"
+"${REPO_ROOT}/bin/autoflow" runners add coordinator-shell-1 coordinator "$project_dir" agent=shell >/dev/null
+"${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" --runner coordinator-shell-1 --dry-run >"$wiki_runner_dry_run_output"
+require_line "$wiki_runner_dry_run_output" "status=dry_run"
+require_line "$wiki_runner_dry_run_output" "role=wiki"
+require_line "$wiki_runner_dry_run_output" "runner_id=coordinator-shell-1"
+"${REPO_ROOT}/bin/autoflow" run coordinator "$project_dir" --runner coordinator-shell-1 >"$merge_output"
+require_line "$merge_output" "status=ok"
+require_line "$merge_output" "role=coordinator"
+require_line "$merge_output" "runtime_status=ok"
+require_line "$merge_output" "coordinator.ready_to_merge_count=1"
+require_line "$merge_output" "coordinator.merge_attempted=true"
+require_line "$merge_output" "coordinator.merge_ticket_id=001"
+require_line "$merge_output" "coordinator.merge_status=done"
 require_line "$merge_output" "outcome=pass"
 require_line "$merge_output" "wiki.status=updated"
-require_line "$merge_output" "wiki_maintainer.status=failed"
-require_line "$merge_output" "wiki_maintainer.reason=autoflow_cli_missing"
+require_line "$merge_output" "wiki_maintainer.status=skipped_no_runner"
 require_line "$merge_output" "commit_status=committed"
 require_pattern "$merge_output" '^commit_hash=[0-9a-f]{40}$'
 require_line "${project_dir}/.autoflow/wiki/index.md" "<!-- AUTOFLOW:BEGIN work-map -->"

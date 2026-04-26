@@ -21,7 +21,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 - `tickets/inprogress/verify_NNN.md` during verification.
 - A verified ticket queued under `tickets/ready-to-merge/` after pass.
 - Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
-- Merge-bot, not Ticket Owner, writes the final completion log and local pass commit.
+- Coordinator, not Ticket Owner, writes the final completion log and local pass commit.
 
 ## Rules
 
@@ -48,7 +48,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 6. Update `Notes` and `Resume Context` as work progresses.
 7. Run `scripts/verify-ticket-owner.* <ticket-id>`.
 8. Inspect the verification record and command output.
-9. If criteria pass, finish pass with a short summary so merge-bot can integrate later.
+9. If criteria pass, finish pass with a short summary so the coordinator can integrate later.
 10. If criteria fail or command is missing, finish fail with an observable reason.
 11. Leave enough context for another owner to resume from board files.
 

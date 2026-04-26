@@ -116,6 +116,7 @@ merge_one_output="${project_dir}/merge-one.out"
 resume_two_output="${project_dir}/resume-two.out"
 finish_two_block_output="${project_dir}/finish-two-block.out"
 runner_block_output="${project_dir}/runner-block.out"
+stale_recovery_block_output="${project_dir}/stale-recovery-block.out"
 fake_bin="${project_dir}/fake-bin"
 fake_codex_marker="${project_dir}/codex-called"
 
@@ -170,6 +171,18 @@ require_line "$resume_two_output" "status=resume"
 require_line "$resume_two_output" "ticket_id=002"
 require_line "$resume_two_output" "stage=executing"
 require_pattern "${project_dir}/.autoflow/tickets/inprogress/tickets_002.md" 'shared Allowed Path blockers cleared'
+
+perl -0pi -e 's/- Stage: executing/- Stage: blocked/' "${project_dir}/.autoflow/tickets/inprogress/tickets_002.md"
+rm -f "$fake_codex_marker"
+AUTOFLOW_WORKTREE_MODE=project-root-on-dirty PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-2 >"$stale_recovery_block_output"
+require_line "$stale_recovery_block_output" "status=blocked"
+require_line "$stale_recovery_block_output" "runner_status=blocked"
+require_line "$stale_recovery_block_output" "runtime_status=blocked"
+require_line "$stale_recovery_block_output" "reason=ticket_stage_blocked"
+if [ -e "$fake_codex_marker" ]; then
+  echo "Codex adapter was invoked after a stale auto-recovery marker became the latest block event." >&2
+  exit 1
+fi
 
 echo "status=ok"
 echo "project_root=$project_dir"

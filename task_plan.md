@@ -219,6 +219,42 @@ Replace the desktop app's left sidebar layout with a tabbed layout that separate
 
 ---
 
+# Task Plan: Coordinator Wiki Bot Role
+
+## Goal
+Extend Coordinator Mode so the coordinator also covers wiki-maintainer responsibilities instead of requiring a separate visible wiki bot role.
+
+## Scope
+- Inspect coordinator, wiki, runner, scaffold, and CLI runtime wiring.
+- Prefer reusing existing `autoflow wiki` commands and managed-section rules.
+- Keep `.autoflow/tickets/` as source of truth; wiki remains derived knowledge.
+- Avoid reverting unrelated dirty work already present in the repository.
+
+## Phases
+- [x] Read Autoflow board contracts and coordinator/wiki role prompts.
+- [x] Map existing coordinator and wiki runtime implementation.
+- [x] Implement the smallest safe coordinator/wiki integration.
+- [x] Update current board and scaffold documentation/config if needed.
+- [x] Run targeted CLI/smoke verification.
+
+## Decisions
+- Preserve coordinator's no-implementation boundary.
+- Treat wiki maintenance as a post-merge/derived-knowledge responsibility inside coordinator mode.
+
+## Verification
+- [x] `bash -n packages/cli/run-role.sh packages/cli/wiki-project.sh packages/cli/metrics-project.sh packages/cli/coordinator-project.sh runtime/board-scripts/merge-ready-ticket.sh runtime/board-scripts/finish-ticket-owner.sh runtime/board-scripts/check-stop.sh runtime/board-scripts/run-hook.sh runtime/board-scripts/start-ticket-owner.sh runtime/board-scripts/verify-ticket-owner.sh tests/smoke/ticket-owner-smoke.sh tests/smoke/doctor-blocked-ticket-smoke.sh bin/autoflow`
+- [x] `bash tests/smoke/ticket-owner-smoke.sh`
+- [x] `bash tests/smoke/doctor-blocked-ticket-smoke.sh`
+- [x] Temp `autoflow wiki query --synth --runner coordinator-shell-1` returned `synth_status=skipped_no_adapter` after selecting a coordinator role runner.
+- [x] Temp `autoflow wiki lint --semantic --runner coordinator-shell-1` returned `semantic_status=skipped_no_adapter`.
+- [x] Runtime/current-board mirror `diff -q` checks for changed scripts and agent/reference docs.
+- [x] `./bin/autoflow metrics .`
+- [x] `git diff --check` on changed files.
+
+## Risks
+- The worktree is already heavily dirty from active dogfood work; changes must stay tightly scoped.
+- Existing live coordinator loop state may be active, so config/runtime edits should avoid destructive state operations.
+
 # Task Plan: Essential Decision UI Simplification
 
 ## Goal
@@ -324,6 +360,41 @@ Turn the desktop `진행 스냅샷` area into a reporting-oriented dashboard tha
 ## Risks
 - Current worktree is heavily dirty from previous work; edits must stay tightly scoped.
 - Metrics history may be sparse, so charts should degrade gracefully when `daily.jsonl` has few entries.
+
+---
+
+# Task Plan: Coordinator Agent For Blocked Work And Merge
+
+## Goal
+Make Autoflow explain frequent `blocked` runner states and let a coordinator role process ready-to-merge work when present.
+
+## Scope
+- Extend `autoflow doctor` output with active-ticket operational triage.
+- Allow `coordinator` as a local runner role through `autoflow runners start coordinator-1`.
+- Add AI-friendly coordinator agent instructions.
+- Add a coordinator runtime that runs doctor diagnostics and invokes one ready-to-merge runtime when present.
+- Add focused smoke coverage for blocked shared-path diagnosis.
+- Avoid changing live ticket state or repairing work automatically in this pass.
+
+## Phases
+- [x] Inspect existing doctor, runner, and shared-path conflict runtime code.
+- [x] Implement doctor active-ticket diagnostics.
+- [x] Wire `coordinator` into runner role validation and `autoflow run`.
+- [x] Document the coordinator role and add smoke coverage.
+- [x] Verify shell syntax, smoke behavior, and whitespace.
+
+## Decisions
+- Keep `autoflow doctor` as a deterministic scanner.
+- Use `autoflow runners start coordinator-1` for the role-level loop: diagnostics first, then one ready-to-merge integration if available.
+- Treat shared Allowed Path blockers as warnings rather than errors, because a serialized queue can be intentional; the value is surfacing the real chain.
+- Inside a coordinator adapter turn, the AI must not start or run the coordinator recursively; it executes the provided runtime path once, then reports the result.
+
+## Verification
+- [x] `bash -n packages/cli/coordinator-project.sh packages/cli/run-role.sh packages/cli/runners-project.sh packages/cli/doctor-project.sh tests/smoke/doctor-blocked-ticket-smoke.sh tests/smoke/ticket-owner-smoke.sh bin/autoflow`
+- [x] `bash tests/smoke/doctor-blocked-ticket-smoke.sh`
+- [x] `bash tests/smoke/ticket-owner-smoke.sh`
+- [x] `git diff --check` for touched coordinator/doctor/runner/smoke files
+- [x] Live `coordinator-1` loop restarted and completed one AI coordinator tick without recursive coordinator processes.
 
 ---
 

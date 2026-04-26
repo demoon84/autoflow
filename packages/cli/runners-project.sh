@@ -229,10 +229,30 @@ start_loop_worker_process() {
 
   if command -v setsid >/dev/null 2>&1; then
     nohup setsid "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >"$stdout_file" 2>"$stderr_file" &
+    loop_pid="$!"
+  elif command -v python3 >/dev/null 2>&1; then
+    loop_pid="$(python3 - "$SCRIPT_DIR/runners-project.sh" "$target_runner_id" "$project_root" "$board_dir_name" "$stdout_file" "$stderr_file" <<'PY'
+import subprocess
+import sys
+
+script, runner_id, project_root, board_dir_name, stdout_file, stderr_file = sys.argv[1:]
+stdout = open(stdout_file, "ab", buffering=0)
+stderr = open(stderr_file, "ab", buffering=0)
+process = subprocess.Popen(
+    [script, "loop-worker", runner_id, project_root, board_dir_name],
+    stdin=subprocess.DEVNULL,
+    stdout=stdout,
+    stderr=stderr,
+    start_new_session=True,
+    close_fds=True,
+)
+print(process.pid)
+PY
+)"
   else
     nohup "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >"$stdout_file" 2>"$stderr_file" &
+    loop_pid="$!"
   fi
-  loop_pid="$!"
 }
 
 runner_role_to_run_role() {
@@ -249,11 +269,11 @@ runner_role_to_run_role() {
     verifier)
       printf 'verifier'
       ;;
-    merge|merge-bot)
-      printf 'merge'
-      ;;
     wiki|wiki-maintainer)
       printf 'wiki'
+      ;;
+    coordinator|coord|doctor|diagnose)
+      printf 'coordinator'
       ;;
     *)
       return 1
@@ -426,7 +446,7 @@ runner_allowed_config_key() {
 
 runner_allowed_role() {
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher)
+    ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|coordinator|coord|doctor|diagnose|watcher)
       return 0
       ;;
     *)
@@ -1214,13 +1234,12 @@ sync_heartbeat_set_workers() {
   set_file="$(runner_heartbeat_set_path)"
   [ -f "$set_file" ] || return 0
 
-  for role in ticket-owner planner todo verifier merge-bot; do
+  for role in ticket-owner planner todo verifier; do
     case "$role" in
       ticket-owner) array_key="owner_workers" ;;
       planner) array_key="planner_workers" ;;
       todo) array_key="todo_workers" ;;
       verifier) array_key="verifier_workers" ;;
-      merge-bot) array_key="merge_workers" ;;
     esac
     ids="$(runner_ids_for_role "$role")"
     updated_array=""

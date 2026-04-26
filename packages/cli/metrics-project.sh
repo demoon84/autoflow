@@ -194,7 +194,7 @@ count_runner_states() {
         if [ "$in_runner" -eq 1 ] && [ -n "$id" ]; then
           runner_total_count=$((runner_total_count + 1))
           case "$role" in
-            ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher) ;;
+            ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|coordinator|coord|doctor|diagnose|watcher) ;;
             *) invalid_config="true" ;;
           esac
           case "$enabled" in

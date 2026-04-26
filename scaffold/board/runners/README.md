@@ -25,4 +25,5 @@ Rules:
 - Runner state is process state, not ticket state.
 - Tickets remain authoritative.
 - Logs and artifacts should be copied to `runners/logs/`.
+- The coordinator may also serve wiki-bot adapter turns; a separate `wiki-maintainer` runner is optional compatibility.
 - Never push from a runner.

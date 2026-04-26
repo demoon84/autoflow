@@ -212,7 +212,7 @@ printf 'exit_code=%s\n' "$exit_code"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
 if [ "$exit_code" -eq 0 ]; then
-  printf 'next_action=scripts/finish-ticket-owner.sh %s pass "<short summary>" to queue ready-to-merge for merge-bot\n' "$ticket_id"
+  printf 'next_action=scripts/finish-ticket-owner.sh %s pass "<short summary>" to queue ready-to-merge for coordinator\n' "$ticket_id"
 else
   printf 'next_action=Fix inside scope and rerun verification, or scripts/finish-ticket-owner.sh %s fail "<concrete reject reason>"\n' "$ticket_id"
 fi

@@ -36,7 +36,7 @@ const allowedRunRoles = new Set([
   "wiki",
   "wiki-maintainer"
 ]);
-const allowedRunnerRoles = new Set(["ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "watcher"]);
+const allowedRunnerRoles = new Set(["ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "coordinator", "watcher"]);
 const allowedRunnerConfigKeys = new Set([
   "agent",
   "model",
@@ -121,14 +121,8 @@ function parseTomlStringValue(rawValue) {
 }
 
 function supportedCodexProfile(model, reasoning) {
-  let supportedModel = model;
-
-  if (supportedModel === "gpt-5.5") {
-    supportedModel = "gpt-5.4";
-  }
-
   return {
-    model: supportedModel,
+    model,
     reasoning
   };
 }
@@ -170,11 +164,25 @@ function scaffoldManifestValue(section, name, fallback) {
 const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticCache = new Map();
+const knownProjectScopes = new Map();
+const activeChildProcesses = new Set();
+let runnerShutdownInProgress = false;
 
 function appConfig() {
   return {
     defaultBoardDirName
   };
+}
+
+function rememberProjectScope(options) {
+  if (!options || typeof options.projectRoot !== "string" || !options.projectRoot) {
+    return;
+  }
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  const key = `${options.projectRoot}\0${boardDirName}`;
+  if (!knownProjectScopes.has(key)) {
+    knownProjectScopes.set(key, { projectRoot: options.projectRoot, boardDirName });
+  }
 }
 
 function createWindow() {
@@ -256,6 +264,7 @@ function runAutoflowArgs(args, options = {}) {
       },
       windowsHide: true
     });
+    activeChildProcesses.add(child);
 
     let stdout = "";
     let stderr = "";
@@ -275,6 +284,7 @@ function runAutoflowArgs(args, options = {}) {
     }
 
     child.on("error", (error) => {
+      activeChildProcesses.delete(child);
       resolve({
         ok: false,
         command: label,
@@ -285,6 +295,7 @@ function runAutoflowArgs(args, options = {}) {
     });
 
     child.on("close", (code) => {
+      activeChildProcesses.delete(child);
       resolve({
         ok: isSuccessfulAutoflowResult(code, stdout),
         command: label,
@@ -506,7 +517,8 @@ function parseRunnerListOutput(output) {
       artifactStderrStatus: values[`${prefix}artifact_stderr_status`] || "",
       lastLogLine: values[`${prefix}last_log_line`] || "",
       statePath: values[`${prefix}state_path`] || "",
-      logPath: values[`${prefix}log_path`] || ""
+      logPath: values[`${prefix}log_path`] || "",
+      tokenUsage: 0
     });
   }
 
@@ -601,14 +613,6 @@ async function runnerConversationPreview(runner, boardRoot) {
   return "";
 }
 
-async function enrichRunnerTerminalPreviews(runners, boardRoot) {
-  return Promise.all(
-    runners.map(async (runner) => ({
-      ...runner,
-      conversationPreview: await runnerConversationPreview(runner, boardRoot)
-    }))
-  );
-}
 
 async function pathExists(filePath) {
   try {
@@ -617,6 +621,182 @@ async function pathExists(filePath) {
   } catch {
     return false;
   }
+}
+
+const runnerLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_(?:stdout|stderr)\.log$/;
+const runnerLiveLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_live_(?:stdout|stderr)\.log$/;
+const ansiEscapePattern = /\[[0-9;?]*[A-Za-z]/g;
+const totalTokensMarkerPattern = /total[_ -]?tokens/;
+const liveTokenLogCache = new Map();
+
+function parseTokenUsageChunk(chunk, prior) {
+  const combined = (prior?.tail || "") + chunk;
+  const lines = combined.split("\n");
+  const newTail = lines.pop() ?? "";
+  let total = prior?.tokens ?? 0;
+  let waiting = prior?.waiting ?? false;
+
+  for (const rawLine of lines) {
+    const clean = rawLine.replace(/\r$/, "").replace(ansiEscapePattern, "");
+    const lower = clean.toLowerCase();
+
+    if (waiting) {
+      const numberMatch = clean.replace(/,/g, "").match(/[0-9]+/);
+      if (numberMatch) {
+        total += Number.parseInt(numberMatch[0], 10);
+        waiting = false;
+        continue;
+      }
+      if (clean.trim() !== "") {
+        waiting = false;
+      }
+    }
+
+    const tokensUsedIdx = lower.indexOf("tokens used");
+    if (tokensUsedIdx >= 0) {
+      const after = clean.slice(tokensUsedIdx + "tokens used".length).replace(/,/g, "");
+      const inlineMatch = after.match(/[0-9]+/);
+      if (inlineMatch) {
+        total += Number.parseInt(inlineMatch[0], 10);
+      } else {
+        waiting = true;
+      }
+      continue;
+    }
+
+    const totalTokensMatch = lower.match(totalTokensMarkerPattern);
+    if (totalTokensMatch) {
+      const idx = lower.indexOf(totalTokensMatch[0]);
+      const after = clean.slice(idx + totalTokensMatch[0].length).replace(/,/g, "");
+      const inlineMatch = after.match(/[0-9]+/);
+      if (inlineMatch) {
+        total += Number.parseInt(inlineMatch[0], 10);
+      }
+    }
+  }
+
+  return { tokens: total, waiting, tail: newTail };
+}
+
+async function aggregateLiveTokenUsage(logsDir) {
+  const totals = new Map();
+  let entries;
+  try {
+    entries = await fs.readdir(logsDir);
+  } catch {
+    return totals;
+  }
+
+  const seenPaths = new Set();
+
+  await Promise.all(
+    entries.map(async (name) => {
+      const match = runnerLiveLogNamePattern.exec(name);
+      if (!match) return;
+      const runnerId = match[1];
+      const filePath = path.join(logsDir, name);
+
+      let stat;
+      try {
+        stat = await fs.stat(filePath);
+      } catch {
+        return;
+      }
+      if (!stat.isFile()) return;
+
+      seenPaths.add(filePath);
+      if (stat.size === 0) return;
+
+      const cached = liveTokenLogCache.get(filePath);
+      if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+        totals.set(runnerId, (totals.get(runnerId) || 0) + cached.tokens);
+        return;
+      }
+
+      let startOffset = 0;
+      let prior = { tokens: 0, waiting: false, tail: "" };
+      if (cached && cached.size > 0 && cached.size <= stat.size) {
+        startOffset = cached.size;
+        prior = { tokens: cached.tokens, waiting: cached.waiting, tail: cached.tail };
+      }
+
+      let content = "";
+      const length = stat.size - startOffset;
+      if (length > 0) {
+        let handle;
+        try {
+          handle = await fs.open(filePath, "r");
+          const buffer = Buffer.allocUnsafe(length);
+          await handle.read(buffer, 0, length, startOffset);
+          content = buffer.toString("utf8");
+        } catch {
+          return;
+        } finally {
+          if (handle) await handle.close().catch(() => {});
+        }
+      }
+
+      const result = parseTokenUsageChunk(content, prior);
+      liveTokenLogCache.set(filePath, {
+        size: stat.size,
+        mtimeMs: stat.mtimeMs,
+        tokens: result.tokens,
+        waiting: result.waiting,
+        tail: result.tail
+      });
+
+      totals.set(runnerId, (totals.get(runnerId) || 0) + result.tokens);
+    })
+  );
+
+  for (const cachedPath of liveTokenLogCache.keys()) {
+    if (!seenPaths.has(cachedPath)) {
+      liveTokenLogCache.delete(cachedPath);
+    }
+  }
+
+  return totals;
+}
+
+async function readRunnerTokenUsage(boardRoot) {
+  const totals = new Map();
+  const cachePath = path.join(boardRoot, "metrics", "token-cache.tsv");
+
+  let raw;
+  try {
+    raw = await fs.readFile(cachePath, "utf8");
+  } catch {
+    raw = "";
+  }
+
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line) continue;
+    const parts = line.split("\t");
+    if (parts.length < 4) continue;
+    const tokenCount = Number.parseInt(parts[3], 10);
+    if (!Number.isFinite(tokenCount) || tokenCount <= 0) continue;
+    const match = path.basename(parts[0]).match(runnerLogNamePattern);
+    if (!match) continue;
+    totals.set(match[1], (totals.get(match[1]) || 0) + tokenCount);
+  }
+
+  const liveTotals = await aggregateLiveTokenUsage(path.join(boardRoot, "runners", "logs"));
+  for (const [runnerId, count] of liveTotals) {
+    totals.set(runnerId, (totals.get(runnerId) || 0) + count);
+  }
+
+  return totals;
+}
+
+async function enrichRunnerTerminalPreviews(runners, boardRoot) {
+  const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot);
+  return Promise.all(
+    runners.map(async (runner) => ({
+      ...runner,
+      conversationPreview: await runnerConversationPreview(runner, boardRoot),
+      tokenUsage: tokenUsageByRunner.get(runner.id) || 0
+    }))
+  );
 }
 
 function usefulPreviewValue(value) {
@@ -1444,6 +1624,168 @@ function controlWatcher(options = {}) {
   return runAutoflow(commandByAction[action], options);
 }
 
+function withScopeMemory(handler) {
+  return (_event, options) => {
+    rememberProjectScope(options);
+    return handler(options || {});
+  };
+}
+
+function listChildPids(parentPid) {
+  if (process.platform === "win32") return [];
+  try {
+    const { spawnSync } = require("node:child_process");
+    const result = spawnSync("pgrep", ["-P", String(parentPid)], {
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    if (result.status !== 0 || !result.stdout) return [];
+    return result.stdout
+      .toString()
+      .split(/\s+/)
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value) && value > 0);
+  } catch {
+    return [];
+  }
+}
+
+function collectProcessTree(rootPid, visited = new Set()) {
+  if (!Number.isInteger(rootPid) || rootPid <= 0 || visited.has(rootPid)) {
+    return [];
+  }
+  visited.add(rootPid);
+  const children = listChildPids(rootPid);
+  const descendants = [];
+  for (const child of children) {
+    descendants.push(...collectProcessTree(child, visited));
+  }
+  return [...descendants, rootPid];
+}
+
+function killPidGracefully(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  if (process.platform === "win32") {
+    try {
+      const { spawnSync } = require("node:child_process");
+      const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore"
+      });
+      return result.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  const tree = collectProcessTree(pid);
+  if (tree.length === 0) {
+    return false;
+  }
+
+  for (const target of tree) {
+    try {
+      process.kill(-target, "SIGTERM");
+    } catch {}
+    try {
+      process.kill(target, "SIGTERM");
+    } catch {}
+  }
+
+  setTimeout(() => {
+    for (const target of collectProcessTree(pid)) {
+      try {
+        process.kill(-target, "SIGKILL");
+      } catch {}
+      try {
+        process.kill(target, "SIGKILL");
+      } catch {}
+    }
+  }, 1500).unref();
+
+  return true;
+}
+
+function parseRunnerStateFile(content) {
+  const values = {};
+  for (const line of content.split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index <= 0) continue;
+    values[line.slice(0, index)] = line.slice(index + 1);
+  }
+  return values;
+}
+
+function serializeRunnerState(values) {
+  return Object.entries(values)
+    .map(([key, value]) => `${key}=${value ?? ""}`)
+    .join("\n") + "\n";
+}
+
+async function shutdownRunnersForScope(scope) {
+  const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
+  let entries;
+  try {
+    entries = await fs.readdir(stateDir);
+  } catch {
+    return 0;
+  }
+
+  let killedCount = 0;
+  await Promise.all(
+    entries
+      .filter((name) => name.endsWith(".state"))
+      .map(async (name) => {
+        const filePath = path.join(stateDir, name);
+        let content;
+        try {
+          content = await fs.readFile(filePath, "utf8");
+        } catch {
+          return;
+        }
+        const values = parseRunnerStateFile(content);
+        if (values.status !== "running") return;
+        const pid = Number.parseInt(values.pid || "", 10);
+        if (!Number.isInteger(pid) || pid <= 0) return;
+
+        if (killPidGracefully(pid)) {
+          killedCount += 1;
+        }
+
+        values.status = "stopped";
+        values.pid = "";
+        values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+        try {
+          await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+        } catch {}
+      })
+  );
+  return killedCount;
+}
+
+async function shutdownAllRunners() {
+  if (runnerShutdownInProgress) return 0;
+  runnerShutdownInProgress = true;
+
+  let total = 0;
+  for (const scope of knownProjectScopes.values()) {
+    try {
+      total += await shutdownRunnersForScope(scope);
+    } catch {}
+  }
+
+  for (const child of activeChildProcesses) {
+    try {
+      child.kill("SIGTERM");
+    } catch {}
+  }
+  activeChildProcesses.clear();
+
+  return total;
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
@@ -1459,19 +1801,19 @@ app.whenReady().then(() => {
 
   ipcMain.handle("autoflow:getConfig", () => appConfig());
   ipcMain.handle("autoflow:listInstalledAgentProfiles", () => readInstalledAgentProfiles());
-  ipcMain.handle("autoflow:readBoard", (_event, options) => readBoard(options || {}));
-  ipcMain.handle("autoflow:installBoard", (_event, options) => installBoard(options || {}));
-  ipcMain.handle("autoflow:listRunners", (_event, options) => listRunners(options || {}));
-  ipcMain.handle("autoflow:controlRunner", (_event, options) => controlRunner(options || {}));
-  ipcMain.handle("autoflow:listRunnerArtifacts", (_event, options) => listRunnerArtifacts(options || {}));
-  ipcMain.handle("autoflow:runRole", (_event, options) => runRole(options || {}));
-  ipcMain.handle("autoflow:configureRunner", (_event, options) => configureRunner(options || {}));
-  ipcMain.handle("autoflow:createRunner", (_event, options) => createRunner(options || {}));
-  ipcMain.handle("autoflow:controlWiki", (_event, options) => controlWiki(options || {}));
-  ipcMain.handle("autoflow:writeMetricsSnapshot", (_event, options) => writeMetricsSnapshot(options || {}));
-  ipcMain.handle("autoflow:controlStopHook", (_event, options) => controlStopHook(options || {}));
-  ipcMain.handle("autoflow:controlWatcher", (_event, options) => controlWatcher(options || {}));
-  ipcMain.handle("autoflow:readBoardFile", (_event, options) => readBoardFile(options || {}));
+  ipcMain.handle("autoflow:readBoard", withScopeMemory(readBoard));
+  ipcMain.handle("autoflow:installBoard", withScopeMemory(installBoard));
+  ipcMain.handle("autoflow:listRunners", withScopeMemory(listRunners));
+  ipcMain.handle("autoflow:controlRunner", withScopeMemory(controlRunner));
+  ipcMain.handle("autoflow:listRunnerArtifacts", withScopeMemory(listRunnerArtifacts));
+  ipcMain.handle("autoflow:runRole", withScopeMemory(runRole));
+  ipcMain.handle("autoflow:configureRunner", withScopeMemory(configureRunner));
+  ipcMain.handle("autoflow:createRunner", withScopeMemory(createRunner));
+  ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
+  ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
+  ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
+  ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
+  ipcMain.handle("autoflow:readBoardFile", withScopeMemory(readBoardFile));
 
   createWindow();
 
@@ -1479,6 +1821,23 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
+  });
+});
+
+app.on("before-quit", (event) => {
+  if (runnerShutdownInProgress) {
+    return;
+  }
+  if (knownProjectScopes.size === 0 && activeChildProcesses.size === 0) {
+    return;
+  }
+  event.preventDefault();
+
+  const shutdownTimeoutMs = 5000;
+  const cleanup = shutdownAllRunners().catch(() => 0);
+  const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
+  Promise.race([cleanup, timeout]).finally(() => {
+    app.exit(0);
   });
 });
 
