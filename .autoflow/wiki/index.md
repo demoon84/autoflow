@@ -8,8 +8,8 @@ Generated summaries may be written here by `autoflow wiki update`.
 
 ## Pages
 
-- `project-overview.md`
-- `log.md`
+- [[project-overview]]
+- [[log]]
 - `decisions/`
 - `features/`
 - `architecture/`
@@ -22,11 +22,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 11
+- Done tickets: 12
 - Reject records: 1
-- Verifier logs: 202
+- Verifier logs: 203
 - Conversation handoffs: 0
-- Last updated: 2026-04-27T12:52:36Z
+- Last updated: 2026-04-27T13:01:40Z
 
 ## Completed Tickets
 
@@ -41,4 +41,5 @@ Tickets, verification records, and logs remain authoritative.
 - `tickets_015` - Show pending PRD count alongside total in workflow pin label. PRD workflow pin label now shows nonzero pending backlog count and reuses the label for the layer heading. Source: `tickets/done/prd_015/tickets_015.md`.
 - `tickets_017` - Restrict Claude reasoning dropdown to medium/high only. Restrict Claude reasoning choices to medium/high and normalize invalid saved Claude values to high Source: `tickets/done/prd_017/tickets_017.md`.
 - `tickets_018` - Align workflow stat strip edges with PRD pin bar + show raw token count. Align workflow stat strip edges with PRD pin strip and show raw token counts Source: `tickets/done/prd_018/tickets_018.md`.
+- `tickets_019` - Reduce ticket workspace tabs to PRD + 발급 티켓 only. Reduced ticket workspace to PRD and issued-ticket tabs with issued as default and all ticket stages listed. Source: `tickets/done/prd_019/tickets_019.md`.
 <!-- AUTOFLOW:END work-map -->
