@@ -10,13 +10,26 @@ Generated summaries may be written here by `autoflow wiki update`.
 
 - [[project-overview]]
 - [[log]]
-- [[ai-workflow-board]]
-- [[self-improvement-trial]]
-- [[ticket-workspace-tabs]]
-- `decisions/`
 - `features/`
+  - [[ai-workflow-board]]
+  - [[self-improvement-trial]]
+  - [[ticket-workspace-tabs]]
+  - [[wiki-preview-flow]]
+  - [[desktop-tickets-kanban]]
+  - [[auto-resume-recovery]]
+  - [[workflow-stat-strip]]
+  - [[desktop-gemini-icon]]
+  - [[in-app-help]]
+- `decisions/`
+  - [[manual-resolution-policy]]
+  - [[handoff-as-raw-source]]
+  - [[prd-terminology-rename]]
+  - [[worker-display-policy]]
 - `architecture/`
+  - [[README]]
+  - [[runner-role-slugs]]
 - `learnings/`
+  - [[ticket-overlap-no-op]]
 
 ## Source Of Truth
 
@@ -25,11 +38,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 15
+- Done tickets: 16
 - Reject records: 1
-- Verifier logs: 206
+- Verifier logs: 207
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T14:19:12Z
+- Last updated: 2026-04-27T15:05:58Z
 
 ## Completed Tickets
 
@@ -48,4 +61,5 @@ Tickets, verification records, and logs remain authoritative.
 - `tickets_019` - Reduce ticket workspace tabs to PRD + 발급 티켓 only. Reduced ticket workspace to PRD and issued-ticket tabs with issued as default and all ticket stages listed. Source: `tickets/done/prd_019/tickets_019.md`.
 - `tickets_020` - Auto-resume finish-pass when an inprogress ticket has Result: passed but no commit / merge. auto-resume finish-pass recovery implemented Source: `tickets/done/prd_020/tickets_020.md`.
 - `tickets_022` - Log-driven self-improvement trial runner — analyze logs, detect repeated issues, emit safe improvement candidates. self-improvement trial runner implemented and verified Source: `tickets/done/prd_022/tickets_022.md`.
+- `tickets_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. auto-resumed by recovery path Source: `tickets/done/prd_023/tickets_023.md`.
 <!-- AUTOFLOW:END work-map -->

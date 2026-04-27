@@ -8,10 +8,22 @@ Generated entries may be inserted here.
 
 Each entry should cite its source ticket or log.
 
+- `prd_001` - Restructure Wiki & Handoff panel — handoff as wiki source, not a peer. Source: `tickets/done/prd_001/prd_001.md`.
+- `prd_004` - Add in-app Help section explaining sidebar and core terms. Source: `tickets/done/prd_004/prd_004.md`.
+- `prd_005` - Rename "spec" terminology to "PRD" (UI + docs + CLI alias). Source: `tickets/done/prd_005/prd_005.md`.
+- `prd_012` - Rename runner ids to role-aligned slugs (planner / worker / wiki-maintainer). Source: `tickets/done/prd_012/prd_012.md`.
+- `prd_016` - Pin AI progress board to a 2-left / 1-right tall layout when three runners are present. Source: `tickets/done/prd_016/prd_016.md`.
+- `prd_021` - Workflow page UI overhaul — collapse sidebar label, wrap progress bar, simplify card titles, hoist AI controls into the cards. Source: `tickets/done/prd_021/prd_021.md`.
+- `prd_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. Source: `tickets/done/prd_023/prd_023.md`.
+- `prd_024` - Convert ticket workspace right preview into a click-to-open layer like the workflow PRD pin. Source: `tickets/done/prd_024/prd_024.md`.
+- `prd_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Source: `tickets/done/prd_025/prd_025.md`.
+- `prd_026` - Fix Gemini app icon in Desktop AI runner UI. Source: `tickets/done/prd_026/prd_026.md`.
+
+
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-27T14:19:12Z
+- Last rebuilt: 2026-04-27T15:05:58Z
 
 ### Completed Tickets
 
@@ -30,6 +42,7 @@ Each entry should cite its source ticket or log.
 - `tickets_019` - Reduce ticket workspace tabs to PRD + 발급 티켓 only. Reduced ticket workspace to PRD and issued-ticket tabs with issued as default and all ticket stages listed. Source: `tickets/done/prd_019/tickets_019.md`.
 - `tickets_020` - Auto-resume finish-pass when an inprogress ticket has Result: passed but no commit / merge. auto-resume finish-pass recovery implemented Source: `tickets/done/prd_020/tickets_020.md`.
 - `tickets_022` - Log-driven self-improvement trial runner — analyze logs, detect repeated issues, emit safe improvement candidates. self-improvement trial runner implemented and verified Source: `tickets/done/prd_022/tickets_022.md`.
+- `tickets_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. auto-resumed by recovery path Source: `tickets/done/prd_023/tickets_023.md`.
 
 ### Verifier Logs
 

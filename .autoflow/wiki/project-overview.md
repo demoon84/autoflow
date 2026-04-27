@@ -2,15 +2,22 @@
 
 ## Summary
 
-Describe the project in a few factual sentences.
+Autoflow is an AI-native project orchestration system. 
+As of April 27, 2026, the project has reached a stable 3-runner topology (Planner, Worker, Wiki) with a polished Desktop UI.
+Total PRDs completed: 26 (15 via automated ticket-owner flow, 11 via direct PRD-to-done transitions).
 
-## Current Work
-
-Summarize active or recent Autoflow work from board sources.
 
 ## Key Decisions
 
-List durable decisions with source links.
+- **[[prd-terminology-rename]]**: Unified requirement terminology from "spec" to "PRD" across UI and documentation (`prd_005`).
+- **[[handoff-as-raw-source]]**: Conversation handoffs are treated as raw ingest for the wiki, not as peer wiki outputs (`prd_001`).
+- **[[manual-resolution-policy]]**: Repeated automation failures (shared path blocks) require manual intervention (`learnings/ticket-overlap-no-op`).
+
+## Current Work
+
+- Improving agent runner visual feedback and resource tracking (Stat Strip).
+- Expanding in-app help and documentation (Help Section).
+- Self-improvement loop experimentation (Log-driven trial runner).
 
 ## Open Questions
 
@@ -21,11 +28,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon/Documents/project/autoflow`
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
-- Done tickets: 15
+- Done tickets: 16
 - Reject records: 1
-- Verifier logs: 206
+- Verifier logs: 207
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T14:19:12Z
+- Last updated: 2026-04-27T15:05:58Z
 
 ## Latest Completed Work
 

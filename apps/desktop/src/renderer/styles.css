@@ -2507,27 +2507,6 @@ pre {
   min-width: 0;
 }
 
-.ai-progress-plan {
-  border-left-color: var(--muted-foreground);
-}
-
-.ai-progress-todo {
-  border-left-color: var(--muted-foreground);
-}
-
-.ai-progress-inprogress {
-  border-left-color: var(--primary);
-}
-
-.ai-progress-verifier,
-.ai-progress-done {
-  border-left-color: var(--chart-2);
-}
-
-.ai-progress-reject {
-  border-left-color: var(--destructive);
-}
-
 .ai-progress-agent {
   display: block;
   min-width: 0;
@@ -2775,7 +2754,7 @@ pre {
   gap: 12px;
   width: 100%;
   border: 1px solid var(--border);
-  border-left-width: 3px;
+  border-left-color: var(--border);
   border-radius: 8px;
   background: var(--card);
   padding: 10px 14px;
@@ -2791,17 +2770,6 @@ pre {
   outline: none;
 }
 
-.workflow-pin-default {
-  border-left-color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 4%, var(--card));
-}
-
-.workflow-pin-default:hover,
-.workflow-pin-default:focus-visible {
-  background: color-mix(in srgb, var(--primary) 8%, var(--card));
-  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
-}
-
 .workflow-pin-default .workflow-pin-icon {
   background: color-mix(in srgb, var(--primary) 16%, var(--card));
   color: var(--primary);
@@ -2814,18 +2782,6 @@ pre {
 .workflow-pin-default .workflow-pin-cta {
   color: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
-}
-
-.workflow-pin-destructive {
-  border-color: color-mix(in srgb, var(--destructive) 35%, var(--border));
-  border-left-color: var(--destructive);
-  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
-}
-
-.workflow-pin-destructive:hover,
-.workflow-pin-destructive:focus-visible {
-  background: color-mix(in srgb, var(--destructive) 14%, var(--card));
-  border-color: color-mix(in srgb, var(--destructive) 55%, var(--border));
 }
 
 .workflow-pin-destructive .workflow-pin-icon {
