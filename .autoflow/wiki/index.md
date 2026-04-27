@@ -22,11 +22,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 9
+- Done tickets: 10
 - Reject records: 1
-- Verifier logs: 200
+- Verifier logs: 201
 - Conversation handoffs: 0
-- Last updated: 2026-04-27T12:31:30Z
+- Last updated: 2026-04-27T12:45:08Z
 
 ## Completed Tickets
 
@@ -39,4 +39,5 @@ Tickets, verification records, and logs remain authoritative.
 - `tickets_011` - AI work for prd_011. Replace ticket board with tabbed PRD/ticket workspace Source: `tickets/done/prd_011/tickets_011.md`.
 - `tickets_013` - Hoist code-volume + token-usage stat strip above TicketBoard on 작업 흐름 page. Workflow stat strip reuses ReportingDashboard metric counts above the workflow board; tsc and desktop check pass. Source: `tickets/done/prd_013/tickets_013.md`.
 - `tickets_015` - Show pending PRD count alongside total in workflow pin label. PRD workflow pin label now shows nonzero pending backlog count and reuses the label for the layer heading. Source: `tickets/done/prd_015/tickets_015.md`.
+- `tickets_017` - Restrict Claude reasoning dropdown to medium/high only. Restrict Claude reasoning choices to medium/high and normalize invalid saved Claude values to high Source: `tickets/done/prd_017/tickets_017.md`.
 <!-- AUTOFLOW:END work-map -->

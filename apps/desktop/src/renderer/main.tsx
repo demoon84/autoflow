@@ -112,7 +112,7 @@ const runnerAgentModelOptions: Record<string, string[]> = {
 };
 const runnerAgentReasoningOptions: Record<string, string[]> = {
   codex: ["low", "medium", "high", "xhigh"],
-  claude: ["low", "medium", "high", "xhigh", "max"],
+  claude: ["medium", "high"],
   gemini: []
 };
 const runnerOptionLabels: Record<string, Record<string, string>> = {
@@ -517,6 +517,10 @@ function runnerReasoningChoices(agent: string, installedAgentProfiles: Installed
     return [];
   }
 
+  if (agent === "claude") {
+    return uniqueOptions(runnerAgentReasoningOptions.claude || []);
+  }
+
   return uniqueOptions([currentValue, profile.reasoning, ...(runnerAgentReasoningOptions[agent] || [])]);
 }
 
@@ -530,7 +534,14 @@ function normalizeRunnerSelections(
   const modelChoices = runnerModelChoices(agent, installedAgentProfiles, model);
   const normalizedModel = modelChoices[0] || "";
   const reasoningChoices = runnerReasoningChoices(agent, installedAgentProfiles, reasoning);
-  const normalizedReasoning = profile.supportsReasoning ? reasoningChoices[0] || "" : "";
+  const normalizedReasoning =
+    agent === "claude" && profile.supportsReasoning
+      ? reasoningChoices.includes(reasoning)
+        ? reasoning
+        : "high"
+      : profile.supportsReasoning
+        ? reasoningChoices[0] || ""
+        : "";
 
   return {
     model: normalizedModel,
