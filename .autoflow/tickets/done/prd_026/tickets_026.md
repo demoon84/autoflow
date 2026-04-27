@@ -87,6 +87,7 @@
 - Queued without worktree commit at 2026-04-27T15:52:48Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
 - Impl AI AI-1 marked verification pass at 2026-04-27T15:52:48Z; runtime finalizer will not perform merge operations.
 - Coordinator AI-1 finalized this verified ticket at 2026-04-27T15:52:48Z.
+- Coordinator post-merge cleanup at 2026-04-27T15:52:48Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_026 deleted_branch=autoflow/tickets_026.
 ## Verification
 - Run file: `tickets/done/prd_026/verify_026.md`
 - Log file: `logs/verifier_026_20260427_155248Z_pass.md`
