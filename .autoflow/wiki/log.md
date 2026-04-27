@@ -24,7 +24,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-27T15:42:59Z
+- Last rebuilt: 2026-04-27T15:52:48Z
 
 ### Completed Tickets
 
@@ -46,6 +46,7 @@ Each entry should cite its source ticket or log.
 - `tickets_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. auto-resumed by recovery path Source: `tickets/done/prd_023/tickets_023.md`.
 - `tickets_024` - Convert ticket workspace right preview into a click-to-open detail layer. auto-resumed by recovery path Source: `tickets/done/prd_024/tickets_024.md`.
 - `tickets_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Impl AI progress stages reduced to four and dot/fill alignment verified after AI-led root merge Source: `tickets/done/prd_025/tickets_025.md`.
+- `tickets_026` - Fix Gemini app icon in Desktop AI runner UI. Gemini runner cards now use a local Gemini PNG app icon. Source: `tickets/done/prd_026/tickets_026.md`.
 
 ### Verifier Logs
 

@@ -1,0 +1,98 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_026
+- PRD Key: prd_026
+- Plan Candidate: Plan AI handoff from tickets/done/prd_026/prd_026.md
+- Title: Fix Gemini app icon in Desktop AI runner UI
+- Stage: done
+- AI: AI-1
+- Claimed By: AI-1
+- Execution AI: AI-1
+- Verifier AI: AI-1
+- Last Updated: 2026-04-27T15:52:48Z
+
+## Goal
+
+- 이번 작업의 목표: Replace the odd generic Gemini fallback icon shown in the Desktop AI runner card with a polished local Gemini image icon that visually matches the Codex and Claude app icons.
+
+## References
+
+- PRD: tickets/done/prd_026/prd_026.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_026]]
+- Plan Note:
+- Ticket Note: [[tickets_026]]
+
+## Allowed Paths
+
+- apps/desktop/src/renderer/main.tsx
+- apps/desktop/src/renderer/styles.css
+- apps/desktop/src/renderer/assets/agent-icons/gemini.png
+
+## Worktree
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_026`
+- Branch: autoflow/tickets_026
+- Base Commit: 239eb4d46720174d79adcb3c4fc15d76124356bc
+- Worktree Commit:
+- Integration Status: already_in_project_root
+
+## Done When
+
+- [x] Gemini runner cards display a Gemini image icon instead of the current gray bordered Sparkles fallback.
+- [x] The Gemini icon aligns visually with existing Codex and Claude icons: same apparent size, no clipping, no extra border shell, no awkward padding.
+- [x] Codex and Claude icon rendering remains unchanged.
+- [x] Unknown/fallback agents still render the generic Sparkles fallback.
+- [x] The change does not alter Gemini runner models, reasoning support, runner config, or adapter behavior.
+- [x] Desktop visual check confirms the Gemini row/card no longer matches the reported screenshot issue.
+
+## Next Action
+- Complete: coordinator integrated the verified ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 backlog PRD 에서 todo 티켓을 생성하고 PRD 기준으로 Allowed Paths, Goal, Next Action, Verification 을 좁혔다.
+- 직전 작업: `scripts/start-plan.sh` 가 `tickets/backlog/prd_026.md` 를 `tickets/done/prd_026/prd_026.md` 로 보관하고 `tickets/todo/tickets_026.md` 를 만들었다. Plan AI 는 그 직후 wiki pass 를 반영해 이 티켓을 보강했다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_026/prd_026.md`, `apps/desktop/src/renderer/main.tsx` 의 `AgentAppIcon`, 기존 `claude.png`/`codex.png` asset handling, and `styles.css` Gemini fallback styles.
+- Wiki context: `./bin/autoflow wiki query . --term "Gemini app icon" --term AgentAppIcon --term "apps/desktop/src/renderer/main.tsx" --term "agent-icons" --term Sparkles --limit 8` and the follow-up Gemini runner query surfaced no prior Gemini icon implementation. Related done tickets show this area has frequent narrow Desktop renderer edits; keep scope limited to this ticket's three paths.
+
+## Notes
+
+- Created by planner-1 (Plan AI) from tickets/done/prd_026/prd_026.md at 2026-04-27T13:57:23Z.
+- Planner wiki finding: `tickets/done/prd_017/{prd_017.md,tickets_017.md,verify_017.md}` explicitly preserved Codex/OpenCode/Gemini reasoning behavior while changing Claude only, so this ticket must not alter Gemini runner model or reasoning logic.
+- Planner wiki finding: `tickets/done/prd_013/tickets_013.md` and `tickets/done/prd_003/reject_003.md` point to prior Desktop renderer/style conflict risk from broad or unisolated edits. This ticket should stay in the listed Allowed Paths and avoid layout redesign.
+- PRD note: existing `claude.png` and `codex.png` are 128x128 local PNG assets under `apps/desktop/src/renderer/assets/agent-icons/`; Gemini should use the same local asset pattern, not a remote hotlink.
+
+- Runtime hydrated worktree dependency at 2026-04-27T15:45:08Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-27T15:45:08Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-1 prepared todo at 2026-04-27T15:45:07Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_026; run=tickets/inprogress/verify_026.md
+- AI AI-1 prepared resume at 2026-04-27T15:45:44Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_026; run=tickets/inprogress/verify_026.md
+- Owner mini-plan at 2026-04-27T15:47:57Z:
+  1. Add `apps/desktop/src/renderer/assets/agent-icons/gemini.png` as a local 128x128 PNG app icon, matching the existing Codex/Claude asset pattern.
+  2. Update `AgentAppIcon` in `apps/desktop/src/renderer/main.tsx` so `gemini` resolves to the image asset and unknown agents still use the Sparkles fallback.
+  3. Remove or leave harmless any now-unused Gemini fallback styling without changing the generic fallback, runner model data, reasoning options, config, or adapter behavior.
+  4. Verify with `npm --prefix apps/desktop run check`, inspect the built asset mapping, and record evidence before AI-led merge.
+- Owner wiki finding: `wiki/features/desktop-gemini-icon.md` and `tickets/done/prd_026/prd_026.md` describe the intended pattern: local 128x128 PNG assets under `apps/desktop/src/renderer/assets/agent-icons/` mapped by `AgentAppIcon`; wiki is treated as context only, not completion proof.
+- Owner wiki finding: `tickets/done/prd_003/reject_003.md` indicates prior Desktop renderer/style work had conflict risk, so implementation stays limited to the three Allowed Paths.
+- Implementation completed at 2026-04-27T15:52:00Z:
+  - Added `apps/desktop/src/renderer/assets/agent-icons/gemini.png` as a 128x128 RGBA local PNG.
+  - Updated `apps/desktop/src/renderer/main.tsx` so Gemini uses `ai-agent-app-icon-image`, matching Codex and Claude.
+  - Left fallback Sparkles behavior for unknown agents intact and did not change runner model, reasoning, config, or adapter code.
+  - AI-led PROJECT_ROOT merge copied only the verified Allowed Paths changes and confirmed ticket worktree content matches PROJECT_ROOT for `main.tsx` and `gemini.png`.
+- Queued without worktree commit at 2026-04-27T15:52:48Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI AI-1 marked verification pass at 2026-04-27T15:52:48Z; runtime finalizer will not perform merge operations.
+- Coordinator AI-1 finalized this verified ticket at 2026-04-27T15:52:48Z.
+## Verification
+- Run file: `tickets/done/prd_026/verify_026.md`
+- Log file: `logs/verifier_026_20260427_155248Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Gemini runner cards now use a local Gemini PNG app icon.
+- Remaining risk: Low. Visual confirmation used the running Electron Desktop UI because Codex Browser Node REPL control was unavailable; Playwright was not used.

@@ -53,6 +53,7 @@ import {
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
+import geminiAppIcon from "./assets/agent-icons/gemini.png";
 
 const ticketFolders = ["backlog", "todo", "inprogress", "done", "reject"] as const;
 
@@ -4594,7 +4595,14 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
 
 function AgentAppIcon({ agent }: { agent: string }) {
   const agentKey = (agent || "").toLowerCase();
-  const iconAsset = agentKey === "codex" ? codexAppIcon : agentKey === "claude" ? claudeAppIcon : "";
+  const iconAsset =
+    agentKey === "codex"
+      ? codexAppIcon
+      : agentKey === "claude"
+        ? claudeAppIcon
+        : agentKey === "gemini"
+          ? geminiAppIcon
+          : "";
 
   if (iconAsset) {
     return (
@@ -4605,14 +4613,6 @@ function AgentAppIcon({ agent }: { agent: string }) {
   }
 
   const iconClassName = `ai-agent-app-icon ai-agent-app-icon-${agentKey || "default"}`;
-
-  if (agentKey === "gemini") {
-    return (
-      <span className={iconClassName} aria-hidden="true">
-        <Sparkles size={13} strokeWidth={2.2} />
-      </span>
-    );
-  }
 
   return (
     <span className={iconClassName} aria-hidden="true">
