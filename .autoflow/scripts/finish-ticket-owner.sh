@@ -454,19 +454,6 @@ prefix_wiki_output() {
   '
 }
 
-prefix_wiki_maintainer_output() {
-  awk '
-    index($0, "=") > 0 {
-      print "wiki_maintainer." $0
-      next
-    }
-    NF > 0 {
-      count += 1
-      print "wiki_maintainer.output." count "=" $0
-    }
-  '
-}
-
 auto_update_wiki() {
   local wiki_output wiki_exit
 
