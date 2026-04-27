@@ -78,6 +78,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Legacy/compatibility state for owner-verified tickets waiting for finalization.
   - The owner has decided verification pass; finalization must not change that decision.
   - Finalization scripts validate that the AI owner already merged the prepared work into `PROJECT_ROOT`, then archive evidence/logs/wiki and create the local completion commit.
+  - Finalization scripts delete the completed ticket worktree and matching `autoflow/tickets_*` branch before the completion commit; cleanup notes belong in the same commit.
   - Finalization scripts must not rebase, cherry-pick, resolve conflicts, or otherwise merge product code.
 - `merge-blocked/`
   - Contains ready tickets with ticket-specific blockers, such as invalid commit scope.

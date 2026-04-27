@@ -75,6 +75,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - Do not rebase, cherry-pick, resolve conflicts, or merge product code.
 - Do not move blocked tickets between queues unless a runtime did it.
 - May reassign a contaminated ticket worktree (shared non-base HEAD) to a freshly created clean replacement worktree at a new path. The old worktree directory must be left intact on disk for postmortem; the ticket markdown `Worktree`, `Stage`, and `Next Action` sections are updated to point at the new path, and a `## Notes` entry plus a `coordinator_*_remediation_shared_nonbase_head_repaired_*.md` log record the old path/branch/head, the new path/branch, and the base commit. Do not `git reset --hard`, `git worktree remove`, or otherwise mutate the old worktree.
+- Completion finalization is the only exception: after AI-led merge has already passed, `merge-ready-ticket.*` must delete the completed ticket worktree and matching `autoflow/tickets_*` branch before creating the completion commit.
 - May edit `runners/config.toml` only when the model alias is in `normalize_claude_model_alias`'s known table; otherwise log the unknown alias and let the operator decide. Adapter normalization at `packages/cli/run-role.sh` (and the runtime mirror) handles the resolution before invoking `claude --model`, so the config file usually does not need editing.
 - Do not run browser checks unless the diagnosis specifically depends on rendered behavior.
 - Do not treat wiki content as evidence that work passed.

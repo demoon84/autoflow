@@ -498,6 +498,88 @@ git_commit_if_possible() {
   printf 'commit_hash=%s\n' "$(git -C "$git_root" rev-parse --verify HEAD)"
 }
 
+cleanup_completed_ticket_worktree() {
+  local ticket_file="$1"
+  local ticket_id="$2"
+  local cleanup_git_root cleanup_worktree_path cleanup_branch cleanup_default_branch
+  local branch part seen_branches cleanup_summary
+  local -a cleanup_status_parts=()
+  local -a cleanup_failed_parts=()
+  local -a cleanup_log_parts=()
+
+  cleanup_git_root="$(git_root_path 2>/dev/null || true)"
+  cleanup_worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  cleanup_branch="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Branch")")"
+  cleanup_default_branch="autoflow/tickets_${ticket_id}"
+
+  if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
+    if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
+      cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
+    else
+      cleanup_failed_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
+    fi
+  fi
+
+  seen_branches=""
+  for branch in "$cleanup_branch" "$cleanup_default_branch"; do
+    [ -n "$branch" ] || continue
+    case "$branch" in
+      autoflow/tickets_*) ;;
+      *) continue ;;
+    esac
+    case " $seen_branches " in
+      *" $branch "*) continue ;;
+    esac
+    seen_branches="${seen_branches} ${branch}"
+    if [ -n "$cleanup_git_root" ] && git -C "$cleanup_git_root" rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
+      if git -C "$cleanup_git_root" branch -D "$branch" >/dev/null 2>&1; then
+        cleanup_status_parts+=("deleted_branch=${branch}")
+      else
+        cleanup_failed_parts+=("branch_delete_failed=${branch}")
+      fi
+    fi
+  done
+
+  if [ "${#cleanup_status_parts[@]}" -gt 0 ] || [ "${#cleanup_failed_parts[@]}" -gt 0 ]; then
+    cleanup_summary=""
+    if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
+      cleanup_summary="${cleanup_summary}$(printf '%s ' "${cleanup_status_parts[@]}")"
+    fi
+    if [ "${#cleanup_failed_parts[@]}" -gt 0 ]; then
+      cleanup_summary="${cleanup_summary}$(printf '%s ' "${cleanup_failed_parts[@]}")"
+    fi
+    cleanup_summary="$(printf '%s' "$cleanup_summary" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    append_note "$ticket_file" "Coordinator post-merge cleanup at ${timestamp}: ${cleanup_summary}."
+    cleanup_log_parts=("ticket_id=${ticket_id}")
+    if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
+      for part in "${cleanup_status_parts[@]}"; do
+        cleanup_log_parts+=("$part")
+      done
+    fi
+    if [ "${#cleanup_failed_parts[@]}" -gt 0 ]; then
+      for part in "${cleanup_failed_parts[@]}"; do
+        cleanup_log_parts+=("$part")
+      done
+    fi
+    runner_append_log "$worker_id" "post_merge_cleanup" \
+      "${cleanup_log_parts[@]}" 2>/dev/null || true
+  fi
+
+  if [ "${#cleanup_failed_parts[@]}" -gt 0 ]; then
+    printf 'cleanup_status=failed\n'
+    printf 'cleanup_reason=post_merge_cleanup_failed\n'
+    printf 'cleanup_detail=%s\n' "${cleanup_failed_parts[@]}"
+    return 1
+  fi
+
+  printf 'cleanup_status=ok\n'
+  if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
+    printf 'cleanup_detail=%s\n' "${cleanup_status_parts[@]}"
+  else
+    printf 'cleanup_detail=\n'
+  fi
+}
+
 prefix_wiki_output() {
   awk '
     index($0, "=") > 0 {
@@ -822,6 +904,17 @@ if [ "$ticket_file" != "$done_target" ]; then
   ticket_file="$done_target"
 fi
 
+cleanup_output="$(cleanup_completed_ticket_worktree "$ticket_file" "$ticket_id" 2>&1)" || {
+  printf 'status=blocked\n'
+  printf 'reason=post_merge_cleanup_failed\n'
+  printf 'ticket=%s\n' "$ticket_file"
+  printf 'ticket_id=%s\n' "$ticket_id"
+  printf 'run=%s\n' "$run_file"
+  printf '%s\n' "$cleanup_output"
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  exit 0
+}
 log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
 wiki_output="$(auto_update_wiki)"
 # Inline AI synthesis is intentionally skipped here. wiki-1 (the dedicated
@@ -833,38 +926,13 @@ commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
 clear_active_ticket_context_record || true
 clear_runner_active_state
 
-cleanup_worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
-cleanup_branch="autoflow/tickets_${ticket_id}"
-cleanup_git_root="$(git_root_path 2>/dev/null || true)"
-cleanup_status_parts=()
-if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
-  if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
-    cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
-  else
-    cleanup_status_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
-  fi
-fi
-if [ -n "$cleanup_git_root" ] && git -C "$cleanup_git_root" rev-parse --verify --quiet "refs/heads/${cleanup_branch}" >/dev/null 2>&1; then
-  if git -C "$cleanup_git_root" branch -D "$cleanup_branch" >/dev/null 2>&1; then
-    cleanup_status_parts+=("deleted_branch=${cleanup_branch}")
-  else
-    cleanup_status_parts+=("branch_delete_failed=${cleanup_branch}")
-  fi
-fi
-if [ "${#cleanup_status_parts[@]}" -gt 0 ]; then
-  cleanup_summary="${cleanup_status_parts[*]}"
-  append_note "$ticket_file" "Coordinator post-merge cleanup at ${timestamp}: ${cleanup_summary}."
-  runner_append_log "$worker_id" "post_merge_cleanup" \
-    "ticket_id=${ticket_id}" \
-    "${cleanup_status_parts[@]}" 2>/dev/null || true
-fi
-
 printf 'status=done\n'
 printf 'outcome=pass\n'
 printf 'ticket=%s\n' "$ticket_file"
 printf 'ticket_id=%s\n' "$ticket_id"
 printf 'run=%s\n' "$(done_run_path_for_ticket_file "$ticket_file")"
 printf '%s\n' "$merge_output"
+printf '%s\n' "$cleanup_output"
 printf '%s\n' "$log_output"
 printf '%s\n' "$wiki_output"
 printf '%s\n' "$commit_output"

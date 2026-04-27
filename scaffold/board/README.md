@@ -106,7 +106,7 @@ Coordinator mode diagnoses board health and may report finalization opportunitie
 
 Use `autoflow runners start coordinator-1` for the default looped coordinator when active tickets are blocked, worktree state looks suspicious, runner state does not explain what to do next, `tickets/ready-to-merge/` contains work, or derived wiki maintenance needs an adapter. The coordinator performs a cheap precheck each tick and runs full doctor diagnostics only when a problem or finalization opportunity is present; unchanged problem fingerprints skip repeated full diagnosis until board state changes. It reports shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, and board scaffold issues. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code.
 
-Coordinator output is evidence for a next action. Product-code repair and merge remain AI owner work. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Repair, requeue, reset, delete worktrees, and push remain separate human-directed actions.
+Coordinator output is evidence for a next action. Product-code repair and merge remain AI owner work. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
 
 ## Writing Standard
 

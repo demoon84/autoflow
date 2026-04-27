@@ -69,6 +69,6 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - Do not make new verification decisions.
 - Do not rebase, cherry-pick, resolve conflicts, or merge product code.
 - Do not move blocked tickets between queues unless a runtime did it.
-- Do not delete or reset worktrees without explicit human direction.
+- Do not delete or reset worktrees without explicit human direction, except that completion finalization must delete the completed ticket worktree and matching `autoflow/tickets_*` branch after AI-led merge has already passed.
 - Do not run browser checks unless the diagnosis specifically depends on rendered behavior.
 - Do not treat wiki content as evidence that work passed.

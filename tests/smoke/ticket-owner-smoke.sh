@@ -214,7 +214,23 @@ test -f "${project_dir}/owner-done.txt"
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified" >"$finish_output"
 require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
+require_line "$finish_output" "cleanup_status=ok"
+require_pattern "$finish_output" '^cleanup_detail=removed_worktree='
+require_line "$finish_output" "cleanup_detail=deleted_branch=autoflow/tickets_001"
 require_line "$finish_output" "commit_status=committed_via_inline_merge"
+if [ -d "$implementation_root" ]; then
+  echo "Merged ticket worktree should be deleted: $implementation_root" >&2
+  exit 1
+fi
+if git -C "$project_dir" show-ref --verify --quiet refs/heads/autoflow/tickets_001; then
+  echo "Merged ticket branch should be deleted: autoflow/tickets_001" >&2
+  exit 1
+fi
+if git -C "$project_dir" status --porcelain -- .autoflow/tickets/done/prd_001/tickets_001.md | grep -q .; then
+  echo "Cleanup note should be included in the completion commit" >&2
+  git -C "$project_dir" status --porcelain -- .autoflow/tickets/done/prd_001/tickets_001.md >&2
+  exit 1
+fi
 
 "${REPO_ROOT}/bin/autoflow" runners add coordinator-shell-1 coordinator "$project_dir" agent=shell >/dev/null
 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" --runner coordinator-shell-1 --dry-run >"$wiki_runner_dry_run_output"
