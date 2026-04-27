@@ -362,6 +362,24 @@ ensure_agent_on_path() {
   return 1
 }
 
+runner_claude_base_cmd() {
+  local __dest_var="$1"
+  eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)"
+}
+
+runner_claude_supports_effort() {
+  if [ -n "${__autoflow_claude_effort_cached:-}" ]; then
+    [ "$__autoflow_claude_effort_cached" = "yes" ]
+    return $?
+  fi
+  if claude --help 2>&1 | grep -q -- '--effort'; then
+    __autoflow_claude_effort_cached="yes"
+    return 0
+  fi
+  __autoflow_claude_effort_cached="no"
+  return 1
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text

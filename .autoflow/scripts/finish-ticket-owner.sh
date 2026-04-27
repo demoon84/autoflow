@@ -697,14 +697,41 @@ case "$outcome" in
     clear_active_ticket_context_record || true
     clear_runner_active_state
 
+    # Inline merge: Impl AI (ticket-owner) directly invokes the merge runtime
+    # right after pass. This collapses the legacy ready-to-merge handoff —
+    # the ticket lands in tickets/done/ in the same tick, and update-wiki.sh
+    # is triggered from inside merge-ready-ticket.sh on success.
+    merge_script="$(cd "$(dirname "$0")" && pwd)/merge-ready-ticket.sh"
+    inline_merge_output=""
+    inline_merge_exit=0
+    if [ -x "$merge_script" ]; then
+      if inline_merge_output="$(AUTOFLOW_ROLE=merge AUTOFLOW_INLINE_MERGE=1 "$merge_script" "$ticket_id" 2>&1)"; then
+        inline_merge_exit=0
+      else
+        inline_merge_exit=$?
+      fi
+    else
+      inline_merge_exit=127
+      inline_merge_output="merge-ready-ticket.sh not found at ${merge_script}"
+    fi
+
     printf 'status=ready_to_merge\n'
     printf 'outcome=pass\n'
     printf 'ticket=%s\n' "$ticket_file"
     printf 'ticket_id=%s\n' "$ticket_id"
     printf 'run=%s\n' "$run_file"
     printf '%s\n' "$merge_prep_output"
-    printf 'next_action=Run scripts/merge-ready-ticket.sh %s with AUTOFLOW_ROLE=merge, or let a coordinator runner process tickets/ready-to-merge.\n' "$ticket_id"
-    printf 'commit_status=not_committed_waiting_for_merge_bot\n'
+    printf 'inline_merge_exit=%s\n' "$inline_merge_exit"
+    if [ -n "$inline_merge_output" ]; then
+      printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
+    fi
+    if [ "$inline_merge_exit" -eq 0 ]; then
+      printf 'commit_status=committed_via_inline_merge\n'
+      printf 'next_action=Inline merge completed. Impl AI may pick the next todo ticket on the next tick.\n'
+    else
+      printf 'commit_status=inline_merge_failed_check_output\n'
+      printf 'next_action=Inline merge from finish-ticket-owner failed. Inspect inline_merge output before claiming the next ticket.\n'
+    fi
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     ;;

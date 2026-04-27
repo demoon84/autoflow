@@ -4,13 +4,16 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = ".autoflow/"
 
-owner_workers = ["owner-1", "owner-2", "owner-3"]
-
-# Legacy role-pipeline workers. Leave these empty for Ticket Owner Mode.
-planner_workers = []
+# Two-runner topology: one Plan AI + one Impl AI.
+# Plan AI processes backlog/reject into todo. Impl AI claims todo and runs
+# implementation, verification, merge inline. Wiki rebuild is triggered as a
+# one-shot from the Impl AI's merge step, so no persistent merge or wiki
+# runners are configured.
+owner_workers = ["owner-1"]
+planner_workers = ["planner-1"]
 todo_workers = []
 verifier_workers = []
-merge_workers = ["merge-1"]
+merge_workers = []
 
 execution_pool = ""
 verifier_pool = ""
@@ -26,12 +29,10 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 # target_thread_id. Values starting with REPLACE_WITH_ are treated as
 # missing at render time.
 [thread_ids]
+planner-1 = "REPLACE_WITH_PLANNER_1_THREAD_ID"
 owner-1 = "REPLACE_WITH_OWNER_1_THREAD_ID"
-owner-2 = "REPLACE_WITH_OWNER_2_THREAD_ID"
-owner-3 = "REPLACE_WITH_OWNER_3_THREAD_ID"
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-scaling_rule = "Scale Ticket Owner Mode by adding owner_workers and matching [thread_ids] entries. Use legacy planner/todo/verifier arrays only for role-pipeline compatibility."
-single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
-trigger_rule = "`autoflow run ticket` / owner heartbeats should keep running until the user explicitly says stop."
-merge_rule = "`autoflow run merge` should be single-writer; run at most one merge bot for a board."
+topology_rule = "Two-runner model: keep planner_workers=[\"planner-1\"] and owner_workers=[\"owner-1\"]. Add a third Plan or Impl only after profiling shows the pipeline is starved."
+trigger_rule = "`autoflow run ticket` / owner-1 heartbeats should keep running until the user explicitly says stop."
+wiki_rule = "Wiki rebuild fires inline from owner-1's finish-ticket-owner merge step; do not configure a wiki or coordinator loop runner."

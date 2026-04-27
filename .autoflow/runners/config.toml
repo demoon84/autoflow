@@ -1,8 +1,21 @@
 # Autoflow runner configuration.
 #
-# The default runner owns one ticket from local planning through verification.
-# Change agent/model fields to claude, opencode, gemini, shell, or a custom
-# command when Codex CLI is not the desired local runner.
+# Two-runner topology (post-refactor 2026-04-27):
+#   planner-1 : Plan AI — backlog/PRD → todo, reject → todo (auto-replan).
+#   owner-1   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
+# Wiki rebuild is invoked one-shot from owner-1 right after each merge,
+# so no persistent wiki/coordinator runner is needed.
+
+[[runners]]
+id = "planner-1"
+role = "planner"
+agent = "claude"
+model = "opus"
+reasoning = "high"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
 
 [[runners]]
 id = "owner-1"
@@ -10,39 +23,6 @@ role = "ticket-owner"
 agent = "claude"
 model = "opus"
 reasoning = "high"
-mode = "loop"
-interval_seconds = 60
-enabled = true
-command = ""
-
-[[runners]]
-id = "owner-2"
-role = "ticket-owner"
-agent = "claude"
-model = "opus"
-reasoning = "high"
-mode = "loop"
-interval_seconds = 60
-enabled = true
-command = ""
-
-[[runners]]
-id = "owner-3"
-role = "ticket-owner"
-agent = "claude"
-model = "opus"
-reasoning = "high"
-mode = "loop"
-interval_seconds = 60
-enabled = true
-command = ""
-
-[[runners]]
-id = "coordinator-1"
-role = "coordinator"
-agent = "codex"
-model = "gpt-5.5"
-reasoning = "xhigh"
 mode = "loop"
 interval_seconds = 60
 enabled = true
