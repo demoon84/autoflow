@@ -597,8 +597,12 @@ find_enabled_wiki_maintainer_runner() {
   [ -f "$config_path" ] || return 1
   allow_coordinator_fallback="${AUTOFLOW_WIKI_MAINTAINER_COORDINATOR_FALLBACK:-on}"
 
+  runner_id=""
+  runner_role=""
+  runner_enabled="true"
+
   consider_wiki_runner() {
-    case "$runner_role:$runner_enabled" in
+    case "${runner_role:-}:${runner_enabled:-true}" in
       wiki-maintainer:true|wiki:true)
         if [ -n "$runner_id" ]; then
           printf '%s' "$runner_id"
