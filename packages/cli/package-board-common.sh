@@ -299,12 +299,8 @@ logs
 logs/hooks
 tickets
 tickets/backlog
-tickets/plan
 tickets/todo
 tickets/inprogress
-tickets/ready-to-merge
-tickets/merge-blocked
-tickets/verifier
 tickets/done
 tickets/reject
 EOF

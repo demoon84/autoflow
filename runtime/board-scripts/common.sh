@@ -1637,11 +1637,15 @@ pending_run_path() {
 }
 
 ready_to_merge_ticket_path_for_ticket_file() {
+  # Post-refactor: tickets/ready-to-merge/ no longer exists. Tickets stay in
+  # tickets/inprogress/ with Stage=ready_to_merge until merge-ready-ticket.sh
+  # picks them up. Helper kept for back-compat with older scripts that may
+  # still call it; returns the inprogress path.
   local ticket_file="$1"
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/ready-to-merge/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 ready_to_merge_run_path_for_ticket_file() {
@@ -1649,15 +1653,18 @@ ready_to_merge_run_path_for_ticket_file() {
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/ready-to-merge/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 merge_blocked_ticket_path_for_ticket_file() {
+  # Post-refactor: tickets/merge-blocked/ no longer exists. Tickets stay in
+  # tickets/inprogress/ with Stage=merge_blocked. Helper returns the
+  # inprogress path so legacy callers work unchanged.
   local ticket_file="$1"
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/merge-blocked/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 merge_blocked_run_path_for_ticket_file() {
@@ -1665,7 +1672,7 @@ merge_blocked_run_path_for_ticket_file() {
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/merge-blocked/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 done_dir_for_project_key() {

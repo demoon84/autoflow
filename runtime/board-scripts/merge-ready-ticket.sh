@@ -22,12 +22,29 @@ display_id="$(display_worker_id "$worker_id")"
 timestamp="$(now_iso)"
 
 resolve_ready_ticket_file() {
+  # Post-refactor: tickets/ready-to-merge/ is gone. Pass-tagged tickets
+  # stay in tickets/inprogress/ with Stage=ready_to_merge until this script
+  # picks them up. We still accept the legacy folder if it exists for
+  # transitional boards that haven't migrated yet.
   local ref="${1:-}"
   local normalized_ref id candidate
 
   if [ -z "$ref" ]; then
-    lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md'
-    return $?
+    if [ -d "${BOARD_ROOT}/tickets/ready-to-merge" ]; then
+      candidate="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
+      [ -n "$candidate" ] && printf '%s' "$candidate" && return 0
+    fi
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      stage="$(ticket_stage "$candidate")"
+      case "$stage" in
+        ready_to_merge|ready-to-merge|merge_blocked|merge-blocked)
+          printf '%s' "$candidate"
+          return 0
+          ;;
+      esac
+    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+    return 1
   fi
 
   normalized_ref="$(normalize_runtime_path "$ref")"
@@ -44,6 +61,8 @@ resolve_ready_ticket_file() {
   id="$(normalize_id "$ref" || true)"
   [ -n "$id" ] || return 1
 
+  candidate="$(ticket_path "inprogress" "$id")"
+  [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
   candidate="$(ticket_path "ready-to-merge" "$id")"
   [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
 
@@ -404,24 +423,18 @@ move_run_file() {
 }
 
 move_ticket_to_merge_blocked() {
+  # Post-refactor: tickets/merge-blocked/ is gone. We mark the in-place
+  # ticket with Stage=merge_blocked so the next merge tick can retry, while
+  # keeping the run file alongside the ticket. The function name is kept
+  # for call-site stability.
   local ticket_file="$1"
   local run_file="$2"
   local reason="$3"
-  local blocked_target blocked_run_target
 
-  blocked_target="$(merge_blocked_ticket_path_for_ticket_file "$ticket_file")"
-  blocked_run_target="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
-
-  mkdir -p "$(dirname "$blocked_target")"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merge-blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merge_blocked"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Next: repair the merge blocker (${reason}), then move this ticket back to \`tickets/ready-to-merge/\` for coordinator retry."
-  append_note "$ticket_file" "Coordinator ${display_id} moved this ticket to merge-blocked at ${timestamp}: ${reason}."
-  move_run_file "$run_file" "$blocked_run_target"
-  if [ "$ticket_file" != "$blocked_target" ]; then
-    mv "$ticket_file" "$blocked_target"
-    ticket_file="$blocked_target"
-  fi
+  replace_section_block "$ticket_file" "Next Action" "- Next: repair the merge blocker (${reason}). The ticket stays in tickets/inprogress/ with Stage=merge_blocked; the next merge invocation will retry."
+  append_note "$ticket_file" "Impl AI ${display_id} flagged merge_blocked in place at ${timestamp}: ${reason}."
 
   printf '%s' "$ticket_file"
 }
@@ -430,7 +443,7 @@ stage_ticket_commit_scope() {
   local git_root="$1"
   local ticket_file="$2"
   local run_file="$3"
-  local allowed_path ticket_id project_key done_root ready_ticket ready_run
+  local allowed_path ticket_id project_key done_root
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   project_key="$(project_key_from_ticket_file "$ticket_file" 2>/dev/null || true)"
@@ -439,11 +452,6 @@ stage_ticket_commit_scope() {
   if [ -n "${done_target:-}" ]; then
     stage_git_path_if_present "$git_root" "$done_target"
   fi
-
-  ready_ticket="${BOARD_ROOT}/tickets/ready-to-merge/tickets_${ticket_id}.md"
-  ready_run="${BOARD_ROOT}/tickets/ready-to-merge/verify_${ticket_id}.md"
-  stage_git_path_if_present "$git_root" "$ready_ticket"
-  stage_git_path_if_present "$git_root" "$ready_run"
   stage_git_path_if_present "$git_root" "$run_file"
 
   if [ -n "$project_key" ]; then
@@ -755,7 +763,6 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
   case "$merge_reason" in
     cherry_pick_conflict|invalid_worktree_commit_scope|missing_worktree_commit|missing_allowed_paths|rebase_conflict)
       ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$current_reason")"
-      run_file="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
       rm -f "$merge_retry_state_file"
       ;;
     *)
@@ -781,8 +788,7 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
       if [ "$retry_count" -ge "$merge_retry_threshold" ]; then
         escalated_reason="${current_reason}_persistent"
         ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$escalated_reason")"
-        run_file="$(merge_blocked_run_path_for_ticket_file "$ticket_file")"
-        append_note "$ticket_file" "Coordinator escalated to merge-blocked at ${timestamp}: ${current_reason} persisted for ${retry_count} consecutive attempts (threshold=${merge_retry_threshold})."
+        append_note "$ticket_file" "Impl AI escalated to merge_blocked at ${timestamp}: ${current_reason} persisted for ${retry_count} consecutive attempts (threshold=${merge_retry_threshold})."
         rm -f "$merge_retry_state_file"
         merge_reason="$escalated_reason"
       else

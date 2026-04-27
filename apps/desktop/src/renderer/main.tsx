@@ -81,6 +81,13 @@ const wikiBotFlowStages = [
   { key: "blocked", label: "오류", meta: "어댑터 오류", icon: TriangleAlert, tone: "flow-reject" }
 ] as const;
 
+const plannerFlowStages = [
+  { key: "idle", label: "대기", meta: "backlog/reject 감시", icon: Layers3, tone: "flow-todo" },
+  { key: "planning", label: "계획", meta: "PRD 분해 / 재계획", icon: ClipboardList, tone: "flow-plan" },
+  { key: "done", label: "완료", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" },
+  { key: "blocked", label: "정체", meta: "PRD 누락 등", icon: TriangleAlert, tone: "flow-reject" }
+] as const;
+
 type FlowStageDef = {
   readonly key: string;
   readonly label: string;
@@ -406,21 +413,24 @@ const statusLabels: Record<string, string> = {
   false: "중지"
 };
 
+// Default topology is Plan AI + Impl AI. Legacy role labels are kept so older
+// boards with coordinator / wiki-maintainer / merge / verifier runners still
+// render readable names.
 const runnerRoleLabels: Record<string, string> = {
-  "ticket-owner": "AI",
-  owner: "AI",
-  ticket: "AI",
-  "wiki-maintainer": "위키 관리자",
-  wiki: "위키 관리자",
-  coordinator: "coordinator",
-  coord: "coordinator",
-  doctor: "coordinator",
-  diagnose: "coordinator",
-  planner: "플래너",
-  plan: "플랜",
-  todo: "작업자",
-  verifier: "검증자",
-  veri: "검증자",
+  "ticket-owner": "Impl AI",
+  owner: "Impl AI",
+  ticket: "Impl AI",
+  planner: "Plan AI",
+  plan: "Plan AI",
+  "wiki-maintainer": "위키 (legacy)",
+  wiki: "위키 (legacy)",
+  coordinator: "coordinator (legacy)",
+  coord: "coordinator (legacy)",
+  doctor: "coordinator (legacy)",
+  diagnose: "coordinator (legacy)",
+  todo: "작업자 (legacy)",
+  verifier: "검증자 (legacy)",
+  veri: "검증자 (legacy)",
   watcher: "감시기",
   runner: "AI"
 };
@@ -2184,7 +2194,12 @@ function RunnerConsole({
   onConfigure: (runner: AutoflowRunner) => void;
 }) {
   const runners = (board?.runners || []).filter(
-    (runner) => runner.role === "ticket-owner" || isCoordinatorRole(runner.role)
+    (runner) =>
+      runner.role === "ticket-owner" ||
+      runner.role === "owner" ||
+      runner.role === "planner" ||
+      runner.role === "plan" ||
+      isCoordinatorRole(runner.role)
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
   const stoppedCount = runners.filter((runner) => (runner.stateStatus || "") === "stopped").length;
@@ -2204,7 +2219,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">ticket-owner / coordinator</span>
+            <span className="ticket-workspace-tab-copy">Plan AI / Impl AI</span>
           </div>
         }
       >
@@ -2461,7 +2476,7 @@ function RunnerConsole({
             ) : (
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
-                <span>ticket-owner 또는 coordinator runner가 추가되면 여기에 표시됩니다.</span>
+                <span>Plan AI(planner) 또는 Impl AI(ticket-owner) runner가 추가되면 여기에 표시됩니다.</span>
               </div>
             )}
           </div>
@@ -4114,6 +4129,7 @@ function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
   const role = (runner.role || "").toLowerCase();
   if (role === "merge-bot" || role === "merge") return mergeBotFlowStages;
   if (role.includes("wiki")) return wikiBotFlowStages;
+  if (role === "planner" || role === "plan") return plannerFlowStages;
   return ownerFlowStages;
 }
 
@@ -4139,6 +4155,13 @@ function runnerStageKey(runner: AutoflowRunner): string {
     if (isFailLike) return "blocked";
     if (status === "running" && (hasActiveTicket || /event=adapter_start|\bstatus=running\b/.test(stateText))) return "syncing";
     if (/event=adapter_finish.*status=ok|\bwiki_(?:updated|sync_ok)\b/.test(stateText)) return "done";
+    return "idle";
+  }
+
+  if (role === "planner" || role === "plan") {
+    if (isFailLike) return "blocked";
+    if (status === "running" || /\bevent=adapter_start\b|\bstatus=running\b|\bstatus=ok\b/.test(stateText)) return "planning";
+    if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "done";
     return "idle";
   }
 

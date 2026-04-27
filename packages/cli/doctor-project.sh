@@ -764,7 +764,7 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for ticket_dir in todo inprogress ready-to-merge merge-blocked verifier done reject; do
+  for ticket_dir in todo inprogress done reject; do
     if [ -d "${board_root}/tickets/${ticket_dir}" ]; then
       record_check "tickets_${ticket_dir}" "ok"
     else
@@ -773,11 +773,18 @@ if [ -d "$board_root" ]; then
     fi
   done
 
+  # Legacy folders. Not required after the 2-runner refactor (2026-04-27),
+  # but recorded as ok if present so older boards continue to validate.
+  for legacy_ticket_dir in plan ready-to-merge merge-blocked verifier; do
+    if [ -d "${board_root}/tickets/${legacy_ticket_dir}" ]; then
+      record_check "tickets_${legacy_ticket_dir}_legacy" "ok"
+    fi
+  done
+
   for required_nested_dir in \
     "tickets/backlog" \
     "rules/verifier" \
     "logs/hooks" \
-    "tickets/plan" \
     "automations/state" \
     "automations/state/threads"
   do

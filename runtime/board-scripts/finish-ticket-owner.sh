@@ -676,23 +676,19 @@ case "$outcome" in
       exit 0
     }
 
-    ready_target="$(ready_to_merge_ticket_path_for_ticket_file "$ticket_file")"
-    mkdir -p "$(dirname "$ready_target")"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready-to-merge"
+    # Post-refactor: ticket stays in tickets/inprogress/ with Stage=ready_to_merge
+    # until the inline merge call below moves it to tickets/done/. The
+    # tickets/ready-to-merge/ folder is no longer used as a handoff queue.
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready_to_merge"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-    replace_section_block "$ticket_file" "Next Action" "- Next: coordinator should process this ticket from \`tickets/ready-to-merge/\`, integrate the prepared worktree commit into PROJECT_ROOT, archive evidence, and create the local completion commit."
-    append_note "$ticket_file" "AI ${display_id} marked verification pass and queued merge at ${timestamp}."
-    run_file="$(move_run_file_to_ready_to_merge "$run_file" "$ticket_file")"
+    replace_section_block "$ticket_file" "Next Action" "- Next: inline merge from finish-ticket-owner integrates the prepared worktree commit into PROJECT_ROOT and archives the ticket to tickets/done/."
+    append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp} and triggered inline merge."
     replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
-- Log file: pending coordinator completion
+- Log file: pending inline merge
 - Result: passed by ${display_id} at ${timestamp}"
-    if [ "$ticket_file" != "$ready_target" ]; then
-      mv "$ticket_file" "$ready_target"
-      ticket_file="$ready_target"
-    fi
 
     clear_active_ticket_context_record || true
     clear_runner_active_state
