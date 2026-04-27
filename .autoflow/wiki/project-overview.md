@@ -21,11 +21,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon/Documents/project/autoflow`
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
-- Done tickets: 12
+- Done tickets: 13
 - Reject records: 1
-- Verifier logs: 203
-- Conversation handoffs: 0
-- Last updated: 2026-04-27T13:01:40Z
+- Verifier logs: 204
+- Conversation handoffs: 1
+- Last updated: 2026-04-27T13:29:34Z
 
 ## Latest Completed Work
 
@@ -40,5 +40,5 @@ List unresolved questions with owner or source when known.
 
 ## Recent Handoffs
 
-- No conversation handoffs archived.
+- PRD Handoff. Source: `conversations/prd_022/spec-handoff.md`.
 <!-- AUTOFLOW:END project-summary -->
