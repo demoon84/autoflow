@@ -97,6 +97,9 @@
 - No staged code changes found in worktree during merge preparation at 2026-04-27T13:29:33Z.
 - Impl AI AI-1 marked verification pass at 2026-04-27T13:29:33Z and triggered inline merge.
 - Coordinator AI-1 finalized this verified ticket at 2026-04-27T13:29:34Z.
+- Coordinator post-merge cleanup at 2026-04-27T13:29:34Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_014 deleted_branch=autoflow/tickets_014.
+- Repair note at 2026-04-27T13:31:12Z: post-finish sanity check found the inline merge skipped `apps/desktop/src/renderer/main.tsx` because the Allowed Paths line included explanatory prose after the backticked path. The verified one-line planner mapping change was applied directly to `PROJECT_ROOT` and staged as a follow-up repair hunk without staging unrelated dirty renderer changes.
+- Repair verification at 2026-04-27T13:31:12Z: `cd apps/desktop && npx tsc --noEmit` exited 0 and `cd apps/desktop && npm run check` exited 0 from `PROJECT_ROOT`.
 ## Verification
 - Run file: `tickets/done/prd_014/verify_014.md`
 - Log file: `logs/verifier_014_20260427_132934Z_pass.md`
@@ -105,4 +108,4 @@
 ## Result
 
 - Summary: Fix planner stage mapping so idle running loops show 대기 and todo creation shows 완료
-- Remaining risk: Direct Electron visual inspection was unavailable in this adapter session, so visual behavior is inferred from the verified stage-key mapping and unchanged `plannerFlowStages` rendering path.
+- Remaining risk: Direct Electron visual inspection was unavailable in this adapter session, so visual behavior is inferred from the verified stage-key mapping and unchanged `plannerFlowStages` rendering path. Runtime Allowed Paths parsing skipped the original worktree file; repaired in PROJECT_ROOT with a follow-up commit.

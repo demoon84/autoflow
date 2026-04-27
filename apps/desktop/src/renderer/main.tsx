@@ -4220,8 +4220,8 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (role === "planner" || role === "plan") {
     if (isFailLike) return "blocked";
-    if (status === "running" || /\bevent=adapter_start\b|\bstatus=running\b|\bstatus=ok\b/.test(stateText)) return "planning";
     if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "done";
+    if (status === "running" && (hasActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
     return "idle";
   }
 

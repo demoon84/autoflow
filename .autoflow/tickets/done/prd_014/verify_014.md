@@ -71,6 +71,7 @@ computing gzip size...
 - Additional command: `cd apps/desktop && npx tsc --noEmit` exited 0.
 - Scenario check: direct planner mapping script confirmed `loop_waiting_exit_0` without markers -> `idle`, `source=backlog-to-todo` / `source=reject-replan` / `todo_ticket=` -> `done`, `event=adapter_start` or active ticket while running -> `planning`, and `adapter_exit_1` / `failed` -> `blocked`.
 - Browser check: `npm run dev` started Vite on `http://127.0.0.1:5174/`, but Electron inspection was unavailable because Computer Use returned macOS Apple event error -1743. A headless Chrome screenshot of the Vite URL produced a blank renderer page, so the visual check is covered by the code-path scenario verification rather than direct UI observation in this adapter session.
+- Post-finish repair: inline merge skipped the product file because the Allowed Paths entry contained explanatory prose after the path. The verified planner mapping hunk was applied directly to `PROJECT_ROOT`, then `cd apps/desktop && npx tsc --noEmit` and `cd apps/desktop && npm run check` both exited 0 again at 2026-04-27T13:31:12Z.
 
 ## Findings
 - blocker:
@@ -86,7 +87,7 @@ computing gzip size...
 ## Result
 
 - Verdict: pass
-- Summary: Planner stage mapping now avoids treating `status=running` alone as planning and preserves done/planning/blocked mappings required by prd_014.
+- Summary: Planner stage mapping now avoids treating `status=running` alone as planning and preserves done/planning/blocked mappings required by prd_014. A follow-up repair applied the verified product hunk to `PROJECT_ROOT` after the runtime skipped it during inline merge.
 
 ## Checks
 - [x] spec reference confirmed
