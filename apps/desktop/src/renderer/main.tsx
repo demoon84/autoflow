@@ -3432,9 +3432,13 @@ type TicketWorkspaceItemKind = "prd" | "ticket";
 type TicketKanbanFolderKey = string;
 
 type TicketWorkspaceItemMeta = {
+  id: string;
   title: string;
   projectKey: string;
+  stage: string;
   aiLabel: string;
+  claimedByLabel: string;
+  lastUpdated: string;
   statusKey: TicketWorkspaceStatusKey;
   statusLabel: string;
   statusVariant: "default" | "secondary" | "destructive";
@@ -3594,15 +3598,21 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
 }
 
 function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string): TicketWorkspaceItemMeta {
-  const claimedBy = markdownScalar(content, ["Execution AI", "AI", "Claimed By"]);
+  const id = markdownScalar(content, ["ID"]) || workflowFileDisplayName(file.name);
+  const ai = markdownScalar(content, ["AI", "Execution AI", "Owner"]);
+  const claimedBy = markdownScalar(content, ["Claimed By"]);
   const title = markdownScalar(content, ["Title"]) || file.title || file.name;
+  const stage = markdownScalar(content, ["Stage"]);
   const fileStatusKey = ticketWorkspaceStatusForFile(file) || "todo";
-  const stage = markdownScalar(content, ["Stage"]).toLowerCase();
-  const statusKey = fileStatusKey === "inprogress" && stage === "blocked" ? "blocked" : fileStatusKey;
+  const statusKey = fileStatusKey === "inprogress" && stage.toLowerCase() === "blocked" ? "blocked" : fileStatusKey;
   return {
+    id,
     title,
     projectKey: projectKeyFromBoardFile(file, content),
-    aiLabel: displayWorkflowRunnerId(claimedBy),
+    stage,
+    aiLabel: displayWorkflowRunnerId(ai),
+    claimedByLabel: displayWorkflowRunnerId(claimedBy),
+    lastUpdated: markdownScalar(content, ["Last Updated"]),
     statusKey,
     statusLabel: ticketWorkspaceStatusLabel(statusKey, file, content),
     statusVariant: ticketWorkspaceStatusVariant(statusKey)
@@ -3634,6 +3644,100 @@ function ticketKanbanColumnsForBoard(board: AutoflowBoardSnapshot | null) {
 
 function ticketKanbanFolderForItem(item: TicketWorkspaceItem): TicketKanbanFolderKey {
   return ticketFolderKeyFromFile(item);
+}
+
+function TicketDetailLayer({
+  item,
+  content,
+  loading,
+  error,
+  onOpenChange,
+  onClose
+}: {
+  item: TicketWorkspaceItem | null;
+  content: AutoflowFileContentResult | null;
+  loading: boolean;
+  error: string;
+  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
+}) {
+  const ItemIcon = item?.kind === "prd" ? ClipboardCheck : ClipboardList;
+  const metaRows = item
+    ? [
+        ["ID", item.id || item.displayId],
+        ["PRD Key", item.projectKey],
+        ["Stage", item.stage || item.statusLabel],
+        ["AI", item.aiLabel],
+        ["Claimed By", item.claimedByLabel],
+        ["Last Updated", item.lastUpdated || formatDate(item.modifiedAt)]
+      ].filter(([, value]) => Boolean(value))
+    : [];
+
+  return (
+    <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="workflow-pin-layer-panel workflow-pin-layer-default ticket-detail-layer-panel"
+        overlayClassName="workflow-pin-layer-overlay"
+        aria-describedby={undefined}
+      >
+        {item ? (
+          <>
+            <div className="workflow-pin-layer-header ticket-detail-layer-header">
+              <div className="workflow-pin-layer-heading">
+                <ItemIcon className="h-4 w-4" aria-hidden="true" />
+                <DialogTitle asChild>
+                  <strong>{item.displayId}</strong>
+                </DialogTitle>
+              </div>
+              <Badge className="ticket-workspace-detail-badge" variant={item.statusVariant}>
+                {item.statusLabel}
+              </Badge>
+              <time>{formatDate(item.modifiedAt)}</time>
+              <span className="ticket-detail-layer-path">{item.filePath}</span>
+              <button
+                type="button"
+                className="workflow-pin-layer-close"
+                onClick={onClose}
+                aria-label="닫기"
+                autoFocus
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="ticket-workspace-detail-summary ticket-detail-layer-summary">
+              <h4>{item.title}</h4>
+              <dl className="ticket-detail-layer-meta">
+                {metaRows.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="workflow-pin-detail ticket-workspace-detail-body ticket-detail-layer-body">
+              {loading ? (
+                <div className="workflow-pin-detail-loading">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <span>불러오는 중…</span>
+                </div>
+              ) : null}
+              {error ? <div className="workflow-pin-detail-error">{error}</div> : null}
+              {!error && content ? (
+                <div className="workflow-pin-detail-body">
+                  {content.content ? (
+                    <MarkdownViewer content={content.content} />
+                  ) : (
+                    <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function WorkflowPinLayer({
@@ -3924,10 +4028,11 @@ function TicketKanban({
     "--ticket-kanban-column-count": Math.max(kanbanColumns.length, 1)
   } as React.CSSProperties;
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
-  const [selectedFilePath, setSelectedFilePath] = React.useState("");
+  const [activeDetailPath, setActiveDetailPath] = React.useState("");
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
+  const itemButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3955,9 +4060,13 @@ function TicketKanban({
         nextMeta[file.filePath] = result.ok
           ? extractTicketWorkspaceMeta(file, result.content || "")
           : {
+              id: workflowFileDisplayName(file.name),
               title: file.title || file.name,
               projectKey: projectKeyFromBoardFile(file, ""),
+              stage: "",
               aiLabel: "",
+              claimedByLabel: "",
+              lastUpdated: "",
               statusKey: ticketWorkspaceStatusForFile(file) || "todo",
               statusLabel: ticketWorkspaceStatusLabel(ticketWorkspaceStatusForFile(file) || "todo", file, ""),
               statusVariant: ticketWorkspaceStatusVariant(ticketWorkspaceStatusForFile(file) || "todo")
@@ -3987,7 +4096,11 @@ function TicketKanban({
           displayId: workflowFileDisplayName(file.name),
           title: meta?.title || file.title || file.name,
           projectKey: meta?.projectKey || projectKeyFromBoardFile(file, ""),
+          id: meta?.id || workflowFileDisplayName(file.name),
+          stage: meta?.stage || "",
           aiLabel: meta?.aiLabel || "",
+          claimedByLabel: meta?.claimedByLabel || "",
+          lastUpdated: meta?.lastUpdated || "",
           statusKey,
           statusLabel: meta?.statusLabel || ticketWorkspaceStatusLabel(statusKey, file, ""),
           statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
@@ -3996,23 +4109,33 @@ function TicketKanban({
     [files, metaByPath]
   );
 
-  const selectedItem = React.useMemo(
-    () => items.find((item) => item.filePath === selectedFilePath) || null,
-    [items, selectedFilePath]
+  const activeDetailItem = React.useMemo(
+    () => items.find((item) => item.filePath === activeDetailPath) || null,
+    [activeDetailPath, items]
   );
 
-  React.useEffect(() => {
-    if (items.length === 0) {
-      setSelectedFilePath("");
-      setDetailContent(null);
-      setDetailError("");
-      return;
-    }
+  const restoreFocusToItem = React.useCallback((filePath: string) => {
+    window.setTimeout(() => itemButtonRefs.current[filePath]?.focus(), 0);
+  }, []);
 
-    if (!items.some((item) => item.filePath === selectedFilePath)) {
-      setSelectedFilePath(items[0].filePath);
+  const closeDetailLayer = React.useCallback(() => {
+    const previousPath = activeDetailPath;
+    setActiveDetailPath("");
+    setDetailContent(null);
+    setDetailError("");
+    if (previousPath) {
+      restoreFocusToItem(previousPath);
     }
-  }, [items, selectedFilePath]);
+  }, [activeDetailPath, restoreFocusToItem]);
+
+  const handleDetailOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (!open) {
+        closeDetailLayer();
+      }
+    },
+    [closeDetailLayer]
+  );
 
   React.useEffect(() => {
     let cancelled = false;
@@ -4020,7 +4143,7 @@ function TicketKanban({
     const loadDetail = async () => {
       setDetailContent(null);
       setDetailError("");
-      if (!selectedItem) {
+      if (!activeDetailItem) {
         return;
       }
       if (!options?.projectRoot) {
@@ -4036,7 +4159,7 @@ function TicketKanban({
       try {
         const result = await window.autoflow.readBoardFile({
           ...options,
-          filePath: selectedItem.filePath
+          filePath: activeDetailItem.filePath
         });
         if (cancelled) {
           return;
@@ -4062,7 +4185,7 @@ function TicketKanban({
     return () => {
       cancelled = true;
     };
-  }, [options, selectedItem]);
+  }, [activeDetailItem, options]);
 
   const boardIsEmpty = items.length === 0;
 
@@ -4099,15 +4222,18 @@ function TicketKanban({
                       ) : (
                         <div className="ticket-kanban-card-list">
                           {columnItems.map((item) => {
-                            const selected = item.filePath === selectedFilePath;
                             const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
                             return (
                               <button
                                 key={item.filePath}
+                                ref={(node) => {
+                                  itemButtonRefs.current[item.filePath] = node;
+                                }}
                                 type="button"
-                                className={`ticket-kanban-card${selected ? " is-selected" : ""}`}
-                                onClick={() => setSelectedFilePath(item.filePath)}
+                                className="ticket-kanban-card"
+                                onClick={() => setActiveDetailPath(item.filePath)}
                                 title={item.title}
+                                aria-haspopup="dialog"
                               >
                                 <span className="ticket-kanban-card-topline">
                                   <span className="ticket-kanban-card-id">{item.displayId}</span>
@@ -4126,15 +4252,17 @@ function TicketKanban({
                 })}
               </div>
             </div>
-            <TicketWorkspaceDetailPane
-              selectedItem={selectedItem}
-              detailLoading={detailLoading}
-              detailError={detailError}
-              detailContent={detailContent}
-            />
           </div>
         )}
       </PageLayout>
+      <TicketDetailLayer
+        item={activeDetailItem}
+        content={detailContent}
+        loading={detailLoading}
+        error={detailError}
+        onOpenChange={handleDetailOpenChange}
+        onClose={closeDetailLayer}
+      />
     </section>
   );
 }

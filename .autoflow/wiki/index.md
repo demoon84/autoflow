@@ -39,11 +39,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 16
+- Done tickets: 17
 - Reject records: 1
-- Verifier logs: 207
+- Verifier logs: 208
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T15:17:37Z
+- Last updated: 2026-04-27T15:26:50Z
 
 ## Completed Tickets
 
@@ -63,4 +63,5 @@ Tickets, verification records, and logs remain authoritative.
 - `tickets_020` - Auto-resume finish-pass when an inprogress ticket has Result: passed but no commit / merge. auto-resume finish-pass recovery implemented Source: `tickets/done/prd_020/tickets_020.md`.
 - `tickets_022` - Log-driven self-improvement trial runner — analyze logs, detect repeated issues, emit safe improvement candidates. self-improvement trial runner implemented and verified Source: `tickets/done/prd_022/tickets_022.md`.
 - `tickets_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. auto-resumed by recovery path Source: `tickets/done/prd_023/tickets_023.md`.
+- `tickets_024` - Convert ticket workspace right preview into a click-to-open detail layer. auto-resumed by recovery path Source: `tickets/done/prd_024/tickets_024.md`.
 <!-- AUTOFLOW:END work-map -->
