@@ -196,6 +196,46 @@ active_ticket_files() {
   done | sort
 }
 
+ticket_has_passed_finish_marker() {
+  local ticket_file="$1"
+
+  awk '
+    /^## Verification/ { in_verification=1; in_result=0; next }
+    /^## Result/ { in_result=1; in_verification=0; next }
+    /^## / { in_verification=0; in_result=0 }
+    (in_verification || in_result) && /^[[:space:]]*[-*][[:space:]]*Result:[[:space:]]*passed([[:space:]]|$)/ { found=1 }
+    in_result && /passed by/ { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$ticket_file"
+}
+
+record_passed_inprogress_recovery_check() {
+  local pending_count=0
+  local ticket_file ticket_id pending_ids
+
+  pending_ids=""
+
+  if [ -d "${board_root}/tickets/inprogress" ]; then
+    while IFS= read -r ticket_file; do
+      [ -n "$ticket_file" ] || continue
+      ticket_has_passed_finish_marker "$ticket_file" || continue
+      ticket_id="$(ticket_numeric_id "$ticket_file" 2>/dev/null || true)"
+      [ -n "$ticket_id" ] || continue
+      pending_count=$((pending_count + 1))
+      pending_ids="$(append_csv_value "$pending_ids" "tickets_${ticket_id}")"
+    done < <(find "${board_root}/tickets/inprogress" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md' | sort)
+  fi
+
+  printf 'doctor.passed_inprogress_recovery_pending_count=%s\n' "$pending_count" >> "$check_output"
+  printf 'doctor.passed_inprogress_recovery_pending_tickets=%s\n' "${pending_ids:-}" >> "$check_output"
+  if [ "$pending_count" -gt 0 ]; then
+    record_check "passed_inprogress_recovery_pending" "warning"
+    record_warning "passed inprogress ticket(s) still need auto-resume finish-pass: ${pending_ids}"
+  else
+    record_check "passed_inprogress_recovery_pending" "ok"
+  fi
+}
+
 shared_allowed_path_blockers() {
   local ticket_file="$1"
   local ticket_id ticket_num current_paths other_file other_id other_num other_stage
@@ -1120,6 +1160,7 @@ if [ -d "$board_root" ]; then
     done < <(find "${board_root}/tickets/inprogress" -maxdepth 1 -type f -name 'tickets_*.md' | sort)
   fi
 
+  record_passed_inprogress_recovery_check
   record_active_ticket_diagnostics
 
   if board_is_initialized "$board_root"; then

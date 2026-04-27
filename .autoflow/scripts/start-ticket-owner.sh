@@ -233,6 +233,16 @@ sync_runner_active_state() {
   mv "$temp_file" "$state_path"
 }
 
+auto_resume_finish_pass_or_continue() {
+  local ticket_file="$1"
+  local recovery_output
+
+  if recovery_output="$(recover_passed_inprogress_ticket "$ticket_file" "auto-resumed by recovery path" 2>&1)"; then
+    printf '%s\n' "$recovery_output"
+    exit 0
+  fi
+}
+
 prepare_ticket_owner_context() {
   local ticket_file="$1"
   local source_kind="$2"
@@ -437,6 +447,7 @@ if [ -n "$owned_file" ]; then
     exit 0
   fi
 
+  auto_resume_finish_pass_or_continue "$owned_file"
   printf 'status=resume\n'
   prepare_ticket_owner_context "$owned_file" "resume"
   exit 0
@@ -445,6 +456,7 @@ fi
 if [ -z "$requested_normalized" ]; then
   adoptable_ticket="$(find_adoptable_inprogress_ticket || true)"
   if [ -n "$adoptable_ticket" ]; then
+    auto_resume_finish_pass_or_continue "$adoptable_ticket"
     printf 'status=resume\n'
     prepare_ticket_owner_context "$adoptable_ticket" "adopted-inprogress"
     exit 0
@@ -458,6 +470,7 @@ if [ -n "$requested_normalized" ]; then
     if [ -z "$claimed_ticket" ]; then
       fail_or_idle "Ticket is already claimed by another owner: tickets_${requested_normalized}.md" "ticket_claim_conflict"
     fi
+    auto_resume_finish_pass_or_continue "$claimed_ticket"
     printf 'status=ok\n'
     prepare_ticket_owner_context "$claimed_ticket" "requested-ticket"
     exit 0

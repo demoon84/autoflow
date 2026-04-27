@@ -1430,6 +1430,149 @@ auto_recover_blocked_ticket() {
   return 0
 }
 
+ticket_recovery_path_allowed() {
+  local ticket_file="$1"
+  local repo_rel_path="$2"
+  local allowed_path
+
+  repo_rel_path="${repo_rel_path#./}"
+  [ -n "$repo_rel_path" ] || return 1
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete_repo_path "$allowed_path" || continue
+    allowed_path="${allowed_path#./}"
+    case "$repo_rel_path" in
+      "$allowed_path"|"$allowed_path"/*)
+        return 0
+        ;;
+    esac
+  done < <(extract_ticket_allowed_paths "$ticket_file")
+
+  return 1
+}
+
+ticket_has_passed_finish_marker() {
+  local ticket_file="$1"
+
+  awk '
+    /^## Verification/ { in_verification=1; in_result=0; next }
+    /^## Result/ { in_result=1; in_verification=0; next }
+    /^## / { in_verification=0; in_result=0 }
+    (in_verification || in_result) && /^[[:space:]]*[-*][[:space:]]*Result:[[:space:]]*passed([[:space:]]|$)/ { found=1 }
+    in_result && /passed by/ { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$ticket_file"
+}
+
+recover_passed_inprogress_ticket() {
+  local ticket_file="$1"
+  local summary="${2:-auto-resumed by recovery path}"
+  local ticket_id timestamp worktree_path base_commit worktree_head status_output
+  local dirty_path invalid_paths=() add_paths=() commit_author finish_script finish_output finish_exit
+
+  [ -f "$ticket_file" ] || return 1
+  case "$ticket_file" in
+    "${BOARD_ROOT}/tickets/inprogress/"tickets_*.md) ;;
+    *) return 1 ;;
+  esac
+  ticket_has_passed_finish_marker "$ticket_file" || return 1
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  timestamp="$(now_iso)"
+  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  if [ -z "$worktree_path" ] || ! git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_recovery_missing_worktree"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+    append_note "$ticket_file" "Auto-resume finish-pass blocked at ${timestamp}: worktree is missing or not a git worktree (${worktree_path:-empty})."
+    printf 'status=blocked\n'
+    printf 'source=auto_resumed_finish_pass\n'
+    printf 'reason=recovery_missing_worktree\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    return 0
+  fi
+
+  while IFS= read -r dirty_path; do
+    [ -n "$dirty_path" ] || continue
+    dirty_path="${dirty_path:3}"
+    case "$dirty_path" in
+      *" -> "*) dirty_path="${dirty_path##* -> }" ;;
+    esac
+    if ticket_recovery_path_allowed "$ticket_file" "$dirty_path"; then
+      add_paths+=("$dirty_path")
+    else
+      invalid_paths+=("$dirty_path")
+    fi
+  done < <(git -C "$worktree_path" status --porcelain --untracked-files=all)
+
+  if [ "${#invalid_paths[@]}" -gt 0 ]; then
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_out_of_scope_recovery"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+    append_note "$ticket_file" "Auto-resume finish-pass blocked at ${timestamp}: worktree has dirty paths outside Allowed Paths (${invalid_paths[*]})."
+    printf 'status=blocked\n'
+    printf 'source=auto_resumed_finish_pass\n'
+    printf 'reason=out_of_scope_recovery\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'invalid_path=%s\n' "${invalid_paths[@]}"
+    return 0
+  fi
+
+  if [ "${#add_paths[@]}" -gt 0 ]; then
+    git -C "$worktree_path" add -A -- "${add_paths[@]}"
+    if ! git -C "$worktree_path" diff --cached --quiet; then
+      commit_author="autoflow-recover <autoflow-recover@local.test>"
+      git -C "$worktree_path" \
+        -c user.name="autoflow-recover" \
+        -c user.email="autoflow-recover@local.test" \
+        commit --author "$commit_author" \
+        -m "[tickets_${ticket_id}] auto-resumed finish pass after dropped tick" >/dev/null
+      append_note "$ticket_file" "Auto-resume finish-pass created recovery worktree commit at ${timestamp} for dropped owner tick."
+    fi
+  fi
+
+  worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
+  base_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Base Commit")")"
+  if [ -n "$worktree_head" ] && [ "$worktree_head" != "$base_commit" ]; then
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_head"
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "ready_to_merge"
+  fi
+
+  append_note "$ticket_file" "Auto-resume finish-pass at ${timestamp}: invoking finish-ticket-owner pass for previously passed inprogress ticket."
+  finish_script="${BOARD_ROOT}/scripts/finish-ticket-owner.sh"
+  if [ ! -x "$finish_script" ]; then
+    printf 'status=blocked\n'
+    printf 'source=auto_resumed_finish_pass\n'
+    printf 'reason=finish_runtime_missing\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'finish_script=%s\n' "$finish_script"
+    return 0
+  fi
+
+  set +e
+  finish_output="$(AUTOFLOW_ROLE=ticket-owner "$finish_script" "$ticket_id" pass "$summary" 2>&1)"
+  finish_exit="$?"
+  set -e
+
+  printf 'status=auto_resumed_finish_pass\n'
+  printf 'source=auto_resumed_finish_pass\n'
+  printf 'ticket=%s\n' "$ticket_file"
+  printf 'ticket_id=%s\n' "$ticket_id"
+  printf 'finish_exit=%s\n' "$finish_exit"
+  if [ -n "$worktree_head" ]; then
+    printf 'worktree_commit=%s\n' "$worktree_head"
+  fi
+  if [ -n "$finish_output" ]; then
+    printf 'finish.output_begin\n%s\nfinish.output_end\n' "$finish_output"
+  fi
+
+  return 0
+}
+
 ensure_ticket_worktree() {
   local ticket_file="$1"
   local ticket_id git_root base_commit branch worktree_path parent_root existing_path existing_branch fallback_reason
