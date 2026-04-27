@@ -2959,7 +2959,7 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
       </div>
       <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
         <Badge variant="secondary">토큰 사용량</Badge>
-        <strong>{formatCompactCount(tokenUsageCount)}</strong>
+        <strong>{formatCount(tokenUsageCount)}</strong>
         <span>실행 로그 {formatCount(tokenReportCount)}개</span>
       </div>
     </div>
@@ -3033,7 +3033,7 @@ function ReportingDashboard({
     {
       label: "사용 토큰",
       value: tokenUsageCount,
-      displayValue: formatCompactCount(tokenUsageCount),
+      displayValue: formatCount(tokenUsageCount),
       color: reportColors.violet,
       detail: `${formatCount(tokenReportCount)}개 실행 로그`
     },
@@ -3088,7 +3088,7 @@ function ReportingDashboard({
         />
         <ReportMetricCard
           label="토큰 사용량"
-          value={formatCompactCount(tokenUsageCount)}
+          value={formatCount(tokenUsageCount)}
           detail={`${formatCount(tokenReportCount)}개 실행 로그 기준`}
           icon={Terminal}
           tone="report-tone-violet"

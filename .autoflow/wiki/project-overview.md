@@ -21,11 +21,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon/Documents/project/autoflow`
 - Board root: `/Users/demoon/Documents/project/autoflow/.autoflow`
-- Done tickets: 10
+- Done tickets: 11
 - Reject records: 1
-- Verifier logs: 201
+- Verifier logs: 202
 - Conversation handoffs: 0
-- Last updated: 2026-04-27T12:45:08Z
+- Last updated: 2026-04-27T12:52:36Z
 
 ## Latest Completed Work
 
