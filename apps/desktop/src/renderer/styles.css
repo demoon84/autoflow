@@ -2888,7 +2888,7 @@ pre {
 
 .ai-progress-track {
   --progress-value: 0%;
-  --stage-count: 6;
+  --stage-count: 4;
   --progress-track-inset: calc(50% / var(--stage-count));
   --progress-track-width: calc(100% - (100% / var(--stage-count)));
 
@@ -2896,8 +2896,9 @@ pre {
   display: flex;
   align-items: flex-start;
   flex-wrap: nowrap;
-  gap: 4px;
+  gap: 0;
   min-width: 0;
+  overflow: visible;
   padding-top: 14px;
 }
 
@@ -2932,9 +2933,11 @@ pre {
   z-index: 1;
   display: grid;
   justify-items: center;
+  align-items: start;
   gap: 7px;
   flex: 1 1 0;
   min-width: 32px;
+  padding: 0 2px;
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 430;

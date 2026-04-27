@@ -58,9 +58,7 @@ const ticketFolders = ["backlog", "todo", "inprogress", "done", "reject"] as con
 
 const ownerFlowStages = [
   { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
-  { key: "plan", label: "계획", meta: "작업 설계", icon: ClipboardList, tone: "flow-plan" },
-  { key: "inprogress", label: "구현", meta: "구현 진행", icon: Activity, tone: "flow-inprogress" },
-  { key: "verifier", label: "검증", meta: "증거 확인", icon: ShieldCheck, tone: "flow-verifier" },
+  { key: "inprogress", label: "구현", meta: "mini-plan / 구현 / 검증 / 머지 통합", icon: Activity, tone: "flow-inprogress" },
   { key: "done", label: "완료", meta: "통과", icon: CheckCircle2, tone: "flow-done" },
   { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "flow-reject" }
 ] as const;
@@ -4507,18 +4505,18 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (isFailLike) return "reject";
 
+  if (/\bcommitted_via_inline_merge\b|event=adapter_finish.*status=ok/.test(stateText)) return "done";
+
   if (hasActiveTicket) {
-    if (/^(done|pass|complete|completed)$/.test(activeStage)) return "done";
-    if (/^(blocked|merge_blocked|merge-blocked)$/.test(activeStage)) return "reject";
-    if (/^(verifying|verifier|ready_for_verification|review)$/.test(activeStage)) return "verifier";
-    if (/^(planning|plan)$/.test(activeStage)) return "plan";
-    if (/^(claimed|todo)$/.test(activeStage)) return "todo";
+    if (/^(done|pass|complete|completed|committed_via_inline_merge)$/.test(activeStage)) return "done";
+    if (/^(blocked|merge_blocked|merge-blocked|rejected|reject)$/.test(activeStage)) return "reject";
+    if (/^(executing|claimed|inprogress|verifying|verifier|ready_for_verification|ready_to_merge|ready-to-merge|review|merging)$/.test(activeStage)) {
+      return "inprogress";
+    }
     return "inprogress";
   }
 
   if (/\bdone\b|\bpass\b|\bcomplete\b|adapter_exit_0/.test(stateText)) return "done";
-  if (/\bverify\b|\bverifier\b|\breview\b/.test(stateText) || role.includes("verifier")) return "verifier";
-  if (/\bplan\b|\bplanner\b|\bspec\b/.test(stateText) || role.includes("plan")) return "plan";
 
   return "todo";
 }

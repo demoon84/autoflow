@@ -24,7 +24,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-27T15:26:50Z
+- Last rebuilt: 2026-04-27T15:42:59Z
 
 ### Completed Tickets
 
@@ -45,6 +45,7 @@ Each entry should cite its source ticket or log.
 - `tickets_022` - Log-driven self-improvement trial runner — analyze logs, detect repeated issues, emit safe improvement candidates. self-improvement trial runner implemented and verified Source: `tickets/done/prd_022/tickets_022.md`.
 - `tickets_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. auto-resumed by recovery path Source: `tickets/done/prd_023/tickets_023.md`.
 - `tickets_024` - Convert ticket workspace right preview into a click-to-open detail layer. auto-resumed by recovery path Source: `tickets/done/prd_024/tickets_024.md`.
+- `tickets_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Impl AI progress stages reduced to four and dot/fill alignment verified after AI-led root merge Source: `tickets/done/prd_025/tickets_025.md`.
 
 ### Verifier Logs
 
