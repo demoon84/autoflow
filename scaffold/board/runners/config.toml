@@ -51,3 +51,16 @@ mode = "loop"
 interval_seconds = 60
 enabled = true
 command = ""
+
+[[runners]]
+id = "self-improve-1"
+role = "self-improve"
+agent = "shell"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 1800
+enabled = false
+max_duration_seconds = 10800
+max_ticks = 6
+command = ""

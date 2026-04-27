@@ -16,6 +16,7 @@ Usage:
   run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
   run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
 EOF
 }
 
@@ -92,6 +93,12 @@ case "$requested_role" in
     runtime_role="coordinator"
     default_runner_id="coordinator-1"
     runtime_script=""
+    ;;
+  self-improve|self_improve|selfimprove)
+    public_role="self-improve"
+    runtime_role="self-improve"
+    default_runner_id="self-improve-1"
+    runtime_script="start-self-improve.sh"
     ;;
   *)
     echo "Unknown run role: ${requested_role}" >&2
@@ -661,7 +668,7 @@ if [ "$mode" = "watch" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] 
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"

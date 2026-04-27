@@ -10,6 +10,9 @@ Generated summaries may be written here by `autoflow wiki update`.
 
 - [[project-overview]]
 - [[log]]
+- [[features/ai-workflow-board]]
+- [[features/self-improvement-trial]]
+- [[features/ticket-workspace-tabs]]
 - `decisions/`
 - `features/`
 - `architecture/`
@@ -22,11 +25,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 13
+- Done tickets: 14
 - Reject records: 1
-- Verifier logs: 204
+- Verifier logs: 205
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T13:29:34Z
+- Last updated: 2026-04-27T13:58:08Z
 
 ## Completed Tickets
 
@@ -43,4 +46,5 @@ Tickets, verification records, and logs remain authoritative.
 - `tickets_017` - Restrict Claude reasoning dropdown to medium/high only. Restrict Claude reasoning choices to medium/high and normalize invalid saved Claude values to high Source: `tickets/done/prd_017/tickets_017.md`.
 - `tickets_018` - Align workflow stat strip edges with PRD pin bar + show raw token count. Align workflow stat strip edges with PRD pin strip and show raw token counts Source: `tickets/done/prd_018/tickets_018.md`.
 - `tickets_019` - Reduce ticket workspace tabs to PRD + 발급 티켓 only. Reduced ticket workspace to PRD and issued-ticket tabs with issued as default and all ticket stages listed. Source: `tickets/done/prd_019/tickets_019.md`.
+- `tickets_022` - Log-driven self-improvement trial runner — analyze logs, detect repeated issues, emit safe improvement candidates. self-improvement trial runner implemented and verified Source: `tickets/done/prd_022/tickets_022.md`.
 <!-- AUTOFLOW:END work-map -->
