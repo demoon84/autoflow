@@ -25,7 +25,7 @@ List unresolved questions with owner or source when known.
 - Reject records: 1
 - Verifier logs: 198
 - Conversation handoffs: 0
-- Last updated: 2026-04-27T11:32:45Z
+- Last updated: 2026-04-27T11:51:34Z
 
 ## Latest Completed Work
 

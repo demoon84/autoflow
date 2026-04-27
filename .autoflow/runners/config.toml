@@ -1,10 +1,14 @@
 # Autoflow runner configuration.
 #
-# Two-runner topology (post-refactor 2026-04-27):
+# Three-runner topology (refactor 2026-04-27):
 #   planner-1 : Plan AI — backlog/PRD → todo, reject → todo (auto-replan).
 #   owner-1   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
-# Wiki rebuild is invoked one-shot from owner-1 right after each merge,
-# so no persistent wiki/coordinator runner is needed.
+#   wiki-1    : Wiki AI — periodically refreshes .autoflow/wiki/ when
+#               tickets/done or tickets/reject change. Path-disjoint from
+#               Plan AI and Impl AI so it never causes worktree/merge
+#               conflicts.
+# Impl AI still runs deterministic update-wiki.sh inline at merge time so
+# the wiki has a fresh baseline; wiki-1 layers AI synthesis on top.
 
 [[runners]]
 id = "planner-1"
@@ -20,6 +24,17 @@ command = ""
 [[runners]]
 id = "owner-1"
 role = "ticket-owner"
+agent = "claude"
+model = "opus"
+reasoning = "high"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "wiki-1"
+role = "wiki-maintainer"
 agent = "claude"
 model = "opus"
 reasoning = "high"

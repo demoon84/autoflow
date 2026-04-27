@@ -84,7 +84,7 @@ case "$requested_role" in
   wiki|wiki-maintainer)
     public_role="wiki"
     runtime_role="wiki"
-    default_runner_id="coordinator-1"
+    default_runner_id="wiki-1"
     runtime_script=""
     ;;
   coordinator|coord|doctor|diagnose)

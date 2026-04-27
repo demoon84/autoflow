@@ -422,8 +422,8 @@ const runnerRoleLabels: Record<string, string> = {
   ticket: "Impl AI",
   planner: "Plan AI",
   plan: "Plan AI",
-  "wiki-maintainer": "위키 (legacy)",
-  wiki: "위키 (legacy)",
+  "wiki-maintainer": "Wiki AI",
+  wiki: "Wiki AI",
   coordinator: "coordinator (legacy)",
   coord: "coordinator (legacy)",
   doctor: "coordinator (legacy)",
@@ -2199,6 +2199,8 @@ function RunnerConsole({
       runner.role === "owner" ||
       runner.role === "planner" ||
       runner.role === "plan" ||
+      runner.role === "wiki-maintainer" ||
+      runner.role === "wiki" ||
       isCoordinatorRole(runner.role)
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
@@ -2219,7 +2221,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">Plan AI / Impl AI</span>
+            <span className="ticket-workspace-tab-copy">Plan AI / Impl AI / Wiki AI</span>
           </div>
         }
       >
@@ -2476,7 +2478,7 @@ function RunnerConsole({
             ) : (
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
-                <span>Plan AI(planner) 또는 Impl AI(ticket-owner) runner가 추가되면 여기에 표시됩니다.</span>
+                <span>Plan AI(planner) / Impl AI(ticket-owner) / Wiki AI(wiki-maintainer) runner가 추가되면 여기에 표시됩니다.</span>
               </div>
             )}
           </div>

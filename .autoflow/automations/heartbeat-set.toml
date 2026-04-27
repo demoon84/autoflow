@@ -4,13 +4,15 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = ".autoflow/"
 
-# Two-runner topology: one Plan AI + one Impl AI.
+# Three-runner topology: Plan AI + Impl AI + Wiki AI.
 # Plan AI processes backlog/reject into todo. Impl AI claims todo and runs
-# implementation, verification, merge inline. Wiki rebuild is triggered as a
-# one-shot from the Impl AI's merge step, so no persistent merge or wiki
-# runners are configured.
+# implementation, verification, and inline merge. Wiki AI periodically
+# refreshes .autoflow/wiki/ from done/ + reject/, layering AI synthesis on
+# top of the deterministic update-wiki.sh that Impl AI runs at merge time.
+# Path-disjoint set so concurrent ticks never produce merge conflicts.
 owner_workers = ["owner-1"]
 planner_workers = ["planner-1"]
+wiki_workers = ["wiki-1"]
 todo_workers = []
 verifier_workers = []
 merge_workers = []
@@ -31,8 +33,9 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 [thread_ids]
 planner-1 = "REPLACE_WITH_PLANNER_1_THREAD_ID"
 owner-1 = "REPLACE_WITH_OWNER_1_THREAD_ID"
+wiki-1 = "REPLACE_WITH_WIKI_1_THREAD_ID"
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-topology_rule = "Two-runner model: keep planner_workers=[\"planner-1\"] and owner_workers=[\"owner-1\"]. Add a third Plan or Impl only after profiling shows the pipeline is starved."
-trigger_rule = "`autoflow run ticket` / owner-1 heartbeats should keep running until the user explicitly says stop."
-wiki_rule = "Wiki rebuild fires inline from owner-1's finish-ticket-owner merge step; do not configure a wiki or coordinator loop runner."
+topology_rule = "Three-runner model: planner_workers=[\"planner-1\"], owner_workers=[\"owner-1\"], wiki_workers=[\"wiki-1\"]. Scale only after profiling shows the pipeline is starved."
+trigger_rule = "All three heartbeats keep running until the user explicitly says stop."
+wiki_rule = "Impl AI's finish-ticket-owner pass runs the deterministic update-wiki.sh inline so the wiki has a fresh baseline immediately. wiki-1 ticks every minute on top of that to layer AI synthesis (autoflow wiki query --synth, autoflow wiki lint --semantic) when tickets/done or tickets/reject changes."

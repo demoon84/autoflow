@@ -827,7 +827,11 @@ fi
 
 log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
 wiki_output="$(auto_update_wiki)"
-wiki_maintainer_output="$(auto_run_wiki_maintainer)"
+# Inline AI synthesis is intentionally skipped here. wiki-1 (the dedicated
+# Wiki AI loop runner) layers `autoflow wiki query --synth` and
+# `autoflow wiki lint --semantic` on top of the deterministic update above
+# on its own tick, so we do not double-trigger the maintainer adapter
+# from inside the merge step.
 commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
 clear_active_ticket_context_record || true
 clear_runner_active_state
@@ -866,7 +870,6 @@ printf 'run=%s\n' "$(done_run_path_for_ticket_file "$ticket_file")"
 printf '%s\n' "$merge_output"
 printf '%s\n' "$log_output"
 printf '%s\n' "$wiki_output"
-printf '%s\n' "$wiki_maintainer_output"
 printf '%s\n' "$commit_output"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
