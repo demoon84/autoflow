@@ -449,6 +449,22 @@ ticket_worktree_path_for_id() {
   printf '%s/tickets_%s' "$parent_root" "$ticket_id"
 }
 
+exclude_ticket_worktree_dependency_path() {
+  local worktree_path="$1"
+  local rel_path="$2"
+  local exclude_path
+
+  [ -n "$worktree_path" ] || return 0
+  [ -n "$rel_path" ] || return 0
+
+  exclude_path="$(git -C "$worktree_path" rev-parse --git-path info/exclude 2>/dev/null || true)"
+  [ -n "$exclude_path" ] || return 0
+
+  mkdir -p "$(dirname "$exclude_path")" 2>/dev/null || return 0
+  grep -Fxq "$rel_path" "$exclude_path" 2>/dev/null && return 0
+  printf '%s\n' "$rel_path" >> "$exclude_path" 2>/dev/null || true
+}
+
 hydrate_ticket_worktree_dependencies() {
   local ticket_file="$1"
   local worktree_path="$2"
@@ -476,12 +492,13 @@ hydrate_ticket_worktree_dependencies() {
         ;;
     esac
 
-    target_path="${worktree_path}/${rel_path}"
-    target_parent="$(dirname "$target_path")"
-    [ -d "$target_parent" ] || continue
-    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
-      continue
-    fi
+	target_path="${worktree_path}/${rel_path}"
+	target_parent="$(dirname "$target_path")"
+	[ -d "$target_parent" ] || continue
+	exclude_ticket_worktree_dependency_path "$worktree_path" "$rel_path"
+	if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+	  continue
+	fi
 
     ln -s "$dep_dir" "$target_path"
     append_note "$ticket_file" "Runtime hydrated worktree dependency at ${timestamp}: linked ${rel_path} -> ${dep_dir}"
@@ -1430,6 +1447,19 @@ auto_recover_blocked_ticket() {
   return 0
 }
 
+ticket_worktree_dependency_path() {
+  local repo_rel_path="$1"
+
+  repo_rel_path="${repo_rel_path#./}"
+  case "$repo_rel_path" in
+    node_modules|node_modules/*|*/node_modules|*/node_modules/*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 ticket_recovery_path_allowed() {
   local ticket_file="$1"
   local repo_rel_path="$2"
@@ -1468,7 +1498,7 @@ ticket_has_passed_finish_marker() {
 recover_passed_inprogress_ticket() {
   local ticket_file="$1"
   local summary="${2:-auto-resumed by recovery path}"
-  local ticket_id timestamp worktree_path base_commit worktree_head status_output
+  local ticket_id timestamp worktree_path base_commit worktree_head status_output ticket_stage integration_status
   local dirty_path invalid_paths=() add_paths=() commit_author finish_script finish_output finish_exit
 
   [ -f "$ticket_file" ] || return 1
@@ -1480,6 +1510,26 @@ recover_passed_inprogress_ticket() {
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
+  ticket_stage="$(trim_spaces "$(ticket_scalar_field "$ticket_file" "Stage")")"
+  integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
+  case "${ticket_stage}:${integration_status}" in
+    merge_blocked:*|merge-blocked:*|*:blocked_dirty_scope_conflict|*:blocked_dirty_scope_conflict_persistent|*:blocked_cherry_pick_conflict|*:blocked_rebase_conflict|*:blocked_invalid_worktree_commit_scope|*:blocked_missing_worktree_commit|*:blocked_missing_allowed_paths)
+      if [ "$ticket_stage" != "blocked" ]; then
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+        replace_section_block "$ticket_file" "Next Action" "- Next: repair the merge blocker (${integration_status:-${ticket_stage}}). Do not auto-resume finish-pass until PROJECT_ROOT dirty path conflicts are resolved."
+        append_note "$ticket_file" "Auto-resume finish-pass paused at ${timestamp}: merge blocker still needs repair (${integration_status:-${ticket_stage}})."
+      fi
+      printf 'status=blocked\n'
+      printf 'source=auto_resumed_finish_pass\n'
+      printf 'reason=merge_blocked_needs_repair\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      [ -z "$ticket_stage" ] || printf 'ticket_stage=%s\n' "$ticket_stage"
+      [ -z "$integration_status" ] || printf 'integration_status=%s\n' "$integration_status"
+      return 0
+      ;;
+  esac
   worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
   if [ -z "$worktree_path" ] || ! git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_recovery_missing_worktree"
@@ -1500,6 +1550,9 @@ recover_passed_inprogress_ticket() {
     case "$dirty_path" in
       *" -> "*) dirty_path="${dirty_path##* -> }" ;;
     esac
+    if ticket_worktree_dependency_path "$dirty_path"; then
+      continue
+    fi
     if ticket_recovery_path_allowed "$ticket_file" "$dirty_path"; then
       add_paths+=("$dirty_path")
     else

@@ -13,9 +13,9 @@
 [[runners]]
 id = "planner-1"
 role = "planner"
-agent = "claude"
-model = "opus"
-reasoning = "high"
+agent = "codex"
+model = "gpt-5.5"
+reasoning = "xhigh"
 mode = "loop"
 interval_seconds = 60
 enabled = true
@@ -37,9 +37,9 @@ command = ""
 [[runners]]
 id = "owner-1"
 role = "ticket-owner"
-agent = "claude"
-model = "opus"
-reasoning = "high"
+agent = "codex"
+model = "gpt-5.5"
+reasoning = "medium"
 mode = "loop"
 interval_seconds = 60
 enabled = true
@@ -48,9 +48,9 @@ command = ""
 [[runners]]
 id = "wiki-1"
 role = "wiki-maintainer"
-agent = "claude"
-model = "opus"
-reasoning = "high"
+agent = "gemini"
+model = "gemini-3-flash-preview"
+reasoning = ""
 mode = "loop"
 interval_seconds = 60
 enabled = true

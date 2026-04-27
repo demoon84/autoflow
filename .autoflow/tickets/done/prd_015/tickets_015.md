@@ -11,7 +11,7 @@
 - Claimed By: 019dcee6-0b20-7252-9b42-47a5e7cda19d
 - Execution AI: 019dcee6-0b20-7252-9b42-47a5e7cda19d
 - Verifier AI: 019dcee6-0b20-7252-9b42-47a5e7cda19d
-- Last Updated: 2026-04-27T12:31:30Z
+- Last Updated: 2026-04-27T12:32:01Z
 
 ## Goal
 
@@ -38,7 +38,7 @@
 - Branch: autoflow/tickets_015
 - Base Commit: 4629581b08ff2026b93f8b294d1b872e4bac1514
 - Worktree Commit:
-- Integration Status: no_code_changes
+- Integration Status: repaired_followup_commit_pending
 
 ## Done When
 
@@ -81,6 +81,8 @@
 - No staged code changes found in worktree during merge preparation at 2026-04-27T12:31:30Z.
 - Impl AI 019dcee6-0b20-7252-9b42-47a5e7cda19d marked verification pass at 2026-04-27T12:31:30Z and triggered inline merge.
 - Coordinator 019dcee6-0b20-7252-9b42-47a5e7cda19d finalized this verified ticket at 2026-04-27T12:31:30Z.
+- Coordinator post-merge cleanup at 2026-04-27T12:31:30Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_015 deleted_branch=autoflow/tickets_015.
+- Repair note at 2026-04-27T12:32:01Z: final sanity check found the inline merge skipped `apps/desktop/src/renderer/main.tsx` because the Allowed Paths line included explanatory prose after the backticked path. The already verified one-file change was applied directly to `PROJECT_ROOT` for a local follow-up completion commit.
 ## Verification
 - Run file: `tickets/done/prd_015/verify_015.md`
 - Log file: `logs/verifier_015_20260427_123130Z_pass.md`
@@ -89,4 +91,4 @@
 ## Result
 
 - Summary: PRD workflow pin label now shows nonzero pending backlog count and reuses the label for the layer heading.
-- Remaining risk: Coordinator merge pending; no known owner-side blockers.
+- Remaining risk: Follow-up local repair commit pending after runtime skipped the code file during inline merge preparation.

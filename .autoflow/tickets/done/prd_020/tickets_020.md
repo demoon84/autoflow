@@ -98,6 +98,7 @@
 - Impl AI AI-1 marked verification pass at 2026-04-27T14:19:10Z and triggered inline merge.
 - Coordinator AI-1 integrated worktree commit d11a15c2560624d79a49b067f8f6ada4dd5ea54b into PROJECT_ROOT without committing at 2026-04-27T14:19:11Z.
 - Coordinator AI-1 finalized this verified ticket at 2026-04-27T14:19:11Z.
+- Coordinator post-merge cleanup at 2026-04-27T14:19:11Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_020 deleted_branch=autoflow/tickets_020.
 ## Verification
 - Run file: `tickets/done/prd_020/verify_020.md`
 - Log file: `logs/verifier_020_20260427_141912Z_pass.md`

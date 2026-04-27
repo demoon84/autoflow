@@ -22,7 +22,6 @@ import {
   PanelRightOpen,
   Play,
   RefreshCw,
-  RotateCcw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -51,12 +50,11 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 
-const ticketFolders = ["backlog", "plan", "todo", "inprogress", "verifier", "done", "reject"] as const;
+const ticketFolders = ["backlog", "todo", "inprogress", "done", "reject"] as const;
 
 const ownerFlowStages = [
   { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
@@ -133,7 +131,7 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "progress", label: "작업 흐름", icon: Workflow },
+  { key: "progress", label: "작업", icon: Workflow },
   { key: "kanban", label: "티켓 정보", icon: KanbanSquare },
   { key: "ai", label: "AI 관리", icon: Laptop },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
@@ -1239,7 +1237,7 @@ function App() {
   );
 
   const controlRunner = React.useCallback(
-    async (action: "start" | "stop" | "restart", runnerId: string) => {
+    async (action: "start" | "stop", runnerId: string) => {
       if (!options.projectRoot || runnerActionKey) {
         return;
       }
@@ -1250,7 +1248,7 @@ function App() {
       setRunnerError("");
       try {
         const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
-        if (runner && (action === "start" || action === "restart")) {
+        if (runner && action === "start") {
           const draft = runnerDrafts[runner.id] || {
             agent: runner.agent || "codex",
             model: runner.model || "",
@@ -1602,6 +1600,12 @@ function App() {
                       selectedPath={selectedLogPath}
                       onSelect={readLog}
                       options={options}
+                      actionKey={runnerActionKey}
+                      drafts={runnerDrafts}
+                      onSelectRunner={selectRunner}
+                      onControl={controlRunner}
+                      onDraftChange={updateRunnerDraft}
+                      onConfigure={saveRunnerConfig}
                     />
                   </section>
                 </section>
@@ -2161,6 +2165,7 @@ function EssentialApp() {
                   <WorkflowStatStrip board={board} />
                   <TicketBoard
                     board={board}
+                    installedAgentProfiles={installedAgentProfiles}
                     selectedPath={selectedLogPath}
                     onSelect={readLog}
                     options={options}
@@ -2192,6 +2197,140 @@ function EssentialApp() {
   );
 }
 
+function RunnerConfigControls({
+  runner,
+  installedAgentProfiles,
+  actionKey,
+  draft,
+  canEditConfig,
+  onSelectRunner,
+  onDraftChange,
+  onConfigure,
+  showAgent = true,
+  className = "runner-config"
+}: {
+  runner: AutoflowRunner;
+  installedAgentProfiles: InstalledAgentProfiles;
+  actionKey: string;
+  draft: RunnerDraft;
+  canEditConfig: boolean;
+  onSelectRunner: (runnerId: string) => void;
+  onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
+  onConfigure: (runner: AutoflowRunner) => void;
+  showAgent?: boolean;
+  className?: string;
+}) {
+  const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
+  const modelChoices = normalized.modelChoices;
+  const reasoningChoices = normalized.reasoningChoices;
+  const modelSelectDisabled = Boolean(actionKey) || !canEditConfig || modelChoices.length === 0;
+  const reasoningSelectDisabled =
+    Boolean(actionKey) || !canEditConfig || !normalized.supportsReasoning || reasoningChoices.length === 0;
+  const reasoningSelectValue = normalized.supportsReasoning && reasoningChoices.length ? normalized.reasoning : "unsupported";
+  const agentOptions = runnerAgentOptions.includes(draft.agent as (typeof runnerAgentOptions)[number])
+    ? runnerAgentOptions
+    : [draft.agent, ...runnerAgentOptions];
+  const hasDraftChanges =
+    draft.agent !== (runner.agent || "codex") ||
+    normalized.model !== (runner.model || "") ||
+    normalized.reasoning !== (runner.reasoning || "") ||
+    (runner.mode || "loop") !== "loop" ||
+    (runner.intervalSeconds || "60") !== "60" ||
+    (runner.enabled || "true") !== "true" ||
+    draft.command !== (runner.command || "");
+  const isWorking = actionKey.endsWith(`:${runner.id}`);
+
+  return (
+    <div className={`${className}${showAgent ? "" : " runner-config-no-agent"}`}>
+      {showAgent ? (
+        <Select
+          value={draft.agent}
+          disabled={Boolean(actionKey) || !canEditConfig}
+          onValueChange={(value) => {
+            onSelectRunner(runner.id);
+            onDraftChange(runner.id, "agent", value);
+          }}
+        >
+          <SelectTrigger className="runner-select runner-agent-select" aria-label={`${runner.id} 에이전트`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {agentOptions.map((agent) => (
+              <SelectItem key={agent} value={agent}>
+                {agent}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+      <Select
+        value={modelChoices.length ? normalized.model : undefined}
+        disabled={modelSelectDisabled}
+        onValueChange={(value) => {
+          onSelectRunner(runner.id);
+          onDraftChange(runner.id, "model", value);
+        }}
+      >
+        <SelectTrigger className="runner-select" aria-label={`${runner.id} 모델`}>
+          <SelectValue placeholder="모델 없음" />
+        </SelectTrigger>
+        <SelectContent>
+          {modelChoices.map((model) => (
+            <SelectItem key={model} value={model}>
+              {displayRunnerOption(draft.agent, model)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={reasoningSelectValue}
+        disabled={reasoningSelectDisabled}
+        onValueChange={(value) => {
+          onSelectRunner(runner.id);
+          onDraftChange(runner.id, "reasoning", value);
+        }}
+      >
+        <SelectTrigger className="runner-select" aria-label={`${runner.id} 추론 강도`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {normalized.supportsReasoning ? (
+            reasoningChoices.map((reasoning) => (
+              <SelectItem key={reasoning} value={reasoning}>
+                {displayRunnerOption(draft.agent, reasoning)}
+              </SelectItem>
+            ))
+          ) : (
+            <SelectItem value="unsupported">{normalized.supportsReasoning ? "선택 없음" : "지원 안 함"}</SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        className="runner-save-button"
+        aria-label={`${runner.id} 저장`}
+        disabled={!canEditConfig || !hasDraftChanges || Boolean(actionKey)}
+        onClick={() => {
+          onSelectRunner(runner.id);
+          onConfigure(runner);
+        }}
+      >
+        {isWorking && actionKey.startsWith("config:") ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>저장</span>
+          </>
+        ) : (
+          <>
+            <span>저장</span>
+            {hasDraftChanges ? <span className="runner-save-dirty-dot" aria-hidden="true" /> : null}
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
 function RunnerConsole({
   board,
   defaultBoardDirName,
@@ -2214,7 +2353,7 @@ function RunnerConsole({
   drafts: Record<string, RunnerDraft>;
   selectedRunnerId: string;
   onSelectRunner: (runnerId: string) => void;
-  onControl: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onControl: (action: "start" | "stop", runnerId: string) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner) => void;
@@ -2274,25 +2413,6 @@ function RunnerConsole({
               enabled: runner.enabled || "true",
               command: runner.command || ""
             };
-            const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
-            const modelChoices = normalized.modelChoices;
-            const reasoningChoices = normalized.reasoningChoices;
-            const modelSelectDisabled = Boolean(actionKey) || !canEditConfig || modelChoices.length === 0;
-            const reasoningSelectDisabled =
-              Boolean(actionKey) || !canEditConfig || !normalized.supportsReasoning || reasoningChoices.length === 0;
-            const reasoningSelectValue =
-              normalized.supportsReasoning && reasoningChoices.length ? normalized.reasoning : "unsupported";
-            const agentOptions = runnerAgentOptions.includes(draft.agent as (typeof runnerAgentOptions)[number])
-              ? runnerAgentOptions
-              : [draft.agent, ...runnerAgentOptions];
-            const hasDraftChanges =
-              draft.agent !== (runner.agent || "codex") ||
-              normalized.model !== (runner.model || "") ||
-              normalized.reasoning !== (runner.reasoning || "") ||
-              (runner.mode || "loop") !== "loop" ||
-              (runner.intervalSeconds || "60") !== "60" ||
-              (runner.enabled || "true") !== "true" ||
-              draft.command !== (runner.command || "");
             const doctorId = runnerDoctorId(runner.id);
             const roleHealth = board?.doctor[`check.${doctorId}_role`] || "";
             const adapterHealth = board?.doctor[`check.${doctorId}_adapter`] || "";
@@ -2385,9 +2505,9 @@ function RunnerConsole({
                         variant="outline"
                         size="icon"
                         className="runner-icon-button runner-plain-icon-button"
-                        title={mode === "loop" ? "반복 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                        data-tooltip={mode === "loop" ? "반복 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                        aria-label={`${runner.id} 반복 시작`}
+                        title={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
+                        data-tooltip={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
+                        aria-label={`${runner.id} AI 시작`}
                         disabled={!canStart || Boolean(actionKey)}
                         onClick={() => {
                           onSelectRunner(runner.id);
@@ -2413,90 +2533,16 @@ function RunnerConsole({
                       </span>
                     ) : null}
                   </div>
-                  <div className="runner-config">
-                    <Select
-                      value={draft.agent}
-                      disabled={Boolean(actionKey) || !canEditConfig}
-                      onValueChange={(value) => {
-                        onSelectRunner(runner.id);
-                        onDraftChange(runner.id, "agent", value);
-                      }}
-                    >
-                      <SelectTrigger className="runner-select runner-agent-select" aria-label={`${runner.id} 에이전트`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agentOptions.map((agent) => (
-                          <SelectItem key={agent} value={agent}>
-                            {agent}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={modelChoices.length ? normalized.model : undefined}
-                      disabled={modelSelectDisabled}
-                      onValueChange={(value) => {
-                        onSelectRunner(runner.id);
-                        onDraftChange(runner.id, "model", value);
-                      }}
-                    >
-                      <SelectTrigger className="runner-select" aria-label={`${runner.id} 모델`}>
-                        <SelectValue placeholder="모델 없음" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {modelChoices.map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {displayRunnerOption(draft.agent, model)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={reasoningSelectValue}
-                      disabled={reasoningSelectDisabled}
-                      onValueChange={(value) => {
-                        onSelectRunner(runner.id);
-                        onDraftChange(runner.id, "reasoning", value);
-                      }}
-                    >
-                      <SelectTrigger className="runner-select" aria-label={`${runner.id} 추론 강도`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {normalized.supportsReasoning ? (
-                          reasoningChoices.map((reasoning) => (
-                            <SelectItem key={reasoning} value={reasoning}>
-                              {displayRunnerOption(draft.agent, reasoning)}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="unsupported">
-                            {normalized.supportsReasoning ? "선택 없음" : "지원 안 함"}
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      className="runner-save-button"
-                      aria-label={`${runner.id} 저장`}
-                      disabled={!canEditConfig || !hasDraftChanges || Boolean(actionKey)}
-                      onClick={() => {
-                        onSelectRunner(runner.id);
-                        onConfigure(runner);
-                      }}
-                    >
-                      {isWorking && actionKey.startsWith("config:") ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>저장</span>
-                        </>
-                      ) : (
-                        <span>저장</span>
-                      )}
-                    </Button>
-                  </div>
+                  <RunnerConfigControls
+                    runner={runner}
+                    installedAgentProfiles={installedAgentProfiles}
+                    actionKey={actionKey}
+                    draft={draft}
+                    canEditConfig={canEditConfig}
+                    onSelectRunner={onSelectRunner}
+                    onDraftChange={onDraftChange}
+                    onConfigure={onConfigure}
+                  />
                 </div>
               </article>
             );
@@ -2618,21 +2664,58 @@ function highlightLogText(text: string) {
 const TYPING_TAIL_CHARS = 400;
 const TYPING_TICK_MS = 16;
 const TYPING_TARGET_CATCHUP_MS = 1500;
+const conversationStreamTextCache = new Map<string, string>();
 
-function ConversationStream({ label, text }: { label: string; text: string }) {
+function initialConversationDisplayLength(streamId: string, text: string) {
+  const cachedText = conversationStreamTextCache.get(streamId) || "";
+  if (!text) return 0;
+  if (!cachedText) return Math.max(0, text.length - TYPING_TAIL_CHARS);
+  if (text === cachedText || cachedText.startsWith(text)) return text.length;
+  if (text.startsWith(cachedText)) return cachedText.length;
+  return text.length;
+}
+
+function ConversationStream({
+  label,
+  text,
+  streamId = label
+}: {
+  label: string;
+  text: string;
+  streamId?: string;
+}) {
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const previousTextRef = React.useRef("");
+  const previousTextRef = React.useRef(conversationStreamTextCache.get(streamId) || text);
   const [displayedLength, setDisplayedLength] = React.useState(() =>
-    Math.max(0, text.length - TYPING_TAIL_CHARS)
+    initialConversationDisplayLength(streamId, text)
   );
 
   React.useEffect(() => {
     const previous = previousTextRef.current;
-    if (!text.startsWith(previous)) {
-      setDisplayedLength(Math.max(0, text.length - TYPING_TAIL_CHARS));
+    const cachedText = conversationStreamTextCache.get(streamId) || "";
+
+    if (!cachedText) {
+      if (text) {
+        setDisplayedLength((current) => current || Math.max(0, text.length - TYPING_TAIL_CHARS));
+      }
+      conversationStreamTextCache.set(streamId, text);
+      previousTextRef.current = text;
+      return;
     }
+
+    if (text === cachedText || cachedText.startsWith(text)) {
+      setDisplayedLength(text.length);
+    } else if (text.startsWith(previous)) {
+      setDisplayedLength((current) => Math.min(text.length, Math.max(current, previous.length)));
+    } else if (cachedText && text.startsWith(cachedText)) {
+      setDisplayedLength(cachedText.length);
+    } else {
+      setDisplayedLength(text.length);
+    }
+
     previousTextRef.current = text;
-  }, [text]);
+    conversationStreamTextCache.set(streamId, text);
+  }, [streamId, text]);
 
   React.useEffect(() => {
     if (displayedLength >= text.length) return;
@@ -3344,9 +3427,9 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketWorkspaceTabKey = "all" | "prd" | "issued" | "inprogress" | "blocked" | "closed" | "reject";
-type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "blocked" | "verifier" | "done" | "reject";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "verifier" | "done" | "reject";
 type TicketWorkspaceItemKind = "prd" | "ticket";
+type TicketKanbanFolderKey = string;
 
 type TicketWorkspaceItemMeta = {
   title: string;
@@ -3363,19 +3446,17 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketWorkspaceTabs: Array<{
-  key: TicketWorkspaceTabKey;
+const ticketKanbanFolderOrder = ["backlog", "todo", "inprogress", "done", "reject"] as const;
+const ticketKanbanFolderMeta: Record<string, {
   label: string;
   description: string;
-}> = [
-  { key: "all", label: "전체", description: "PRD와 발급된 티켓 전체" },
-  { key: "prd", label: "PRD", description: "backlog와 보관된 PRD" },
-  { key: "issued", label: "발급 티켓", description: "전체 티켓 흐름" },
-  { key: "inprogress", label: "진행 중", description: "현재 구현 중인 티켓" },
-  { key: "blocked", label: "막힘", description: "처리가 멈춰 확인이 필요한 티켓" },
-  { key: "closed", label: "검증/완료", description: "검증 대기와 완료 티켓" },
-  { key: "reject", label: "반려", description: "검증 실패 후 재시도 대상" }
-] as const;
+}> = {
+  backlog: { label: "Backlog", description: "PRD 대기" },
+  todo: { label: "TODO", description: "아직 시작 전" },
+  inprogress: { label: "진행 중", description: "AI가 처리 중" },
+  done: { label: "완료", description: "완료 기록" },
+  reject: { label: "반려", description: "재시도/검토 필요" }
+};
 
 function workflowFileDisplayName(name: string) {
   const stem = name.replace(/\.md$/, "");
@@ -3388,6 +3469,9 @@ function workflowFileDisplayName(name: string) {
   if (stem.startsWith("reject_")) {
     return stem.replace(/^reject_/, "Reject-");
   }
+  if (stem.startsWith("tickets_")) {
+    return stem.replace(/^tickets_/, "Ticket-");
+  }
   return stem;
 }
 
@@ -3397,6 +3481,15 @@ function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
 
 function boardPath(value: string) {
   return value.replace(/\\/g, "/");
+}
+
+function ticketFolderKeyFromFile(file: AutoflowFilePreview) {
+  const match = boardPath(file.filePath).match(/\/tickets\/([^/]+)/);
+  return match?.[1] || "";
+}
+
+function isTicketWorkspaceBoardFile(file: AutoflowFilePreview) {
+  return isPrdBoardFile(file) || isTicketBoardFile(file) || isRejectBoardFile(file);
 }
 
 function isPrdBoardFile(file: AutoflowFilePreview) {
@@ -3442,6 +3535,12 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   if (normalized.includes("/tickets/inprogress/")) {
     return "inprogress";
   }
+  if (normalized.includes("/tickets/ready-to-merge/")) {
+    return "ready-to-merge";
+  }
+  if (normalized.includes("/tickets/merge-blocked/")) {
+    return "merge-blocked";
+  }
   if (normalized.includes("/tickets/verifier/")) {
     return "verifier";
   }
@@ -3460,12 +3559,20 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return "막힘";
   }
 
+  if (statusKey === "ready-to-merge") {
+    return "머지 대기";
+  }
+
+  if (statusKey === "merge-blocked") {
+    return "머지 막힘";
+  }
+
   if (statusKey === "inprogress") {
     const stage = markdownScalar(content, ["Stage"]).toLowerCase();
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "blocked">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
     todo: "발급됨",
     verifier: "검증",
     done: "완료",
@@ -3475,11 +3582,11 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
 }
 
 function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
-  if (statusKey === "blocked" || statusKey === "reject") {
+  if (statusKey === "blocked" || statusKey === "merge-blocked" || statusKey === "reject") {
     return "destructive" as const;
   }
 
-  if (statusKey === "inprogress" || statusKey === "verifier" || statusKey === "done") {
+  if (statusKey === "inprogress" || statusKey === "ready-to-merge" || statusKey === "verifier" || statusKey === "done") {
     return "default" as const;
   }
 
@@ -3503,39 +3610,30 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string):
 }
 
 function ticketWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
-  const prdFiles = [
-    ...((board?.tickets.backlog || []).filter(isPrdBoardFile) || []),
-    ...((board?.tickets.done || []).filter(isPrdBoardFile) || [])
-  ];
-  const issuedFiles = [
-    ...((board?.tickets.todo || []).filter(isTicketBoardFile) || []),
-    ...((board?.tickets.inprogress || []).filter(isTicketBoardFile) || []),
-    ...((board?.tickets.verifier || []).filter(isTicketBoardFile) || []),
-    ...((board?.tickets.done || []).filter(isTicketBoardFile) || []),
-    ...((board?.tickets.reject || []).filter(isRejectBoardFile) || [])
-  ];
+  const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
+    folderFiles.filter(isTicketWorkspaceBoardFile)
+  );
 
-  return sortFilesByModifiedAt([...prdFiles, ...issuedFiles]);
+  return sortFilesByModifiedAt(files);
 }
 
-function ticketWorkspaceItemsForTab(items: TicketWorkspaceItem[], tab: TicketWorkspaceTabKey) {
-  switch (tab) {
-    case "prd":
-      return items.filter((item) => item.kind === "prd");
-    case "issued":
-      return items.filter((item) => item.kind === "ticket");
-    case "inprogress":
-      return items.filter((item) => item.statusKey === "inprogress");
-    case "blocked":
-      return items.filter((item) => item.statusKey === "blocked");
-    case "closed":
-      return items.filter((item) => item.statusKey === "verifier" || item.statusKey === "done");
-    case "reject":
-      return items.filter((item) => item.statusKey === "reject");
-    case "all":
-    default:
-      return items;
-  }
+function ticketKanbanColumnsForBoard(board: AutoflowBoardSnapshot | null) {
+  const existingKeys = new Set(Object.keys(board?.tickets || {}));
+  const orderedKeys = [
+    ...ticketKanbanFolderOrder.filter((key) => existingKeys.has(key)),
+    ...[...existingKeys].filter((key) => !ticketKanbanFolderOrder.includes(key as typeof ticketKanbanFolderOrder[number])).sort()
+  ];
+
+  return orderedKeys.map((key) => ({
+    key,
+    label: ticketKanbanFolderMeta[key]?.label || key,
+    path: `tickets/${key}`,
+    description: ticketKanbanFolderMeta[key]?.description || "사용자 정의 폴더"
+  }));
+}
+
+function ticketKanbanFolderForItem(item: TicketWorkspaceItem): TicketKanbanFolderKey {
+  return ticketFolderKeyFromFile(item);
 }
 
 function WorkflowPinLayer({
@@ -3748,6 +3846,71 @@ function WorkflowPinLayer({
   );
 }
 
+function TicketWorkspaceDetailPane({
+  selectedItem,
+  detailLoading,
+  detailError,
+  detailContent
+}: {
+  selectedItem: TicketWorkspaceItem | null;
+  detailLoading: boolean;
+  detailError: string;
+  detailContent: AutoflowFileContentResult | null;
+}) {
+  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
+
+  return (
+    <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
+      {!selectedItem ? (
+        <div className="ticket-workspace-empty ticket-workspace-detail-empty">
+          <strong>항목을 선택하세요.</strong>
+          <span>선택한 PRD 또는 티켓의 메타데이터와 Markdown 본문이 여기에 표시됩니다.</span>
+        </div>
+      ) : (
+        <>
+          <header className="workflow-pin-layer-header ticket-workspace-detail-head">
+            <div className="workflow-pin-layer-heading">
+              <SelectedDetailIcon className="h-4 w-4" aria-hidden="true" />
+              <strong>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</strong>
+            </div>
+            <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
+            <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
+              {selectedItem.statusLabel}
+            </Badge>
+          </header>
+          <div className="ticket-workspace-detail-summary">
+            <h4>{selectedItem.title}</h4>
+            <div className="ticket-workspace-detail-meta">
+              {selectedItem.projectKey ? <span>프로젝트 키 · {selectedItem.projectKey}</span> : null}
+              {selectedItem.aiLabel ? <span>담당 · {selectedItem.aiLabel}</span> : null}
+              <time>{formatDate(selectedItem.modifiedAt)}</time>
+              <span>{selectedItem.filePath}</span>
+            </div>
+          </div>
+          <div className="workflow-pin-detail ticket-workspace-detail-body">
+            {detailLoading ? (
+              <div className="workflow-pin-detail-loading">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span>불러오는 중…</span>
+              </div>
+            ) : null}
+            {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
+            {!detailError && detailContent ? (
+              <div className="workflow-pin-detail-body">
+                {detailContent.content ? (
+                  <MarkdownViewer content={detailContent.content} />
+                ) : (
+                  <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function TicketKanban({
   board,
   options
@@ -3756,8 +3919,11 @@ function TicketKanban({
   options?: { projectRoot: string; boardDirName: string };
 }) {
   const files = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
+  const kanbanColumns = React.useMemo(() => ticketKanbanColumnsForBoard(board), [board]);
+  const kanbanColumnStyle = {
+    "--ticket-kanban-column-count": Math.max(kanbanColumns.length, 1)
+  } as React.CSSProperties;
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
-  const [activeTab, setActiveTab] = React.useState<TicketWorkspaceTabKey>("all");
   const [selectedFilePath, setSelectedFilePath] = React.useState("");
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -3830,24 +3996,23 @@ function TicketKanban({
     [files, metaByPath]
   );
 
-  const visibleItems = React.useMemo(() => ticketWorkspaceItemsForTab(items, activeTab), [activeTab, items]);
   const selectedItem = React.useMemo(
-    () => visibleItems.find((item) => item.filePath === selectedFilePath) || null,
-    [selectedFilePath, visibleItems]
+    () => items.find((item) => item.filePath === selectedFilePath) || null,
+    [items, selectedFilePath]
   );
 
   React.useEffect(() => {
-    if (visibleItems.length === 0) {
+    if (items.length === 0) {
       setSelectedFilePath("");
       setDetailContent(null);
       setDetailError("");
       return;
     }
 
-    if (!visibleItems.some((item) => item.filePath === selectedFilePath)) {
-      setSelectedFilePath(visibleItems[0].filePath);
+    if (!items.some((item) => item.filePath === selectedFilePath)) {
+      setSelectedFilePath(items[0].filePath);
     }
-  }, [selectedFilePath, visibleItems]);
+  }, [items, selectedFilePath]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3900,134 +4065,76 @@ function TicketKanban({
   }, [options, selectedItem]);
 
   const boardIsEmpty = items.length === 0;
-  const activeTabCopy = ticketWorkspaceTabs.find((tab) => tab.key === activeTab)?.description || "";
-  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
 
   return (
     <section className="ticket-kanban-board" aria-label="티켓 정보">
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TicketWorkspaceTabKey)}
-        className="ticket-workspace"
-      >
-        <PageLayout
-          className="ticket-workspace-page"
-          header={
-            <div className="ticket-workspace-toolbar">
-              <TabsList className="ticket-workspace-tabs" aria-label="티켓 정보 탭">
-                {ticketWorkspaceTabs.map((tab) => {
-                  const count = ticketWorkspaceItemsForTab(items, tab.key).length;
+      <PageLayout className="ticket-workspace-page">
+        {boardIsEmpty ? (
+          <div className="ticket-kanban-empty ticket-workspace-empty">
+            <strong>표시할 티켓이 없습니다.</strong>
+            <span>tickets 폴더에 티켓이 생기면 폴더 기준 칸반으로 표시됩니다.</span>
+          </div>
+        ) : (
+          <div className="ticket-workspace-kanban-layout">
+            <div className="ticket-workspace-kanban-pane">
+              <div
+                className="ticket-workspace-kanban-columns"
+                aria-label="폴더 기준 티켓 칸반"
+                style={kanbanColumnStyle}
+              >
+                {kanbanColumns.map((column) => {
+                  const columnItems = items.filter((item) => ticketKanbanFolderForItem(item) === column.key);
                   return (
-                    <TabsTrigger key={tab.key} value={tab.key} className="ticket-workspace-tab-trigger">
-                      <span>{tab.label}</span>
-                      <Badge variant="secondary">{count}</Badge>
-                    </TabsTrigger>
+                    <section key={column.key} className={`ticket-kanban-column ticket-kanban-column-${column.key}`}>
+                      <header className="ticket-kanban-column-header">
+                        <div>
+                          <strong>{column.label}</strong>
+                          <span>{column.path}</span>
+                        </div>
+                        <Badge variant="secondary">{columnItems.length}</Badge>
+                      </header>
+                      <div className="ticket-kanban-column-note">{column.description}</div>
+                      {columnItems.length === 0 ? (
+                        <div className="ticket-kanban-column-empty">비어 있음</div>
+                      ) : (
+                        <div className="ticket-kanban-card-list">
+                          {columnItems.map((item) => {
+                            const selected = item.filePath === selectedFilePath;
+                            const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
+                            return (
+                              <button
+                                key={item.filePath}
+                                type="button"
+                                className={`ticket-kanban-card${selected ? " is-selected" : ""}`}
+                                onClick={() => setSelectedFilePath(item.filePath)}
+                                title={item.title}
+                              >
+                                <span className="ticket-kanban-card-topline">
+                                  <span className="ticket-kanban-card-id">{item.displayId}</span>
+                                  <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                                </span>
+                                <strong>{item.title}</strong>
+                                <span className="ticket-kanban-card-meta">{metaText || item.filePath}</span>
+                                <time>{formatDate(item.modifiedAt)}</time>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                   );
                 })}
-              </TabsList>
-              <span className="ticket-workspace-tab-copy">{activeTabCopy}</span>
-            </div>
-          }
-        >
-          {boardIsEmpty ? (
-            <div className="ticket-kanban-empty ticket-workspace-empty">
-              <strong>표시할 PRD 또는 티켓이 없습니다.</strong>
-              <span>보드가 비어 있습니다. 새 PRD를 추가하거나 runner 상태를 확인하세요.</span>
-            </div>
-          ) : (
-            <div className="ticket-workspace-layout">
-              <div className="ticket-workspace-list-pane">
-                {ticketWorkspaceTabs.map((tab) => (
-                  <TabsContent key={tab.key} value={tab.key} className="ticket-workspace-tab-panel">
-                    {ticketWorkspaceItemsForTab(items, tab.key).length === 0 ? (
-                      <div className="ticket-workspace-empty">
-                        <strong>이 탭에 표시할 항목이 없습니다.</strong>
-                        <span>{tab.label} 탭에 해당하는 PRD 또는 티켓이 아직 없습니다.</span>
-                      </div>
-                    ) : (
-                      <div className="ticket-workspace-list" aria-label={`${tab.label} 목록`}>
-                        {ticketWorkspaceItemsForTab(items, tab.key).map((item) => {
-                          const selected = item.filePath === selectedFilePath;
-                          const ItemIcon = item.kind === "prd" ? ClipboardCheck : ClipboardList;
-                          const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
-                          return (
-                            <button
-                              key={item.filePath}
-                              type="button"
-                              className={`ticket-workspace-item${selected ? " is-selected" : ""}`}
-                              onClick={() => setSelectedFilePath(item.filePath)}
-                              title={item.title}
-                            >
-                              <span className="ticket-workspace-item-icon" aria-hidden="true">
-                                <ItemIcon className="h-4 w-4" />
-                              </span>
-                              <span className="ticket-workspace-item-main">
-                                <strong>{item.title}</strong>
-                                <span>{metaText || item.filePath}</span>
-                              </span>
-                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
-                              <time>{formatDate(item.modifiedAt)}</time>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </TabsContent>
-                ))}
-              </div>
-
-              <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
-                {!selectedItem ? (
-                  <div className="ticket-workspace-empty ticket-workspace-detail-empty">
-                    <strong>왼쪽 목록에서 항목을 선택하세요.</strong>
-                    <span>선택한 PRD 또는 티켓의 메타데이터와 Markdown 본문이 여기에 표시됩니다.</span>
-                  </div>
-                ) : (
-                  <>
-                    <header className="workflow-pin-layer-header ticket-workspace-detail-head">
-                      <div className="workflow-pin-layer-heading">
-                        <SelectedDetailIcon className="h-4 w-4" aria-hidden="true" />
-                        <strong>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</strong>
-                      </div>
-                      <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
-                      <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
-                        {selectedItem.statusLabel}
-                      </Badge>
-                    </header>
-                    <div className="ticket-workspace-detail-summary">
-                      <h4>{selectedItem.title}</h4>
-                      <div className="ticket-workspace-detail-meta">
-                        {selectedItem.projectKey ? <span>프로젝트 키 · {selectedItem.projectKey}</span> : null}
-                        {selectedItem.aiLabel ? <span>담당 · {selectedItem.aiLabel}</span> : null}
-                        <time>{formatDate(selectedItem.modifiedAt)}</time>
-                        <span>{selectedItem.filePath}</span>
-                      </div>
-                    </div>
-                    <div className="workflow-pin-detail ticket-workspace-detail-body">
-                      {detailLoading ? (
-                        <div className="workflow-pin-detail-loading">
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                          <span>불러오는 중…</span>
-                        </div>
-                      ) : null}
-                      {detailError ? <div className="workflow-pin-detail-error">{detailError}</div> : null}
-                      {!detailError && detailContent ? (
-                        <div className="workflow-pin-detail-body">
-                          {detailContent.content ? (
-                            <MarkdownViewer content={detailContent.content} />
-                          ) : (
-                            <p className="workflow-pin-detail-empty">(비어 있음)</p>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </>
-                )}
               </div>
             </div>
-          )}
-        </PageLayout>
-      </Tabs>
+            <TicketWorkspaceDetailPane
+              selectedItem={selectedItem}
+              detailLoading={detailLoading}
+              detailError={detailError}
+              detailContent={detailContent}
+            />
+          </div>
+        )}
+      </PageLayout>
     </section>
   );
 }
@@ -4037,15 +4144,27 @@ function TicketBoard({
   installedAgentProfiles = {},
   selectedPath: _selectedPath,
   onSelect,
-  options
+  options,
+  actionKey = "",
+  drafts = {},
+  onSelectRunner,
+  onControl,
+  onDraftChange,
+  onConfigure
 }: {
   board: AutoflowBoardSnapshot | null;
   installedAgentProfiles?: InstalledAgentProfiles;
   selectedPath: string;
   onSelect: (filePath: string) => void;
   options?: { projectRoot: string; boardDirName: string };
+  actionKey?: string;
+  drafts?: Record<string, RunnerDraft>;
+  onSelectRunner?: (runnerId: string) => void;
+  onControl?: (action: "start" | "stop", runnerId: string) => void;
+  onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
+  onConfigure?: (runner: AutoflowRunner) => void;
 }) {
-  const runners = board?.runners || [];
+  const runners = (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve");
   const rejectFiles = (board?.tickets.reject || [])
     .filter((file) => file.name.startsWith("reject_"))
     .map((file) => ({ ...file, stateLabel: "반려", stateTone: "destructive" } as WorkflowFileEntry));
@@ -4055,15 +4174,27 @@ function TicketBoard({
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
+  const todoTickets = (board?.tickets.todo || [])
+    .filter(isTicketBoardFile)
+    .map((file) => ({ ...file, stateLabel: "TODO", stateTone: "neutral" } as WorkflowFileEntry));
   const specNumericId = (name: string) => {
     const match = name.match(/(?:prd|project)_(\d+)/);
+    return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const ticketNumericId = (name: string) => {
+    const match = name.match(/tickets_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
+  const todoFiles: WorkflowFileEntry[] = todoTickets.sort(
+    (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
+  );
+  const prdPinTitle = `PRD ${specFiles.length}건${backlogSpecs.length ? ` · 대기 ${backlogSpecs.length}건` : ""}`;
+  const todoPinTitle = `TODO ${todoFiles.length}건`;
 
-  const hasHeader = Boolean(specFiles.length || rejectFiles.length);
+  const hasHeader = Boolean(specFiles.length || todoFiles.length || rejectFiles.length);
 
   return (
     <PageLayout
@@ -4074,11 +4205,22 @@ function TicketBoard({
               <WorkflowPinLayer
                 files={specFiles}
                 options={options}
-                pinTitle={`PRD ${specFiles.length}건`}
+                pinTitle={prdPinTitle}
                 pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
                 variant="default"
-                layerHeading={`PRD ${specFiles.length}건`}
+                layerHeading={prdPinTitle}
                 layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
+              />
+            ) : null}
+            {todoFiles.length ? (
+              <WorkflowPinLayer
+                files={todoFiles}
+                options={options}
+                pinTitle={todoPinTitle}
+                pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
+                variant="default"
+                layerHeading={todoPinTitle}
+                layerHelpText="아직 시작되지 않은 TODO 티켓 목록입니다. 항목을 클릭하면 티켓 본문이 이 화면에서 열립니다."
               />
             ) : null}
             {rejectFiles.length ? (
@@ -4105,6 +4247,12 @@ function TicketBoard({
               onSelect={onSelect}
               installedAgentProfiles={installedAgentProfiles}
               options={options}
+              actionKey={actionKey}
+              draft={drafts[runner.id]}
+              onSelectRunner={onSelectRunner}
+              onControl={onControl}
+              onDraftChange={onDraftChange}
+              onConfigure={onConfigure}
             />
           ))
         ) : (
@@ -4156,7 +4304,7 @@ function AiConversationPanel({
         <strong>{runnerLabel}</strong>
         <span>{agentLabel}</span>
       </header>
-      <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} />
+      <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} streamId={`panel:${runnerLabel}`} />
     </article>
   );
 }
@@ -4198,11 +4346,12 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
   const hasActiveTicket = Boolean(runner.activeTicketId);
-  const stateText = [runner.activeItem, runner.lastResult, runner.lastLogLine].join(" ").toLowerCase();
+  const stateSignalText = [runner.activeItem, runner.lastResult, runner.lastLogLine].join(" ").toLowerCase();
+  const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
   const isFailLike =
     status === "failed" ||
     /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
-    /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateText);
+    /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateSignalText);
 
   if (role === "merge-bot" || role === "merge") {
     if (isFailLike || /\bmerge[-_]?blocked\b|\b_persistent\b|\bblocked_(?:cherry_pick|rebase|dirty_scope|missing_)/.test(stateText)) return "blocked";
@@ -4219,7 +4368,10 @@ function runnerStageKey(runner: AutoflowRunner): string {
   }
 
   if (role === "planner" || role === "plan") {
+    const hasPlannerIdleSignal =
+      /\bno_actionable_plan_input\b|\bidle_wait_for_backlog_or_reject\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
     if (isFailLike) return "blocked";
+    if (hasPlannerIdleSignal && !hasActiveTicket && !runner.activeItem) return "idle";
     if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "done";
     if (status === "running" && (hasActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
     return "idle";
@@ -4229,9 +4381,10 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (hasActiveTicket) {
     if (/^(done|pass|complete|completed)$/.test(activeStage)) return "done";
+    if (/^(blocked|merge_blocked|merge-blocked)$/.test(activeStage)) return "reject";
     if (/^(verifying|verifier|ready_for_verification|review)$/.test(activeStage)) return "verifier";
     if (/^(planning|plan)$/.test(activeStage)) return "plan";
-    if (/^(claimed|todo|blocked)$/.test(activeStage)) return "todo";
+    if (/^(claimed|todo)$/.test(activeStage)) return "todo";
     return "inprogress";
   }
 
@@ -4302,6 +4455,17 @@ function displayProgressRunnerLabel(runner: AutoflowRunner) {
   return isCoordinatorRole(runner.role) ? `${agent}(coordinator)` : agent;
 }
 
+function displayProgressRoleLabel(runner: AutoflowRunner) {
+  const role = (runner.role || "").toLowerCase();
+  if (role === "planner" || role === "plan") return "Planner";
+  if (role === "ticket-owner" || role === "owner") return "Worker";
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "위키봇";
+
+  const metaLabel = displayWorkflowRunnerId(runner.id);
+  const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
+  return metaLabel ? `${agentName}(${metaLabel})` : agentName;
+}
+
 function AgentAppIcon({ agent }: { agent: string }) {
   const agentKey = (agent || "").toLowerCase();
   const iconAsset = agentKey === "codex" ? codexAppIcon : agentKey === "claude" ? claudeAppIcon : "";
@@ -4353,23 +4517,36 @@ function AiProgressRow({
   runner,
   onSelect: _onSelect,
   installedAgentProfiles,
-  options
+  options,
+  actionKey = "",
+  draft,
+  onSelectRunner,
+  onControl,
+  onDraftChange,
+  onConfigure
 }: {
   runner: AutoflowRunner;
   onSelect: (filePath: string) => void;
   installedAgentProfiles?: InstalledAgentProfiles;
   options?: { projectRoot: string; boardDirName: string };
+  actionKey?: string;
+  draft?: RunnerDraft;
+  onSelectRunner?: (runnerId: string) => void;
+  onControl?: (action: "start" | "stop", runnerId: string) => void;
+  onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
+  onConfigure?: (runner: AutoflowRunner) => void;
 }) {
   const currentKey = runnerStageKey(runner);
   const hideProgressTrack = isCoordinatorRole(runner.role);
   const flowStages = flowStagesForRunner(runner);
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
-  const dotCenterPercent =
-    flowStages.length > 0 && stageIndex >= 0 ? ((stageIndex + 0.5) / flowStages.length) * 100 : 0;
-  const progressFillPercent = Math.max(0, dotCenterPercent - 9);
+  const stageCount = Math.max(1, flowStages.length);
+  const progressFillPercent = stageIndex > 0 ? (stageIndex / stageCount) * 100 : 0;
   const progressValue = progressFillPercent <= 0 ? "0px" : `${progressFillPercent}%`;
   const status = runner.stateStatus || "idle";
+  const role = (runner.role || "").toLowerCase();
+  const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
   const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
@@ -4377,26 +4554,29 @@ function AiProgressRow({
   const ticketSummary = activeTicketSummary(runner);
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
   const agentLabel = displayProgressRunnerLabel(runner);
-  const normalized = normalizeRunnerSelections(
-    runner.agent || "codex",
-    runner.model || "",
-    runner.reasoning || "",
-    installedAgentProfiles || {}
-  );
-  const modelLabel = normalized.model ? displayRunnerOption(runner.agent || "codex", normalized.model) : "";
-  const reasoningLabel =
-    normalized.supportsReasoning && normalized.reasoning
-      ? displayRunnerOption(runner.agent || "codex", normalized.reasoning)
-      : "";
-  const modelMetaLabel = [modelLabel, reasoningLabel].filter(Boolean).join(" · ");
-  const metaLabel = displayWorkflowRunnerId(runner.id);
-  const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
-  const agentTitle = metaLabel ? `${agentName}(${metaLabel})` : agentName;
+  const agentTitle = displayProgressRoleLabel(runner);
   const tokenUsageValue = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
   const animatedTokenUsage = useCountUp(tokenUsageValue);
   const tokenUsageLabel = animatedTokenUsage > 0 ? `${formatCount(animatedTokenUsage)} 토큰 사용` : "";
   const conversationText = runnerConversationText(runner);
   const showConversation = shouldShowConversation(runner);
+  const statusLower = status.toLowerCase();
+  const mode = "loop";
+  const isWorking = actionKey.endsWith(`:${runner.id}`);
+  const canStart = mode === "loop";
+  const canStop = statusLower === "running" || Boolean(runner.pid);
+  const canEditConfig = statusLower !== "running";
+  const runnerDraft = draft || {
+    agent: runner.agent || "codex",
+    model: runner.model || "",
+    reasoning: runner.reasoning || "",
+    mode,
+    intervalSeconds: runner.intervalSeconds || "60",
+    enabled: runner.enabled || "true",
+    command: runner.command || ""
+  };
+  const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
+  const canControl = Boolean(onSelectRunner && onControl);
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
@@ -4446,7 +4626,11 @@ function AiProgressRow({
   }, [options, runner.activeTicketId]);
 
   return (
-    <article className={`ai-progress-row ai-progress-${currentKey}${hideProgressTrack ? " ai-progress-row-no-track" : ""}`}>
+    <article
+      className={`ai-progress-row ai-progress-${currentKey}${isWorkerProgressRow ? " ai-progress-row-worker" : ""}${
+        hideProgressTrack ? " ai-progress-row-no-track" : ""
+      }`}
+    >
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
           <div>
@@ -4454,7 +4638,6 @@ function AiProgressRow({
               <AgentAppIcon agent={runner.agent || ""} />
               <strong>{agentTitle}</strong>
             </div>
-            {modelMetaLabel ? <p>{modelMetaLabel}</p> : null}
             {tokenUsageLabel ? (
               <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
             ) : null}
@@ -4475,6 +4658,51 @@ function AiProgressRow({
                 </div>
               );
             })}
+          </div>
+        ) : null}
+        {canControl ? (
+          <div className="ai-progress-actions" aria-label={`${agentTitle} 제어`}>
+            {canStop ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="runner-icon-button runner-plain-icon-button"
+                title="AI 중지"
+                data-tooltip="AI 중지"
+                aria-label={`${runner.id} AI 중지`}
+                disabled={Boolean(actionKey)}
+                onClick={() => {
+                  onSelectRunner?.(runner.id);
+                  onControl?.("stop", runner.id);
+                }}
+              >
+                {isWorking && actionKey.startsWith("stop:") ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="icon"
+                className="runner-icon-button runner-plain-icon-button"
+                title={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
+                data-tooltip={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
+                aria-label={`${runner.id} AI 시작`}
+                disabled={!canStart || Boolean(actionKey)}
+                onClick={() => {
+                  onSelectRunner?.(runner.id);
+                  onControl?.("start", runner.id);
+                }}
+              >
+                {isWorking && actionKey.startsWith("start:") ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </Button>
+            )}
           </div>
         ) : null}
       </div>
@@ -4509,8 +4737,22 @@ function AiProgressRow({
           </button>
         ) : null}
       </div>
+      {canConfigure ? (
+        <RunnerConfigControls
+          runner={runner}
+          installedAgentProfiles={installedAgentProfiles || {}}
+          actionKey={actionKey}
+          draft={runnerDraft}
+          canEditConfig={canEditConfig}
+          onSelectRunner={onSelectRunner!}
+          onDraftChange={onDraftChange!}
+          onConfigure={onConfigure!}
+          showAgent={false}
+          className="ai-progress-config runner-config"
+        />
+      ) : null}
       {showConversation ? (
-        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} />
+        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
       ) : null}
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent

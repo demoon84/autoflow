@@ -111,6 +111,8 @@ Autoflow Hook Mode: ticket-owner
 This run was triggered by the file watcher for the board at \`${BOARD_ROOT}\` (project root: \`${PROJECT_ROOT}\`).
 Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn.
 
+Language policy: write user-visible chat/terminal prose in Korean by default. Keep machine-readable keys, paths, commands, code, ticket fields, and required board formats unchanged.
+
 Worker identity:
 - Role: ticket-owner
 - Worker Id: ${worker_id}
@@ -138,6 +140,8 @@ Autoflow Hook Mode: plan
 
 This run was triggered by the file watcher for the board at \`${BOARD_ROOT}\` (project root: \`${PROJECT_ROOT}\`).
 Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn.
+
+Language policy: write user-visible chat/terminal prose in Korean by default. Keep machine-readable keys, paths, commands, code, ticket fields, and required board formats unchanged.
 
 Worker identity:
 - Role: plan
@@ -168,6 +172,8 @@ Autoflow Hook Mode: todo
 This run was triggered by the file watcher for the board at \`${BOARD_ROOT}\` (project root: \`${PROJECT_ROOT}\`).
 Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn.
 
+Language policy: write user-visible chat/terminal prose in Korean by default. Keep machine-readable keys, paths, commands, code, ticket fields, and required board formats unchanged.
+
 Worker identity:
 - Role: todo
 - Worker Id: ${worker_id}
@@ -196,6 +202,8 @@ Autoflow Hook Mode: verifier
 
 This run was triggered by the file watcher for the board at \`${BOARD_ROOT}\` (project root: \`${PROJECT_ROOT}\`).
 Do NOT create, pause, delete, or rely on heartbeat automations in this run. This is a one-shot hook turn.
+
+Language policy: write user-visible chat/terminal prose in Korean by default. Keep machine-readable keys, paths, commands, code, ticket fields, and required board formats unchanged.
 
 Worker identity:
 - Role: verifier

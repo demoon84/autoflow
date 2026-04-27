@@ -493,8 +493,9 @@ run_query_synth() {
 
   {
     printf 'You answer Autoflow wiki queries using only the supplied search results.\n'
+    printf 'Keep the exact output keys and format. Write natural-language values in Korean.\n'
     printf 'Return plain text with this exact format:\n'
-    printf 'synth_answer=<one concise answer line>\n'
+    printf 'synth_answer=<one concise Korean answer line>\n'
     printf 'synth_citation.1=<board-relative path>\n'
     printf 'Add more synth_citation.N lines only for paths you actually used. Do not invent paths.\n\n'
     printf 'Query terms:\n'
@@ -526,7 +527,7 @@ run_query_synth() {
 
   printf 'synth_status=ok\n'
   printf 'synth_runner=%s\n' "$runner_id"
-  printf 'synth_answer=%s\n' "$(wiki_output_escape "${answer:-No grounded answer produced.}")"
+  printf 'synth_answer=%s\n' "$(wiki_output_escape "${answer:-근거 있는 답변을 생성하지 못했습니다.}")"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     printf '%s\n' "$line"
@@ -556,10 +557,11 @@ run_semantic_lint() {
   find "$wiki_root" -type f -name '*.md' ! -name 'README.md' | sort > "$pages_file"
   {
     printf 'You review Autoflow wiki pages for contradictions, stale claims, and missing links.\n'
+    printf 'Keep the exact output keys and format. Write natural-language summary values in Korean.\n'
     printf 'Return plain text lines only in this format:\n'
     printf 'semantic_finding.1.page=<board-relative path>\n'
     printf 'semantic_finding.1.kind=contradiction|stale_claim|missing_link\n'
-    printf 'semantic_finding.1.summary=<one concise sentence>\n'
+    printf 'semantic_finding.1.summary=<one concise Korean sentence>\n'
     printf 'If there are no semantic issues, return exactly: semantic_finding.none=true\n\n'
     while IFS= read -r page; do
       [ -n "$page" ] || continue
@@ -836,7 +838,7 @@ run_update() {
     printf -- '- Conversation handoffs: %s\n' "$handoff_count"
     printf -- '- Last updated: %s\n\n' "$timestamp"
     printf '## Latest Completed Work\n\n'
-    write_ticket_list "$board_root" "$done_tickets" 8
+    write_ticket_list "$board_root" "$done_tickets" 20
     printf '\n## Recent Handoffs\n\n'
     write_handoff_list "$board_root" "$handoff_files" 5
   } > "$overview_body"

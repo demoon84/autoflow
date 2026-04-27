@@ -69,6 +69,19 @@ runner_now_iso() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+runner_file_has_quota_limit() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'quota|rateLimit|rate limit|RESOURCE_EXHAUSTED|MODEL_CAPACITY_EXHAUSTED|Too Many Requests|No capacity available' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 runner_pid_is_running() {
   local pid="${1:-}"
 

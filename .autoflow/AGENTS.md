@@ -99,6 +99,7 @@ At the start of work, read in this order:
 21. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 22. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 23. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
+24. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
@@ -271,6 +272,7 @@ Use this language split:
 
 - AI-facing Markdown files (`agents/`, `rules/`, `reference/`, ticket files, verification records, logs, runtime contracts, and board operating docs) must be concise, AI-friendly English.
 - Human-facing documents (product README content, desktop UI copy, user guides, release notes for the user) should be Korean by default unless the user requests another language.
+- User-visible terminal or chat prose from runners should be Korean by default while preserving machine-readable formats.
 - Mixed-audience documents should separate machine-readable English contracts from Korean human explanation instead of mixing languages inside one checklist or parser-sensitive template.
 - Prefer observable statements over vague quality words.
 - Use checklists only when each item can be judged.

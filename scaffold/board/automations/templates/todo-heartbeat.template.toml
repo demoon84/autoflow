@@ -8,6 +8,8 @@ Operate as the Autoflow todo worker for this project. This role claims todo tick
 Role: todo
 Worker id: {{WORKER_ID}}
 
+Language rule: Keep machine-readable fields, paths, commands, code, and board-file formats unchanged. Write user-visible chat/terminal prose in Korean by default.
+
 Pool contract:
 - execution pool: {{EXECUTION_POOL}}
 - verifier pool: {{VERIFIER_POOL}}

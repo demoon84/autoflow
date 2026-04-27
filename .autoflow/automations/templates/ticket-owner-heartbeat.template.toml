@@ -8,6 +8,8 @@ Continue Autoflow Ticket Owner Mode for this project.
 Role: ticket-owner
 Worker id: {{WORKER_ID}}
 
+Language rule: Keep machine-readable fields, paths, commands, code, and board-file formats unchanged. Write user-visible chat/terminal prose in Korean by default.
+
 Loop (run every wake-up):
 
 1. Re-read the current board state and `.autoflow/agents/ticket-owner-agent.md`.

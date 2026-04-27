@@ -700,6 +700,8 @@ case "$outcome" in
     merge_script="$(cd "$(dirname "$0")" && pwd)/merge-ready-ticket.sh"
     inline_merge_output=""
     inline_merge_exit=0
+    inline_merge_status=""
+    inline_merge_reason=""
     if [ -x "$merge_script" ]; then
       if inline_merge_output="$(AUTOFLOW_ROLE=merge AUTOFLOW_INLINE_MERGE=1 "$merge_script" "$ticket_id" 2>&1)"; then
         inline_merge_exit=0
@@ -710,8 +712,17 @@ case "$outcome" in
       inline_merge_exit=127
       inline_merge_output="merge-ready-ticket.sh not found at ${merge_script}"
     fi
+    inline_merge_status="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
+    inline_merge_reason="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
 
-    printf 'status=ready_to_merge\n'
+    if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
+      printf 'status=done\n'
+    elif [ "$inline_merge_status" = "blocked" ]; then
+      printf 'status=blocked\n'
+      [ -z "$inline_merge_reason" ] || printf 'reason=%s\n' "$inline_merge_reason"
+    else
+      printf 'status=ready_to_merge\n'
+    fi
     printf 'outcome=pass\n'
     printf 'ticket=%s\n' "$ticket_file"
     printf 'ticket_id=%s\n' "$ticket_id"
@@ -721,9 +732,12 @@ case "$outcome" in
     if [ -n "$inline_merge_output" ]; then
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
     fi
-    if [ "$inline_merge_exit" -eq 0 ]; then
+    if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
       printf 'commit_status=committed_via_inline_merge\n'
       printf 'next_action=Inline merge completed. Impl AI may pick the next todo ticket on the next tick.\n'
+    elif [ "$inline_merge_status" = "blocked" ]; then
+      printf 'commit_status=inline_merge_blocked\n'
+      printf 'next_action=Inline merge is blocked (%s). Resolve the blocker before claiming the next ticket.\n' "${inline_merge_reason:-unknown}"
     else
       printf 'commit_status=inline_merge_failed_check_output\n'
       printf 'next_action=Inline merge from finish-ticket-owner failed. Inspect inline_merge output before claiming the next ticket.\n'

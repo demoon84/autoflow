@@ -15,6 +15,7 @@ Each entry should cite its source ticket or log.
 - `prd_016` - Pin AI progress board to a 2-left / 1-right tall layout when three runners are present. Source: `tickets/done/prd_016/prd_016.md`.
 - `prd_021` - Workflow page UI overhaul — collapse sidebar label, wrap progress bar, simplify card titles, hoist AI controls into the cards. Source: `tickets/done/prd_021/prd_021.md`.
 - `prd_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. Source: `tickets/done/prd_023/prd_023.md`.
+- `learning` - Recorded how to resolve `dirty_scope_conflict` when the ticket patch is already present in `PROJECT_ROOT` but unrelated dirty edits remain in the same file. Source: `learnings/merge-blocked-already-applied-patch.md`.
 - `prd_024` - Convert ticket workspace right preview into a click-to-open layer like the workflow PRD pin. Source: `tickets/done/prd_024/prd_024.md`.
 - `prd_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Source: `tickets/done/prd_025/prd_025.md`.
 - `prd_026` - Fix Gemini app icon in Desktop AI runner UI. Source: `tickets/done/prd_026/prd_026.md`.
@@ -23,7 +24,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-27T15:05:58Z
+- Last rebuilt: 2026-04-27T15:17:37Z
 
 ### Completed Tickets
 

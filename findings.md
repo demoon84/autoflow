@@ -1,5 +1,18 @@
 # Findings
 
+## Korean Terminal AI Response Findings
+
+- User requested terminal conversations to appear in Korean and for the AI to speak Korean.
+- Existing planning context shows many unrelated dirty files, including desktop renderer, runner scripts, board tickets, and wiki files. Treat them as pre-existing and avoid reverting them.
+- Required board docs say installed board Markdown should remain concise, AI-friendly English, while user-facing docs/UI can be Korean. Therefore the likely fix is a prompt-level user-visible language directive, not translating all board contracts.
+- Ticket Owner/automation docs route AI work through runner prompts and agent instruction files. Visible terminal conversation can be Korean while durable board files remain English.
+- `bin/autoflow run ...` dispatches to `packages/cli/run-role.sh`; its `write_agent_prompt()` feeds Codex, Claude, OpenCode, and Gemini adapters.
+- `runtime/board-scripts/run-role.sh` contains a similar prompt for packaged/generated runtime script copies, but it is currently older than `packages/cli/run-role.sh`.
+- `packages/cli/wiki-project.sh` has separate adapter prompts for `wiki query --synth` and `wiki lint --semantic`; these produce key=value output and should keep exact machine-readable keys while making any natural-language values Korean.
+- Legacy hook and heartbeat paths also generate prompts (`run-hook.sh` and `automations/templates/*heartbeat*.toml`). They need the same language rule for consistency when those compatibility routes are used.
+
+---
+
 ## Repository Shape
 - No existing `package.json`, `tsconfig.json`, or frontend build tool was present before the Electron work.
 - The current implementation is shell/PowerShell CLI plus generated board templates.

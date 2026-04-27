@@ -662,9 +662,71 @@ function parseRunnerListOutput(output) {
 
 const conversationDropPatterns = [
   /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
+  /^Warning: Basic terminal detected\b/i,
+  /^Warning: 256-color support not detected\b/i,
+  /^YOLO mode is enabled\b/i,
+  /^Error executing tool [\w-]+: Error: /i,
+  /^[a-z][a-z0-9_.-]*=/i,
+  /^[a-z][a-z0-9_.-]*\.output_(?:begin|end)$/i,
+  /^[a-z][a-z0-9_.-]*_output_(?:begin|end)$/i,
   /\bcodex_core::plugins::manifest: ignoring interface\.defaultPrompt\b/i,
-  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i
+  /\bcodex_core_plugins::manifest: ignoring interface\.defaultPrompt\b/i,
+  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i,
+  /\bcodex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group\b/i,
+  /^\/.*\/\.autoflow\/tickets\/.*\.md$/i
 ];
+
+const conversationAnsiEscapePattern = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+const conversationRepeatNormalizers = [
+  [/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, "<timestamp>"],
+  [/\b\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\b/g, "<timestamp>"],
+  [/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT\b/g, "<http-date>"],
+  [/\bAttempt \d+ failed\b/g, "Attempt <n> failed"],
+  [/\bprocess group \d+\b/g, "process group <pid>"],
+  [/\bpid=\d+\b/g, "pid=<pid>"],
+  [/\bdur=\d+\b/g, "dur=<duration>"],
+  [/\bx-[a-z0-9-]+-trace-id': '[^']+'/gi, "x-trace-id: '<id>'"]
+];
+
+function cleanConversationLine(line) {
+  return line.replace(conversationAnsiEscapePattern, "").trim();
+}
+
+function conversationRepeatKey(line) {
+  let key = cleanConversationLine(line);
+  if (!key) return "";
+  for (const [pattern, replacement] of conversationRepeatNormalizers) {
+    key = key.replace(pattern, replacement);
+  }
+  return key;
+}
+
+function collapseRepeatedConversationLines(lines) {
+  const collapsed = [];
+  const seenKeys = new Set();
+
+  for (const line of lines) {
+    const key = conversationRepeatKey(line);
+    if (!key) {
+      const previous = collapsed[collapsed.length - 1] || "";
+      if (previous.trim()) {
+        collapsed.push(line);
+      }
+      continue;
+    }
+
+    if (seenKeys.has(key)) {
+      continue;
+    }
+
+    seenKeys.add(key);
+    collapsed.push(line);
+  }
+
+  while (collapsed.length && !collapsed[collapsed.length - 1].trim()) collapsed.pop();
+
+  return collapsed;
+}
 
 function extractAgentConversation(text, maxChars = 4000) {
   if (!text) return "";
@@ -673,7 +735,7 @@ function extractAgentConversation(text, maxChars = 4000) {
   const kept = [];
   for (const rawLine of lines) {
     const line = rawLine.replace(/\s+$/, "");
-    const matchTarget = line.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "").trim();
+    const matchTarget = cleanConversationLine(line);
     if (conversationDropPatterns.some((pattern) => pattern.test(matchTarget))) continue;
     kept.push(line);
   }
@@ -681,7 +743,9 @@ function extractAgentConversation(text, maxChars = 4000) {
   while (kept.length && !kept[0].trim()) kept.shift();
   while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
 
-  let conversation = kept.join("\n");
+  const collapsed = collapseRepeatedConversationLines(kept);
+
+  let conversation = collapsed.join("\n");
   if (conversation.length > maxChars) {
     conversation = `…\n${conversation.slice(conversation.length - maxChars)}`;
   }
@@ -1203,6 +1267,27 @@ async function listMarkdownFiles(directory, recursive = false) {
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function listTicketFolders(ticketsRoot) {
+  if (!(await pathExists(ticketsRoot))) {
+    return [];
+  }
+
+  const entries = await fs.readdir(ticketsRoot, { withFileTypes: true });
+  const canonicalOrder = ["backlog", "todo", "inprogress", "done", "reject"];
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => {
+      const leftIndex = canonicalOrder.indexOf(left);
+      const rightIndex = canonicalOrder.indexOf(right);
+      if (leftIndex !== -1 || rightIndex !== -1) {
+        return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+          (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+      }
+      return left.localeCompare(right);
+    });
+}
+
 async function listTextFiles(directory, extensions, recursive = false) {
   if (!(await pathExists(directory))) {
     return [];
@@ -1425,15 +1510,10 @@ async function readBoard({ projectRoot, boardDirName }) {
       ])
     : [null, null, null, null, null, null];
 
-  const ticketGroups = {
-    backlog: await listMarkdownFiles(path.join(ticketsRoot, "backlog")),
-    plan: await listMarkdownFiles(path.join(ticketsRoot, "plan")),
-    todo: await listMarkdownFiles(path.join(ticketsRoot, "todo")),
-    inprogress: await listMarkdownFiles(path.join(ticketsRoot, "inprogress")),
-    verifier: await listMarkdownFiles(path.join(ticketsRoot, "verifier")),
-    done: await listMarkdownFiles(path.join(ticketsRoot, "done"), true),
-    reject: await listMarkdownFiles(path.join(ticketsRoot, "reject"))
-  };
+  const ticketGroups = {};
+  for (const folder of await listTicketFolders(ticketsRoot)) {
+    ticketGroups[folder] = await listMarkdownFiles(path.join(ticketsRoot, folder), folder === "done");
+  }
 
   const logs = await listMarkdownFiles(path.join(boardRoot, "logs"), true);
   const runnerLogs = await listTextFiles(path.join(boardRoot, "runners", "logs"), [".log"], true);

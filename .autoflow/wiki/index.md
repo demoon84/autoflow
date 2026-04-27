@@ -30,6 +30,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[runner-role-slugs]]
 - `learnings/`
   - [[ticket-overlap-no-op]]
+  - [[merge-blocked-already-applied-patch]]
 
 ## Source Of Truth
 
@@ -42,7 +43,7 @@ Tickets, verification records, and logs remain authoritative.
 - Reject records: 1
 - Verifier logs: 207
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T15:05:58Z
+- Last updated: 2026-04-27T15:17:37Z
 
 ## Completed Tickets
 

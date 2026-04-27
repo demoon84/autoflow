@@ -256,6 +256,13 @@ Context:
 - Model: ${model:-}
 - Reasoning: ${reasoning:-}
 
+Language policy:
+- Write all user-visible terminal/chat prose, progress summaries, explanations,
+  and natural-language adapter output in Korean by default.
+- Keep machine-readable keys, required output formats, paths, commands, code,
+  quoted source text, ticket fields, and board/runtime contracts exactly as
+  their template or parser requires.
+
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
@@ -288,11 +295,25 @@ run_custom_adapter_command() {
   command_summary="$command_value"
   (
     cd "$adapter_working_root"
-    AUTOFLOW_PROMPT_FILE="$prompt_file" \
+    AUTOFLOW_ROLE="$runtime_role" \
+      AUTOFLOW_WORKER_ID="$runner_id" \
+      AUTOFLOW_BACKGROUND=1 \
+      AUTOFLOW_BOARD_ROOT="$board_root" \
       AUTOFLOW_PROJECT_ROOT="$project_root" \
       AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
+    AUTOFLOW_PROMPT_FILE="$prompt_file" \
       bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
   )
+}
+
+run_adapter_with_identity() {
+  AUTOFLOW_ROLE="$runtime_role" \
+    AUTOFLOW_WORKER_ID="$runner_id" \
+    AUTOFLOW_BACKGROUND=1 \
+    AUTOFLOW_BOARD_ROOT="$board_root" \
+    AUTOFLOW_PROJECT_ROOT="$project_root" \
+    AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
+    "$@"
 }
 
 normalize_claude_model_alias() {
@@ -420,11 +441,11 @@ run_default_adapter_command() {
           printf ' < "$1"\n'
         } > "$codex_wrapper"
         chmod +x "$codex_wrapper"
-        script -q /dev/null "$codex_wrapper" "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        run_adapter_with_identity script -q /dev/null "$codex_wrapper" "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
         rm -f "$codex_wrapper"
       else
-        "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        run_adapter_with_identity "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
       fi
       return "$command_exit"
@@ -441,7 +462,7 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     opencode)
       ensure_agent_on_path opencode || return 127
@@ -455,17 +476,17 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     gemini)
       ensure_agent_on_path gemini || return 127
       prompt_text="$(cat "$prompt_file")"
-      cmd=(gemini --approval-mode auto_edit --prompt "$prompt_text")
+      cmd=(gemini --approval-mode yolo --prompt "$prompt_text")
       if [ -n "$model" ]; then
         cmd+=(--model "$model")
       fi
       command_summary="$(command_summary_from_array "${cmd[@]:0:3}") prompt"
-      (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     *)
       return 127
@@ -783,7 +804,7 @@ case "$agent" in
             command_summary="$(command_summary_from_array "${dry_cmd[@]}") prompt"
             ;;
           gemini)
-            dry_cmd=(gemini --approval-mode auto_edit --prompt)
+            dry_cmd=(gemini --approval-mode yolo --prompt)
             [ -z "$model" ] || dry_cmd+=(--model "$model")
             command_summary="$(command_summary_from_array "${dry_cmd[@]}") prompt"
             ;;

@@ -8,6 +8,8 @@ Operate as the Autoflow verifier worker for this project.
 Role: verifier
 Worker id: {{WORKER_ID}}
 
+Language rule: Keep machine-readable fields, paths, commands, code, and board-file formats unchanged. Write user-visible chat/terminal prose in Korean by default.
+
 Loop (run every wake-up):
 
 1. Prefer the PowerShell wrapper on Windows: set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=verifier`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `powershell -ExecutionPolicy Bypass -File {{BOARD_DIR}}/scripts/start-verifier.ps1`. In Bash-only environments, run the equivalent `{{BOARD_DIR}}/scripts/start-verifier.sh`.

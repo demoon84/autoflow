@@ -1,5 +1,5 @@
-# Architecture Notes
+# Architecture Decisions
 
-Use this folder for architecture pages derived from completed work.
+This directory catalogs architectural decisions and patterns used in the Autoflow project.
 
-Each page should cite ticket or log sources.
+- [[runner-role-slugs]]

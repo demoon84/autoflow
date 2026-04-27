@@ -219,6 +219,42 @@ Replace the desktop app's left sidebar layout with a tabbed layout that separate
 
 ---
 
+# Task Plan: Korean Terminal AI Responses
+
+## Goal
+Make Autoflow terminal/adapter AI conversations use Korean by default where the project controls agent prompts and runner-facing instructions.
+
+## Scope
+- Inspect Autoflow board/rule docs in the required project read order.
+- Locate runner prompt generation and terminal-facing agent instruction files.
+- Add a scoped language directive that makes AI terminal output Korean without changing storage IDs or English runtime contracts that need to remain machine-friendly.
+- Verify with targeted static checks and any prompt dry-run available.
+- Avoid reverting or normalizing unrelated dirty work.
+
+## Phases
+- [x] Read required Autoflow board docs and relevant agent/runtime docs.
+- [x] Trace how terminal AI prompts are generated for Codex/Claude/etc.
+- [x] Implement the smallest language-policy change.
+- [x] Verify generated prompt/content and syntax/whitespace checks.
+
+## Decisions
+- Keep board/runtime contracts machine-readable; user-facing terminal conversation should be Korean.
+- Do not touch unrelated dirty desktop, wiki, ticket, or runner changes.
+
+## Verification
+- [x] Targeted prompt inspection or dry-run.
+- [x] Relevant shell syntax checks if scripts are changed.
+- [x] `git diff --check` for changed files.
+- [ ] `autoflow render-heartbeats` on live board (blocked: placeholder/non-real target thread id).
+
+## Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| `render-heartbeats` rejected the live `.autoflow/automations/heartbeat-set.toml` target thread id | Tried `./bin/autoflow render-heartbeats . .autoflow` | Verified heartbeat language directives by direct template search instead. |
+
+## Risks
+- Some agent docs are intentionally English for machine contracts, so the fix should be explicit about visible terminal responses rather than translating all docs.
+
 # Task Plan: Coordinator Wiki Bot Role
 
 ## Goal

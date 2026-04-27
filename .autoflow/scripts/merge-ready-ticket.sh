@@ -188,6 +188,20 @@ project_root_path_matches_worktree() {
   cmp -s "$root_path" "$worktree_path"
 }
 
+ticket_commit_patch_present_in_project_root() {
+  local git_root="$1"
+  local worktree_commit="$2"
+  local repo_rel_path="$3"
+
+  [ -n "$git_root" ] || return 1
+  [ -n "$worktree_commit" ] || return 1
+  [ -n "$repo_rel_path" ] || return 1
+  git -C "$git_root" cat-file -e "${worktree_commit}^" >/dev/null 2>&1 || return 1
+
+  git -C "$git_root" diff --binary "${worktree_commit}^" "$worktree_commit" -- "$repo_rel_path" |
+    git -C "$git_root" apply --check --reverse - >/dev/null 2>&1
+}
+
 ticket_path_has_dirty_project_root_conflict() {
   local ticket_file="$1"
   local repo_rel_path="$2"
@@ -245,8 +259,10 @@ merge_ticket_worktree() {
   local ticket_file="$1"
   local ticket_id worktree_path worktree_commit integration_status git_root op_reason
   local -a allowed_paths=()
+  local -a commit_paths=()
   local -a conflict_paths=()
   local -a invalid_paths=()
+  local -a already_applied_paths=()
   local allowed_path repo_rel_path cherry_pick_output
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
@@ -342,10 +358,15 @@ merge_ticket_worktree() {
 
   while IFS= read -r repo_rel_path; do
     [ -n "$repo_rel_path" ] || continue
+    commit_paths+=("$repo_rel_path")
+  done < <(git -C "$git_root" diff-tree --no-commit-id --name-only -r "$worktree_commit")
+
+  for repo_rel_path in "${commit_paths[@]}"; do
+    [ -n "$repo_rel_path" ] || continue
     if ! ticket_diff_path_allowed "$ticket_file" "$repo_rel_path"; then
       invalid_paths+=("$repo_rel_path")
     fi
-  done < <(git -C "$git_root" diff-tree --no-commit-id --name-only -r "$worktree_commit")
+  done
   if [ "${#invalid_paths[@]}" -gt 0 ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_invalid_worktree_commit_scope"
     append_note "$ticket_file" "Merge blocked at ${timestamp}: Worktree Commit touched paths outside Allowed Paths (${invalid_paths[*]})."
@@ -356,15 +377,19 @@ merge_ticket_worktree() {
   fi
 
   conflict_paths=()
-  while IFS= read -r repo_rel_path; do
+  for repo_rel_path in "${commit_paths[@]}"; do
     [ -n "$repo_rel_path" ] || continue
     if [ -n "$worktree_path" ] && [ -d "$worktree_path" ]; then
       ticket_path_has_dirty_project_root_conflict "$ticket_file" "$repo_rel_path" "$git_root" || continue
+      if ticket_commit_patch_present_in_project_root "$git_root" "$worktree_commit" "$repo_rel_path"; then
+        already_applied_paths+=("$repo_rel_path")
+        continue
+      fi
     elif ! git -C "$git_root" status --porcelain --untracked-files=all -- "$repo_rel_path" | grep -q .; then
       continue
     fi
     conflict_paths+=("$repo_rel_path")
-  done < <(git -C "$git_root" diff-tree --no-commit-id --name-only -r "$worktree_commit")
+  done
   if [ "${#conflict_paths[@]}" -gt 0 ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_dirty_scope_conflict"
     append_note "$ticket_file" "Merge blocked at ${timestamp}: PROJECT_ROOT has conflicting dirty changes in commit paths (${conflict_paths[*]})."
@@ -372,6 +397,16 @@ merge_ticket_worktree() {
     printf 'reason=dirty_scope_conflict\n'
     printf 'conflicting_path=%s\n' "${conflict_paths[@]}"
     return 1
+  fi
+
+  if [ "${#commit_paths[@]}" -gt 0 ] && [ "${#already_applied_paths[@]}" -eq "${#commit_paths[@]}" ]; then
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "already_in_project_root"
+    append_note "$ticket_file" "Coordinator ${display_id} found worktree commit ${worktree_commit} already present in PROJECT_ROOT dirty paths at ${timestamp}; skipped cherry-pick."
+    printf 'status=already_in_project_root\n'
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'worktree_commit=%s\n' "$worktree_commit"
+    printf 'already_applied_path=%s\n' "${already_applied_paths[@]}"
+    return 0
   fi
 
   set +e

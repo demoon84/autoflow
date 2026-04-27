@@ -85,6 +85,8 @@
 - No staged code changes found in worktree during merge preparation at 2026-04-27T13:01:39Z.
 - Impl AI 019dcf03-6060-70f2-993b-dc0ec8533af3 marked verification pass at 2026-04-27T13:01:39Z and triggered inline merge.
 - Coordinator 019dcf03-6060-70f2-993b-dc0ec8533af3 finalized this verified ticket at 2026-04-27T13:01:39Z.
+- Coordinator post-merge cleanup at 2026-04-27T13:01:39Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_019 deleted_branch=autoflow/tickets_019.
+- Post-finish repair note (2026-04-27T13:03:13Z): finish/merge skipped the product file because the Allowed Paths line included a descriptive parenthetical that was treated as part of the literal filename. The verified `main.tsx` patch was reapplied directly to PROJECT_ROOT after the ticket worktree was removed. Root checks then passed: `cd apps/desktop && npx tsc --noEmit` exited 0 and `cd apps/desktop && npm run check` exited 0 with only the existing Vite chunk-size warning. The product change remains in the PROJECT_ROOT working tree because the runtime completion commit had already been created without it.
 ## Verification
 - Run file: `tickets/done/prd_019/verify_019.md`
 - Log file: `logs/verifier_019_20260427_130140Z_pass.md`
@@ -93,4 +95,4 @@
 ## Result
 
 - Summary: Reduced ticket workspace to PRD and issued-ticket tabs with issued as default and all ticket stages listed.
-- Remaining risk: Browser visual inspection was not run in this adapter turn; source scope is limited to the existing ticket workspace tab logic and automated desktop checks pass.
+- Remaining risk: Browser visual inspection was not run in this adapter turn; source scope is limited to the existing ticket workspace tab logic and automated desktop checks pass. The runtime commit `5607a9e1bef39af25ac87d51984903657bd487cb` contains board/wiki completion only; the product code repair is currently an uncommitted PROJECT_ROOT change alongside pre-existing unrelated root changes.
