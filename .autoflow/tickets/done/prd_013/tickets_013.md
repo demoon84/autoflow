@@ -1,0 +1,116 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_013
+- PRD Key: prd_013
+- Plan Candidate: Plan AI handoff from tickets/done/prd_013/prd_013.md
+- Title: Hoist code-volume + token-usage stat strip above TicketBoard on 작업 흐름 page
+- Stage: done
+- AI: AI-1
+- Claimed By: AI-1
+- Execution AI: AI-1
+- Verifier AI: AI-1
+- Last Updated: 2026-04-27T12:22:34Z
+
+## Goal
+
+- 이번 작업의 목표: 데스크톱 사이드 메뉴의 `작업 흐름` 페이지에서 TicketBoard 위로, `통계` 페이지에 이미 노출되는 두 지표 — Autoflow 누적 변경 코드량(`autoflow_code_files_changed_count`, `autoflow_code_insertions_count`, `autoflow_code_deletions_count`)과 누적 토큰 사용량(`autoflow_token_usage_count`, `autoflow_token_report_count`) — 을 한 줄짜리 stat strip 으로 항상 노출한다. `board.metrics` 와 기존 `formatCount` / `formatCompactCount` 포맷터를 재사용해 `통계` 페이지와 숫자가 항상 일치하게 한다.
+
+## References
+
+- PRD: tickets/done/prd_013/prd_013.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_013]]
+- Plan Note:
+- Ticket Note: [[tickets_013]]
+
+## Allowed Paths
+
+- apps/desktop/src/renderer/main.tsx
+- apps/desktop/src/renderer/styles.css
+
+## Worktree
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013`
+- Branch: autoflow/tickets_013
+- Base Commit: cce1ea5dacf0d14adfb4aec5039037d9553d54f0
+- Worktree Commit: d757f2d3109e7b2040f6fecf52a637659389db50
+- Integration Status: integrated
+
+## Done When
+
+- [ ] 데스크톱 앱에서 사이드 메뉴 `작업 흐름` 을 선택하면, TicketBoard 위로 한 줄짜리 stat strip 이 보인다.
+- [ ] strip 좌측 칸이 `+ 추가 라인 / − 삭제 라인 · 변경 파일 N` 형태로 코드 변경량을 보여준다.
+- [ ] strip 우측 칸이 `토큰 사용량 (compact)` 과 `실행 로그 N개` 보조 텍스트를 보여준다.
+- [ ] 같은 보드의 `통계` 페이지 ReportingDashboard 의 `변경 코드량` / `토큰 사용량` 카드 숫자와 strip 의 숫자가 정확히 일치한다.
+- [ ] `board.metrics` 가 비어 있을 때 (메트릭 미수집) strip 은 `0` 또는 `—` 로 안전하게 fallback 하고 깨지지 않는다.
+- [ ] `cd apps/desktop && npx tsc --noEmit` 가 0 errors 로 통과한다.
+- [ ] `cd apps/desktop && npm run check` 가 통과한다.
+- [ ] dev 서버에서 `Cmd+R` 새로고침 후 시각 회귀 없음 (다른 페이지/카드 깨지지 않음).
+
+## Next Action
+- Complete: coordinator integrated the verified ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: 구현은 ticket worktree 에 완료됨. 작업 흐름 페이지 active branch 와 EssentialApp branch 모두 `WorkflowStatStrip` 를 TicketBoard 위에 렌더링한다.
+- 직전 작업: `npx tsc --noEmit`, `npm run check`, mocked dev UI visual check, ReportingDashboard number comparison, and Cmd+R refresh check all passed in the ticket worktree.
+- 재개 시 먼저 볼 것: `apps/desktop/src/renderer/main.tsx`, `apps/desktop/src/renderer/styles.css`, 그리고 `tickets/inprogress/verify_013.md`.
+
+## Notes
+
+- Created by demoon@gomgom:78299 (Plan AI) from tickets/done/prd_013/prd_013.md at 2026-04-27T12:10:22Z.
+
+- Runtime hydrated worktree dependency at 2026-04-27T12:10:59Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-27T12:10:59Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-1 prepared todo at 2026-04-27T12:10:59Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013; run=tickets/inprogress/verify_013.md
+- AI AI-1 prepared resume at 2026-04-27T12:11:25Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013; run=tickets/inprogress/verify_013.md
+- 2026-04-27T12:16:00Z mini-plan by AI-1:
+  - Narrow Allowed Paths to the PRD-scoped renderer files: `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.
+  - Reuse the same `board.metrics`, `formatCount`, and `formatCompactCount` path as `ReportingDashboard` so the workflow strip cannot drift from the statistics page.
+  - Insert a compact, non-interactive stat strip above the workflow TicketBoard and keep CSS scoped to the progress view.
+  - Verify with `cd apps/desktop && npx tsc --noEmit` and `cd apps/desktop && npm run check`; perform browser/dev-server visual verification if the local app can run in this owner turn.
+- 2026-04-27T12:16:00Z wiki context by AI-1:
+  - `./bin/autoflow wiki query ... --term TicketBoard --term ReportingDashboard --term board.metrics --term apps/desktop` returned related desktop UI work in `tickets/done/prd_011/tickets_011.md` and the governing spec `tickets/done/prd_013/prd_013.md`.
+  - `tickets/done/prd_003/reject_003.md` showed repeated failures around unisolated desktop renderer/style diffs, so this turn keeps implementation in the ticket worktree and only touches the two narrowed allowed paths.
+- 2026-04-27T12:20:00Z implementation evidence by AI-1:
+  - Added shared `getWorkflowMetricCounts(board)` and `WorkflowStatStrip` in `apps/desktop/src/renderer/main.tsx`.
+  - Reused the same metric keys and formatters as `ReportingDashboard`: `autoflow_code_files_changed_count`, `autoflow_code_insertions_count`, `autoflow_code_deletions_count`, `autoflow_code_volume_count`, `autoflow_token_usage_count`, and `autoflow_token_report_count`.
+  - Added scoped `.workflow-stat-strip` / `.workflow-stat-cell` CSS in `apps/desktop/src/renderer/styles.css`, including a flex override so the strip remains a 52px one-line strip above TicketBoard.
+  - Verification evidence before runtime verify: `cd apps/desktop && npx tsc --noEmit` exit 0; `cd apps/desktop && npm run check` exit 0.
+  - Dev visual evidence with mocked Electron preload data at `http://127.0.0.1:5174/`: workflow strip text was `15,758줄`, `+13,897 / -1,861 라인 · 변경 파일 75`, `33.4M`, `실행 로그 42개`; ReportingDashboard showed the same metric numbers; `Cmd+R` refresh preserved the strip.
+- 2026-04-27T12:10:22Z Plan AI scope refinement (planner-1):
+  - Title/Goal enriched from PRD. Allowed Paths confirmed to 2 files: `main.tsx` (stat strip insertion in `progress` settingsSection, reuse `board.metrics` / `formatCount` / `formatCompactCount`) and `styles.css` (`.workflow-stat-strip` class).
+  - PRD Out of Scope: no changes to 통계 page layout, no new metric collection, no token cost conversion, no strip on other side pages.
+  - shadcn-first rule (AGENTS.md rule 17): strip uses Badge/Card or plain div+Tailwind — no modal/popover/tooltip.
+  - Metrics empty-state: strip must show `0` or `—` gracefully when `board.metrics` has zero values; PRD notes grey-tone for zero-token display.
+  - Verification: `cd apps/desktop && npm run check` (primary) + visual dev-server check.
+- Ticket owner verification failed by AI-1 at 2026-04-27T12:18:13Z: command exited 127
+- Ticket owner verification passed by AI-1 at 2026-04-27T12:18:49Z: command exited 0
+- AI AI-1 prepared resume at 2026-04-27T12:19:42Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013; run=tickets/inprogress/verify_013.md
+- AI AI-1 prepared resume at 2026-04-27T12:20:27Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013; run=tickets/inprogress/verify_013.md
+- Ticket owner verification failed by AI-1 at 2026-04-27T12:21:35Z: command exited 127
+- Ticket owner verification passed by AI-1 at 2026-04-27T12:22:08Z: command exited 0
+- 2026-04-27T12:22:10Z resume verification by AI-1:
+  - Fresh wiki query for `TicketBoard`, `ReportingDashboard`, `board.metrics`, `workflow stat strip`, and `apps/desktop/src/renderer/main.tsx` again surfaced the governing PRD at `tickets/done/prd_013/prd_013.md`, related desktop UI work at `tickets/done/prd_011/tickets_011.md`, and the prior isolated-diff caution from `tickets/done/prd_003/reject_003.md`.
+  - `cd apps/desktop && npx tsc --noEmit` passed with exit 0 from the ticket worktree.
+  - `cd apps/desktop && npm run check` passed with exit 0 from the ticket worktree.
+  - Runtime verify initially failed because the inherited board command included Markdown backticks and `bash -lc` interpreted them as command substitution; rerunning `verify-ticket-owner.sh 013 'cd apps/desktop && npm run check'` passed and refreshed `tickets/inprogress/verify_013.md`.
+- Prepared worktree commit d757f2d3109e7b2040f6fecf52a637659389db50 at 2026-04-27T12:22:33Z; coordinator should integrate it into PROJECT_ROOT and create the local completion commit.
+- Impl AI AI-1 marked verification pass at 2026-04-27T12:22:33Z and triggered inline merge.
+- Coordinator AI-1 integrated worktree commit d757f2d3109e7b2040f6fecf52a637659389db50 into PROJECT_ROOT without committing at 2026-04-27T12:22:34Z.
+- Coordinator AI-1 finalized this verified ticket at 2026-04-27T12:22:34Z.
+- Coordinator post-merge cleanup at 2026-04-27T12:22:34Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_013 deleted_branch=autoflow/tickets_013.
+## Verification
+- Run file: `tickets/done/prd_013/verify_013.md`
+- Log file: `logs/verifier_013_20260427_122234Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Workflow stat strip reuses ReportingDashboard metric counts above the workflow board; tsc and desktop check pass.
+- Remaining risk:

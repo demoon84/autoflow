@@ -361,6 +361,19 @@ function formatSignedCount(value: number) {
   return `${value >= 0 ? "+" : ""}${formatCount(value)}`;
 }
 
+function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
+  const metrics = board?.metrics || {};
+
+  return {
+    codeFilesChangedCount: statusNumber(metrics, "autoflow_code_files_changed_count"),
+    codeInsertionsCount: statusNumber(metrics, "autoflow_code_insertions_count"),
+    codeDeletionsCount: statusNumber(metrics, "autoflow_code_deletions_count"),
+    codeVolumeCount: statusNumber(metrics, "autoflow_code_volume_count"),
+    tokenUsageCount: statusNumber(metrics, "autoflow_token_usage_count"),
+    tokenReportCount: statusNumber(metrics, "autoflow_token_report_count")
+  };
+}
+
 function formatPercentValue(value: number) {
   return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
 }
@@ -1571,6 +1584,7 @@ function App() {
               {activeSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
                   <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
+                    <WorkflowStatStrip board={board} />
                     <TicketBoard
                       board={board}
                       installedAgentProfiles={installedAgentProfiles}
@@ -2133,6 +2147,7 @@ function EssentialApp() {
                       <h3>작업 흐름</h3>
                     </div>
                   </div>
+                  <WorkflowStatStrip board={board} />
                   <TicketBoard
                     board={board}
                     selectedPath={selectedLogPath}
@@ -2910,6 +2925,36 @@ function CompletionTrend({ snapshots }: { snapshots: AutoflowMetricSnapshot[] })
   );
 }
 
+function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
+  const {
+    codeFilesChangedCount,
+    codeInsertionsCount,
+    codeDeletionsCount,
+    codeVolumeCount,
+    tokenUsageCount,
+    tokenReportCount
+  } = getWorkflowMetricCounts(board);
+  const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
+
+  return (
+    <div className="workflow-stat-strip" aria-label="작업 흐름 지표 요약">
+      <div className="workflow-stat-cell">
+        <Badge variant="secondary">변경 코드량</Badge>
+        <strong>{formatCount(codeVolumeCount)}줄</strong>
+        <span>
+          {formatSignedCount(codeInsertionsCount)} / -{formatCount(codeDeletionsCount)} 라인 · 변경 파일{" "}
+          {formatCount(codeFilesChangedCount)}
+        </span>
+      </div>
+      <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
+        <Badge variant="secondary">토큰 사용량</Badge>
+        <strong>{formatCompactCount(tokenUsageCount)}</strong>
+        <span>실행 로그 {formatCount(tokenReportCount)}개</span>
+      </div>
+    </div>
+  );
+}
+
 function ReportingDashboard({
   board,
   lastUpdated,
@@ -2938,12 +2983,14 @@ function ReportingDashboard({
   const artifactWarning = statusNumber(metrics, "runner_artifact_warning_count");
   const artifactTotal = artifactOk + artifactWarning;
   const commitCount = statusNumber(metrics, "autoflow_commit_count");
-  const codeFilesChangedCount = statusNumber(metrics, "autoflow_code_files_changed_count");
-  const codeInsertionsCount = statusNumber(metrics, "autoflow_code_insertions_count");
-  const codeDeletionsCount = statusNumber(metrics, "autoflow_code_deletions_count");
-  const codeVolumeCount = statusNumber(metrics, "autoflow_code_volume_count");
-  const tokenUsageCount = statusNumber(metrics, "autoflow_token_usage_count");
-  const tokenReportCount = statusNumber(metrics, "autoflow_token_report_count");
+  const {
+    codeFilesChangedCount,
+    codeInsertionsCount,
+    codeDeletionsCount,
+    codeVolumeCount,
+    tokenUsageCount,
+    tokenReportCount
+  } = getWorkflowMetricCounts(board);
   const runnerRunning = statusNumber(metrics, "runner_running_count");
   const runnerIdle = statusNumber(metrics, "runner_idle_count");
   const runnerStopped = statusNumber(metrics, "runner_stopped_count");

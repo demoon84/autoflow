@@ -951,7 +951,7 @@ pre {
 
 .settings-content-progress .board-section {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -964,6 +964,54 @@ pre {
 .settings-content-progress .ai-progress-board {
   min-height: 0;
   padding-right: 2px;
+}
+
+.workflow-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+
+.workflow-stat-cell {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--card) 92%, var(--accent));
+  padding: 9px 11px;
+  gap: 9px;
+}
+
+.workflow-stat-cell .af-badge {
+  min-width: max-content;
+}
+
+.workflow-stat-cell strong,
+.workflow-stat-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-stat-cell strong {
+  color: var(--foreground);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.workflow-stat-cell span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.workflow-stat-cell-muted {
+  background: color-mix(in srgb, var(--muted) 46%, var(--card));
 }
 
 .runner-dashboard-area {
@@ -1154,6 +1202,10 @@ pre {
   flex: 0 0 auto;
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+.board-section.board-section-flush > .workflow-stat-strip {
+  flex: 0 0 auto;
 }
 
 .section-heading {
@@ -4597,6 +4649,18 @@ pre {
 
   .metrics-strip {
     grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+
+  .workflow-stat-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workflow-stat-cell {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workflow-stat-cell span {
+    grid-column: 1 / -1;
   }
 
   .report-metric-grid,
