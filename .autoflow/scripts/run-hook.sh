@@ -128,7 +128,7 @@ Do exactly one current hook turn:
 3. Keep the same owner responsible for mini-plan, implementation, verification command execution, evidence recording, and ready-to-merge/reject movement. Do not split the work across planner/todo/verifier roles.
 4. Implement only within the ticket's Allowed Paths and record durable progress in Notes, Result, and Resume Context.
 5. When ready, run \`${BOARD_PROMPT_ROOT}/scripts/verify-ticket-owner.sh <ticket-id>\` to write command/output/evidence, then \`${BOARD_PROMPT_ROOT}/scripts/finish-ticket-owner.sh <ticket-id> pass "<summary>"\` or \`fail "<concrete reason>"\`.
-6. Treat local verification commands, board file moves, and worktree snapshot preparation as pre-authorized inside the current project/board. Only coordinator integrates into PROJECT_ROOT and creates the local pass commit. Never git push.
+6. Treat board file moves, evidence recording, and worktree snapshot preparation as pre-authorized inside the current project/board. The AI owner must run and judge verification, manually merge into PROJECT_ROOT, and resolve conflicts; scripts only finalize/record after the AI-merged result exists. Never git push.
 7. If there is no actionable work, leave the runner idle with a concise reason.
 8. Exit after the current hook turn is complete.
 EOF

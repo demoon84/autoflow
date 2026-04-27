@@ -51,6 +51,9 @@ run_temp_runtime() {
 git -C "$project_dir" init -q
 git -C "$project_dir" config user.email autoflow-smoke@example.test
 git -C "$project_dir" config user.name "Autoflow Smoke"
+: >"${project_dir}/baseline.txt"
+git -C "$project_dir" add baseline.txt
+git -C "$project_dir" commit -m "baseline" >/dev/null
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
 
@@ -71,6 +74,7 @@ require_line "${project_dir}/.codex/skills/af/SKILL.md" "1. Treat \`\$af\`, \`#a
 require_line "${project_dir}/.codex/skills/autoflow/agents/openai.yaml" "  display_name: \"Autoflow\""
 
 spec_output="${project_dir}/spec.out"
+plan_output="${project_dir}/plan.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
 finish_output="${project_dir}/finish.out"
@@ -112,6 +116,10 @@ Create a tiny owner-mode smoke artifact.
 
 - `owner-done.txt`
 
+## Allowed Paths
+
+- owner-done.txt
+
 ## Global Acceptance Criteria
 
 - `owner-done.txt` exists.
@@ -129,7 +137,7 @@ require_line "$spec_output" "status=created"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
-require_line "$runner_list_output" "runner_count=4"
+require_line "$runner_list_output" "runner_count=5"
 require_line "$runner_list_output" "runner.1.id=owner-1"
 require_line "$runner_list_output" "runner.4.id=coordinator-1"
 require_line "$runner_list_output" "runner.4.mode=loop"
@@ -152,8 +160,8 @@ require_line "$runner_loop_start_output" "result=started"
 require_line "$runner_loop_start_output" "runner_id=coordinator-shell-loop"
 sleep 2
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_loop_list_output"
-require_line "$runner_loop_list_output" "runner.6.id=coordinator-shell-loop"
-require_line "$runner_loop_list_output" "runner.6.state_status=running"
+require_line "$runner_loop_list_output" "runner.7.id=coordinator-shell-loop"
+require_line "$runner_loop_list_output" "runner.7.state_status=running"
 "${REPO_ROOT}/bin/autoflow" runners stop coordinator-shell-loop "$project_dir" >"$runner_loop_stop_output"
 require_line "$runner_loop_stop_output" "status=ok"
 require_line "$runner_loop_stop_output" "runner_status=stopped"
@@ -174,12 +182,22 @@ if grep -Fq "doctor_output_begin" "$coordinator_idle_output"; then
   exit 1
 fi
 
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_output"
+require_line "$plan_output" "status=ok"
+require_line "$plan_output" "source=backlog-to-todo"
+
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
-require_line "$start_output" "stage=planning"
+require_line "$start_output" "stage=executing"
 
-: >"${project_dir}/owner-done.txt"
+implementation_root="$(awk -F= '$1 == "implementation_root" { print $2; exit }' "$start_output")"
+if [ -z "$implementation_root" ]; then
+  echo "Expected start-ticket-owner to return implementation_root" >&2
+  cat "$start_output" >&2
+  exit 1
+fi
+: >"${implementation_root}/owner-done.txt"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/verify-ticket-owner.sh 001 >"$verify_output"
 require_line "$verify_output" "status=pass"
@@ -187,9 +205,16 @@ require_line "$verify_output" "ticket_id=001"
 require_line "$verify_output" "exit_code=0"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified" >"$finish_output"
-require_line "$finish_output" "status=ready_to_merge"
+require_line "$finish_output" "status=needs_ai_merge"
 require_line "$finish_output" "outcome=pass"
-require_line "$finish_output" "commit_status=not_committed_waiting_for_merge_bot"
+require_line "$finish_output" "commit_status=ai_merge_required"
+
+cp "${implementation_root}/owner-done.txt" "${project_dir}/owner-done.txt"
+test -f "${project_dir}/owner-done.txt"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified" >"$finish_output"
+require_line "$finish_output" "status=done"
+require_line "$finish_output" "outcome=pass"
+require_line "$finish_output" "commit_status=committed_via_inline_merge"
 
 "${REPO_ROOT}/bin/autoflow" runners add coordinator-shell-1 coordinator "$project_dir" agent=shell >/dev/null
 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" --runner coordinator-shell-1 --dry-run >"$wiki_runner_dry_run_output"
@@ -199,16 +224,11 @@ require_line "$wiki_runner_dry_run_output" "runner_id=coordinator-shell-1"
 "${REPO_ROOT}/bin/autoflow" run coordinator "$project_dir" --runner coordinator-shell-1 >"$merge_output"
 require_line "$merge_output" "status=ok"
 require_line "$merge_output" "role=coordinator"
-require_line "$merge_output" "runtime_status=ok"
-require_line "$merge_output" "coordinator.ready_to_merge_count=1"
-require_line "$merge_output" "coordinator.merge_attempted=true"
-require_line "$merge_output" "coordinator.merge_ticket_id=001"
-require_line "$merge_output" "coordinator.merge_status=done"
-require_line "$merge_output" "outcome=pass"
-require_line "$merge_output" "wiki.status=updated"
-require_line "$merge_output" "wiki_maintainer.status=skipped_no_runner"
-require_line "$merge_output" "commit_status=committed"
-require_pattern "$merge_output" '^commit_hash=[0-9a-f]{40}$'
+require_line "$merge_output" "runtime_status=idle"
+require_line "$merge_output" "reason=no_problem_detected"
+require_line "$merge_output" "coordinator.ready_to_merge_count=0"
+require_line "$merge_output" "coordinator.merge_attempted=false"
+require_line "$merge_output" "coordinator.merge_status=not_applicable"
 require_line "${project_dir}/.autoflow/wiki/index.md" "<!-- AUTOFLOW:BEGIN work-map -->"
 require_pattern "${project_dir}/.autoflow/wiki/project-overview.md" 'Done tickets: 1'
 

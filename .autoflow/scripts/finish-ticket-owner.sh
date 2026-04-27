@@ -262,32 +262,24 @@ prepare_ticket_worktree_for_merge() {
     return 1
   fi
 
-  local project_root_git project_root_head worktree_head rebase_log_file rebase_tail
+  local project_root_git project_root_head worktree_head
   project_root_git="$(git_root_path 2>/dev/null || true)"
   if [ -n "$project_root_git" ]; then
     project_root_head="$(git_head_commit "$project_root_git" 2>/dev/null || true)"
     worktree_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
     if [ -n "$project_root_head" ] && [ -n "$worktree_head" ] && [ "$project_root_head" != "$worktree_head" ]; then
-      if git -C "$worktree_path" merge-base --is-ancestor "$project_root_head" "$worktree_head" 2>/dev/null; then
-        :
-      else
-        rebase_log_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-prefinish-rebase.XXXXXX")"
-        if git -C "$worktree_path" rebase --autostash "$project_root_head" >"$rebase_log_file" 2>&1; then
-          append_note "$ticket_file" "Rebased worktree onto PROJECT_ROOT HEAD ${project_root_head} at ${timestamp} for clean merge."
-        else
-          git -C "$worktree_path" rebase --abort >/dev/null 2>&1 || true
-          rebase_tail="$(tail -3 "$rebase_log_file" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-          replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_rebase_conflict"
-          append_note "$ticket_file" "Worktree rebase onto PROJECT_ROOT HEAD ${project_root_head} failed at ${timestamp}; ticket-owner must resolve conflicts in ${worktree_path} (e.g. \`git -C ${worktree_path} rebase ${project_root_head}\`) and re-run finish. Tail: ${rebase_tail}"
-          rm -f "$rebase_log_file"
-          echo "Worktree rebase failed for ticket ${ticket_id}; see ticket Notes for resolution path." >&2
-          printf 'status=blocked_rebase_conflict\n'
-          printf 'reason=rebase_against_project_root\n'
-          printf 'ticket_id=%s\n' "$ticket_id"
-          printf 'project_root_head=%s\n' "$project_root_head"
-          return 1
-        fi
-        rm -f "$rebase_log_file"
+      if ! git -C "$worktree_path" merge-base --is-ancestor "$project_root_head" "$worktree_head" 2>/dev/null; then
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merging"
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+        replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "needs_ai_rebase"
+        replace_section_block "$ticket_file" "Next Action" "- Next: the ticket-owner AI must rebase or otherwise merge the ticket worktree against PROJECT_ROOT HEAD, resolve conflicts, rerun verification, manually integrate into PROJECT_ROOT, and rerun finish. Runtime scripts must not perform the rebase."
+        append_note "$ticket_file" "Finish paused at ${timestamp}: worktree HEAD ${worktree_head} does not contain PROJECT_ROOT HEAD ${project_root_head}. AI must perform the rebase/merge; script did not run git rebase."
+        printf 'status=needs_ai_merge\n'
+        printf 'reason=worktree_rebase_required\n'
+        printf 'ticket_id=%s\n' "$ticket_id"
+        printf 'project_root_head=%s\n' "$project_root_head"
+        printf 'worktree_head=%s\n' "$worktree_head"
+        return 1
       fi
     fi
   fi
@@ -664,6 +656,19 @@ case "$outcome" in
     fi
 
     merge_prep_output="$(prepare_ticket_worktree_for_merge "$ticket_file" 2>&1)" || {
+      merge_prep_status="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
+      merge_prep_reason="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
+      if [ "$merge_prep_status" = "needs_ai_merge" ]; then
+        printf 'status=needs_ai_merge\n'
+        [ -z "$merge_prep_reason" ] || printf 'reason=%s\n' "$merge_prep_reason"
+        printf 'ticket=%s\n' "$ticket_file"
+        printf 'ticket_id=%s\n' "$ticket_id"
+        printf '%s\n' "$merge_prep_output"
+        printf 'next_action=AI must complete the merge/rebase in the ticket worktree and PROJECT_ROOT, rerun verification itself, then rerun finish-ticket-owner pass. Runtime scripts will not perform the merge.\n'
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        exit 0
+      fi
       merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
       append_note "$ticket_file" "AI pass finish blocked during merge preparation at ${timestamp}: ${merge_prep_output_single_line}"
@@ -676,27 +681,24 @@ case "$outcome" in
       exit 0
     }
 
-    # Post-refactor: ticket stays in tickets/inprogress/ with Stage=ready_to_merge
-    # until the inline merge call below moves it to tickets/done/. The
-    # tickets/ready-to-merge/ folder is no longer used as a handoff queue.
+    # Ticket stays in tickets/inprogress/ while the AI owner performs merge.
+    # The finalizer below only archives/logs/commits after PROJECT_ROOT already
+    # contains the AI-merged result; it must not rebase or cherry-pick.
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready_to_merge"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-    replace_section_block "$ticket_file" "Next Action" "- Next: inline merge from finish-ticket-owner integrates the prepared worktree commit into PROJECT_ROOT and archives the ticket to tickets/done/."
-    append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp} and triggered inline merge."
+    replace_section_block "$ticket_file" "Next Action" "- Next: ticket-owner AI manually integrates verified worktree changes into PROJECT_ROOT if needed, reruns verification, then reruns finish. The runtime finalizer only archives/logs/commits an already AI-merged result."
+    append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp}; runtime finalizer will not perform merge operations."
     replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
-- Log file: pending inline merge
+- Log file: pending AI merge finalization
 - Result: passed by ${display_id} at ${timestamp}"
 
-    clear_active_ticket_context_record || true
-    clear_runner_active_state
-
-    # Inline merge: Impl AI (ticket-owner) directly invokes the merge runtime
-    # right after pass. This collapses the legacy ready-to-merge handoff —
-    # the ticket lands in tickets/done/ in the same tick, and update-wiki.sh
-    # is triggered from inside merge-ready-ticket.sh on success.
+    # Finalization call: verifies that AI already integrated the work into
+    # PROJECT_ROOT, then archives evidence/wiki and creates the local commit.
+    # It intentionally refuses to perform rebase, cherry-pick, or conflict
+    # resolution.
     merge_script="$(cd "$(dirname "$0")" && pwd)/merge-ready-ticket.sh"
     inline_merge_output=""
     inline_merge_exit=0
@@ -717,6 +719,11 @@ case "$outcome" in
 
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
       printf 'status=done\n'
+    elif [ "$inline_merge_status" = "needs_ai_merge" ]; then
+      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merging"
+      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+      printf 'status=needs_ai_merge\n'
+      printf 'reason=%s\n' "${inline_merge_reason:-ai_merge_required}"
     elif [ "$inline_merge_status" = "blocked" ]; then
       printf 'status=blocked\n'
       [ -z "$inline_merge_reason" ] || printf 'reason=%s\n' "$inline_merge_reason"
@@ -733,14 +740,19 @@ case "$outcome" in
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
     fi
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
+      clear_active_ticket_context_record || true
+      clear_runner_active_state
       printf 'commit_status=committed_via_inline_merge\n'
-      printf 'next_action=Inline merge completed. Impl AI may pick the next todo ticket on the next tick.\n'
+      printf 'next_action=AI merge finalization completed. Impl AI may pick the next todo ticket on the next tick.\n'
+    elif [ "$inline_merge_status" = "needs_ai_merge" ]; then
+      printf 'commit_status=ai_merge_required\n'
+      printf 'next_action=AI must manually integrate the verified worktree changes into PROJECT_ROOT, resolve conflicts, rerun verification, and rerun finish. Runtime scripts will not perform the merge.\n'
     elif [ "$inline_merge_status" = "blocked" ]; then
       printf 'commit_status=inline_merge_blocked\n'
-      printf 'next_action=Inline merge is blocked (%s). Resolve the blocker before claiming the next ticket.\n' "${inline_merge_reason:-unknown}"
+      printf 'next_action=Finalization is blocked (%s). AI must resolve the blocker before claiming the next ticket.\n' "${inline_merge_reason:-unknown}"
     else
       printf 'commit_status=inline_merge_failed_check_output\n'
-      printf 'next_action=Inline merge from finish-ticket-owner failed. Inspect inline_merge output before claiming the next ticket.\n'
+      printf 'next_action=Finalization from finish-ticket-owner failed. Inspect inline_merge output before claiming the next ticket.\n'
     fi
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"

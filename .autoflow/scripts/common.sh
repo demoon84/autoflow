@@ -1508,6 +1508,13 @@ recover_passed_inprogress_ticket() {
   esac
   ticket_has_passed_finish_marker "$ticket_file" || return 1
 
+  # AI-led owner mode: a passed in-progress ticket must be resumed by the AI
+  # so it can inspect verification evidence, perform any needed merge/rebase,
+  # and choose the next tool call. Scripts are tools, not the decision-maker.
+  if [ "${AUTOFLOW_SCRIPT_DRIVEN_FINISH:-off}" != "on" ]; then
+    return 1
+  fi
+
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
   ticket_stage="$(trim_spaces "$(ticket_scalar_field "$ticket_file" "Stage")")"

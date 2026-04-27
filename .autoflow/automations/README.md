@@ -7,8 +7,8 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 Default model:
 
 - Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual spec handoff, no heartbeat.
-- `ticket-owner`: one runner owns mini-plan, implementation, verification, and finish.
-- wiki managed sections are updated automatically when coordinator merge completion runs.
+- `ticket-owner`: one runner owns mini-plan, implementation, verification judgment, AI-led merge, and finish.
+- wiki managed sections are updated automatically when AI-led merge finalization runs.
 
 Legacy role-pipeline model:
 
@@ -30,7 +30,8 @@ Autoflow skill handoff (`/af`, `/autoflow`, `$af`, `$autoflow`) and compatibilit
 - Claims or creates one active ticket.
 - Writes a mini-plan in the ticket.
 - Implements within `Allowed Paths`.
-- Runs verification and records evidence.
+- Runs verification commands directly, judges evidence, and records evidence.
+- Manually merges verified changes into `PROJECT_ROOT`, resolving conflicts when needed.
 - Finishes pass or fail.
 
 Legacy `#plan`:
@@ -94,11 +95,13 @@ Recommended map:
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
 - `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no separate wiki route is needed; coordinator merge completion updates wiki managed sections automatically.
+- `tickets/done/`: no separate wiki route is needed; AI-led merge finalization updates wiki managed sections automatically.
 
 ## Operating Principle
 
 Board stage is authoritative. The chat transcript is not.
+
+Ticket-owner AI is the actor. Runtime scripts are tools for claim/state/evidence/finalization; they must not be the actor that implements, verifies, rebases, cherry-picks, resolves conflicts, or merges product code.
 
 ## Context Lifecycle
 

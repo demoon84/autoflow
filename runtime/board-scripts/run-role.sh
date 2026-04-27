@@ -270,14 +270,14 @@ Required flow:
 4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
 5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
 6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-7. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the merge role integrates into PROJECT_ROOT and creates the local completion commit.
+7. For ticket-owner work, the AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool.
 8. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
 9. Do not rely on this prompt as future memory.
 10. Never git push.
 
 Role boundary:
-- ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- merge: process exactly one ready-to-merge ticket as the single PROJECT_ROOT writer. Never change verification decisions and never push.
+- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
+- merge: finalize exactly one ready-to-merge ticket only after the ticket-owner AI already merged it. Never verify, rebase, cherry-pick, resolve conflicts, merge product code, change verification decisions, or push.
 - planner: create/update plans and todo ticket files only. Query the wiki before drafting or ticket generation. Do not implement, verify, commit, or push.
 - todo: claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.

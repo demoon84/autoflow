@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Process one verified ticket from `tickets/ready-to-merge/` as the single writer to `PROJECT_ROOT`.
+Finalize one verified ticket from `tickets/ready-to-merge/` after the ticket-owner AI has already merged it into `PROJECT_ROOT`.
 
-Merge Bot does not decide pass/fail verification. Ticket Owner Mode records the verification result first, then queues the ticket for merge. Merge Bot only integrates the prepared worktree snapshot, archives evidence, updates wiki output, and creates the local completion commit.
+Merge Bot does not decide pass/fail verification and does not merge product code. Ticket Owner Mode records the verification result, manually merges the prepared work into `PROJECT_ROOT`, reruns needed verification, then uses this runtime only to validate that already-merged result, archive evidence, update wiki output, and create the local completion commit.
 
 ## Inputs
 
@@ -17,13 +17,14 @@ Merge Bot does not decide pass/fail verification. Ticket Owner Mode records the 
 - Passed ticket moved to `tickets/done/<project-key>/`.
 - Verification evidence moved to `tickets/done/<project-key>/verify_NNN.md`.
 - Completion log under `logs/`.
-- Local git commit containing the ticket board move, evidence/log/wiki updates, and product changes from the ticket Allowed Paths.
-- If the prepared worktree commit cannot be integrated safely, ticket remains in `ready-to-merge/` for transient blockers or moves to `merge-blocked/` for ticket-specific repair.
+- Local git commit containing the ticket board move, evidence/log/wiki updates, and AI-merged product changes from the ticket Allowed Paths.
+- If the prepared worktree commit is not yet present in `PROJECT_ROOT`, runtime reports `needs_ai_merge` and leaves the ticket for the ticket-owner AI.
 
 ## Procedure
 
 1. Run `scripts/merge-ready-ticket.* [ticket-id-or-path]`.
-2. If it reports `status=done`, stop after one merge.
-3. If it reports `status=blocked`, read the `reason`, ticket `Notes`, and `Worktree` section. Do not make a verification decision.
-4. Never edit unrelated product files.
-5. Never run `git push`.
+2. If it reports `status=done`, stop after one finalization.
+3. If it reports `status=needs_ai_merge`, return control to the ticket-owner AI; do not rebase, cherry-pick, or resolve conflicts.
+4. If it reports `status=blocked`, read the `reason`, ticket `Notes`, and `Worktree` section. Do not make a verification decision.
+5. Never edit unrelated product files.
+6. Never run `git push`.

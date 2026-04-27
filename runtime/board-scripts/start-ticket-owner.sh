@@ -419,9 +419,9 @@ prepare_ticket_owner_context() {
   printf 'reject_target=%s\n' "$reject_target"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Use this same ticket owner turn to update the mini-plan and implement within Allowed Paths. Then run scripts/verify-ticket-owner.sh %s, followed by scripts/finish-ticket-owner.sh %s pass "<summary>" or fail "<reason>". Never split planner/todo/verifier roles and never git push.\n' "$ticket_id" "$ticket_id"
-  printf 'routing_verify=Run scripts/verify-ticket-owner.sh %s to execute the ticket/spec verification command from implementation_root and record command/output/evidence in the run file.\n' "$ticket_id"
-  printf 'routing_pass=After verification evidence passes, run scripts/finish-ticket-owner.sh %s pass "<short summary>". It prepares the worktree snapshot, moves the ticket to ready-to-merge, and clears active context. A coordinator runner is the only role that integrates into PROJECT_ROOT and creates the local completion commit. Never push.\n' "$ticket_id"
+  printf 'next_action=Use this same ticket owner AI turn to update the mini-plan, implement within Allowed Paths, run and inspect verification commands directly, manually merge verified changes into PROJECT_ROOT, then use scripts/finish-ticket-owner.sh %s pass "<summary>" or fail "<reason>" as a bookkeeping/finalization tool. Never split planner/todo/verifier roles and never git push.\n' "$ticket_id"
+  printf 'routing_verify=AI must run the ticket/spec verification command itself from implementation_root or PROJECT_ROOT as appropriate, inspect the evidence, and update the run file. scripts/verify-ticket-owner.sh %s is only an optional evidence-recording tool, not the verifier decision-maker.\n' "$ticket_id"
+  printf 'routing_pass=After AI has verified the work and manually integrated it into PROJECT_ROOT, keep the ticket worktree/snapshot aligned with the resolved PROJECT_ROOT content, then run scripts/finish-ticket-owner.sh %s pass "<short summary>". It finalizes board/log/wiki/local commit only after validating the AI-merged result; it does not rebase, cherry-pick, resolve conflicts, or otherwise merge code. Never push.\n' "$ticket_id"
   printf 'routing_fail=If the owner cannot fix the failure in scope, run scripts/finish-ticket-owner.sh %s fail "<concrete reject reason>". It moves the ticket to reject, writes the verifier log, and does not commit failed work.\n' "$ticket_id"
 }
 

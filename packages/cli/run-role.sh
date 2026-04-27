@@ -270,19 +270,19 @@ Required flow:
 4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
 5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
 6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-7. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the coordinator/merge runtime integrates into PROJECT_ROOT and creates the local completion commit.
-8. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the merge runtime.
+7. For ticket-owner work, the AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool.
+8. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime.
 9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
 10. Do not rely on this prompt as future memory.
 11. Never git push.
 
 Role boundary:
-- ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
+- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
 - planner: create/update plans and todo ticket files only. Query the wiki before drafting or ticket generation. Do not implement, verify, commit, or push.
 - todo: claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
 - wiki: update derived wiki pages from done tickets, reject records, and logs. A coordinator runner may serve this wiki-bot turn. Never treat the wiki as proof of completion.
-- coordinator: diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. If ready-to-merge work exists, invoke the merge runtime for one ready ticket; the merge runtime may then run the coordinator as the wiki bot. Never implement or push.
+- coordinator: diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push.
 
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.

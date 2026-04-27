@@ -95,19 +95,12 @@ fi
 git -C "$worktree_path" commit -m "autoflow ticket ${ticket_id} code snapshot" >/dev/null
 worktree_commit="$(git -C "$worktree_path" rev-parse --verify HEAD)"
 
-if ! git -C "$git_root" cherry-pick --no-commit "$worktree_commit"; then
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "merge_required"
-  append_note "$ticket_file" "Worktree integration requires merge resolution at ${timestamp}: ${worktree_commit}. AI must resolve or abort the cherry-pick in PROJECT_ROOT, then rerun finish."
-  echo "Cherry-pick requires merge resolution in PROJECT_ROOT. Resolve or abort before retrying finish." >&2
-  exit 1
-fi
-
 replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
-replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "integrated"
-append_note "$ticket_file" "Integrated worktree commit ${worktree_commit} into PROJECT_ROOT without committing at ${timestamp}; verifier should now include board + code changes in one local commit."
+replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "needs_ai_merge"
+append_note "$ticket_file" "Worktree snapshot ${worktree_commit} prepared at ${timestamp}; AI must manually merge it into PROJECT_ROOT. integrate-worktree did not run rebase, cherry-pick, conflict resolution, or product-code merge because scripts are tools, not merge actors."
 
-printf 'status=integrated\n'
+printf 'status=needs_ai_merge\n'
+printf 'reason=ai_merge_required\n'
 printf 'ticket_id=%s\n' "$ticket_id"
 printf 'worktree_path=%s\n' "$worktree_path"
 printf 'worktree_commit=%s\n' "$worktree_commit"
