@@ -6,12 +6,12 @@
 - PRD Key: prd_021
 - Plan Candidate: Workflow page UI overhaul — collapse sidebar label, wrap progress bar, simplify card titles, hoist AI controls into cards
 - Title: Workflow page UI overhaul — sidebar label, card header simplification, progress wrap, inline controls
-- Stage: ready_to_merge
+- Stage: done
 - AI: 019dcf25-517d-73a1-8ab4-471907c1f307
 - Claimed By: 019dcf25-517d-73a1-8ab4-471907c1f307
 - Execution AI: 019dcf25-517d-73a1-8ab4-471907c1f307
 - Verifier AI: 019dcf25-517d-73a1-8ab4-471907c1f307
-- Last Updated: 2026-04-27T13:42:40Z
+- Last Updated: 2026-04-27T16:07:56Z
 
 ## Goal
 
@@ -41,7 +41,7 @@
 - Branch: autoflow/tickets_021
 - Base Commit: 049209895508984a9418dc02ff4d7a1cc088088e
 - Worktree Commit: f1b2b0186041ba7fd33ff06305460b49af9bdb47
-- Integration Status: blocked_dirty_scope_conflict
+- Integration Status: integrated_by_ai_manual_merge
 
 ## Done When
 
@@ -57,7 +57,7 @@
 - [x] 시각 회귀: 통계, Wiki, 티켓 정보 페이지 영향 없음.
 
 ## Next Action
-- Next: resolve the `PROJECT_ROOT` dirty-scope conflict on `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`, then rerun the merge runtime for ticket 021. Do not claim another implementation ticket until this merge blocker is handled or explicitly deferred.
+- Complete: AI manually merged the remaining workflow card controls/layout behavior into current `main` while preserving later ticket 025/026 changes.
 
 ## Resume Context
 
@@ -93,9 +93,10 @@
 - Impl AI 019dcf25-517d-73a1-8ab4-471907c1f307 marked verification pass at 2026-04-27T13:42:40Z and triggered inline merge.
 - Merge blocked at 2026-04-27T13:42:40Z: PROJECT_ROOT has conflicting dirty changes in commit paths (apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css).
 - Coordinator 019dcf25-517d-73a1-8ab4-471907c1f307 blocked at 2026-04-27T13:42:40Z: dirty_scope_conflict (attempt 1/5).
+- AI-led root merge at 2026-04-27T16:07:56Z: preserved existing `작업` navigation label, role-only card titles, shared `RunnerConfigControls`, and Gemini asset behavior from current `main`; added workflow-card `restart` control typing/button and kept progress labels wrapping without truncation. `cd apps/desktop && npx tsc --noEmit` and `npm --prefix apps/desktop run check` passed.
 ## Verification
-- Run file: `tickets/inprogress/verify_021.md`
-- Log file: pending inline merge
+- Run file: `tickets/done/prd_021/verify_021.md`
+- Log file: `logs/manual_worktree_merge_20260427_160756Z.md`
 - Result: passed by 019dcf25-517d-73a1-8ab4-471907c1f307 at 2026-04-27T13:42:40Z
 
 ## Result

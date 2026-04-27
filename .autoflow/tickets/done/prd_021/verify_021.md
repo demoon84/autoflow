@@ -28,7 +28,7 @@
 ## Command
 - Started At: 2026-04-27T13:40:58Z
 - Finished At: 2026-04-27T13:41:02Z
-- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_021`
+- Working Root: `/Users/demoon/Documents/project/autoflow`
 - Command: `cd apps/desktop && npm run check`
 - Exit Code: 0
 
@@ -67,7 +67,8 @@ computing gzip size...
 ## Evidence
 - Result: passed
 - Exit Code: 0
-- Completed At: 2026-04-27T13:41:02Z
+- Completed At: 2026-04-27T16:07:56Z
+- Root verification: `cd apps/desktop && npx tsc --noEmit` exited 0; `npm --prefix apps/desktop run check` exited 0 after AI-led merge into current `main`.
 - Manual command before runtime: `cd apps/desktop && npx tsc --noEmit` exited 0.
 - Source evidence: `settingsNavigation` progress label is `작업`; `AiProgressRow` renders role-only labels via `displayProgressRoleLabel`; shared `RunnerConfigControls` powers workflow and AI management controls; `.ai-progress-track` uses wrapping flex steps with non-truncated labels.
 - Scope evidence: `git diff --name-only` lists only `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`.

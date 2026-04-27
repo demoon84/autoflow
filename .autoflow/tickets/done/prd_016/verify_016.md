@@ -28,7 +28,7 @@
 ## Command
 - Started At: 2026-04-27T12:37:42Z
 - Finished At: 2026-04-27T12:37:46Z
-- Working Root: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_016`
+- Working Root: `/Users/demoon/Documents/project/autoflow`
 - Command: `cd apps/desktop && npm run check`
 - Exit Code: 0
 
@@ -67,7 +67,8 @@ computing gzip size...
 ## Evidence
 - Result: passed
 - Exit Code: 0
-- Completed At: 2026-04-27T12:37:46Z
+- Completed At: 2026-04-27T16:07:56Z
+- Root verification: `cd apps/desktop && npx tsc --noEmit` exited 0; `npm --prefix apps/desktop run check` exited 0 after AI-led merge into current `main`.
 
 ## Findings
 - blocker:

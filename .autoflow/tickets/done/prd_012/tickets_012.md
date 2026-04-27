@@ -6,12 +6,12 @@
 - PRD Key: prd_012
 - Plan Candidate: Plan AI handoff from tickets/done/prd_012/prd_012.md
 - Title: Rename runner ids to role-aligned slugs (planner / worker / wiki-maintainer)
-- Stage: executing
+- Stage: done
 - AI: 019dced1-1e5a-77c2-8ac5-459080d66015
 - Claimed By: 019dced1-1e5a-77c2-8ac5-459080d66015
 - Execution AI: 019dced1-1e5a-77c2-8ac5-459080d66015
 - Verifier AI: 019dced1-1e5a-77c2-8ac5-459080d66015
-- Last Updated: 2026-04-27T12:02:23Z
+- Last Updated: 2026-04-27T16:07:56Z
 
 ## Goal
 
@@ -48,7 +48,7 @@
 - Branch: autoflow/tickets_012
 - Base Commit: cce1ea5dacf0d14adfb4aec5039037d9553d54f0
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: superseded_by_current_topology
 
 ## Done When
 
@@ -64,7 +64,7 @@
 - [ ] `bin/autoflow` CLI help text 의 runner id 예시가 새 슬러그로 갱신됐다.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다.
+- Complete: current `main` keeps the documented `planner-1` / `owner-1` / `wiki-1` runner ids. The stale worktree-only config rename to `planner` / `worker` / `wiki-maintainer` was intentionally not applied because it conflicts with the current AGENTS topology contract and live runner state.
 
 ## Resume Context
 
@@ -82,12 +82,13 @@
 - The PRD's Out of Scope explicitly excludes: role name changes, topology changes, old log file backfill, and PowerShell variants.
 
 - AI 019dced1-1e5a-77c2-8ac5-459080d66015 prepared todo at 2026-04-27T12:02:23Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_012; run=tickets/inprogress/verify_012.md
+- AI-led resolution at 2026-04-27T16:07:56Z: branch commit `cce1ea5` is already in `main`; the remaining dirty worktree change only renamed live runner ids and switched configured agents/models. Current project instructions explicitly keep `planner-1`, `owner-1`, and `wiki-1`, so `main` was preserved and the stale worktree was closed as superseded.
 ## Verification
-- Run file: `tickets/inprogress/verify_012.md`
-- Log file: pending
-- Result: pending ticket-owner by 019dced1-1e5a-77c2-8ac5-459080d66015
+- Run file: `tickets/done/prd_012/verify_012.md`
+- Log file: `logs/manual_worktree_merge_20260427_160756Z.md`
+- Result: resolved as superseded by current topology contract
 
 ## Result
 
-- Summary:
-- Remaining risk:
+- Summary: Stale runner-id rename was not applied; current runner topology remains consistent with AGENTS and active config.
+- Remaining risk: The original PRD acceptance criteria for slug renaming are intentionally unmet because the project later re-standardized on `planner-1` / `owner-1` / `wiki-1`.

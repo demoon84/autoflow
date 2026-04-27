@@ -1913,6 +1913,30 @@ pre {
   flex: 1 1 0;
 }
 
+.ai-progress-board[data-runner-count="3"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr);
+  grid-template-areas:
+    "plan impl"
+    "wiki impl";
+}
+
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="planner"],
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="plan"] {
+  grid-area: plan;
+}
+
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="ticket-owner"],
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="owner"],
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="ticket"] {
+  grid-area: impl;
+}
+
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="wiki-maintainer"],
+.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="wiki"] {
+  grid-area: wiki;
+}
+
 .ai-progress-row {
   display: flex;
   flex-direction: column;
@@ -1925,7 +1949,7 @@ pre {
 }
 
 .ai-progress-row-worker {
-  grid-row: span 2;
+  grid-row: auto;
 }
 
 .ai-progress-row > * + * {
@@ -2895,8 +2919,9 @@ pre {
   position: relative;
   display: flex;
   align-items: flex-start;
-  flex-wrap: nowrap;
-  gap: 0;
+  flex-wrap: wrap;
+  column-gap: 0;
+  row-gap: 8px;
   min-width: 0;
   overflow: visible;
   padding-top: 14px;
@@ -2935,8 +2960,8 @@ pre {
   justify-items: center;
   align-items: start;
   gap: 7px;
-  flex: 1 1 0;
-  min-width: 32px;
+  flex: 1 1 58px;
+  min-width: 58px;
   padding: 0 2px;
   color: var(--muted-foreground);
   font-size: 11px;
@@ -2947,9 +2972,9 @@ pre {
 
 .ai-progress-step span:last-child {
   max-width: 84px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
   word-break: keep-all;
 }
 
@@ -4942,6 +4967,15 @@ pre {
 
   .ai-progress-board {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-progress-board[data-runner-count="3"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      "plan"
+      "impl"
+      "wiki";
   }
 
   .ai-progress-row-worker {

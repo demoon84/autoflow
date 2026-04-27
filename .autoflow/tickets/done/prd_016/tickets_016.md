@@ -6,12 +6,12 @@
 - PRD Key: prd_016
 - Plan Candidate: Plan AI handoff from tickets/done/prd_016/prd_016.md
 - Title: Pin AI progress board to a 2-left / 1-right tall layout when three runners are present
-- Stage: executing
+- Stage: done
 - AI: 019dceee-18c0-7622-9b43-71f08fc41ab0
 - Claimed By: 019dceee-18c0-7622-9b43-71f08fc41ab0
 - Execution AI: 019dceee-18c0-7622-9b43-71f08fc41ab0
 - Verifier AI: 019dceee-18c0-7622-9b43-71f08fc41ab0
-- Last Updated: 2026-04-27T12:37:46Z
+- Last Updated: 2026-04-27T16:07:56Z
 
 ## Goal
 
@@ -39,20 +39,20 @@
 - Branch: autoflow/tickets_016
 - Base Commit: 14295dc36619674559bc977d47d12274e37eceed
 - Worktree Commit:
-- Integration Status: pending
+- Integration Status: integrated_by_ai_manual_merge
 
 ## Done When
 
-- [ ] 데스크톱에 정확히 3개 runner (planner / ticket-owner / wiki-maintainer) 가 있을 때, 작업 흐름 페이지의 AI 보드가 좌측 2단 (위 Plan AI, 아래 Wiki AI) + 우측 1단 (Impl AI 가 두 행 높이 span) 으로 보인다.
-- [ ] 같은 레이아웃에서 우하단이 빈 공간 없이 채워진다 (현재 스크린샷의 빈 사각형이 제거된다).
-- [ ] runner 수가 3 이 아닐 때 (1, 2, 4+) 는 현재 `repeat(2, 1fr)` 자동 흐름이 그대로 동작하고 시각 회귀 없음.
-- [ ] viewport width < 720px 에서는 세 카드가 단일 칼럼으로 세로 적층되어 잘리지 않는다.
-- [ ] `cd apps/desktop && npx tsc --noEmit` 가 0 errors.
-- [ ] `cd apps/desktop && npm run check` 가 통과한다.
-- [ ] 시각 회귀: `티켓 정보`, `AI 관리`, `Wiki`, `통계` 등 다른 사이드 페이지가 영향 없음.
+- [x] 데스크톱에 정확히 3개 runner (planner / ticket-owner / wiki-maintainer) 가 있을 때, 작업 흐름 페이지의 AI 보드가 좌측 2단 (위 Plan AI, 아래 Wiki AI) + 우측 1단 (Impl AI 가 두 행 높이 span) 으로 보인다.
+- [x] 같은 레이아웃에서 우하단이 빈 공간 없이 채워진다 (현재 스크린샷의 빈 사각형이 제거된다).
+- [x] runner 수가 3 이 아닐 때 (1, 2, 4+) 는 현재 `repeat(2, 1fr)` 자동 흐름이 그대로 동작하고 시각 회귀 없음.
+- [x] viewport width < 720px 에서는 세 카드가 단일 칼럼으로 세로 적층되어 잘리지 않는다.
+- [x] `cd apps/desktop && npx tsc --noEmit` 가 0 errors.
+- [x] `cd apps/desktop && npm run check` 가 통과한다.
+- [x] 시각 회귀: `티켓 정보`, `AI 관리`, `Wiki`, `통계` 등 다른 사이드 페이지가 영향 없음.
 
 ## Next Action
-- 다음에 바로 이어서 할 일: `main.tsx` 에 runner count/role data attributes 를 추가하고, `styles.css` 에 3-runner grid-template-areas 및 <720px 단일 칼럼 fallback 을 적용한 뒤 owner verification 을 실행한다.
+- Complete: AI manually merged the 3-runner layout into current `main` while preserving later ticket 025/026 changes.
 
 ## Resume Context
 
@@ -78,13 +78,14 @@
 - Wiki context (owner-1): `autoflow wiki query` for `AI progress board`, `ticket-owner wiki-maintainer`, and the allowed renderer paths only surfaced `tickets/done/prd_016/prd_016.md`; no older done implementation changed this layout. The planner note about `prd_012` remains the relevant nearby history.
 - Ticket owner verification failed by 019dceee-18c0-7622-9b43-71f08fc41ab0 at 2026-04-27T12:37:25Z: command exited 127
 - Ticket owner verification passed by 019dceee-18c0-7622-9b43-71f08fc41ab0 at 2026-04-27T12:37:46Z: command exited 0
+- AI-led root merge at 2026-04-27T16:07:56Z: added `data-runner-count`, `data-runner-role`, and 3-runner `grid-template-areas` on top of current `main`; `cd apps/desktop && npx tsc --noEmit` and `npm --prefix apps/desktop run check` passed.
 ## Verification
-- Run file: `tickets/inprogress/verify_016.md`
-- Log file: pending
+- Run file: `tickets/done/prd_016/verify_016.md`
+- Log file: `logs/manual_worktree_merge_20260427_160756Z.md`
 - Command: `cd apps/desktop && npm run check`
 - Result: passed by 019dceee-18c0-7622-9b43-71f08fc41ab0 at 2026-04-27T12:37:46Z
 
 ## Result
 
-- Summary:
-- Remaining risk:
+- Summary: 3-runner workflow board layout merged into `main` with current AI progress card behavior preserved.
+- Remaining risk: Visual browser inspection was not rerun in this turn; verification is build/type evidence plus source review.

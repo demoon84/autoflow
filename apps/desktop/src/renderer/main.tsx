@@ -1236,7 +1236,7 @@ function App() {
   );
 
   const controlRunner = React.useCallback(
-    async (action: "start" | "stop", runnerId: string) => {
+    async (action: "start" | "stop" | "restart", runnerId: string) => {
       if (!options.projectRoot || runnerActionKey) {
         return;
       }
@@ -1247,7 +1247,7 @@ function App() {
       setRunnerError("");
       try {
         const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
-        if (runner && action === "start") {
+        if (runner && (action === "start" || action === "restart")) {
           const draft = runnerDrafts[runner.id] || {
             agent: runner.agent || "codex",
             model: runner.model || "",
@@ -2352,7 +2352,7 @@ function RunnerConsole({
   drafts: Record<string, RunnerDraft>;
   selectedRunnerId: string;
   onSelectRunner: (runnerId: string) => void;
-  onControl: (action: "start" | "stop", runnerId: string) => void;
+  onControl: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner) => void;
@@ -4287,7 +4287,7 @@ function TicketBoard({
   actionKey?: string;
   drafts?: Record<string, RunnerDraft>;
   onSelectRunner?: (runnerId: string) => void;
-  onControl?: (action: "start" | "stop", runnerId: string) => void;
+  onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner) => void;
 }) {
@@ -4365,7 +4365,7 @@ function TicketBoard({
         ) : null
       }
     >
-      <div className="ai-progress-board" aria-label="AI별 작업 진행률">
+      <div className="ai-progress-board" data-runner-count={runners.length} aria-label="AI별 작업 진행률">
         {runners.length ? (
           runners.map((runner) => (
             <AiProgressRow
@@ -4658,7 +4658,7 @@ function AiProgressRow({
   actionKey?: string;
   draft?: RunnerDraft;
   onSelectRunner?: (runnerId: string) => void;
-  onControl?: (action: "start" | "stop", runnerId: string) => void;
+  onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner) => void;
 }) {
@@ -4753,6 +4753,7 @@ function AiProgressRow({
 
   return (
     <article
+      data-runner-role={runner.role}
       className={`ai-progress-row ai-progress-${currentKey}${isWorkerProgressRow ? " ai-progress-row-worker" : ""}${
         hideProgressTrack ? " ai-progress-row-no-track" : ""
       }`}
@@ -4829,6 +4830,25 @@ function AiProgressRow({
                 )}
               </Button>
             )}
+            <Button
+              variant="outline"
+              size="icon"
+              className="runner-icon-button runner-plain-icon-button"
+              title="AI 재시작"
+              data-tooltip="AI 재시작"
+              aria-label={`${runner.id} AI 재시작`}
+              disabled={Boolean(actionKey)}
+              onClick={() => {
+                onSelectRunner?.(runner.id);
+                onControl?.("restart", runner.id);
+              }}
+            >
+              {isWorking && actionKey.startsWith("restart:") ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </Button>
           </div>
         ) : null}
       </div>
