@@ -1,0 +1,10 @@
+updated_at=2026-04-26T14:33:42Z
+fingerprint=ready=tickets_004.md|merge_blocked=tickets_001.md|reject=|active_blocked=|runner_problem=
+problem_reason=ready_to_merge
+doctor_status=ok
+operational_blockers=warning
+shared_path_blocked_ticket_count=2
+worktree_issue_count=0
+project_root_dirty_overlap_count=3
+shared_nonbase_head_group_count=0
+branch_mismatch_count=0
