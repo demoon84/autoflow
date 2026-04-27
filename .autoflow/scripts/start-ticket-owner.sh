@@ -34,6 +34,34 @@ ticket_owned_by_worker() {
     worker_id_matches_field "$verifier_owner" "$worker_id"
 }
 
+ticket_claimed_by_other_worker() {
+  local file="$1"
+  local field value
+
+  for field in "AI" "Claimed By" "Execution AI" "Verifier AI"; do
+    value="$(ticket_scalar_field "$file" "$field")"
+    [ -n "$value" ] || continue
+    worker_id_matches_field "$value" "$worker_id" && return 1
+    return 0
+  done
+
+  return 1
+}
+
+ticket_claim_owner() {
+  local file="$1"
+  local field value
+
+  for field in "Claimed By" "Execution AI" "AI" "Verifier AI"; do
+    value="$(ticket_scalar_field "$file" "$field")"
+    [ -n "$value" ] || continue
+    printf '%s' "$value"
+    return 0
+  done
+
+  return 1
+}
+
 find_active_context_ticket() {
   local context_role active_path active_id file
 
@@ -97,6 +125,7 @@ find_adoptable_inprogress_ticket() {
   while IFS= read -r file; do
     [ -n "$file" ] || continue
     ticket_owned_by_worker "$file" && continue
+    ticket_claimed_by_other_worker "$file" && continue
     ticket_referenced_by_runner_state "$file" && continue
     stage="$(ticket_stage "$file")"
     stage_is_execution_candidate "$stage" || continue
@@ -147,6 +176,9 @@ claim_existing_ticket() {
 
   case "$source_dir" in
     inprogress)
+      if ticket_claimed_by_other_worker "$source_file"; then
+        return 1
+      fi
       printf '%s' "$source_file"
       return 0
       ;;
@@ -417,6 +449,19 @@ prepare_ticket_owner_context() {
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
 
+  if ticket_claimed_by_other_worker "$ticket_file"; then
+    set_thread_context_record "ticket-owner" "$worker_id" "" "" ""
+    printf 'status=idle\n'
+    printf 'reason=ticket_claimed_by_another_owner\n'
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'claimed_by=%s\n' "$(ticket_claim_owner "$ticket_file" || true)"
+    printf 'worker_id=%s\n' "$worker_id"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    exit 0
+  fi
+
   pre_stage="$(ticket_stage "$ticket_file")"
   if [ "$pre_stage" = "blocked" ]; then
     if auto_recover_blocked_ticket "$ticket_file"; then
@@ -654,24 +699,16 @@ if [ -n "$replanned_reject" ]; then
   if [ -z "$replanned_ticket" ]; then
     fail_or_idle "Reject ticket could not be replanned: $(board_relative_path "$replanned_reject")" "reject_replan_failed"
   fi
+  claimed_ticket="$(claim_existing_ticket "$replanned_ticket" || true)"
+  if [ -z "$claimed_ticket" ]; then
+    fail_or_idle "Replanned reject ticket could not be claimed: $(board_relative_path "$replanned_ticket")" "ticket_claim_conflict"
+  fi
 
   printf 'status=ok\n'
   printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
-  printf 'retry_count=%s\n' "$(ticket_retry_count "$replanned_ticket")"
+  printf 'retry_count=%s\n' "$(ticket_retry_count "$claimed_ticket")"
   emit_replan_skipped_metadata "$replan_skipped_file"
-  printf 'ticket=%s\n' "$replanned_ticket"
-  printf 'ticket_id=%s\n' "$(extract_numeric_id "$replanned_ticket")"
-  printf 'owner=%s\n' "$worker_id"
-  printf 'stage=todo\n'
-  printf 'source=replan\n'
-  printf 'worktree_status=pending_claim\n'
-  printf 'implementation_root=%s\n' "$PROJECT_ROOT"
-  printf 'run=%s\n' "$(ensure_runs_file "$(extract_numeric_id "$replanned_ticket")")"
-  printf 'done_target=%s\n' "$(done_ticket_path_for_ticket_file "$replanned_ticket")"
-  printf 'reject_target=%s\n' "$(reject_ticket_path_for_ticket_file "$replanned_ticket")"
-  printf 'board_root=%s\n' "$BOARD_ROOT"
-  printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Replanned reject moved back to todo. The next ticket-owner start should claim tickets_%s from todo and continue with a mini-plan that addresses the latest Reject History entry.\n' "$(extract_numeric_id "$replanned_ticket")"
+  prepare_ticket_owner_context "$claimed_ticket" "replan"
   exit 0
 fi
 

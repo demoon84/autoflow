@@ -242,6 +242,30 @@ append_csv_value() {
   fi
 }
 
+find_adapter_path_fast() {
+  local adapter="$1"
+  local path_entry candidate uname_value
+  local path_entries=()
+
+  uname_value="$(uname -r 2>/dev/null || true)"
+  IFS=':' read -r -a path_entries <<< "${PATH:-}"
+  for path_entry in "${path_entries[@]}"; do
+    [ -n "$path_entry" ] || continue
+    case "$uname_value:$path_entry" in
+      *[Mm]icrosoft*:/mnt/[a-zA-Z]/*|*WSL*:/mnt/[a-zA-Z]/*)
+        continue
+        ;;
+    esac
+    candidate="${path_entry}/${adapter}"
+    if [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 physical_path_equals() {
   local left="$1"
   local right="$2"
@@ -528,7 +552,7 @@ record_runner_adapter_check() {
     codex|claude|opencode|gemini)
       if [ -n "$command_value" ]; then
         record_check "${check_id}_adapter" "custom_command"
-      elif adapter_path="$(command -v "$agent" 2>/dev/null)"; then
+      elif adapter_path="$(find_adapter_path_fast "$agent")"; then
         record_check "${check_id}_adapter" "ok"
         printf 'runner.%s.adapter_path=%s\n' "$check_id" "$adapter_path" >> "$check_output"
       else

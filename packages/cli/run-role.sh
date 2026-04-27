@@ -252,17 +252,20 @@ Context:
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
-3. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-4. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the coordinator/merge runtime integrates into PROJECT_ROOT and creates the local completion commit.
-5. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the merge runtime.
-6. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
-7. Do not rely on this prompt as future memory.
-8. Never git push.
+3. For planner, ticket-owner, and todo work, run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the spec/ticket title, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty.
+4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
+5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
+6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
+7. For ticket-owner work, plan, implement, verify, and finish from Implementation root; owner pass queues the verified ticket in ready-to-merge. Only the coordinator/merge runtime integrates into PROJECT_ROOT and creates the local completion commit.
+8. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the merge runtime.
+9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
+10. Do not rely on this prompt as future memory.
+11. Never git push.
 
 Role boundary:
 - ticket: own one ticket from local planning through implementation, verification, evidence logging, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- planner: create/update plans and todo ticket files only. Do not implement, verify, commit, or push.
-- todo: claim/resume one todo ticket, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
+- planner: create/update plans and todo ticket files only. Query the wiki before drafting or ticket generation. Do not implement, verify, commit, or push.
+- todo: claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
 - verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
 - wiki: update derived wiki pages from done tickets, reject records, and logs. A coordinator runner may serve this wiki-bot turn. Never treat the wiki as proof of completion.
 - coordinator: diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. If ready-to-merge work exists, invoke the merge runtime for one ready ticket; the merge runtime may then run the coordinator as the wiki bot. Never implement or push.
@@ -303,6 +306,63 @@ normalize_claude_model_alias() {
   esac
 }
 
+ensure_agent_on_path() {
+  local agent="$1"
+  command -v "$agent" >/dev/null 2>&1 && return 0
+
+  local login_path
+  login_path="$(bash -lc 'printf %s "$PATH"' 2>/dev/null || true)"
+  if [ -n "$login_path" ]; then
+    PATH="${PATH}:${login_path}"
+    export PATH
+    command -v "$agent" >/dev/null 2>&1 && return 0
+  fi
+
+  local roots=()
+  [ -n "${HOME:-}" ] && roots+=("$HOME")
+  if [ -n "${USERPROFILE:-}" ] && [ "${USERPROFILE}" != "${HOME:-}" ]; then
+    roots+=("$USERPROFILE")
+  fi
+  if [ -d "/mnt/c/Users" ]; then
+    local wsl_user_dir
+    for wsl_user_dir in /mnt/c/Users/*/; do
+      [ -d "${wsl_user_dir}AppData/Roaming/nvm" ] || [ -d "${wsl_user_dir}AppData/Roaming/npm" ] || continue
+      roots+=("${wsl_user_dir%/}")
+    done
+  fi
+  [ ${#roots[@]} -gt 0 ] || return 1
+
+  local root candidate ver_dir
+  for root in "${roots[@]}"; do
+    for candidate in \
+      "$root/AppData/Roaming/npm" \
+      "$root/AppData/Roaming/nvm/current" \
+      "$root/.local/bin" \
+      "$root/.npm-global/bin" \
+      "$root/bin"; do
+      [ -d "$candidate" ] || continue
+      if [ -e "$candidate/$agent" ] || [ -e "$candidate/$agent.cmd" ] || [ -e "$candidate/$agent.exe" ]; then
+        PATH="${PATH}:${candidate}"
+        export PATH
+        command -v "$agent" >/dev/null 2>&1 && return 0
+      fi
+    done
+
+    if [ -d "$root/AppData/Roaming/nvm" ]; then
+      while IFS= read -r ver_dir; do
+        [ -d "$ver_dir" ] || continue
+        if [ -e "$ver_dir/$agent" ] || [ -e "$ver_dir/$agent.cmd" ] || [ -e "$ver_dir/$agent.exe" ]; then
+          PATH="${PATH}:${ver_dir}"
+          export PATH
+          command -v "$agent" >/dev/null 2>&1 && return 0
+        fi
+      done < <(find "$root/AppData/Roaming/nvm" -maxdepth 1 -type d -name 'v*' 2>/dev/null | sort -r)
+    fi
+  done
+
+  return 1
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text
@@ -311,7 +371,7 @@ run_default_adapter_command() {
 
   case "$agent" in
     codex)
-      command -v codex >/dev/null 2>&1 || return 127
+      ensure_agent_on_path codex || return 127
       cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
       if [ -n "$model" ]; then
         cmd+=(-m "$model")
@@ -340,13 +400,13 @@ run_default_adapter_command() {
       return "$command_exit"
       ;;
     claude)
-      command -v claude >/dev/null 2>&1 || return 127
+      ensure_agent_on_path claude || return 127
       prompt_text="$(cat "$prompt_file")"
-      cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+      runner_claude_base_cmd cmd
       if [ -n "$model" ]; then
         cmd+=(--model "$(normalize_claude_model_alias "$model")")
       fi
-      if [ -n "$reasoning" ]; then
+      if [ -n "$reasoning" ] && runner_claude_supports_effort; then
         cmd+=(--effort "$reasoning")
       fi
       cmd+=("$prompt_text")
@@ -354,7 +414,7 @@ run_default_adapter_command() {
       (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     opencode)
-      command -v opencode >/dev/null 2>&1 || return 127
+      ensure_agent_on_path opencode || return 127
       prompt_text="$(cat "$prompt_file")"
       cmd=(opencode run)
       if [ -n "$model" ]; then
@@ -368,7 +428,7 @@ run_default_adapter_command() {
       (cd "$adapter_working_root" && "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     gemini)
-      command -v gemini >/dev/null 2>&1 || return 127
+      ensure_agent_on_path gemini || return 127
       prompt_text="$(cat "$prompt_file")"
       cmd=(gemini --approval-mode auto_edit --prompt "$prompt_text")
       if [ -n "$model" ]; then
@@ -423,7 +483,7 @@ prepare_adapter_live_logs() {
 agent_runtime_preflight_or_exit() {
   local preflight_output preflight_exit preflight_status preflight_reason preflight_log_path
   local started_at finished_at command_status runner_status last_result
-  local active_item
+  local active_item active_ticket_id active_ticket_title active_stage active_spec_ref
 
   [ "$public_role" = "ticket" ] || return 0
   [ "$dry_run" = "true" ] && return 0
@@ -445,7 +505,20 @@ agent_runtime_preflight_or_exit() {
   preflight_reason="$(awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   implementation_root="$(awk -F= '$1 == "implementation_root" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
-  [ -n "$active_item" ] || active_item="$(runner_active_state_value "active_item")"
+  active_ticket_id="$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
+  if [ -n "$active_ticket_id" ]; then
+    case "$active_ticket_id" in
+      tickets_*) ;;
+      *) active_ticket_id="tickets_${active_ticket_id}" ;;
+    esac
+    [ -n "$active_item" ] || active_item="$active_ticket_id"
+    active_stage="${preflight_status:-}"
+  else
+    active_item=""
+    active_stage=""
+  fi
+  active_ticket_title=""
+  active_spec_ref=""
   preflight_log_path="$(persist_run_artifact "$preflight_output" "runtime")"
 
   if [ "$preflight_exit" -eq 0 ] && { [ "$preflight_status" = "ok" ] || [ "$preflight_status" = "resume" ]; }; then
@@ -479,10 +552,10 @@ agent_runtime_preflight_or_exit() {
     "model=${model}" \
     "reasoning=${reasoning}" \
     "active_item=${active_item}" \
-    "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-    "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-    "active_stage=$(runner_active_state_value "active_stage")" \
-    "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+    "active_ticket_id=${active_ticket_id}" \
+    "active_ticket_title=${active_ticket_title}" \
+    "active_stage=${active_stage}" \
+    "active_spec_ref=${active_spec_ref}" \
     "pid=$(runner_state_pid_for_finish)" \
     "started_at=$(runner_state_started_at "$started_at")" \
     "last_event_at=${finished_at}" \
@@ -556,7 +629,7 @@ if [ "$enabled" != "true" ]; then
   exit 0
 fi
 
-if [ "$mode" != "one-shot" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] && [ "$public_role" != "wiki" ]; then
+if [ "$mode" = "watch" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] && [ "$public_role" != "wiki" ] && [ "$public_role" != "coordinator" ]; then
   write_blocked_state "runner_mode_not_supported_for_run"
   print_run_header "blocked"
   printf 'reason=runner_mode_not_supported_for_run\n'
@@ -666,9 +739,11 @@ case "$agent" in
             command_summary="$(command_summary_from_array "${dry_cmd[@]}")"
             ;;
           claude)
-            dry_cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+            runner_claude_base_cmd dry_cmd
             [ -z "$model" ] || dry_cmd+=(--model "$model")
-            [ -z "$reasoning" ] || dry_cmd+=(--effort "$reasoning")
+            if [ -n "$reasoning" ] && runner_claude_supports_effort; then
+              dry_cmd+=(--effort "$reasoning")
+            fi
             command_summary="$(command_summary_from_array "${dry_cmd[@]}") prompt"
             ;;
           opencode)
@@ -738,6 +813,9 @@ case "$agent" in
     elif [ "$adapter_exit" -eq 127 ]; then
       command_status="blocked"
       runner_status="blocked"
+    elif runner_file_has_quota_limit "$adapter_stdout" "$adapter_stderr"; then
+      command_status="blocked"
+      runner_status="stopped"
     else
       command_status="failed"
       runner_status="failed"
@@ -759,10 +837,10 @@ case "$agent" in
       "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
       "active_stage=$(runner_active_state_value "active_stage")" \
       "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
-      "pid=$(runner_state_pid_for_finish)" \
+      "pid=$([ "$runner_status" = "stopped" ] && printf '' || runner_state_pid_for_finish)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \
-      "last_result=adapter_exit_${adapter_exit}" \
+      "last_result=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || printf 'adapter_exit_%s' "$adapter_exit")" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
       "last_stderr_log=${stderr_log_path}"
@@ -771,6 +849,7 @@ case "$agent" in
       "agent=${agent}" \
       "exit_code=${adapter_exit}" \
       "runner_status=${runner_status}" \
+      "reason=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || true)" \
       "command=${command_summary}"
 
     print_run_header "$command_status"
@@ -783,13 +862,15 @@ case "$agent" in
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$runner_status" = "stopped" ]; then
+      printf 'reason=quota_limited\n'
     fi
     printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
     printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
     emit_file_block "adapter_stdout" "$adapter_stdout"
     emit_file_block "adapter_stderr" "$adapter_stderr"
     rm -f "$prompt_file" "$adapter_stdout" "$adapter_stderr"
-    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 127 ]; then
+    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
     fi
     exit 0

@@ -25,8 +25,28 @@ if (-not $BoardDirName) {
   $BoardDirName = Get-DefaultBoardDirName
 }
 
-if ((@($Background.IsPresent, $Stop.IsPresent, $Status.IsPresent) | Where-Object { $_ }).Count -gt 1) {
+if (@(@($Background.IsPresent, $Stop.IsPresent, $Status.IsPresent) | Where-Object { $_ }).Count -gt 1) {
   throw "Use only one of -Background, -Stop, or -Status."
+}
+
+function Get-CurrentPowerShellExe {
+  $processPath = Get-Process -Id $PID -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty Path -ErrorAction SilentlyContinue
+  if ($processPath) {
+    return $processPath
+  }
+
+  $pwsh = Get-Command -Name pwsh -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($pwsh) {
+    return $pwsh.Source
+  }
+
+  $powershell = Get-Command -Name powershell.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($powershell) {
+    return $powershell.Source
+  }
+
+  return "powershell.exe"
 }
 
 function Get-WatchProcess {
@@ -137,7 +157,7 @@ if ($Background.IsPresent) {
     }
   }
 
-  $powershellExe = (Get-Process -Id $PID).Path
+  $powershellExe = Get-CurrentPowerShellExe
   $stdoutFile = Join-Path $hooksLogDir "watch-board.stdout.log"
   $stderrFile = Join-Path $hooksLogDir "watch-board.stderr.log"
   $argList = @(

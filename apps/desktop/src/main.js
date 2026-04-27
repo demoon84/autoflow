@@ -8,6 +8,11 @@ const path = require("node:path");
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 
+if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
+  app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
+  app.setPath("sessionData", path.join(process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA, "session"));
+}
+
 const allowedCommands = new Set([
   "init",
   "status",
@@ -28,6 +33,8 @@ const allowedRunRoles = new Set([
   "ticket",
   "ticket-owner",
   "owner",
+  "coordinator",
+  "coord",
   "planner",
   "plan",
   "todo",
@@ -394,16 +401,141 @@ function parseKeyValueOutput(output) {
   return values;
 }
 
+const projectHostSkillAssets = [
+  {
+    sourceRoot: "integrations/claude/skills",
+    sourceRel: "autoflow/SKILL.md",
+    targetRel: ".claude/skills/autoflow/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/claude/skills",
+    sourceRel: "af/SKILL.md",
+    targetRel: ".claude/skills/af/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "autoflow/SKILL.md",
+    targetRel: ".codex/skills/autoflow/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "autoflow/agents/openai.yaml",
+    targetRel: ".codex/skills/autoflow/agents/openai.yaml"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "af/SKILL.md",
+    targetRel: ".codex/skills/af/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "af/agents/openai.yaml",
+    targetRel: ".codex/skills/af/agents/openai.yaml"
+  }
+];
+
+function renderProjectTemplate(content, boardDirName) {
+  return content.replaceAll("{{BOARD_DIR}}", boardDirName || defaultBoardDirName);
+}
+
+async function syncProjectHostSkillAsset(projectRoot, boardDirName, asset) {
+  const sourcePath = path.join(repoRoot, asset.sourceRoot, asset.sourceRel);
+  const targetPath = path.join(projectRoot, asset.targetRel);
+  const sourceContent = renderProjectTemplate(await fs.readFile(sourcePath, "utf8"), boardDirName);
+
+  try {
+    const targetContent = await fs.readFile(targetPath, "utf8");
+    if (targetContent === sourceContent) {
+      return "unchanged";
+    }
+
+    return "preserved";
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, sourceContent, "utf8");
+  return "created";
+}
+
+async function ensureProjectHostSkills(options = {}) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) {
+    return {
+      ok: false,
+      created: 0,
+      unchanged: 0,
+      preserved: 0,
+      stderr: "Project root is required."
+    };
+  }
+
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  const result = {
+    ok: true,
+    created: 0,
+    unchanged: 0,
+    preserved: 0,
+    stderr: ""
+  };
+
+  for (const asset of projectHostSkillAssets) {
+    try {
+      const action = await syncProjectHostSkillAsset(projectRoot, boardDirName, asset);
+      result[action] += 1;
+    } catch (error) {
+      result.ok = false;
+      result.stderr = error.message || String(error);
+      return result;
+    }
+  }
+
+  return result;
+}
+
 function commandExists(command) {
   return new Promise((resolve) => {
-    const child = spawn("bash", ["-lc", `command -v ${command}`], {
+    const invocation =
+      process.platform === "win32"
+        ? {
+            command: "powershell.exe",
+            args: [
+              "-NoProfile",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              "& { param($Name) if (Get-Command -Name $Name -ErrorAction SilentlyContinue) { exit 0 } exit 1 }",
+              command
+            ]
+          }
+        : {
+            command: "bash",
+            args: ["-lc", `command -v ${command}`]
+          };
+    let settled = false;
+    const finish = (exists) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolve(exists);
+    };
+    const child = spawn(invocation.command, invocation.args, {
       cwd: repoRoot,
       env: process.env,
       windowsHide: true
     });
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish(false);
+    }, 5000);
 
-    child.on("error", () => resolve(false));
-    child.on("close", (code) => resolve(code === 0));
+    child.on("error", () => finish(false));
+    child.on("close", (code) => finish(code === 0));
   });
 }
 
@@ -592,6 +724,106 @@ function runnerArtifactLogPaths(runner) {
   return [runner.lastStdoutLog, runner.lastStderrLog, runner.lastRuntimeLog, runner.logPath].filter(Boolean);
 }
 
+function runnerQuotaInfoFromText(text) {
+  const clean = (text || "").replace(ansiEscapePattern, "");
+  const lower = clean.toLowerCase();
+  const limited =
+    lower.includes("hit your limit") ||
+    lower.includes("usage limit") ||
+    lower.includes("rate limit") ||
+    lower.includes("quota") ||
+    clean.includes("쿼터 부족") ||
+    clean.includes("토큰 부족") ||
+    clean.includes("사용량 제한");
+
+  if (!limited) {
+    return { quotaLimited: false, quotaResetLabel: "" };
+  }
+
+  const resetMatch = clean.match(/\bresets?\s+([^\r\n]+)/i);
+  return {
+    quotaLimited: true,
+    quotaResetLabel: resetMatch?.[1]?.trim() || ""
+  };
+}
+
+function mergeRunnerQuotaInfo(current, next) {
+  if (current.quotaLimited) {
+    return current.quotaResetLabel || !next.quotaResetLabel
+      ? current
+      : { ...current, quotaResetLabel: next.quotaResetLabel };
+  }
+
+  return next.quotaLimited ? next : current;
+}
+
+async function recentRunnerArtifactLogPaths(runner, boardRoot, maxFiles = 10) {
+  if (!runner.id || !safeIdPattern.test(runner.id)) {
+    return [];
+  }
+
+  const logsDir = path.join(boardRoot, "runners", "logs");
+  let entries;
+  try {
+    entries = await fs.readdir(logsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const prefix = `${runner.id}_`;
+  const candidates = [];
+  await Promise.all(
+    entries.map(async (entry) => {
+      if (!entry.isFile()) return;
+      if (!entry.name.startsWith(prefix)) return;
+      if (!/_(?:stdout|stderr)\.log$/.test(entry.name)) return;
+      if (/_live_(?:stdout|stderr)\.log$/.test(entry.name)) return;
+
+      const filePath = path.join(logsDir, entry.name);
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.isFile()) {
+          candidates.push({ filePath, modifiedMs: stat.mtimeMs });
+        }
+      } catch {}
+    })
+  );
+
+  return candidates
+    .sort((a, b) => b.modifiedMs - a.modifiedMs)
+    .slice(0, maxFiles)
+    .map((candidate) => candidate.filePath);
+}
+
+async function runnerQuotaInfo(runner, boardRoot) {
+  const status = runner.stateStatus || runner.status || "";
+  const lastResult = runner.lastResult || "";
+  const shouldReadHistoricQuota = status === "stopped" && lastResult === "quota_limited";
+  let quotaInfo = runnerQuotaInfoFromText(
+    [runner.lastLogLine, runner.activeItem, runner.lastResult].filter(Boolean).join("\n")
+  );
+
+  const candidatePaths = [
+    runner.lastStdoutLog,
+    runner.lastStderrLog,
+    ...(shouldReadHistoricQuota ? await recentRunnerArtifactLogPaths(runner, boardRoot) : [])
+  ].filter(Boolean);
+
+  const seen = new Set();
+  for (const candidatePath of candidatePaths) {
+    if (seen.has(candidatePath)) continue;
+    seen.add(candidatePath);
+    const absolutePath = path.isAbsolute(candidatePath) ? candidatePath : path.join(boardRoot, candidatePath);
+    const text = await readTailText(absolutePath, 8192);
+    quotaInfo = mergeRunnerQuotaInfo(quotaInfo, runnerQuotaInfoFromText(text));
+    if (quotaInfo.quotaLimited && quotaInfo.quotaResetLabel) {
+      break;
+    }
+  }
+
+  return quotaInfo;
+}
+
 async function runnerConversationPreview(runner, boardRoot) {
   const candidatePaths = [
     runner.lastStdoutLog,
@@ -627,7 +859,58 @@ const runnerLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_(?:std
 const runnerLiveLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_live_(?:stdout|stderr)\.log$/;
 const ansiEscapePattern = /\[[0-9;?]*[A-Za-z]/g;
 const totalTokensMarkerPattern = /total[_ -]?tokens/;
+const tokenTotalMarkers = ["total_tokens", "total tokens", "total-tokens", "totaltokens"];
+const tokenComponentMarkers = [
+  "cache_creation_input_tokens",
+  "cache creation input tokens",
+  "cachecreationinputtokens",
+  "cache_read_input_tokens",
+  "cache read input tokens",
+  "cachereadinputtokens",
+  "cached_input_tokens",
+  "cached input tokens",
+  "cachedinputtokens",
+  "reasoning_tokens",
+  "reasoning tokens",
+  "reasoningtokens",
+  "prompt_tokens",
+  "prompt tokens",
+  "prompttokens",
+  "input_tokens",
+  "input tokens",
+  "inputtokens",
+  "completion_tokens",
+  "completion tokens",
+  "completiontokens",
+  "output_tokens",
+  "output tokens",
+  "outputtokens"
+];
 const liveTokenLogCache = new Map();
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function numberAfterTokenMarker(lower, marker) {
+  const markerPattern = new RegExp(`(^|[^a-z0-9_])${escapeRegExp(marker)}[^0-9]*([0-9][0-9,]*)`);
+  const match = lower.match(markerPattern);
+  return match ? Number.parseInt(match[2].replace(/,/g, ""), 10) : -1;
+}
+
+function tokenUsageFromLine(lower) {
+  for (const marker of tokenTotalMarkers) {
+    const value = numberAfterTokenMarker(lower, marker);
+    if (value >= 0) return value;
+  }
+
+  let total = 0;
+  for (const marker of tokenComponentMarkers) {
+    const value = numberAfterTokenMarker(lower, marker);
+    if (value >= 0) total += value;
+  }
+  return total;
+}
 
 function parseTokenUsageChunk(chunk, prior) {
   const combined = (prior?.tail || "") + chunk;
@@ -664,14 +947,18 @@ function parseTokenUsageChunk(chunk, prior) {
       continue;
     }
 
-    const totalTokensMatch = lower.match(totalTokensMarkerPattern);
-    if (totalTokensMatch) {
-      const idx = lower.indexOf(totalTokensMatch[0]);
-      const after = clean.slice(idx + totalTokensMatch[0].length).replace(/,/g, "");
-      const inlineMatch = after.match(/[0-9]+/);
-      if (inlineMatch) {
-        total += Number.parseInt(inlineMatch[0], 10);
-      }
+    if (lower.match(totalTokensMarkerPattern) || lower.includes("totaltokens")) {
+      const tokenLineTotal = tokenUsageFromLine(lower);
+      if (tokenLineTotal > 0) total += tokenLineTotal;
+      continue;
+    }
+
+    if (
+      /(input|output|prompt|completion|cache|cached|reasoning)[_ -]?tokens/.test(lower) ||
+      /(input|output|prompt|completion|cache|cached|reasoning)tokens/.test(lower)
+    ) {
+      const tokenLineTotal = tokenUsageFromLine(lower);
+      if (tokenLineTotal > 0) total += tokenLineTotal;
     }
   }
 
@@ -791,11 +1078,16 @@ async function readRunnerTokenUsage(boardRoot) {
 async function enrichRunnerTerminalPreviews(runners, boardRoot) {
   const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot);
   return Promise.all(
-    runners.map(async (runner) => ({
-      ...runner,
-      conversationPreview: await runnerConversationPreview(runner, boardRoot),
-      tokenUsage: tokenUsageByRunner.get(runner.id) || 0
-    }))
+    runners.map(async (runner) => {
+      const conversationPreview = await runnerConversationPreview(runner, boardRoot);
+      const quotaInfo = await runnerQuotaInfo({ ...runner, conversationPreview }, boardRoot);
+      return {
+        ...runner,
+        ...quotaInfo,
+        conversationPreview,
+        tokenUsage: tokenUsageByRunner.get(runner.id) || 0
+      };
+    })
   );
 }
 
@@ -1111,25 +1403,27 @@ async function readBoard({ projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot || "", normalizedBoardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
   const exists = await pathExists(boardRoot);
+  const hostSkillsResult = exists
+    ? await ensureProjectHostSkills({ projectRoot, boardDirName: normalizedBoardDirName })
+    : null;
 
-  const statusResult = exists
-    ? await runAutoflow("status", { projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
-  const runnersResult = exists
-    ? await listRunners({ projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
-  const doctorResult = exists
-    ? await runAutoflowCached("doctor", { projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
-  const metricsResult = exists
-    ? await runAutoflowCached("metrics", { projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
-  const stopHookResult = exists
-    ? await runAutoflow("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
-  const watcherResult = exists
-    ? await runAutoflow("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
-    : null;
+  const [
+    statusResult,
+    runnersResult,
+    doctorResult,
+    metricsResult,
+    stopHookResult,
+    watcherResult
+  ] = exists
+    ? await Promise.all([
+        runAutoflow("status", { projectRoot, boardDirName: normalizedBoardDirName }),
+        listRunners({ projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCached("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCached("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflow("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflow("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
+      ])
+    : [null, null, null, null, null, null];
 
   const ticketGroups = {
     backlog: await listMarkdownFiles(path.join(ticketsRoot, "backlog")),
@@ -1162,6 +1456,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     stopHookResult,
     watcher: watcherResult ? parseKeyValueOutput(watcherResult.stdout) : {},
     watcherResult,
+    hostSkillsResult,
     runners: runnersResult?.runners || [],
     runnersResult,
     tickets: ticketGroups,

@@ -9,7 +9,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 function Get-BoardRoot {
-  $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $scriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+  }
+  elseif ($MyInvocation.MyCommand.Path) {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+  }
+  else {
+    (Get-Location).Path
+  }
   $scriptDirName = Split-Path -Leaf $scriptDir
   if ($scriptDirName -eq "runtime") {
     return (Resolve-Path (Join-Path $scriptDir "..\..")).Path
@@ -77,7 +85,12 @@ function Quote-CommandArg {
 function Get-DefaultStopHookCommand {
   param([string]$CheckStopScript)
 
-  $powershellExe = (Get-Process -Id $PID).Path
+  $powershellExe = Get-Process -Id $PID -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty Path -ErrorAction SilentlyContinue
+  if (-not $powershellExe) {
+    $pwsh = Get-Command -Name pwsh -ErrorAction SilentlyContinue | Select-Object -First 1
+    $powershellExe = if ($pwsh) { $pwsh.Source } else { "powershell.exe" }
+  }
   return ('{0} -NoLogo -NoProfile -ExecutionPolicy Bypass -File {1}' -f (Quote-CommandArg $powershellExe), (Quote-CommandArg $CheckStopScript))
 }
 
@@ -214,7 +227,12 @@ elseif ($stopEntriesValue -is [System.Collections.IEnumerable] -and $stopEntries
   Set-JsonPropertyValue -Object $hooksObject -Name "Stop" -Value $stopEntries
 }
 else {
-  throw "hook manifest 'hooks.Stop' must be a JSON array: $manifestPath"
+  if ($Action -eq "status") {
+    $stopEntries = New-MutableList
+  }
+  else {
+    throw "hook manifest 'hooks.Stop' must be a JSON array: $manifestPath"
+  }
 }
 
 $installedBefore = $false
