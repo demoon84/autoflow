@@ -48,9 +48,9 @@ command = ""
 [[runners]]
 id = "wiki-1"
 role = "wiki-maintainer"
-agent = "gemini"
-model = "gemini-3-flash-preview"
-reasoning = ""
+agent = "codex"
+model = "gpt-5.5"
+reasoning = "medium"
 mode = "loop"
 interval_seconds = 60
 enabled = true
