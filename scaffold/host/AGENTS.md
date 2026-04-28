@@ -30,7 +30,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Ticket Owner 또는 legacy todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `{{BOARD_DIR}}/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
-5. 기본 실행 모델은 `ticket-owner` 다. 한 runner 가 ticket mini-plan, 구현, 검증, evidence, done/reject 이동을 끝까지 책임진다.
+5. 기본 토폴로지는 **Plan AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. Plan AI(`planner-1`) 가 backlog/reject 를 todo 로 흘려보내면, Impl AI(`owner-1`) 가 todo claim 부터 mini-plan, 구현, 검증, AI-led merge, done/reject 이동을 한 번에 끝낸다. Wiki AI(`wiki-1`) 는 `tickets/done/` + `tickets/reject/` 변동을 감지해 `{{BOARD_DIR}}/wiki/` 의 AI synthesis 를 갱신한다. 세 runner 는 디스조인트한 경로만 만지므로 동시에 ticking 해도 충돌이 발생하지 않는다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 역할 분리보다 `autoflow run ticket` / owner runner 를 우선한다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
 8. ticket owner 또는 verifier 는 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.
@@ -46,13 +46,13 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 ## Trigger Interpretation
 
 - `#af`
-  - Claude `/af`, Codex `$af` 와 같은 spec handoff alias 다.
-  - 사용자와 대화해 내용을 정리하고, 사용자가 명시적으로 저장을 허락하면 `{{BOARD_DIR}}/tickets/backlog/project_{NNN}.md` 에 spec 만 남긴다.
+  - Claude `/af`, Codex `$af` 와 같은 PRD handoff alias 다.
+  - 사용자와 대화해 내용을 정리하고, 사용자가 명시적으로 저장을 허락하면 `{{BOARD_DIR}}/tickets/backlog/prd_{NNN}.md` 에 PRD 만 남긴다.
   - `{{BOARD_DIR}}/tickets/plan/` 은 건드리지 않는다.
 
 - `#autoflow`
-  - Claude `/autoflow`, Codex `$autoflow` 와 같은 spec handoff alias 다.
-  - Codex/Claude 대화창에서 요구사항을 정리해 `{{BOARD_DIR}}/tickets/backlog/project_{NNN}.md` spec 만 넘긴다.
+  - Claude `/autoflow`, Codex `$autoflow` 와 같은 PRD handoff alias 다.
+  - Codex/Claude 대화창에서 요구사항을 정리해 `{{BOARD_DIR}}/tickets/backlog/prd_{NNN}.md` PRD 만 넘긴다.
   - 이후 ticket owner runner 가 Autoflow 보드에서 mini-plan / 구현 / 검증 / evidence 를 한 번에 이어받는다.
   - 현재 프로젝트에 이 alias 구현이 없다면 `#af` 와 같은 원칙으로 처리하되, plan / ticket / 구현은 시작하지 않는다.
 
