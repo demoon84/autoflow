@@ -1,6 +1,11 @@
-# Hook Logs
+# Hook Logs (DEPRECATED — legacy file-watch path)
 
-`logs/hooks/` stores file-watch hook dispatch records.
+`logs/hooks/` stores file-watch hook dispatch records produced by
+`watch-board.*` → `run-hook.*`. The file-watch trigger path is
+DEPRECATED in favor of the heartbeat-driven 3-runner topology
+(planner-1 + owner-1 + wiki-1); these logs only appear when a user
+explicitly runs `autoflow watch-bg`. Heartbeat runners log to
+`runners/logs/` instead.
 
 Typical log name:
 
