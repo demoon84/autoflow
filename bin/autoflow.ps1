@@ -22,12 +22,12 @@ Usage:
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
-  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Plan AI (3-runner default)
+  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]    # Impl AI (3-runner default)
+  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Wiki AI (3-runner default)
+  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # legacy role-pipeline
+  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy role-pipeline
+  autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]

@@ -28,13 +28,13 @@ Usage:
   autoflow watch-stop [project-root] [board-dir-name]
   autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
-  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  autoflow run self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Plan AI (3-runner default)
+  autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]    # Impl AI (3-runner default)
+  autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Wiki AI (3-runner default)
+  autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # legacy role-pipeline
+  autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy role-pipeline
+  autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
+  autoflow run self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # trial (disabled by default)
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
@@ -60,10 +60,11 @@ Examples:
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
   echo "Build the local runner harness" | autoflow prd create /path/to/project --title "Runner harness"
-  autoflow run ticket /path/to/project --runner owner-1
   autoflow run planner /path/to/project --runner planner-1
-  autoflow run coordinator /path/to/project --runner coordinator-1
-  autoflow run self-improve /path/to/project --runner self-improve-1
+  autoflow run ticket /path/to/project --runner owner-1
+  autoflow run wiki /path/to/project --runner wiki-1
+  autoflow run coordinator /path/to/project --runner coordinator-1   # legacy
+  autoflow run self-improve /path/to/project --runner self-improve-1  # trial
   autoflow wiki update /path/to/project
   autoflow wiki query /path/to/project --term auth --term session --limit 5 --synth
   autoflow runners list /path/to/project
