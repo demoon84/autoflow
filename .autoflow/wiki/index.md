@@ -7,43 +7,43 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
-- **[[learnings/manual-merge-recovery-20260427|manual-merge-recovery-20260427]]**: Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
-- **[[features/desktop-runner-controls|desktop-runner-controls]]**: Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
-- **[[decisions/design-kit-mui-migration|design-kit-mui-migration]]**: Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
-- **[[features/desktop-gemini-icon|desktop-gemini-icon]]**: Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
-- **[[features/ai-workflow-board|ai-workflow-board]]**: Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
-- **[[features/ticket-workspace-tabs|ticket-workspace-tabs]]**: Documented the evolution of the ticket board into a unified tabbed workspace.
+- **[[manual-merge-recovery-20260427]]**: Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
+- **[[desktop-runner-controls]]**: Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
+- **[[design-kit-mui-migration]]**: Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
+- **[[desktop-gemini-icon]]**: Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
+- **[[ai-workflow-board]]**: Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
+- **[[ticket-workspace-tabs]]**: Documented the evolution of the ticket board into a unified tabbed workspace.
 
 ## Pages
 
 - [[project-overview]]
 - [[log]]
 - `features/`
-  - [[features/ai-workflow-board|ai-workflow-board]]
-  - [[features/self-improvement-trial|self-improvement-trial]]
-  - [[features/ticket-workspace-tabs|ticket-workspace-tabs]]
-  - [[features/wiki-preview-flow|wiki-preview-flow]]
-  - [[features/auto-resume-recovery|auto-resume-recovery]]
-  - [[features/workflow-stat-strip|workflow-stat-strip]]
-  - [[features/desktop-gemini-icon|desktop-gemini-icon]]
-  - [[features/in-app-help|in-app-help]]
-  - [[features/desktop-runner-controls|desktop-runner-controls]]
+  - [[ai-workflow-board]]
+  - [[self-improvement-trial]]
+  - [[ticket-workspace-tabs]]
+  - [[wiki-preview-flow]]
+  - [[auto-resume-recovery]]
+  - [[workflow-stat-strip]]
+  - [[desktop-gemini-icon]]
+  - [[in-app-help]]
+  - [[desktop-runner-controls]]
 - `decisions/`
-  - [[decisions/design-kit-mui-migration|design-kit-mui-migration]]
-  - [[decisions/manual-resolution-policy|manual-resolution-policy]]
-  - [[decisions/handoff-as-raw-source|handoff-as-raw-source]]
-  - [[decisions/prd-terminology-rename|prd-terminology-rename]]
-  - [[decisions/worker-display-policy|worker-display-policy]]
+  - [[design-kit-mui-migration]]
+  - [[manual-resolution-policy]]
+  - [[handoff-as-raw-source]]
+  - [[prd-terminology-rename]]
+  - [[worker-display-policy]]
 - `architecture/`
-  - [[architecture/README|README]]
-  - [[architecture/runner-role-slugs|runner-role-slugs]]
+  - [[README]]
+  - [[runner-role-slugs]]
 - `learnings/`
-  - [[learnings/ticket-overlap-no-op|ticket-overlap-no-op]]
-  - [[learnings/merge-blocked-already-applied-patch|merge-blocked-already-applied-patch]]
-  - [[learnings/manual-merge-recovery-20260427|manual-merge-recovery-20260427]]
+  - [[ticket-overlap-no-op]]
+  - [[merge-blocked-already-applied-patch]]
+  - [[manual-merge-recovery-20260427]]
 
 ## Archive
-- [[features/desktop-tickets-kanban|desktop-tickets-kanban]] (Legacy)
+- [[desktop-tickets-kanban]] (Legacy)
 
 ## Source Of Truth
 
@@ -52,11 +52,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 25
+- Done tickets: 26
 - Reject records: 1
-- Verifier logs: 214
+- Verifier logs: 215
 - Conversation handoffs: 1
-- Last updated: 2026-04-28T15:00:53Z
+- Last updated: 2026-04-28T15:19:51Z
 
 ## Completed Tickets
 
