@@ -25,12 +25,13 @@ Each entry should cite its source ticket or log.
 - `prd_030` - Add Inbox tab to Ticket Workspace. Source: `tickets/done/prd_030/prd_030.md`.
 - `prd_035` - Apply MUI dashboard design to the Statistics page. Source: `tickets/done/prd_035/prd_035.md`.
 - `prd_037` - Fix Statistics page scrolling. Source: `tickets/done/prd_037/prd_037.md`.
+- `prd_038` - Enable Wiki Bot (`wiki-1`) to use the Codex adapter while preserving Gemini support. Source: `tickets/done/prd_038/tickets_038.md`.
 
 
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-28T20:43:50Z
+- Last rebuilt: 2026-04-28T21:03:36Z
 
 ### Completed Tickets
 

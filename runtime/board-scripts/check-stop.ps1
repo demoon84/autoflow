@@ -357,6 +357,30 @@ function Get-TicketField {
   return (Get-MarkdownFieldValue -FilePath $FilePath -Heading "Ticket" -Field $Field)
 }
 
+function ConvertTo-WorkerMatchId {
+  param([string]$Value)
+
+  if (-not $Value) {
+    return ""
+  }
+
+  if ($Value -match '^(owner|worker|ai)-(.+)$') {
+    return "worker-$($matches[2])"
+  }
+
+  return $Value
+}
+
+function Test-WorkerFieldMatch {
+  param([string]$FieldValue, [string]$WorkerId)
+
+  if (-not $FieldValue -or -not $WorkerId) {
+    return $false
+  }
+
+  return (ConvertTo-WorkerMatchId $FieldValue) -eq (ConvertTo-WorkerMatchId $WorkerId)
+}
+
 function Test-ExecutionStageCandidate {
   param([string]$Stage)
 
@@ -368,7 +392,7 @@ function Get-ExecutionLoadForOwner {
 
   $count = 0
   foreach ($ticket in (Get-ListMatchingFiles -Directory (Join-Path $BoardRoot "tickets/inprogress") -Filter "tickets_*.md")) {
-    if ((Get-TicketField -FilePath $ticket.FullName -Field "Execution AI") -ne $Owner) {
+    if (-not (Test-WorkerFieldMatch (Get-TicketField -FilePath $ticket.FullName -Field "Execution AI") $Owner)) {
       continue
     }
 
@@ -460,10 +484,10 @@ switch ($hookRole) {
         $executionOwner = Get-TicketField -FilePath $ticket.FullName -Field "Execution AI"
         $verifierOwner = Get-TicketField -FilePath $ticket.FullName -Field "Verifier AI"
 
-        $ownedByTicketOwner = ($owner -eq $hookWorkerId) -or
-          ($claimedBy -eq $hookWorkerId) -or
-          ($executionOwner -eq $hookWorkerId) -or
-          ($verifierOwner -eq $hookWorkerId)
+        $ownedByTicketOwner = (Test-WorkerFieldMatch $owner $hookWorkerId) -or
+          (Test-WorkerFieldMatch $claimedBy $hookWorkerId) -or
+          (Test-WorkerFieldMatch $executionOwner $hookWorkerId) -or
+          (Test-WorkerFieldMatch $verifierOwner $hookWorkerId)
 
         if ($ownedByTicketOwner -and (@("done", "rejected") -notcontains $stage)) {
           $reason = "ticket-owner work remains: owner $hookWorkerId still has inprogress ticket $($ticket.Name)."
@@ -562,9 +586,9 @@ switch ($hookRole) {
       $executionOwner = Get-TicketField -FilePath $ticket.FullName -Field "Execution AI"
       $owner = Get-TicketField -FilePath $ticket.FullName -Field "AI"
 
-      $ownedByWorker = ($executionOwner -eq $hookWorkerId) -or
-        ($owner -eq $hookWorkerId) -or
-        ((Test-FieldUnassigned $executionOwner) -and $owner -eq $hookWorkerId)
+      $ownedByWorker = (Test-WorkerFieldMatch $executionOwner $hookWorkerId) -or
+        (Test-WorkerFieldMatch $owner $hookWorkerId) -or
+        ((Test-FieldUnassigned $executionOwner) -and (Test-WorkerFieldMatch $owner $hookWorkerId))
 
       if ($ownedByWorker -and (@("", "claimed", "executing") -contains $stage)) {
         $reason = "todo work remains: worker $hookWorkerId still has inprogress ticket $($ticket.Name)."
@@ -588,8 +612,8 @@ switch ($hookRole) {
       $verifierOwner = Get-TicketField -FilePath $ticket.FullName -Field "Verifier AI"
       $owner = Get-TicketField -FilePath $ticket.FullName -Field "AI"
 
-      $ownedByVerifier = ($verifierOwner -eq $hookWorkerId) -or
-        ((Test-FieldUnassigned $verifierOwner) -and $owner -eq $hookWorkerId) -or
+      $ownedByVerifier = (Test-WorkerFieldMatch $verifierOwner $hookWorkerId) -or
+        ((Test-FieldUnassigned $verifierOwner) -and (Test-WorkerFieldMatch $owner $hookWorkerId)) -or
         (Test-FieldUnassigned $verifierOwner)
 
       if ($ownedByVerifier) {

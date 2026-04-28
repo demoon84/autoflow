@@ -3685,7 +3685,7 @@ function TicketDetailLayer({
         ["ID", item.id || item.displayId],
         ["PRD Key", item.projectKey],
         [item.kind === "memo" ? "Status" : "Stage", item.stage || item.statusLabel],
-        ["AI", item.aiLabel],
+        ["Worker", item.aiLabel],
         ["Claimed By", item.claimedByLabel],
         ["Last Updated", item.lastUpdated || formatDate(item.modifiedAt)]
       ].filter(([, value]) => Boolean(value))
@@ -4867,8 +4867,9 @@ function isMachineRunnerLog(value: string) {
 
 function displayWorkflowRunnerId(value: string) {
   if (!value) return value;
-  if (/^owner-/.test(value)) return value.replace(/^owner-/, "AI-");
-  if (/^worker-/.test(value)) return value.replace(/^worker-/, "AI-");
+  if (/^owner-/.test(value)) return value.replace(/^owner-/, "worker-");
+  if (/^worker-/.test(value)) return value;
+  if (/^ai-/i.test(value)) return value.replace(/^ai-/i, "worker-");
   if (value === "merge-1") return "머지봇";
   if (/^merge-\d+$/.test(value)) return value.replace(/^merge-/, "머지봇-");
   if (value === "wiki-maintainer-1" || value === "wiki-1") return "위키봇";

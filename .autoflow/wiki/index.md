@@ -7,43 +7,45 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
-- **[[manual-merge-recovery-20260427]]**: Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
-- **[[desktop-runner-controls]]**: Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
-- **[[design-kit-mui-migration]]**: Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
-- **[[desktop-gemini-icon]]**: Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
-- **[[ai-workflow-board]]**: Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
-- **[[ticket-workspace-tabs]]**: Documented the evolution of the ticket board into a unified tabbed workspace.
+- **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
+- **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
+- **[[features/desktop-runner-controls]]** (`wiki/features/desktop-runner-controls.md`): Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
+- **[[decisions/design-kit-mui-migration]]** (`wiki/decisions/design-kit-mui-migration.md`): Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
+- **[[features/desktop-gemini-icon]]** (`wiki/features/desktop-gemini-icon.md`): Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
+- **[[features/ai-workflow-board]]** (`wiki/features/ai-workflow-board.md`): Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
+- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Documented the evolution of the ticket board into a unified tabbed workspace.
 
 ## Pages
 
 - [[project-overview]]
 - [[log]]
 - `features/`
-  - [[ai-workflow-board]]
-  - [[self-improvement-trial]]
-  - [[ticket-workspace-tabs]]
-  - [[wiki-preview-flow]]
-  - [[auto-resume-recovery]]
-  - [[workflow-stat-strip]]
-  - [[desktop-gemini-icon]]
-  - [[in-app-help]]
-  - [[desktop-runner-controls]]
-  - [[desktop-statistics-page]]
+  - [[features/ai-workflow-board]] (`wiki/features/ai-workflow-board.md`)
+  - [[features/self-improvement-trial]] (`wiki/features/self-improvement-trial.md`)
+  - [[features/ticket-workspace-tabs]] (`wiki/features/ticket-workspace-tabs.md`)
+  - [[features/wiki-preview-flow]] (`wiki/features/wiki-preview-flow.md`)
+  - [[features/auto-resume-recovery]] (`wiki/features/auto-resume-recovery.md`)
+  - [[features/workflow-stat-strip]] (`wiki/features/workflow-stat-strip.md`)
+  - [[features/desktop-gemini-icon]] (`wiki/features/desktop-gemini-icon.md`)
+  - [[features/in-app-help]] (`wiki/features/in-app-help.md`)
+  - [[features/desktop-runner-controls]] (`wiki/features/desktop-runner-controls.md`)
+  - [[features/desktop-statistics-page]] (`wiki/features/desktop-statistics-page.md`)
+  - [[features/wiki-bot-codex-adapter]] (`wiki/features/wiki-bot-codex-adapter.md`)
 - `decisions/`
-  - [[design-kit-mui-migration]]
-  - [[manual-resolution-policy]]
-  - [[handoff-as-raw-source]]
-  - [[prd-terminology-rename]]
-  - [[worker-display-policy]]
+  - [[decisions/design-kit-mui-migration]] (`wiki/decisions/design-kit-mui-migration.md`)
+  - [[decisions/manual-resolution-policy]] (`wiki/decisions/manual-resolution-policy.md`)
+  - [[decisions/handoff-as-raw-source]] (`wiki/decisions/handoff-as-raw-source.md`)
+  - [[decisions/prd-terminology-rename]] (`wiki/decisions/prd-terminology-rename.md`)
+  - [[decisions/worker-display-policy]] (`wiki/decisions/worker-display-policy.md`)
 - `architecture/`
-  - [[runner-role-slugs]]
+  - [[architecture/runner-role-slugs]] (`wiki/architecture/runner-role-slugs.md`)
 - `learnings/`
-  - [[ticket-overlap-no-op]]
-  - [[merge-blocked-already-applied-patch]]
-  - [[manual-merge-recovery-20260427]]
+  - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
+  - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
+  - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
 
 ## Archive
-- [[desktop-tickets-kanban]] (Legacy)
+- [[features/desktop-tickets-kanban]] (`wiki/features/desktop-tickets-kanban.md`) (Legacy)
 
 ## Source Of Truth
 
@@ -52,11 +54,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 34
+- Done tickets: 35
 - Reject records: 1
-- Verifier logs: 223
+- Verifier logs: 224
 - Conversation handoffs: 2
-- Last updated: 2026-04-28T20:43:50Z
+- Last updated: 2026-04-28T21:03:36Z
 
 ## Completed Tickets
 

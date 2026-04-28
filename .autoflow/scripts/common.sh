@@ -80,7 +80,30 @@ display_worker_id() {
   suffix="${raw#*-}"
   case "$prefix" in
     owner|worker|ai|AI)
-      printf 'AI-%s' "$suffix"
+      printf 'worker-%s' "$suffix"
+      ;;
+    *)
+      printf '%s' "$raw"
+      ;;
+  esac
+}
+
+canonical_worker_id() {
+  local raw="${1:-}"
+  local prefix suffix
+
+  [ -n "$raw" ] || return 0
+
+  prefix="${raw%%-*}"
+  if [ "$prefix" = "$raw" ]; then
+    printf '%s' "$raw"
+    return 0
+  fi
+
+  suffix="${raw#*-}"
+  case "$prefix" in
+    owner|worker|ai|AI)
+      printf 'worker-%s' "$suffix"
       ;;
     *)
       printf '%s' "$raw"
@@ -94,7 +117,7 @@ worker_id_matches_field() {
 
   [ -n "$field_value" ] || return 1
   [ -n "$worker_value" ] || return 1
-  [ "$(display_worker_id "$field_value")" = "$(display_worker_id "$worker_value")" ]
+  [ "$(canonical_worker_id "$field_value")" = "$(canonical_worker_id "$worker_value")" ]
 }
 
 BOARD_ROOT="$(normalize_runtime_path "${AUTOFLOW_BOARD_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}")"

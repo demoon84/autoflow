@@ -19,4 +19,4 @@ Topology note (refactor 2026-04-27): the default board runs **three loop runners
 
 Wiki AI note: Impl AI's finish-ticket-owner pass still runs `update-wiki.sh` inline so the deterministic baseline (`.autoflow/wiki/index.md`, `log.md`, `project-overview.md`) is fresh the moment a ticket lands in `done/`. The AI synthesis layer (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) is delegated to `wiki-1` which polls done/reject for changes; the inline call no longer triggers the maintainer adapter, keeping a single source of AI invocation.
 
-User-visible worker notation rule: ticket / verification / log markdown and desktop previews should render runner ids as `AI-N`. Keep storage ids such as `owner-1`, runtime role keys, and runner state filenames unchanged.
+User-visible worker notation rule: ticket / verification / log markdown and desktop previews should prefer `worker-N` wording for runner attribution. Keep storage ids such as `owner-1`, runtime role keys, and runner state filenames unchanged. Existing legacy ticket fields such as `AI`, `Execution AI`, and `Verifier AI` remain readable for compatibility.
