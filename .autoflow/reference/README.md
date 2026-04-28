@@ -3,6 +3,7 @@
 Reference files explain the board contract and provide templates.
 
 - `backlog.md`: PRD queue rules.
+- `memo.md`: quick memo intake rules.
 - `plan.md`: legacy planning rules.
 - `tickets-board.md`: ticket state machine.
 - `project-spec-template.md`: backlog PRD template.

@@ -80,7 +80,7 @@ The agent must:
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
 4. Let Plan AI promote the memo into a generated PRD and todo ticket when safe.
-5. Mark unclear memos as `needs-info` instead of creating implementation work.
+5. Treat memo requests as directives and infer the safest narrow implementation scope; only unsafe memos should be blocked.
 
 ## Ticket Owner Rules
 

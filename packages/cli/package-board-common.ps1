@@ -105,6 +105,7 @@ function Get-ManagedBoardAssetEntries {
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "rules/wiki/lint-checklist.md"; TargetRel = "rules/wiki/lint-checklist.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/README.md"; TargetRel = "reference/README.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/backlog.md"; TargetRel = "reference/backlog.md" }
+    [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/memo.md"; TargetRel = "reference/memo.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/backlog-processed.md"; TargetRel = "reference/backlog-processed.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/project-spec-template.md"; TargetRel = "reference/project-spec-template.md" }
     [pscustomobject]@{ Kind = "template_text"; SourceRel = "reference/feature-spec-template.md"; TargetRel = "reference/feature-spec-template.md" }
@@ -205,6 +206,7 @@ function Get-ManagedBoardDirectoryEntries {
     "logs"
     "logs/hooks"
     "tickets"
+    "tickets/inbox"
     "tickets/backlog"
     "tickets/plan"
     "tickets/todo"
@@ -235,10 +237,13 @@ function Get-ManagedHostSkillAssetEntries {
   return @(
     [pscustomobject]@{ Kind = "claude_skill_text"; SourceRel = "autoflow/SKILL.md"; TargetRel = ".claude/skills/autoflow/SKILL.md" }
     [pscustomobject]@{ Kind = "claude_skill_text"; SourceRel = "af/SKILL.md"; TargetRel = ".claude/skills/af/SKILL.md" }
+    [pscustomobject]@{ Kind = "claude_skill_text"; SourceRel = "memo/SKILL.md"; TargetRel = ".claude/skills/memo/SKILL.md" }
     [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "autoflow/SKILL.md"; TargetRel = ".codex/skills/autoflow/SKILL.md" }
     [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "autoflow/agents/openai.yaml"; TargetRel = ".codex/skills/autoflow/agents/openai.yaml" }
     [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "af/SKILL.md"; TargetRel = ".codex/skills/af/SKILL.md" }
     [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "af/agents/openai.yaml"; TargetRel = ".codex/skills/af/agents/openai.yaml" }
+    [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "memo/SKILL.md"; TargetRel = ".codex/skills/memo/SKILL.md" }
+    [pscustomobject]@{ Kind = "codex_skill_text"; SourceRel = "memo/agents/openai.yaml"; TargetRel = ".codex/skills/memo/agents/openai.yaml" }
   )
 }
 

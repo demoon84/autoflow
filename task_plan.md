@@ -65,6 +65,40 @@ Create a first Electron desktop shell that visualizes how Codex is moving work t
 
 ---
 
+# Task Plan: Wiki Runner Token Efficiency
+
+## Goal
+Reduce unnecessary wiki-bot LLM/token usage and long-running adapter memory cost while keeping the deterministic wiki baseline and query/lint behavior correct.
+
+## Scope
+- Improve wiki runner preflight so idle loop ticks can skip adapter startup when wiki inputs have not changed.
+- Keep explicit `autoflow wiki query --synth` and `autoflow wiki lint --semantic` available when requested.
+- Add lightweight local state/fingerprints instead of changing ticket or wiki source-of-truth rules.
+- Keep edits scoped to CLI/runtime scripts and focused tests.
+
+## Phases
+- [x] Read board rules, wiki runner contracts, planning files, and current process/token evidence.
+- [x] Trace current wiki adapter invocation and identify the smallest skip/cache point.
+- [x] Implement deterministic wiki idle gate and low-value synth skip.
+- [x] Add targeted smoke coverage for skip/run behavior.
+- [x] Run verification commands and whitespace checks.
+
+## Decisions
+- Do not stop live `planner-1`, `owner-1`, or `wiki-1` during investigation unless explicitly requested.
+- Avoid touching dirty desktop/UI/board files unrelated to this optimization.
+- Prefer deterministic input fingerprints over model-specific token accounting.
+
+## Verification
+- [x] Shell syntax checks for changed scripts.
+- [x] Targeted wiki smoke test.
+- [x] `git diff --check` for changed files.
+
+## Risks
+- A too-aggressive skip could miss meaningful wiki source changes.
+- Live `owner-1` is currently active on `tickets_038`; avoid overlapping edits to files it may be changing.
+
+---
+
 # Task Plan: Blocked Runner Status Debug
 
 ## Goal
@@ -459,3 +493,29 @@ Assess whether Autoflow is competitive against similar GitHub-hosted AI coding a
 ## Verification
 - [x] GitHub repo pages and GitHub API metadata checked on 2026-04-26.
 - [x] Local `desktop:check` and `smoke:ticket-owner` still pass from the preceding harness diagnosis.
+
+---
+
+# Task Plan: Planner Needs-Info Token Gate
+
+## Goal
+Make memo intake autonomous: planner ticks must not turn memo requests into repeated human-question loops, and parked `needs-info` memos must be reprocessable.
+
+## Scope
+- Add cheap runtime preflight for planner runs before launching the AI adapter.
+- Treat `needs-info` memos as actionable legacy/parked inputs so the planner can promote them instead of looping.
+- Remove memo-planner instructions that ask humans for clarification.
+- Add smoke coverage proving a previously `needs-info` memo is selected as memo inbox work.
+- Prevent already-promoted memos from being selected again, and archive consumed memo files beside the generated PRD when the todo ticket is created.
+
+## Phases
+- [x] Confirm root cause from `memo_005`, `start-plan.sh`, runner config, and runner logs.
+- [x] Patch planner preflight, memo actionability, and memo archive/duplicate guards.
+- [x] Add smoke coverage for actionable `needs-info` memo recovery and generated-PRD archive behavior.
+- [x] Verify syntax and focused smoke behavior.
+
+## Decisions
+- Autonomous runners should not wait on human clarification inside an AI loop.
+- Memo files are directives, not question prompts; Plan AI must infer a concrete implementation scope and ticketize.
+- If a memo conflicts with existing policy, the newer memo directive is treated as intentional unless it is unsafe.
+- If a planner already generated a PRD from a memo, the runtime must skip that inbox memo on later ticks so it cannot create duplicate PRDs.

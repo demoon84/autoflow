@@ -1,5 +1,8 @@
 # Progress
 
+- 2026-04-29 — Started wiki runner token-efficiency implementation after reviewing live runner memory/process state and token metrics. Added a focused plan section and recorded findings that wiki semantic lint and per-tick adapter startup are the main optimization targets.
+- 2026-04-29 — Added a loop-mode wiki input fingerprint gate, no-result synth skip, and `wiki-runner-idle-skip-smoke.sh`. Verification passed: shell syntax checks, targeted smoke, no-result synth check, and targeted `git diff --check`.
+
 - 2026-04-24 22:50 — Confirmed no existing JavaScript package setup and checked local Node/npm availability.
 - 2026-04-24 22:51 — Chose a plain Electron MVP under `apps/desktop/` to keep the first step small and low-risk.
 - 2026-04-24 22:56 — Added root package scripts plus `apps/desktop` Electron main/preload/renderer scaffold.
@@ -85,3 +88,10 @@
 - 2026-04-27 — Added prompt-level language policy to runner adapter prompts, wiki synth/lint prompts, hook prompts, heartbeat templates, and AGENTS guidance: visible prose Korean by default; parser-sensitive formats unchanged.
 - 2026-04-27 — Verification: `bash -n` passed for changed shell scripts; targeted `git diff --check` passed; disposable `autoflow run ticket --dry-run` prompt includes the Language policy; heartbeat templates and wiki prompts contain the Korean-output directives.
 - 2026-04-27 — Verification note: `./bin/autoflow render-heartbeats . .autoflow` could not run on the live board because `.autoflow/automations/heartbeat-set.toml` has a placeholder/non-real `target_thread_id`.
+- 2026-04-29 — Started planner needs-info token gate after `memo_005` repeatedly consumed planner Codex ticks while parked at `Status: needs-info`.
+- 2026-04-29 — User clarified memo requests are not a place for planner questions; updated implementation direction to make `needs-info` memos actionable and remove future memo-question loops.
+- 2026-04-29 — Patched planner preflight so idle planner runtime exits before Codex adapter launch; memo contracts now treat inbox memos as implementation directives, including scaffold/current docs and memo creation hooks.
+- 2026-04-29 — Compressed the repeated `memo_005` planner notes, marked it ready, and observed the live planner promote it into `prd_039` / `tickets_039`.
+- 2026-04-29 — Added runtime duplicate protection for already-promoted memo sources and automatic source memo archiving during backlog-to-todo ticket creation; moved `memo_005` to `tickets/done/prd_039/memo_005.md`.
+- 2026-04-29 — Verification passed: shell syntax checks, `tests/smoke/ticket-owner-smoke.sh`, targeted `git diff --check`, and runtime preflight now selects `memo_011` rather than reprocessing `memo_005`.
+- 2026-04-29 — Lowered live `planner-1` reasoning from `xhigh` to `medium` and terminated the already-running xhigh planner adapter tick while keeping the planner loop runner itself alive.

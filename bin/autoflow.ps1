@@ -22,6 +22,7 @@ Usage:
   autoflow render-heartbeats [project-root] [board-dir-name]
   autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
+  autoflow memo create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Plan AI (3-runner default)
   autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]    # Impl AI (3-runner default)
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Wiki AI (3-runner default)
@@ -75,6 +76,7 @@ $cliScriptMap = @{
   "render-heartbeats" = "render-heartbeats.ps1"
   "prd" = "spec-project.ps1"
   "spec" = "spec-project.ps1"
+  "memo" = "memo-project.ps1"
   "wiki" = "wiki-project.ps1"
   "runners" = "runners-project.ps1"
   "run" = "run-role.ps1"

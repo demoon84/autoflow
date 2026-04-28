@@ -8,3 +8,4 @@ Each lesson should cite its source.
 
 - [[ticket-overlap-no-op]]
 - [[merge-blocked-already-applied-patch]]
+- [[manual-merge-recovery-20260427]]

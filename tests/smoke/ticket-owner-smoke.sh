@@ -81,6 +81,10 @@ test -f "${project_dir}/.autoflow/reference/memo.md"
 spec_output="${project_dir}/spec.out"
 memo_output="${project_dir}/memo.out"
 memo_plan_output="${project_dir}/memo-plan.out"
+memo_needs_info_output="${project_dir}/memo-needs-info.out"
+memo_needs_info_plan_output="${project_dir}/memo-needs-info-plan.out"
+memo_promoted_plan_output="${project_dir}/memo-promoted-plan.out"
+planner_idle_output="${project_dir}/planner-idle.out"
 plan_output="${project_dir}/plan.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
@@ -110,6 +114,72 @@ require_line "$memo_plan_output" "status=ok"
 require_line "$memo_plan_output" "source=memo-inbox"
 require_line "$memo_plan_output" "memo_id=001"
 rm -f "$memo_file"
+
+"${REPO_ROOT}/bin/autoflow" memo create "$project_dir" --id 002 --request "Rename AI-1 label to worker" --title "Rename worker label" --allowed-path apps/desktop/src --verification "npm run desktop:check" >"$memo_needs_info_output"
+require_line "$memo_needs_info_output" "status=created"
+needs_info_memo_file="$(awk -F= '$1 == "memo_file" { print $2; exit }' "$memo_needs_info_output")"
+perl -0pi -e 's/- Status: inbox/- Status: needs-info/' "$needs_info_memo_file"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$memo_needs_info_plan_output"
+require_line "$memo_needs_info_plan_output" "status=ok"
+require_line "$memo_needs_info_plan_output" "source=memo-inbox"
+require_line "$memo_needs_info_plan_output" "memo_id=002"
+
+cat >"${project_dir}/.autoflow/tickets/backlog/prd_002.md" <<'PRD'
+# Project PRD
+
+## Project
+
+- ID: prd_002
+- Name: Rename worker label
+- Title: Rename AI-1 label to worker
+- Goal: Rename user-visible AI-1 labels to worker wording.
+- Status: draft
+
+## Allowed Paths
+
+- `apps/desktop/src`
+
+## Global Acceptance Criteria
+
+- [ ] User-visible AI-1 labels are replaced with worker wording.
+
+## Verification
+
+- Command: npm run desktop:check
+
+## Conversation Handoff
+
+- Source: `tickets/inbox/memo_002.md`
+PRD
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$memo_promoted_plan_output"
+require_line "$memo_promoted_plan_output" "status=ok"
+require_line "$memo_promoted_plan_output" "source=backlog-to-todo"
+test ! -e "$needs_info_memo_file"
+test -f "${project_dir}/.autoflow/tickets/done/prd_002/memo_002.md"
+generated_memo_ticket="$(awk -F= '$1 == "todo_ticket" { print $2; exit }' "$memo_promoted_plan_output")"
+test -f "$generated_memo_ticket"
+rm -f "$generated_memo_ticket"
+rm -rf "${project_dir}/.autoflow/tickets/done/prd_002"
+
+fake_codex_dir="${project_dir}/fake-codex"
+fake_codex_marker="${project_dir}/codex-invoked"
+mkdir -p "$fake_codex_dir"
+cat >"${fake_codex_dir}/codex" <<FAKE_CODEX
+#!/usr/bin/env bash
+touch "${fake_codex_marker}"
+echo "unexpected planner codex invocation" >&2
+exit 42
+FAKE_CODEX
+chmod +x "${fake_codex_dir}/codex"
+PATH="${fake_codex_dir}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$planner_idle_output"
+require_line "$planner_idle_output" "status=ok"
+require_line "$planner_idle_output" "runner_status=idle"
+require_line "$planner_idle_output" "runtime_status=idle"
+require_line "$planner_idle_output" "reason=no_actionable_plan_input"
+if [ -e "$fake_codex_marker" ]; then
+  echo "Codex adapter was invoked even though planner runtime preflight was idle." >&2
+  exit 1
+fi
 
 "${REPO_ROOT}/bin/autoflow" spec create "$project_dir" --raw <<'SPEC' >"$spec_output"
 # Project Spec

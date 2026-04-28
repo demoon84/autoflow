@@ -164,9 +164,12 @@ $routeConfigs = $config["Routes"]
 
 $watchMap = @(
   @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "project_*.md"; IncludeSubdirectories = $false },
+  @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "prd_*.md"; IncludeSubdirectories = $false },
   @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/todo"); Filter = "tickets_*.md"; IncludeSubdirectories = $false },
   @{ Route = "ticket"; Path = (Join-Path $resolvedBoardRoot "tickets/verifier"); Filter = "tickets_*.md"; IncludeSubdirectories = $false },
+  @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/inbox"); Filter = "memo_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "project_*.md"; IncludeSubdirectories = $false },
+  @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/backlog"); Filter = "prd_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/reject"); Filter = "reject_*.md"; IncludeSubdirectories = $false },
   @{ Route = "plan"; Path = (Join-Path $resolvedBoardRoot "tickets/done"); Filter = "tickets_*.md"; IncludeSubdirectories = $true },
   @{ Route = "todo"; Path = (Join-Path $resolvedBoardRoot "tickets/todo"); Filter = "tickets_*.md"; IncludeSubdirectories = $false },

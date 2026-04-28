@@ -34,6 +34,7 @@ PROJECT_ROOT
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
+- `tickets/inbox/`: quick memo queue before Plan AI promotion.
 - `tickets/backlog/`: approved spec queue before execution.
 - `tickets/plan/`: legacy planning queue.
 - `tickets/todo/`: legacy implementation queue.
@@ -55,11 +56,12 @@ At the start of work, read in this order:
 1. `README.md`
 2. `rules/README.md`
 3. `reference/backlog.md`
-4. `reference/plan.md`
-5. `automations/README.md`
-6. `reference/tickets-board.md`
-7. `rules/verifier/README.md`
-8. Role-specific files:
+4. `reference/memo.md`
+5. `reference/plan.md`
+6. `automations/README.md`
+7. `reference/tickets-board.md`
+8. `rules/verifier/README.md`
+9. Role-specific files:
    - PRD handoff: `agents/spec-author-agent.md`
    - default execution: `agents/ticket-owner-agent.md`
    - legacy planning: `agents/plan-to-ticket-agent.md`
@@ -76,30 +78,31 @@ At the start of work, read in this order:
 
 ## Core Rules
 
-1. Do not create plans or tickets without an approved spec.
+1. Do not create plans or tickets without an approved spec or a clear quick memo promoted by Plan AI.
 2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
-4. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
-5. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
-6. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
-7. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
-8. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
-9. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-10. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Coordinator integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
-11. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
-12. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
-13. There must not be two copies of the same `tickets_NNN.md` in different state folders.
-14. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
-15. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Obsidian Links`, run files, and logs.
-16. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
-17. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after coordinator/merge completion. Failed records move to `tickets/reject/verify_NNN.md`.
-18. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Coordinator/merge completion automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
-19. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
-20. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
-21. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
-22. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
-23. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
-24. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive formats, and AI-facing board contracts in their required language and format.
+3. Claude `/memo`, Codex `$memo`, and compatibility alias `#memo` are quick memo handoff triggers only. They write `tickets/inbox/memo_NNN.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+4. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
+5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
+6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
+7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
+8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
+9. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
+10. Never run `git push` from automation or agent work. Remote publication is always a human decision.
+11. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Coordinator integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
+12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
+13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
+14. There must not be two copies of the same `tickets_NNN.md` in different state folders.
+15. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
+16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Obsidian Links`, run files, and logs.
+17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
+18. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after coordinator/merge completion. Failed records move to `tickets/reject/verify_NNN.md`.
+19. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Coordinator/merge completion automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
+20. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
+21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
+22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
+23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
+24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
+25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
@@ -131,7 +134,25 @@ Do not:
 - Create tickets.
 - Implement, verify, commit, or push.
 
-### 2. Ticket Owner Mode
+### 2. Quick Memo Intake Mode
+
+Trigger: Claude `/memo`, Codex `$memo`, or compatibility alias `#memo`.
+
+Purpose: capture a small request without a full PRD handoff.
+
+Do:
+
+- Preserve the original user request in `tickets/inbox/memo_NNN.md`.
+- Add scope, Allowed Paths, and verification hints only when obvious.
+- Let Plan AI promote the memo into a generated PRD and todo ticket when safe.
+
+Do not:
+
+- Draft a full PRD in chat.
+- Create PRDs or tickets directly.
+- Implement, verify, commit, or push.
+
+### 3. Ticket Owner Mode
 
 Purpose: one owner completes one ticket end to end.
 
@@ -156,23 +177,24 @@ Do not:
 - Push.
 - Modify unrelated files.
 
-### 3. Legacy Plan Automation Mode
+### 4. Legacy Plan Automation Mode
 
 Trigger: `#plan`.
 
-Purpose: convert populated specs and reject reasons into todo tickets.
+Purpose: convert quick memos, populated specs, and reject reasons into todo tickets.
 
 Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
 - Use `scripts/start-plan.*`.
+- Treat memos as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous memos into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or rejects.
 - Generate todo ticket bodies from `Execution Candidates`.
 - Archive consumed specs/plans/rejects under `done/<project-key>/`.
 
 Do not implement, verify, commit, or push.
 
-### 4. Legacy Todo Queue Mode
+### 5. Legacy Todo Queue Mode
 
 Trigger: `#todo`.
 
@@ -188,7 +210,7 @@ Do:
 
 Do not verify, reject, commit, or push.
 
-### 5. Legacy Verification Mode
+### 6. Legacy Verification Mode
 
 Trigger: `#veri`.
 
@@ -204,7 +226,7 @@ Do:
 
 Do not fix code, create tickets, or push.
 
-### 6. Coordinator Mode
+### 7. Coordinator Mode
 
 Purpose: explain board/runtime health, blocked work, process one ready-to-merge ticket when present, and maintain derived wiki knowledge.
 

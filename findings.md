@@ -1,5 +1,19 @@
 # Findings
 
+## Wiki Runner Token Efficiency Findings
+
+- Live runner process inspection showed loop worker bash processes are small (~1MB RSS), while `codex`, `gemini`, and MCP child processes dominate memory.
+- Current snapshot measured approximate runner process trees: `planner-1` ~196MB RSS, `owner-1` ~194MB RSS, `wiki-1` ~297MB RSS.
+- `run-role.sh` creates a fresh prompt file and launches a fresh adapter process on every AI tick. This prevents chat-context accumulation, but it also means each tick can pay the full prompt + board/wiki reread cost.
+- Prompt artifacts are small: 671 prompt logs total ~1.8MB, average ~2.8KB. Token waste is not primarily the base prompt size.
+- Runner stdout artifacts dominate disk: `.autoflow/runners/logs` is ~462MB, with stdout logs ~266MB.
+- Current metrics report `autoflow_token_usage_count=52,977,703` over 554 token reports, average ~95.6k tokens/report.
+- Wiki semantic lint builds a prompt from every wiki page up to 220 lines per page, then invokes the configured wiki adapter. This is the most obvious high-token wiki path.
+- `wiki-project.sh` currently has synth/semantic adapter helpers, but no deterministic fingerprint gate for "inputs unchanged" before an AI semantic/synthesis pass.
+- `run-role.sh` invokes the wiki adapter turn for `wiki-1`; the wiki agent then decides what tools to call. A preflight gate at this layer can skip launching the model entirely when done/reject/conversation/wiki inputs are unchanged.
+- Implemented skip point: loop-mode wiki runs hash `tickets/done`, `tickets/reject`, `logs`, `conversations`, and `wiki` source files, stores the hash under runner state, and skips adapter startup when the hash is unchanged.
+- Implemented low-value synth skip: `autoflow wiki query --synth` now returns `synth_status=skipped_no_results` when deterministic search returns zero results, avoiding an adapter call that cannot cite sources.
+
 ## Korean Terminal AI Response Findings
 
 - User requested terminal conversations to appear in Korean and for the AI to speak Korean.
@@ -202,3 +216,16 @@
 - `merge-ready-ticket.sh` already runs deterministic `update-wiki.sh` after moving a ready ticket to done, then attempts a non-blocking `autoflow run wiki` adapter turn.
 - The existing wiki adapter lookup only accepted `wiki` / `wiki-maintainer`; `query --synth`, `lint --semantic`, and post-merge wiki maintenance therefore needed coordinator fallback support.
 - The old runtime config parser decided on a runner as soon as it saw `role = ...`, before reading a later `enabled = false`; coordinator fallback should evaluate complete `[[runners]]` blocks instead.
+
+---
+
+# Planner Needs-Info Token Gate Findings
+
+- `memo_005` is parked at `Status: needs-info`; `start-plan.sh` treats only empty, `inbox`, `ready`, and `pending` memo statuses as actionable.
+- The active `planner-1` runner is a Codex loop runner with `interval_seconds=60` and `reasoning=xhigh`, so every idle tick can be expensive if the adapter is launched before checking runtime state.
+- `start-plan.sh` already provides a deterministic cheap runtime answer (`status=idle`, `reason=no_actionable_plan_input`) when no actionable planner input exists.
+- The current expensive path happens because `run-role.sh` only preflights ticket-owner runs; planner runs launch Codex first and let the AI call `start-plan.sh` itself.
+- For autonomous operation, `needs-info` cannot mean "ask a human every minute." User clarified memo intake should not ask questions; memos are directives that should be promoted by inference unless unsafe.
+- After `memo_005` was made actionable, live `planner-1` generated `prd_039` and `tickets_039`, but the source memo remained in `tickets/inbox/`. Without an archive/skip guard, the next planner tick could duplicate the generated PRD from the same memo.
+- The runtime can deterministically recognize already-promoted memos by scanning backlog/done PRDs for `## Conversation Handoff` sources that reference the memo.
+- The live runner config set `planner-1` to `reasoning="xhigh"`, which made each mistaken planner tick expensive. Planner work does not need xhigh reasoning by default, so the current board config should use `medium`.

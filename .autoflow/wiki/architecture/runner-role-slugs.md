@@ -1,22 +1,28 @@
-# Runner Role Slugs
+# Runner Role Identifiers
 
 ## Overview
-Autoflow uses role-aligned slugs for runner identifiers in the standard 3-runner topology. This simplifies configuration and aligns the internal IDs with their primary functions, making the system easier to monitor and maintain.
+Autoflow uses standardized identifiers for the runners in its 3-runner topology. While a move to role-aligned slugs (e.g., `worker` instead of `owner-1`) was planned, the project has maintained its existing numerical suffix identifiers to preserve compatibility with established AGENTS and active configuration contracts.
 
-## Slug Mapping
-- **Planner AI**: Internal ID `planner` (mapped from `planner-1`).
-- **Worker (Implementation) AI**: Internal ID `worker` (mapped from `owner-1`).
-- **Wiki Maintainer AI**: Internal ID `wiki-maintainer` (mapped from `wiki-1`).
+## Current Identifiers
+- **Planner AI**: `planner-1`
+- **Worker (Implementation) AI**: `owner-1`
+- **Wiki Maintainer AI**: `wiki-1`
 
 ## Design Rationale
-- **Simplicity**: Removes numerical suffixes when a single runner per role is sufficient, creating "one board, one AI of each type" model.
-- **Namespace Reservation**: The `worker` ID is intentionally distinct from its role (`ticket-owner`) to allow for future horizontal scaling (e.g., adding `worker-1`, `worker-2`) while keeping the first instance clean.
-- **Self-Alignment**: For roles like `wiki-maintainer`, the ID and role are identical, reducing configuration overhead.
+- **Stability**: Maintaining existing IDs prevents configuration drift and avoids breaking state persistence or UI mapping logic that expects the `-1` suffix.
+- **Scaling Readiness**: Numerical suffixes allow for future horizontal scaling (e.g., adding `owner-2`) without changing the base naming convention.
+- **UI Mapping**: The desktop application maps these internal IDs to user-friendly titles:
+  - `planner-1` → **Planner** (formerly Plan AI)
+  - `owner-1` → **Worker** (formerly Impl AI)
+  - `wiki-1` → **위키봇** (formerly Wiki AI)
+
+## Status of Slug Rename
+- **Decision**: A proposal to rename IDs to `planner`, `worker`, and `wiki-maintainer` (`prd_012`) was **superseded**.
+- **Reasoning**: The rename conflicted with the current AGENTS topology contract and live runner state. It was determined that the current ID scheme provides sufficient clarity and better compatibility (`tickets/done/prd_012/tickets_012.md`).
 
 ## Impact
-- **Configuration**: Affects `.autoflow/runners/config.toml` and `.autoflow/automations/heartbeat-set.toml`.
-- **Persistence**: Runner state files (e.g., `worker.state`) use the new slugs.
-- **UI Labels**: The desktop application maps these slugs to user-friendly titles like "Plan AI", "Impl AI", and "Wiki AI".
+- **Configuration**: Always use `planner-1`, `owner-1`, and `wiki-1` in `.autoflow/runners/config.toml` and heartbeat automations.
+- **Persistence**: State files under `.autoflow/runners/state/` continue to use these IDs.
 
-## Origins
-- **Decision**: Implemented to unify identifiers across the 3-runner topology and improve UI clarity (`tickets/done/prd_012/prd_012.md`).
+## See Also
+- **[[decisions/worker-display-policy]]**: How internal IDs are normalized for user-facing display.

@@ -61,7 +61,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - Claude `/memo`, Codex `$memo` 와 같은 quick memo handoff alias 다.
   - 단순 수정 요청을 PRD 없이 `{{BOARD_DIR}}/tickets/inbox/memo_{NNN}.md` 에 저장한다.
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
-  - plan / ticket / 구현은 시작하지 않는다. 이후 Plan AI 가 memo 를 읽고 안전하면 generated PRD 와 todo ticket 으로 승격하며, 애매하면 `Status: needs-info` 로 질문을 남긴다.
+  - plan / ticket / 구현은 시작하지 않는다. 이후 Plan AI 가 memo 를 구현 지시로 읽고 안전하면 가장 좁은 해석으로 generated PRD 와 todo ticket 으로 승격한다. unsafe 인 경우만 구체적인 blocker 를 남긴다.
 
 - `#plan`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 plan 작업은 항상-on Plan AI(`planner-1`) loop runner 가 1분 tick 마다 처리하므로 새 작업에서는 사용 권장하지 않는다.

@@ -3,6 +3,7 @@ import MuiDialog from "@mui/material/Dialog";
 import IconButton from "@mui/material/IconButton";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "./button";
 
 type DialogContextValue = {
   open?: boolean;
@@ -53,7 +54,11 @@ function DialogTrigger({
     return React.cloneElement(children as React.ReactElement<typeof triggerProps>, triggerProps);
   }
 
-  return <button {...triggerProps}>{children}</button>;
+  return (
+    <Button {...triggerProps} variant="ghost" className={props.className}>
+      {children}
+    </Button>
+  );
 }
 
 function DialogClose({
@@ -74,7 +79,11 @@ function DialogClose({
     return React.cloneElement(children as React.ReactElement<typeof closeProps>, closeProps);
   }
 
-  return <button {...closeProps}>{children}</button>;
+  return (
+    <Button {...closeProps} variant="ghost" className={props.className}>
+      {children}
+    </Button>
+  );
 }
 
 const DialogPortal = ({ children }: { children: React.ReactNode }) => <>{children}</>;

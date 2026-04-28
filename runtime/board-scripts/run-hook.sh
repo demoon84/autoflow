@@ -165,15 +165,16 @@ ${change_line}
 
 Do exactly one current hook turn:
 1. Read the repo instructions and Autoflow board files.
-2. Inspect \`${BOARD_PROMPT_ROOT}/tickets/backlog/\`, \`${BOARD_PROMPT_ROOT}/tickets/plan/\`, \`${BOARD_PROMPT_ROOT}/tickets/reject/\`, and the current ticket state.
-3. If a populated spec has no real plan or only a placeholder plan, create or update the matching plan draft.
-4. If a plan is actionable, generate todo tickets as appropriate.
-5. If \`reject_NNN.md\` files exist, fold each \`## Reject Reason\` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\`.
-6. If this hook was triggered by a pass into \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.
-7. Do not stop at the first generated plan if another populated backlog spec still lacks a real plan or only has a placeholder plan. Drain the backlog for planning work as far as this current hook turn reasonably can.
-8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from \`${BOARD_PROMPT_ROOT}/\` rather than chat history.
-9. Do not claim todo work, do not implement code, do not verify, do not commit, and do not push.
-10. Exit after the current hook turn is complete.
+2. Inspect \`${BOARD_PROMPT_ROOT}/tickets/inbox/\`, \`${BOARD_PROMPT_ROOT}/tickets/backlog/\`, \`${BOARD_PROMPT_ROOT}/tickets/plan/\`, \`${BOARD_PROMPT_ROOT}/tickets/reject/\`, and the current ticket state.
+3. If a \`memo_NNN.md\` exists, treat it as an implementation directive, infer a safe narrow scope, and promote it into a generated PRD and todo ticket. Do not turn memo intake into a repeated human-question loop; only unsafe requests should be blocked.
+4. If a populated spec has no real plan or only a placeholder plan, create or update the matching plan draft.
+5. If a plan is actionable, generate todo tickets as appropriate.
+6. If \`reject_NNN.md\` files exist, fold each \`## Reject Reason\` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\`.
+7. If this hook was triggered by a pass into \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.
+8. Do not stop at the first generated plan if another populated backlog spec still lacks a real plan or only has a placeholder plan. Drain the backlog for planning work as far as this current hook turn reasonably can.
+9. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from \`${BOARD_PROMPT_ROOT}/\` rather than chat history.
+10. Do not claim todo work, do not implement code, do not verify, do not commit, and do not push.
+11. Exit after the current hook turn is complete.
 EOF
 }
 

@@ -1,25 +1,21 @@
-# Desktop Tickets Kanban
+# Ticket Board Evolution (Legacy)
 
 ## Overview
-The **Tickets Kanban** (티켓 보드) provides a board-style visualization of the entire ticket lifecycle, from PRD backlog to completion or rejection.
+The **Ticket Board** (티켓 보드) was the original holistic visualization of the Autoflow ticket lifecycle. It has since evolved into the **Ticket Workspace** to improve readability and simplify navigation.
 
-## Structure
-- **Columns**: 6 status-based columns derived from `.autoflow/tickets/` directory structure:
-  - `PRD 대기` (backlog)
-  - `실행 대기` (todo)
-  - `구현` (inprogress)
-  - `검증` (verifier)
-  - `완료` (done)
-  - `반려` (reject)
-- **Cards**: Each card represents a ticket or PRD, showing:
-  - Identifier (`PRD-NNN`, `Ticket-NNN`, `Reject-NNN`).
-  - Title (one-line ellipsis).
-  - Metadata: Assigned AI (`AI-N`), Project Key, and Last Modified Date.
-- **Visual Cues**: Color-coded left borders (3px) indicate the current stage (e.g., primary for in-progress, destructive for reject).
+## Evolution History
 
-## Interaction
-- **Layered Preview**: Clicking a card opens a `Dialog`-based inline layer displaying the full markdown content using the standard `MarkdownViewer`.
-- **Read-Only**: The current implementation is focused on visualization and status monitoring; drag-and-drop state transitions are handled by agent runners.
+### 1. Kanban Board (Legacy)
+The initial design (`prd_010`) used a traditional 6-column Kanban layout (`PRD 대기`, `실행 대기`, `구현`, `검증`, `완료`, `반려`). Cards were color-coded with left borders to indicate status.
 
-## Origins
-- **Design Handoff**: Introduced via `prd_010` to provide a holistic view of the Autoflow board state beyond the active runner cards (`tickets/done/prd_010/tickets_010.md`).
+### 2. Tabbed Workspace (Intermediate)
+The board was replaced by a tabbed layout in `prd_011`, moving from columns to a list view with a static right-hand preview pane. It initially supported 7 status-based tabs.
+
+### 3. Unified Ticket Workspace (Current)
+The design was further refined in `prd_019`, `prd_024`, and `prd_030` into the current **[[features/ticket-workspace-tabs]]**:
+- **Simplified Tabs**: The workspace now supports 3 tabs: `Inbox` (added in `prd_030`), `PRD`, and `발급 티켓` (Issued Tickets).
+- **Detail Layer**: Static preview panes were replaced with a click-to-open Dialog overlay, allowing the list to utilize 100% of the screen width.
+- **Visual Cleanup**: Left-border color accents were removed in `prd_023` to reduce visual noise, relying on status badges for state indication.
+
+## Current Recommendation
+For documentation on the active ticket management interface, please refer to the **[[features/ticket-workspace-tabs]]** page.

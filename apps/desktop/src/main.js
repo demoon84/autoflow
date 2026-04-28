@@ -1289,7 +1289,7 @@ async function listTicketFolders(ticketsRoot) {
   }
 
   const entries = await fs.readdir(ticketsRoot, { withFileTypes: true });
-  const canonicalOrder = ["backlog", "todo", "inprogress", "done", "reject"];
+  const canonicalOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject"];
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)

@@ -2,12 +2,13 @@
 
 # Plan AI runtime (post-refactor 2026-04-27).
 #
-# Plan AI now owns two responsibilities — both purely board-side, no product
+# Plan AI now owns three responsibilities — all purely board-side, no product
 # code edits — and emits a ticket in tickets/todo/ as the only output:
 #   1. Auto-replan rejected tickets back to todo (reject/ -> todo/).
-#   2. Convert populated PRDs in backlog/ into a fresh tickets_NNN.md in todo/.
+#   2. Promote lightweight memos in tickets/inbox/ into PRD/todo work.
+#   3. Convert populated PRDs in backlog/ into a fresh tickets_NNN.md in todo/.
 # Legacy plan/ files (rules/plan or tickets/plan) are still consumed as a
-# transitional fallback when neither (1) nor (2) yields work, so older
+# transitional fallback when neither (1), (2), nor (3) yields work, so older
 # sample boards keep functioning.
 
 set -euo pipefail
@@ -114,6 +115,120 @@ select_populated_spec() {
   return 1
 }
 
+memo_ref_is_already_promoted() {
+  local memo_ref="$1"
+  local spec_file
+
+  while IFS= read -r spec_file; do
+    [ -n "$spec_file" ] || continue
+    [ -f "$spec_file" ] || continue
+    if grep -Fq -- "Source: \`${memo_ref}\`" "$spec_file" || grep -Fq -- "Source: ${memo_ref}" "$spec_file"; then
+      return 0
+    fi
+  done < <(
+    {
+      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md'
+      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md'
+      if [ -d "${BOARD_ROOT}/tickets/done" ]; then
+        find "${BOARD_ROOT}/tickets/done" -mindepth 2 -maxdepth 2 -type f \( -name 'prd_*.md' -o -name 'project_*.md' \)
+      fi
+    } | sort
+  )
+
+  return 1
+}
+
+memo_file_is_actionable() {
+  local memo_file="$1"
+  local memo_ref status
+
+  [ -f "$memo_file" ] || return 1
+  memo_ref="$(board_relative_path "$memo_file")"
+  if memo_ref_is_already_promoted "$memo_ref"; then
+    return 1
+  fi
+
+  status="$(extract_scalar_field_in_section "$memo_file" "Memo" "Status")"
+  status="$(trim_spaces "$status")"
+
+  case "$status" in
+    ""|inbox|ready|pending|needs-info)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+select_inbox_memo() {
+  local memo_file id
+
+  if [ -n "$requested_normalized" ]; then
+    memo_file="${BOARD_ROOT}/tickets/inbox/memo_${requested_normalized}.md"
+    if memo_file_is_actionable "$memo_file"; then
+      printf '%s' "$memo_file"
+      return 0
+    fi
+    return 1
+  fi
+
+  while IFS= read -r memo_file; do
+    [ -n "$memo_file" ] || continue
+    memo_file_is_actionable "$memo_file" || continue
+    id="$(extract_numeric_id "$memo_file" 2>/dev/null || true)"
+    [ -n "$id" ] || continue
+    printf '%s' "$memo_file"
+    return 0
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'memo_*.md')
+
+  return 1
+}
+
+extract_spec_source_memo_ref() {
+  local file="$1"
+
+  awk '
+    $0 == "## Conversation Handoff" { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*- Source:[[:space:]]*/ {
+      sub(/^[[:space:]]*- Source:[[:space:]]*/, "", $0)
+      gsub(/`/, "", $0)
+      print
+      exit
+    }
+  ' "$file"
+}
+
+archive_source_memo_for_spec() {
+  local project_key="$1"
+  local spec_file="$2"
+  local memo_ref memo_file target_file
+
+  memo_ref="$(extract_spec_source_memo_ref "$spec_file")"
+  case "$memo_ref" in
+    tickets/inbox/memo_*.md)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  memo_file="${BOARD_ROOT}/${memo_ref}"
+  [ -f "$memo_file" ] || return 0
+
+  target_file="${BOARD_ROOT}/tickets/done/${project_key}/$(basename "$memo_file")"
+  if [ -f "$target_file" ]; then
+    if cmp -s "$memo_file" "$target_file"; then
+      rm -f "$memo_file"
+    fi
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$target_file")"
+  mv "$memo_file" "$target_file"
+}
+
 create_todo_ticket_from_spec() {
   local spec_file="$1"
   local spec_ref project_key ticket_id ticket_file ticket_note project_note
@@ -134,6 +249,7 @@ create_todo_ticket_from_spec() {
 
   archived_spec_ref="$(archive_spec_to_done_if_needed "$spec_ref")"
   archived_spec_file="${BOARD_ROOT}/${archived_spec_ref}"
+  archive_source_memo_for_spec "$project_key" "$archived_spec_file"
   ticket_id="$(next_ticket_id)"
   ticket_file="$(ticket_path "todo" "$ticket_id")"
   ticket_note="[[tickets_${ticket_id}]]"
@@ -251,7 +367,21 @@ if [ -n "$replanned_reject" ]; then
   exit 0
 fi
 
-# --- Branch 2: backlog PRD -> todo ticket -------------------------------------
+# --- Branch 2: quick memo inbox -> AI-generated PRD/todo ----------------------
+memo_file="$(select_inbox_memo || true)"
+if [ -n "$memo_file" ]; then
+  printf 'status=ok\n'
+  printf 'source=memo-inbox\n'
+  printf 'memo=%s\n' "$memo_file"
+  printf 'memo_id=%s\n' "$(extract_numeric_id "$memo_file")"
+  emit_replan_skipped_metadata "$replan_skipped_file"
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  printf 'next_action=Plan AI must read %s, treat the memo as an implementation directive, infer a safe narrow scope from the request and repository context, create a generated backlog PRD with a Conversation Handoff source, then rerun this runtime once to create the todo ticket. The runtime archives the consumed memo beside the generated PRD during ticket creation. Do not turn memo intake into a repeated human-question loop; only refuse ticket creation for unsafe requests.\n' "$(board_relative_path "$memo_file")"
+  exit 0
+fi
+
+# --- Branch 3: backlog PRD -> todo ticket -------------------------------------
 spec_file="$(select_populated_spec || true)"
 if [ -n "$spec_file" ]; then
   created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
@@ -266,7 +396,7 @@ if [ -n "$spec_file" ]; then
   exit 0
 fi
 
-# --- Branch 3: legacy plan/ fallback -----------------------------------------
+# --- Branch 4: legacy plan/ fallback -----------------------------------------
 plan_root="$(plan_root_path 2>/dev/null || true)"
 if [ -n "$plan_root" ] && [ -d "$plan_root" ]; then
   legacy_plan="$(lowest_matching_file "$plan_root" 'plan_[0-9][0-9][0-9].md' || true)"

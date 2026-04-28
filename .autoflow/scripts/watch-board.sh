@@ -62,7 +62,7 @@ route_trigger_root() {
       printf '%s/tickets/backlog' "$BOARD_ROOT"
       ;;
     plan)
-      printf '%s/tickets/backlog' "$BOARD_ROOT"
+      printf '%s/tickets/inbox' "$BOARD_ROOT"
       ;;
     todo)
       printf '%s/tickets/todo' "$BOARD_ROOT"
@@ -78,13 +78,16 @@ route_file_stream() {
     ticket)
       {
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'prd_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
       } | sort
       ;;
     plan)
       {
+        find "${BOARD_ROOT}/tickets/inbox" -maxdepth 1 -type f -name 'memo_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'prd_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/reject" -maxdepth 1 -type f -name 'reject_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/done" -type f -name 'tickets_*.md' 2>/dev/null
       } | sort

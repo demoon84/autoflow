@@ -699,7 +699,8 @@ run_query() {
 
   if [ "$result_count" -eq 0 ]; then
     if [ "$synth_mode" = "true" ]; then
-      run_query_synth "$project_root" "$board_root" "$terms_file" "$synth_results" "$synth_runner_id"
+      printf 'synth_status=skipped_no_results\n'
+      printf 'synth_citation_count=0\n'
     fi
     return 0
   fi

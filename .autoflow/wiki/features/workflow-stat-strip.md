@@ -9,7 +9,7 @@ The **Workflow Stat Strip** (작업 흐름 통계 스트립) is a horizontal met
 - **Execution Logs**: Shows the total number of execution reports processed.
 
 ## Behavior
-- **Data Source**: Reuses metrics from the `board.metrics` file, the same source used by the Reporting Dashboard in the Statistics page.
+- **Data Source**: Reuses metrics from the `board.metrics` file, the same source used by the Reporting Dashboard in the [[features/desktop-statistics-page]] (Statistics page).
 - **Alignment**: The strip's edges are pixel-aligned with the PRD pin bar below it to maintain visual consistency.
 - **Fallbacks**: If no metrics are available, values fallback to `0` or `—`.
 - **Interactivity**: The strip is read-only and designed for high-glance awareness.

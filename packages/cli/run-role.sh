@@ -683,7 +683,14 @@ agent_runtime_preflight_or_exit() {
   local started_at finished_at command_status runner_status last_result
   local active_item active_ticket_id active_ticket_title active_stage active_spec_ref
 
-  [ "$public_role" = "ticket" ] || return 0
+  case "$public_role" in
+    ticket|planner)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+  [ -n "${runtime_path:-}" ] || return 0
   [ "$dry_run" = "true" ] && return 0
 
   preflight_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-preflight.XXXXXX")"
@@ -704,6 +711,9 @@ agent_runtime_preflight_or_exit() {
   implementation_root="$(awk -F= '$1 == "implementation_root" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_ticket_id="$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
+  if [ "$public_role" = "planner" ]; then
+    active_item="$(awk -F= '$1 == "memo" || $1 == "spec" || $1 == "plan" || $1 == "reject_origin" || $1 == "todo_ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$preflight_output" 2>/dev/null || true)"
+  fi
   if [ -n "$active_ticket_id" ]; then
     case "$active_ticket_id" in
       tickets_*) ;;

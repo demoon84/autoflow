@@ -198,6 +198,7 @@ template_text|rules/wiki/page-template.md|rules/wiki/page-template.md
 template_text|rules/wiki/lint-checklist.md|rules/wiki/lint-checklist.md
 template_text|reference/README.md|reference/README.md
 template_text|reference/backlog.md|reference/backlog.md
+template_text|reference/memo.md|reference/memo.md
 template_text|reference/backlog-processed.md|reference/backlog-processed.md
 template_text|reference/project-spec-template.md|reference/project-spec-template.md
 template_text|reference/feature-spec-template.md|reference/feature-spec-template.md
@@ -298,6 +299,7 @@ wiki/learnings
 logs
 logs/hooks
 tickets
+tickets/inbox
 tickets/backlog
 tickets/todo
 tickets/inprogress
@@ -326,10 +328,13 @@ managed_host_skill_asset_entries() {
   cat <<'EOF'
 claude_skill_text|autoflow/SKILL.md|.claude/skills/autoflow/SKILL.md
 claude_skill_text|af/SKILL.md|.claude/skills/af/SKILL.md
+claude_skill_text|memo/SKILL.md|.claude/skills/memo/SKILL.md
 codex_skill_text|autoflow/SKILL.md|.codex/skills/autoflow/SKILL.md
 codex_skill_text|autoflow/agents/openai.yaml|.codex/skills/autoflow/agents/openai.yaml
 codex_skill_text|af/SKILL.md|.codex/skills/af/SKILL.md
 codex_skill_text|af/agents/openai.yaml|.codex/skills/af/agents/openai.yaml
+codex_skill_text|memo/SKILL.md|.codex/skills/memo/SKILL.md
+codex_skill_text|memo/agents/openai.yaml|.codex/skills/memo/agents/openai.yaml
 EOF
 }
 

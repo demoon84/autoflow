@@ -28,6 +28,7 @@ Usage:
   autoflow watch-stop [project-root] [board-dir-name]
   autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]
   autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force] (legacy alias)
+  autoflow memo create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Plan AI (3-runner default)
   autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]    # Impl AI (3-runner default)
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Wiki AI (3-runner default)
@@ -60,6 +61,7 @@ Examples:
   autoflow install-stop-hook /path/to/project
   autoflow watch-bg /path/to/project
   echo "Build the local runner harness" | autoflow prd create /path/to/project --title "Runner harness"
+  echo "Increase body font size by 2px" | autoflow memo create /path/to/project --title "Increase body font"
   autoflow run planner /path/to/project --runner planner-1
   autoflow run ticket /path/to/project --runner owner-1
   autoflow run wiki /path/to/project --runner wiki-1
@@ -124,6 +126,10 @@ case "$cmd" in
   prd|spec)
     shift || true
     exec "${REPO_ROOT}/packages/cli/spec-project.sh" "$@"
+    ;;
+  memo)
+    shift || true
+    exec "${REPO_ROOT}/packages/cli/memo-project.sh" "$@"
     ;;
   run)
     shift || true

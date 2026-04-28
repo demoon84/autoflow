@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memo"
+  short_description: "Drop a quick Autoflow memo"
+  default_prompt: "Use $memo to save a small request into the Autoflow memo inbox."

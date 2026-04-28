@@ -78,6 +78,7 @@ upgrade_scaffold_directory_entries() {
   cat <<'EOF'
 agents/adapters
 conversations
+tickets/inbox
 rules/wiki
 runners
 runners/state

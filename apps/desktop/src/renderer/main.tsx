@@ -1,7 +1,9 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import ButtonBase from "@mui/material/ButtonBase";
+import Checkbox from "@mui/material/Checkbox";
 import CssBaseline from "@mui/material/CssBaseline";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
 import {
@@ -59,7 +61,7 @@ import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
 
-const ticketFolders = ["backlog", "todo", "inprogress", "done", "reject"] as const;
+const ticketFolders = ["backlog", "inbox", "todo", "inprogress", "done", "reject"] as const;
 
 const ownerFlowStages = [
   { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
@@ -1494,8 +1496,9 @@ function App() {
           <aside className="settings-nav" aria-label="메뉴">
             <nav className="settings-nav-list" aria-label="Autoflow 메뉴">
               {settingsNavigation.map(({ key, label, icon: Icon }) => (
-                <button
+                <Button
                   key={key}
+                  variant="ghost"
                   type="button"
                   className={`settings-nav-item${activeSettingsSection === key ? " settings-nav-item-active" : ""}`}
                   aria-current={activeSettingsSection === key ? "page" : undefined}
@@ -1504,7 +1507,7 @@ function App() {
                 >
                   <Icon className="h-4 w-4" aria-hidden="true" />
                   <span>{label}</span>
-                </button>
+                </Button>
               ))}
             </nav>
             <div className="settings-nav-footer">
@@ -1539,8 +1542,9 @@ function App() {
                       {recentProjects.map((project) => {
                         const selected = project === options.projectRoot;
                         return (
-                          <button
+                          <Button
                             key={project}
+                            variant="ghost"
                             type="button"
                             className="project-menu-item"
                             title={project}
@@ -1549,14 +1553,20 @@ function App() {
                           >
                             <span>{basename(project)}</span>
                             {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
-                          </button>
+                          </Button>
                         );
                       })}
                     </div>
                     <div className="project-menu-separator" />
-                    <button type="button" className="project-menu-item project-menu-open" role="menuitem" onClick={browseProject}>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      className="project-menu-item project-menu-open"
+                      role="menuitem"
+                      onClick={browseProject}
+                    >
                       <span>폴더 열기...</span>
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
               </div>
@@ -1642,7 +1652,8 @@ function App() {
                           <div className="knowledge-stack">
                             <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                             <section className="knowledge-sources" aria-label="Sources">
-                              <button
+                              <Button
+                                variant="ghost"
                                 type="button"
                                 className="panel-subheading knowledge-sources-toggle"
                                 onClick={() => setSourcesOpen((prev) => !prev)}
@@ -1650,7 +1661,7 @@ function App() {
                               >
                                 <ChevronDown className={`h-4 w-4 knowledge-sources-chevron${sourcesOpen ? "" : " knowledge-sources-chevron-closed"}`} aria-hidden="true" />
                                 <span>Sources</span>
-                              </button>
+                              </Button>
                               {sourcesOpen && (
                                 <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                               )}
@@ -2003,8 +2014,9 @@ function EssentialApp() {
                     {recentProjects.map((project) => {
                       const selected = project === options.projectRoot;
                       return (
-                        <button
+                        <Button
                           key={project}
+                          variant="ghost"
                           type="button"
                           className="project-menu-item"
                           title={project}
@@ -2013,14 +2025,20 @@ function EssentialApp() {
                         >
                           <span>{basename(project)}</span>
                           {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>
                   <div className="project-menu-separator" />
-                  <button type="button" className="project-menu-item project-menu-open" role="menuitem" onClick={browseProject}>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    className="project-menu-item project-menu-open"
+                    role="menuitem"
+                    onClick={browseProject}
+                  >
                     <span>폴더 열기...</span>
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -3242,8 +3260,9 @@ function BoardSearch({
         results.length ? (
           <div className="board-search-results">
             {results.map((file) => (
-              <button
+              <Button
                 key={file.filePath}
+                variant="ghost"
                 type="button"
                 className={`log-row${selectedPath === file.filePath ? " log-row-selected" : ""}`}
                 onClick={() => onSelect(file.filePath)}
@@ -3256,7 +3275,7 @@ function BoardSearch({
                   </span>
                   <p>{file.title}</p>
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         ) : (
@@ -3287,8 +3306,9 @@ function MetricsHistory({
       {files.length ? (
         <div className="metrics-history-list">
           {files.map((file) => (
-            <button
+            <Button
               key={file.filePath}
+              variant="ghost"
               type="button"
               className={`log-row${selectedPath === file.filePath ? " log-row-selected" : ""}`}
               onClick={() => onSelect(file.filePath)}
@@ -3298,7 +3318,7 @@ function MetricsHistory({
                 <strong>{file.name}</strong>
                 <span>지표 · {formatDate(file.modifiedAt)}</span>
               </div>
-            </button>
+            </Button>
           ))}
         </div>
       ) : (
@@ -3410,7 +3430,7 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketKanbanFolderOrder = ["backlog", "todo", "inprogress", "done", "reject"] as const;
+const ticketKanbanFolderOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
@@ -3425,6 +3445,7 @@ const ticketKanbanFolderMeta: Record<string, {
   description: string;
 }> = {
   backlog: { label: "Backlog", description: "PRD 대기" },
+  inbox: { label: "Memo", description: "빠른 메모" },
   todo: { label: "TODO", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "AI가 처리 중" },
   done: { label: "완료", description: "완료 기록" },
@@ -3480,12 +3501,12 @@ function isMemoBoardFile(file: AutoflowFilePreview) {
   return /^memo_\d+\.md$/i.test(file.name);
 }
 
-function isRejectBoardFile(file: AutoflowFilePreview) {
-  return /^reject_\d+\.md$/i.test(file.name);
-}
-
 function isInboxMemoBoardFile(file: AutoflowFilePreview) {
   return isMemoBoardFile(file) && boardPath(file.filePath).includes("/tickets/inbox/");
+}
+
+function isRejectBoardFile(file: AutoflowFilePreview) {
+  return /^reject_\d+\.md$/i.test(file.name);
 }
 
 function markdownScalar(content: string, labels: string[]) {
@@ -3517,11 +3538,11 @@ function projectKeyFromBoardFile(file: AutoflowFilePreview, content: string) {
 
 function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspaceStatusKey | null {
   const normalized = boardPath(file.filePath);
-  if (isInboxMemoBoardFile(file)) {
-    return "memo";
-  }
   if (isPrdBoardFile(file)) {
     return "prd";
+  }
+  if (isInboxMemoBoardFile(file)) {
+    return "memo";
   }
   if (isRejectBoardFile(file)) {
     return "reject";
@@ -3682,7 +3703,7 @@ function TicketDetailLayer({
     ? [
         ["ID", item.id || item.displayId],
         ["PRD Key", item.projectKey],
-        [item.kind === "memo" ? "Status" : "Stage", item.stage || item.statusLabel],
+        ["Stage", item.stage || item.statusLabel],
         ["Worker", item.aiLabel],
         ["Claimed By", item.claimedByLabel],
         ["Last Updated", item.lastUpdated || formatDate(item.modifiedAt)]
@@ -3710,7 +3731,9 @@ function TicketDetailLayer({
               </Badge>
               <time>{formatDate(item.modifiedAt)}</time>
               <span className="ticket-detail-layer-path">{item.filePath}</span>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 type="button"
                 className="workflow-pin-layer-close"
                 onClick={onClose}
@@ -3718,7 +3741,7 @@ function TicketDetailLayer({
                 autoFocus
               >
                 <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </Button>
             </div>
             <div className="ticket-workspace-detail-summary ticket-detail-layer-summary">
               <h4>{item.title}</h4>
@@ -4073,7 +4096,8 @@ function WorkflowPinLayer({
 
   return (
     <>
-      <button
+      <Button
+        variant="outline"
         type="button"
         className={`workflow-pin workflow-pin-${variant}`}
         onClick={() => setLayerOpen(true)}
@@ -4089,7 +4113,7 @@ function WorkflowPinLayer({
         <span className="workflow-pin-cta" aria-hidden="true">
           세부 보기
         </span>
-      </button>
+      </Button>
       <Dialog open={layerOpen} onOpenChange={handleOpenChange}>
         <DialogContent
           className={`workflow-pin-layer-panel workflow-pin-layer-${variant}`}
@@ -4098,7 +4122,8 @@ function WorkflowPinLayer({
         >
           <div className="workflow-pin-layer-header">
             {detailFile ? (
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 className="workflow-pin-layer-back"
                 onClick={handleBackToList}
@@ -4106,7 +4131,7 @@ function WorkflowPinLayer({
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 <span>이전</span>
-              </button>
+              </Button>
             ) : (
               <div className="workflow-pin-layer-heading">
                 {pinIcon}
@@ -4122,14 +4147,16 @@ function WorkflowPinLayer({
                 </strong>
               </DialogTitle>
             ) : null}
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               type="button"
               className="workflow-pin-layer-close"
               onClick={closeLayer}
               aria-label="닫기"
             >
               ✕
-            </button>
+            </Button>
           </div>
           {detailFile ? (
             <div className="workflow-pin-detail">
@@ -4161,7 +4188,8 @@ function WorkflowPinLayer({
                 <ul className="workflow-pin-list">
                   {files.map((file) => (
                     <li key={file.filePath}>
-                      <button
+                      <Button
+                        variant="ghost"
                         type="button"
                         className="workflow-pin-item"
                         onClick={() => handleOpenDetail(file)}
@@ -4170,14 +4198,15 @@ function WorkflowPinLayer({
                         <strong>{workflowFileDisplayName(file.name)}</strong>
                         {file.title ? <span>{file.title}</span> : null}
                         {file.stateLabel ? (
-                          <span
+                          <Badge
+                            variant={file.stateTone === "destructive" ? "destructive" : file.stateTone === "success" ? "default" : "secondary"}
                             className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
                           >
                             {file.stateLabel}
-                          </span>
+                          </Badge>
                         ) : null}
                         <time>{formatDate(file.modifiedAt)}</time>
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -4203,7 +4232,8 @@ function TicketWorkspaceDetailPane({
   detailError: string;
   detailContent: AutoflowFileContentResult | null;
 }) {
-  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
+  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "memo" ? Inbox : ClipboardList;
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "memo" ? "Memo" : "Ticket";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -4217,7 +4247,7 @@ function TicketWorkspaceDetailPane({
           <header className="workflow-pin-layer-header ticket-workspace-detail-head">
             <div className="workflow-pin-layer-heading">
               <SelectedDetailIcon className="h-4 w-4" aria-hidden="true" />
-              <strong>{selectedItem.kind === "prd" ? "PRD" : "Ticket"}</strong>
+              <strong>{selectedKindLabel}</strong>
             </div>
             <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
             <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
@@ -4343,7 +4373,7 @@ function TicketKanban({
         const statusKey = meta?.statusKey || ticketWorkspaceStatusForFile(file) || "todo";
         return {
           ...file,
-          kind: isPrdBoardFile(file) ? "prd" : isInboxMemoBoardFile(file) ? "memo" : "ticket",
+          kind: isPrdBoardFile(file) ? "prd" : isMemoBoardFile(file) ? "memo" : "ticket",
           displayId: workflowFileDisplayName(file.name),
           title: meta?.title || file.title || file.name,
           projectKey: meta?.projectKey || projectKeyFromBoardFile(file, ""),
@@ -4522,7 +4552,7 @@ function TicketKanban({
                               {columnItems.map((item) => {
                                 const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
                                 return (
-                                  <button
+                                  <ButtonBase
                                     key={item.filePath}
                                     ref={(node) => {
                                       itemButtonRefs.current[item.filePath] = node;
@@ -4540,7 +4570,7 @@ function TicketKanban({
                                     <strong>{item.title}</strong>
                                     <span className="ticket-kanban-card-meta">{metaText || item.filePath}</span>
                                     <time>{formatDate(item.modifiedAt)}</time>
-                                  </button>
+                                  </ButtonBase>
                                 );
                               })}
                             </div>
@@ -4599,6 +4629,9 @@ function TicketBoard({
   const backlogSpecs = (board?.tickets.backlog || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
+  const inboxMemos = (board?.tickets.inbox || [])
+    .filter(isMemoBoardFile)
+    .map((file) => ({ ...file, stateLabel: "MEMO", stateTone: "neutral" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
@@ -4613,23 +4646,32 @@ function TicketBoard({
     const match = name.match(/tickets_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
+  const memoNumericId = (name: string) => {
+    const match = name.match(/memo_(\d+)/);
+    return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+  };
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
+  );
+  const memoFiles: WorkflowFileEntry[] = inboxMemos.sort(
+    (a, b) => memoNumericId(b.name) - memoNumericId(a.name)
   );
   const todoFiles: WorkflowFileEntry[] = todoTickets.sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD ${specFiles.length}건${backlogSpecs.length ? ` · 대기 ${backlogSpecs.length}건` : ""}`;
+  const memoPinTitle = `MEMO ${memoFiles.length}건`;
   const todoPinTitle = `TODO ${todoFiles.length}건`;
+  const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
 
-  const hasHeader = Boolean(specFiles.length || todoFiles.length || rejectFiles.length);
+  const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length);
 
   return (
     <PageLayout
       header={
         hasHeader ? (
           <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
-            {specFiles.length ? (
+            {hasWorkflowPins ? (
               <WorkflowPinLayer
                 files={specFiles}
                 options={options}
@@ -4638,9 +4680,24 @@ function TicketBoard({
                 variant="default"
                 layerHeading={prdPinTitle}
                 layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
+                emptyText="아직 작성된 PRD가 없습니다."
+                showWhenEmpty
               />
             ) : null}
-            {specFiles.length || todoFiles.length ? (
+            {hasWorkflowPins ? (
+              <WorkflowPinLayer
+                files={memoFiles}
+                options={options}
+                pinTitle={memoPinTitle}
+                pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
+                variant="default"
+                layerHeading={memoPinTitle}
+                layerHelpText="인박스에 들어온 빠른 메모 목록입니다. 항목을 클릭하면 메모 본문이 이 화면에서 열립니다."
+                emptyText="아직 들어온 메모가 없습니다."
+                showWhenEmpty
+              />
+            ) : null}
+            {hasWorkflowPins ? (
               <WorkflowPinLayer
                 files={todoFiles}
                 options={options}
@@ -5156,7 +5213,8 @@ function AiProgressRow({
           </Badge>
         ) : null}
         {runner.activeTicketId ? (
-          <button
+          <Button
+            variant="ghost"
             type="button"
             className="ai-progress-active-ticket-button"
             onClick={openTicketDialog}
@@ -5165,7 +5223,7 @@ function AiProgressRow({
             <Badge variant="outline" className="ai-progress-active-ticket">
               #{runner.activeTicketId}
             </Badge>
-          </button>
+          </Button>
         ) : null}
       </div>
       {canConfigure ? (
@@ -5205,14 +5263,16 @@ function AiProgressRow({
                 </strong>
               </DialogTitle>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               type="button"
               className="workflow-pin-layer-close"
               onClick={() => setTicketDialogOpen(false)}
               aria-label="닫기"
             >
               ✕
-            </button>
+            </Button>
           </div>
           <div className="workflow-pin-detail">
             {ticketLoading ? (
@@ -5256,8 +5316,9 @@ function LogList({
   return (
     <div className="log-list">
       {logs.map((log) => (
-        <button
+        <Button
           key={log.filePath}
+          variant="ghost"
           type="button"
           className={`log-row${selectedPath === log.filePath ? " log-row-selected" : ""}`}
           onClick={() => onSelect(log.filePath)}
@@ -5270,7 +5331,7 @@ function LogList({
             </span>
             <p>{log.title}</p>
           </div>
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -5323,22 +5384,28 @@ function WikiQueryPanel({
         </Button>
       </form>
       <div className="wiki-query-toggles">
-        <label>
-          <input
-            type="checkbox"
-            checked={includeTickets}
-            onChange={(event) => onIncludeTicketsChange(event.target.checked)}
-          />
-          완료/거절 티켓 포함
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={includeHandoffs}
-            onChange={(event) => onIncludeHandoffsChange(event.target.checked)}
-          />
-          인수인계 포함
-        </label>
+        <FormControlLabel
+          className="wiki-query-toggle"
+          control={
+            <Checkbox
+              size="small"
+              checked={includeTickets}
+              onChange={(event) => onIncludeTicketsChange(event.target.checked)}
+            />
+          }
+          label="완료/거절 티켓 포함"
+        />
+        <FormControlLabel
+          className="wiki-query-toggle"
+          control={
+            <Checkbox
+              size="small"
+              checked={includeHandoffs}
+              onChange={(event) => onIncludeHandoffsChange(event.target.checked)}
+            />
+          }
+          label="인수인계 포함"
+        />
       </div>
       {result ? (
         result.results.length === 0 ? (
@@ -5346,8 +5413,9 @@ function WikiQueryPanel({
         ) : (
           <div className="log-list wiki-query-results">
             {result.results.map((entry) => (
-              <button
+              <Button
                 key={entry.path}
+                variant="ghost"
                 type="button"
                 className={`log-row${selectedPath === entry.path ? " log-row-selected" : ""}`}
                 onClick={() => onSelect(entry.path)}
@@ -5364,7 +5432,7 @@ function WikiQueryPanel({
                     </p>
                   ) : null}
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         )
@@ -5391,8 +5459,9 @@ function WikiList({
   return (
     <div className="log-list knowledge-list">
       {pages.map((page) => (
-        <button
+        <Button
           key={page.filePath}
+          variant="ghost"
           type="button"
           className={`log-row${selectedPath === page.filePath ? " log-row-selected" : ""}`}
           onClick={() => onSelect(page.filePath)}
@@ -5403,7 +5472,7 @@ function WikiList({
             <span>Wiki · {formatDate(page.modifiedAt)}</span>
             <p>{page.title}</p>
           </div>
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -5429,8 +5498,9 @@ function HandoffList({
       {handoffs.length ? (
         <div className="log-list handoff-list">
           {handoffs.map((handoff) => (
-            <button
+            <Button
               key={handoff.filePath}
+              variant="ghost"
               type="button"
               className={`log-row${selectedPath === handoff.filePath ? " log-row-selected" : ""}`}
               onClick={() => onSelect(handoff.filePath)}
@@ -5441,7 +5511,7 @@ function HandoffList({
                 <span>Source · Handoff · {formatDate(handoff.modifiedAt)}</span>
                 <p>{handoff.title}</p>
               </div>
-            </button>
+            </Button>
           ))}
         </div>
       ) : (

@@ -53,6 +53,7 @@ function Get-UpgradeScaffoldDirectoryEntries {
   return @(
     "agents/adapters"
     "conversations"
+    "tickets/inbox"
     "rules/wiki"
     "runners"
     "runners/state"

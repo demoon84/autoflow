@@ -7,7 +7,7 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 Default 3-runner topology (planner-1 + owner-1 + wiki-1):
 
 - Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner-1` (Plan AI): converts populated backlog PRDs and reject records into todo tickets. Path scope: `tickets/{backlog,todo,reject,done}/`. Owns reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`.
+- `planner-1` (Plan AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets. Path scope: `tickets/{inbox,backlog,todo,reject,done}/`. Owns memo promotion and reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`.
 - `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. Refreshes the deterministic wiki baseline inline at merge time.
 - `wiki-1` (Wiki AI): ticks every minute and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) over the deterministic baseline whenever `tickets/done/` or `tickets/reject/` changes. Path scope: `.autoflow/wiki/` only.
 - The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
@@ -26,6 +26,13 @@ Autoflow skill handoff (`/af`, `/autoflow`, `$af`, `$autoflow`) and compatibilit
 - Save only after explicit approval.
 - Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff.
 - Do not create plans, tickets, code, verification records, commits, or pushes.
+
+Memo skill handoff (`/memo`, `$memo`, `#memo`) and `autoflow memo create`:
+
+- Save only a quick memo under `tickets/inbox/memo_NNN.md`.
+- Preserve the original request and optional hints.
+- Do not create PRDs, tickets, code, verification records, commits, or pushes.
+- Plan AI promotes clear memos into generated PRDs and todo tickets.
 
 `ticket-owner`:
 
@@ -88,6 +95,7 @@ unreliable.
 
 Typical routes (when file-watch is enabled):
 
+- inbox changes -> planner,
 - backlog changes -> ticket owner or legacy planner,
 - todo changes -> ticket owner or legacy todo,
 - verifier changes -> ticket owner or legacy verifier,
@@ -100,6 +108,7 @@ Each hook dispatch writes a log under `logs/hooks/`.
 Recommended map (when running file-watch alongside the heartbeat as a
 fallback):
 
+- `tickets/inbox/`: `plan` route when file-watch fallback is enabled.
 - `tickets/backlog/`: `ticket` route by default.
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
