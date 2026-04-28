@@ -249,7 +249,7 @@ prepare_ticket_worktree_for_merge() {
 
   if [ -z "$worktree_path" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "no_worktree"
-    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; queued for coordinator board-only finalization."
+    append_note "$ticket_file" "No worktree path recorded at ${timestamp}; queued for board-only finalization (no product-code merge needed)."
     printf 'status=no_worktree\n'
     printf 'ticket_id=%s\n' "$ticket_id"
     return 0
@@ -346,7 +346,7 @@ prepare_ticket_worktree_for_merge() {
 
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Worktree Commit" "$worktree_commit"
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "ready_to_merge"
-  append_note "$ticket_file" "Prepared worktree commit ${worktree_commit} at ${timestamp}; coordinator should integrate it into PROJECT_ROOT and create the local completion commit."
+  append_note "$ticket_file" "Prepared worktree commit ${worktree_commit} at ${timestamp}; Impl AI integrates it into PROJECT_ROOT and the inline finalizer creates the local completion commit."
 
   printf 'status=ready_to_merge\n'
   printf 'ticket_id=%s\n' "$ticket_id"

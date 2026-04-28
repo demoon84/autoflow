@@ -285,7 +285,7 @@ prepare_ticket_owner_context() {
             | tr '\n' ' ' \
             | sed 's/[[:space:]]\+/ /g; s/[[:space:]]*$//'
         )"
-        [ -n "$blocked_next_action" ] || blocked_next_action="Ticket is blocked; wait for coordinator diagnosis or explicit recovery."
+        [ -n "$blocked_next_action" ] || blocked_next_action="Ticket is blocked; explicit recovery required (or run a legacy coordinator runner if the project still uses one)."
         blocked_reason="ticket_stage_blocked"
       fi
 
