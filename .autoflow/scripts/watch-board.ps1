@@ -4,6 +4,18 @@ param(
   [string]$ConfigPath
 )
 
+# DEPRECATED: legacy script-driven file-watch loop.
+#
+# This script polls .autoflow/tickets/* fingerprints and dispatches one-shot
+# hooks via run-hook.ps1. It runs autonomously (script-driven), which is the
+# pattern Autoflow has moved away from. The supported execution model is the
+# 3-runner topology (planner-1, owner-1, wiki-1) where an AI runner decides
+# when to call scripts as tools, not the reverse.
+#
+# This loop is kept for backwards compatibility with users still on
+# `autoflow watch-bg`. New deployments should rely on the heartbeat-driven
+# AI runners declared in `.autoflow/runners/config.toml`.
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -204,7 +216,8 @@ try {
     }
   }
 
-  Write-Host "Autoflow file-watch hook is running."
+  Write-Host "Autoflow file-watch hook is running (DEPRECATED legacy script-driven loop)."
+  Write-Host "Recommended: use the heartbeat-driven AI runners in `".autoflow/runners/config.toml`" (planner-1 + owner-1 + wiki-1)."
   Write-Host "Board Root: $resolvedBoardRoot"
   Write-Host "Config: $resolvedConfigPath"
   Write-Host "Watched routes: ticket, plan, todo, verifier"

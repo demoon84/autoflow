@@ -454,19 +454,6 @@ prefix_wiki_output() {
   '
 }
 
-prefix_wiki_maintainer_output() {
-  awk '
-    index($0, "=") > 0 {
-      print "wiki_maintainer." $0
-      next
-    }
-    NF > 0 {
-      count += 1
-      print "wiki_maintainer.output." count "=" $0
-    }
-  '
-}
-
 auto_update_wiki() {
   local wiki_output wiki_exit
 
@@ -494,100 +481,6 @@ auto_update_wiki() {
   printf 'wiki.status=failed\n'
   printf 'wiki.exit_code=%s\n' "$wiki_exit"
   printf '%s\n' "$wiki_output" | prefix_wiki_output
-}
-
-find_enabled_wiki_maintainer_runner() {
-  local config_path runner_id runner_role runner_enabled fallback_runner_id
-
-  config_path="${BOARD_ROOT}/runners/config.toml"
-  [ -f "$config_path" ] || return 1
-
-  consider_wiki_runner() {
-    case "$runner_role:$runner_enabled" in
-      wiki-maintainer:true|wiki:true)
-        if [ -n "$runner_id" ]; then
-          printf '%s' "$runner_id"
-          return 0
-        fi
-        ;;
-      coordinator:true|coord:true|doctor:true|diagnose:true)
-        if [ -n "$runner_id" ] && [ -z "${fallback_runner_id:-}" ]; then
-          fallback_runner_id="$runner_id"
-        fi
-        ;;
-    esac
-    return 1
-  }
-
-  while IFS= read -r line; do
-    case "$line" in
-      "[[runners]]")
-        consider_wiki_runner && return 0
-        runner_id=""
-        runner_role=""
-        runner_enabled="true"
-        ;;
-      id\ =\ *)
-        runner_id="${line#id = }"
-        runner_id="${runner_id%\"}"
-        runner_id="${runner_id#\"}"
-        ;;
-      role\ =\ *)
-        runner_role="${line#role = }"
-        runner_role="${runner_role%\"}"
-        runner_role="${runner_role#\"}"
-        ;;
-      enabled\ =\ *)
-        runner_enabled="${line#enabled = }"
-        ;;
-    esac
-  done < "$config_path"
-
-  consider_wiki_runner && return 0
-
-  if [ -n "${fallback_runner_id:-}" ]; then
-    printf '%s' "$fallback_runner_id"
-    return 0
-  fi
-
-  return 1
-}
-
-auto_run_wiki_maintainer() {
-  local runner_id wiki_output wiki_exit board_dir_name
-
-  if [ "${AUTOFLOW_WIKI_MAINTAINER_AUTO:-on}" = "off" ]; then
-    printf 'wiki_maintainer.status=skipped_by_env\n'
-    return 0
-  fi
-
-  runner_id="$(find_enabled_wiki_maintainer_runner || true)"
-  if [ -z "$runner_id" ]; then
-    printf 'wiki_maintainer.status=skipped_no_runner\n'
-    return 0
-  fi
-
-  if [ ! -x "${PROJECT_ROOT}/bin/autoflow" ]; then
-    printf 'wiki_maintainer.status=failed\n'
-    printf 'wiki_maintainer.reason=autoflow_cli_missing\n'
-    return 0
-  fi
-
-  board_dir_name="$(basename "$BOARD_ROOT")"
-  set +e
-  wiki_output="$(AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "${PROJECT_ROOT}/bin/autoflow" run wiki "$PROJECT_ROOT" "$board_dir_name" --runner "$runner_id" 2>&1)"
-  wiki_exit=$?
-  set -e
-
-  if [ "$wiki_exit" -eq 0 ]; then
-    printf '%s\n' "$wiki_output" | prefix_wiki_maintainer_output
-    return 0
-  fi
-
-  printf 'wiki_maintainer.status=failed\n'
-  printf 'wiki_maintainer.runner_id=%s\n' "$runner_id"
-  printf 'wiki_maintainer.exit_code=%s\n' "$wiki_exit"
-  printf '%s\n' "$wiki_output" | prefix_wiki_maintainer_output
 }
 
 move_run_file_to_ready_to_merge() {

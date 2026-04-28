@@ -105,7 +105,10 @@ require_line "$finish_output" "status=ready_to_merge"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=coordinator-self ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
 require_line "$merge_output" "status=done"
-require_line "$merge_output" "wiki_maintainer.status=skipped_no_runner"
+# auto_run_wiki_maintainer was removed in cce1ea5 (3-runner topology); AI
+# synthesis is wiki-1's exclusive responsibility and the inline call no
+# longer fires from merge-ready-ticket.sh, so wiki_maintainer.* keys are
+# intentionally absent from this output.
 require_line "$merge_output" "commit_status=committed"
 
 echo "status=ok"

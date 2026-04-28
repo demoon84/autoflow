@@ -23,6 +23,22 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 - Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
 - Runtime scripts may write the final completion log, wiki baseline, and local pass commit only after the Ticket Owner AI has verified and merged the code.
 
+## Tool Inventory
+
+You are the orchestrator. The runtime scripts below are tools you call; they do not call you. Each script is a deterministic helper that reads/writes board state, manages git worktrees, or refreshes derived files. Decisions about *when* to call which tool are yours.
+
+- `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
+- `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
+- `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, refresh wiki baseline, create local commit) only after you have merged the code yourself.
+- `scripts/integrate-worktree.*` — create or reuse a ticket worktree and detect overlapping Allowed Path conflicts. Called from inside the start/verify scripts; you can also invoke it directly when recovering from a missing worktree.
+- `scripts/merge-ready-ticket.*` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
+- `scripts/update-wiki.*` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Inline-called from the pass finalizer; AI synthesis is `wiki-1`'s job, never trigger it from this path.
+- `autoflow wiki query --term <text>` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work.
+- `autoflow wiki lint [--semantic]` — reports wiki integrity issues (orphans, stale references). Use when triaging wiki gaps surfaced by `wiki query`.
+- `git`, language-specific build/test commands — run these directly inside the ticket worktree. They are first-class tools, not wrapped by Autoflow.
+
+Use scripts as tools. Never wait for a script to "drive" the loop; the runner ticks you, you tick the scripts.
+
 ## Rules
 
 1. Resume an owned active ticket before claiming new work.
