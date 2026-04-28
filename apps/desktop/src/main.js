@@ -29,19 +29,20 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
+// Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
+// case statement. 3-runner active: ticket / planner / wiki (with their
+// owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
+// verifier (+ veri alias), coordinator (+ coord/doctor/diagnose aliases),
+// merge / merge-bot. Trial: self-improve (+ self_improve/selfimprove).
 const allowedRunRoles = new Set([
-  "ticket",
-  "ticket-owner",
-  "owner",
-  "coordinator",
-  "coord",
-  "planner",
-  "plan",
+  "ticket", "ticket-owner", "owner",
+  "planner", "plan",
+  "wiki", "wiki-maintainer",
   "todo",
-  "verifier",
-  "veri",
-  "wiki",
-  "wiki-maintainer"
+  "verifier", "veri",
+  "coordinator", "coord", "doctor", "diagnose",
+  "merge", "merge-bot",
+  "self-improve", "self_improve", "selfimprove"
 ]);
 // 3-runner active: ticket-owner / planner / wiki-maintainer (with legacy
 // aliases owner / plan / wiki). Legacy/back-compat: todo, verifier,
