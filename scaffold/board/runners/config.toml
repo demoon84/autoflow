@@ -1,12 +1,30 @@
 # Autoflow runner configuration.
 #
-# Ships with a fixed set of three ticket-owner AIs plus the coordinator system
-# role. The coordinator also serves wiki-bot turns when derived wiki synthesis
-# or semantic lint needs an adapter. The desktop AI 관리 page only exposes the
-# ticket-owner runners; add/remove of AIs is disabled by design — edit this file
-# directly if a different layout is required.
+# Default 3-runner topology (refactor 2026-04-27):
+#   planner-1 : Plan AI — backlog/PRD → todo, reject → todo (auto-replan).
+#   owner-1   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
+#   wiki-1    : Wiki AI — periodically refreshes wiki/ when tickets/done or
+#               tickets/reject change. Path-disjoint from Plan AI and Impl AI
+#               so it never causes worktree/merge conflicts.
+# Impl AI still runs deterministic update-wiki.sh inline at merge time so the
+# wiki has a fresh baseline; wiki-1 layers AI synthesis on top.
+#
 # Change agent/model fields to claude, opencode, gemini, shell, or a custom
 # command when Codex CLI is not the desired local runner.
+#
+# Legacy `coordinator-1` and trial `self-improve-1` runners are kept reachable
+# only as backwards-compat / opt-in trials — they ship disabled by default.
+
+[[runners]]
+id = "planner-1"
+role = "planner"
+agent = "codex"
+model = ""
+reasoning = ""
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
 
 [[runners]]
 id = "owner-1"
@@ -20,23 +38,12 @@ enabled = true
 command = ""
 
 [[runners]]
-id = "owner-2"
-role = "ticket-owner"
+id = "wiki-1"
+role = "wiki-maintainer"
 agent = "codex"
 model = ""
 reasoning = ""
-mode = "one-shot"
-interval_seconds = 60
-enabled = true
-command = ""
-
-[[runners]]
-id = "owner-3"
-role = "ticket-owner"
-agent = "codex"
-model = ""
-reasoning = ""
-mode = "one-shot"
+mode = "loop"
 interval_seconds = 60
 enabled = true
 command = ""
@@ -45,11 +52,11 @@ command = ""
 id = "coordinator-1"
 role = "coordinator"
 agent = "codex"
-model = "gpt-5.5"
-reasoning = "xhigh"
+model = ""
+reasoning = ""
 mode = "loop"
 interval_seconds = 60
-enabled = true
+enabled = false
 command = ""
 
 [[runners]]

@@ -69,11 +69,18 @@ fi
 
 require_line "${project_dir}/.claude/skills/autoflow/SKILL.md" "2. If the current project has \`CLAUDE.md\`, \`AGENTS.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
 require_line "${project_dir}/.claude/skills/af/SKILL.md" "1. Treat \`#af\` and \`/af\` as Autoflow PRD handoff triggers."
+require_line "${project_dir}/.claude/skills/memo/SKILL.md" "1. Treat \`#memo\`, \`/memo\`, and \"quick Autoflow memo\" as memo triggers."
 require_line "${project_dir}/.codex/skills/autoflow/SKILL.md" "2. If the current project has \`AGENTS.md\`, \`CLAUDE.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
 require_line "${project_dir}/.codex/skills/af/SKILL.md" "1. Treat \`\$af\`, \`#af\`, and \`/af\` as Autoflow PRD handoff triggers."
+require_line "${project_dir}/.codex/skills/memo/SKILL.md" "1. Treat \`\$memo\`, \`#memo\`, \`/memo\`, and \"quick Autoflow memo\" as memo triggers."
 require_line "${project_dir}/.codex/skills/autoflow/agents/openai.yaml" "  display_name: \"Autoflow\""
+require_line "${project_dir}/.codex/skills/memo/agents/openai.yaml" "  display_name: \"Memo\""
+test -d "${project_dir}/.autoflow/tickets/inbox"
+test -f "${project_dir}/.autoflow/reference/memo.md"
 
 spec_output="${project_dir}/spec.out"
+memo_output="${project_dir}/memo.out"
+memo_plan_output="${project_dir}/memo-plan.out"
 plan_output="${project_dir}/plan.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
@@ -88,6 +95,20 @@ runner_loop_start_output="${project_dir}/runner-loop-start.out"
 runner_loop_list_output="${project_dir}/runner-loop-list.out"
 runner_loop_stop_output="${project_dir}/runner-loop-stop.out"
 coordinator_idle_output="${project_dir}/coordinator-idle.out"
+
+"${REPO_ROOT}/bin/autoflow" memo create "$project_dir" --request "Increase body font size by 2px" --title "Increase body font" --allowed-path apps/desktop/src/renderer/styles.css --verification "npm run desktop:check" >"$memo_output"
+require_line "$memo_output" "status=created"
+require_line "$memo_output" "memo_id=001"
+memo_file="$(awk -F= '$1 == "memo_file" { print $2; exit }' "$memo_output")"
+require_line "$memo_file" "- ID: memo_001"
+require_line "$memo_file" "- Title: Increase body font"
+require_line "$memo_file" "- \`apps/desktop/src/renderer/styles.css\`"
+require_line "$memo_file" "- Command: npm run desktop:check"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$memo_plan_output"
+require_line "$memo_plan_output" "status=ok"
+require_line "$memo_plan_output" "source=memo-inbox"
+require_line "$memo_plan_output" "memo_id=001"
+rm -f "$memo_file"
 
 "${REPO_ROOT}/bin/autoflow" spec create "$project_dir" --raw <<'SPEC' >"$spec_output"
 # Project Spec
@@ -138,9 +159,15 @@ require_line "$spec_output" "status=created"
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
 require_line "$runner_list_output" "runner_count=5"
-require_line "$runner_list_output" "runner.1.id=owner-1"
+# Default 3-runner topology (refactor 2026-04-27): planner-1 / owner-1 /
+# wiki-1 are listed first in scaffold config.toml in that order, followed
+# by the legacy coordinator-1 (ships disabled) and the self-improve-1
+# trial (also disabled).
+require_line "$runner_list_output" "runner.1.id=planner-1"
+require_line "$runner_list_output" "runner.2.id=owner-1"
+require_line "$runner_list_output" "runner.3.id=wiki-1"
 require_line "$runner_list_output" "runner.4.id=coordinator-1"
-require_line "$runner_list_output" "runner.4.mode=loop"
+require_line "$runner_list_output" "runner.4.enabled=false"
 
 "${REPO_ROOT}/bin/autoflow" runners add owner-shell-1 ticket-owner "$project_dir" agent=shell model=smoke-model >"$runner_set_output"
 require_line "$runner_set_output" "status=ok"
