@@ -19,6 +19,17 @@ This mode is only a handoff entry point. It never creates plans, tickets, implem
 - Approved PRD: `tickets/backlog/prd_NNN.md`.
 - Optional approved conversation archive: `conversations/prd_NNN/spec-handoff.md`.
 
+## Tool Inventory
+
+You are a user-triggered agent (Claude `/af`, Codex `$af`, compatibility `#af` / `#autoflow`). The runtime scripts below are tools you call; they do not call you. You never spawn a heartbeat or run any of Plan AI / Impl AI / Wiki AI's tools — you only produce the PRD that those runners will pick up later.
+
+- `scripts/start-spec.*` — reserves or resumes the next `prd_NNN` slot. Run when available; inspect `status=` to decide whether to draft a new PRD or resume an active one.
+- `scripts/clear-thread-context.* --active-only` — clears the active spec thread context after the PRD is saved, so the next handoff turn does not inherit stale state.
+- `reference/project-spec-template.md` — read-only template that defines the PRD shape; produce a complete fill-in before showing it to the user for approval.
+- File reads under `tickets/backlog/`, `tickets/plan/`, `tickets/inprogress/`, `tickets/done/<project-key>/` — used for duplicate detection only; never write to these from this role.
+
+You never call `start-plan.*`, `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-owner.*`, `merge-ready-ticket.*`, or any wiki tool. After you save the PRD, hand off to `autoflow run ticket` (Impl AI) or the Desktop Owner runner; do not initiate execution yourself.
+
 ## Rules
 
 1. Treat Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` as PRD handoff triggers.

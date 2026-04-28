@@ -3,6 +3,15 @@ id = "{{AUTOMATION_ID}}"
 kind = "heartbeat"
 name = "{{AUTOMATION_NAME}}"
 prompt = """
+DEPRECATED LEGACY ROLE. The 3-runner topology (planner-1 + owner-1 + wiki-1)
+has Impl AI (`owner-1`) run AI-led verification inline via
+`verify-ticket-owner.*` and `finish-ticket-owner.*` — there is no separate
+verifier worker. This heartbeat template is kept only for backwards
+compatibility with users still on `#veri` or the legacy role-pipeline.
+New boards should rely on the ticket-owner heartbeat instead. Read
+`.autoflow/agents/verifier-agent.md` and follow that legacy contract; do
+not improvise.
+
 Operate as the Autoflow verifier worker for this project.
 
 Role: verifier
