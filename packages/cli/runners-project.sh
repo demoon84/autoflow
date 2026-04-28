@@ -449,8 +449,14 @@ runner_allowed_config_key() {
 }
 
 runner_allowed_role() {
+  # Active roles (3-runner topology): ticket-owner / planner / wiki-maintainer.
+  # Legacy/back-compat roles (kept reachable so users on older configs can
+  # still `autoflow runners add ...`): owner|ticket alias for ticket-owner,
+  # plan alias for planner, wiki alias for wiki-maintainer, plus
+  # todo|verifier|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher.
+  # Trial role (disabled by default): self-improve.
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|todo|verifier|wiki-maintainer|coordinator|coord|doctor|diagnose|watcher)
+    ticket-owner|owner|ticket|planner|plan|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       return 0
       ;;
     *)
