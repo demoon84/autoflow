@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: legacy one-shot dispatcher for the script-driven file-watch
+# trigger path.
+#
+# `watch-board.sh` (also DEPRECATED) detects board file changes and invokes
+# this script per route. This script then builds a role-specific prompt and
+# dispatches to an AI CLI (codex/claude) or a configured shell command.
+#
+# In the supported 3-runner topology (planner-1 + owner-1 + wiki-1), the
+# heartbeat-driven AI runner reads the board on every tick and decides what
+# to do — `run-hook.sh` is not part of that path. It is kept only for
+# backwards compatibility with users still on `autoflow watch-bg`.
 
 set -euo pipefail
 
