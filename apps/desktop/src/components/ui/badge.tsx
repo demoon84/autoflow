@@ -1,25 +1,21 @@
 import * as React from "react";
-import { cva, type VariantProps } from "class-variance-authority";
+import Chip from "@mui/material/Chip";
 import { cn } from "@/lib/utils";
 
-const badgeVariants = cva("af-badge", {
-  variants: {
-    variant: {
-      default: "af-badge-default",
-      secondary: "af-badge-secondary",
-      destructive: "af-badge-destructive",
-      outline: "af-badge-outline"
-    }
-  },
-  defaultVariants: {
-    variant: "default"
-  }
-});
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: BadgeVariant;
+}
 
-export function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={cn(badgeVariants({ variant }), className)} {...props} />;
+export function Badge({ className, variant = "default", children, ...props }: BadgeProps) {
+  return (
+    <Chip
+      className={cn("af-badge", `af-badge-${variant}`, className)}
+      label={children}
+      size="small"
+      variant={variant === "outline" ? "outlined" : "filled"}
+      {...(props as Omit<typeof props, "color">)}
+    />
+  );
 }

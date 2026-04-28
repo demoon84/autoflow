@@ -1,52 +1,52 @@
 import * as React from "react";
-import { Slot } from "@radix-ui/react-slot";
-import { cva, type VariantProps } from "class-variance-authority";
+import MuiButton, { type ButtonProps as MuiButtonProps } from "@mui/material/Button";
 import { cn } from "@/lib/utils";
 
-const buttonVariants = cva(
-  "inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
-        outline: "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline"
-      },
-      size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9"
-      }
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default"
-    }
-  }
-);
+type ButtonVariant = "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
+type ButtonSize = "default" | "sm" | "lg" | "icon";
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "color"> {
   asChild?: boolean;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}
+
+function muiVariant(variant: ButtonVariant): MuiButtonProps["variant"] {
+  if (variant === "outline") return "outlined";
+  if (variant === "ghost" || variant === "link") return "text";
+  return "contained";
+}
+
+function muiColor(variant: ButtonVariant): MuiButtonProps["color"] {
+  if (variant === "destructive") return "error";
+  if (variant === "secondary") return "secondary";
+  return "primary";
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
+  ({ className, variant = "default", size = "default", asChild = false, children, ...props }, ref) => {
+    const buttonClassName = cn("af-button", `af-button-${variant}`, `af-button-${size}`, className);
+
+    if (asChild && React.isValidElement(children)) {
+      const child = children as React.ReactElement<{ className?: string }>;
+      return React.cloneElement(child, {
+        className: cn(buttonClassName, child.props.className)
+      });
+    }
+
     return (
-      <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+      <MuiButton
         ref={ref}
+        className={buttonClassName}
+        color={muiColor(variant)}
+        size={size === "lg" ? "large" : size === "sm" || size === "icon" ? "small" : "medium"}
+        variant={muiVariant(variant)}
         {...props}
-      />
+      >
+        {children}
+      </MuiButton>
     );
   }
 );
 Button.displayName = "Button";
-
-export { buttonVariants };

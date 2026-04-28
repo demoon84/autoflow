@@ -1,45 +1,79 @@
 import * as React from "react";
-import * as TabsPrimitive from "@radix-ui/react-tabs";
+import Box from "@mui/material/Box";
+import MuiTab from "@mui/material/Tab";
+import MuiTabs from "@mui/material/Tabs";
 import { cn } from "@/lib/utils";
 
-const Tabs = TabsPrimitive.Root;
+type TabsContextValue = {
+  value?: string;
+  onValueChange?: (value: string) => void;
+};
 
-const TabsList = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.List>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "tabs-list inline-flex h-auto items-center gap-1 rounded-xl border border-border bg-card p-1 text-muted-foreground",
-      className
-    )}
-    {...props}
-  />
-));
-TabsList.displayName = TabsPrimitive.List.displayName;
+const TabsContext = React.createContext<TabsContextValue>({});
 
-const TabsTrigger = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "tabs-trigger inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:bg-accent data-[state=inactive]:hover:text-accent-foreground",
-      className
-    )}
-    {...props}
-  />
-));
-TabsTrigger.displayName = TabsPrimitive.Trigger.displayName;
+function Tabs({
+  value,
+  defaultValue,
+  onValueChange,
+  children,
+  className
+}: {
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const [internalValue, setInternalValue] = React.useState(defaultValue);
+  const actualValue = value ?? internalValue;
+  const handleValueChange = React.useCallback(
+    (nextValue: string) => {
+      if (value === undefined) setInternalValue(nextValue);
+      onValueChange?.(nextValue);
+    },
+    [onValueChange, value]
+  );
 
-const TabsContent = React.forwardRef<
-  React.ElementRef<typeof TabsPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content ref={ref} className={cn("tabs-content outline-none", className)} {...props} />
-));
-TabsContent.displayName = TabsPrimitive.Content.displayName;
+  return (
+    <TabsContext.Provider value={{ value: actualValue, onValueChange: handleValueChange }}>
+      <Box className={cn("tabs-root", className)}>{children}</Box>
+    </TabsContext.Provider>
+  );
+}
+
+type TabsListProps = Omit<React.HTMLAttributes<HTMLDivElement>, "onChange">;
+
+const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
+  ({ className, children, ...props }, ref) => {
+    const context = React.useContext(TabsContext);
+    return (
+      <MuiTabs
+        ref={ref}
+        className={cn("tabs-list", className)}
+        value={context.value ?? false}
+        onChange={(_, nextValue) => context.onValueChange?.(String(nextValue))}
+        {...props}
+      >
+        {children}
+      </MuiTabs>
+    );
+  }
+);
+TabsList.displayName = "TabsList";
+
+const TabsTrigger = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { value: string }>(
+  ({ className, children, value, ...props }, ref) => (
+    <MuiTab ref={ref} className={cn("tabs-trigger", className)} value={value} label={children} {...props} />
+  )
+);
+TabsTrigger.displayName = "TabsTrigger";
+
+const TabsContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { value: string }>(
+  ({ className, value, ...props }, ref) => {
+    const context = React.useContext(TabsContext);
+    return context.value === value ? <div ref={ref} className={cn("tabs-content", className)} {...props} /> : null;
+  }
+);
+TabsContent.displayName = "TabsContent";
 
 export { Tabs, TabsContent, TabsList, TabsTrigger };

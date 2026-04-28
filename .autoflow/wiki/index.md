@@ -6,6 +6,12 @@ This wiki is derived from completed Autoflow work.
 
 Generated summaries may be written here by `autoflow wiki update`.
 
+## Recent Synthesis
+- **[[design-kit-mui-migration]]**: Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
+- **[[desktop-gemini-icon]]**: Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
+- **[[ai-workflow-board]]**: Updated with Impl AI 4-stage simplification and dot alignment precision from `prd_025`.
+- **[[ticket-workspace-tabs]]**: Documented the evolution of the ticket board into a unified tabbed workspace.
+
 ## Pages
 
 - [[project-overview]]
@@ -21,6 +27,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[desktop-gemini-icon]]
   - [[in-app-help]]
 - `decisions/`
+  - [[design-kit-mui-migration]]
   - [[manual-resolution-policy]]
   - [[handoff-as-raw-source]]
   - [[prd-terminology-rename]]
@@ -39,11 +46,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 22
+- Done tickets: 23
 - Reject records: 1
-- Verifier logs: 211
+- Verifier logs: 212
 - Conversation handoffs: 1
-- Last updated: 2026-04-27T20:35:52Z
+- Last updated: 2026-04-28T13:44:50Z
 
 ## Completed Tickets
 

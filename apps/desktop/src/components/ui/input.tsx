@@ -1,18 +1,25 @@
 import * as React from "react";
+import TextField from "@mui/material/TextField";
 import { cn } from "@/lib/utils";
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, ...props }, ref) => (
-    <input
+  ({ className, type, value, defaultValue, onChange, placeholder, disabled, ...props }, ref) => (
+    <TextField
+      className={cn("af-input", className)}
+      disabled={disabled}
+      fullWidth
+      inputRef={ref}
+      placeholder={placeholder}
+      size="small"
       type={type}
-      className={cn(
-        "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-        className
-      )}
-      ref={ref}
-      {...props}
+      value={value}
+      defaultValue={defaultValue}
+      onChange={onChange}
+      slotProps={{
+        htmlInput: props
+      }}
     />
   )
 );

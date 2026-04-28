@@ -257,7 +257,7 @@ ambiguous.
 
 ## Desktop Autoflow Dashboard
 
-Electron 기반 Autoflow Dashboard 는 `apps/desktop/` 아래에 둔다. 이 앱은 보드에 정의된 runner 를 one-shot 으로 깨우며, ticket/log 파일을 같은 화면에서 읽는 로컬 대시보드다. shadcn/ui 스타일의 React + Vite + Tailwind 렌더러를 쓰고, 프로젝트에 설치된 `.autoflow/` 보드 파일과 `bin/autoflow status` / `bin/autoflow doctor` / `bin/autoflow runners list` 결과를 읽어 흐름을 관찰한다.
+Electron 기반 Autoflow Dashboard 는 `apps/desktop/` 아래에 둔다. 이 앱은 보드에 정의된 runner 를 one-shot 으로 깨우며, ticket/log 파일을 같은 화면에서 읽는 로컬 대시보드다. MUI Material + Emotion theme 기반 React + Vite 렌더러를 쓰고, 프로젝트에 설치된 `.autoflow/` 보드 파일과 `bin/autoflow status` / `bin/autoflow doctor` / `bin/autoflow runners list` 결과를 읽어 흐름을 관찰한다.
 
 현재 1차 화면에서 다루는 일:
 
@@ -284,7 +284,7 @@ npm run desktop:dev
 npm run desktop:check
 ```
 
-shadcn/ui 구성 파일은 `apps/desktop/components.json` 이고, 복사형 UI 컴포넌트는 `apps/desktop/src/components/ui/` 아래에 둔다.
+MUI theme 은 `apps/desktop/src/renderer/theme.ts` 에 두고, 앱 전용 wrapper 컴포넌트는 `apps/desktop/src/components/ui/` 아래에 둔다.
 
 Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를 쓴다.
 

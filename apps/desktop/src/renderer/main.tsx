@@ -1,5 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
+import CssBaseline from "@mui/material/CssBaseline";
+import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
 import {
   Activity,
@@ -50,6 +52,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import { desktopTheme } from "./theme";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
@@ -3747,7 +3750,9 @@ function WorkflowPinLayer({
   pinIcon,
   variant,
   layerHeading,
-  layerHelpText
+  layerHelpText,
+  emptyText,
+  showWhenEmpty = false
 }: {
   files: WorkflowFileEntry[];
   options?: { projectRoot: string; boardDirName: string };
@@ -3757,6 +3762,8 @@ function WorkflowPinLayer({
   variant: "default" | "destructive";
   layerHeading: string;
   layerHelpText: string;
+  emptyText?: string;
+  showWhenEmpty?: boolean;
 }) {
   const [layerOpen, setLayerOpen] = React.useState(false);
   const [detailFile, setDetailFile] = React.useState<WorkflowFileEntry | null>(null);
@@ -3772,10 +3779,10 @@ function WorkflowPinLayer({
   }, []);
 
   React.useEffect(() => {
-    if (files.length === 0 && layerOpen) {
+    if (files.length === 0 && layerOpen && !showWhenEmpty) {
       closeLayer();
     }
-  }, [closeLayer, files.length, layerOpen]);
+  }, [closeLayer, files.length, layerOpen, showWhenEmpty]);
 
   const handleOpenChange = React.useCallback(
     (open: boolean) => {
@@ -3783,7 +3790,7 @@ function WorkflowPinLayer({
         setLayerOpen(true);
         return;
       }
-      // Radix asks to close: if currently in detail view, go back to list instead
+      // Dialog close asks to close: if currently in detail view, go back to list instead
       if (detailFile) {
         setDetailFile(null);
         setDetailContent(null);
@@ -3830,7 +3837,7 @@ function WorkflowPinLayer({
     setDetailError("");
   };
 
-  if (files.length === 0) return null;
+  if (files.length === 0 && !showWhenEmpty) return null;
 
   return (
     <>
@@ -3918,29 +3925,33 @@ function WorkflowPinLayer({
               <DialogDescription className="workflow-pin-layer-help">
                 {layerHelpText}
               </DialogDescription>
-              <ul className="workflow-pin-list">
-                {files.map((file) => (
-                  <li key={file.filePath}>
-                    <button
-                      type="button"
-                      className="workflow-pin-item"
-                      onClick={() => handleOpenDetail(file)}
-                      title={file.title || file.name}
-                    >
-                      <strong>{workflowFileDisplayName(file.name)}</strong>
-                      {file.title ? <span>{file.title}</span> : null}
-                      {file.stateLabel ? (
-                        <span
-                          className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
-                        >
-                          {file.stateLabel}
-                        </span>
-                      ) : null}
-                      <time>{formatDate(file.modifiedAt)}</time>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {files.length ? (
+                <ul className="workflow-pin-list">
+                  {files.map((file) => (
+                    <li key={file.filePath}>
+                      <button
+                        type="button"
+                        className="workflow-pin-item"
+                        onClick={() => handleOpenDetail(file)}
+                        title={file.title || file.name}
+                      >
+                        <strong>{workflowFileDisplayName(file.name)}</strong>
+                        {file.title ? <span>{file.title}</span> : null}
+                        {file.stateLabel ? (
+                          <span
+                            className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
+                          >
+                            {file.stateLabel}
+                          </span>
+                        ) : null}
+                        <time>{formatDate(file.modifiedAt)}</time>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="workflow-pin-empty">{emptyText || "표시할 항목이 없습니다."}</p>
+              )}
             </>
           )}
         </DialogContent>
@@ -4339,7 +4350,7 @@ function TicketBoard({
                 layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
               />
             ) : null}
-            {todoFiles.length ? (
+            {specFiles.length || todoFiles.length ? (
               <WorkflowPinLayer
                 files={todoFiles}
                 options={options}
@@ -4348,6 +4359,8 @@ function TicketBoard({
                 variant="default"
                 layerHeading={todoPinTitle}
                 layerHelpText="아직 시작되지 않은 TODO 티켓 목록입니다. 항목을 클릭하면 티켓 본문이 이 화면에서 열립니다."
+                emptyText="아직 발급된 TODO 티켓이 없습니다."
+                showWhenEmpty
               />
             ) : null}
             {rejectFiles.length ? (
@@ -5198,6 +5211,9 @@ function LogPreview({
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ThemeProvider theme={desktopTheme}>
+      <CssBaseline />
+      <App />
+    </ThemeProvider>
   </React.StrictMode>
 );
