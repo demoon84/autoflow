@@ -1623,17 +1623,6 @@ function App() {
                   <section className="board-section board-section-flush" aria-label="Wiki 본문">
                     <PageLayout
                       className="knowledge-page"
-                      header={
-                        <div className="knowledge-page-toolbar">
-                          <div className="workflow-pin-layer-heading">
-                            <BookOpenText className="h-4 w-4" aria-hidden="true" />
-                            <strong>Knowledge</strong>
-                          </div>
-                          <div className="knowledge-toolbar-trailing">
-                            <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
-                          </div>
-                        </div>
-                      }
                     >
                       <div className="knowledge-split">
                         <div className="tool-panel knowledge-list-pane">
