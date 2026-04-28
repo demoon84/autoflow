@@ -31,9 +31,60 @@ export const desktopTheme = createTheme({
   typography: {
     fontFamily:
       '"Pretendard Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Noto Sans KR", "Helvetica Neue", Arial, sans-serif',
+    fontSize: 13,
+    h1: {
+      fontSize: "1.375rem",
+      lineHeight: 1.12
+    },
+    h2: {
+      fontSize: "1.125rem",
+      lineHeight: 1.18
+    },
+    h3: {
+      fontSize: "1rem",
+      lineHeight: 1.2
+    },
+    h4: {
+      fontSize: "0.9375rem",
+      lineHeight: 1.25
+    },
+    h5: {
+      fontSize: "0.875rem",
+      lineHeight: 1.3
+    },
+    h6: {
+      fontSize: "0.8125rem",
+      lineHeight: 1.35
+    },
+    subtitle1: {
+      fontSize: "0.875rem",
+      lineHeight: 1.35
+    },
+    subtitle2: {
+      fontSize: "0.8125rem",
+      lineHeight: 1.35
+    },
+    body1: {
+      fontSize: "0.8125rem",
+      lineHeight: 1.45
+    },
+    body2: {
+      fontSize: "0.75rem",
+      lineHeight: 1.4
+    },
     button: {
+      fontSize: "0.75rem",
+      lineHeight: 1.25,
       textTransform: "none",
       letterSpacing: 0
+    },
+    caption: {
+      fontSize: "0.6875rem",
+      lineHeight: 1.35
+    },
+    overline: {
+      fontSize: "0.6875rem",
+      lineHeight: 1.35
     },
     allVariants: {
       letterSpacing: 0
@@ -48,7 +99,15 @@ export const desktopTheme = createTheme({
         root: {
           minWidth: 0,
           borderRadius: 8,
+          fontSize: "0.75rem",
           fontWeight: 600
+        }
+      }
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontSize: "0.71875rem"
         }
       }
     },
@@ -69,7 +128,15 @@ export const desktopTheme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          borderRadius: 8
+          borderRadius: 8,
+          fontSize: "0.8125rem"
+        }
+      }
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        root: {
+          fontSize: "0.75rem"
         }
       }
     }

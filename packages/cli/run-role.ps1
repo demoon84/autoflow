@@ -1,7 +1,11 @@
 [CmdletBinding()]
 param(
   [Parameter(Position = 0)]
-  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "wiki", "wiki-maintainer", "coordinator", "coord", "doctor", "diagnose")]
+  # Mirrors `case "$requested_role" in ...` in run-role.sh and the
+  # five other role-acceptance lists across the codebase (CLI
+  # runner_allowed_role, CLI metrics/doctor validation, desktop
+  # allowedRunnerRoles / allowedRunRoles).
+  [ValidateSet("ticket", "owner", "ticket-owner", "planner", "plan", "todo", "verifier", "veri", "wiki", "wiki-maintainer", "merge", "merge-bot", "coordinator", "coord", "doctor", "diagnose", "self-improve", "self_improve", "selfimprove")]
   [string]$Role,
 
   [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
