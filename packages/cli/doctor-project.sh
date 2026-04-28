@@ -527,12 +527,17 @@ record_runner_adapter_check() {
   printf 'runner.%s.interval_seconds=%s\n' "$check_id" "$interval_seconds" >> "$check_output"
 
   case "$role" in
-      ticket-owner|owner|planner|todo|verifier|wiki-maintainer|coordinator|doctor|watcher)
+    # Mirrors runner_allowed_role in runners-project.sh, the metrics
+    # validation list in metrics-project.sh, and the desktop
+    # allowedRunnerRoles / allowedRunRoles sets. 3-runner active
+    # (ticket-owner / planner / wiki-maintainer) + their aliases,
+    # legacy/back-compat roles, plus the self-improve trial.
+    ticket-owner|owner|ticket|planner|plan|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       record_check "${check_id}_role" "ok"
       ;;
     *)
       record_check "${check_id}_role" "warning"
-      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected ticket-owner, planner, todo, verifier, wiki-maintainer, coordinator, doctor, or watcher"
+      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected one of ticket-owner/owner/ticket, planner/plan, wiki-maintainer/wiki, todo, verifier, coordinator/coord/doctor/diagnose, merge/merge-bot, watcher, or self-improve"
       ;;
   esac
 
