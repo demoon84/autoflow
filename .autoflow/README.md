@@ -43,15 +43,17 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 ## Trigger Summary
 
-- Claude `/af` / `/autoflow`: spec handoff only.
-- Codex `$af` / `$autoflow`: spec handoff only.
-- `#af` / `#autoflow`: compatibility aliases for spec handoff only.
-- `autoflow run ticket`: default Ticket Owner execution.
-- `autoflow runners start coordinator-1`: looped coordinator for diagnostics, finalization visibility when present, and wiki-bot maintenance.
-- Desktop Owner runner: default Ticket Owner execution from the UI.
-- `#plan`: legacy planner heartbeat.
-- `#todo`: legacy todo heartbeat.
-- `#veri`: legacy verifier heartbeat.
+- Claude `/af` / `/autoflow`: PRD handoff only.
+- Codex `$af` / `$autoflow`: PRD handoff only.
+- `#af` / `#autoflow`: compatibility aliases for PRD handoff only.
+- `autoflow runners start planner-1`: Plan AI loop runner — backlog/reject → todo.
+- `autoflow run ticket` / `autoflow runners start owner-1`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
+- `autoflow runners start wiki-1`: Wiki AI loop runner — layers AI synthesis on the deterministic wiki baseline that Impl AI refreshes inline at merge time.
+- Desktop Owner runner: default Impl AI execution from the UI.
+- `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not part of default 3-runner topology).
+- `#plan`: legacy planner heartbeat (Plan AI runner replaces this).
+- `#todo`: legacy todo heartbeat (Impl AI claims todo directly).
+- `#veri`: legacy verifier heartbeat (Impl AI runs AI-led verification inline).
 
 ## Spec Handoff Rules
 
@@ -100,13 +102,11 @@ Use the wiki to summarize:
 - repeated failures,
 - architecture notes.
 
-## Coordinator Rules
+## Coordinator Rules (DEPRECATED)
 
-Coordinator mode diagnoses board health and may report finalization opportunities, but it does not own product-code merge.
+Coordinator is no longer a default runner in the 3-runner topology. Its responsibilities have been split: Impl AI (`owner-1`) runs AI-led verification and merge inline via `verify-ticket-owner.*` + `finish-ticket-owner.*` (which calls `merge-ready-ticket.*` as a non-merging finalizer); Wiki AI (`wiki-1`) layers AI synthesis on top of the deterministic baseline that Impl AI already refreshes inline. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
 
-Use `autoflow runners start coordinator-1` for the default looped coordinator when active tickets are blocked, worktree state looks suspicious, runner state does not explain what to do next, `tickets/ready-to-merge/` contains work, or derived wiki maintenance needs an adapter. The coordinator performs a cheap precheck each tick and runs full doctor diagnostics only when a problem or finalization opportunity is present; unchanged problem fingerprints skip repeated full diagnosis until board state changes. It reports shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, and board scaffold issues. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code.
-
-Coordinator output is evidence for a next action. Product-code repair and merge remain AI owner work. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
+If you do run a legacy coordinator, the historical contract still applies: it diagnoses board health (shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, board scaffold issues) and may produce evidence for a next action. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code; product-code repair and merge are Impl AI's responsibility. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
 
 ## Writing Standard
 
