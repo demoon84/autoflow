@@ -27,7 +27,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-28T16:02:21Z
+- Last rebuilt: 2026-04-28T20:34:01Z
 
 ### Completed Tickets
 
@@ -82,4 +82,5 @@ Each entry should cite its source ticket or log.
 ### Conversation Handoffs
 
 - PRD Handoff. Source: `conversations/prd_022/spec-handoff.md`.
+- PRD Handoff. Source: `conversations/prd_038/spec-handoff.md`.
 <!-- AUTOFLOW:END derived-timeline -->

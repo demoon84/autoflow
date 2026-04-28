@@ -3768,6 +3768,11 @@ pre {
   overflow: hidden;
 }
 
+.snapshot-panel.report-panel {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 .knowledge-split {
   display: flex;
   align-items: stretch;
