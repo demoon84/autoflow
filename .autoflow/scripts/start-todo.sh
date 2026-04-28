@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: legacy todo runtime.
+#
+# In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI
+# (`owner-1`) claims directly from `tickets/todo/` via
+# `start-ticket-owner.sh`, implements, verifies, and merges in one
+# flow. There is no separate todo worker.
+#
+# This script is kept reachable as `autoflow run todo` (and the
+# `#todo` heartbeat) only for backwards compatibility with users
+# still on the legacy role-pipeline. New boards should use the
+# ticket-owner flow instead.
 
 set -euo pipefail
 

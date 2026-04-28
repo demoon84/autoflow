@@ -1,4 +1,14 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: smoke test for the trial self-improve runner.
+#
+# `self-improve-1` ships with `enabled = false` in the default
+# `runners/config.toml` and is not part of the 3-runner topology
+# (planner-1 + owner-1 + wiki-1). The script under test
+# (`start-self-improve.sh`) is a deterministic log scanner that does
+# not invoke an AI; it is kept reachable as a manual trial only. This
+# smoke test exercises the trial runner end-to-end and is not wired
+# into CI (only `ticket-owner-smoke.sh` is exposed via package.json).
 
 set -euo pipefail
 

@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: legacy verifier runtime.
+#
+# In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI
+# (`owner-1`) runs AI-led verification inline via
+# `verify-ticket-owner.sh` and decides pass/fail based on the
+# evidence. There is no separate verifier worker.
+#
+# This script is kept reachable as `autoflow run verifier` (and the
+# `#veri` heartbeat) only for backwards compatibility with users
+# still on the legacy role-pipeline. New boards should use the
+# ticket-owner flow instead.
 
 set -euo pipefail
 

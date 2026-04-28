@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: smoke test for the legacy coordinator runner.
+#
+# Coordinator is no longer a default runner in the 3-runner topology
+# (planner-1 + owner-1 + wiki-1). This test scaffolds a backlog PRD
+# and expects the legacy ticket-owner→backlog→todo conversion path to
+# pick it up directly, which the new topology no longer supports
+# (Plan AI handles backlog→todo conversion separately). The test
+# therefore fails on the new topology with `status=idle /
+# no_actionable_ticket` regardless of the coordinator-specific
+# behavior it was originally built to verify. Kept here for repo
+# history; not wired into CI (only `ticket-owner-smoke.sh` is exposed
+# via package.json).
 
 set -euo pipefail
 

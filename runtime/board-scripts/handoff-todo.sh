@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: legacy todo→verifier handoff runtime.
+#
+# In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI
+# (`owner-1`) does not hand a ticket to a separate verifier — it
+# verifies and merges its own ticket inline via
+# `verify-ticket-owner.sh` + `finish-ticket-owner.sh`.
+#
+# This script is kept reachable for backwards compatibility with the
+# legacy todo role-pipeline (`autoflow run todo` / `#todo` heartbeat).
+# New boards should not depend on it.
 
 set -euo pipefail
 
