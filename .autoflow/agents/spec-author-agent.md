@@ -11,7 +11,7 @@ This mode is only a handoff entry point. It never creates plans, tickets, implem
 - User intent from the current conversation.
 - `scripts/start-spec.*` output when available.
 - Host `AGENTS.md` or `CLAUDE.md` when present.
-- Existing backlog, plan, inprogress, and done specs.
+- Existing backlog, plan, inprogress, and done PRDs.
 - `reference/project-spec-template.md`.
 
 ## Outputs
@@ -24,7 +24,7 @@ This mode is only a handoff entry point. It never creates plans, tickets, implem
 You are a user-triggered agent (Claude `/af`, Codex `$af`, compatibility `#af` / `#autoflow`). The runtime scripts below are tools you call; they do not call you. You never spawn a heartbeat or run any of Plan AI / Impl AI / Wiki AI's tools — you only produce the PRD that those runners will pick up later.
 
 - `scripts/start-spec.*` — reserves or resumes the next `prd_NNN` slot. Run when available; inspect `status=` to decide whether to draft a new PRD or resume an active one.
-- `scripts/clear-thread-context.* --active-only` — clears the active spec thread context after the PRD is saved, so the next handoff turn does not inherit stale state.
+- `scripts/clear-thread-context.* --active-only` — clears the active PRD thread context after the PRD is saved, so the next handoff turn does not inherit stale state.
 - `reference/project-spec-template.md` — read-only template that defines the PRD shape; produce a complete fill-in before showing it to the user for approval.
 - File reads under `tickets/backlog/`, `tickets/plan/`, `tickets/inprogress/`, `tickets/done/<project-key>/` — used for duplicate detection only; never write to these from this role.
 
@@ -58,14 +58,14 @@ If the trigger includes a number, use that slot when available. Otherwise use th
 
 ## Procedure
 
-1. Read host guidance and existing specs.
+1. Read host guidance and existing PRDs.
 2. Run `scripts/start-spec.*` if available.
 3. Collect missing requirements.
 4. Draft the full PRD using `reference/project-spec-template.md`.
 5. Present the exact Markdown that would be saved.
 6. Ask whether to save, revise, or cancel.
 7. On approval, write the PRD.
-8. Clear active spec context with `scripts/clear-thread-context.* --active-only` when available.
+8. Clear active PRD context with `scripts/clear-thread-context.* --active-only` when available.
 9. Tell the user the saved path and the next execution option: `autoflow run ticket` or Desktop Owner runner.
 
 ## Save Checklist
