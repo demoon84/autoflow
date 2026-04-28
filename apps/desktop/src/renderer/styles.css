@@ -3785,24 +3785,10 @@ pre {
   min-height: 100%;
 }
 
-.knowledge-preview-pane--hidden {
-  display: none;
-}
-
 .knowledge-toolbar-trailing {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
-}
-
-.knowledge-preview-open-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.log-preview-close {
   margin-left: auto;
 }
 

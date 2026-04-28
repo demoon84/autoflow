@@ -22,7 +22,6 @@ import {
   KanbanSquare,
   Layers3,
   Loader2,
-  PanelRightOpen,
   Play,
   RefreshCw,
   Search,
@@ -888,7 +887,6 @@ function App() {
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
   const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
   const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
-  const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
   const [sourcesOpen, setSourcesOpen] = React.useState(true);
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
@@ -1148,7 +1146,6 @@ function App() {
       setSelectedLogPath("");
       setLogPreview(null);
       setLogError("");
-      setIsWikiPreviewOpen(false);
     }
 
     previousSettingsSectionRef.current = activeSettingsSection;
@@ -1340,7 +1337,6 @@ function App() {
       if (!filePath) {
         return;
       }
-      setIsWikiPreviewOpen(true);
       await readLog(filePath);
     },
     [readLog]
@@ -1634,20 +1630,6 @@ function App() {
                             <strong>Knowledge</strong>
                           </div>
                           <div className="knowledge-toolbar-trailing">
-                            {!isWikiPreviewOpen && selectedLogPath ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="knowledge-preview-open-toggle"
-                                onClick={() => setIsWikiPreviewOpen(true)}
-                                aria-label="미리보기 열기"
-                                data-tooltip="미리보기 열기"
-                              >
-                                <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
-                                <span>미리보기 열기</span>
-                              </Button>
-                            ) : null}
                             <Badge variant="secondary">{board?.wikiFiles?.length || 0}</Badge>
                           </div>
                         </div>
@@ -1688,30 +1670,12 @@ function App() {
                           </div>
                         </div>
                         <div
-                          className={
-                            isWikiPreviewOpen
-                              ? "knowledge-preview-pane"
-                              : "knowledge-preview-pane knowledge-preview-pane--hidden"
-                          }
-                          aria-hidden={!isWikiPreviewOpen}
+                          className="knowledge-preview-pane"
                         >
                           <LogPreview
                             preview={logPreview}
                             isLoading={isReadingLog}
                             error={logError}
-                            headerAction={
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="log-preview-close"
-                                onClick={() => setIsWikiPreviewOpen(false)}
-                                aria-label="미리보기 닫기"
-                                data-tooltip="미리보기 닫기"
-                              >
-                                <X className="h-4 w-4" aria-hidden="true" />
-                              </Button>
-                            }
                           />
                         </div>
                       </div>

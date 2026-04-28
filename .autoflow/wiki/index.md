@@ -35,7 +35,6 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[prd-terminology-rename]]
   - [[worker-display-policy]]
 - `architecture/`
-  - [[README]]
   - [[runner-role-slugs]]
 - `learnings/`
   - [[ticket-overlap-no-op]]
@@ -52,11 +51,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 27
+- Done tickets: 28
 - Reject records: 1
-- Verifier logs: 216
+- Verifier logs: 217
 - Conversation handoffs: 1
-- Last updated: 2026-04-28T15:26:26Z
+- Last updated: 2026-04-28T15:35:17Z
 
 ## Completed Tickets
 
