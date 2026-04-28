@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: smoke test for the legacy coordinator runner's self-skip
+# behavior in the wiki-bot adapter chain.
+#
+# Coordinator is no longer a default runner in the 3-runner topology
+# (planner-1 + owner-1 + wiki-1), and the auto_run_wiki_maintainer
+# function this test exercised was removed in db8cc57 along with the
+# coordinator-as-wiki-bot fallback. This test scaffolds a backlog PRD
+# the same way as the other coordinator-* smoke tests, which the new
+# Impl AI flow no longer auto-converts (Plan AI handles backlog→todo
+# separately). Kept for repo history; not wired into CI (only
+# `ticket-owner-smoke.sh` is exposed via package.json).
 
 set -euo pipefail
 
