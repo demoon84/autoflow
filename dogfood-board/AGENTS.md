@@ -124,8 +124,8 @@
 반드시 읽을 파일:
 
 - `agents/ticket-owner-agent.md`
-- 대상 `tickets/inprogress/tickets_NNN.md`, `tickets/todo/tickets_NNN.md`, `tickets/verifier/tickets_NNN.md`, 또는 `tickets/backlog/project_NNN.md`
-- 참조된 `tickets/done/*/project_*.md`
+- 대상 `tickets/inprogress/tickets_NNN.md`, `tickets/todo/tickets_NNN.md`, `tickets/verifier/tickets_NNN.md`, 또는 `tickets/backlog/prd_NNN.md`
+- 참조된 `tickets/done/*/prd_*.md`
 - `rules/verifier/README.md`, `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`
 
 해야 하는 일:
