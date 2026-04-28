@@ -60,7 +60,7 @@ At the start of work, read in this order:
 6. `reference/tickets-board.md`
 7. `rules/verifier/README.md`
 8. Role-specific files:
-   - spec handoff: `agents/spec-author-agent.md`
+   - PRD handoff: `agents/spec-author-agent.md`
    - default execution: `agents/ticket-owner-agent.md`
    - legacy planning: `agents/plan-to-ticket-agent.md`
    - legacy todo implementation: `agents/todo-queue-agent.md`
@@ -77,7 +77,7 @@ At the start of work, read in this order:
 ## Core Rules
 
 1. Do not create plans or tickets without an approved spec.
-2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are spec handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
+2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
 4. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 5. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.

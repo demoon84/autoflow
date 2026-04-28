@@ -9,7 +9,7 @@ The chat window can start work, but the board owns work state.
 
 Use Ticket Owner Mode by default:
 
-1. User starts spec handoff with Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or compatibility aliases `#af` / `#autoflow`.
+1. User starts PRD handoff with Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or compatibility aliases `#af` / `#autoflow`. For small changes, the user may instead drop a quick memo with Claude `/memo`, Codex `$memo`, or `autoflow memo create`.
 2. The agent drafts a full spec in chat.
 3. The user explicitly approves saving.
 4. The approved spec is saved as `tickets/backlog/prd_NNN.md`.
@@ -23,7 +23,8 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 ## Important Directories
 
-- `tickets/backlog/`: approved specs waiting for execution.
+- `tickets/inbox/`: quick memos waiting for Plan AI promotion into generated PRDs and todo tickets.
+- `tickets/backlog/`: approved or generated specs waiting for execution.
 - `tickets/inprogress/`: active Ticket Owner tickets and verification records.
 - `tickets/ready-to-merge/`: legacy/compatibility state for verified owner tickets waiting for finalization.
 - `tickets/merge-blocked/`: legacy/compatibility state for ready tickets that need ticket-specific AI repair.
@@ -46,6 +47,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Claude `/af` / `/autoflow`: PRD handoff only.
 - Codex `$af` / `$autoflow`: PRD handoff only.
 - `#af` / `#autoflow`: compatibility aliases for PRD handoff only.
+- Claude `/memo`, Codex `$memo`, `#memo`, or `autoflow memo create`: quick memo intake only.
 - `autoflow runners start planner-1`: Plan AI loop runner — backlog/reject → todo.
 - `autoflow run ticket` / `autoflow runners start owner-1`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
 - `autoflow runners start wiki-1`: Wiki AI loop runner — layers AI synthesis on the deterministic wiki baseline that Impl AI refreshes inline at merge time.
@@ -67,6 +69,18 @@ The agent must:
 4. Show the complete spec in chat.
 5. Save only after explicit user approval.
 6. Save only to `tickets/backlog/` and optional `conversations/` archive.
+
+## Memo Intake Rules
+
+Quick memo intake never starts implementation.
+
+The agent must:
+
+1. Preserve the user's original request in `tickets/inbox/memo_NNN.md`.
+2. Add scope, allowed path, and verification hints only when obvious.
+3. Avoid drafting a full PRD in chat.
+4. Let Plan AI promote the memo into a generated PRD and todo ticket when safe.
+5. Mark unclear memos as `needs-info` instead of creating implementation work.
 
 ## Ticket Owner Rules
 

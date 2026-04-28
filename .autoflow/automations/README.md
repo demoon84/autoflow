@@ -150,7 +150,7 @@ The three are path-disjoint and tick on the same 1-minute heartbeat without conf
 
 - No automatic push.
 - No hidden pass/fail.
-- No implementation during spec handoff.
+- No implementation during PRD handoff.
 - No wiki-as-source-of-truth.
 
 ## Template Files
