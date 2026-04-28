@@ -121,9 +121,9 @@ stderr_file="$(autoflow_mktemp)"
 
 if [ -z "$verification_command" ]; then
   replace_scalar_field_in_section "$run_file" "## Meta" "Status" "blocked"
-  replace_section_block "$run_file" "Findings" "- blocker: No verification command found in ticket or referenced spec.
+  replace_section_block "$run_file" "Findings" "- blocker: No verification command found in ticket or referenced PRD.
 - warning:"
-  replace_section_block "$run_file" "Next Fix Hint" "- Add `- Command: ...` under the ticket or project spec `## Verification`, then rerun `scripts/verify-ticket-owner.sh ${ticket_id}`."
+  replace_section_block "$run_file" "Next Fix Hint" "- Add `- Command: ...` under the ticket or referenced PRD `## Verification`, then rerun `scripts/verify-ticket-owner.sh ${ticket_id}`."
   append_note "$ticket_file" "Ticket owner verification blocked at ${timestamp_start}: missing verification command."
   printf 'status=blocked\n'
   printf 'reason=missing_verification_command\n'
@@ -173,7 +173,7 @@ replace_section_block "$run_file" "Command" "- Started At: ${timestamp_start}
 - Working Root: \`${working_root}\`
 - Command: \`${verification_command}\`
 - Exit Code: ${exit_code}"
-replace_section_block "$run_file" "Checks" "- [x] spec reference confirmed
+replace_section_block "$run_file" "Checks" "- [x] PRD reference confirmed
 - [x] allowed paths respected by ticket scope
 - [x] implementation completed or intentionally unchanged
 - [$([ "$exit_code" -eq 0 ] && printf x || printf ' ')] automated verification passed"
