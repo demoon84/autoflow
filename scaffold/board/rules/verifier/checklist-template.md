@@ -3,7 +3,7 @@
 Use this checklist before pass or fail.
 
 - [ ] Ticket path is correct.
-- [ ] Referenced spec was read.
+- [ ] Referenced PRD was read.
 - [ ] `Allowed Paths` were respected.
 - [ ] `Done When` items were checked.
 - [ ] Acceptance criteria were checked.
