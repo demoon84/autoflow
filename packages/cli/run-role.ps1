@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($Role)) {
-  throw "Role is required. Use ticket, planner, todo, verifier, merge, wiki, or coordinator."
+  throw "Role is required. 3-runner default: planner / ticket / wiki. Legacy: todo / verifier / coordinator / merge. Trial: self-improve."
 }
 
 $runner = Join-Path $PSScriptRoot "invoke-cli-sh.ps1"
