@@ -58,7 +58,7 @@ if [ -n "$active_spec_file" ]; then
     printf 'requested_spec_id=%s\n' "$requested_spec_id"
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
-    printf 'next_action=Resume or finish the active spec in this conversation before starting another spec. Use a new Codex conversation for parallel spec authoring.\n'
+    printf 'next_action=Resume or finish the active PRD in this conversation before starting another. Use a new Codex conversation for parallel PRD authoring.\n'
     exit 0
   fi
 
