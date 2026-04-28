@@ -20,7 +20,6 @@ import {
   FolderPlus,
   Inbox,
   KanbanSquare,
-  Laptop,
   Layers3,
   Loader2,
   PanelRightOpen,
@@ -137,7 +136,6 @@ const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 const settingsNavigation = [
   { key: "progress", label: "작업", icon: Workflow },
   { key: "kanban", label: "티켓 정보", icon: KanbanSquare },
-  { key: "ai", label: "AI 관리", icon: Laptop },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
   { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
@@ -1597,6 +1595,7 @@ function App() {
               {activeSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
                   <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
+                    {runnerError ? <div className="runner-error">{runnerError}</div> : null}
                     <WorkflowStatStrip board={board} />
                     <TicketBoard
                       board={board}
@@ -1784,26 +1783,6 @@ function App() {
               </section>
             )}
 
-            {activeSettingsSection === "ai" && (
-              <section className="dashboard-area runner-dashboard-area" aria-label="AI 관리">
-                <section className="board-section board-section-flush" aria-label="AI 관리 본문">
-                  <RunnerConsole
-                    board={board}
-                    defaultBoardDirName={options.boardDirName}
-                    installedAgentProfiles={installedAgentProfiles}
-                    actionKey={runnerActionKey}
-                    error={runnerError}
-                    drafts={runnerDrafts}
-                    selectedRunnerId={selectedRunnerId}
-                    onSelectRunner={selectRunner}
-                    onControl={controlRunner}
-                    onReadLog={readLog}
-                    onDraftChange={updateRunnerDraft}
-                    onConfigure={saveRunnerConfig}
-                  />
-                </section>
-              </section>
-            )}
             </div>
           </section>
         </section>
@@ -4733,7 +4712,7 @@ function TicketBoard({
         ) : (
           <div className="ai-progress-empty">
             <strong>AI가 없습니다</strong>
-            <span>AI 관리 메뉴에서 AI를 추가하면 진행 상태가 여기에 표시됩니다.</span>
+            <span>runner 설정이 추가되면 진행 상태가 여기에 표시됩니다.</span>
           </div>
         )}
       </div>
