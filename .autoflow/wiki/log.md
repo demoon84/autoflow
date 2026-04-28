@@ -22,12 +22,15 @@ Each entry should cite its source ticket or log.
 - `prd_027` - Replace the desktop design kit from shadcn/Radix/Tailwind to MUI. Source: `tickets/done/prd_027/prd_027.md`.
 - `prd_028` - Simplify desktop runner control buttons. Source: `tickets/done/prd_028/prd_028.md`.
 - `learning` - Manual Recovery and Worktree Consolidation (2026-04-27). Documented recovery from dirty scope conflicts for tickets 012, 016, 021, and 025. Source: `learnings/manual-merge-recovery-20260427.md`.
+- `prd_030` - Add Inbox tab to Ticket Workspace. Source: `tickets/done/prd_030/prd_030.md`.
+- `prd_035` - Apply MUI dashboard design to the Statistics page. Source: `tickets/done/prd_035/prd_035.md`.
+- `prd_037` - Fix Statistics page scrolling. Source: `tickets/done/prd_037/prd_037.md`.
 
 
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-28T20:34:01Z
+- Last rebuilt: 2026-04-28T20:43:50Z
 
 ### Completed Tickets
 

@@ -28,6 +28,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[desktop-gemini-icon]]
   - [[in-app-help]]
   - [[desktop-runner-controls]]
+  - [[desktop-statistics-page]]
 - `decisions/`
   - [[design-kit-mui-migration]]
   - [[manual-resolution-policy]]
@@ -51,11 +52,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 33
+- Done tickets: 34
 - Reject records: 1
-- Verifier logs: 222
+- Verifier logs: 223
 - Conversation handoffs: 2
-- Last updated: 2026-04-28T20:34:01Z
+- Last updated: 2026-04-28T20:43:50Z
 
 ## Completed Tickets
 
