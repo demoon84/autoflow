@@ -43,7 +43,22 @@ const allowedRunRoles = new Set([
   "wiki",
   "wiki-maintainer"
 ]);
-const allowedRunnerRoles = new Set(["ticket-owner", "owner", "planner", "todo", "verifier", "wiki-maintainer", "coordinator", "watcher"]);
+// 3-runner active: ticket-owner / planner / wiki-maintainer (with legacy
+// aliases owner / plan / wiki). Legacy/back-compat: todo, verifier,
+// coordinator (+ aliases coord/doctor/diagnose), merge / merge-bot,
+// watcher. Trial (disabled by default): self-improve.
+// Mirrors `runner_allowed_role` in packages/cli/runners-project.sh.
+const allowedRunnerRoles = new Set([
+  "ticket-owner", "owner", "ticket",
+  "planner", "plan",
+  "wiki-maintainer", "wiki",
+  "todo",
+  "verifier",
+  "coordinator", "coord", "doctor", "diagnose",
+  "merge", "merge-bot",
+  "watcher",
+  "self-improve", "self_improve", "selfimprove"
+]);
 const allowedRunnerConfigKeys = new Set([
   "agent",
   "model",
