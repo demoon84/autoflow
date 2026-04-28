@@ -255,7 +255,7 @@ merge_hook_reason() {
 
   ready_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
   if [ -n "$ready_file" ]; then
-    printf 'coordinator work remains: ready-to-merge ticket %s is waiting.' "$(basename "$ready_file")"
+    printf 'merge finalization work remains: ready-to-merge ticket %s is waiting for Impl AI to rerun finish-ticket-owner pass (or for a legacy coordinator/merge runner if the project still uses one).' "$(basename "$ready_file")"
     return 0
   fi
 
