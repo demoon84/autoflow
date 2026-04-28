@@ -2487,9 +2487,9 @@ function RunnerConsole({
                         variant="outline"
                         size="icon"
                         className="runner-icon-button runner-plain-icon-button"
-                        title="AI 중지"
-                        data-tooltip="AI 중지"
-                        aria-label={`${runner.id} AI 중지`}
+                        title="중지"
+                        data-tooltip="중지"
+                        aria-label={`${runner.id} 중지`}
                         disabled={Boolean(actionKey)}
                         onClick={() => {
                           onSelectRunner(runner.id);
@@ -2507,9 +2507,9 @@ function RunnerConsole({
                         variant="outline"
                         size="icon"
                         className="runner-icon-button runner-plain-icon-button"
-                        title={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                        data-tooltip={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                        aria-label={`${runner.id} AI 시작`}
+                        title={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
+                        data-tooltip={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
+                        aria-label={`${runner.id} 시작`}
                         disabled={!canStart || Boolean(actionKey)}
                         onClick={() => {
                           onSelectRunner(runner.id);
@@ -4807,9 +4807,9 @@ function AiProgressRow({
                 variant="outline"
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
-                title="AI 중지"
-                data-tooltip="AI 중지"
-                aria-label={`${runner.id} AI 중지`}
+                title="중지"
+                data-tooltip="중지"
+                aria-label={`${runner.id} 중지`}
                 disabled={Boolean(actionKey)}
                 onClick={() => {
                   onSelectRunner?.(runner.id);
@@ -4827,9 +4827,9 @@ function AiProgressRow({
                 variant="outline"
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
-                title={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                data-tooltip={mode === "loop" ? "AI 시작" : "반복 모드에서만 시작할 수 있습니다"}
-                aria-label={`${runner.id} AI 시작`}
+                title={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
+                data-tooltip={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
+                aria-label={`${runner.id} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
                   onSelectRunner?.(runner.id);
@@ -4843,25 +4843,6 @@ function AiProgressRow({
                 )}
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="icon"
-              className="runner-icon-button runner-plain-icon-button"
-              title="AI 재시작"
-              data-tooltip="AI 재시작"
-              aria-label={`${runner.id} AI 재시작`}
-              disabled={Boolean(actionKey)}
-              onClick={() => {
-                onSelectRunner?.(runner.id);
-                onControl?.("restart", runner.id);
-              }}
-            >
-              {isWorking && actionKey.startsWith("restart:") ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
           </div>
         ) : null}
       </div>

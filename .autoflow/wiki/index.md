@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[desktop-runner-controls]]**: Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
 - **[[design-kit-mui-migration]]**: Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
 - **[[desktop-gemini-icon]]**: Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
 - **[[ai-workflow-board]]**: Updated with Impl AI 4-stage simplification and dot alignment precision from `prd_025`.
@@ -21,19 +22,21 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[self-improvement-trial]]
   - [[ticket-workspace-tabs]]
   - [[wiki-preview-flow]]
-  - [[desktop-tickets-kanban]]
   - [[auto-resume-recovery]]
   - [[workflow-stat-strip]]
   - [[desktop-gemini-icon]]
   - [[in-app-help]]
+  - [[desktop-runner-controls]]
 - `decisions/`
   - [[design-kit-mui-migration]]
   - [[manual-resolution-policy]]
   - [[handoff-as-raw-source]]
   - [[prd-terminology-rename]]
   - [[worker-display-policy]]
+- `archive/`
+  - [[desktop-tickets-kanban]]
 - `architecture/`
-  - [[README]]
+  - [[architecture/README|README]]
   - [[runner-role-slugs]]
 - `learnings/`
   - [[ticket-overlap-no-op]]
@@ -46,11 +49,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 23
+- Done tickets: 24
 - Reject records: 1
-- Verifier logs: 212
+- Verifier logs: 213
 - Conversation handoffs: 1
-- Last updated: 2026-04-28T13:44:50Z
+- Last updated: 2026-04-28T13:53:02Z
 
 ## Completed Tickets
 

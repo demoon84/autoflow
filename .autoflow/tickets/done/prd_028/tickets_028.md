@@ -1,0 +1,100 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_028
+- PRD Key: prd_028
+- Plan Candidate: Plan AI handoff from tickets/done/prd_028/prd_028.md
+- Title: Simplify desktop runner control buttons
+- Stage: done
+- AI: AI-1
+- Claimed By: AI-1
+- Execution AI: AI-1
+- Verifier AI: AI-1
+- Last Updated: 2026-04-28T13:53:01Z
+
+## Goal
+
+- 이번 작업의 목표: Update the desktop runner control UI so the restart control is removed, and the start/stop control labels no longer include the `AI` prefix.
+
+## References
+
+- PRD: tickets/done/prd_028/prd_028.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_028]]
+- Plan Note:
+- Ticket Note: [[tickets_028]]
+
+## Allowed Paths
+
+- `apps/desktop/src/renderer/main.tsx`
+- `apps/desktop/src/renderer/styles.css` only if minor spacing cleanup is required after removing the restart button.
+
+## Worktree
+- Path: `/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_028`
+- Branch: autoflow/tickets_028
+- Base Commit: 73b3b1cff0b9ec4ed78e8e971bfad70853de8c7d
+- Worktree Commit:
+- Integration Status: already_in_project_root
+
+## Done When
+
+- [x] The restart button/icon is no longer rendered in the runner control area shown in the screenshots.
+- [x] No runner control title, tooltip, or aria-label remains as `AI 재시작`.
+- [x] Runner stop controls use `중지` instead of `AI 중지` for title, tooltip, and aria-label text.
+- [x] Runner start controls use `시작` instead of `AI 시작` for title, tooltip, and aria-label text.
+- [x] Existing start/stop click behavior and loading spinner behavior still work.
+- [x] The non-loop disabled start message `반복 모드에서만 시작할 수 있습니다` remains unchanged.
+- [x] No unrelated desktop UI copy or runner storage identifiers are renamed.
+
+## Next Action
+- Complete: coordinator integrated the verified ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Ticket Owner AI resumed `tickets_028` with `start-ticket-owner.sh` (`status=resume`, worktree ready) and confirmed the change is limited to runner control UI copy/rendering in `apps/desktop/src/renderer/main.tsx`.
+- 직전 작업: 위키 조회 결과 `tickets/done/prd_003/reject_003.md` / `tickets/done/prd_026/tickets_026.md` 의 broad `main.tsx` conflict risk and `tickets/done/prd_021/tickets_021.md` inline runner control context 를 반영해 start/stop behavior, disabled message, loading spinner, runner IDs 를 보존하는 narrow patch 로 계획했다.
+- 재개 시 먼저 볼 것: `apps/desktop/src/renderer/main.tsx` 의 `RunnerConsole` and `WorkflowProgressRunnerRow` control buttons, then run `npm run desktop:check`.
+
+## Notes
+
+- Created by planner-1 (Plan AI) from tickets/done/prd_028/prd_028.md at 2026-04-28T13:34:50Z.
+- Plan AI refinement at 2026-04-28T13:35:05Z:
+  - Filled the runtime fallback title and goal from `tickets/done/prd_028/prd_028.md`.
+  - Wiki query command: `./bin/autoflow wiki query --term "Simplify desktop runner control buttons" --term "restart button AI 시작 AI 중지" --term "apps/desktop/src/renderer/main.tsx" --term "workflow runner controls" --term "prd_021"`.
+  - Wiki/ticket context: `tickets/done/prd_021/tickets_021.md` is the closest prior workflow control work; preserve existing start/stop behavior, disabled states, loading indicators, and runner role/model controls while changing only the requested visible control text and restart rendering.
+  - Wiki/ticket context: `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_013/tickets_013.md`, and `tickets/done/prd_026/tickets_026.md` point to repeated conflict risk around broad `apps/desktop/src/renderer/main.tsx` / `styles.css` edits. Keep this ticket narrow and avoid unrelated desktop copy, runner storage IDs, or lifecycle command changes.
+  - Active-board context: `tickets/inprogress/tickets_027.md` currently overlaps `apps/desktop/src/renderer/main.tsx` and may touch desktop UI foundation files. The single Impl AI topology should serialize implementation; when claiming this ticket, re-read the current `main.tsx` after `tickets_027` completes or account for its inprogress changes.
+
+- Runtime hydrated worktree dependency at 2026-04-28T13:46:44Z: linked apps/desktop/node_modules -> /Users/demoon/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-04-28T13:46:44Z: linked node_modules -> /Users/demoon/Documents/project/autoflow/node_modules
+- AI AI-1 prepared todo at 2026-04-28T13:46:44Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_028; run=tickets/inprogress/verify_028.md
+- AI AI-1 prepared resume at 2026-04-28T13:47:17Z; worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_028; run=tickets/inprogress/verify_028.md
+- Mini-plan by AI-1 at 2026-04-28T13:47:45Z:
+  1. Change runner control `title`, `data-tooltip`, and `aria-label` text from `AI 시작` / `AI 중지` to `시작` / `중지` in both the runner console and workflow progress row.
+  2. Remove only the visible restart button from the workflow progress row while leaving existing `onControl` action plumbing untouched.
+  3. Preserve the start/stop `onClick` calls, disabled states, loading spinner branches, and the non-loop disabled message `반복 모드에서만 시작할 수 있습니다`.
+  4. Verify with string search and `npm run desktop:check`, then manually merge the verified file into `PROJECT_ROOT` before finalization.
+- Wiki context used by AI-1: `./bin/autoflow wiki query --term "Simplify desktop runner control buttons" --term "AI 시작 AI 중지 AI 재시작 runner controls" --term "apps/desktop/src/renderer/main.tsx" --term "prd_021 inline runner controls"` returned related prior work including `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_026/tickets_026.md`, and `tickets/done/prd_021/tickets_021.md`; this constrained the implementation to a minimal `main.tsx` UI-only patch.
+- Implementation by AI-1 at 2026-04-28T13:50:36Z: changed only `apps/desktop/src/renderer/main.tsx`; replaced runner control start/stop `title`, `data-tooltip`, and `aria-label` copy with `시작` / `중지`, removed the visible `AI 재시작` workflow progress-row button, and preserved `onControl("start"|"stop")`, disabled state, spinner branches, and the non-loop disabled message.
+- Verification by AI-1 at 2026-04-28T13:50:36Z: worktree `npm run desktop:check` passed, PROJECT_ROOT `npm run desktop:check` passed after AI-led manual merge, and string searches confirmed no `AI 시작` / `AI 중지` / `AI 재시작` / `restart:` control branch remains in `apps/desktop/src/renderer/main.tsx`.
+- Rebase recovery by AI-1 at 2026-04-28T13:52:31Z: `finish-ticket-owner.sh` returned `status=needs_ai_merge` / `reason=worktree_rebase_required`, so the worktree branch was rebased onto current `PROJECT_ROOT` HEAD, the same UI patch was reapplied, `cmp` confirmed worktree and PROJECT_ROOT `main.tsx` match, and worktree `npm run desktop:check` passed again.
+- Finish paused at 2026-04-28T13:51:35Z: worktree HEAD 73b3b1cff0b9ec4ed78e8e971bfad70853de8c7d does not contain PROJECT_ROOT HEAD 188a5b18942c70e84249565158bca6fd6a561789. AI must perform the rebase/merge; script did not run git rebase.
+- Allowed path was not present in worktree during merge preparation at 2026-04-28T13:53:01Z, so it was skipped: apps/desktop/src/renderer/styles.css only if minor spacing cleanup is required after removing the restart button.
+- Queued without worktree commit at 2026-04-28T13:53:01Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI AI-1 marked verification pass at 2026-04-28T13:53:01Z; runtime finalizer will not perform merge operations.
+- Coordinator AI-1 finalized this verified ticket at 2026-04-28T13:53:01Z.
+- Coordinator post-merge cleanup at 2026-04-28T13:53:01Z: removed_worktree=/Users/demoon/Documents/project/.autoflow-worktrees/autoflow/tickets_028 deleted_branch=autoflow/tickets_028.
+## Verification
+- Run file: `tickets/done/prd_028/verify_028.md`
+- Log file: `logs/verifier_028_20260428_135302Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Simplified desktop runner start/stop labels and removed restart control
+- Remaining risk: Browser hover inspection was not run because non-browser source inspection and `desktop:check` covered the requested copy/rendering criteria.
