@@ -4,17 +4,19 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 
 ## Reference Model
 
-Default model:
+Default 3-runner topology (planner-1 + owner-1 + wiki-1):
 
-- Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual spec handoff, no heartbeat.
-- `ticket-owner`: one runner owns mini-plan, implementation, verification judgment, AI-led merge, and finish.
-- wiki managed sections are updated automatically when AI-led merge finalization runs.
+- Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual PRD handoff, no heartbeat.
+- `planner-1` (Plan AI): converts populated backlog PRDs and reject records into todo tickets. Path scope: `tickets/{backlog,todo,reject,done}/`. Owns reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`.
+- `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. Refreshes the deterministic wiki baseline inline at merge time.
+- `wiki-1` (Wiki AI): ticks every minute and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) over the deterministic baseline whenever `tickets/done/` or `tickets/reject/` changes. Path scope: `.autoflow/wiki/` only.
+- The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
 
-Legacy role-pipeline model:
+Legacy role-pipeline model (compatibility only — DEPRECATED):
 
-- `#plan`: planner heartbeat.
-- `#todo`: todo implementation heartbeat.
-- `#veri`: verifier heartbeat.
+- `#plan`: planner heartbeat (Plan AI runner replaces this).
+- `#todo`: todo implementation heartbeat (Impl AI claims todo directly).
+- `#veri`: verifier heartbeat (Impl AI runs AI-led verification inline).
 
 ## Trigger Contract
 
@@ -22,7 +24,7 @@ Autoflow skill handoff (`/af`, `/autoflow`, `$af`, `$autoflow`) and compatibilit
 
 - Draft the spec in chat first.
 - Save only after explicit approval.
-- Write only `tickets/backlog/project_NNN.md` and optional conversation handoff.
+- Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff.
 - Do not create plans, tickets, code, verification records, commits, or pushes.
 
 `ticket-owner`:
@@ -74,28 +76,35 @@ It may block exit when:
 
 The stop hook supplements heartbeats. It does not replace them.
 
-## File Watch Mode
+## File Watch Mode (DEPRECATED legacy script-driven trigger)
 
-File-watch hooks can dispatch work when board files change.
+File-watch hooks (`watch-board.sh` / `watch-board.ps1` → `run-hook.sh` /
+`run-hook.ps1`) can dispatch work when board files change. **This is the
+legacy script-driven trigger pattern**; the supported execution model is
+the heartbeat-driven 3-runner topology where AI runners read board state
+each minute and call scripts as tools. Use file-watch only as a
+backwards-compat fallback for environments where the minute heartbeat is
+unreliable.
 
-Typical routes:
+Typical routes (when file-watch is enabled):
 
 - backlog changes -> ticket owner or legacy planner,
 - todo changes -> ticket owner or legacy todo,
 - verifier changes -> ticket owner or legacy verifier,
 - done/reject changes -> planner follow-up when legacy retries are enabled.
 
-Each hook dispatch should write a log under `logs/hooks/`.
+Each hook dispatch writes a log under `logs/hooks/`.
 
-## Hook Map
+## Hook Map (legacy file-watch only)
 
-Recommended map:
+Recommended map (when running file-watch alongside the heartbeat as a
+fallback):
 
 - `tickets/backlog/`: `ticket` route by default.
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
 - `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no separate wiki route is needed; AI-led merge finalization updates wiki managed sections automatically.
+- `tickets/done/`: no separate wiki route is needed; Impl AI's `finish-ticket-owner pass` runs the deterministic `update-wiki.sh` inline so the baseline stays fresh, and `wiki-1` layers AI synthesis on its own heartbeat.
 
 ## Operating Principle
 
@@ -122,15 +131,13 @@ Recommended environment variables:
 
 ## Recommended Topology
 
-Small projects:
+Default (all sizes):
 
-- one Ticket Owner runner,
-- optional file watcher.
+- one Plan AI (`planner-1`),
+- one Impl AI (`owner-1`),
+- one Wiki AI (`wiki-1`).
 
-Larger projects:
-
-- multiple Ticket Owner runners with unique worker IDs,
-- legacy role-pipeline only when explicitly needed.
+The three are path-disjoint and tick on the same 1-minute heartbeat without conflicting. Scale only after profiling shows the pipeline is starved — running multiple Impl AI instances increases worktree base drift / Allowed Paths conflicts and is intentionally serialized to one Impl AI in the default config. Legacy role-pipeline (`#plan`, `#todo`, `#veri`, `coordinator`, `merge-bot`) and the file-watcher are kept reachable for backwards compatibility but are not part of the default topology.
 
 ## Thread Coordination Rules
 

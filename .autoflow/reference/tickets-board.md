@@ -145,4 +145,4 @@ Important:
 - Each completed owner / verifier run should leave at least one completion log under `BOARD_ROOT/logs/`.
 - Link related specs, plans, tickets, and verification notes with `## Obsidian Links`.
 - Heartbeat workers do not stop themselves. `status=idle` is a valid waiting state.
-- Board location is authoritative. In Ticket Owner Mode, the owner decides pass / fail after verification and coordinator only integrates passed tickets. In the legacy role-pipeline, only verifier mode decides pass / fail.
+- Board location is authoritative. In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI (`owner-1`) decides pass / fail after AI-led verification and runs the inline merge finalizer (`merge-ready-ticket.*`) itself; there is no separate coordinator integration step. In the legacy role-pipeline, only verifier mode decides pass / fail.
