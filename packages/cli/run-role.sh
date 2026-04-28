@@ -10,13 +10,13 @@ source "$(runtime_scripts_root)/runner-common.sh"
 usage() {
   cat <<'EOF' >&2
 Usage:
-  run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Plan AI (3-runner default)
+  run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]       # Impl AI (3-runner default)
+  run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # Wiki AI (3-runner default)
+  run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # legacy role-pipeline
+  run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]     # legacy role-pipeline
+  run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
+  run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run] # trial (disabled by default)
 EOF
 }
 
@@ -281,7 +281,7 @@ Role boundary:
 - planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push.
 - todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly.
 - verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline.
-- wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is `wiki-1`'s exclusive responsibility — Impl AI's `finish-ticket-owner pass` already runs the deterministic `update-wiki.sh` baseline inline, so `wiki-1` only layers AI synthesis on top. Never treat the wiki as proof of completion.
+- wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is \`wiki-1\`'s exclusive responsibility — Impl AI's \`finish-ticket-owner pass\` already runs the deterministic \`update-wiki.sh\` baseline inline, so \`wiki-1\` only layers AI synthesis on top. Never treat the wiki as proof of completion.
 - coordinator (legacy): diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Not part of the default 3-runner topology; kept as a backwards-compat role identifier. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push.
 
 When there is no actionable work, leave the runner and board in an idle state
