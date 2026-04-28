@@ -188,6 +188,110 @@ runner_state_started_at() {
   printf '%s' "${value:-$fallback}"
 }
 
+wiki_inputs_hash_stream() {
+  local root rel_dir dir file rel checksum
+
+  for rel_dir in tickets/done tickets/reject logs conversations wiki; do
+    dir="${board_root}/${rel_dir}"
+    [ -d "$dir" ] || continue
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      case "$(basename "$file")" in
+        README.md)
+          continue
+          ;;
+      esac
+      rel="${file#"$board_root"/}"
+      if command -v shasum >/dev/null 2>&1; then
+        checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        checksum="$(sha256sum "$file" | awk '{ print $1 }')"
+      else
+        checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
+      fi
+      printf '%s  %s\n' "$checksum" "$rel"
+    done < <(find "$dir" -type f \( -name '*.md' -o -name '*.log' -o -name '*.txt' -o -name '*.json' -o -name '*.jsonl' \) | LC_ALL=C sort)
+  done
+}
+
+wiki_inputs_fingerprint() {
+  if command -v shasum >/dev/null 2>&1; then
+    wiki_inputs_hash_stream | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    wiki_inputs_hash_stream | sha256sum | awk '{ print $1 }'
+  else
+    wiki_inputs_hash_stream | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+wiki_inputs_fingerprint_path() {
+  runner_ensure_dirs
+  printf '%s/%s.wiki-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
+}
+
+wiki_record_inputs_fingerprint() {
+  local fingerprint_path fingerprint
+
+  [ "$public_role" = "wiki" ] || return 0
+  [ "${mode:-}" = "loop" ] || return 0
+
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  fingerprint="$(wiki_inputs_fingerprint)"
+  printf '%s\n' "$fingerprint" > "$fingerprint_path"
+}
+
+maybe_skip_unchanged_wiki_turn() {
+  local fingerprint_path current_fingerprint previous_fingerprint timestamp
+
+  [ "$public_role" = "wiki" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
+
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  current_fingerprint="$(wiki_inputs_fingerprint)"
+  previous_fingerprint=""
+  if [ -f "$fingerprint_path" ]; then
+    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  fi
+
+  [ -n "$previous_fingerprint" ] || return 1
+  [ "$current_fingerprint" = "$previous_fingerprint" ] || return 1
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=$(runner_active_state_value "active_item")" \
+    "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
+    "active_stage=$(runner_active_state_value "active_stage")" \
+    "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=wiki_inputs_unchanged"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=wiki_inputs_unchanged" \
+    "fingerprint=${current_fingerprint}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'adapter=%s\n' "$agent"
+  printf 'reason=wiki_inputs_unchanged\n'
+  printf 'wiki_inputs_fingerprint=%s\n' "$current_fingerprint"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  exit 0
+}
+
 write_blocked_state() {
   local reason="$1"
   local timestamp
@@ -233,8 +337,60 @@ agent_instruction_path() {
   esac
 }
 
+role_boundary_for_current_role() {
+  # Emit only the boundary line for the current public_role. Other roles'
+  # boundaries are not relevant to this adapter call and shipping all of
+  # them inflates per-call token usage; agents loading their own role
+  # instruction file already see the full contract there.
+  case "$public_role" in
+    ticket)
+      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
+      ;;
+    planner)
+      printf '%s\n' "- planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push."
+      ;;
+    todo)
+      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
+      ;;
+    verifier)
+      printf '%s\n' "- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline."
+      ;;
+    wiki)
+      printf '%s\n' "- wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is \`wiki-1\`'s exclusive responsibility — Impl AI's \`finish-ticket-owner pass\` already runs the deterministic \`update-wiki.sh\` baseline inline, so \`wiki-1\` only layers AI synthesis on top. Never treat the wiki as proof of completion."
+      ;;
+    coordinator)
+      printf '%s\n' "- coordinator (legacy): diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Not part of the default 3-runner topology; kept as a backwards-compat role identifier. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push."
+      ;;
+    self-improve)
+      printf '%s\n' "- self-improve (trial): scan recent runner logs for repeated operational issues and emit low-risk improvement candidates as PRD drafts. Disabled by default; deterministic log scanner only — does not call AI tools."
+      ;;
+  esac
+}
+
+role_specific_required_flow_items() {
+  # Emit only role-relevant required-flow items. Items 1, 2, 4, 5, 6, 9,
+  # 10, 11 are shared and stay in the prompt body. Items 3, 7, 8 are
+  # role-specific and only ship when applicable.
+  case "$public_role" in
+    planner|ticket|todo)
+      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
+      ;;
+  esac
+  case "$public_role" in
+    ticket)
+      printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
+      ;;
+    coordinator)
+      printf '%s\n' "7. Do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime."
+      ;;
+  esac
+}
+
 write_agent_prompt() {
   local instruction_file="$1"
+  local role_specific_flow role_boundary_line
+  role_specific_flow="$(role_specific_required_flow_items)"
+  role_boundary_line="$(role_boundary_for_current_role)"
 
   cat <<EOF
 Autoflow Local Runner Mode
@@ -266,24 +422,15 @@ Language policy:
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
-3. For planner, ticket-owner, and todo work, run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty.
-4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
+${role_specific_flow}4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
 5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
 6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-7. For ticket-owner work, the AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool.
-8. For coordinator work, do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime.
 9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
 10. Do not rely on this prompt as future memory.
 11. Never git push.
 
 Role boundary:
-- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push.
-- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly.
-- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline.
-- wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is \`wiki-1\`'s exclusive responsibility — Impl AI's \`finish-ticket-owner pass\` already runs the deterministic \`update-wiki.sh\` baseline inline, so \`wiki-1\` only layers AI synthesis on top. Never treat the wiki as proof of completion.
-- coordinator (legacy): diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Not part of the default 3-runner topology; kept as a backwards-compat role identifier. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push.
-
+${role_boundary_line}
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.
 EOF
@@ -741,10 +888,11 @@ case "$agent" in
       exit 0
     fi
 
-    agent_runtime_preflight_or_exit
+	    agent_runtime_preflight_or_exit
+	    maybe_skip_unchanged_wiki_turn || true
 
-    started_at="$(runner_now_iso)"
-    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
+	    started_at="$(runner_now_iso)"
+	    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
     adapter_stdout=""
     adapter_stderr=""
     prepare_adapter_live_logs
@@ -872,11 +1020,14 @@ case "$agent" in
       runner_status="failed"
     fi
 
-    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
-    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
-    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
+	    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+	    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
+	    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
+	    if [ "$adapter_exit" -eq 0 ]; then
+	      wiki_record_inputs_fingerprint
+	    fi
 
-    runner_write_state "$runner_id" \
+	    runner_write_state "$runner_id" \
       "status=${runner_status}" \
       "role=${public_role}" \
       "agent=${agent}" \
