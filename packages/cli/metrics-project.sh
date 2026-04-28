@@ -194,7 +194,11 @@ count_runner_states() {
         if [ "$in_runner" -eq 1 ] && [ -n "$id" ]; then
           runner_total_count=$((runner_total_count + 1))
           case "$role" in
-            ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|coordinator|coord|doctor|diagnose|watcher) ;;
+            # Mirrors runner_allowed_role in runners-project.sh and the
+            # allowedRunnerRoles / allowedRunRoles sets in apps/desktop/
+            # src/main.js. 3-runner active + their aliases, legacy/back-
+            # compat roles, plus the self-improve trial.
+            ticket-owner|owner|ticket|planner|plan|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove) ;;
             *) invalid_config="true" ;;
           esac
           case "$enabled" in
