@@ -266,7 +266,7 @@ Language policy:
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
-3. For planner, ticket-owner, and todo work, run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the spec/ticket title, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty.
+3. For planner, ticket-owner, and todo work, run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty.
 4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
 5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
 6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
@@ -278,7 +278,7 @@ Required flow:
 
 Role boundary:
 - ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- planner: create/update plans and todo ticket files only. Query the wiki before drafting or ticket generation. Do not implement, verify, commit, or push.
+- planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push.
 - todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly.
 - verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline.
 - wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is `wiki-1`'s exclusive responsibility — Impl AI's `finish-ticket-owner pass` already runs the deterministic `update-wiki.sh` baseline inline, so `wiki-1` only layers AI synthesis on top. Never treat the wiki as proof of completion.
