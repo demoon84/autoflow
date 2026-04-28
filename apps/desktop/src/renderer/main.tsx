@@ -132,8 +132,8 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "kanban", label: "Tickets", icon: KanbanSquare },
   { key: "progress", label: "작업", icon: Workflow },
+  { key: "kanban", label: "Tickets", icon: KanbanSquare },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
   { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
