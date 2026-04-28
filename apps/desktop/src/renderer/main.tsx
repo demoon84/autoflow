@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -2828,16 +2829,49 @@ function ReportMetricCard({
   className?: string;
 }) {
   return (
-    <article className={`report-metric-card ${tone} ${className}`.trim()}>
-      <div className="report-metric-icon">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div>
-        <strong>{value}</strong>
-        <span>{label}</span>
-      </div>
-      <em>{detail}</em>
-    </article>
+    <Card className={`report-metric-card ${tone} ${className}`.trim()}>
+      <CardContent className="report-metric-card-content">
+        <div className="report-metric-icon">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="report-metric-copy">
+          <strong>{value}</strong>
+          <span>{label}</span>
+        </div>
+        <em>{detail}</em>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportChartCard({
+  label,
+  wide = false,
+  icon: Icon,
+  title,
+  meta,
+  children
+}: {
+  label: string;
+  wide?: boolean;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  meta: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className={`report-chart-card${wide ? " report-chart-wide" : ""}`} aria-label={label}>
+      <CardContent className="report-chart-card-content">
+        <div className="report-chart-heading">
+          <Icon className="h-4 w-4" />
+          <div>
+            <h3>{title}</h3>
+            <span>{meta}</span>
+          </div>
+        </div>
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3116,71 +3150,62 @@ function ReportingDashboard({
       </div>
 
       <div className="report-chart-grid">
-        <section className="report-chart-card report-chart-wide" aria-label="티켓 처리량">
-          <div className="report-chart-heading">
-            <BarChart3 className="h-4 w-4" />
-            <div>
-              <h3>티켓 처리량</h3>
-              <span>{formatCount(activeCount)}개 활성 / {formatCount(ticketTotal)}개 전체</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="티켓 처리량"
+          wide
+          icon={BarChart3}
+          title="티켓 처리량"
+          meta={`${formatCount(activeCount)}개 활성 / ${formatCount(ticketTotal)}개 전체`}
+        >
           <ReportBarBreakdown data={ticketStateData} />
-        </section>
+        </ReportChartCard>
 
-        <section className="report-chart-card" aria-label="검증 결과">
-          <div className="report-chart-heading">
-            <PieChart className="h-4 w-4" />
-            <div>
-              <h3>검증 결과</h3>
-              <span>{formatPercentValue(passRate)} 통과율</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="검증 결과"
+          icon={PieChart}
+          title="검증 결과"
+          meta={`${formatPercentValue(passRate)} 통과율`}
+        >
           <ReportDonutChart data={verifierData} centerValue={formatCount(verifierTotal)} centerLabel="검증" />
-        </section>
+        </ReportChartCard>
 
-        <section className="report-chart-card report-chart-wide" aria-label="완료 추세">
-          <div className="report-chart-heading">
-            <TrendingUp className="h-4 w-4" />
-            <div>
-              <h3>완료 추세</h3>
-              <span>{snapshots.length ? formatDate(snapshots[snapshots.length - 1].timestamp) : "이력 없음"}</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="완료 추세"
+          wide
+          icon={TrendingUp}
+          title="완료 추세"
+          meta={snapshots.length ? formatDate(snapshots[snapshots.length - 1].timestamp) : "이력 없음"}
+        >
           <CompletionTrend snapshots={snapshots} />
-        </section>
+        </ReportChartCard>
 
-        <section className="report-chart-card report-chart-wide" aria-label="코드 영향">
-          <div className="report-chart-heading">
-            <ClipboardList className="h-4 w-4" />
-            <div>
-              <h3>코드 영향</h3>
-              <span>{formatCount(commitCount)}개 완료 커밋 기준</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="코드 영향"
+          wide
+          icon={ClipboardList}
+          title="코드 영향"
+          meta={`${formatCount(commitCount)}개 완료 커밋 기준`}
+        >
           <ReportBarBreakdown data={codeImpactData} />
-        </section>
+        </ReportChartCard>
 
-        <section className="report-chart-card" aria-label="AI 사용량">
-          <div className="report-chart-heading">
-            <Terminal className="h-4 w-4" />
-            <div>
-              <h3>AI 사용량</h3>
-              <span>{formatCompactCount(tokenUsageCount)} 토큰</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="AI 사용량"
+          icon={Terminal}
+          title="AI 사용량"
+          meta={`${formatCompactCount(tokenUsageCount)} 토큰`}
+        >
           <ReportBarBreakdown data={aiUsageData} />
-        </section>
+        </ReportChartCard>
 
-        <section className="report-chart-card" aria-label="AI 가동 상태">
-          <div className="report-chart-heading">
-            <Activity className="h-4 w-4" />
-            <div>
-              <h3>AI 가동</h3>
-              <span>{formatCount(statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0))}개 사용</span>
-            </div>
-          </div>
+        <ReportChartCard
+          label="AI 가동 상태"
+          icon={Activity}
+          title="AI 가동"
+          meta={`${formatCount(statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0))}개 사용`}
+        >
           <ReportBarBreakdown data={runnerData} />
-        </section>
+        </ReportChartCard>
       </div>
     </div>
   );

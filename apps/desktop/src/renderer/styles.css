@@ -4166,23 +4166,33 @@ pre {
 }
 
 .report-metric-card {
+  grid-column: span 2;
+  min-height: 104px;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  background: var(--card) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent) !important;
+  color: var(--foreground) !important;
+}
+
+.report-metric-card-content.MuiCardContent-root {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  grid-column: span 2;
   align-items: center;
-  min-height: 104px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
+  min-height: inherit;
   padding: 13px;
   gap: 10px;
+}
+
+.report-metric-card-content.MuiCardContent-root:last-child {
+  padding-bottom: 13px;
 }
 
 .report-metric-card-secondary {
   grid-column: span 5;
 }
 
-.report-metric-card > div:not(.report-metric-icon) {
+.report-metric-copy {
   min-width: 0;
 }
 
@@ -4252,10 +4262,19 @@ pre {
 
 .report-chart-card {
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  background: var(--card) !important;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent) !important;
+  color: var(--foreground) !important;
+}
+
+.report-chart-card-content.MuiCardContent-root {
   padding: 14px;
+}
+
+.report-chart-card-content.MuiCardContent-root:last-child {
+  padding-bottom: 14px;
 }
 
 .report-chart-heading {
