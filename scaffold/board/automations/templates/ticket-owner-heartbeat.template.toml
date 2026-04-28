@@ -18,7 +18,7 @@ Loop (run every wake-up):
 4. If `status=resume` or `status=ok`, continue exactly one owned ticket from the returned ticket path. The same owner is responsible for local planning, implementation, verification command execution, evidence recording, and ready-to-merge/reject movement.
 5. Implement only within the ticket's Allowed Paths. Keep durable progress in Notes, Next Action, Result, and Resume Context.
 6. When the ticket is ready to check, run `powershell -ExecutionPolicy Bypass -File {{BOARD_DIR}}/scripts/verify-ticket-owner.ps1 <ticket-id>` on Windows, or `{{BOARD_DIR}}/scripts/verify-ticket-owner.sh <ticket-id>` in Bash-only environments, to record command/output/evidence.
-7. If verification passes, run `finish-ticket-owner` with `pass "<short summary>"` to queue the ticket for merge-bot. If the owner cannot fix a failing check inside scope, run `finish-ticket-owner` with `fail "<concrete reason>"`.
+7. If verification passes, manually merge the verified worktree changes into PROJECT_ROOT yourself, rerun verification from the merged root, then run `finish-ticket-owner` with `pass "<short summary>"`. The pass finalizer calls `merge-ready-ticket.*` inline to validate the AI-merged result, archive evidence, refresh the deterministic wiki baseline, and create the local commit; it will not perform the merge for you. If the owner cannot fix a failing check inside scope, run `finish-ticket-owner` with `fail "<concrete reason>"`.
 8. Do not split work across planner/todo/verifier roles. Legacy role-pipeline files may exist for compatibility, but this heartbeat owns one ticket end-to-end.
 9. Never call `git push`.
 

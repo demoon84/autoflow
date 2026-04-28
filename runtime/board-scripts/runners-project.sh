@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+#
+# STALE COPY: do not modify in isolation.
+#
+# The canonical implementation of `autoflow runners ...` is
+# `packages/cli/runners-project.sh`. That file is what `bin/autoflow`
+# exec's and is the version maintained against the current 3-runner
+# topology (planner-1 + owner-1 + wiki-1).
+#
+# This `runtime/board-scripts/` copy is not referenced by any caller and
+# is not packaged into `.autoflow/scripts/` by the board scaffolder
+# (see `packages/cli/package-board-common.sh`). It exists as a stale
+# parallel artifact and is kept only to avoid surprising users who may
+# have grepped the repo for the runner-management script. Diverge at
+# your peril; treat the packages/cli path as source of truth.
 
 set -euo pipefail
 

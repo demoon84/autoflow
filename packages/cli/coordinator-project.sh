@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+#
+# DEPRECATED: legacy coordinator runtime.
+#
+# Coordinator is no longer a default runner in the 3-runner topology
+# (planner-1 + owner-1 + wiki-1). Its responsibilities have been split:
+#   - Impl AI (`owner-1`) calls `merge-ready-ticket.*` inline from its
+#     `finish-ticket-owner.*` pass finalizer (AI-led merge).
+#   - Wiki AI (`wiki-1`) layers AI synthesis (`autoflow wiki query --synth`,
+#     `autoflow wiki lint --semantic`) on top of the deterministic baseline
+#     that Impl AI already refreshes via `update-wiki.sh`.
+#
+# This script is kept reachable as `autoflow run coordinator` only for
+# backwards compatibility with users who opted into a coordinator-1 runner
+# before the topology refactor. New boards should not add one.
 
 set -euo pipefail
 
