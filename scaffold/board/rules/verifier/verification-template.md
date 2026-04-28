@@ -3,7 +3,7 @@
 ## Meta
 
 - Ticket ID: tickets_NNN
-- Project Key: project_NNN
+- Project Key: prd_NNN
 - Verifier:
 - Status: pending
 - Started At:
