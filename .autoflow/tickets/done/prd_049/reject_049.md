@@ -162,3 +162,11 @@
 - 2026-04-29T07:30:10Z | retry_count=8 | source=`tickets/reject/reject_049.md` | log=``logs/verifier_049_20260429_072945Z_fail.md`` | reason=Required smoke verification fails outside this ticket scope: tests/smoke/ticket-owner-smoke.sh expects cleanup_status=ok in finish-ticket-owner.sh output after successful inline merge, but finish-ticket-owner.sh is not in Allowed Paths for tickets_049. Replan with finish-ticket-owner or smoke expectation scope.
 - 2026-04-29T07:34:48Z | retry_count=9 | source=`tickets/reject/reject_049.md` | log=``logs/verifier_049_20260429_073447Z_fail.md`` | reason=Required smoke verification fails outside this ticket scope: tests/smoke/ticket-owner-smoke.sh expects cleanup_status=ok in finish-ticket-owner.sh output after successful inline merge, but finish-ticket-owner.sh is not in Allowed Paths for tickets_049. Replan with finish-ticket-owner or smoke expectation scope.
 - 2026-04-29T07:39:17Z | retry_count=10 | source=`tickets/reject/reject_049.md` | log=``logs/verifier_049_20260429_073848Z_fail.md`` | reason=Required smoke verification fails outside this ticket scope: tests/smoke/ticket-owner-smoke.sh expects cleanup_status=ok in finish-ticket-owner.sh output after successful inline merge, but finish-ticket-owner.sh is not in Allowed Paths for tickets_049. Replan with finish-ticket-owner or smoke expectation scope.
+
+## Archive Note
+
+- Archived 2026-04-30 by direct user instruction. 사용자가 반려 1건 직접 처리 요청.
+- 원 목표(`## Notes` 의 runtime bookkeeping 누적 방지) 는 다른 방식으로 이미 해결됨. 메인 commit `d8dae69` 의 `append_note_replacing` 헬퍼가 prepared-resume / prepared-todo 같은 고빈도 노트를 prefix-match 회전으로 대체해 ticket file 이 더 이상 부풀지 않도록 함.
+- 049 의 별도 `## Runtime Log` 섹션 + cap 접근은 같은 call site 를 다른 방식으로 다루므로 메인의 회전 방식과 공존 불가. retry_count 10/10 도달, 이 라운드는 폐기.
+- worktree `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_049` 와 branch `autoflow/tickets_049` 제거함. worktree 내 변경(append_runtime_log helper) 도 함께 폐기.
+- 후속 필요 시: 별도 PRD 로 (a) Runtime Log 섹션 도입 + (b) finish-ticket-owner.sh 의 cleanup_status=ok contract 보존을 한 ticket scope 로 다시 계획.
