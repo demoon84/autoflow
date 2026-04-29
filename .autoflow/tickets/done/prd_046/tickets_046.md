@@ -1,0 +1,92 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_046
+- PRD Key: prd_046
+- Plan Candidate: Plan AI handoff from tickets/done/prd_046/prd_046.md
+- Title: Collapse ticket-owner runtime routing output
+- Stage: done
+- AI: worker-1
+- Claimed By: worker-1
+- Execution AI: worker-1
+- Verifier AI: worker-1
+- Last Updated: 2026-04-29T06:40:31Z
+
+## Goal
+
+- 이번 작업의 목표: Reduce recurring Impl AI prompt token overhead by replacing the verbose ticket-owner runtime routing directives with one concise `next_action=` cue that points back to the loaded ticket-owner role instructions.
+
+## References
+
+- PRD: tickets/done/prd_046/prd_046.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_046]]
+- Plan Note:
+- Ticket Note: [[tickets_046]]
+
+## Allowed Paths
+
+- `.autoflow/scripts/start-ticket-owner.sh`
+- `runtime/board-scripts/start-ticket-owner.sh`
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046`
+- Branch: autoflow/tickets_046
+- Base Commit: c8b48c4c4a9c93c250265697447933887d6710fb
+- Worktree Commit:
+- Integration Status: already_in_project_root
+
+## Done When
+
+- [ ] `.autoflow/scripts/start-ticket-owner.sh` emits one short `next_action=` cue after ticket preparation instead of the current long directive.
+- [ ] `.autoflow/scripts/start-ticket-owner.sh` no longer emits `routing_verify=`, `routing_pass=`, or `routing_fail=`.
+- [ ] `runtime/board-scripts/start-ticket-owner.sh` carries the same shortened ticket-owner runtime output shape.
+- [ ] Ticket claim/setup keys and paths other than the removed `routing_*` lines remain unchanged.
+- [ ] The runtime output still gives Impl AI enough context to continue by reading the loaded `ticket-owner-agent.md` role instructions and the prepared ticket/run files.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 `memo_017` 을 generated PRD 로 승격하고, `start-ticket-owner.sh` 두 runtime copy 만 허용하는 todo 티켓을 만들었다.
+- 직전 작업: wiki query 는 직접 관련 결과 0건이었고, `tickets/inprogress/tickets_045.md` 와 `.autoflow/wiki/features/run-role-prompt-dispatch.md` 를 참고해 runtime prompt output shape 를 acceptance surface 로 취급했다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_046/prd_046.md`, `.autoflow/scripts/start-ticket-owner.sh:422`, `runtime/board-scripts/start-ticket-owner.sh:422`.
+
+## Notes
+
+- Created by planner-1 (Plan AI) from tickets/done/prd_046/prd_046.md at 2026-04-29T06:35:21Z.
+- Plan AI context: initial wiki query for `start-ticket-owner.sh next_action routing_verify routing_pass routing_fail run-role prompt dispatch ticket-owner-agent` returned `result_count=0`; secondary query for `runtime_output run-role prompt dispatch next_action routing` also returned `result_count=0`.
+- Related context: `tickets/inprogress/tickets_045.md` is doing the analogous planner-runtime `next_action=` trimming and records the pattern of keeping `.autoflow/scripts/` and `runtime/board-scripts/` copies aligned.
+- Related wiki: `.autoflow/wiki/features/run-role-prompt-dispatch.md` says dry-run prompt output is an acceptance surface, so this ticket treats the emitted runtime key/value shape as observable behavior.
+- Mini-plan at 2026-04-29T06:37:39Z:
+  1. Update only the prepared-ticket output block in `.autoflow/scripts/start-ticket-owner.sh` to emit a concise `next_action=` pointing to `ticket-owner-agent.md`.
+  2. Apply the same output-shape change to `runtime/board-scripts/start-ticket-owner.sh`.
+  3. Verify syntax and output-shape acceptance with the PRD command, then rerun `start-ticket-owner.sh` enough to inspect the actual emitted keys.
+- Wiki context pass at 2026-04-29T06:37:39Z: direct `autoflow wiki query` terms for `start-ticket-owner`, `routing_*`, `runtime_output`, and `start-plan next_action` returned `result_count=0`; prior ticket notes still cite `.autoflow/wiki/features/run-role-prompt-dispatch.md` and `tickets/inprogress/tickets_045.md` as the relevant prompt-shape pattern.
+
+- Runtime hydrated worktree dependency at 2026-04-29T06:36:18Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker-1 prepared todo at 2026-04-29T06:36:17Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046; run=tickets/inprogress/verify_046.md
+- AI worker-1 prepared resume at 2026-04-29T06:36:56Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046; run=tickets/inprogress/verify_046.md
+- AI worker-1 prepared resume at 2026-04-29T06:38:24Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046; run=tickets/inprogress/verify_046.md
+- AI worker-1 prepared resume at 2026-04-29T06:39:20Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046; run=tickets/inprogress/verify_046.md
+- AI worker-1 implemented at 2026-04-29T06:39:30Z: replaced the verbose prepared-ticket `next_action=` and removed `routing_verify=`, `routing_pass=`, and `routing_fail=` in both allowed `start-ticket-owner.sh` copies.
+- AI worker-1 verified at 2026-04-29T06:39:30Z: PRD command exited 0 from PROJECT_ROOT; runtime smoke output for ticket 046 emitted the concise `next_action=Follow ticket-owner-agent.md flow for ticket 046.` and no `routing_*` keys; worktree and PROJECT_ROOT allowed files match.
+- Queued without worktree commit at 2026-04-29T06:40:31Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker-1 marked verification pass at 2026-04-29T06:40:31Z; runtime finalizer will not perform merge operations.
+- Inline merge finalizer (worker worker-1) finalized this verified ticket at 2026-04-29T06:40:31Z.
+- Coordinator post-merge cleanup at 2026-04-29T06:40:31Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_046 deleted_branch=autoflow/tickets_046.
+## Verification
+- Run file: `tickets/done/prd_046/verify_046.md`
+- Log file: `logs/verifier_046_20260429_064032Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Collapsed ticket-owner runtime routing output to one concise next_action cue
+- Remaining risk: Low; change is limited to static prepared-ticket output strings, and claim/setup keys were otherwise preserved.

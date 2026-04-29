@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
 - **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
 - **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so new user-visible attribution prefers `worker-N` while legacy `AI-N` ownership matching remains compatible (`prd_039`).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
@@ -52,6 +53,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 <!-- AUTOFLOW:BEGIN feature-links -->
 ## Added Feature Pages
 
+- [[features/planner-next-action-cues]] (`wiki/features/planner-next-action-cues.md`)
 - [[features/run-role-prompt-dispatch]] (`wiki/features/run-role-prompt-dispatch.md`)
 - [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
 - [[features/desktop-layer-width]] (`wiki/features/desktop-layer-width.md`)
@@ -64,11 +66,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 41
+- Done tickets: 42
 - Reject records: 1
-- Verifier logs: 230
+- Verifier logs: 231
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T06:34:21Z
+- Last updated: 2026-04-29T06:40:32Z
 
 ## Completed Tickets
 
