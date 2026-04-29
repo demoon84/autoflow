@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[features/ticket-owner-verification-output-caps]]** (`wiki/features/ticket-owner-verification-output-caps.md`): Captured the `prd_047` rule that successful `verify-ticket-owner.sh` output uses a separate pass cap with first/last excerpts, while failure diagnostics keep the larger tail.
 - **[[features/run-role-prompt-dispatch]]** (`wiki/features/run-role-prompt-dispatch.md`): Extended the runtime prompt-shape contract with `prd_045` and `prd_046`, keeping planner and ticket-owner runtime outputs concise while preserving machine-readable keys.
 - **[[features/desktop-runner-model-options]]** (`wiki/features/desktop-runner-model-options.md`): Recorded the `prd_040` rule that Gemini stays selectable in Desktop, but unsupported Gemini 3.1 preview model ids stay out of `runnerAgentModelOptions.gemini`.
 - **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
@@ -36,6 +37,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[features/in-app-help]] (`wiki/features/in-app-help.md`)
   - [[features/desktop-runner-controls]] (`wiki/features/desktop-runner-controls.md`)
   - [[features/desktop-statistics-page]] (`wiki/features/desktop-statistics-page.md`)
+  - [[features/ticket-owner-verification-output-caps]] (`wiki/features/ticket-owner-verification-output-caps.md`)
   - [[features/wiki-bot-codex-adapter]] (`wiki/features/wiki-bot-codex-adapter.md`)
 - `decisions/`
   - [[decisions/design-kit-mui-migration]] (`wiki/decisions/design-kit-mui-migration.md`)
@@ -60,6 +62,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - [[features/run-role-prompt-dispatch]] (`wiki/features/run-role-prompt-dispatch.md`)
 - [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
 - [[features/desktop-layer-width]] (`wiki/features/desktop-layer-width.md`)
+- [[features/ticket-owner-verification-output-caps]] (`wiki/features/ticket-owner-verification-output-caps.md`)
 <!-- AUTOFLOW:END feature-links -->
 
 ## Source Of Truth
@@ -69,11 +72,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 43
+- Done tickets: 44
 - Reject records: 1
-- Verifier logs: 232
+- Verifier logs: 233
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T06:46:47Z
+- Last updated: 2026-04-29T06:51:47Z
 
 ## Completed Tickets
 
