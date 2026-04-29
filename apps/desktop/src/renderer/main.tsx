@@ -4,6 +4,7 @@ import ButtonBase from "@mui/material/ButtonBase";
 import Checkbox from "@mui/material/Checkbox";
 import CssBaseline from "@mui/material/CssBaseline";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import FormGroup from "@mui/material/FormGroup";
 import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
 import {
@@ -5382,7 +5383,7 @@ function WikiQueryPanel({
           <span>검색</span>
         </Button>
       </form>
-      <div className="wiki-query-toggles">
+      <FormGroup className="wiki-query-toggles" role="group" aria-label="위키 검색 필터 옵션">
         <FormControlLabel
           className="wiki-query-toggle"
           control={
@@ -5405,7 +5406,7 @@ function WikiQueryPanel({
           }
           label="인수인계 포함"
         />
-      </div>
+      </FormGroup>
       {result ? (
         result.results.length === 0 ? (
           <div className="empty-panel">일치하는 결과가 없습니다</div>
