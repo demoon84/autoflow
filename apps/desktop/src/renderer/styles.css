@@ -830,7 +830,7 @@ pre {
 
 .settings-page {
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -5091,7 +5091,7 @@ pre {
   }
 
   .settings-page {
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: 200px minmax(0, 1fr);
   }
 
   .settings-content-header,
