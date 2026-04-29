@@ -1,0 +1,105 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_060
+- PRD Key: prd_058
+- Plan Candidate: Plan AI handoff from tickets/done/prd_058/prd_058.md
+- Title: Single runner display labels without numeric suffix
+- Stage: done
+- AI: worker
+- Claimed By: worker-1
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-04-29T22:58:34Z
+
+## Goal
+
+- 이번 작업의 목표: 3-runner 기본 topology 에서 각 역할의 enabled runner 가 1개뿐이면 사용자에게 보이는 planner/worker/wiki runner 표기에서 `-1` 접미사를 숨기고 `planner`, `worker`, `위키봇`처럼 표시한다. 내부 storage id, runner state filename, runtime role key, parser-sensitive field 값은 그대로 유지한다.
+
+## References
+
+- PRD: tickets/done/prd_058/prd_058.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_058]]
+- Plan Note:
+- Ticket Note: [[tickets_060]]
+
+## Allowed Paths
+
+- `runtime/board-scripts/common.sh`
+- `.autoflow/scripts/common.sh`
+- `dogfood-board/scripts/common.sh`
+- `apps/desktop/src/renderer/main.tsx`
+- `apps/desktop/src/main.js`
+- `packages/cli/runners-project.sh`
+- `packages/cli/run-role.sh`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `.autoflow/AGENTS.md`
+- `scaffold/board/AGENTS.md`
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_060`
+- Branch: autoflow/tickets_060
+- Base Commit: a424b62b91c7243a05830d359ca48d6ea37374e8
+- Worktree Commit:
+- Integration Status: already_in_project_root
+
+## Done When
+
+- [ ] When the default topology has one enabled planner, one enabled ticket-owner, and one enabled wiki runner, user-visible runner/worker labels render as `planner`, `worker`, and `위키봇` instead of `planner-1`, `worker-1`, and `위키봇-1`.
+- [ ] If a role has two or more enabled runners, labels keep numeric suffixes so instances remain distinguishable, for example `worker-1` and `worker-2`.
+- [ ] Internal storage ids remain `planner-1`, `owner-1`, and `wiki-1` in runner config, state files, runtime context, ticket references, and parser-sensitive values.
+- [ ] Runtime scripts continue to match legacy ownership values such as `AI-1`, `owner-1`, and `worker-1` compatibly.
+- [ ] Desktop runner cards, ticket details, Notes/log previews, and workflow metadata no longer expose unnecessary `-1` suffixes in singleton role contexts.
+- [ ] Live `.autoflow/scripts`, source `runtime/board-scripts`, and `dogfood-board/scripts` remain behaviorally aligned for touched display helper logic.
+- [ ] Policy docs no longer contradict the singleton display rule.
+- [ ] The implementation stays within Allowed Paths and does not rewrite historical done tickets/logs.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 `tickets/inbox/memo_027.md` 를 `tickets/done/prd_058/prd_058.md` 로 승격하고 이 todo 티켓을 생성했다.
+- 직전 작업: `autoflow wiki query` 로 worker display policy 와 runner role slug 기록을 확인했고, `scripts/start-plan.sh 058` 이 PRD 와 memo 를 done 으로 보관한 뒤 todo 티켓을 만들었다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_058/prd_058.md`, `.autoflow/wiki/decisions/worker-display-policy.md`, `.autoflow/wiki/architecture/runner-role-slugs.md`, `display_worker_id()` / `displayWorkflowRunnerId()` 구현.
+
+## Notes
+
+- Created by planner-1 (Plan AI) from tickets/done/prd_058/prd_058.md at 2026-04-29T21:35:02Z.
+- Wiki context command: `./bin/autoflow wiki query . --term "단일 runner -1 접미사 표기 생략" --term "display_worker_id owner-N worker-N wiki-1" --term "worker display policy" --term "runner role slugs" --term "planner-1 worker-1 위키봇" --term "apps/desktop/src/renderer/main.tsx worker_id" --term "runtime/board-scripts/common.sh display_worker_id" --limit 10`.
+- Wiki context result: `wiki/decisions/worker-display-policy.md` and `tickets/done/prd_039/prd_039.md` were relevant; `wiki/architecture/runner-role-slugs.md` was also read because the request touches runner id/display boundaries.
+- Relevant finding: `worker-display-policy` decouples internal storage identifiers from user-facing labels and says internal ids such as `owner-1` / `wiki-1` stay unchanged.
+- Relevant finding: `runner-role-slugs` says actual unsuffixed runner id renaming was superseded; this ticket should not rename `.autoflow/runners/config.toml`, state files, or runtime role keys.
+- Relevant finding: `tickets/done/prd_039/*` established the compatible pattern of changing user-visible worker labels while preserving legacy `AI-N`, `owner-N`, and `worker-N` matching.
+- Code context: `.autoflow/scripts/common.sh` and `runtime/board-scripts/common.sh` currently normalize `owner-N` / `ai-N` to `worker-N`; `apps/desktop/src/renderer/main.tsx` currently maps `wiki-1` to `위키봇` and multi wiki ids to `위키봇-N`.
+- Planning constraint: hide suffixes only when there is one enabled runner for that role; when a role has multiple enabled runners, keep suffixes for disambiguation.
+- Mini-plan: (1) `display_worker_id()` 를 runner config 의 enabled role 수 기준으로 확장해 singleton `planner` / `worker` / `위키봇` 라벨을 만든다. (2) desktop renderer 는 board runner snapshot 을 기준으로 runner card 와 ticket metadata 의 display label 을 계산한다. (3) storage id / parser field / runner config 값은 그대로 둔다. Wiki constraints: [[worker-display-policy]], [[runner-role-slugs]], and `tickets/done/prd_039/prd_039.md`.
+- Implementation: `runtime/board-scripts/common.sh` 와 `.autoflow/scripts/common.sh` 에 singleton-aware display helper 를 추가했다. `dogfood-board/scripts/common.sh` 는 해당 display helper 가 없는 구버전 copy 라서 불필요한 전체 동기화를 하지 않고 원래 구조를 유지했다.
+- Implementation: `apps/desktop/src/renderer/main.tsx` 는 enabled runner count 를 기준으로 `owner-1`/`worker-1`/`AI-1` → `worker`, `planner-1` → `planner`, `wiki-1`/`wiki-maintainer-1` → `위키봇` 으로 표시하고, 같은 role 이 2개 이상 enabled 이면 suffix 를 유지한다.
+- Implementation: `AGENTS.md`, `CLAUDE.md`, `scaffold/board/AGENTS.md` 의 사용자 노출 worker 표기 정책에 singleton suffix 예외를 명시했다.
+- Verification: worktree 에서 `npm --prefix apps/desktop run check` 통과, `tests/smoke/runner-idle-preflight-skip-smoke.sh` 통과. `./bin/autoflow doctor .` 는 worktree-local sidecar scaffold 를 대상으로 실행했을 때 실패했으나, PROJECT_ROOT 통합 후 지정된 host root 에서 재실행해 통과했다.
+- Merge: AI owner 가 verified worktree 변경을 PROJECT_ROOT 에 수동 통합했다. PROJECT_ROOT 의 기존 `apps/desktop/src/renderer/main.tsx` 로그 탭 변경은 보존하고 singleton display 변경만 추가했다.
+
+- Runtime hydrated worktree dependency at 2026-04-29T22:48:50Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker-1 prepared todo at 2026-04-29T22:48:50Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_060; run=tickets/inprogress/verify_060.md
+- AI worker-1 prepared resume at 2026-04-29T22:49:23Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_060; run=tickets/inprogress/verify_060.md
+- Queued without worktree commit at 2026-04-29T22:58:34Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-04-29T22:58:33Z; runtime finalizer will not perform merge operations.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-04-29T22:58:34Z.
+- Coordinator post-merge cleanup at 2026-04-29T22:58:34Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_060 deleted_branch=autoflow/tickets_060.
+## Verification
+- Run file: `tickets/done/prd_058/verify_060.md`
+- Log file: `logs/verifier_060_20260429_225835Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Singleton runner display labels hide numeric suffixes for one enabled role instance and preserve suffixes for multi-runner roles.
+- Remaining risk: Desktop rendered UI was verified by build/typecheck and helper output checks, not by an interactive browser session.

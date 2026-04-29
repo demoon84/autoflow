@@ -7,6 +7,9 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/finish-ticket-owner-cleanup-status-contract]]** (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`): Summarized the `verify_003` / `reject_003` failure caused by the missing `cleanup_status=ok` line in the `finish-ticket-owner` pass-output contract.
+- **[[answers/korean-board-writing-policy]]** (`wiki/answers/korean-board-writing-policy.md`): Captured the board-writing policy that user-facing PRD, ticket, and memo prose defaults to Korean while parser-sensitive fields keep their original format.
+- **[[answers/wiki-query-filter-group]]** (`wiki/answers/wiki-query-filter-group.md`): Captured the `tickets_058` change that groups the two wiki query include options into one MUI-backed filter list.
 - **[[answers/desktop-runner-terminal-streaming]]** (`wiki/answers/desktop-runner-terminal-streaming.md`): Captured the `prd_053` fix that restores multi-line typed terminal streaming in Desktop runner cards instead of path-only/runtime-envelope fallbacks.
 - **[[answers/wiki-maintenance-pipeline]]** (`wiki/answers/wiki-maintenance-pipeline.md`): Summarized the current wiki maintenance flow spanning semantic lint tightening, deterministic frontmatter retrofit, and reusable synth-save patterns.
 - **[[features/finish-pass-inline-merge-summary]]** (`wiki/features/finish-pass-inline-merge-summary.md`): Captured the `prd_048` rule that fully successful `finish-ticket-owner.sh` inline merge finalization now emits one summary line, while debug paths keep the full merge output block.
@@ -61,6 +64,9 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/finish-ticket-owner-cleanup-status-contract]] (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`)
+  - [[answers/korean-board-writing-policy]] (`wiki/answers/korean-board-writing-policy.md`)
+  - [[answers/wiki-query-filter-group]] (`wiki/answers/wiki-query-filter-group.md`)
   - [[answers/desktop-runner-terminal-streaming]] (`wiki/answers/desktop-runner-terminal-streaming.md`)
   - [[answers/wiki-ingest-workflow]] (`wiki/answers/wiki-ingest-workflow.md`)
   - [[answers/wiki-maintenance-pipeline]] (`wiki/answers/wiki-maintenance-pipeline.md`)
@@ -86,11 +92,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 54
+- Done tickets: 55
 - Reject records: 2
-- Verifier logs: 253
+- Verifier logs: 255
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T22:43:42Z
+- Last updated: 2026-04-29T22:58:35Z
 
 ## Completed Tickets
 

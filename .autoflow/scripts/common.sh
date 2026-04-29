@@ -41,25 +41,124 @@ normalize_runtime_path() {
 
 display_worker_id() {
   local raw="${1:-}"
-  local prefix suffix
+  local suffix role
 
   [ -n "$raw" ] || return 0
 
-  prefix="${raw%%-*}"
-  if [ "$prefix" = "$raw" ]; then
-    printf '%s' "$raw"
-    return 0
-  fi
-
-  suffix="${raw#*-}"
-  case "$prefix" in
-    owner|worker|ai|AI)
-      printf 'worker-%s' "$suffix"
+  case "$raw" in
+    owner-*|worker-*|ai-*|AI-*)
+      suffix="${raw#*-}"
+      role="ticket-owner"
+      if display_role_is_singleton "$role"; then
+        printf 'worker'
+      else
+        printf 'worker-%s' "$suffix"
+      fi
+      ;;
+    planner-*|plan-*)
+      suffix="${raw#*-}"
+      role="planner"
+      if display_role_is_singleton "$role"; then
+        printf 'planner'
+      else
+        printf 'planner-%s' "$suffix"
+      fi
+      ;;
+    wiki-maintainer-*)
+      suffix="${raw#wiki-maintainer-}"
+      role="wiki-maintainer"
+      if display_role_is_singleton "$role"; then
+        printf '위키봇'
+      else
+        printf '위키봇-%s' "$suffix"
+      fi
+      ;;
+    wiki-*)
+      suffix="${raw#wiki-}"
+      role="wiki-maintainer"
+      if display_role_is_singleton "$role"; then
+        printf '위키봇'
+      else
+        printf '위키봇-%s' "$suffix"
+      fi
       ;;
     *)
       printf '%s' "$raw"
       ;;
   esac
+}
+
+display_role_is_singleton() {
+  local role="${1:-}"
+  local count
+
+  count="$(enabled_runner_role_count "$role" 2>/dev/null || printf '0')"
+  [ "$count" = "1" ]
+}
+
+enabled_runner_role_count() {
+  local target_role="${1:-}"
+  local config="${AUTOFLOW_RUNNER_CONFIG:-${BOARD_ROOT:-}/runners/config.toml}"
+
+  [ -n "$target_role" ] || {
+    printf '0'
+    return 0
+  }
+  [ -f "$config" ] || {
+    printf '0'
+    return 0
+  }
+
+  awk -v target="$target_role" '
+    function clean(value) {
+      sub(/^[[:space:]]*=[[:space:]]*/, "", value)
+      sub(/[[:space:]]*(#.*)?$/, "", value)
+      gsub(/^"|"$/, "", value)
+      return value
+    }
+    function role_matches(value) {
+      if (target == "ticket-owner") {
+        return value == "ticket-owner" || value == "owner" || value == "ticket"
+      }
+      if (target == "planner") {
+        return value == "planner" || value == "plan"
+      }
+      if (target == "wiki-maintainer") {
+        return value == "wiki-maintainer" || value == "wiki"
+      }
+      return value == target
+    }
+    function flush() {
+      if (in_runner && role_matches(role) && enabled == "true") {
+        count += 1
+      }
+    }
+    BEGIN {
+      in_runner = 0
+      role = ""
+      enabled = "true"
+      count = 0
+    }
+    /^[[:space:]]*\[\[runners\]\][[:space:]]*$/ {
+      flush()
+      in_runner = 1
+      role = ""
+      enabled = "true"
+      next
+    }
+    in_runner && /^[[:space:]]*role[[:space:]]*=/ {
+      role = clean(substr($0, index($0, "=")))
+      next
+    }
+    in_runner && /^[[:space:]]*enabled[[:space:]]*=/ {
+      enabled = clean(substr($0, index($0, "=")))
+      next
+    }
+    END {
+      flush()
+      print count + 0
+    }
+  ' "$config"
 }
 
 canonical_worker_id() {

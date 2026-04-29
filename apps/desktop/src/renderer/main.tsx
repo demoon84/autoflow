@@ -2394,7 +2394,7 @@ function RunnerConsole({
                 <div className="runner-topbar">
                   <div className="runner-main">
                     <div className="runner-title-line">
-                      <strong>{displayWorkflowRunnerId(runner.id)}</strong>
+                      <strong>{displayWorkflowRunnerId(runner.id, runners)}</strong>
                     </div>
                     <span>
                       {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - 반복 실행 / {intervalLabel}s
@@ -3618,7 +3618,7 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
   return "secondary" as const;
 }
 
-function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string): TicketWorkspaceItemMeta {
+function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, runners?: AutoflowRunner[]): TicketWorkspaceItemMeta {
   const id = markdownScalar(content, ["ID"]) || workflowFileDisplayName(file.name);
   const ai = markdownScalar(content, ["AI", "Execution AI", "Owner"]);
   const claimedBy = markdownScalar(content, ["Claimed By"]);
@@ -3631,8 +3631,8 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string):
     title,
     projectKey: projectKeyFromBoardFile(file, content),
     stage,
-    aiLabel: displayWorkflowRunnerId(ai),
-    claimedByLabel: displayWorkflowRunnerId(claimedBy),
+    aiLabel: displayWorkflowRunnerId(ai, runners),
+    claimedByLabel: displayWorkflowRunnerId(claimedBy, runners),
     lastUpdated: markdownScalar(content, ["Last Updated"]),
     statusKey,
     statusLabel: ticketWorkspaceStatusLabel(statusKey, file, content),
@@ -3783,12 +3783,14 @@ function TicketWorkspaceListView({
   files,
   kind,
   options,
+  runners,
   emptyTitle,
   emptyDescription
 }: {
   files: AutoflowFilePreview[];
   kind: TicketWorkspaceItemKind;
   options?: { projectRoot: string; boardDirName: string };
+  runners?: AutoflowRunner[];
   emptyTitle: string;
   emptyDescription: string;
 }) {
@@ -3824,7 +3826,7 @@ function TicketWorkspaceListView({
       for (const { file, result } of results) {
         const statusKey = ticketWorkspaceStatusForFile(file) || (kind === "memo" ? "memo" : "prd");
         nextMeta[file.filePath] = result.ok
-          ? extractTicketWorkspaceMeta(file, result.content || "")
+          ? extractTicketWorkspaceMeta(file, result.content || "", runners)
           : {
               id: workflowFileDisplayName(file.name),
               title: file.title || file.name,
@@ -3849,7 +3851,7 @@ function TicketWorkspaceListView({
     return () => {
       cancelled = true;
     };
-  }, [files, kind, options]);
+  }, [files, kind, options, runners]);
 
   const items = React.useMemo<TicketWorkspaceItem[]>(
     () =>
@@ -4335,7 +4337,7 @@ function TicketKanban({
 
       for (const { file, result } of results) {
         nextMeta[file.filePath] = result.ok
-          ? extractTicketWorkspaceMeta(file, result.content || "")
+          ? extractTicketWorkspaceMeta(file, result.content || "", board?.runners)
           : {
               id: workflowFileDisplayName(file.name),
               title: file.title || file.name,
@@ -4360,7 +4362,7 @@ function TicketKanban({
     return () => {
       cancelled = true;
     };
-  }, [files, options]);
+  }, [files, options, board?.runners]);
 
   React.useEffect(() => {
     window.localStorage.setItem("autoflow.activeTicketWorkspaceTab", activeWorkspaceTab);
@@ -4506,6 +4508,7 @@ function TicketKanban({
               files={prdFiles}
               kind="prd"
               options={options}
+              runners={board?.runners}
               emptyTitle="표시할 PRD가 없습니다."
               emptyDescription="tickets/backlog 또는 tickets/done에 PRD가 생기면 여기에 표시됩니다."
             />
@@ -4515,6 +4518,7 @@ function TicketKanban({
               files={inboxFiles}
               kind="memo"
               options={options}
+              runners={board?.runners}
               emptyTitle="인박스 메모가 없습니다."
               emptyDescription="tickets/inbox/memo_*.md 파일이 있으면 읽기 전용 목록으로 표시됩니다."
             />
@@ -4920,14 +4924,50 @@ function isMachineRunnerLog(value: string) {
   return Boolean(timestampFromRunnerLog(value)) && /^timestamp=\S+(\s+\w+=\S+)*$/.test(value.trim());
 }
 
-function displayWorkflowRunnerId(value: string) {
+function canonicalWorkflowRunnerRole(value: string) {
+  const normalized = (value || "").toLowerCase();
+  if (/^(owner|worker|ai)-/.test(normalized)) return "ticket-owner";
+  if (/^(planner|plan)-/.test(normalized)) return "planner";
+  if (/^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki-maintainer";
+  return "";
+}
+
+function runnerRoleMatchesDisplayRole(role: string, displayRole: string) {
+  const normalized = (role || "").toLowerCase();
+  if (displayRole === "ticket-owner") {
+    return normalized === "ticket-owner" || normalized === "owner" || normalized === "ticket";
+  }
+  if (displayRole === "planner") {
+    return normalized === "planner" || normalized === "plan";
+  }
+  if (displayRole === "wiki-maintainer") {
+    return normalized === "wiki-maintainer" || normalized === "wiki";
+  }
+  return normalized === displayRole;
+}
+
+function enabledWorkflowRunnerCount(runners: AutoflowRunner[] | undefined, displayRole: string) {
+  if (!runners?.length || !displayRole) return 0;
+  return runners.filter((runner) => runnerIsEnabled(runner.enabled) && runnerRoleMatchesDisplayRole(runner.role, displayRole)).length;
+}
+
+function workflowRoleIsSingleton(runners: AutoflowRunner[] | undefined, displayRole: string) {
+  return enabledWorkflowRunnerCount(runners, displayRole) === 1;
+}
+
+function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (!value) return value;
-  if (/^owner-/.test(value)) return value.replace(/^owner-/, "worker-");
-  if (/^worker-/.test(value)) return value;
-  if (/^ai-/i.test(value)) return value.replace(/^ai-/i, "worker-");
+  const role = canonicalWorkflowRunnerRole(value);
+  const singleton = workflowRoleIsSingleton(runners, role);
+  if (/^owner-/.test(value)) return singleton ? "worker" : value.replace(/^owner-/, "worker-");
+  if (/^worker-/.test(value)) return singleton ? "worker" : value;
+  if (/^ai-/i.test(value)) return singleton ? "worker" : value.replace(/^ai-/i, "worker-");
+  if (/^planner-\d+$/.test(value) || /^plan-\d+$/.test(value)) {
+    return singleton ? "planner" : value.replace(/^plan-/, "planner-");
+  }
   if (value === "merge-1") return "머지봇";
   if (/^merge-\d+$/.test(value)) return value.replace(/^merge-/, "머지봇-");
-  if (value === "wiki-maintainer-1" || value === "wiki-1") return "위키봇";
+  if (value === "wiki-maintainer-1" || value === "wiki-1") return singleton ? "위키봇" : "위키봇-1";
   if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키봇-");
   if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키봇-");
   if (value === "coordinator-1") return "coordinator";
