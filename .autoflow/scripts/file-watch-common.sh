@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# DEPRECATED: legacy file-watch dispatcher. The PowerShell-DSL config file at
+# automations/file-watch.psd1 is no longer shipped; callers fall back to defaults
+# when this path does not exist. Kept for backwards compatibility with users
+# who still drive `autoflow watch-bg`. New boards rely on the heartbeat-driven
+# 3-runner topology instead.
 file_watch_default_config_path() {
   printf '%s/automations/file-watch.psd1' "$BOARD_ROOT"
 }
