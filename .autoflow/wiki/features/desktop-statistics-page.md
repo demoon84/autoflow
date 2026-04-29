@@ -22,6 +22,10 @@ The Statistics page primarily centers on the following layout blocks in `apps/de
 - **Shared Metrics:** The `ReportingDashboard` shares the exact same `board.metrics` and formatting helpers (e.g., `formatCount`) as the Work Flow page's top stat strip.
 - **Token Usage Formatting:** Token counts on both the Work Flow strip and the Statistics dashboard are displayed as raw numbers with thousands separators (e.g., `33,381,501`) rather than compact notations (like `33M`), ensuring strict data parity between the two views.
 
+## Related Context
+
+- The Work Flow page strip that shares the same metrics source is documented in [[features/workflow-stat-strip]].
+
 ## Related PRDs
 - `tickets/done/prd_013` (Stat strip data parity)
 - `tickets/done/prd_018` (Token formatting parity)

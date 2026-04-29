@@ -884,6 +884,11 @@ run_semantic_lint() {
     ''|*[!0-9]*) budget=32768 ;;
   esac
 
+  local body_lines="${AUTOFLOW_WIKI_LINT_BODY_LINES:-80}"
+  case "$body_lines" in
+    ''|*[!0-9]*) body_lines=80 ;;
+  esac
+
   cp "$prompt_header_file" "$prompt_file"
   truncated_flag="false"
   : > "$dropped_pages_file"
@@ -897,7 +902,7 @@ run_semantic_lint() {
     section_file="$(autoflow_mktemp)"
     {
       printf -- '--- PAGE: %s ---\n' "$rel"
-      sed -n '1,80p' "$page"
+      sed -n "1,${body_lines}p" "$page"
       printf '\n'
     } > "$section_file"
 

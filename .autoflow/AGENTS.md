@@ -72,9 +72,8 @@ At the start of work, read in this order:
 
 ## Runtime Command Convention
 
-- On Windows, prefer `scripts/*.ps1` wrappers.
-- In Bash-only environments, use the matching `scripts/*.sh` entrypoint.
-- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, `start-todo runtime`, `handoff-todo runtime`, `start-verifier runtime`, or `write-verifier-log runtime`, choose `.ps1` or `.sh` for the current environment.
+- Use the matching `scripts/*.sh` entrypoint for runtime commands.
+- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, `start-todo runtime`, `handoff-todo runtime`, `start-verifier runtime`, or `write-verifier-log runtime`, run the `.sh` script.
 
 ## Core Rules
 

@@ -9,6 +9,9 @@ The Ticket Workspace in the Desktop application simplifies the view of available
 - **발급 티켓 (Issued Tickets) Tab**: Displays all active and completed tickets in a single, unified list regardless of their workflow stage (todo, inprogress, done, reject). The ticket cards themselves retain their visual stage badges (e.g., `구현`, `완료`) to help users distinguish their current status.
 - **Detail View (Layer)**: Clicking any PRD or Ticket card opens a full-width dialog layer (overlay) containing the full markdown body and metadata. This replaced the previous static right-hand preview column, allowing the card list to utilize 100% of the workspace width for better readability (`tickets/done/prd_024/prd_024.md`).
 
+## Layout Constraints
+- List and card content in the `PRD`, `인박스`, and `발급 티켓` tabs should read from the left edge. `prd_042` fixed a MUI `ButtonBase` centering issue by keeping the change CSS-only in `.ticket-workspace-item.MuiButtonBase-root` and related list text containers, while preserving tabs, click behavior, the detail layer, status badges, and board loading (`tickets/done/prd_042/tickets_042.md`, `tickets/done/prd_042/verify_042.md`).
+
 ### State Management
 The active tab is persisted in `localStorage` under the `autoflow.activeTicketWorkspaceTab` key.
 If a user's browser has stale keys from the previous multi-tab design (such as `all`, `inprogress`, `blocked`, `closed`, or `reject`), the application will automatically fall back to the `issued` tab to prevent rendering errors.

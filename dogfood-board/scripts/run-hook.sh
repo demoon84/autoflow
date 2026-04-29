@@ -171,10 +171,10 @@ Do exactly one current hook turn:
 1. Read the repo instructions and Autoflow board files.
 2. Resume any existing inprogress ticket owned by \`${worker_id}\` if one exists; otherwise claim one todo ticket.
 3. Implement only within each ticket's Allowed Paths.
-4. If you resume an existing inprogress ticket, refresh the active ticket context with \`powershell -ExecutionPolicy Bypass -File autoflow/scripts/set-thread-context.ps1 todo <worker-id> <ticket-id> executing <ticket-path>\` on Windows, or \`autoflow/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>\` in Bash-only environments, before continuing.
+4. If you resume an existing inprogress ticket, refresh the active ticket context with \`autoflow/scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>\` before continuing.
 5. Update Notes, Last Updated, Next Action, and Resume Context as you work.
 6. Board stage is authoritative. If a ticket is in \`autoflow/tickets/todo/\` or \`autoflow/tickets/inprogress/\`, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification.
-7. If Done When is satisfied, fill Result.Summary and run \`powershell -ExecutionPolicy Bypass -File autoflow/scripts/handoff-todo.ps1 <ticket-id-or-path>\` on Windows, or \`autoflow/scripts/handoff-todo.sh <ticket-id-or-path>\` in Bash-only environments. The handoff runtime moves the ticket to \`autoflow/tickets/verifier/\`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.
+7. If Done When is satisfied, fill Result.Summary and run \`autoflow/scripts/handoff-todo.sh <ticket-id-or-path>\`. The handoff runtime moves the ticket to \`autoflow/tickets/verifier/\`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.
 8. Keep chat output short; durable context belongs in Resume Context, Notes, Result, and Obsidian links.
 9. Do not verify, do not commit, and do not push.
 10. Exit after the current hook turn is complete.
@@ -207,7 +207,7 @@ Do exactly one current hook turn:
 7. Write a verifier completion log under \`autoflow/logs/\`.
 8. Pass: move the ticket to the matching \`autoflow/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[ticket title] concise change summary\`; take the bracket text from the ticket \`Title\` and keep the summary to one short line.
 9. Fail: append \`## Reject Reason\` and move the ticket to \`autoflow/tickets/reject/reject_NNN.md\`.
-10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; prefer \`write-verifier-log.ps1\` on Windows and use \`.sh\` only in Bash-only environments. Rely on Obsidian links and board files for the next verification target.
+10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; rely on Obsidian links and board files for the next verification target.
 11. Never git push.
 12. Exit after the current hook turn is complete.
 EOF

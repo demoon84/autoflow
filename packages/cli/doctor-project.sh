@@ -990,15 +990,6 @@ if [ -d "$board_root" ]; then
     fi
   done
 
-  for runtime_ps1 in invoke-runtime-sh.ps1 runner-common.ps1 codex-stop-hook.ps1 check-stop.ps1 install-stop-hook.ps1 set-thread-context.ps1 clear-thread-context.ps1 start-ticket-owner.ps1 verify-ticket-owner.ps1 finish-ticket-owner.ps1 merge-ready-ticket.ps1 start-spec.ps1 start-plan.ps1 start-todo.ps1 handoff-todo.ps1 start-verifier.ps1 integrate-worktree.ps1 write-verifier-log.ps1 run-hook.ps1 watch-board.ps1; do
-    if [ -f "${board_root}/scripts/${runtime_ps1}" ]; then
-      record_check "script_${runtime_ps1}" "ok"
-    else
-      record_check "script_${runtime_ps1}" "error"
-      record_error "runtime script is missing: ${board_root}/scripts/${runtime_ps1}"
-    fi
-  done
-
   if [ -f "${board_root}/.project-root" ]; then
     marker_value="$(project_root_marker_value "$board_root")"
     record_check "project_root_marker" "ok"
@@ -1041,7 +1032,6 @@ if [ -d "$board_root" ]; then
 
   for starter_file in \
     "automations/heartbeat-set.toml" \
-    "automations/file-watch.psd1" \
     "automations/state/README.md" \
     "automations/state/.gitignore" \
     "reference/README.md" \

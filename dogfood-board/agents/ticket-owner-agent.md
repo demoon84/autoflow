@@ -19,7 +19,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 ## Operating Contract
 
 - Claim or create exactly one ticket-sized unit of work.
-- Use `scripts/start-ticket-owner.sh` or `scripts/start-ticket-owner.ps1` before editing. It resumes an owned ticket, claims a todo ticket, adopts a legacy verifier ticket, or creates an inprogress ticket from a populated backlog spec.
+- Use `scripts/start-ticket-owner.sh` before editing. It resumes an owned ticket, claims a todo ticket, adopts a legacy verifier ticket, or creates an inprogress ticket from a populated backlog spec.
 - Keep the ticket file as the source of truth.
 - Write a local mini-plan into the ticket before editing product code.
 - Implement within the ticket's `Allowed Paths`.

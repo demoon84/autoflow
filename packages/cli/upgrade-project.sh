@@ -940,7 +940,7 @@ ticket_file_for_id_for_upgrade() {
       done < <(
         find "$TARGET_BOARD_ROOT" \
           \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
-          -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+          -type f \( -name '*.md' -o -name '*.toml' -o -name '*.sh' \) -print | sort
       )
     done < <(
       {
@@ -1088,7 +1088,7 @@ rewrite_spec_references_to_backlog() {
   done < <(
     find "$TARGET_BOARD_ROOT" \
       \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
-      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.sh' \) -print | sort
   )
 }
 
@@ -1110,7 +1110,7 @@ rewrite_plan_references_to_ticket_plan() {
   done < <(
     find "$TARGET_BOARD_ROOT" \
       \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
-      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.sh' \) -print | sort
   )
 }
 
@@ -1132,7 +1132,7 @@ rewrite_run_references_to_ticket_inprogress() {
   done < <(
     find "$TARGET_BOARD_ROOT" \
       \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
-      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.sh' \) -print | sort
   )
 }
 
@@ -1154,7 +1154,7 @@ rewrite_legacy_browser_tool_references() {
   done < <(
     find "$TARGET_BOARD_ROOT" \
       \( -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups" -o -path "${TARGET_BOARD_ROOT}/.autoflow-upgrade-backups/*" \) -prune -o \
-      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.ps1' -o -name '*.psd1' -o -name '*.sh' \) -print | sort
+      -type f \( -name '*.md' -o -name '*.toml' -o -name '*.sh' \) -print | sort
   )
 }
 

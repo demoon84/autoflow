@@ -315,7 +315,7 @@ runner_command_preview() {
 
   if [ "$mode" = "watch" ]; then
     # DEPRECATED: mode=watch wraps the legacy script-driven file-watcher
-    # `autoflow watch-bg` (watch-board.sh/.ps1). The supported topology is
+    # `autoflow watch-bg` (watch-board.sh). The supported topology is
     # heartbeat-driven AI runners; mode=watch is gated by run-role.sh and
     # only retained for backwards compatibility.
     cmd=(autoflow watch-bg "$project_root" "$board_dir_name")

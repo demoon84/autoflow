@@ -48,7 +48,7 @@ heartbeat 또는 수동으로 `#todo`. 수동 트리거라면 **먼저 1분 todo
 3. 있으면: 그 티켓의 `Worktree` / `Resume Context` / `Next Action` / `Notes` 를 읽고 **구현을 이어서 한다**. `Worktree.Path` 를 작업 루트로 열고, 그 안에서 `Allowed Paths` 범위 파일을 수정한다.
    - 현재 ticket 을 재개하는 순간 `scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다.
 - 완료되면 `Notes` 에 최종 로그, `Result → Summary` 를 채운다.
-- verifier 로 넘길 때는 Windows 에서 `scripts/handoff-todo.ps1 <ticket-id-or-path>`, Bash-only 환경에서 `scripts/handoff-todo.sh <ticket-id-or-path>` 를 실행한다. 이 런타임이 티켓 이동과 active ticket context 초기화를 함께 처리한다.
+- verifier 로 넘길 때는 `scripts/handoff-todo.sh <ticket-id-or-path>` 를 실행한다. 이 런타임이 티켓 이동과 active ticket context 초기화를 함께 처리한다.
    - 완료 아니면 진행 로그를 `Resume Context` / `Notes` 에 남기고 tick 종료. Stop hook 이 active ticket context 를 비워 다음 tick 의 토큰 사용을 줄인다.
 4. 없으면: `scripts/start-todo.sh` 실행. 새 티켓 claim 시도.
    - `status=idle` / `reason=no_todo_ticket` → idle 종료.

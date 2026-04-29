@@ -145,13 +145,7 @@ PROJECT_ROOT
 ./bin/autoflow init .
 ```
 
-Windows PowerShell 에서는 아래 래퍼를 쓰면 `D:\project\astra` 같은 경로를 그대로 넘길 수 있다.
-
-```powershell
-./bin/autoflow.ps1 init D:\project\astra
-```
-
-공개 CLI 명령은 macOS/Linux Bash 엔트리포인트 `./bin/autoflow` 와 Windows PowerShell 엔트리포인트 `./bin/autoflow.ps1` 를 모두 제공한다. `init`, `install-stop-hook`, `remove-stop-hook`, `stop-hook-status`, `render-heartbeats`, `status`, `doctor`, `upgrade`, `prd create`, `memo create`, `spec create`(legacy alias), 3-runner default 인 `run planner/ticket/wiki`, `runners list/add/remove/start/stop/restart/artifacts/set`, `metrics` 를 두 환경에서 같은 의미로 쓸 수 있다. legacy 호환 명령으로 `run todo/verifier/coordinator`, `watch`, `watch-bg`, `watch-status`, `watch-stop` 도 제공한다.
+공개 CLI 명령은 macOS/Linux Bash 엔트리포인트 `./bin/autoflow` 하나로 제공한다. `init`, `install-stop-hook`, `remove-stop-hook`, `stop-hook-status`, `render-heartbeats`, `status`, `doctor`, `upgrade`, `prd create`, `memo create`, `spec create`(legacy alias), 3-runner default 인 `run planner/ticket/wiki`, `runners list/add/remove/start/stop/restart/artifacts/set`, `metrics` 를 모두 같은 의미로 쓸 수 있다. legacy 호환 명령으로 `run todo/verifier/coordinator`, `watch`, `watch-bg`, `watch-status`, `watch-stop` 도 제공한다.
 
 기본 보드 폴더 이름은 `.autoflow` 이다.
 
@@ -313,20 +307,6 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 ./bin/autoflow watch-stop /path/to/project
 ```
 
-Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell helper 를 쓴다.
-
-```powershell
-./bin/autoflow.ps1 watch D:\project\astra
-```
-
-창을 띄우지 않고 백그라운드 프로세스로 운영하려면 아래를 쓴다. PID 와 stdout/stderr 는 `.autoflow/logs/hooks/` 에 남는다.
-
-```powershell
-./bin/autoflow.ps1 watch-bg D:\project\astra
-./bin/autoflow.ps1 watch-status D:\project\astra
-./bin/autoflow.ps1 watch-stop D:\project\astra
-```
-
 현재 보드가 제공하는 기본 로컬 작업 흐름:
 
 - Claude: `/af` 또는 `/autoflow`
@@ -355,7 +335,7 @@ Windows 에서 file-watch hook 루프를 직접 돌릴 때는 아래 PowerShell 
 6. 검증 command 는 티켓 또는 PRD 의 `## Verification` 아래 `- Command: ...` 로 둔다. owner 는 `start-ticket-owner`, `verify-ticket-owner`, `finish-ticket-owner` 런타임을 순서대로 써서 evidence 와 completion log 를 남긴다.
 7. role-pipeline 방식이 필요하면 호환 경로로 `#plan`, `#todo`, `#veri` 또는 `autoflow run planner/todo/verifier` 를 사용할 수 있지만 기본 운영 모델은 아니다.
 8. heartbeat 세트를 파일로 관리하고 싶다면 `automations/heartbeat-set.toml` 을 채우고 `autoflow render-heartbeats` 로 role별 heartbeat TOML 묶음을 만든다.
-9. (legacy) 파일 업로드나 폴더 변경에 바로 반응시키고 싶다면 macOS/Linux 에서는 `./bin/autoflow watch-bg <project-root>`, Windows 에서는 `./bin/autoflow.ps1 watch-bg <project-root>` 로 file-watch hook 루프를 백그라운드에서 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보내고 `logs/hooks/` 에 기록을 남긴다. 이 file-watch 경로는 script-driven 트리거이므로 새 보드는 3-runner heartbeat (planner-1 + owner-1 + wiki-1) 를 우선 사용하고, watcher 는 minute heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다.
+9. (legacy) 파일 업로드나 폴더 변경에 바로 반응시키고 싶다면 `./bin/autoflow watch-bg <project-root>` 로 file-watch hook 루프를 백그라운드에서 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보내고 `logs/hooks/` 에 기록을 남긴다. 이 file-watch 경로는 script-driven 트리거이므로 새 보드는 3-runner heartbeat (planner-1 + owner-1 + wiki-1) 를 우선 사용하고, watcher 는 1분 heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다.
 
 ## Branding
 
@@ -426,25 +406,12 @@ autoflow/
 - `run-hook.sh`
 - `watch-board.sh`
 - `install-stop-hook.sh`
-- `start-spec.ps1`
-- `start-ticket-owner.ps1`
-- `verify-ticket-owner.ps1`
-- `finish-ticket-owner.ps1`
-- `start-plan.ps1`
-- `start-todo.ps1`
-- `handoff-todo.ps1`
-- `start-verifier.ps1`
-- `install-stop-hook.ps1`
-- `run-hook.ps1`
-- `watch-board.ps1`
 
-`install-stop-hook.*` 는 현재 보드 `check-stop.*` 를 Codex Stop hook manifest (`~/.codex/hooks.json`) 에 설치 / 제거 / 상태 확인하는 helper 다. 이미 설치된 다른 Stop hook 은 유지하고, 현재 보드 command 만 idempotent 하게 추가 / 제거한다.
-
-Windows 에서는 `.ps1` 래퍼를 우선 실행한다. `.ps1` 래퍼는 경로와 `AUTOFLOW_*` 환경 변수를 안전하게 변환해 기존 `.sh` 런타임을 호출한다. Bash 환경에서는 `.sh` 를 직접 실행해도 된다.
+`install-stop-hook.sh` 는 현재 보드 `check-stop.sh` 를 Codex Stop hook manifest (`~/.codex/hooks.json`) 에 설치 / 제거 / 상태 확인하는 helper 다. 이미 설치된 다른 Stop hook 은 유지하고, 현재 보드 command 만 idempotent 하게 추가 / 제거한다.
 
 이 스크립트들은 결정적인 파일 이동과 상태 갱신을 맡고, 실제 구현 판단은 에이전트가 이어받는다.
 
-`run-hook.sh` / `watch-board.sh` 는 Bash/macOS/Linux 쪽 one-shot hook dispatcher 와 watcher 다. `watch-board.ps1` 는 Windows 쪽 watcher 다. **이 file-watch 경로는 DEPRECATED 된 script-driven 트리거 패턴**으로, 새 토폴로지에서는 1분 heartbeat 가 AI runner 를 깨우면 AI 가 board state 를 직접 읽고 도구로 스크립트를 호출한다. minute heartbeat 가 외부 사유로 끊기는 환경에서는 이 watcher 를 보조 수단으로 함께 둘 수 있고, 상태 전환 직후 다음 route 를 바로 이어붙여 1분 heartbeat 지연을 줄일 수 있다. 평소에는 `watch-bg` 로 백그라운드 실행을 사용하고, watcher 자체는 사용자가 `watch-stop` 으로 멈출 때까지 계속 살아 있다. 상세 실행 기록은 `logs/hooks/` 에 남긴다.
+`run-hook.sh` / `watch-board.sh` 는 macOS/Linux 쪽 one-shot hook dispatcher 와 watcher 다. **이 file-watch 경로는 DEPRECATED 된 script-driven 트리거 패턴**으로, 새 토폴로지에서는 1분 heartbeat 가 AI runner 를 깨우면 AI 가 board state 를 직접 읽고 도구로 스크립트를 호출한다. 1분 heartbeat 가 외부 사유로 끊기는 환경에서는 이 watcher 를 보조 수단으로 함께 둘 수 있고, 상태 전환 직후 다음 route 를 바로 이어붙여 1분 heartbeat 지연을 줄일 수 있다. 평소에는 `watch-bg` 로 백그라운드 실행을 사용하고, watcher 자체는 사용자가 `watch-stop` 으로 멈출 때까지 계속 살아 있다. 상세 실행 기록은 `logs/hooks/` 에 남긴다.
 
 자동화 철학은 `/Users/demoon/Documents/project/mySkills/skills/autopilot/SKILL.md` 처럼 "남은 일이 있는데 너무 일찍 멈추지 않게 하기"에 가깝다.
 다만 현재 `Autoflow` 는 단일 작업 계획 파일 대신 보드 파일을 source of truth 로 쓰고, 기본 실행은 `ticket-owner` heartbeat 또는 `autoflow run ticket` 이 한 티켓을 끝까지 소유하는 쪽을 기준으로 한다.

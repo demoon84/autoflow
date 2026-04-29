@@ -697,23 +697,22 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
 }
 
 function boardFileKind(filePath: string) {
-  const normalizedPath = filePath.replace(/\\/g, "/");
-  if (normalizedPath.includes("/tickets/")) {
+  if (filePath.includes("/tickets/")) {
     return "티켓";
   }
-  if (normalizedPath.includes("/wiki/")) {
+  if (filePath.includes("/wiki/")) {
     return "위키";
   }
-  if (normalizedPath.includes("/metrics/")) {
+  if (filePath.includes("/metrics/")) {
     return "지표";
   }
-  if (normalizedPath.includes("/conversations/")) {
-    return "소스 · Handoff";
+  if (filePath.includes("/conversations/")) {
+    return "소스 · 전달함";
   }
-  if (normalizedPath.includes("/runners/logs/")) {
+  if (filePath.includes("/runners/logs/")) {
     return "AI";
   }
-  if (normalizedPath.includes("/logs/")) {
+  if (filePath.includes("/logs/")) {
     return "로그";
   }
 

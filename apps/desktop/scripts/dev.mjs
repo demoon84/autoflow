@@ -5,12 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const electronBin = path.join(
-  desktopRoot,
-  "node_modules",
-  ".bin",
-  process.platform === "win32" ? "electron.cmd" : "electron"
-);
+const electronBin = path.join(desktopRoot, "node_modules", ".bin", "electron");
 
 const server = await createServer({
   configFile: path.join(desktopRoot, "vite.config.ts"),

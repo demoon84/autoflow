@@ -96,22 +96,7 @@ default_board_dir_name() {
 }
 
 normalize_input_path() {
-  local raw_path="$1"
-
-  case "$raw_path" in
-    [A-Za-z]:[\\/]*)
-      if command -v wslpath >/dev/null 2>&1; then
-        wslpath -a -u "$raw_path"
-        return 0
-      fi
-      if command -v cygpath >/dev/null 2>&1; then
-        cygpath -a -u "$raw_path"
-        return 0
-      fi
-      ;;
-  esac
-
-  printf '%s' "$raw_path"
+  printf '%s' "$1"
 }
 
 ensure_package_templates_present() {
@@ -184,7 +169,6 @@ template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
 template_text|conversations/README.md|conversations/README.md
 template_text|automations/README.md|automations/README.md
-template_text|automations/file-watch.psd1|automations/file-watch.psd1
 template_text|automations/state/README.md|automations/state/README.md
 template_text|automations/state/.gitignore|automations/state/.gitignore
 template_text|automations/templates/heartbeat-set.template.toml|automations/templates/heartbeat-set.template.toml
@@ -245,26 +229,6 @@ runtime_executable|handoff-todo.sh|scripts/handoff-todo.sh
 runtime_executable|start-verifier.sh|scripts/start-verifier.sh
 runtime_executable|start-spec.sh|scripts/start-spec.sh
 runtime_executable|integrate-worktree.sh|scripts/integrate-worktree.sh
-runtime_file|invoke-runtime-sh.ps1|scripts/invoke-runtime-sh.ps1
-runtime_file|runner-common.ps1|scripts/runner-common.ps1
-runtime_file|codex-stop-hook.ps1|scripts/codex-stop-hook.ps1
-runtime_file|check-stop.ps1|scripts/check-stop.ps1
-runtime_file|install-stop-hook.ps1|scripts/install-stop-hook.ps1
-runtime_file|set-thread-context.ps1|scripts/set-thread-context.ps1
-runtime_file|clear-thread-context.ps1|scripts/clear-thread-context.ps1
-runtime_file|start-ticket-owner.ps1|scripts/start-ticket-owner.ps1
-runtime_file|verify-ticket-owner.ps1|scripts/verify-ticket-owner.ps1
-runtime_file|finish-ticket-owner.ps1|scripts/finish-ticket-owner.ps1
-runtime_file|merge-ready-ticket.ps1|scripts/merge-ready-ticket.ps1
-runtime_file|start-spec.ps1|scripts/start-spec.ps1
-runtime_file|start-plan.ps1|scripts/start-plan.ps1
-runtime_file|start-todo.ps1|scripts/start-todo.ps1
-runtime_file|handoff-todo.ps1|scripts/handoff-todo.ps1
-runtime_file|start-verifier.ps1|scripts/start-verifier.ps1
-runtime_file|integrate-worktree.ps1|scripts/integrate-worktree.ps1
-runtime_file|write-verifier-log.ps1|scripts/write-verifier-log.ps1
-runtime_file|run-hook.ps1|scripts/run-hook.ps1
-runtime_file|watch-board.ps1|scripts/watch-board.ps1
 runtime_executable|watch-board.sh|scripts/watch-board.sh
 template_text|rules/verifier/README.md|rules/verifier/README.md
 template_text|rules/verifier/checklist-template.md|rules/verifier/checklist-template.md
@@ -310,11 +274,16 @@ EOF
 
 ensure_board_directories() {
   local board_root="$1"
-  local rel_dir
+  local rel_dir target_dir keepfile
 
   while IFS= read -r rel_dir; do
     [ -n "$rel_dir" ] || continue
-    mkdir -p "${board_root}/${rel_dir}"
+    target_dir="${board_root}/${rel_dir}"
+    mkdir -p "$target_dir"
+    keepfile="${target_dir}/.gitkeep"
+    if [ ! -e "$keepfile" ]; then
+      : > "$keepfile"
+    fi
   done < <(managed_board_directory_entries)
 }
 
@@ -367,7 +336,7 @@ build_asset_temp_file() {
       source_file="${SOURCE_REPO_ROOT}/${source_rel}"
       cp "$source_file" "$temp_file"
       ;;
-    runtime_file|runtime_executable)
+    runtime_executable)
       source_file="${RUNTIME_SCRIPTS_ROOT}/${source_rel}"
       cp "$source_file" "$temp_file"
       ;;

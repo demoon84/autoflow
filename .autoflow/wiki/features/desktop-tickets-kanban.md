@@ -19,3 +19,7 @@ The design was further refined in `prd_019`, `prd_024`, and `prd_030` into the c
 
 ## Current Recommendation
 For documentation on the active ticket management interface, please refer to the **[[features/ticket-workspace-tabs]]** page.
+
+## Related Context
+- Wider Desktop detail surfaces that followed the dialog transition are tracked in **[[features/desktop-layer-width]]**.
+- Later ticket-workspace alignment constraints and left-edge list fixes are documented in **[[features/ticket-workspace-tabs]]**.

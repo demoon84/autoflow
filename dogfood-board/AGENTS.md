@@ -52,14 +52,13 @@
 
 ## Runtime Command Convention
 
-- Windows 에서는 `scripts/*.ps1` 래퍼를 우선 실행한다. 예: `powershell -ExecutionPolicy Bypass -File autoflow/scripts/start-ticket-owner.ps1`
-- Bash 전용 환경에서는 같은 이름의 `scripts/*.sh` 를 실행한다.
-- 문서에서 `start-ticket-owner 런타임`, `verify-ticket-owner 런타임`, `finish-ticket-owner 런타임`, `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 위 규칙에 따라 `.ps1` 또는 `.sh` 중 환경에 맞는 진입점을 고른다.
+- 모든 런타임 진입점은 `scripts/*.sh` 다. 예: `autoflow/scripts/start-ticket-owner.sh`
+- 문서에서 `start-ticket-owner 런타임`, `verify-ticket-owner 런타임`, `finish-ticket-owner 런타임`, `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임`, `write-verifier-log 런타임` 이라고 하면 같은 이름의 `.sh` 진입점을 가리킨다.
 
 ## Core Rules
 
 1. 스펙이 없으면 Ticket Owner 는 backlog 기반 새 티켓을 만들지 않는다. legacy role-pipeline 에서는 스펙이 없으면 플랜도 티켓도 만들지 않는다.
-2. 기본 실행은 `scripts/start-ticket-owner.*` 로 한 owner 가 티켓을 만들거나 점유한 뒤, 같은 owner 가 local plan / 구현 / 검증 / evidence / done-reject 이동까지 처리한다.
+2. 기본 실행은 `scripts/start-ticket-owner.sh` 로 한 owner 가 티켓을 만들거나 점유한 뒤, 같은 owner 가 local plan / 구현 / 검증 / evidence / done-reject 이동까지 처리한다.
 3. 레거시 role-pipeline 에서 플랜은 `#plan` heartbeat 가 spec 에서 도출해 만든다. 사람이 손으로 만들 수도 있다.
 4. 레거시 role-pipeline 에서 새 티켓은 planner agent 가 plan 의 Execution Candidates 를 보고 `tickets/todo/` 에 직접 작성한다. `start-plan.sh` 는 각 Candidate 에 대해 ID/경로/lock/중복체크를 해주고 `pending_ticket_begin ... pending_ticket_end` 블록을 출력하며, agent 가 해당 블록마다 `tickets_{id}.md` 본문을 `reference/ticket-template.md` 기반으로 작성한다. `Plan Candidate` 필드는 script 의 `candidate` 값을 글자 그대로 복사해야 dedup 이 동작한다.
 5. legacy planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 옮겨 backlog / plan 루트에서 빠져야 한다. 기본 Ticket Owner 는 처리한 spec 을 바로 done 프로젝트 폴더로 보관한다.
@@ -130,11 +129,11 @@
 
 해야 하는 일:
 
-- `scripts/start-ticket-owner.*` 실행 후 출력된 `ticket`, `implementation_root`, `run`, `done_target`, `reject_target` 를 기준으로 작업한다.
+- `scripts/start-ticket-owner.sh` 실행 후 출력된 `ticket`, `implementation_root`, `run`, `done_target`, `reject_target` 를 기준으로 작업한다.
 - 티켓의 `Allowed Paths` 안에서만 구현하고, 진행 상황은 `Notes`, `Next Action`, `Resume Context`, `Result` 에 남긴다.
-- 검증 준비가 되면 `scripts/verify-ticket-owner.* <ticket-id>` 로 `tickets/inprogress/verify_NNN.md` evidence 를 만든다.
-- pass 면 `scripts/finish-ticket-owner.* <ticket-id> pass "<summary>"` 로 worktree 통합, done 이동, completion log, local commit 을 처리한다.
-- fail 이고 owner 가 같은 scope 안에서 고칠 수 없으면 `scripts/finish-ticket-owner.* <ticket-id> fail "<concrete reason>"` 으로 reject 와 completion log 를 남긴다.
+- 검증 준비가 되면 `scripts/verify-ticket-owner.sh <ticket-id>` 로 `tickets/inprogress/verify_NNN.md` evidence 를 만든다.
+- pass 면 `scripts/finish-ticket-owner.sh <ticket-id> pass "<summary>"` 로 worktree 통합, done 이동, completion log, local commit 을 처리한다.
+- fail 이고 owner 가 같은 scope 안에서 고칠 수 없으면 `scripts/finish-ticket-owner.sh <ticket-id> fail "<concrete reason>"` 으로 reject 와 completion log 를 남긴다.
 
 하면 안 되는 일:
 
@@ -190,7 +189,7 @@
 - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태 폴더가 `todo` 또는 `inprogress` 이면 그대로 구현 단계로 처리
 - 티켓의 `Worktree.Path` 또는 `implementation_root` 에서 `Allowed Paths` 범위 안으로 Goal 구현. 여러 heartbeat tick 에 걸쳐 Resume Context 로 이어가도 됨
 - 기존 `inprogress` 재개 시에는 `scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다
-- 완료 시 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.*` 런타임으로 중앙 보드 파일을 `tickets/verifier/` 로 넘기고 현재 ticket 문맥만 비운다
+- 완료 시 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.sh` 런타임으로 중앙 보드 파일을 `tickets/verifier/` 로 넘기고 현재 ticket 문맥만 비운다
 
 하면 안 되는 일:
 
@@ -346,7 +345,7 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `T
 4. 티켓 제목 / Goal / Done When 이 검증처럼 보여도 stage 가 `todo` 또는 `executing` 인 한 todo worker 가 구현을 계속 진행한다. legacy role-pipeline 에서는 verifier 만 pass / fail 을 판정한다.
 5. 티켓 `Worktree.Path` 또는 `implementation_root` 에서 `Allowed Paths` 범위 안으로 Goal 구현 (한 tick 에 끝내지 못하면 Resume Context 남기고 다음 tick 에 이어감).
 6. 기존 `inprogress` 재개 시에는 `scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥을 현재 ticket 에 맞춘다.
-7. `Done When` 충족되면 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.*` 런타임으로 티켓을 `tickets/verifier/` 로 넘긴다. 이 런타임이 이동과 `clear-thread-context --active-only` 를 함께 수행해 현재 ticket 문맥만 비운다.
+7. `Done When` 충족되면 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.sh` 런타임으로 티켓을 `tickets/verifier/` 로 넘긴다. 이 런타임이 이동과 `clear-thread-context --active-only` 를 함께 수행해 현재 ticket 문맥만 비운다.
 8. 다른 티켓 생성 / 검증 / commit / push 금지.
 
 Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Verification Mode` 로 해석한다 (heartbeat 대상).

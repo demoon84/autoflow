@@ -33,7 +33,6 @@ autoflow/
     desktop/
   bin/
     autoflow
-    autoflow.ps1
   docs/
   examples/
   packages/
@@ -123,8 +122,7 @@ projects install to `.autoflow/`.
 ## Migration Plan
 
 1. Done: Add scaffold manifest support while keeping current paths working.
-2. Done: Teach Bash and PowerShell installers to read source paths from the
-   manifest.
+2. Done: Teach the Bash installer to read source paths from the manifest.
 3. Done: Move `templates/board/` and `templates/host-AGENTS.md` into
    `scaffold/`.
 4. Done: Fold root `agents/`, `automations/`, `reference/`, and `rules/`

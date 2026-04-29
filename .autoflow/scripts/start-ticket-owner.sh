@@ -403,7 +403,9 @@ prepare_ticket_owner_context() {
 - Log file: pending
 - Result: pending ticket-owner by ${display_id}"
   replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
-  append_note "$ticket_file" "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")"
+  append_note_replacing "$ticket_file" \
+    "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")" \
+    "AI ${display_id} prepared ${source_kind}"
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
 

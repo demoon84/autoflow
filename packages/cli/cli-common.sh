@@ -38,22 +38,7 @@ autoflow_cleanup_tmp() {
 trap autoflow_cleanup_tmp EXIT
 
 normalize_input_path() {
-  local raw_path="$1"
-
-  case "$raw_path" in
-    [A-Za-z]:[\\/]*)
-      if command -v wslpath >/dev/null 2>&1; then
-        wslpath -a -u "$raw_path"
-        return 0
-      fi
-      if command -v cygpath >/dev/null 2>&1; then
-        cygpath -a -u "$raw_path"
-        return 0
-      fi
-      ;;
-  esac
-
-  printf '%s' "$raw_path"
+  printf '%s' "$1"
 }
 
 scaffold_manifest_value() {

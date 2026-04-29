@@ -85,13 +85,12 @@ The stop hook supplements heartbeats. It does not replace them.
 
 ## File Watch Mode (DEPRECATED legacy script-driven trigger)
 
-File-watch hooks (`watch-board.sh` / `watch-board.ps1` → `run-hook.sh` /
-`run-hook.ps1`) can dispatch work when board files change. **This is the
-legacy script-driven trigger pattern**; the supported execution model is
-the heartbeat-driven 3-runner topology where AI runners read board state
-each minute and call scripts as tools. Use file-watch only as a
-backwards-compat fallback for environments where the minute heartbeat is
-unreliable.
+File-watch hooks (`watch-board.sh` → `run-hook.sh`) can dispatch work
+when board files change. **This is the legacy script-driven trigger
+pattern**; the supported execution model is the heartbeat-driven
+3-runner topology where AI runners read board state each minute and
+call scripts as tools. Use file-watch only as a backwards-compat
+fallback for environments where the minute heartbeat is unreliable.
 
 Typical routes (when file-watch is enabled):
 

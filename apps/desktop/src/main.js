@@ -259,25 +259,9 @@ function createWindow() {
 }
 
 function cliInvocation(args) {
-  const normalizedArgs = args.map((arg) => String(arg));
-
-  if (process.platform === "win32") {
-    return {
-      command: "powershell.exe",
-      args: [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        path.join(repoRoot, "bin", "autoflow.ps1"),
-        ...normalizedArgs
-      ]
-    };
-  }
-
   return {
     command: path.join(repoRoot, "bin", "autoflow"),
-    args: normalizedArgs
+    args: args.map((arg) => String(arg))
   };
 }
 
@@ -310,8 +294,7 @@ function runAutoflowArgs(args, options = {}) {
       env: {
         ...process.env,
         ...(options.env || {})
-      },
-      windowsHide: true
+      }
     });
     activeChildProcesses.add(child);
 
@@ -540,23 +523,6 @@ async function ensureProjectHostSkills(options = {}) {
 
 function commandExists(command) {
   return new Promise((resolve) => {
-    const invocation =
-      process.platform === "win32"
-        ? {
-            command: "powershell.exe",
-            args: [
-              "-NoProfile",
-              "-ExecutionPolicy",
-              "Bypass",
-              "-Command",
-              "& { param($Name) if (Get-Command -Name $Name -ErrorAction SilentlyContinue) { exit 0 } exit 1 }",
-              command
-            ]
-          }
-        : {
-            command: "bash",
-            args: ["-lc", `command -v ${command}`]
-          };
     let settled = false;
     const finish = (exists) => {
       if (settled) {
@@ -566,10 +532,9 @@ function commandExists(command) {
       clearTimeout(timeout);
       resolve(exists);
     };
-    const child = spawn(invocation.command, invocation.args, {
+    const child = spawn("bash", ["-lc", `command -v ${command}`], {
       cwd: repoRoot,
-      env: process.env,
-      windowsHide: true
+      env: process.env
     });
     const timeout = setTimeout(() => {
       child.kill();
@@ -2112,7 +2077,6 @@ function withScopeMemory(handler) {
 }
 
 function listChildPids(parentPid) {
-  if (process.platform === "win32") return [];
   try {
     const { spawnSync } = require("node:child_process");
     const result = spawnSync("pgrep", ["-P", String(parentPid)], {
@@ -2145,19 +2109,6 @@ function collectProcessTree(rootPid, visited = new Set()) {
 function killPidGracefully(pid) {
   if (!Number.isInteger(pid) || pid <= 0) {
     return false;
-  }
-
-  if (process.platform === "win32") {
-    try {
-      const { spawnSync } = require("node:child_process");
-      const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore"
-      });
-      return result.status === 0;
-    } catch {
-      return false;
-    }
   }
 
   const tree = collectProcessTree(pid);

@@ -9,3 +9,4 @@ Each lesson should cite its source.
 - [[ticket-overlap-no-op]]
 - [[merge-blocked-already-applied-patch]]
 - [[manual-merge-recovery-20260427]]
+- [[runtime-log-scope-vs-finish-contract-20260429]]

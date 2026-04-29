@@ -36,33 +36,7 @@ autoflow_cleanup_tmp() {
 trap autoflow_cleanup_tmp EXIT
 
 normalize_runtime_path() {
-  local raw="${1:-}"
-  local drive rest flavor
-
-  case "$raw" in
-    [A-Za-z]:[\\/]*)
-      drive="$(printf '%s' "${raw%%:*}" | tr '[:upper:]' '[:lower:]')"
-      rest="${raw#?:}"
-      rest="${rest//\\//}"
-      rest="${rest#/}"
-      flavor="${AUTOFLOW_BASH_FLAVOR:-}"
-      if [ -z "$flavor" ]; then
-        case "$(uname -s 2>/dev/null || true)" in
-          MINGW*|MSYS*) flavor="msys" ;;
-          CYGWIN*) flavor="cygwin" ;;
-          *) flavor="wsl" ;;
-        esac
-      fi
-      case "$flavor" in
-        msys) printf '/%s/%s' "$drive" "$rest" ;;
-        cygwin) printf '/cygdrive/%s/%s' "$drive" "$rest" ;;
-        *) printf '/mnt/%s/%s' "$drive" "$rest" ;;
-      esac
-      ;;
-    *)
-      printf '%s' "$raw"
-      ;;
-  esac
+  printf '%s' "${1:-}"
 }
 
 BOARD_ROOT="$(normalize_runtime_path "${AUTOFLOW_BOARD_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}")"
@@ -718,6 +692,47 @@ append_note() {
       in_notes=0
       print
       next
+    }
+    { print }
+    END {
+      if (in_notes && !inserted) {
+        print "- " note
+      } else if (!inserted) {
+        print ""
+        print "## Notes"
+        print "- " note
+      }
+    }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+}
+
+append_note_replacing() {
+  local file="$1"
+  local note="$2"
+  local key_prefix="$3"
+  local tmp
+  tmp="$(autoflow_mktemp)"
+  awk -v note="$note" -v key="$key_prefix" '
+    BEGIN { in_notes=0; inserted=0 }
+    $0 == "## Notes" {
+      print
+      in_notes=1
+      next
+    }
+    in_notes && /^## / && !inserted {
+      print "- " note
+      inserted=1
+      in_notes=0
+      print
+      next
+    }
+    in_notes && key != "" {
+      body=$0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", body)
+      if (index(body, key) == 1) {
+        next
+      }
     }
     { print }
     END {
