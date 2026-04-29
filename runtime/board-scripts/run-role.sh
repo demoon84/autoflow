@@ -4,7 +4,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-source "${SCRIPT_DIR}/cli-common.sh"
+if [ -f "${SCRIPT_DIR}/cli-common.sh" ]; then
+  source "${SCRIPT_DIR}/cli-common.sh"
+else
+  source "${SCRIPT_DIR}/../../packages/cli/cli-common.sh"
+fi
 source "$(runtime_scripts_root)/runner-common.sh"
 
 usage() {
@@ -337,8 +341,60 @@ agent_instruction_path() {
   esac
 }
 
+role_boundary_for_current_role() {
+  # Emit only the boundary line for the current public_role. Other roles'
+  # boundaries are not relevant to this adapter call and shipping all of
+  # them inflates per-call token usage; agents loading their own role
+  # instruction file already see the full contract there.
+  case "$public_role" in
+    ticket)
+      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
+      ;;
+    planner)
+      printf '%s\n' "- planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push."
+      ;;
+    todo)
+      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
+      ;;
+    verifier)
+      printf '%s\n' "- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline."
+      ;;
+    wiki)
+      printf '%s\n' "- wiki: update derived wiki pages from done tickets, reject records, and logs. In the 3-runner topology this is \`wiki-1\`'s exclusive responsibility — Impl AI's \`finish-ticket-owner pass\` already runs the deterministic \`update-wiki.sh\` baseline inline, so \`wiki-1\` only layers AI synthesis on top. Never treat the wiki as proof of completion."
+      ;;
+    coordinator)
+      printf '%s\n' "- coordinator (legacy): diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Not part of the default 3-runner topology; kept as a backwards-compat role identifier. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push."
+      ;;
+    self-improve)
+      printf '%s\n' "- self-improve (trial): scan recent runner logs for repeated operational issues and emit low-risk improvement candidates as PRD drafts. Disabled by default; deterministic log scanner only — does not call AI tools."
+      ;;
+  esac
+}
+
+role_specific_required_flow_items() {
+  # Emit only role-relevant required-flow items. Items 1, 2, 4, 5, 6, 9,
+  # 10, 11 are shared and stay in the prompt body. Items 3, 7, 8 are
+  # role-specific and only ship when applicable.
+  case "$public_role" in
+    planner|ticket|todo)
+      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
+      ;;
+  esac
+  case "$public_role" in
+    ticket)
+      printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
+      ;;
+    coordinator)
+      printf '%s\n' "7. Do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime."
+      ;;
+  esac
+}
+
 write_agent_prompt() {
   local instruction_file="$1"
+  local role_specific_flow role_boundary_line
+  role_specific_flow="$(role_specific_required_flow_items)"
+  role_boundary_line="$(role_boundary_for_current_role)"
 
   cat <<EOF
 Autoflow Local Runner Mode
@@ -370,23 +426,15 @@ Language policy:
 Required flow:
 1. Read the role instruction file and the current board state.
 2. Execute exactly one safe ${public_role} turn.
-3. For planner, ticket-owner, and todo work, run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the spec/ticket title, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty.
-4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
+${role_specific_flow}4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
 5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
 6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-7. For ticket-owner work, the AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool.
-8. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
-9. Do not rely on this prompt as future memory.
-10. Never git push.
+9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
+10. Do not rely on this prompt as future memory.
+11. Never git push.
 
 Role boundary:
-- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push.
-- merge: finalize exactly one ready-to-merge ticket only after the ticket-owner AI already merged it. Never verify, rebase, cherry-pick, resolve conflicts, merge product code, change verification decisions, or push.
-- planner: create/update plans and todo ticket files only. Query the wiki before drafting or ticket generation. Do not implement, verify, commit, or push.
-- todo: claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push.
-- verifier: verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push.
-- wiki: update derived wiki pages from done tickets, reject records, and logs. Never treat the wiki as proof of completion.
-
+${role_boundary_line}
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.
 EOF
