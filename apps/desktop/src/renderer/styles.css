@@ -200,6 +200,7 @@ button:disabled {
 .log-row.MuiButton-root,
 .workflow-pin.MuiButton-root,
 .workflow-pin-item.MuiButton-root,
+.ticket-workspace-item.MuiButtonBase-root,
 .ticket-kanban-card.MuiButtonBase-root,
 .knowledge-sources-toggle.MuiButton-root {
   min-width: 0;
@@ -241,6 +242,7 @@ button:disabled {
 
 .workflow-pin.MuiButton-root,
 .workflow-pin-item.MuiButton-root,
+.ticket-workspace-item.MuiButtonBase-root,
 .ticket-kanban-card.MuiButtonBase-root {
   justify-content: stretch !important;
   padding: 0;
@@ -257,6 +259,13 @@ button:disabled {
 .workflow-pin-item.MuiButton-root {
   display: grid !important;
   align-items: center !important;
+  padding: 10px 12px;
+}
+
+.ticket-workspace-item.MuiButtonBase-root {
+  display: grid !important;
+  align-items: center !important;
+  justify-items: stretch !important;
   padding: 10px 12px;
 }
 
@@ -2471,8 +2480,10 @@ pre {
 .ticket-workspace-item-main {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
   min-width: 0;
+  text-align: left;
 }
 
 .ticket-workspace-item-main strong {
@@ -2489,6 +2500,7 @@ pre {
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: var(--font-size-meta);
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2504,6 +2516,7 @@ pre {
 .ticket-workspace-detail-meta {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 8px 12px;
   color: var(--muted-foreground);
   font-size: var(--font-size-meta);
