@@ -334,6 +334,28 @@ wiki_output_escape() {
   printf '%s' "$1" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'
 }
 
+wiki_file_checksum() {
+  local file="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{ print $1 }'
+  else
+    cksum "$file" | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+hash_stream() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{ print $1 }'
+  else
+    cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
 find_wiki_runner() {
   local board_root="$1"
   local explicit_runner_id="${2:-}"
@@ -471,6 +493,37 @@ run_wiki_adapter_prompt() {
   esac
 }
 
+semantic_lint_fingerprint_path() {
+  local board_root="$1"
+  local runner_id="$2"
+
+  mkdir -p "${board_root}/runners/state"
+  printf '%s/runners/state/%s.semantic-lint.fingerprint' "$board_root" "$runner_id"
+}
+
+semantic_lint_pages_fingerprint() {
+  local board_root="$1"
+  local pages_file="$2"
+  local page rel checksum
+
+  while IFS= read -r page; do
+    [ -n "$page" ] || continue
+    rel="$(relative_to_board "$board_root" "$page")"
+    checksum="$(wiki_file_checksum "$page")"
+    printf '%s  %s\n' "$checksum" "$rel"
+  done < "$pages_file" | hash_stream
+}
+
+semantic_lint_record_fingerprint() {
+  local board_root="$1"
+  local runner_id="$2"
+  local fingerprint="$3"
+  local path
+
+  path="$(semantic_lint_fingerprint_path "$board_root" "$runner_id")"
+  printf '%s\n' "$fingerprint" > "$path"
+}
+
 run_query_synth() {
   local project_root="$1"
   local board_root="$2"
@@ -541,7 +594,7 @@ run_semantic_lint() {
   local wiki_root="$3"
   local explicit_runner_id="${4:-}"
   local runner_id prompt_file stdout_file stderr_file adapter_exit
-  local pages_file line
+  local pages_file fingerprint_path current_fingerprint previous_fingerprint
 
   runner_id="$(find_wiki_runner "$board_root" "$explicit_runner_id" || true)"
   if [ -z "$runner_id" ]; then
@@ -555,6 +608,22 @@ run_semantic_lint() {
   stderr_file="$(autoflow_mktemp)"
 
   find "$wiki_root" -type f -name '*.md' ! -name 'README.md' | sort > "$pages_file"
+  current_fingerprint="$(semantic_lint_pages_fingerprint "$board_root" "$pages_file")"
+  fingerprint_path="$(semantic_lint_fingerprint_path "$board_root" "$runner_id")"
+  previous_fingerprint=""
+  if [ -f "$fingerprint_path" ]; then
+    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  fi
+
+  if [ -n "$previous_fingerprint" ] && [ "$current_fingerprint" = "$previous_fingerprint" ]; then
+    printf 'semantic_status=skipped_unchanged\n'
+    printf 'semantic_runner=%s\n' "$runner_id"
+    printf 'semantic_reason=wiki_inputs_unchanged\n'
+    printf 'semantic_fingerprint=%s\n' "$current_fingerprint"
+    printf 'semantic_fingerprint_path=%s\n' "$fingerprint_path"
+    return 0
+  fi
+
   {
     printf 'You review Autoflow wiki pages for contradictions, stale claims, and missing links.\n'
     printf 'Keep the exact output keys and format. Write natural-language summary values in Korean.\n'
@@ -566,7 +635,7 @@ run_semantic_lint() {
     while IFS= read -r page; do
       [ -n "$page" ] || continue
       printf -- '--- PAGE: %s ---\n' "$(relative_to_board "$board_root" "$page")"
-      sed -n '1,220p' "$page"
+      sed -n '1,80p' "$page"
       printf '\n'
     done < "$pages_file"
   } > "$prompt_file"
@@ -590,6 +659,8 @@ run_semantic_lint() {
 
   printf 'semantic_status=ok\n'
   printf 'semantic_runner=%s\n' "$runner_id"
+  printf 'semantic_fingerprint=%s\n' "$current_fingerprint"
+  printf 'semantic_fingerprint_path=%s\n' "$fingerprint_path"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     case "$line" in
@@ -598,6 +669,7 @@ run_semantic_lint() {
         ;;
     esac
   done < "$stdout_file"
+  semantic_lint_record_fingerprint "$board_root" "$runner_id" "$current_fingerprint"
 }
 
 run_query() {

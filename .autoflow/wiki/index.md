@@ -1,12 +1,13 @@
 # Wiki Index
 
-This wiki is derived from completed Autoflow work.
+This wiki is derived from completed Autoflow work, reject learnings, logs, and conversation handoffs.
 
 ## Managed Summary
 
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[features/finish-pass-inline-merge-summary]]** (`wiki/features/finish-pass-inline-merge-summary.md`): Captured the `prd_048` rule that fully successful `finish-ticket-owner.sh` inline merge finalization now emits one summary line, while debug paths keep the full merge output block.
 - **[[features/ticket-owner-verification-output-caps]]** (`wiki/features/ticket-owner-verification-output-caps.md`): Captured the `prd_047` rule that successful `verify-ticket-owner.sh` output uses a separate pass cap with first/last excerpts, while failure diagnostics keep the larger tail.
 - **[[features/run-role-prompt-dispatch]]** (`wiki/features/run-role-prompt-dispatch.md`): Extended the runtime prompt-shape contract with `prd_045` and `prd_046`, keeping planner and ticket-owner runtime outputs concise while preserving machine-readable keys.
 - **[[features/desktop-runner-model-options]]** (`wiki/features/desktop-runner-model-options.md`): Recorded the `prd_040` rule that Gemini stays selectable in Desktop, but unsupported Gemini 3.1 preview model ids stay out of `runnerAgentModelOptions.gemini`.
@@ -36,7 +37,12 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[features/desktop-gemini-icon]] (`wiki/features/desktop-gemini-icon.md`)
   - [[features/in-app-help]] (`wiki/features/in-app-help.md`)
   - [[features/desktop-runner-controls]] (`wiki/features/desktop-runner-controls.md`)
+  - [[features/finish-pass-inline-merge-summary]] (`wiki/features/finish-pass-inline-merge-summary.md`)
   - [[features/desktop-statistics-page]] (`wiki/features/desktop-statistics-page.md`)
+  - [[features/desktop-layer-width]] (`wiki/features/desktop-layer-width.md`)
+  - [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
+  - [[features/planner-next-action-cues]] (`wiki/features/planner-next-action-cues.md`)
+  - [[features/run-role-prompt-dispatch]] (`wiki/features/run-role-prompt-dispatch.md`)
   - [[features/ticket-owner-verification-output-caps]] (`wiki/features/ticket-owner-verification-output-caps.md`)
   - [[features/wiki-bot-codex-adapter]] (`wiki/features/wiki-bot-codex-adapter.md`)
 - `decisions/`
@@ -51,6 +57,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
+  - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 
 ## Archive
 - [[features/desktop-tickets-kanban]] (`wiki/features/desktop-tickets-kanban.md`) (Legacy)
@@ -58,6 +65,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 <!-- AUTOFLOW:BEGIN feature-links -->
 ## Added Feature Pages
 
+- [[features/finish-pass-inline-merge-summary]] (`wiki/features/finish-pass-inline-merge-summary.md`)
 - [[features/planner-next-action-cues]] (`wiki/features/planner-next-action-cues.md`)
 - [[features/run-role-prompt-dispatch]] (`wiki/features/run-role-prompt-dispatch.md`)
 - [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
@@ -72,11 +80,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 44
-- Reject records: 1
-- Verifier logs: 233
+- Done tickets: 45
+- Reject records: 2
+- Verifier logs: 245
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T06:51:47Z
+- Last updated: 2026-04-29T07:50:48Z
 
 ## Completed Tickets
 

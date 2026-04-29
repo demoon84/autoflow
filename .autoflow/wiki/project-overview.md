@@ -2,9 +2,9 @@
 
 ## Summary
 
-Autoflow is an AI-native project orchestration system. 
-As of April 28, 2026, the project has reached a stable 3-runner topology (Planner, Worker, Wiki) with a polished Desktop UI.
-Total completed tickets: 38 (updated regularly via automated ticket-owner flow and direct PRD-to-done transitions).
+Autoflow is an AI-native project orchestration system.
+As of April 29, 2026, the project has reached a stable 3-runner topology (Planner, Worker, Wiki) with a polished Desktop UI.
+Total completed tickets: 44 (updated regularly via automated ticket-owner flow and direct PRD-to-done transitions).
 
 
 ## Key Decisions
@@ -31,11 +31,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 44
-- Reject records: 1
-- Verifier logs: 233
+- Done tickets: 45
+- Reject records: 2
+- Verifier logs: 245
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T06:51:47Z
+- Last updated: 2026-04-29T07:50:48Z
 
 ## Latest Completed Work
 

@@ -1,6 +1,6 @@
 # Wiki Log
 
-Chronological notes derived from completed tickets.
+Chronological notes derived from completed tickets, reject learnings, and operational logs.
 
 ## Managed Log
 
@@ -32,7 +32,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-29T06:51:47Z
+- Last rebuilt: 2026-04-29T07:50:48Z
 
 ### Completed Tickets
 
@@ -83,6 +83,7 @@ Each entry should cite its source ticket or log.
 ### Reject Records
 
 - reject_003. Source: `tickets/done/prd_003/reject_003.md`.
+- reject_049. Source: `tickets/reject/reject_049.md`.
 
 ### Conversation Handoffs
 
