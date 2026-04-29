@@ -138,7 +138,8 @@ const settingsNavigation = [
   { key: "progress", label: "작업", icon: Workflow },
   { key: "kanban", label: "Tickets", icon: KanbanSquare },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
-  { key: "snapshot", label: "통계", icon: BarChart3 }
+  { key: "snapshot", label: "통계", icon: BarChart3 },
+  { key: "logs", label: "로그", icon: Terminal }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
@@ -671,13 +672,12 @@ function runnerIsEnabled(value: string) {
   return value ? value === "true" : true;
 }
 
-function recentLogs(board: AutoflowBoardSnapshot | null): DisplayLog[] {
+function recentLogs(board: AutoflowBoardSnapshot | null, limit: number | null = 16): DisplayLog[] {
   const boardLogs = (board?.logs || []).map((log) => ({ ...log, source: "Board" as const }));
   const runnerLogs = (board?.runnerLogs || []).map((log) => ({ ...log, source: "Runner" as const }));
 
-  return [...boardLogs, ...runnerLogs]
-    .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
-    .slice(0, 16);
+  const sorted = [...boardLogs, ...runnerLogs].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  return limit == null ? sorted : sorted.slice(0, limit);
 }
 
 function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
@@ -1676,6 +1676,36 @@ function App() {
                             isLoading={isReadingLog}
                             error={logError}
                           />
+                        </div>
+                      </div>
+                    </PageLayout>
+                  </section>
+                </section>
+              )}
+
+              {activeSettingsSection === "logs" && (
+                <section className="dashboard-area" aria-label="로그">
+                  <section className="board-section board-section-flush" aria-label="로그 본문">
+                    <PageLayout className="knowledge-page">
+                      <div className="knowledge-split">
+                        <div className="tool-panel knowledge-list-pane">
+                          <div className="section-heading compact">
+                            <div>
+                              <div className="section-kicker">전체</div>
+                              <h3>로그</h3>
+                            </div>
+                            <Terminal className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                          <LogList
+                            board={board}
+                            selectedPath={selectedLogPath}
+                            onSelect={readLog}
+                            limit={null}
+                            className="log-list-fill"
+                          />
+                        </div>
+                        <div className="knowledge-preview-pane">
+                          <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
                         </div>
                       </div>
                     </PageLayout>
@@ -5372,20 +5402,24 @@ function AiProgressRow({
 function LogList({
   board,
   selectedPath,
-  onSelect
+  onSelect,
+  limit = 16,
+  className
 }: {
   board: AutoflowBoardSnapshot | null;
   selectedPath: string;
   onSelect: (filePath: string) => void;
+  limit?: number | null;
+  className?: string;
 }) {
-  const logs = React.useMemo(() => recentLogs(board), [board]);
+  const logs = React.useMemo(() => recentLogs(board, limit), [board, limit]);
 
   if (!logs.length) {
     return <div className="empty-panel">로그가 없습니다</div>;
   }
 
   return (
-    <div className="log-list">
+    <div className={`log-list${className ? ` ${className}` : ""}`}>
       {logs.map((log) => (
         <Button
           key={log.filePath}
