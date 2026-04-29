@@ -30,6 +30,7 @@ You are the orchestrator. The commands below are tools you call. The runner tick
 - `autoflow wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
 - `autoflow wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
 - `autoflow wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
+- `autoflow wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
 - `autoflow wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
 - File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
@@ -46,6 +47,19 @@ Single-source-of-AI-synthesis rule: AI-driven wiki synthesis lives only in this 
 Verifiers may set `AUTOFLOW_WIKI_LINT_DEBUG_PROMPT_PATH=<file>` to copy the assembled adapter prompt to disk for inspection. The prompt explicitly instructs the model that unchanged pages have been elided so it does not interpret missing pages as deletions.
 
 When you spot an issue that needs attention, prefer adding a focused entity/concept page or refreshing an existing one over expanding the prompt. Token cost grows with what the adapter sees, not with what the wiki contains.
+
+## Raw source ingest
+
+`autoflow wiki ingest` creates two layers:
+
+1. `wiki-raw/<slug>.md` is the raw-sources layer. It starts with frontmatter (`kind: raw_source`, `slug`, `original_path`, `ingested_at`, `updated_at`, `sha256`) and then stores the source body verbatim. The LLM may read this file but should not rewrite it.
+2. `wiki/sources/<slug>.md` is the wiki summary layer. It starts with frontmatter (`kind: source_summary`, `slug`, `created`, `updated`, `raw_source`, `entities`, `concepts`) and cites the raw file under `## Source`.
+
+The command stores the last successfully summarized sha256 at `runners/state/<runner_id>.ingest.sources.d/<slug>`. If the raw source is unchanged and the summary exists, the adapter is not invoked and the command emits `ingest_status=skipped_unchanged_source` plus `ingest_summary_status=skipped_unchanged`.
+
+`AUTOFLOW_WIKI_INGEST_PROMPT_BYTES` caps the ingest adapter prompt (default `16384`). If the source body exceeds the budget, the prompt includes the leading bytes and an explicit `...[truncated]...` marker, while the full raw file remains preserved. `AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH=<file>` copies the assembled prompt for verifier inspection.
+
+Use `--no-summary` when you only want to populate `wiki-raw/`; it emits `ingest_summary_status=skipped_no_summary_flag` and does not call the adapter.
 
 ## Rules
 

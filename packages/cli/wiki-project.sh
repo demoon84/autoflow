@@ -11,12 +11,14 @@ Usage:
   wiki-project.sh update [project-root] [board-dir-name] [--dry-run]
   wiki-project.sh lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
+  wiki-project.sh ingest [project-root] [board-dir-name] <source-file> [--slug SLUG] [--no-summary] [--runner RUNNER_ID]
 
 Examples:
   wiki-project.sh update /path/to/project
   wiki-project.sh lint /path/to/project .autoflow --semantic
   wiki-project.sh query /path/to/project --term auth --term session --limit 5 --synth
   wiki-project.sh query /path/to/project --term wiki --term lint --synth --save-as wiki-lint-summary
+  wiki-project.sh ingest /path/to/project .autoflow docs/source.md --slug source-doc
 
 Environment:
   AUTOFLOW_WIKI_LINT_PROMPT_BYTES    Byte cap for the semantic-lint adapter prompt (default 32768).
@@ -27,6 +29,9 @@ Environment:
                                      When set, the assembled adapter prompt is copied to that path
                                      before the adapter is invoked. Used by verifiers to confirm
                                      only changed pages are included.
+  AUTOFLOW_WIKI_INGEST_PROMPT_BYTES  Byte cap for the ingest adapter prompt (default 16384).
+  AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH
+                                     When set, the assembled ingest prompt is copied to that path.
 EOF
 }
 
@@ -789,6 +794,455 @@ save_synth_answer() {
   printf 'synth_save_updated=%s\n' "$now"
 }
 
+wiki_yaml_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+wiki_slug_from_source() {
+  local source_file="$1"
+  local base
+
+  base="$(basename "$source_file")"
+  base="${base%.*}"
+  printf '%s' "$base" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/[^a-z0-9_-]/-/g' -e 's/--*/-/g' -e 's/^[-_]*//' -e 's/[-_]*$//'
+}
+
+wiki_validate_lower_slug() {
+  case "${1:-}" in
+    ""|*[!a-z0-9_-]*)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+wiki_resolve_source_path() {
+  local project_root="$1"
+  local source_input="$2"
+  local normalized
+
+  normalized="$(normalize_input_path "$source_input")"
+  case "$normalized" in
+    /*|[A-Za-z]:[\\/]*)
+      printf '%s' "$normalized"
+      ;;
+    *)
+      printf '%s/%s' "$project_root" "$normalized"
+      ;;
+  esac
+}
+
+ingest_source_state_dir() {
+  local board_root="$1"
+  local runner_id="$2"
+  local dir
+
+  dir="${board_root}/runners/state/${runner_id}.ingest.sources.d"
+  mkdir -p "$dir"
+  printf '%s' "$dir"
+}
+
+extract_frontmatter_value() {
+  local file="$1"
+  local key="$2"
+
+  awk -v key="$key" '
+    NR == 1 && $0 != "---" { exit }
+    NR > 1 && $0 == "---" { exit }
+    NR > 1 {
+      prefix = key ":"
+      if (index($0, prefix) == 1) {
+        sub("^" key ":[[:space:]]*", "", $0)
+        print
+        exit
+      }
+    }
+  ' "$file" 2>/dev/null || true
+}
+
+ingest_write_raw_source() {
+  local board_root="$1"
+  local source_file="$2"
+  local source_input="$3"
+  local slug="$4"
+  local sha="$5"
+  local raw_path="$6"
+  local now="$7"
+  local existing_sha existing_ingested tmp
+
+  existing_sha=""
+  existing_ingested="$now"
+  if [ -f "$raw_path" ]; then
+    existing_sha="$(extract_frontmatter_value "$raw_path" "sha256")"
+    existing_ingested="$(extract_frontmatter_value "$raw_path" "ingested_at")"
+    [ -n "$existing_ingested" ] || existing_ingested="$now"
+  fi
+
+  if [ -f "$raw_path" ] && [ "$existing_sha" = "$sha" ]; then
+    printf 'ingest_status=skipped_unchanged_source\n'
+    printf 'ingest_raw_path=%s\n' "$(relative_to_board "$board_root" "$raw_path")"
+    return 0
+  fi
+
+  tmp="$(autoflow_mktemp)"
+  {
+    printf -- '---\n'
+    printf 'kind: raw_source\n'
+    printf 'slug: %s\n' "$slug"
+    printf 'original_path: "%s"\n' "$(wiki_yaml_escape "$source_input")"
+    printf 'ingested_at: %s\n' "$existing_ingested"
+    printf 'updated_at: %s\n' "$now"
+    printf 'sha256: %s\n' "$sha"
+    printf -- '---\n\n'
+    cat "$source_file"
+  } > "$tmp"
+  mv "$tmp" "$raw_path"
+
+  if [ -n "$existing_sha" ]; then
+    printf 'ingest_status=updated_source\n'
+  else
+    printf 'ingest_status=ok\n'
+  fi
+  printf 'ingest_raw_path=%s\n' "$(relative_to_board "$board_root" "$raw_path")"
+}
+
+ingest_append_source_index_entry() {
+  local board_root="$1"
+  local slug="$2"
+  local title="$3"
+  local index_file="${board_root}/wiki/index.md"
+  local entry
+
+  mkdir -p "$(dirname "$index_file")"
+  [ -f "$index_file" ] || write_default_pages "$(autoflow_mktemp)" "$(autoflow_mktemp)" "$(autoflow_mktemp)"
+
+  entry="- [[sources/${slug}]] (${title:-source summary})"
+  if [ -f "$index_file" ] && grep -Fq "[[sources/${slug}]]" "$index_file"; then
+    return 0
+  fi
+
+  {
+    if [ -f "$index_file" ]; then
+      cat "$index_file"
+      printf '\n'
+    else
+      printf '# Wiki Index\n\n'
+    fi
+    if ! grep -Fq '## sources/' "$index_file" 2>/dev/null; then
+      printf '## sources/\n\n'
+    fi
+    printf '%s\n' "$entry"
+  } > "${index_file}.tmp"
+  mv "${index_file}.tmp" "$index_file"
+}
+
+ingest_adapter_value() {
+  local file="$1"
+  local key="$2"
+
+  awk -v key="$key" -F= '
+    $1 == key {
+      sub(/^[^=]*=/, "", $0)
+      print
+      exit
+    }
+  ' "$file" 2>/dev/null || true
+}
+
+ingest_yaml_names_for_prefix() {
+  local file="$1"
+  local prefix="$2"
+  local default_value="$3"
+  local found=0
+
+  awk -F= -v prefix="$prefix" '
+    index($1, prefix) == 1 && $1 ~ /\.name$/ {
+      value=$0
+      sub(/^[^=]*=/, "", value)
+      if (value != "") print value
+    }
+  ' "$file" | while IFS= read -r value; do
+    found=1
+    printf '  - "%s"\n' "$(wiki_yaml_escape "$value")"
+  done
+
+  if [ "$found" -eq 0 ] && [ -n "$default_value" ]; then
+    printf '  - "%s"\n' "$(wiki_yaml_escape "$default_value")"
+  fi
+}
+
+ingest_markdown_list_for_prefix() {
+  local file="$1"
+  local prefix="$2"
+  local empty_text="$3"
+  local values_file
+
+  values_file="$(autoflow_mktemp)"
+  awk -F= -v prefix="$prefix" '
+    index($1, prefix) == 1 && $1 ~ /\.name$/ {
+      key=$1
+      idx=key
+      sub("^" prefix, "", idx)
+      sub("\\.name$", "", idx)
+      name=$0
+      sub(/^[^=]*=/, "", name)
+      names[idx]=name
+    }
+    index($1, prefix) == 1 && $1 ~ /\.kind$/ {
+      key=$1
+      idx=key
+      sub("^" prefix, "", idx)
+      sub("\\.kind$", "", idx)
+      kind=$0
+      sub(/^[^=]*=/, "", kind)
+      kinds[idx]=kind
+    }
+    index($1, prefix) == 1 && $1 ~ /\.note$/ {
+      key=$1
+      idx=key
+      sub("^" prefix, "", idx)
+      sub("\\.note$", "", idx)
+      note=$0
+      sub(/^[^=]*=/, "", note)
+      notes[idx]=note
+    }
+    END {
+      for (idx in names) {
+        line = "- " names[idx]
+        if (kinds[idx] != "") line = line " (" kinds[idx] ")"
+        if (notes[idx] != "") line = line ": " notes[idx]
+        print line
+      }
+    }
+  ' "$file" | sort -V > "$values_file"
+
+  if [ -s "$values_file" ]; then
+    cat "$values_file"
+  else
+    printf -- '- %s\n' "$empty_text"
+  fi
+}
+
+ingest_write_summary() {
+  local board_root="$1"
+  local slug="$2"
+  local raw_rel="$3"
+  local summary_path="$4"
+  local adapter_stdout="$5"
+  local now="$6"
+  local created_at title one_line summary tmp
+  local summary_preexisting="false"
+
+  created_at="$now"
+  if [ -f "$summary_path" ]; then
+    summary_preexisting="true"
+    created_at="$(extract_frontmatter_value "$summary_path" "created")"
+    [ -n "$created_at" ] || created_at="$now"
+  fi
+
+  title="$(ingest_adapter_value "$adapter_stdout" "source_title")"
+  one_line="$(ingest_adapter_value "$adapter_stdout" "source_one_line")"
+  summary="$(ingest_adapter_value "$adapter_stdout" "source_summary")"
+  [ -n "$title" ] || title="$slug"
+  [ -n "$one_line" ] || one_line="Summary for ${slug}."
+  [ -n "$summary" ] || summary="No adapter summary was returned."
+
+  tmp="$(autoflow_mktemp)"
+  {
+    printf -- '---\n'
+    printf 'kind: source_summary\n'
+    printf 'slug: %s\n' "$slug"
+    printf 'created: %s\n' "$created_at"
+    printf 'updated: %s\n' "$now"
+    printf 'raw_source: "%s"\n' "$raw_rel"
+    printf 'entities:\n'
+    ingest_yaml_names_for_prefix "$adapter_stdout" "source_entity." ""
+    printf 'concepts:\n'
+    ingest_yaml_names_for_prefix "$adapter_stdout" "source_concept." ""
+    printf -- '---\n\n'
+    printf '# %s\n\n' "$title"
+    printf '## One-liner\n\n%s\n\n' "$one_line"
+    printf '## Summary\n\n%s\n\n' "$summary"
+    printf '## Entities\n\n'
+    ingest_markdown_list_for_prefix "$adapter_stdout" "source_entity." "No entities returned."
+    printf '\n## Concepts\n\n'
+    ingest_markdown_list_for_prefix "$adapter_stdout" "source_concept." "No concepts returned."
+    printf '\n## Source\n\n'
+    printf -- '- `%s`\n' "$raw_rel"
+  } > "$tmp"
+  mv "$tmp" "$summary_path"
+
+  if [ "$summary_preexisting" = "false" ]; then
+    ingest_append_source_index_entry "$board_root" "$slug" "$title"
+  fi
+}
+
+run_ingest() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local source_input="$3"
+  local slug_input="$4"
+  local no_summary="$5"
+  local explicit_runner_id="${6:-}"
+  local board_root wiki_root raw_root sources_root source_file slug sha now raw_path summary_path
+  local raw_rel runner_id state_dir state_file previous_sha prompt_file stdout_file stderr_file
+  local prompt_header_file body_budget budget prompt_bytes truncated_flag debug_path adapter_exit
+  local summary_existed
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  wiki_root="${board_root}/wiki"
+  raw_root="${board_root}/wiki-raw"
+  sources_root="${wiki_root}/sources"
+
+  if ! board_is_initialized "$board_root"; then
+    printf 'status=blocked\n'
+    printf 'reason=board_not_initialized\n'
+    printf 'project_root=%s\n' "$project_root"
+    printf 'board_root=%s\n' "$board_root"
+    exit 0
+  fi
+
+  source_file="$(wiki_resolve_source_path "$project_root" "$source_input")"
+  if [ ! -f "$source_file" ]; then
+    printf 'status=blocked\n'
+    printf 'ingest_status=source_not_found\n'
+    printf 'source_file=%s\n' "$source_file"
+    exit 1
+  fi
+
+  if [ -n "$slug_input" ]; then
+    slug="$slug_input"
+  else
+    slug="$(wiki_slug_from_source "$source_file")"
+  fi
+  if ! wiki_validate_lower_slug "$slug"; then
+    printf 'status=blocked\n'
+    printf 'ingest_status=invalid_slug\n'
+    printf 'ingest_slug=%s\n' "$slug"
+    exit 1
+  fi
+
+  mkdir -p "$raw_root" "$sources_root"
+  sha="$(wiki_file_checksum "$source_file")"
+  now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  raw_path="${raw_root}/${slug}.md"
+  summary_path="${sources_root}/${slug}.md"
+  summary_existed="false"
+  [ -f "$summary_path" ] && summary_existed="true"
+
+  printf 'status=ok\n'
+  printf 'project_root=%s\n' "$project_root"
+  printf 'board_root=%s\n' "$board_root"
+  printf 'wiki_raw_root=%s\n' "$raw_root"
+  printf 'wiki_sources_root=%s\n' "$sources_root"
+  printf 'ingest_slug=%s\n' "$slug"
+  printf 'ingest_sha256=%s\n' "$sha"
+
+  ingest_write_raw_source "$board_root" "$source_file" "$source_input" "$slug" "$sha" "$raw_path" "$now"
+  raw_rel="$(relative_to_board "$board_root" "$raw_path")"
+
+  if [ "$no_summary" = "true" ]; then
+    printf 'ingest_summary_status=skipped_no_summary_flag\n'
+    return 0
+  fi
+
+  runner_id="$(find_wiki_runner "$board_root" "$explicit_runner_id" || true)"
+  if [ -z "$runner_id" ]; then
+    printf 'ingest_summary_status=skipped_no_adapter\n'
+    return 0
+  fi
+
+  state_dir="$(ingest_source_state_dir "$board_root" "$runner_id")"
+  state_file="${state_dir}/${slug}"
+  previous_sha=""
+  [ -f "$state_file" ] && previous_sha="$(cat "$state_file" 2>/dev/null || true)"
+  if [ "$previous_sha" = "$sha" ] && [ -f "$summary_path" ]; then
+    printf 'ingest_summary_status=skipped_unchanged\n'
+    printf 'ingest_summary_path=%s\n' "$(relative_to_board "$board_root" "$summary_path")"
+    printf 'ingest_runner=%s\n' "$runner_id"
+    return 0
+  fi
+
+  prompt_file="$(autoflow_mktemp)"
+  prompt_header_file="$(autoflow_mktemp)"
+  stdout_file="$(autoflow_mktemp)"
+  stderr_file="$(autoflow_mktemp)"
+
+  {
+    printf 'Summarize one Autoflow raw source for the project wiki.\n'
+    printf 'Return plain text key=value lines only. Write natural-language values in Korean.\n'
+    printf 'Required keys:\n'
+    printf 'source_title=<short title>\n'
+    printf 'source_one_line=<one concise line>\n'
+    printf 'source_summary=<concise paragraph>\n'
+    printf 'Optional repeated keys:\n'
+    printf 'source_entity.1.name=<name>\nsource_entity.1.kind=<kind>\nsource_entity.1.note=<note>\n'
+    printf 'source_concept.1.name=<name>\nsource_concept.1.note=<note>\n\n'
+    printf 'Source slug: %s\nRaw citation: %s\n\nSource body:\n' "$slug" "$raw_rel"
+  } > "$prompt_header_file"
+
+  budget="${AUTOFLOW_WIKI_INGEST_PROMPT_BYTES:-16384}"
+  case "$budget" in
+    ''|*[!0-9]*) budget=16384 ;;
+  esac
+  cp "$prompt_header_file" "$prompt_file"
+  body_budget=$((budget - $(wc -c < "$prompt_header_file" | tr -d '[:space:]') - 20))
+  truncated_flag="false"
+  if [ "$body_budget" -gt 0 ] && [ "$(wc -c < "$source_file" | tr -d '[:space:]')" -gt "$body_budget" ]; then
+    head -c "$body_budget" "$source_file" >> "$prompt_file"
+    printf '\n...[truncated]...\n' >> "$prompt_file"
+    truncated_flag="true"
+  elif [ "$body_budget" -gt 0 ]; then
+    cat "$source_file" >> "$prompt_file"
+  fi
+  if [ "$(wc -c < "$prompt_file" | tr -d '[:space:]')" -gt "$budget" ]; then
+    head -c "$budget" "$prompt_file" > "${prompt_file}.cap"
+    mv "${prompt_file}.cap" "$prompt_file"
+    truncated_flag="true"
+  fi
+  prompt_bytes="$(wc -c < "$prompt_file" | tr -d '[:space:]')"
+
+  debug_path="${AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH:-}"
+  if [ -n "$debug_path" ]; then
+    mkdir -p "$(dirname "$debug_path")" 2>/dev/null || true
+    cp "$prompt_file" "$debug_path" 2>/dev/null || true
+  fi
+
+  set +e
+  run_wiki_adapter_prompt "$project_root" "$board_root" "$runner_id" "$prompt_file" "$stdout_file" "$stderr_file"
+  adapter_exit=$?
+  set -e
+
+  printf 'ingest_runner=%s\n' "$runner_id"
+  printf 'ingest_prompt_bytes=%s\n' "$prompt_bytes"
+  printf 'ingest_prompt_budget=%s\n' "$budget"
+  printf 'ingest_body_truncated=%s\n' "$truncated_flag"
+
+  if [ "$adapter_exit" -eq 127 ]; then
+    printf 'ingest_summary_status=skipped_no_adapter\n'
+    return 0
+  fi
+  if [ "$adapter_exit" -ne 0 ]; then
+    printf 'ingest_summary_status=failed\n'
+    printf 'ingest_summary_exit_code=%s\n' "$adapter_exit"
+    return 0
+  fi
+
+  ingest_write_summary "$board_root" "$slug" "$raw_rel" "$summary_path" "$stdout_file" "$now"
+  printf '%s\n' "$sha" > "$state_file"
+  printf 'ingest_summary_status=ok\n'
+  printf 'ingest_summary_path=%s\n' "$(relative_to_board "$board_root" "$summary_path")"
+  if [ "$summary_existed" = "true" ]; then
+    printf 'ingest_summary_write=updated\n'
+  else
+    printf 'ingest_summary_write=created\n'
+  fi
+}
+
 run_semantic_lint() {
   local project_root="$1"
   local board_root="$2"
@@ -1262,7 +1716,7 @@ run_lint() {
   local board_root wiki_root index_file pages_file
   local page_count=0 orphan_count=0 citation_gap_count=0 stale_reference_count=0
   local broken_link_count=0 missing_frontmatter_count=0 lint_finding_total=0
-  local file rel stem content stems_file all_stems_file link_target page_first_line
+  local file rel stem content stems_file all_stems_file link_target page_first_line link_path
   local status="ok"
 
   board_root="$(board_root_path "$project_root" "$board_dir_name")"
@@ -1307,6 +1761,8 @@ run_lint() {
     [ -n "$file" ] || continue
     rel="$(relative_to_board "$board_root" "$file")"
     stem="$(basename "$file" .md)"
+    link_path="${rel#wiki/}"
+    link_path="${link_path%.md}"
 
     case "$stem" in
       index)
@@ -1319,6 +1775,7 @@ run_lint() {
     fi
 
     if ! printf '%s\n' "$content" | grep -Fq "[[${stem}]]" && \
+       ! printf '%s\n' "$content" | grep -Fq "[[${link_path}]]" && \
        ! printf '%s\n' "$content" | grep -Fq "$rel"; then
       orphan_count="$((orphan_count + 1))"
       printf 'orphan.%s=%s\n' "$orphan_count" "$rel"
@@ -1444,6 +1901,8 @@ query_save_as=""
 lint_semantic="false"
 wiki_runner_id=""
 query_terms_file=""
+ingest_slug=""
+ingest_no_summary="false"
 positionals=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -1508,6 +1967,21 @@ while [ "$#" -gt 0 ]; do
     --runner=*)
       wiki_runner_id="${1#--runner=}"
       ;;
+    --slug)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --slug" >&2
+        usage
+        exit 1
+      fi
+      ingest_slug="$1"
+      ;;
+    --slug=*)
+      ingest_slug="${1#--slug=}"
+      ;;
+    --no-summary)
+      ingest_no_summary="true"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -1545,6 +2019,14 @@ case "$action" in
     run_query "$project_root" "$board_dir_name" "$query_terms_file" "$query_limit" \
       "$query_include_tickets" "$query_include_handoffs" "$query_with_snippets" \
       "$query_synth" "$wiki_runner_id" "$query_save_as"
+    ;;
+  ingest)
+    if [ -z "${positionals[2]:-}" ]; then
+      echo "Missing source file for ingest" >&2
+      usage
+      exit 1
+    fi
+    run_ingest "$project_root" "$board_dir_name" "${positionals[2]}" "$ingest_slug" "$ingest_no_summary" "$wiki_runner_id"
     ;;
   help|-h|--help)
     usage

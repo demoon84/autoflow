@@ -11,6 +11,7 @@ Use wiki pages for:
 - architecture notes,
 - lessons learned,
 - filed-back synthesis answers (under `wiki/answers/`).
+- source summaries derived from raw ingested files (under `wiki/sources/`).
 
 Do not use the wiki as the source of truth for active ticket stage, ownership, pass/fail result, or commit state.
 
@@ -30,3 +31,15 @@ Adding `--semantic` runs the LLM contradiction / stale-claim / missing-link pass
 `autoflow wiki query --synth --save-as <slug>` writes the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `slug`, `runner`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. The slug must match `[A-Za-z0-9_-]+`.
 
 This realises the LLM-Wiki "good answers can be filed back into the wiki as new pages" recommendation: the next `wiki query` over the same terms can surface the persisted answer and avoid a re-synthesis.
+
+## Ingesting raw sources
+
+`autoflow wiki ingest <source-file> [--slug SLUG] [--no-summary]` adds source documents to the wiki without repeatedly spending adapter tokens.
+
+The command writes the full source body to `wiki-raw/<slug>.md` with YAML frontmatter (`kind: raw_source`, `slug`, `original_path`, `ingested_at`, `updated_at`, `sha256`). The raw layer is source material: wiki agents may read it, but should not rewrite it.
+
+Unless `--no-summary` is used, the command then asks the wiki adapter for a fixed key=value source summary and writes `wiki/sources/<slug>.md` with frontmatter (`kind: source_summary`, `slug`, `created`, `updated`, `raw_source`, `entities`, `concepts`). The summary page includes `## One-liner`, `## Summary`, `## Entities`, `## Concepts`, and `## Source`.
+
+Per-source summary fingerprints live at `runners/state/<runner_id>.ingest.sources.d/<slug>`. Re-ingesting an unchanged source with an existing summary emits `ingest_status=skipped_unchanged_source` and `ingest_summary_status=skipped_unchanged`, calls no adapter, and preserves both files byte-for-byte. If the source changes, the raw file preserves `ingested_at`, the summary preserves `created:`, and both `updated` timestamps advance after a successful adapter summary.
+
+`AUTOFLOW_WIKI_INGEST_PROMPT_BYTES` caps the ingest prompt (default `16384`). Long source bodies are truncated in the adapter prompt with `...[truncated]...`, but the raw file still stores the full body. `AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH` copies the assembled prompt to disk for verification.
