@@ -10,12 +10,23 @@ usage() {
 Usage:
   wiki-project.sh update [project-root] [board-dir-name] [--dry-run]
   wiki-project.sh lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
-  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--runner RUNNER_ID]
+  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
 
 Examples:
   wiki-project.sh update /path/to/project
   wiki-project.sh lint /path/to/project .autoflow --semantic
   wiki-project.sh query /path/to/project --term auth --term session --limit 5 --synth
+  wiki-project.sh query /path/to/project --term wiki --term lint --synth --save-as wiki-lint-summary
+
+Environment:
+  AUTOFLOW_WIKI_LINT_PROMPT_BYTES    Byte cap for the semantic-lint adapter prompt (default 32768).
+                                     When the assembled prompt would exceed this, pages are dropped
+                                     from the tail and `semantic_truncated=true` plus
+                                     `semantic_dropped_pages.<n>=...` are emitted.
+  AUTOFLOW_WIKI_LINT_DEBUG_PROMPT_PATH
+                                     When set, the assembled adapter prompt is copied to that path
+                                     before the adapter is invoked. Used by verifiers to confirm
+                                     only changed pages are included.
 EOF
 }
 
@@ -524,12 +535,105 @@ semantic_lint_record_fingerprint() {
   printf '%s\n' "$fingerprint" > "$path"
 }
 
+# Per-page semantic-lint fingerprint helpers.
+#
+# State layout: <board_root>/runners/state/<runner_id>.semantic-lint.pages.d/<safe_name>
+#   where <safe_name> is the board-relative path with `/` replaced by `__`.
+# Each file contains the page's sha256 sum at the time of the last successful adapter call.
+# The whole-wiki fingerprint at semantic_lint_fingerprint_path is still the cheap fast-path
+# check used to short-circuit unchanged ticks; the per-page state is consulted only when
+# the whole-wiki fingerprint indicates change.
+
+wiki_safe_filename() {
+  local rel="$1"
+  printf '%s' "$rel" | tr '/' '_' | tr ' ' '_'
+}
+
+semantic_lint_pages_state_dir() {
+  local board_root="$1"
+  local runner_id="$2"
+  local dir
+
+  dir="${board_root}/runners/state/${runner_id}.semantic-lint.pages.d"
+  mkdir -p "$dir"
+  printf '%s' "$dir"
+}
+
+# Emit board-relative paths of pages whose content sum differs from the recorded
+# per-page fingerprint, plus pages with no recorded fingerprint at all (i.e. new pages).
+semantic_lint_emit_changed_pages() {
+  local board_root="$1"
+  local runner_id="$2"
+  local pages_file="$3"
+  local state_dir page rel sum prev safe
+
+  state_dir="$(semantic_lint_pages_state_dir "$board_root" "$runner_id")"
+  while IFS= read -r page; do
+    [ -n "$page" ] || continue
+    rel="$(relative_to_board "$board_root" "$page")"
+    sum="$(wiki_file_checksum "$page")"
+    safe="$(wiki_safe_filename "$rel")"
+    prev=""
+    if [ -f "${state_dir}/${safe}" ]; then
+      prev="$(cat "${state_dir}/${safe}" 2>/dev/null || true)"
+    fi
+    if [ "$sum" != "$prev" ]; then
+      printf '%s\n' "$rel"
+    fi
+  done < "$pages_file"
+}
+
+# For each changed page (board-relative path), emit pages that link to it via a
+# `[[wikilink]]`. Both bare-stem (`[[stem]]`) and path-style (`[[dir/stem]]`) link
+# forms are matched, plus optional `|alias` and `#heading` suffixes. Output may
+# include duplicates; callers should sort -u and exclude already-included pages.
+semantic_lint_emit_neighbors() {
+  local board_root="$1"
+  local pages_file="$2"
+  local changed_file="$3"
+  local changed_rel changed_stem changed_stem_re page rel pattern
+
+  while IFS= read -r changed_rel; do
+    [ -n "$changed_rel" ] || continue
+    changed_stem="$(basename "$changed_rel" .md)"
+    # Escape regex metacharacters in the stem so we can use grep -E safely.
+    changed_stem_re="$(printf '%s' "$changed_stem" | sed -e 's/[][\\.^$*+?(){}|/]/\\&/g')"
+    pattern="\\[\\[([^][]*/)?${changed_stem_re}([|#][^]]*)?\\]\\]"
+    while IFS= read -r page; do
+      [ -n "$page" ] || continue
+      rel="$(relative_to_board "$board_root" "$page")"
+      [ "$rel" = "$changed_rel" ] && continue
+      if grep -Eq "$pattern" "$page" 2>/dev/null; then
+        printf '%s\n' "$rel"
+      fi
+    done < "$pages_file"
+  done < "$changed_file"
+}
+
+# Save current per-page checksums so the next run can diff against them.
+semantic_lint_record_per_page() {
+  local board_root="$1"
+  local runner_id="$2"
+  local pages_file="$3"
+  local state_dir page rel sum safe
+
+  state_dir="$(semantic_lint_pages_state_dir "$board_root" "$runner_id")"
+  while IFS= read -r page; do
+    [ -n "$page" ] || continue
+    rel="$(relative_to_board "$board_root" "$page")"
+    sum="$(wiki_file_checksum "$page")"
+    safe="$(wiki_safe_filename "$rel")"
+    printf '%s\n' "$sum" > "${state_dir}/${safe}"
+  done < "$pages_file"
+}
+
 run_query_synth() {
   local project_root="$1"
   local board_root="$2"
   local terms_file="$3"
   local synth_results_file="$4"
   local explicit_runner_id="${5:-}"
+  local save_as_slug="${6:-}"
   local runner_id prompt_file stdout_file stderr_file adapter_exit
   local answer citations_file citations_count=0 line
 
@@ -586,6 +690,103 @@ run_query_synth() {
     printf '%s\n' "$line"
   done < "$citations_file"
   printf 'synth_citation_count=%s\n' "${citations_count:-0}"
+
+  if [ -n "$save_as_slug" ]; then
+    save_synth_answer "$board_root" "$save_as_slug" "$runner_id" "$terms_file" "$citations_file" "$answer"
+  fi
+}
+
+# Persist a synth answer to wiki/answers/<slug>.md so explorations compound.
+# On re-save, the file's `created:` field is preserved and `updated:` is refreshed.
+save_synth_answer() {
+  local board_root="$1"
+  local slug="$2"
+  local runner_id="$3"
+  local terms_file="$4"
+  local citations_file="$5"
+  local answer="$6"
+  local answers_dir answer_path now created_at terms_yaml citations_yaml citation_line citation_path
+
+  case "$slug" in
+    *[!A-Za-z0-9_-]*|"")
+      printf 'synth_save_status=invalid_slug\n'
+      printf 'synth_save_slug=%s\n' "$slug"
+      return 0
+      ;;
+  esac
+
+  answers_dir="${board_root}/wiki/answers"
+  mkdir -p "$answers_dir"
+  answer_path="${answers_dir}/${slug}.md"
+  now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  created_at="$now"
+  if [ -f "$answer_path" ]; then
+    local existing_created
+    existing_created="$(awk '/^created:[[:space:]]*/ { sub(/^created:[[:space:]]*/, ""); print; exit }' "$answer_path" 2>/dev/null || true)"
+    if [ -n "$existing_created" ]; then
+      created_at="$existing_created"
+    fi
+  fi
+
+  terms_yaml=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if [ -z "$terms_yaml" ]; then
+      terms_yaml="  - \"$(printf '%s' "$line" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')\""
+    else
+      terms_yaml="${terms_yaml}"$'\n'"  - \"$(printf '%s' "$line" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')\""
+    fi
+  done < "$terms_file"
+
+  citations_yaml=""
+  while IFS= read -r citation_line; do
+    [ -n "$citation_line" ] || continue
+    citation_path="${citation_line#*=}"
+    if [ -z "$citations_yaml" ]; then
+      citations_yaml="  - \"$(printf '%s' "$citation_path" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')\""
+    else
+      citations_yaml="${citations_yaml}"$'\n'"  - \"$(printf '%s' "$citation_path" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')\""
+    fi
+  done < "$citations_file"
+
+  {
+    printf -- '---\n'
+    printf 'kind: synth_answer\n'
+    printf 'slug: %s\n' "$slug"
+    printf 'runner: %s\n' "$runner_id"
+    printf 'created: %s\n' "$created_at"
+    printf 'updated: %s\n' "$now"
+    printf 'terms:\n'
+    if [ -n "$terms_yaml" ]; then
+      printf '%s\n' "$terms_yaml"
+    fi
+    printf 'citations:\n'
+    if [ -n "$citations_yaml" ]; then
+      printf '%s\n' "$citations_yaml"
+    fi
+    printf -- '---\n\n'
+    printf '# %s\n\n' "$slug"
+    printf '## Answer\n\n'
+    printf '%s\n\n' "${answer:-근거 있는 답변을 생성하지 못했습니다.}"
+    printf '## Citations\n\n'
+    if [ -s "$citations_file" ]; then
+      while IFS= read -r citation_line; do
+        [ -n "$citation_line" ] || continue
+        citation_path="${citation_line#*=}"
+        printf -- '- `%s`\n' "$citation_path"
+      done < "$citations_file"
+    else
+      printf -- '- (no citations were returned by the adapter)\n'
+    fi
+    printf '\n## Source\n\n'
+    printf -- '- Generated by `autoflow wiki query --synth --save-as %s`.\n' "$slug"
+  } > "$answer_path"
+
+  printf 'synth_save_status=ok\n'
+  printf 'synth_save_slug=%s\n' "$slug"
+  printf 'synth_save_path=%s\n' "$(relative_to_board "$board_root" "$answer_path")"
+  printf 'synth_save_created=%s\n' "$created_at"
+  printf 'synth_save_updated=%s\n' "$now"
 }
 
 run_semantic_lint() {
@@ -595,6 +796,10 @@ run_semantic_lint() {
   local explicit_runner_id="${4:-}"
   local runner_id prompt_file stdout_file stderr_file adapter_exit
   local pages_file fingerprint_path current_fingerprint previous_fingerprint
+  local changed_pages_file neighbors_file selected_pages_file dropped_pages_file
+  local prompt_header_file budget prompt_bytes truncated_flag
+  local selected_count dropped_count line page rel
+  local debug_path
 
   runner_id="$(find_wiki_runner "$board_root" "$explicit_runner_id" || true)"
   if [ -z "$runner_id" ]; then
@@ -606,6 +811,11 @@ run_semantic_lint() {
   prompt_file="$(autoflow_mktemp)"
   stdout_file="$(autoflow_mktemp)"
   stderr_file="$(autoflow_mktemp)"
+  changed_pages_file="$(autoflow_mktemp)"
+  neighbors_file="$(autoflow_mktemp)"
+  selected_pages_file="$(autoflow_mktemp)"
+  dropped_pages_file="$(autoflow_mktemp)"
+  prompt_header_file="$(autoflow_mktemp)"
 
   find "$wiki_root" -type f -name '*.md' ! -name 'README.md' | sort > "$pages_file"
   current_fingerprint="$(semantic_lint_pages_fingerprint "$board_root" "$pages_file")"
@@ -624,21 +834,95 @@ run_semantic_lint() {
     return 0
   fi
 
+  # Per-page diff: only changed pages plus pages that link to them go to the adapter.
+  semantic_lint_emit_changed_pages "$board_root" "$runner_id" "$pages_file" \
+    | sort -u > "$changed_pages_file"
+
+  if [ ! -s "$changed_pages_file" ]; then
+    # Whole-wiki fingerprint moved (e.g. file mtime / order shift) but no per-page
+    # checksum changed. Treat as unchanged at content level, just refresh the
+    # whole-wiki fingerprint and persist current per-page sums.
+    printf 'semantic_status=skipped_unchanged_per_page\n'
+    printf 'semantic_runner=%s\n' "$runner_id"
+    printf 'semantic_reason=per_page_inputs_unchanged\n'
+    printf 'semantic_fingerprint=%s\n' "$current_fingerprint"
+    printf 'semantic_fingerprint_path=%s\n' "$fingerprint_path"
+    semantic_lint_record_per_page "$board_root" "$runner_id" "$pages_file"
+    semantic_lint_record_fingerprint "$board_root" "$runner_id" "$current_fingerprint"
+    return 0
+  fi
+
+  semantic_lint_emit_neighbors "$board_root" "$pages_file" "$changed_pages_file" \
+    | sort -u > "$neighbors_file"
+
+  # Selected = changed pages first, then inbound neighbors. Preserve a stable order
+  # so byte-budget truncation always drops the lowest-priority pages first.
+  {
+    cat "$changed_pages_file"
+    if [ -s "$neighbors_file" ]; then
+      grep -Fxv -f "$changed_pages_file" "$neighbors_file" 2>/dev/null || true
+    fi
+  } > "$selected_pages_file"
+
+  selected_count="$(count_lines "$selected_pages_file")"
+
+  # Build the prompt header (instructions only) to its own file so we can compute
+  # remaining byte budget for page bodies.
   {
     printf 'You review Autoflow wiki pages for contradictions, stale claims, and missing links.\n'
+    printf 'Only the pages whose content has changed since the last successful run plus their inbound-link neighbors are included below; all unchanged pages have been intentionally elided to save tokens.\n'
     printf 'Keep the exact output keys and format. Write natural-language summary values in Korean.\n'
     printf 'Return plain text lines only in this format:\n'
     printf 'semantic_finding.1.page=<board-relative path>\n'
     printf 'semantic_finding.1.kind=contradiction|stale_claim|missing_link\n'
     printf 'semantic_finding.1.summary=<one concise Korean sentence>\n'
     printf 'If there are no semantic issues, return exactly: semantic_finding.none=true\n\n'
-    while IFS= read -r page; do
-      [ -n "$page" ] || continue
-      printf -- '--- PAGE: %s ---\n' "$(relative_to_board "$board_root" "$page")"
+  } > "$prompt_header_file"
+
+  budget="${AUTOFLOW_WIKI_LINT_PROMPT_BYTES:-32768}"
+  case "$budget" in
+    ''|*[!0-9]*) budget=32768 ;;
+  esac
+
+  cp "$prompt_header_file" "$prompt_file"
+  truncated_flag="false"
+  : > "$dropped_pages_file"
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    page="${board_root}/${rel}"
+    [ -f "$page" ] || continue
+
+    local section_file
+    section_file="$(autoflow_mktemp)"
+    {
+      printf -- '--- PAGE: %s ---\n' "$rel"
       sed -n '1,80p' "$page"
       printf '\n'
-    done < "$pages_file"
-  } > "$prompt_file"
+    } > "$section_file"
+
+    local current_bytes section_bytes projected
+    current_bytes="$(wc -c < "$prompt_file" | tr -d '[:space:]')"
+    section_bytes="$(wc -c < "$section_file" | tr -d '[:space:]')"
+    projected=$((current_bytes + section_bytes))
+
+    if [ "$projected" -le "$budget" ]; then
+      cat "$section_file" >> "$prompt_file"
+    else
+      truncated_flag="true"
+      printf '%s\n' "$rel" >> "$dropped_pages_file"
+    fi
+  done < "$selected_pages_file"
+
+  prompt_bytes="$(wc -c < "$prompt_file" | tr -d '[:space:]')"
+  dropped_count="$(count_lines "$dropped_pages_file")"
+
+  # Optional debug hook: copy the assembled prompt for verifier inspection.
+  debug_path="${AUTOFLOW_WIKI_LINT_DEBUG_PROMPT_PATH:-}"
+  if [ -n "$debug_path" ]; then
+    mkdir -p "$(dirname "$debug_path")" 2>/dev/null || true
+    cp "$prompt_file" "$debug_path" 2>/dev/null || true
+  fi
 
   set +e
   run_wiki_adapter_prompt "$project_root" "$board_root" "$runner_id" "$prompt_file" "$stdout_file" "$stderr_file"
@@ -661,6 +945,19 @@ run_semantic_lint() {
   printf 'semantic_runner=%s\n' "$runner_id"
   printf 'semantic_fingerprint=%s\n' "$current_fingerprint"
   printf 'semantic_fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'semantic_selected_count=%s\n' "${selected_count:-0}"
+  printf 'semantic_prompt_bytes=%s\n' "${prompt_bytes:-0}"
+  printf 'semantic_prompt_budget=%s\n' "$budget"
+  printf 'semantic_truncated=%s\n' "$truncated_flag"
+  if [ "$truncated_flag" = "true" ] && [ "$dropped_count" -gt 0 ]; then
+    local drop_idx=0
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      drop_idx=$((drop_idx + 1))
+      printf 'semantic_dropped_pages.%d=%s\n' "$drop_idx" "$line"
+    done < "$dropped_pages_file"
+    printf 'semantic_dropped_count=%s\n' "$drop_idx"
+  fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     case "$line" in
@@ -670,6 +967,7 @@ run_semantic_lint() {
     esac
   done < "$stdout_file"
   semantic_lint_record_fingerprint "$board_root" "$runner_id" "$current_fingerprint"
+  semantic_lint_record_per_page "$board_root" "$runner_id" "$pages_file"
 }
 
 run_query() {
@@ -682,6 +980,7 @@ run_query() {
   local with_snippets="$7"
   local synth_mode="${8:-false}"
   local synth_runner_id="${9:-}"
+  local save_as_slug="${10:-}"
 
   local board_root wiki_root candidates scores sorted synth_results
   local term_count=0 result_count=0 emitted=0
@@ -829,7 +1128,7 @@ run_query() {
   done < "$sorted"
 
   if [ "$synth_mode" = "true" ]; then
-    run_query_synth "$project_root" "$board_root" "$terms_file" "$synth_results" "$synth_runner_id"
+    run_query_synth "$project_root" "$board_root" "$terms_file" "$synth_results" "$synth_runner_id" "$save_as_slug"
   fi
 }
 
@@ -957,7 +1256,8 @@ run_lint() {
   local semantic_runner_id="${4:-}"
   local board_root wiki_root index_file pages_file
   local page_count=0 orphan_count=0 citation_gap_count=0 stale_reference_count=0
-  local file rel stem content
+  local broken_link_count=0 missing_frontmatter_count=0 lint_finding_total=0
+  local file rel stem content stems_file all_stems_file link_target page_first_line
   local status="ok"
 
   board_root="$(board_root_path "$project_root" "$board_dir_name")"
@@ -989,6 +1289,15 @@ run_lint() {
     content="$(cat "$index_file")"
   fi
 
+  # Pre-compute the set of valid wikilink targets (page stems) so broken-link
+  # detection does not need a per-page filesystem walk.
+  all_stems_file="$(autoflow_mktemp)"
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ "$(basename "$file")" = "README.md" ] && continue
+    basename "$file" .md
+  done < "$pages_file" | sort -u > "$all_stems_file"
+
   while IFS= read -r file; do
     [ -n "$file" ] || continue
     rel="$(relative_to_board "$board_root" "$file")"
@@ -1008,7 +1317,52 @@ run_lint() {
        ! printf '%s\n' "$content" | grep -Fq "$rel"; then
       orphan_count="$((orphan_count + 1))"
       printf 'orphan.%s=%s\n' "$orphan_count" "$rel"
+      printf 'lint_orphan.%s.page=%s\n' "$orphan_count" "$rel"
     fi
+
+    # Broken-link check: collect every `[[target]]` from the page body and verify
+    # each target resolves to a known page stem (without `.md`). Skip targets that
+    # contain `|` (alias syntax) by trimming after the pipe, and skip targets that
+    # contain `/` (relative path links — those are checked against stem matches by
+    # last segment).
+    local link_targets_file link_target_clean link_target_segment
+    link_targets_file="$(autoflow_mktemp)"
+    grep -Eo '\[\[[^][]+\]\]' "$file" 2>/dev/null \
+      | sed -e 's/^\[\[//' -e 's/\]\]$//' \
+      | sort -u > "$link_targets_file" || true
+
+    while IFS= read -r link_target; do
+      [ -n "$link_target" ] || continue
+      # Drop alias/header suffixes: [[target|alias]] and [[target#heading]]
+      link_target_clean="${link_target%%|*}"
+      link_target_clean="${link_target_clean%%#*}"
+      # Use the final path segment as the stem to look up.
+      link_target_segment="${link_target_clean##*/}"
+      [ -n "$link_target_segment" ] || continue
+      if ! grep -Fxq "$link_target_segment" "$all_stems_file"; then
+        broken_link_count="$((broken_link_count + 1))"
+        printf 'lint_broken_link.%s.page=%s\n' "$broken_link_count" "$rel"
+        printf 'lint_broken_link.%s.target=%s\n' "$broken_link_count" "$link_target_clean"
+      fi
+    done < "$link_targets_file"
+
+    # Missing-frontmatter check: any wiki page that lacks a leading `---` line
+    # (excluding index/log/project-overview which are managed by the deterministic
+    # baseline) gets flagged. New pages under wiki/answers/ are expected to carry
+    # frontmatter from the start; existing pages are reported so a follow-up can
+    # retrofit them.
+    case "$stem" in
+      index|log|project-overview)
+        :
+        ;;
+      *)
+        page_first_line="$(awk 'NR == 1 { sub(/\r$/, ""); print; exit }' "$file" 2>/dev/null || true)"
+        if [ "$page_first_line" != "---" ]; then
+          missing_frontmatter_count="$((missing_frontmatter_count + 1))"
+          printf 'lint_missing_frontmatter.%s.page=%s\n' "$missing_frontmatter_count" "$rel"
+        fi
+        ;;
+    esac
 
     case "$stem" in
       log|project-overview)
@@ -1040,8 +1394,15 @@ run_lint() {
     done < "$refs_file"
   done < "$pages_file"
 
-  if [ "$orphan_count" -gt 0 ] || [ "$citation_gap_count" -gt 0 ] || [ "$stale_reference_count" -gt 0 ]; then
+  lint_finding_total=$((orphan_count + broken_link_count + missing_frontmatter_count))
+
+  if [ "$orphan_count" -gt 0 ] || [ "$citation_gap_count" -gt 0 ] || [ "$stale_reference_count" -gt 0 ] \
+    || [ "$broken_link_count" -gt 0 ] || [ "$missing_frontmatter_count" -gt 0 ]; then
     status="warning"
+  fi
+
+  if [ "$lint_finding_total" -eq 0 ]; then
+    printf 'lint_finding.none=true\n'
   fi
 
   printf 'status=%s\n' "$status"
@@ -1052,6 +1413,9 @@ run_lint() {
   printf 'orphan_count=%s\n' "$orphan_count"
   printf 'citation_gap_count=%s\n' "$citation_gap_count"
   printf 'stale_reference_count=%s\n' "$stale_reference_count"
+  printf 'broken_link_count=%s\n' "$broken_link_count"
+  printf 'missing_frontmatter_count=%s\n' "$missing_frontmatter_count"
+  printf 'lint_finding_total=%s\n' "$lint_finding_total"
 
   if [ "$semantic_mode" = "true" ]; then
     run_semantic_lint "$project_root" "$board_root" "$wiki_root" "$semantic_runner_id"
@@ -1071,6 +1435,7 @@ query_include_tickets="true"
 query_include_handoffs="true"
 query_with_snippets="true"
 query_synth="false"
+query_save_as=""
 lint_semantic="false"
 wiki_runner_id=""
 query_terms_file=""
@@ -1110,6 +1475,18 @@ while [ "$#" -gt 0 ]; do
       ;;
     --synth)
       query_synth="true"
+      ;;
+    --save-as)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --save-as" >&2
+        usage
+        exit 1
+      fi
+      query_save_as="$1"
+      ;;
+    --save-as=*)
+      query_save_as="${1#--save-as=}"
       ;;
     --semantic)
       lint_semantic="true"
@@ -1156,9 +1533,13 @@ case "$action" in
       echo "Invalid --limit value: ${query_limit}" >&2
       exit 1
     fi
+    if [ -n "$query_save_as" ] && [ "$query_synth" != "true" ]; then
+      echo "--save-as requires --synth" >&2
+      exit 1
+    fi
     run_query "$project_root" "$board_dir_name" "$query_terms_file" "$query_limit" \
       "$query_include_tickets" "$query_include_handoffs" "$query_with_snippets" \
-      "$query_synth" "$wiki_runner_id"
+      "$query_synth" "$wiki_runner_id" "$query_save_as"
     ;;
   help|-h|--help)
     usage

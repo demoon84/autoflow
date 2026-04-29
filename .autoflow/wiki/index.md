@@ -58,6 +58,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
+- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
 
 ## Archive
 - [[features/desktop-tickets-kanban]] (`wiki/features/desktop-tickets-kanban.md`) (Legacy)
@@ -80,11 +81,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 46
+- Done tickets: 47
 - Reject records: 2
 - Verifier logs: 246
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T08:01:04Z
+- Last updated: 2026-04-29T12:44:28Z
 
 ## Completed Tickets
 

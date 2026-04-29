@@ -29,10 +29,23 @@ You are the orchestrator. The commands below are tools you call. The runner tick
 - `autoflow wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). The Impl AI's `finish-ticket-owner` pass already runs this inline on every ticket merge, so the baseline is usually fresh by the time you tick. Re-run only when you detect drift.
 - `autoflow wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
 - `autoflow wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
-- `autoflow wiki lint [--semantic]` — reports orphan pages, stale references, and citation gaps. Run after synthesis to catch new issues you introduced.
+- `autoflow wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
+- `autoflow wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
 - File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
 Single-source-of-AI-synthesis rule: AI-driven wiki synthesis lives only in this runner. The Impl AI's inline `update-wiki.sh` baseline path is deterministic only and must never trigger AI synthesis.
+
+## Token-frugal semantic lint
+
+`autoflow wiki lint --semantic` is the most expensive operation this runner performs. The CLI applies three layered controls so per-tick token spend stays bounded as the wiki grows:
+
+1. **Whole-wiki fingerprint short-circuit**: a sha256 of all page checksums. If unchanged since the last run, the adapter is not invoked at all (`semantic_status=skipped_unchanged`).
+2. **Per-page fingerprint diff**: when the whole-wiki fingerprint moves, only the pages whose own checksum changed plus their inbound-link neighbors (pages containing `[[<changed-stem>]]`) are placed in the prompt. Unchanged pages are intentionally elided. State lives in `runners/state/<runner_id>.semantic-lint.pages.d/`. If the per-page diff turns up empty (mtime / ordering shift only), the adapter is again skipped (`semantic_status=skipped_unchanged_per_page`).
+3. **Prompt byte budget**: the env var `AUTOFLOW_WIKI_LINT_PROMPT_BYTES` (default 32768) caps the assembled prompt size. Pages are appended in priority order (changed first, neighbors next); when adding the next page would exceed the budget, the rest are reported as `semantic_dropped_pages.<n>` and `semantic_truncated=true` is emitted. The output also carries `semantic_selected_count`, `semantic_prompt_bytes`, and `semantic_prompt_budget` so a verifier can confirm the cap took effect.
+
+Verifiers may set `AUTOFLOW_WIKI_LINT_DEBUG_PROMPT_PATH=<file>` to copy the assembled adapter prompt to disk for inspection. The prompt explicitly instructs the model that unchanged pages have been elided so it does not interpret missing pages as deletions.
+
+When you spot an issue that needs attention, prefer adding a focused entity/concept page or refreshing an existing one over expanding the prompt. Token cost grows with what the adapter sees, not with what the wiki contains.
 
 ## Rules
 
