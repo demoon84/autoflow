@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/wiki-preview-top-alignment]]** (`wiki/answers/wiki-preview-top-alignment.md`): Captured the `tickets_059` adjustment that keeps the Wiki query right preview aligned to the top while preserving the existing split-pane preview flow.
 - **[[answers/finish-ticket-owner-cleanup-status-contract]]** (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`): Summarized the `verify_003` / `reject_003` failure caused by the missing `cleanup_status=ok` line in the `finish-ticket-owner` pass-output contract.
 - **[[answers/korean-board-writing-policy]]** (`wiki/answers/korean-board-writing-policy.md`): Captured the board-writing policy that user-facing PRD, ticket, and memo prose defaults to Korean while parser-sensitive fields keep their original format.
 - **[[answers/wiki-query-filter-group]]** (`wiki/answers/wiki-query-filter-group.md`): Captured the `tickets_058` change that groups the two wiki query include options into one MUI-backed filter list.
@@ -64,6 +65,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/wiki-preview-top-alignment]] (`wiki/answers/wiki-preview-top-alignment.md`)
   - [[answers/finish-ticket-owner-cleanup-status-contract]] (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`)
   - [[answers/korean-board-writing-policy]] (`wiki/answers/korean-board-writing-policy.md`)
   - [[answers/wiki-query-filter-group]] (`wiki/answers/wiki-query-filter-group.md`)
@@ -92,11 +94,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 55
+- Done tickets: 56
 - Reject records: 2
-- Verifier logs: 255
+- Verifier logs: 256
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T22:58:35Z
+- Last updated: 2026-04-29T23:41:52Z
 
 ## Completed Tickets
 

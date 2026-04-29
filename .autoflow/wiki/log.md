@@ -5,7 +5,7 @@ Chronological notes derived from completed tickets, reject learnings, and operat
 ## Managed Log
 
 Generated entries may be inserted here.
-This curated milestone list summarizes key milestones from the early board foundation through the recent wiki/runtime refinements (`prd_056`). For current counts and broader work context, use [[index]] and [[project-overview]].
+This curated milestone list summarizes representative milestones from the early board foundation through the recent wiki/runtime refinements. For current counts and broader work context, use [[index]] and [[project-overview]].
 
 Each entry should cite its source ticket or log.
 
@@ -41,7 +41,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-29T22:58:35Z
+- Last rebuilt: 2026-04-29T23:41:52Z
 
 ### Completed Tickets
 

@@ -3422,6 +3422,10 @@ pre {
   overflow: hidden;
 }
 
+.workflow-pin-layer-overlay.MuiBackdrop-root {
+  background: color-mix(in srgb, var(--foreground) 34%, transparent);
+}
+
 .af-dialog-content:focus-visible {
   outline: none;
 }

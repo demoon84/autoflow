@@ -3715,6 +3715,7 @@ function TicketDetailLayer({
       <DialogContent
         className="workflow-pin-layer-panel workflow-pin-layer-default ticket-detail-layer-panel"
         overlayClassName="workflow-pin-layer-overlay"
+        keepMounted
         aria-describedby={undefined}
       >
         {item ? (
@@ -3797,6 +3798,7 @@ function TicketWorkspaceListView({
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
   const [activeDetailPath, setActiveDetailPath] = React.useState("");
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
+  const [detailContentPath, setDetailContentPath] = React.useState("");
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
   const itemButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
@@ -3886,24 +3888,37 @@ function TicketWorkspaceListView({
     const previousPath = activeDetailPath;
     setActiveDetailPath("");
     setDetailContent(null);
+    setDetailContentPath("");
+    setDetailLoading(false);
     setDetailError("");
     if (previousPath) {
       window.setTimeout(() => itemButtonRefs.current[previousPath]?.focus(), 0);
     }
   }, [activeDetailPath]);
 
+  const openDetailLayer = React.useCallback((filePath: string) => {
+    setDetailContent(null);
+    setDetailContentPath("");
+    setDetailError("");
+    setDetailLoading(true);
+    setActiveDetailPath(filePath);
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
 
     const loadDetail = async () => {
       setDetailContent(null);
+      setDetailContentPath("");
       setDetailError("");
       if (!activeDetailItem) {
+        setDetailLoading(false);
         return;
       }
       if (!options?.projectRoot) {
         if (!cancelled) {
           setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
+          setDetailLoading(false);
         }
         return;
       }
@@ -3924,6 +3939,7 @@ function TicketWorkspaceListView({
           return;
         }
         setDetailContent(result);
+        setDetailContentPath(activeDetailItem.filePath);
       } catch (error) {
         if (!cancelled) {
           setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
@@ -3965,7 +3981,7 @@ function TicketWorkspaceListView({
                 }}
                 type="button"
                 className="ticket-workspace-item"
-                onClick={() => setActiveDetailPath(item.filePath)}
+                onClick={() => openDetailLayer(item.filePath)}
                 title={item.title}
                 aria-haspopup="dialog"
               >
@@ -3985,8 +4001,8 @@ function TicketWorkspaceListView({
       </div>
       <TicketDetailLayer
         item={activeDetailItem}
-        content={detailContent}
-        loading={detailLoading}
+        content={detailContentPath === activeDetailPath ? detailContent : null}
+        loading={Boolean(activeDetailPath) && (detailLoading || (detailContentPath !== activeDetailPath && !detailError))}
         error={detailError}
         onOpenChange={(open) => {
           if (!open) {
@@ -4309,6 +4325,7 @@ function TicketKanban({
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
   const [activeDetailPath, setActiveDetailPath] = React.useState("");
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
+  const [detailContentPath, setDetailContentPath] = React.useState("");
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
   const itemButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
@@ -4405,11 +4422,21 @@ function TicketKanban({
     const previousPath = activeDetailPath;
     setActiveDetailPath("");
     setDetailContent(null);
+    setDetailContentPath("");
+    setDetailLoading(false);
     setDetailError("");
     if (previousPath) {
       restoreFocusToItem(previousPath);
     }
   }, [activeDetailPath, restoreFocusToItem]);
+
+  const openDetailLayer = React.useCallback((filePath: string) => {
+    setDetailContent(null);
+    setDetailContentPath("");
+    setDetailError("");
+    setDetailLoading(true);
+    setActiveDetailPath(filePath);
+  }, []);
 
   const handleDetailOpenChange = React.useCallback(
     (open: boolean) => {
@@ -4425,13 +4452,16 @@ function TicketKanban({
 
     const loadDetail = async () => {
       setDetailContent(null);
+      setDetailContentPath("");
       setDetailError("");
       if (!activeDetailItem) {
+        setDetailLoading(false);
         return;
       }
       if (!options?.projectRoot) {
         if (!cancelled) {
           setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
+          setDetailLoading(false);
         }
         return;
       }
@@ -4452,6 +4482,7 @@ function TicketKanban({
           return;
         }
         setDetailContent(result);
+        setDetailContentPath(activeDetailItem.filePath);
       } catch (error) {
         if (!cancelled) {
           setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
@@ -4563,7 +4594,7 @@ function TicketKanban({
                                     }}
                                     type="button"
                                     className="ticket-kanban-card"
-                                    onClick={() => setActiveDetailPath(item.filePath)}
+                                    onClick={() => openDetailLayer(item.filePath)}
                                     title={item.title}
                                     aria-haspopup="dialog"
                                   >
@@ -4591,8 +4622,8 @@ function TicketKanban({
       </PageLayout>
       <TicketDetailLayer
         item={activeDetailItem}
-        content={detailContent}
-        loading={detailLoading}
+        content={detailContentPath === activeDetailPath ? detailContent : null}
+        loading={Boolean(activeDetailPath) && (detailLoading || (detailContentPath !== activeDetailPath && !detailError))}
         error={detailError}
         onOpenChange={handleDetailOpenChange}
         onClose={closeDetailLayer}

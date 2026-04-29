@@ -101,16 +101,21 @@ const DialogContent = React.forwardRef<
     overlayClassName?: string;
     overlayDim?: boolean;
     showClose?: boolean;
+    keepMounted?: boolean;
   }
->(({ className, children, overlayClassName, overlayDim = false, showClose = false, ...props }, ref) => {
+>(({ className, children, overlayClassName, overlayDim = false, showClose = false, keepMounted = false, ...props }, ref) => {
   const context = React.useContext(DialogContext);
 
   return (
     <MuiDialog
       open={Boolean(context.open)}
       onClose={() => context.onOpenChange?.(false)}
-      className={cn("af-dialog-root", overlayClassName, overlayDim ? "af-dialog-root-dim" : undefined)}
+      keepMounted={keepMounted}
+      className={cn("af-dialog-root", overlayDim ? "af-dialog-root-dim" : undefined)}
       slotProps={{
+        backdrop: {
+          className: cn("af-dialog-backdrop", overlayClassName)
+        },
         paper: {
           className: cn("af-dialog-content", className),
           ref,
