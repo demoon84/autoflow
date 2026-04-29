@@ -229,6 +229,150 @@ wiki_inputs_fingerprint_path() {
   printf '%s/%s.wiki-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
 }
 
+idle_preflight_inputs_hash_stream() {
+  local rel_dir dir file rel checksum
+
+  case "$public_role" in
+    planner)
+      set -- tickets/inbox tickets/backlog tickets/reject tickets/todo tickets/inprogress tickets/done tickets/plan plan
+      ;;
+    ticket)
+      set -- tickets/todo tickets/inprogress tickets/verifier
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  for rel_dir in "$@"; do
+    dir="${board_root}/${rel_dir}"
+    [ -d "$dir" ] || continue
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      case "$(basename "$file")" in
+        README.md)
+          continue
+          ;;
+      esac
+      rel="${file#"$board_root"/}"
+      if command -v shasum >/dev/null 2>&1; then
+        checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        checksum="$(sha256sum "$file" | awk '{ print $1 }')"
+      else
+        checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
+      fi
+      printf '%s  %s\n' "$checksum" "$rel"
+    done < <(find "$dir" -type f \( -name '*.md' -o -name '*.log' -o -name '*.txt' -o -name '*.json' -o -name '*.jsonl' \) | LC_ALL=C sort)
+  done
+}
+
+idle_preflight_inputs_fingerprint() {
+  if command -v shasum >/dev/null 2>&1; then
+    idle_preflight_inputs_hash_stream | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    idle_preflight_inputs_hash_stream | sha256sum | awk '{ print $1 }'
+  else
+    idle_preflight_inputs_hash_stream | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+idle_preflight_fingerprint_path() {
+  runner_ensure_dirs
+  printf '%s/%s.%s-idle-inputs.fingerprint' "$(runner_state_dir)" "$runner_id" "$public_role"
+}
+
+idle_preflight_skip_reason() {
+  case "$public_role" in
+    planner)
+      printf 'planner_inputs_unchanged'
+      ;;
+    ticket)
+      printf 'ticket_inputs_unchanged'
+      ;;
+  esac
+}
+
+maybe_skip_unchanged_idle_preflight() {
+  local preflight_status="$1"
+  local preflight_reason="$2"
+  local preflight_output="$3"
+  local preflight_log_path="$4"
+  local fingerprint_path current_fingerprint previous_fingerprint skip_reason timestamp
+
+  idle_preflight_fingerprint=""
+  idle_preflight_fingerprint_path_value=""
+
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  case "$public_role:$preflight_status:$preflight_reason" in
+    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  fingerprint_path="$(idle_preflight_fingerprint_path)"
+  current_fingerprint="$(idle_preflight_inputs_fingerprint)"
+  previous_fingerprint=""
+  if [ -f "$fingerprint_path" ]; then
+    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$current_fingerprint" > "$fingerprint_path"
+
+  idle_preflight_fingerprint="$current_fingerprint"
+  idle_preflight_fingerprint_path_value="$fingerprint_path"
+
+  [ -n "$previous_fingerprint" ] || return 1
+  [ "$current_fingerprint" = "$previous_fingerprint" ] || return 1
+
+  skip_reason="$(idle_preflight_skip_reason)"
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=${skip_reason}" \
+    "last_runtime_log=${preflight_log_path}"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${skip_reason}" \
+    "runtime_reason=${preflight_reason}" \
+    "fingerprint=${current_fingerprint}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'runtime_script=%s\n' "$runtime_path"
+  printf 'runtime_status=%s\n' "$preflight_status"
+  printf 'runtime_exit_code=0\n'
+  printf 'reason=%s\n' "$skip_reason"
+  printf 'runtime_reason=%s\n' "$preflight_reason"
+  printf 'active_item=\n'
+  printf 'idle_inputs_fingerprint=%s\n' "$current_fingerprint"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  printf 'runtime_output_begin\n'
+  cat "$preflight_output"
+  printf 'runtime_output_end\n'
+  rm -f "$preflight_output"
+  exit 0
+}
+
 wiki_record_inputs_fingerprint() {
   local fingerprint_path fingerprint
 
@@ -738,6 +882,7 @@ agent_runtime_preflight_or_exit() {
   fi
 
   finished_at="$(runner_now_iso)"
+  maybe_skip_unchanged_idle_preflight "$preflight_status" "$preflight_reason" "$preflight_output" "$preflight_log_path" || true
   if [ "$preflight_exit" -eq 0 ] && [ "$preflight_status" = "blocked" ]; then
     command_status="blocked"
     runner_status="blocked"
@@ -783,6 +928,10 @@ agent_runtime_preflight_or_exit() {
   printf 'runtime_exit_code=%s\n' "$preflight_exit"
   printf 'reason=%s\n' "$preflight_reason"
   printf 'active_item=%s\n' "$active_item"
+  if [ -n "${idle_preflight_fingerprint:-}" ]; then
+    printf 'idle_inputs_fingerprint=%s\n' "$idle_preflight_fingerprint"
+    printf 'fingerprint_path=%s\n' "$idle_preflight_fingerprint_path_value"
+  fi
   printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
   printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"

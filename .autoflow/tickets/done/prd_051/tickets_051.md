@@ -1,0 +1,92 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_051
+- PRD Key: prd_051
+- Plan Candidate: Plan AI handoff from tickets/done/prd_051/prd_051.md
+- Title: Skip unchanged planner and ticket idle turns
+- Stage: done
+- AI: worker-1
+- Claimed By: worker-1
+- Execution AI: worker-1
+- Verifier AI: worker-1
+- Last Updated: 2026-04-29T08:01:03Z
+
+## Goal
+
+- 이번 작업의 목표: Reduce recurring Plan AI and Impl AI adapter token usage by skipping unchanged idle loop ticks after deterministic runtime preflight has already reported no actionable work.
+
+## References
+
+- PRD: tickets/done/prd_051/prd_051.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_051]]
+- Plan Note:
+- Ticket Note: [[tickets_051]]
+
+## Allowed Paths
+
+- `packages/cli/run-role.sh`
+- `runtime/board-scripts/run-role.sh`
+- `tests/smoke/runner-idle-preflight-skip-smoke.sh`
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_051`
+- Branch: autoflow/tickets_051
+- Base Commit: b0e8aec2e1eba3c240dc2e4e219b0d113c05ac35
+- Worktree Commit:
+- Integration Status: already_in_project_root
+
+## Done When
+
+- [x] Planner loop runs that preflight to `status=idle` and `reason=no_actionable_plan_input` record a deterministic fingerprint for relevant planner board inputs.
+- [x] A later planner loop run with the same idle preflight reason and unchanged fingerprint exits before `write_agent_prompt` and reports a parseable skip reason.
+- [x] Ticket loop runs that preflight to `status=idle` and `reason=no_actionable_ticket` record a deterministic fingerprint for relevant ticket board inputs.
+- [x] A later ticket loop run with the same idle preflight reason and unchanged fingerprint exits before `write_agent_prompt` and reports a parseable skip reason.
+- [x] Adding or changing a relevant file under planner/ticket watched ticket folders changes the fingerprint and allows the adapter to run again.
+- [x] Non-idle preflight outputs, dry-run mode, and non-loop mode still call the adapter exactly as before.
+- [x] Existing Wiki AI idle skip behavior remains covered by `tests/smoke/wiki-runner-idle-skip-smoke.sh`.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: planner/ticket loop idle preflight fingerprint skip을 `packages/cli/run-role.sh`와 `runtime/board-scripts/run-role.sh`에 구현했고, 새 smoke와 기존 wiki smoke가 통과했다.
+- 직전 작업: 검증된 worktree patch를 PROJECT_ROOT에 수동 적용한 뒤 루트에서 지정 검증 명령을 재실행해 통과했다.
+- 재개 시 먼저 볼 것: `git status --short -- packages/cli/run-role.sh runtime/board-scripts/run-role.sh tests/smoke/runner-idle-preflight-skip-smoke.sh` 와 `tickets/inprogress/verify_051.md`.
+
+## Notes
+
+- Created by planner-1 (Plan AI) from tickets/done/prd_051/prd_051.md at 2026-04-29T06:56:31Z.
+- Wiki context: `./bin/autoflow wiki query --term "maybe_skip_unchanged_wiki_turn planner owner idle start-plan start-ticket-owner run-role packages/cli/run-role.sh"` returned `result_count=0`, so no exact wiki hit constrains the implementation.
+- Related wiki context: `.autoflow/wiki/features/run-role-prompt-dispatch.md` says dry-run prompt output is an acceptance surface and `runtime/board-scripts/run-role.sh` remains a required runtime copy; `.autoflow/wiki/features/planner-next-action-cues.md` says runtime key/value output shape must remain stable while token overhead is reduced.
+- Ticket history context: `tickets/done/prd_045/tickets_045.md` previously reduced recurring planner prompt overhead while preserving machine-readable branch outputs; follow that compatibility stance.
+- Repository pattern: `tests/smoke/wiki-runner-idle-skip-smoke.sh` demonstrates the fake-adapter marker-count pattern for unchanged-input skips.
+- Scope guard: do not change `start-plan.sh`, `start-ticket-owner.sh`, ticket lifecycle, claim/resume behavior, verification judgment, implementation worktrees, or Wiki AI skip semantics beyond shared helper extraction if needed.
+
+- Runtime hydrated worktree dependency at 2026-04-29T07:52:29Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker-1 prepared todo at 2026-04-29T07:52:29Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_051; run=tickets/inprogress/verify_051.md
+- AI worker-1 prepared resume at 2026-04-29T07:52:53Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_051; run=tickets/inprogress/verify_051.md
+- Mini-plan at 2026-04-29T07:58:53Z: add planner/ticket idle preflight fingerprint helpers next to the existing wiki skip helper; gate only loop-mode `status=idle` with `no_actionable_plan_input` / `no_actionable_ticket`; emit parseable `planner_inputs_unchanged` / `ticket_inputs_unchanged`; keep dry-run and actionable `ok/resume` adapter paths unchanged; mirror the change to the runtime copy and add smoke coverage.
+- Wiki context at 2026-04-29T07:58:53Z: `./bin/autoflow wiki query --term "idle preflight skip planner ticket runner run-role maybe_skip_unchanged_wiki_turn no_actionable_plan_input no_actionable_ticket"` from PROJECT_ROOT returned `result_count=0`; existing ticket notes still constrain this work via `.autoflow/wiki/features/run-role-prompt-dispatch.md`, `.autoflow/wiki/features/planner-next-action-cues.md`, and `tickets/done/prd_045/tickets_045.md`.
+- Implementation: added `idle_preflight_inputs_*` fingerprint helpers and `maybe_skip_unchanged_idle_preflight` in both run-role copies; first idle loop records and emits `idle_inputs_fingerprint`, unchanged later loop exits with parseable skip reason before prompt writing, and relevant board mutations wake planner/ticket adapter paths.
+- Verification: `bash -n packages/cli/run-role.sh runtime/board-scripts/run-role.sh tests/smoke/runner-idle-preflight-skip-smoke.sh && bash tests/smoke/runner-idle-preflight-skip-smoke.sh && bash tests/smoke/wiki-runner-idle-skip-smoke.sh` passed in worktree and again in PROJECT_ROOT after manual integration.
+- Queued without worktree commit at 2026-04-29T08:01:03Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker-1 marked verification pass at 2026-04-29T08:01:03Z; runtime finalizer will not perform merge operations.
+- Inline merge finalizer (worker worker-1) finalized this verified ticket at 2026-04-29T08:01:03Z.
+- Coordinator post-merge cleanup at 2026-04-29T08:01:03Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_051 deleted_branch=autoflow/tickets_051.
+## Verification
+- Run file: `tickets/done/prd_051/verify_051.md`
+- Log file: `logs/verifier_051_20260429_080104Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Skip unchanged planner and ticket idle preflight turns
+- Remaining risk: Low; the watched path set is intentionally scoped to board inputs that affect planner/ticket actionability and excludes runner state to avoid self-invalidating fingerprints.
