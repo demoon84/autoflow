@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
@@ -218,10 +218,36 @@ function createWindow() {
     backgroundColor: "#f7f7f7",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
+    }
+  });
+
+  // macOS: 데스크탑 4(=Mission Control space 4) 에서 시작되도록 Ctrl+4 를 먼저 보낸 뒤,
+  // 잠시 모든 space 에 보이게 했다가 현재(=Desktop 4) space 에 고정한다.
+  // 사전 설정 필요: System Settings -> Keyboard -> Keyboard Shortcuts -> Mission Control
+  // 에서 "Switch to Desktop 4" 단축키 활성화, 그리고 Electron(또는 터미널)의 Accessibility 권한.
+  win.once("ready-to-show", () => {
+    if (process.platform === "darwin") {
+      // key code 21 = "4", control down -> macOS "Switch to Desktop 4" 단축키.
+      execFile(
+        "osascript",
+        ["-e", 'tell application "System Events" to key code 21 using control down'],
+        () => {
+          // 단축키가 비활성화돼 있어도 창은 어쨌든 띄워야 하므로 결과는 무시.
+          setTimeout(() => {
+            win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+            win.show();
+            win.focus();
+            win.setVisibleOnAllWorkspaces(false);
+          }, 350);
+        }
+      );
+    } else {
+      win.show();
     }
   });
 
@@ -676,6 +702,9 @@ function parseRunnerListOutput(output) {
   };
 }
 
+// Strict drop set — applied when the log is structured as adapter conversation
+// (begin/end markers present). It removes the protocol envelope and any
+// key=value scaffolding so only the agent's natural-language text remains.
 const conversationDropPatterns = [
   /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
   /^Warning: Basic terminal detected\b/i,
@@ -691,6 +720,39 @@ const conversationDropPatterns = [
   /\bcodex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group\b/i,
   /^\/.*\/\.autoflow\/tickets\/.*\.md$/i
 ];
+
+// Permissive drop set — applied when the log carries only the runtime tick
+// stream (no adapter conversation embedded, as is the case when codex/claude
+// is not on PATH or the adapter ran but produced nothing). We keep `key=value`
+// tick lines so the runner card terminal panel can show a live, growing
+// stream and the typing animation has new characters to reveal each tick.
+const conversationEnvelopeDropPatterns = [
+  /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
+  /^[a-z][a-z0-9_.-]*\.output_(?:begin|end)$/i,
+  /^[a-z][a-z0-9_.-]*_output_(?:begin|end)$/i,
+  /^Warning: Basic terminal detected\b/i,
+  /^Warning: 256-color support not detected\b/i,
+  /^YOLO mode is enabled\b/i,
+  /\bcodex_core::plugins::manifest: ignoring interface\.defaultPrompt\b/i,
+  /\bcodex_core_plugins::manifest: ignoring interface\.defaultPrompt\b/i,
+  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i,
+  /\bcodex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group\b/i
+];
+
+const adapterMarkerPattern = /^adapter_(stdout|stderr|prompt|runtime)_begin\s*$/im;
+
+// Detect rich-mode only when there is real conversation content between
+// adapter_*_begin and adapter_*_end. When the adapter executable is missing
+// the runtime emits empty marker pairs (`begin\nend`); those should fall
+// back to permissive mode so the runtime tick stream is visible.
+function hasNonEmptyAdapterBody(text) {
+  const re = /adapter_(stdout|stderr|prompt|runtime)_begin\s*\n([\s\S]*?)\nadapter_\1_end/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match[2] && match[2].trim().length > 0) return true;
+  }
+  return false;
+}
 
 const conversationAnsiEscapePattern = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const conversationRepeatNormalizers = [
@@ -748,20 +810,47 @@ function extractAgentConversation(text, maxChars = 4000) {
   if (!text) return "";
   const lines = text.split(/\r?\n/);
 
-  const kept = [];
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+$/, "");
-    const matchTarget = cleanConversationLine(line);
-    if (conversationDropPatterns.some((pattern) => pattern.test(matchTarget))) continue;
-    kept.push(line);
+  // Apply a drop-pattern set + optional dedup over the line list.
+  function applyFilter(dropPatterns, dedupe) {
+    const kept = [];
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\s+$/, "");
+      const matchTarget = cleanConversationLine(line);
+      if (dropPatterns.some((pattern) => pattern.test(matchTarget))) continue;
+      kept.push(line);
+    }
+    while (kept.length && !kept[0].trim()) kept.shift();
+    while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+    return dedupe ? collapseRepeatedConversationLines(kept) : kept;
   }
 
-  while (kept.length && !kept[0].trim()) kept.shift();
-  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+  // Strict: only the agent's natural-language conversation, with envelope and
+  // `key=value` scaffolding removed. Useful when an adapter is actually
+  // running and emitting prose.
+  const strict = applyFilter(conversationDropPatterns, true);
+  // Permissive: drop only the protocol envelope and error noise; keep
+  // `key=value` runtime tick lines and skip dedup so the terminal panel grows
+  // tick-by-tick — that growth is what makes the ConversationStream typing
+  // animation visibly play.
+  const permissive = applyFilter(conversationEnvelopeDropPatterns, false);
 
-  const collapsed = collapseRepeatedConversationLines(kept);
+  // Pick strict only when it actually has meaningful conversation content.
+  // When the adapter is missing or its body is empty, strict collapses to a
+  // stray fragment; permissive keeps the live tick stream visible.
+  const useStrict = strict.length >= 3 || strict.length >= permissive.length;
+  const result = useStrict ? strict : permissive;
 
-  let conversation = collapsed.join("\n");
+  // Single stray log/path line (e.g. wiki-1 stderr that contains only its own
+  // log filename) is not useful as a "conversation" — return empty so the
+  // caller can fall through to the next candidate log.
+  if (
+    result.length === 1 &&
+    /^[\w./_-]+\.(log|txt|md)$/i.test(result[0].trim())
+  ) {
+    return "";
+  }
+
+  let conversation = result.join("\n");
   if (conversation.length > maxChars) {
     conversation = `…\n${conversation.slice(conversation.length - maxChars)}`;
   }
