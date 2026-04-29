@@ -1,3 +1,15 @@
+---
+kind: decision
+slug: worker-display-policy
+title: "Worker Display Policy"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - decision
+  - worker-display-policy
+  - decisions
+---
+
 # Worker Display Policy
 
 ## Overview

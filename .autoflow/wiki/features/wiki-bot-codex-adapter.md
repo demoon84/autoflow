@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: wiki-bot-codex-adapter
+title: "Wiki Bot Codex Adapter"
+created: 2026-04-28T21:20:26Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - feature
+  - wiki-bot-codex-adapter
+  - features
+---
+
 # Wiki Bot Codex Adapter
 
 Wiki Bot (`wiki-1`) can run through the Codex adapter while preserving Gemini as a selectable provider.

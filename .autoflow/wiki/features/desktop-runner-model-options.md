@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-runner-model-options
+title: "Desktop Runner Model Options"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - desktop-runner-model-options
+  - features
+---
+
 # Desktop Runner Model Options
 
 ## Overview

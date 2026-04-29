@@ -1,3 +1,15 @@
+---
+kind: learning
+slug: runtime-log-scope-vs-finish-contract-20260429
+title: "Runtime-Log Scope vs Finish Contract (2026-04-29)"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - learning
+  - runtime-log-scope-vs-finish-contract-20260429
+  - learnings
+---
+
 # Runtime-Log Scope vs Finish Contract (2026-04-29)
 
 ## Overview
@@ -18,6 +30,6 @@
 
 ## Sources
 
-- Verification evidence: `tickets/reject/verify_049.md`
+- Verification evidence: `tickets/done/prd_049/verify_049.md`
 - Failure log: `logs/verifier_049_20260429_070409Z_fail.md`
 - Related completed constraint: `wiki/features/finish-pass-inline-merge-summary.md`

@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-statistics-page
+title: "Desktop Statistics Page"
+created: 2026-04-28T21:20:26Z
+updated: 2026-04-29T16:52:51Z
+tags:
+  - feature
+  - desktop-statistics-page
+  - features
+---
+
 # Desktop Statistics Page
 
 ## Overview

@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: auto-resume-recovery
+title: "Auto-Resume Recovery"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - feature
+  - auto-resume-recovery
+  - features
+---
+
 # Auto-Resume Recovery
 
 ## Overview

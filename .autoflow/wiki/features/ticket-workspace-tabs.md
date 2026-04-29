@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: ticket-workspace-tabs
+title: "Ticket Workspace Tabs"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-29T16:52:51Z
+tags:
+  - feature
+  - ticket-workspace-tabs
+  - features
+---
+
 # Ticket Workspace Tabs
 
 ## Overview

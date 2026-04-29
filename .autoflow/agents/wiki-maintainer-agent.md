@@ -31,6 +31,7 @@ You are the orchestrator. The commands below are tools you call. The runner tick
 - `autoflow wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
 - `autoflow wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
 - `autoflow wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
+- `autoflow wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
 - `autoflow wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
 - File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
@@ -60,6 +61,20 @@ The command stores the last successfully summarized sha256 at `runners/state/<ru
 `AUTOFLOW_WIKI_INGEST_PROMPT_BYTES` caps the ingest adapter prompt (default `16384`). If the source body exceeds the budget, the prompt includes the leading bytes and an explicit `...[truncated]...` marker, while the full raw file remains preserved. `AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH=<file>` copies the assembled prompt for verifier inspection.
 
 Use `--no-summary` when you only want to populate `wiki-raw/`; it emits `ingest_summary_status=skipped_no_summary_flag` and does not call the adapter.
+
+## Frontmatter retrofit
+
+`autoflow wiki retrofit-frontmatter` closes deterministic lint gaps on existing focused wiki pages. It walks `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`, excluding `README.md`, `index.md`, `log.md`, `project-overview.md`, and pages that already start with `---`.
+
+The deterministic-first invariant is strict: without `--allow-adapter`, the command must never invoke `run_wiki_adapter_prompt` or any configured Codex/Claude/OpenCode/Gemini adapter. Frontmatter fields come from local data only:
+
+- `kind`: directory kind (`decision`, `feature`, `learning`, `architecture`).
+- `slug`: markdown basename.
+- `title`: first H1, falling back to a title-cased slug.
+- `created` / `updated`: git history timestamps, with a UTC current-time fallback when history is missing.
+- `tags`: deterministic lowercased tags from kind, slug, and directory ancestors.
+
+`--dry-run` prints the proposed frontmatter and `retrofit.<n>.status=dry_run` without writing. `--page wiki/features/example.md` limits the operation to one board-relative page. `--allow-adapter` is an explicit opt-in escape hatch for fallback-title polish only; `AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES` caps that per-page prompt at 4096 bytes by default.
 
 ## Rules
 

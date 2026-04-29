@@ -1,3 +1,14 @@
+---
+kind: architecture
+slug: runner-role-slugs
+title: "Runner Role Identifiers"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - architecture
+  - runner-role-slugs
+---
+
 # Runner Role Identifiers
 
 ## Overview

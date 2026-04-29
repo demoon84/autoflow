@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-tickets-kanban
+title: "Ticket Board Evolution (Legacy)"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-29T16:52:51Z
+tags:
+  - feature
+  - desktop-tickets-kanban
+  - features
+---
+
 # Ticket Board Evolution (Legacy)
 
 ## Overview

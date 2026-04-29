@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: run-role-prompt-dispatch
+title: "Run-Role Prompt Dispatch"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - run-role-prompt-dispatch
+  - features
+---
+
 # Run-Role Prompt Dispatch
 
 ## Overview

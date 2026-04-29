@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: ticket-owner-verification-output-caps
+title: "Ticket-Owner Verification Output Caps"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - ticket-owner-verification-output-caps
+  - features
+---
+
 # Ticket-Owner Verification Output Caps
 
 ## Overview

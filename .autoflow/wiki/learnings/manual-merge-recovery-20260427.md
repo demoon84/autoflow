@@ -1,3 +1,15 @@
+---
+kind: learning
+slug: manual-merge-recovery-20260427
+title: "Learning: Manual Recovery and Worktree Consolidation (2026-04-27)"
+created: 2026-04-28T21:20:26Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - learning
+  - manual-merge-recovery-20260427
+  - learnings
+---
+
 # Learning: Manual Recovery and Worktree Consolidation (2026-04-27)
 
 ## Context

@@ -1,3 +1,15 @@
+---
+kind: decision
+slug: prd-terminology-rename
+title: "PRD Terminology Rename"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - decision
+  - prd-terminology-rename
+  - decisions
+---
+
 # PRD Terminology Rename
 
 ## Decision

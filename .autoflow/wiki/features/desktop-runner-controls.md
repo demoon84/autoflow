@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-runner-controls
+title: "Desktop Runner Controls"
+created: 2026-04-28T21:20:26Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - feature
+  - desktop-runner-controls
+  - features
+---
+
 # Desktop Runner Controls
 
 Simplified runner control UI for the desktop application.

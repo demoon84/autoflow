@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-layer-width
+title: "Desktop Layer Width"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - desktop-layer-width
+  - features
+---
+
 # Desktop Layer Width
 
 ## Overview

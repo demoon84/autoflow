@@ -1,3 +1,15 @@
+---
+kind: decision
+slug: manual-resolution-policy
+title: "Manual Resolution Policy"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - decision
+  - manual-resolution-policy
+  - decisions
+---
+
 # Manual Resolution Policy
 
 ## Decision

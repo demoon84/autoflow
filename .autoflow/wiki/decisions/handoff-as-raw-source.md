@@ -1,3 +1,15 @@
+---
+kind: decision
+slug: handoff-as-raw-source
+title: "Decision: Handoff as Raw Source"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - decision
+  - handoff-as-raw-source
+  - decisions
+---
+
 # Decision: Handoff as Raw Source
 
 ## Context

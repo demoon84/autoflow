@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: self-improvement-trial
+title: "Self-Improvement Trial Runner"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - feature
+  - self-improvement-trial
+  - features
+---
+
 # Self-Improvement Trial Runner
 
 ## Overview

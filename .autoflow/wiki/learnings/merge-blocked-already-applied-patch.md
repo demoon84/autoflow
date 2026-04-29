@@ -1,3 +1,15 @@
+---
+kind: learning
+slug: merge-blocked-already-applied-patch
+title: "Merge Blocked by an Already-Applied Patch"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - learning
+  - merge-blocked-already-applied-patch
+  - learnings
+---
+
 # Merge Blocked by an Already-Applied Patch
 
 ## Context

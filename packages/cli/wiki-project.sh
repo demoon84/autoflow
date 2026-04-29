@@ -12,6 +12,7 @@ Usage:
   wiki-project.sh lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
   wiki-project.sh ingest [project-root] [board-dir-name] <source-file> [--slug SLUG] [--no-summary] [--runner RUNNER_ID]
+  wiki-project.sh retrofit-frontmatter [project-root] [board-dir-name] [--dry-run] [--page BOARD_RELATIVE_PATH] [--allow-adapter] [--runner RUNNER_ID]
 
 Examples:
   wiki-project.sh update /path/to/project
@@ -19,6 +20,7 @@ Examples:
   wiki-project.sh query /path/to/project --term auth --term session --limit 5 --synth
   wiki-project.sh query /path/to/project --term wiki --term lint --synth --save-as wiki-lint-summary
   wiki-project.sh ingest /path/to/project .autoflow docs/source.md --slug source-doc
+  wiki-project.sh retrofit-frontmatter /path/to/project .autoflow --dry-run
 
 Environment:
   AUTOFLOW_WIKI_LINT_PROMPT_BYTES    Byte cap for the semantic-lint adapter prompt (default 32768).
@@ -32,6 +34,10 @@ Environment:
   AUTOFLOW_WIKI_INGEST_PROMPT_BYTES  Byte cap for the ingest adapter prompt (default 16384).
   AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH
                                      When set, the assembled ingest prompt is copied to that path.
+  AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES
+                                     Byte cap for the optional retrofit-frontmatter adapter prompt
+                                     when --allow-adapter is passed (default 4096). The default
+                                     deterministic path never invokes an adapter.
 EOF
 }
 
@@ -864,6 +870,223 @@ extract_frontmatter_value() {
   ' "$file" 2>/dev/null || true
 }
 
+wiki_yaml_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+wiki_tag_slug() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+wiki_title_from_slug() {
+  local slug="$1"
+
+  printf '%s' "$slug" | awk '
+    BEGIN { FS = "-" }
+    {
+      out = ""
+      for (i = 1; i <= NF; i++) {
+        if ($i == "") {
+          continue
+        }
+        word = toupper(substr($i, 1, 1)) substr($i, 2)
+        out = out (out == "" ? "" : " ") word
+      }
+      print out
+    }
+  '
+}
+
+wiki_first_h1_title() {
+  local file="$1"
+
+  awk '
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (line ~ /^#[[:space:]]+/) {
+        sub(/^#[[:space:]]+/, "", line)
+        print line
+        found = 1
+        exit
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "$file" 2>/dev/null || true
+}
+
+retrofit_kind_from_rel() {
+  local rel="$1"
+
+  case "$rel" in
+    wiki/decisions/*) printf 'decision' ;;
+    wiki/features/*) printf 'feature' ;;
+    wiki/learnings/*) printf 'learning' ;;
+    wiki/architecture/*) printf 'architecture' ;;
+    *) return 1 ;;
+  esac
+}
+
+retrofit_is_excluded_page() {
+  local rel="$1"
+  local base
+
+  base="$(basename "$rel")"
+  case "$base" in
+    README.md|index.md|log.md|project-overview.md)
+      return 0
+      ;;
+  esac
+
+  case "$rel" in
+    wiki/decisions/*.md|wiki/features/*.md|wiki/learnings/*.md|wiki/architecture/*.md)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+retrofit_has_frontmatter() {
+  local file="$1"
+  local first_line
+
+  first_line="$(awk 'NR == 1 { sub(/\r$/, ""); print; exit }' "$file" 2>/dev/null || true)"
+  [ "$first_line" = "---" ]
+}
+
+retrofit_git_timestamp() {
+  local project_root="$1"
+  local repo_rel="$2"
+  local mode="$3"
+  local epoch
+
+  if [ "$mode" = "created" ]; then
+    epoch="$(git -C "$project_root" log --diff-filter=A --follow --reverse --format=%ct -- "$repo_rel" 2>/dev/null | awk 'NF { print; exit }' || true)"
+  else
+    epoch="$(git -C "$project_root" log -1 --format=%ct -- "$repo_rel" 2>/dev/null | awk 'NF { print; exit }' || true)"
+  fi
+
+  if [ -n "$epoch" ]; then
+    date -u -r "$epoch" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || true
+  fi
+}
+
+retrofit_write_frontmatter_file() {
+  local output_file="$1"
+  local kind="$2"
+  local slug="$3"
+  local title="$4"
+  local created="$5"
+  local updated="$6"
+  local tags_csv="$7"
+  local tag
+
+  {
+    printf -- '---\n'
+    printf 'kind: %s\n' "$kind"
+    printf 'slug: %s\n' "$slug"
+    printf 'title: "%s"\n' "$(wiki_yaml_escape "$title")"
+    printf 'created: %s\n' "$created"
+    printf 'updated: %s\n' "$updated"
+    printf 'tags:\n'
+    IFS=',' read -r -a tags_array <<< "$tags_csv"
+    for tag in "${tags_array[@]}"; do
+      [ -n "$tag" ] || continue
+      printf '  - %s\n' "$tag"
+    done
+    printf -- '---\n'
+  } > "$output_file"
+}
+
+retrofit_tags_csv() {
+  local kind="$1"
+  local slug="$2"
+  local rel="$3"
+  local tags_file tag dir path_part
+
+  tags_file="$(autoflow_mktemp)"
+  printf '%s\n' "$(wiki_tag_slug "$kind")" >> "$tags_file"
+  printf '%s\n' "$(wiki_tag_slug "$slug")" >> "$tags_file"
+
+  path_part="${rel#wiki/}"
+  dir="$(dirname "$path_part")"
+  if [ "$dir" != "." ]; then
+    while [ -n "$dir" ] && [ "$dir" != "." ]; do
+      printf '%s\n' "$(wiki_tag_slug "$(basename "$dir")")" >> "$tags_file"
+      dir="$(dirname "$dir")"
+    done
+  fi
+
+  awk 'NF && !seen[$0]++ { print }' "$tags_file" | paste -sd ',' -
+}
+
+retrofit_maybe_adapter_title_tags() {
+  local project_root="$1"
+  local board_root="$2"
+  local runner_id="$3"
+  local file="$4"
+  local rel="$5"
+  local title="$6"
+  local tags_csv="$7"
+  local prompt_file stdout_file stderr_file budget body_bytes adapter_exit line key value
+
+  [ -n "$runner_id" ] || return 0
+
+  budget="${AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES:-4096}"
+  case "$budget" in
+    ''|*[!0-9]*) budget="4096" ;;
+  esac
+
+  prompt_file="$(autoflow_mktemp)"
+  stdout_file="$(autoflow_mktemp)"
+  stderr_file="$(autoflow_mktemp)"
+  body_bytes="$(autoflow_mktemp)"
+  LC_ALL=C head -c "$budget" "$file" > "$body_bytes" 2>/dev/null || true
+
+  {
+    printf 'Suggest deterministic wiki frontmatter polish.\n'
+    printf 'Return only optional key=value lines: title=<title>, tags=<comma-separated extra tags>.\n'
+    printf 'Do not invent facts. At most three extra tags.\n\n'
+    printf 'page=%s\n' "$rel"
+    printf 'current_title=%s\n' "$title"
+    printf 'current_tags=%s\n\n' "$tags_csv"
+    printf 'Body excerpt:\n'
+    cat "$body_bytes"
+  } > "$prompt_file"
+
+  set +e
+  run_wiki_adapter_prompt "$project_root" "$board_root" "$runner_id" "$prompt_file" "$stdout_file" "$stderr_file"
+  adapter_exit=$?
+  set -e
+  if [ "$adapter_exit" -ne 0 ]; then
+    printf 'retrofit_adapter_status=skipped_or_failed\n'
+    printf 'retrofit_adapter_exit_code=%s\n' "$adapter_exit"
+    return 0
+  fi
+
+  while IFS= read -r line; do
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      title)
+        [ -n "$value" ] && title="$value"
+        ;;
+      tags)
+        [ -n "$value" ] && tags_csv="${tags_csv},$(printf '%s' "$value" | tr ',' '\n' | while IFS= read -r tag_value; do wiki_tag_slug "$tag_value"; printf '\n'; done | awk 'NF' | head -n 3 | paste -sd ',' -)"
+        ;;
+    esac
+  done < "$stdout_file"
+
+  tags_csv="$(printf '%s' "$tags_csv" | tr ',' '\n' | awk 'NF && !seen[$0]++ { print }' | paste -sd ',' -)"
+  printf 'retrofit_adapter_status=ok\n'
+  printf 'title=%s\n' "$title"
+  printf 'tags=%s\n' "$tags_csv"
+}
+
 ingest_write_raw_source() {
   local board_root="$1"
   local source_file="$2"
@@ -1241,6 +1464,163 @@ run_ingest() {
   else
     printf 'ingest_summary_write=created\n'
   fi
+}
+
+run_retrofit_frontmatter() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local dry_run="$3"
+  local page_filter="$4"
+  local allow_adapter="$5"
+  local runner_id="$6"
+  local board_root wiki_root pages_file file rel repo_rel kind slug title title_source created updated tags_csv
+  local frontmatter_file tmp_file today adapter_result_file adapter_title adapter_tags
+  local idx=0 total=0 written=0 skipped=0 dry_run_count=0 warning_count=0
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  wiki_root="${board_root}/wiki"
+  pages_file="$(autoflow_mktemp)"
+
+  if ! board_is_initialized "$board_root"; then
+    printf 'status=blocked\n'
+    printf 'reason=board_not_initialized\n'
+    printf 'project_root=%s\n' "$project_root"
+    printf 'board_root=%s\n' "$board_root"
+    exit 0
+  fi
+
+  if [ ! -d "$wiki_root" ]; then
+    printf 'status=warning\n'
+    printf 'reason=wiki_root_missing\n'
+    printf 'project_root=%s\n' "$project_root"
+    printf 'board_root=%s\n' "$board_root"
+    printf 'wiki_root=%s\n' "$wiki_root"
+    exit 0
+  fi
+
+  if [ -n "$page_filter" ]; then
+    case "$page_filter" in
+      wiki/*.md) ;;
+      *)
+        printf 'status=blocked\n'
+        printf 'reason=invalid_page_path\n'
+        printf 'page=%s\n' "$page_filter"
+        exit 1
+        ;;
+    esac
+    printf '%s/%s\n' "$board_root" "$page_filter" > "$pages_file"
+  else
+    {
+      find "${wiki_root}/decisions" -type f -name '*.md' ! -name 'README.md' 2>/dev/null || true
+      find "${wiki_root}/features" -type f -name '*.md' ! -name 'README.md' 2>/dev/null || true
+      find "${wiki_root}/learnings" -type f -name '*.md' ! -name 'README.md' 2>/dev/null || true
+      find "${wiki_root}/architecture" -type f -name '*.md' ! -name 'README.md' 2>/dev/null || true
+    } | sort > "$pages_file"
+  fi
+
+  if [ "$allow_adapter" = "true" ] && [ -z "$runner_id" ]; then
+    runner_id="$(find_wiki_runner "$board_root" "" 2>/dev/null || true)"
+  fi
+
+  today="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    rel="$(relative_to_board "$board_root" "$file")"
+    idx="$((idx + 1))"
+
+    if [ ! -f "$file" ]; then
+      skipped="$((skipped + 1))"
+      printf 'retrofit.%s.page=%s\n' "$idx" "$rel"
+      printf 'retrofit.%s.status=skipped_missing\n' "$idx"
+      continue
+    fi
+
+    if retrofit_is_excluded_page "$rel"; then
+      skipped="$((skipped + 1))"
+      printf 'retrofit.%s.page=%s\n' "$idx" "$rel"
+      printf 'retrofit.%s.status=skipped_excluded\n' "$idx"
+      continue
+    fi
+
+    total="$((total + 1))"
+    printf 'retrofit.%s.page=%s\n' "$idx" "$rel"
+
+    if retrofit_has_frontmatter "$file"; then
+      skipped="$((skipped + 1))"
+      printf 'retrofit.%s.status=skipped_already_has_frontmatter\n' "$idx"
+      continue
+    fi
+
+    kind="$(retrofit_kind_from_rel "$rel")"
+    slug="$(basename "$file" .md)"
+    title="$(wiki_first_h1_title "$file")"
+    title_source="h1"
+    if [ -z "$title" ]; then
+      title="$(wiki_title_from_slug "$slug")"
+      title_source="slug_fallback"
+    fi
+
+    repo_rel="${board_dir_name}/${rel}"
+    created="$(retrofit_git_timestamp "$project_root" "$repo_rel" "created")"
+    if [ -z "$created" ]; then
+      created="$today"
+      warning_count="$((warning_count + 1))"
+      printf 'retrofit_warning.%s=missing_git_history_for=%s\n' "$warning_count" "$rel"
+    fi
+    updated="$(retrofit_git_timestamp "$project_root" "$repo_rel" "updated")"
+    [ -n "$updated" ] || updated="$created"
+    tags_csv="$(retrofit_tags_csv "$kind" "$slug" "$rel")"
+
+    if [ "$allow_adapter" = "true" ] && [ "$title_source" = "slug_fallback" ]; then
+      adapter_result_file="$(autoflow_mktemp)"
+      retrofit_maybe_adapter_title_tags "$project_root" "$board_root" "$runner_id" "$file" "$rel" "$title" "$tags_csv" > "$adapter_result_file"
+      grep '^retrofit_adapter_' "$adapter_result_file" || true
+      adapter_title="$(awk -F= '$1 == "title" { sub(/^[^=]*=/, ""); print; exit }' "$adapter_result_file")"
+      adapter_tags="$(awk -F= '$1 == "tags" { sub(/^[^=]*=/, ""); print; exit }' "$adapter_result_file")"
+      [ -n "$adapter_title" ] && title="$adapter_title"
+      [ -n "$adapter_tags" ] && tags_csv="$adapter_tags"
+    fi
+
+    frontmatter_file="$(autoflow_mktemp)"
+    retrofit_write_frontmatter_file "$frontmatter_file" "$kind" "$slug" "$title" "$created" "$updated" "$tags_csv"
+
+    if [ "$dry_run" = "true" ]; then
+      dry_run_count="$((dry_run_count + 1))"
+      printf 'retrofit.%s.status=dry_run\n' "$idx"
+      printf 'retrofit.%s.kind=%s\n' "$idx" "$kind"
+      printf 'retrofit.%s.slug=%s\n' "$idx" "$slug"
+      printf 'retrofit.%s.title=%s\n' "$idx" "$(wiki_output_escape "$title")"
+      printf 'retrofit.%s.created=%s\n' "$idx" "$created"
+      printf 'retrofit.%s.updated=%s\n' "$idx" "$updated"
+      printf 'retrofit.%s.tags=%s\n' "$idx" "$tags_csv"
+      printf 'retrofit.%s.frontmatter_begin\n' "$idx"
+      cat "$frontmatter_file"
+      printf 'retrofit.%s.frontmatter_end\n' "$idx"
+      continue
+    fi
+
+    tmp_file="$(autoflow_mktemp)"
+    {
+      cat "$frontmatter_file"
+      printf '\n'
+      cat "$file"
+    } > "$tmp_file"
+    mv "$tmp_file" "$file"
+    written="$((written + 1))"
+    printf 'retrofit.%s.status=written\n' "$idx"
+  done < "$pages_file"
+
+  printf 'status=ok\n'
+  printf 'project_root=%s\n' "$project_root"
+  printf 'board_root=%s\n' "$board_root"
+  printf 'wiki_root=%s\n' "$wiki_root"
+  printf 'retrofit_total=%s\n' "$total"
+  printf 'retrofit_written=%s\n' "$written"
+  printf 'retrofit_skipped=%s\n' "$skipped"
+  printf 'retrofit_dry_run=%s\n' "$dry_run_count"
+  printf 'retrofit_allow_adapter=%s\n' "$allow_adapter"
+  printf 'retrofit_warning_count=%s\n' "$warning_count"
 }
 
 run_semantic_lint() {
@@ -1903,6 +2283,8 @@ wiki_runner_id=""
 query_terms_file=""
 ingest_slug=""
 ingest_no_summary="false"
+retrofit_page=""
+retrofit_allow_adapter="false"
 positionals=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -1982,6 +2364,21 @@ while [ "$#" -gt 0 ]; do
     --no-summary)
       ingest_no_summary="true"
       ;;
+    --page)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --page" >&2
+        usage
+        exit 1
+      fi
+      retrofit_page="$1"
+      ;;
+    --page=*)
+      retrofit_page="${1#--page=}"
+      ;;
+    --allow-adapter)
+      retrofit_allow_adapter="true"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -2027,6 +2424,9 @@ case "$action" in
       exit 1
     fi
     run_ingest "$project_root" "$board_dir_name" "${positionals[2]}" "$ingest_slug" "$ingest_no_summary" "$wiki_runner_id"
+    ;;
+  retrofit-frontmatter)
+    run_retrofit_frontmatter "$project_root" "$board_dir_name" "$dry_run" "$retrofit_page" "$retrofit_allow_adapter" "$wiki_runner_id"
     ;;
   help|-h|--help)
     usage

@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: in-app-help
+title: "In-App Help Section"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - feature
+  - in-app-help
+  - features
+---
+
 # In-App Help Section
 
 ## Overview

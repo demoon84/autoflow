@@ -1,3 +1,15 @@
+---
+kind: decision
+slug: design-kit-mui-migration
+title: "Decision: Migration to MUI Design Kit"
+created: 2026-04-28T21:20:26Z
+updated: 2026-04-28T21:20:26Z
+tags:
+  - decision
+  - design-kit-mui-migration
+  - decisions
+---
+
 # Decision: Migration to MUI Design Kit
 
 ## Context

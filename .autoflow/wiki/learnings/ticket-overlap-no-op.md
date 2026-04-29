@@ -1,3 +1,15 @@
+---
+kind: learning
+slug: ticket-overlap-no-op
+title: "Ticket Overlap and No-op Worktrees"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - learning
+  - ticket-overlap-no-op
+  - learnings
+---
+
 # Ticket Overlap and No-op Worktrees
 
 ## Context

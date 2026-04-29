@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: planner-next-action-cues
+title: "Planner Next-Action Cues"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - planner-next-action-cues
+  - features
+---
+
 # Planner Next-Action Cues
 
 ## Overview

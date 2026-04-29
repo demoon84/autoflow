@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: finish-pass-inline-merge-summary
+title: "Finish-Pass Inline Merge Summary"
+created: 2026-04-29T15:54:31Z
+updated: 2026-04-29T15:54:31Z
+tags:
+  - feature
+  - finish-pass-inline-merge-summary
+  - features
+---
+
 # Finish-Pass Inline Merge Summary
 
 ## Overview

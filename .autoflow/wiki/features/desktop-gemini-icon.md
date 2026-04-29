@@ -1,3 +1,15 @@
+---
+kind: feature
+slug: desktop-gemini-icon
+title: "Desktop Agent App Icons"
+created: 2026-04-27T15:19:53Z
+updated: 2026-04-27T15:19:53Z
+tags:
+  - feature
+  - desktop-gemini-icon
+  - features
+---
+
 # Desktop Agent App Icons
 
 ## Overview
