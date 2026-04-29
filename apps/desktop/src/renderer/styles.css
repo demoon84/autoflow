@@ -2610,8 +2610,8 @@ pre {
 }
 
 .ticket-detail-layer-panel {
-  width: min(980px, calc(100vw - 32px));
-  max-width: min(980px, calc(100vw - 32px));
+  width: min(1274px, calc(100vw - 32px));
+  max-width: min(1274px, calc(100vw - 32px));
 }
 
 .ticket-detail-layer-header {
@@ -3469,6 +3469,7 @@ pre {
 }
 
 .workflow-pin-layer-panel {
+  width: min(884px, calc(100vw - 48px));
   background:
     linear-gradient(180deg, var(--card) 0%, color-mix(in srgb, var(--card) 86%, var(--background)) 100%);
 }

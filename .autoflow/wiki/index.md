@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
 - **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so new user-visible attribution prefers `worker-N` while legacy `AI-N` ownership matching remains compatible (`prd_039`).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
 - **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
@@ -55,11 +56,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 38
+- Done tickets: 39
 - Reject records: 1
-- Verifier logs: 227
+- Verifier logs: 228
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T05:08:26Z
+- Last updated: 2026-04-29T05:17:23Z
 
 ## Completed Tickets
 
