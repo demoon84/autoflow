@@ -52,6 +52,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 <!-- AUTOFLOW:BEGIN feature-links -->
 ## Added Feature Pages
 
+- [[features/run-role-prompt-dispatch]] (`wiki/features/run-role-prompt-dispatch.md`)
 - [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
 - [[features/desktop-layer-width]] (`wiki/features/desktop-layer-width.md`)
 <!-- AUTOFLOW:END feature-links -->
@@ -63,11 +64,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 40
+- Done tickets: 41
 - Reject records: 1
-- Verifier logs: 229
+- Verifier logs: 230
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T05:35:13Z
+- Last updated: 2026-04-29T06:34:21Z
 
 ## Completed Tickets
 

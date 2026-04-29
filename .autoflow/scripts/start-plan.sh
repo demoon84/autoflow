@@ -363,7 +363,7 @@ if [ -n "$replanned_reject" ]; then
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Reject ticket %s was bumped back to todo by Plan AI. Impl AI will claim it on the next tick. No further action this turn.\n' "$(basename "$replanned_ticket")"
+  printf 'next_action=Reject ticket %s returned to todo; follow plan-to-ticket-agent.md for retry handling.\n' "$(basename "$replanned_ticket")"
   exit 0
 fi
 
@@ -377,7 +377,7 @@ if [ -n "$memo_file" ]; then
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Plan AI must read %s, treat the memo as an implementation directive, infer a safe narrow scope from the request and repository context, create a generated backlog PRD with a Conversation Handoff source, then rerun this runtime once to create the todo ticket. The runtime archives the consumed memo beside the generated PRD during ticket creation. Do not turn memo intake into a repeated human-question loop; only refuse ticket creation for unsafe requests.\n' "$(board_relative_path "$memo_file")"
+  printf 'next_action=Promote memo %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$memo_file")"
   exit 0
 fi
 
@@ -392,7 +392,7 @@ if [ -n "$spec_file" ]; then
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Plan AI created todo ticket %s from %s. Refine Allowed Paths and Done When if the PRD has more specific scope, then let Impl AI claim it on the next tick.\n' "$(basename "$created_ticket")" "$(board_relative_path "$spec_file")"
+  printf 'next_action=Todo %s created from %s; hand off to ticket owner.\n' "$(basename "$created_ticket")" "$(board_relative_path "$spec_file")"
   exit 0
 fi
 
@@ -407,7 +407,7 @@ if [ -n "$plan_root" ] && [ -d "$plan_root" ]; then
     emit_replan_skipped_metadata "$replan_skipped_file"
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
-    printf 'next_action=Legacy plan file detected at %s. Convert any unticketed Plan Candidates into tickets in tickets/todo/ this turn.\n' "$legacy_plan"
+    printf 'next_action=Convert unticketed candidates from legacy plan %s.\n' "$legacy_plan"
     exit 0
   fi
 fi
