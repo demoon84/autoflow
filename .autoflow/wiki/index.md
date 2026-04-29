@@ -49,6 +49,13 @@ Generated summaries may be written here by `autoflow wiki update`.
 ## Archive
 - [[features/desktop-tickets-kanban]] (`wiki/features/desktop-tickets-kanban.md`) (Legacy)
 
+<!-- AUTOFLOW:BEGIN feature-links -->
+## Added Feature Pages
+
+- [[features/desktop-runner-model-options]] (`wiki/features/desktop-runner-model-options.md`)
+- [[features/desktop-layer-width]] (`wiki/features/desktop-layer-width.md`)
+<!-- AUTOFLOW:END feature-links -->
+
 ## Source Of Truth
 
 Tickets, verification records, and logs remain authoritative.
@@ -56,11 +63,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 39
+- Done tickets: 40
 - Reject records: 1
-- Verifier logs: 228
+- Verifier logs: 229
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T05:17:23Z
+- Last updated: 2026-04-29T05:35:13Z
 
 ## Completed Tickets
 
