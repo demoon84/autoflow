@@ -3437,7 +3437,7 @@ const ticketWorkspaceTabs: Array<{
   description: string;
 }> = [
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
-  { key: "inbox", label: "인박스", description: "빠른 메모 intake" },
+  { key: "inbox", label: "인박스", description: "빠른 오더 intake" },
   { key: "issued", label: "발급 티켓", description: "발급된 작업 티켓" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
@@ -3445,7 +3445,7 @@ const ticketKanbanFolderMeta: Record<string, {
   description: string;
 }> = {
   backlog: { label: "Backlog", description: "PRD 대기" },
-  inbox: { label: "Memo", description: "빠른 메모" },
+  inbox: { label: "Order", description: "빠른 오더" },
   todo: { label: "TODO", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "AI가 처리 중" },
   done: { label: "완료", description: "완료 기록" },
@@ -3464,7 +3464,7 @@ function workflowFileDisplayName(name: string) {
     return stem.replace(/^reject_/, "Reject-");
   }
   if (stem.startsWith("memo_")) {
-    return stem.replace(/^memo_/, "Memo-");
+    return stem.replace(/^memo_/, "Order-");
   }
   if (stem.startsWith("tickets_")) {
     return stem.replace(/^tickets_/, "Ticket-");
@@ -4251,7 +4251,7 @@ function TicketWorkspaceDetailPane({
   detailContent: AutoflowFileContentResult | null;
 }) {
   const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "memo" ? Inbox : ClipboardList;
-  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "memo" ? "Memo" : "Ticket";
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "memo" ? "Order" : "Ticket";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -4550,7 +4550,7 @@ function TicketKanban({
               kind="memo"
               options={options}
               runners={board?.runners}
-              emptyTitle="인박스 메모가 없습니다."
+              emptyTitle="인박스 오더가 없습니다."
               emptyDescription="tickets/inbox/memo_*.md 파일이 있으면 읽기 전용 목록으로 표시됩니다."
             />
           ) : null}
@@ -4666,7 +4666,7 @@ function TicketBoard({
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const inboxMemos = (board?.tickets.inbox || [])
     .filter(isMemoBoardFile)
-    .map((file) => ({ ...file, stateLabel: "MEMO", stateTone: "neutral" } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "ORDER", stateTone: "neutral" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
@@ -4695,7 +4695,7 @@ function TicketBoard({
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD ${specFiles.length}건${backlogSpecs.length ? ` · 대기 ${backlogSpecs.length}건` : ""}`;
-  const memoPinTitle = `MEMO ${memoFiles.length}건`;
+  const memoPinTitle = `ORDER ${memoFiles.length}건`;
   const todoPinTitle = `TODO ${todoFiles.length}건`;
   const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
 
@@ -4727,8 +4727,8 @@ function TicketBoard({
                 pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
                 variant="default"
                 layerHeading={memoPinTitle}
-                layerHelpText="인박스에 들어온 빠른 메모 목록입니다. 항목을 클릭하면 메모 본문이 이 화면에서 열립니다."
-                emptyText="아직 들어온 메모가 없습니다."
+                layerHelpText="인박스에 들어온 빠른 오더 목록입니다. 항목을 클릭하면 오더 본문이 이 화면에서 열립니다."
+                emptyText="아직 들어온 오더가 없습니다."
                 showWhenEmpty
               />
             ) : null}

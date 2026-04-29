@@ -68,6 +68,8 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[answers/wiki-preview-top-alignment]] (`wiki/answers/wiki-preview-top-alignment.md`)
   - [[answers/finish-ticket-owner-cleanup-status-contract]] (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`)
   - [[answers/korean-board-writing-policy]] (`wiki/answers/korean-board-writing-policy.md`)
+  - [[answers/obsidian-free-board-outputs]] (`wiki/answers/obsidian-free-board-outputs.md`)
+  - [[answers/singleton-runner-display-labels]] (`wiki/answers/singleton-runner-display-labels.md`)
   - [[answers/wiki-query-filter-group]] (`wiki/answers/wiki-query-filter-group.md`)
   - [[answers/desktop-runner-terminal-streaming]] (`wiki/answers/desktop-runner-terminal-streaming.md`)
   - [[answers/wiki-ingest-workflow]] (`wiki/answers/wiki-ingest-workflow.md`)
@@ -94,11 +96,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 56
+- Done tickets: 57
 - Reject records: 2
-- Verifier logs: 256
+- Verifier logs: 257
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T23:41:52Z
+- Last updated: 2026-04-29T23:47:50Z
 
 ## Completed Tickets
 
