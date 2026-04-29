@@ -99,10 +99,53 @@ verification_command_for_ticket() {
   return 1
 }
 
-tail_file_or_empty() {
+positive_int_or_default() {
+  local value="$1"
+  local default_value="$2"
+
+  case "$value" in
+    ''|*[!0-9]*|0)
+      printf '%s' "$default_value"
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+format_output_file() {
   local file="$1"
-  if [ -s "$file" ]; then
-    tail -n "${AUTOFLOW_VERIFY_OUTPUT_LINES:-200}" "$file"
+  local exit_code="$2"
+  local max_lines total_lines first_lines last_lines omitted_lines
+
+  [ -s "$file" ] || return 0
+
+  if [ "$exit_code" -eq 0 ]; then
+    max_lines="$(positive_int_or_default "${AUTOFLOW_VERIFY_PASS_OUTPUT_LINES:-40}" "40")"
+    total_lines="$(wc -l <"$file" | tr -d '[:space:]')"
+
+    if [ "$total_lines" -le "$max_lines" ]; then
+      cat "$file"
+      return 0
+    fi
+
+    first_lines=$((max_lines / 2))
+    last_lines=$((max_lines - first_lines))
+    if [ "$first_lines" -lt 1 ]; then
+      first_lines=1
+      last_lines=$((max_lines - first_lines))
+    fi
+    if [ "$last_lines" -lt 1 ]; then
+      last_lines=1
+      first_lines=$((max_lines - last_lines))
+    fi
+    omitted_lines=$((total_lines - first_lines - last_lines))
+
+    head -n "$first_lines" "$file"
+    printf '[... truncated: %s lines omitted between first %s and last %s lines ...]\n' "$omitted_lines" "$first_lines" "$last_lines"
+    tail -n "$last_lines" "$file"
+  else
+    tail -n "$(positive_int_or_default "${AUTOFLOW_VERIFY_FAIL_OUTPUT_LINES:-${AUTOFLOW_VERIFY_OUTPUT_LINES:-200}}" "200")" "$file"
   fi
 }
 
@@ -182,13 +225,13 @@ replace_section_block "$run_file" "Findings" "- ${blocker_line}
 replace_section_block "$run_file" "Output" "### stdout
 
 \`\`\`text
-$(tail_file_or_empty "$stdout_file")
+$(format_output_file "$stdout_file" "$exit_code")
 \`\`\`
 
 ### stderr
 
 \`\`\`text
-$(tail_file_or_empty "$stderr_file")
+$(format_output_file "$stderr_file" "$exit_code")
 \`\`\`"
 replace_section_block "$run_file" "Evidence" "- Result: ${result_line}
 - Exit Code: ${exit_code}

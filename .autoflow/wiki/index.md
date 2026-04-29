@@ -7,6 +7,9 @@ This wiki is derived from completed Autoflow work.
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[features/run-role-prompt-dispatch]]** (`wiki/features/run-role-prompt-dispatch.md`): Extended the runtime prompt-shape contract with `prd_045` and `prd_046`, keeping planner and ticket-owner runtime outputs concise while preserving machine-readable keys.
+- **[[features/desktop-runner-model-options]]** (`wiki/features/desktop-runner-model-options.md`): Recorded the `prd_040` rule that Gemini stays selectable in Desktop, but unsupported Gemini 3.1 preview model ids stay out of `runnerAgentModelOptions.gemini`.
+- **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
 - **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
 - **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
 - **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so new user-visible attribution prefers `worker-N` while legacy `AI-N` ownership matching remains compatible (`prd_039`).
@@ -66,11 +69,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 42
+- Done tickets: 43
 - Reject records: 1
-- Verifier logs: 231
+- Verifier logs: 232
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T06:40:32Z
+- Last updated: 2026-04-29T06:46:47Z
 
 ## Completed Tickets
 
