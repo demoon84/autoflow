@@ -4,7 +4,7 @@
 
 ## Claude Code
 
-Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow`, `.claude/skills/af`, and `.claude/skills/memo`.
+Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow`, `.claude/skills/af`, and `.claude/skills/order` (renamed from `memo`; the inbox file naming `memo_NNN.md` and the CLI subcommand `autoflow memo create` are intentionally unchanged).
 
 When the user invokes `/af`, `/autoflow`, `#af`, or `#autoflow`, treat it as an Autoflow PRD handoff trigger:
 
@@ -15,13 +15,13 @@ When the user invokes `/af`, `/autoflow`, `#af`, or `#autoflow`, treat it as an 
 5. Save only after the user explicitly confirms with words such as `save`, `confirm`, `approved`, or `ready`.
 6. After saving, tell the user that `autoflow run planner` (Plan AI) will pick the PRD up and create a todo ticket on the next tick, and `autoflow run ticket` (Impl AI) will then claim and finish it.
 
-When the user invokes `/memo` or `#memo`, treat it as an Autoflow quick memo trigger:
+When the user invokes `/order` or `#order`, treat it as an Autoflow quick order trigger (this trigger was previously named `/memo` / `#memo`; the inbox filename prefix and CLI subcommand are still `memo`):
 
 1. Do not say the trigger is unknown.
-2. Save only a short memo under `.autoflow/tickets/inbox/memo_NNN.md`.
+2. Save only a short note under `.autoflow/tickets/inbox/memo_NNN.md`.
 3. Preserve the original request and add only obvious scope / Allowed Paths / Verification hints.
 4. Do not create a PRD, plan, ticket, implementation, verification, commit, or push.
-5. Tell the user that `autoflow run planner` (Plan AI) will promote the memo into a generated PRD and todo ticket when safe.
+5. Tell the user that `autoflow run planner` (Plan AI) will promote the order into a generated PRD and todo ticket when safe.
 
 Topology note (refactor 2026-04-27): the default board runs **three loop runners** — `planner-1` (Plan AI), `owner-1` (Impl AI), and `wiki-1` (Wiki AI). They tick on disjoint paths so concurrent ticks never produce merge conflicts. Reject auto-replan is Plan AI's responsibility (`start-plan.sh`), not Impl AI's. Up to `AUTOFLOW_REJECT_MAX_RETRIES` attempts, unless `AUTOFLOW_REJECT_AUTO_REPLAN=off`.
 

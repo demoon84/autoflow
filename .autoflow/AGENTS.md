@@ -80,7 +80,7 @@ At the start of work, read in this order:
 
 1. Do not create plans or tickets without an approved spec or a clear quick memo promoted by Plan AI.
 2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. Claude `/memo`, Codex `$memo`, and compatibility alias `#memo` are quick memo handoff triggers only. They write `tickets/inbox/memo_NNN.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (renamed from the previous `memo` triggers). They write `tickets/inbox/memo_NNN.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes. The inbox filename prefix `memo_` and the CLI subcommand `autoflow memo create` are intentionally unchanged so existing scanning / tooling keeps working.
 4. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
 5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
@@ -134,9 +134,9 @@ Do not:
 - Create tickets.
 - Implement, verify, commit, or push.
 
-### 2. Quick Memo Intake Mode
+### 2. Quick Order Intake Mode
 
-Trigger: Claude `/memo`, Codex `$memo`, or compatibility alias `#memo`.
+Trigger: Claude `/order`, Codex `$order`, or compatibility alias `#order` (renamed from the previous `memo` triggers; the inbox filename prefix `memo_` and the CLI subcommand `autoflow memo create` are intentionally unchanged).
 
 Purpose: capture a small request without a full PRD handoff.
 
@@ -144,7 +144,7 @@ Do:
 
 - Preserve the original user request in `tickets/inbox/memo_NNN.md`.
 - Add scope, Allowed Paths, and verification hints only when obvious.
-- Let Plan AI promote the memo into a generated PRD and todo ticket when safe.
+- Let Plan AI promote the inbox note into a generated PRD and todo ticket when safe.
 
 Do not:
 
