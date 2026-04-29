@@ -4012,6 +4012,8 @@ pre {
 
 .knowledge-preview-pane > .log-preview {
   flex: 1 1 auto;
+  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: 8px;
   min-height: 100%;
