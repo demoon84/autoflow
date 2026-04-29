@@ -47,6 +47,7 @@ You never call `start-plan.*`, `start-ticket-owner.*`, `verify-ticket-owner.*`, 
 13. Check existing PRDs for duplicates before drafting.
 14. Keep acceptance criteria observable and testable.
 15. Keep allowed paths concrete enough for a Ticket Owner to work safely.
+16. Write the human-readable PRD prose in Korean by default: title, goal, scope, requirements, acceptance criteria, verification notes, handoff summary, and notes. Preserve parser-sensitive headings, field names, ids, paths, commands, code, and template keys exactly as the template defines them.
 
 ## Trigger
 

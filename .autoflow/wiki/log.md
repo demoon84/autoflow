@@ -5,6 +5,7 @@ Chronological notes derived from completed tickets, reject learnings, and operat
 ## Managed Log
 
 Generated entries may be inserted here.
+This curated milestone list summarizes key milestones from the early board foundation through the recent wiki/runtime refinements (`prd_053`). For current counts and broader work context, use [[index]] and [[project-overview]].
 
 Each entry should cite its source ticket or log.
 
@@ -15,7 +16,7 @@ Each entry should cite its source ticket or log.
 - `prd_016` - Pin AI progress board to a 2-left / 1-right tall layout when three runners are present. Source: `tickets/done/prd_016/tickets_016.md`.
 - `prd_021` - Workflow page UI overhaul — collapse sidebar label, wrap progress bar, simplify card titles, hoist AI controls into the cards. Source: `tickets/done/prd_021/tickets_021.md`.
 - `prd_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. Source: `tickets/done/prd_023/tickets_023.md`.
-- `learning` - Recorded how to resolve `dirty_scope_conflict` when the ticket patch is already present in `PROJECT_ROOT` but unrelated dirty edits remain in the same file. Source: `learnings/merge-blocked-already-applied-patch.md`.
+- `learning` - Recorded how to resolve `dirty_scope_conflict` when the ticket patch is already present in `PROJECT_ROOT` but unrelated dirty edits remain in the same file. See [[learnings/merge-blocked-already-applied-patch]]. Source: `learnings/merge-blocked-already-applied-patch.md`.
 - `prd_024` - Convert ticket workspace right preview into a click-to-open layer like the workflow PRD pin. Source: `tickets/done/prd_024/tickets_024.md`.
 - `prd_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Source: `tickets/done/prd_025/prd_025.md`.
 - `prd_026` - Fix Gemini app icon in Desktop AI runner UI. Source: `tickets/done/prd_026/prd_026.md`.
@@ -27,12 +28,20 @@ Each entry should cite its source ticket or log.
 - `prd_037` - Fix Statistics page scrolling. Source: `tickets/done/prd_037/prd_037.md`.
 - `prd_038` - Enable Wiki Bot (`wiki-1`) to use the Codex adapter while preserving Gemini support. Source: `tickets/done/prd_038/tickets_038.md`.
 - `prd_039` - Replace user-visible `AI-N` worker attribution with `worker-N` while keeping legacy ownership matching compatible. Source: `tickets/done/prd_039/tickets_039.md`.
+- `prd_040` - Removed unsupported Gemini 3.1 preview model ids from Desktop runner options. Source: `tickets/done/prd_040/tickets_040.md`.
+- `prd_042` - Kept the Ticket Workspace on the PRD / Inbox / Issued 3-tab layout while left-aligning list rows and preserving the detail layer. Source: `tickets/done/prd_042/tickets_042.md`.
+- `prd_045` - Shortened planner `next_action` output while preserving machine-readable runtime keys. Source: `tickets/done/prd_045/tickets_045.md`.
+- `prd_047` - Compressed successful `verify-ticket-owner` output into short pass excerpts while keeping larger failure tails. Source: `tickets/done/prd_047/tickets_047.md`.
+- `prd_048` - Compressed successful `finish-ticket-owner` inline merge output into a one-line summary while keeping diagnostic paths verbose. Source: `tickets/done/prd_048/tickets_048.md`.
+- `prd_050` - Added semantic wiki lint fingerprint gating and prompt-budget smoke coverage. Source: `tickets/done/prd_050/tickets_050.md`.
+- `prd_052` - Retrofitted deterministic YAML frontmatter onto existing focused wiki pages. Source: `tickets/done/prd_052/tickets_054.md`.
+- `prd_053` - Restored desktop runner terminal streaming so live cards show multi-line typed output instead of path-only/runtime-envelope fragments. Source: `tickets/done/prd_053/tickets_055.md`.
 
 
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-29T21:30:47Z
+- Last rebuilt: 2026-04-29T21:40:02Z
 
 ### Completed Tickets
 

@@ -55,6 +55,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 12. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 13. Never push.
 14. Do not hide state in chat. Durable state belongs in board files.
+15. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
 
 ## Procedure
 

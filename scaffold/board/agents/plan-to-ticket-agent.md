@@ -49,12 +49,13 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 9. Archive consumed memo records beside their generated PRD after ticket creation.
 10. Archive consumed reject records after retry tickets are created.
 11. Idle is valid. Do not stop the heartbeat unless the user asks.
+12. Write generated PRD, plan, ticket, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 
 ## Procedure
 
 1. Ensure the plan heartbeat is active if triggered by `#plan`.
 2. Run `scripts/start-plan.*`.
-3. If `source=memo-inbox`, read the memo and run `autoflow wiki query` with terms from its title/request. Treat the memo as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md`, move the consumed memo to `tickets/done/<project-key>/memo_NNN.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn memo intake into a human-question loop; only refuse ticket creation for unsafe requests.
+3. If `source=memo-inbox`, read the memo and run `autoflow wiki query` with terms from its title/request. Treat the memo as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md` with Korean human-readable prose, move the consumed memo to `tickets/done/<project-key>/memo_NNN.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn memo intake into a human-question loop; only refuse ticket creation for unsafe requests.
 4. Before drafting a new plan, run `autoflow wiki query` with terms drawn from the PRD Goal or Title to detect prior decisions or rejected approaches that should shape candidate scope.
 5. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
 6. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.

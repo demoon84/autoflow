@@ -7,6 +7,8 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/desktop-runner-terminal-streaming]]** (`wiki/answers/desktop-runner-terminal-streaming.md`): Captured the `prd_053` fix that restores multi-line typed terminal streaming in Desktop runner cards instead of path-only/runtime-envelope fallbacks.
+- **[[answers/wiki-maintenance-pipeline]]** (`wiki/answers/wiki-maintenance-pipeline.md`): Summarized the current wiki maintenance flow spanning semantic lint tightening, deterministic frontmatter retrofit, and reusable synth-save patterns.
 - **[[features/finish-pass-inline-merge-summary]]** (`wiki/features/finish-pass-inline-merge-summary.md`): Captured the `prd_048` rule that fully successful `finish-ticket-owner.sh` inline merge finalization now emits one summary line, while debug paths keep the full merge output block.
 - **[[features/ticket-owner-verification-output-caps]]** (`wiki/features/ticket-owner-verification-output-caps.md`): Captured the `prd_047` rule that successful `verify-ticket-owner.sh` output uses a separate pass cap with first/last excerpts, while failure diagnostics keep the larger tail.
 - **[[features/run-role-prompt-dispatch]]** (`wiki/features/run-role-prompt-dispatch.md`): Extended the runtime prompt-shape contract with `prd_045` and `prd_046`, keeping planner and ticket-owner runtime outputs concise while preserving machine-readable keys.
@@ -21,7 +23,6 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[decisions/design-kit-mui-migration]]** (`wiki/decisions/design-kit-mui-migration.md`): Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
 - **[[features/desktop-gemini-icon]]** (`wiki/features/desktop-gemini-icon.md`): Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
 - **[[features/ai-workflow-board]]** (`wiki/features/ai-workflow-board.md`): Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
-- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Documented the evolution of the ticket board into a unified tabbed workspace.
 
 ## Pages
 
@@ -59,8 +60,10 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
+  - [[answers/README]] (`wiki/answers/README.md`)
   - [[answers/desktop-runner-terminal-streaming]] (`wiki/answers/desktop-runner-terminal-streaming.md`)
   - [[answers/wiki-ingest-workflow]] (`wiki/answers/wiki-ingest-workflow.md`)
+  - [[answers/wiki-maintenance-pipeline]] (`wiki/answers/wiki-maintenance-pipeline.md`)
 
 ## Archive
 - [[features/desktop-tickets-kanban]] (`wiki/features/desktop-tickets-kanban.md`) (Legacy)
@@ -83,11 +86,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 51
+- Done tickets: 52
 - Reject records: 2
-- Verifier logs: 249
+- Verifier logs: 250
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T21:30:47Z
+- Last updated: 2026-04-29T21:40:02Z
 
 ## Completed Tickets
 

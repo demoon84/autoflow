@@ -101,7 +101,7 @@ At the start of work, read in this order:
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
-25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive formats, and AI-facing board contracts in their required language and format.
+25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly memo prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
@@ -291,14 +291,15 @@ A ticket may move to done only when:
 
 Use this language split:
 
-- AI-facing Markdown files (`agents/`, `rules/`, `reference/`, ticket files, verification records, logs, runtime contracts, and board operating docs) must be concise, AI-friendly English.
+- Newly generated PRD, plan, ticket, and user-friendly memo prose should be Korean by default.
 - Human-facing documents (product README content, desktop UI copy, user guides, release notes for the user) should be Korean by default unless the user requests another language.
 - User-visible terminal or chat prose from runners should be Korean by default while preserving machine-readable formats.
-- Mixed-audience documents should separate machine-readable English contracts from Korean human explanation instead of mixing languages inside one checklist or parser-sensitive template.
+- AI-facing Markdown files (`agents/`, `rules/`, `reference/`, runtime contracts, and board operating docs) should keep concise, parser-compatible structure. Human-readable placeholder and guidance prose may be Korean when it shapes generated PRD/plan/ticket/memo output.
+- Mixed-audience documents should preserve machine-readable English contracts and use Korean for human-facing explanation where appropriate.
 - Prefer observable statements over vague quality words.
 - Use checklists only when each item can be judged.
 - Keep durable context in board files, not chat.
-- Preserve parser-sensitive headings exactly.
+- Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime formats exactly.
 
 ## Conflict Priority
 
