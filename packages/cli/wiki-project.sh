@@ -2070,9 +2070,14 @@ run_update() {
   fi
 
   mkdir -p "$wiki_root"
+  mkdir -p "${board_root}/runners/state"
+  acquire_wiki_baseline_lock "${board_root}/runners/state/wiki-baseline.lock"
+  trap 'release_wiki_baseline_lock "${board_root}/runners/state/wiki-baseline.lock"' EXIT
   replace_managed_section "${wiki_root}/index.md" "work-map" "$index_body" "$index_default"
   replace_managed_section "${wiki_root}/log.md" "derived-timeline" "$log_body" "$log_default"
   replace_managed_section "${wiki_root}/project-overview.md" "project-summary" "$overview_body" "$overview_default"
+  release_wiki_baseline_lock "${board_root}/runners/state/wiki-baseline.lock"
+  trap - EXIT
 
   printf 'status=updated\n'
   printf 'project_root=%s\n' "$project_root"

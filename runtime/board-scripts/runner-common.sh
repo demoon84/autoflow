@@ -338,7 +338,9 @@ runner_write_state() {
 
   runner_ensure_dirs
   state_path="$(runner_state_path "$runner_id")"
-  temp_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-runner-state.XXXXXX")"
+  # Same-filesystem temp so the final mv stays atomic (cross-FS mv would fall
+  # back to copy+unlink and is not atomic if the process is killed mid-write).
+  temp_file="$(mktemp "${state_path}.XXXXXX")"
 
   {
     printf 'id=%s\n' "$runner_id"

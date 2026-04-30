@@ -1800,6 +1800,10 @@ ensure_ticket_worktree() {
     return 0
   fi
 
+  # Drop dangling worktree refs whose backing directory is gone, so the next
+  # add does not collide with a stale entry from a crashed prior turn.
+  git -C "$git_root" worktree prune >/dev/null 2>&1 || true
+
   base_commit="$(git_head_commit "$git_root" || true)"
   if [ -z "$base_commit" ]; then
     replace_section_block "$ticket_file" "Worktree" "- Path:
@@ -2597,4 +2601,27 @@ resolve_verifier_owner_for_claim() {
   fi
 
   printf '%s' "$selected_owner"
+}
+
+# Wiki baseline write lock — serializes Impl AI inline update + Wiki AI tick.
+# Portable mkdir-based mutex (works on macOS without flock).
+acquire_wiki_baseline_lock() {
+  local lock_dir="$1"
+  local timeout_seconds="${2:-30}"
+  local i=0
+  mkdir -p "$(dirname "$lock_dir")"
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge "$timeout_seconds" ]; then
+      printf "wiki_baseline_lock=timeout path=\n" "$lock_dir" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  return 0
+}
+
+release_wiki_baseline_lock() {
+  local lock_dir="$1"
+  rm -rf "$lock_dir" 2>/dev/null || true
 }

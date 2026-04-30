@@ -24,7 +24,7 @@ The wiki is not the source of truth. Tickets, verification records, and logs rem
 
 ## Tool Inventory
 
-You are the orchestrator. The commands below are tools you call. The runner ticks you on a 1-minute heartbeat; never poll yourself, and never expect a script to drive the loop.
+You are the orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
 
 - `autoflow wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). The Impl AI's `finish-ticket-owner` pass already runs this inline on every ticket merge, so the baseline is usually fresh by the time you tick. Re-run only when you detect drift.
 - `autoflow wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.

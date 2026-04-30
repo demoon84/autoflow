@@ -233,6 +233,66 @@ wiki_inputs_fingerprint_path() {
   printf '%s/%s.wiki-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
 }
 
+wiki_inputs_manifest_path() {
+  runner_ensure_dirs
+  printf '%s/%s.wiki-inputs.manifest' "$(runner_state_dir)" "$runner_id"
+}
+
+wiki_debounce_state_path() {
+  runner_ensure_dirs
+  printf '%s/%s.wiki-debounce.state' "$(runner_state_dir)" "$runner_id"
+}
+
+wiki_debounce_read_field() {
+  local field="$1"
+  local path
+  path="$(wiki_debounce_state_path)"
+  [ -f "$path" ] || { printf ''; return 0; }
+  awk -F= -v k="$field" 'BEGIN{r=""} $1==k {sub(/^[^=]*=/,""); r=$0} END{print r}' "$path"
+}
+
+wiki_debounce_write_field() {
+  local field="$1"
+  local value="$2"
+  local path tmp
+  path="$(wiki_debounce_state_path)"
+  tmp="$(mktemp)"
+  if [ -f "$path" ]; then
+    awk -F= -v k="$field" '$1!=k {print}' "$path" > "$tmp"
+  fi
+  printf '%s=%s\n' "$field" "$value" >> "$tmp"
+  mv -f "$tmp" "$path"
+}
+
+wiki_debounce_clear_field() {
+  local field="$1"
+  local path tmp
+  path="$(wiki_debounce_state_path)"
+  [ -f "$path" ] || return 0
+  tmp="$(mktemp)"
+  awk -F= -v k="$field" '$1!=k {print}' "$path" > "$tmp"
+  if [ -s "$tmp" ]; then
+    mv -f "$tmp" "$path"
+  else
+    rm -f "$path" "$tmp"
+  fi
+}
+
+wiki_compute_inputs_state() {
+  if [ -n "${WIKI_CURRENT_MANIFEST_PATH:-}" ] && [ -f "$WIKI_CURRENT_MANIFEST_PATH" ] && [ -n "${WIKI_CURRENT_FINGERPRINT:-}" ]; then
+    return 0
+  fi
+  WIKI_CURRENT_MANIFEST_PATH="$(mktemp "${TMPDIR:-/tmp}/autoflow-wiki-manifest.XXXXXX")"
+  wiki_inputs_hash_stream | LC_ALL=C sort > "$WIKI_CURRENT_MANIFEST_PATH"
+  if command -v shasum >/dev/null 2>&1; then
+    WIKI_CURRENT_FINGERPRINT="$(shasum -a 256 "$WIKI_CURRENT_MANIFEST_PATH" | awk '{ print $1 }')"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    WIKI_CURRENT_FINGERPRINT="$(sha256sum "$WIKI_CURRENT_MANIFEST_PATH" | awk '{ print $1 }')"
+  else
+    WIKI_CURRENT_FINGERPRINT="$(cksum "$WIKI_CURRENT_MANIFEST_PATH" | awk '{ print $1 ":" $2 }')"
+  fi
+}
+
 idle_preflight_inputs_hash_stream() {
   local rel_dir dir file rel checksum
 
@@ -378,33 +438,42 @@ maybe_skip_unchanged_idle_preflight() {
 }
 
 wiki_record_inputs_fingerprint() {
-  local fingerprint_path fingerprint
+  local fingerprint_path manifest_path now_epoch
 
   [ "$public_role" = "wiki" ] || return 0
   [ "${mode:-}" = "loop" ] || return 0
 
+  wiki_compute_inputs_state
   fingerprint_path="$(wiki_inputs_fingerprint_path)"
-  fingerprint="$(wiki_inputs_fingerprint)"
-  printf '%s\n' "$fingerprint" > "$fingerprint_path"
+  manifest_path="$(wiki_inputs_manifest_path)"
+  printf '%s\n' "$WIKI_CURRENT_FINGERPRINT" > "$fingerprint_path"
+  cp -f "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path"
+
+  now_epoch="$(date +%s)"
+  wiki_debounce_write_field "last_synth_at_epoch" "$now_epoch"
+  wiki_debounce_clear_field "pending_since_epoch"
 }
 
 maybe_skip_unchanged_wiki_turn() {
-  local fingerprint_path current_fingerprint previous_fingerprint timestamp
+  local fingerprint_path previous_fingerprint timestamp
 
   [ "$public_role" = "wiki" ] || return 1
   [ "${mode:-}" = "loop" ] || return 1
   [ "$dry_run" = "false" ] || return 1
   [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
 
+  wiki_compute_inputs_state
   fingerprint_path="$(wiki_inputs_fingerprint_path)"
-  current_fingerprint="$(wiki_inputs_fingerprint)"
   previous_fingerprint=""
   if [ -f "$fingerprint_path" ]; then
     previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
   fi
 
   [ -n "$previous_fingerprint" ] || return 1
-  [ "$current_fingerprint" = "$previous_fingerprint" ] || return 1
+  [ "$WIKI_CURRENT_FINGERPRINT" = "$previous_fingerprint" ] || return 1
+
+  wiki_debounce_clear_field "pending_since_epoch"
+  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
 
   timestamp="$(runner_now_iso)"
   runner_write_state "$runner_id" \
@@ -427,14 +496,104 @@ maybe_skip_unchanged_wiki_turn() {
     "role=${public_role}" \
     "agent=${agent}" \
     "reason=wiki_inputs_unchanged" \
-    "fingerprint=${current_fingerprint}"
+    "fingerprint=${WIKI_CURRENT_FINGERPRINT}"
 
   print_run_header "ok"
   printf 'runner_status=idle\n'
   printf 'adapter=%s\n' "$agent"
   printf 'reason=wiki_inputs_unchanged\n'
-  printf 'wiki_inputs_fingerprint=%s\n' "$current_fingerprint"
+  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
   printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  exit 0
+}
+
+maybe_skip_debounced_wiki_turn() {
+  local manifest_path changed_count now_epoch
+  local pending_since_epoch pending_age min_changes max_age_seconds
+  local last_synth_at_epoch synth_age timestamp fingerprint_path
+
+  [ "$public_role" = "wiki" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
+  [ "${AUTOFLOW_WIKI_DEBOUNCE:-1}" != "0" ] || return 1
+
+  wiki_compute_inputs_state
+
+  min_changes="${AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES:-3}"
+  max_age_seconds="${AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS:-1800}"
+
+  manifest_path="$(wiki_inputs_manifest_path)"
+  if [ -f "$manifest_path" ]; then
+    changed_count="$(LC_ALL=C comm -3 "$WIKI_CURRENT_MANIFEST_PATH" <(LC_ALL=C sort "$manifest_path") 2>/dev/null | awk 'NF{c++} END{print c+0}')"
+  else
+    changed_count="$(awk 'END{print NR+0}' "$WIKI_CURRENT_MANIFEST_PATH")"
+  fi
+
+  now_epoch="$(date +%s)"
+  pending_since_epoch="$(wiki_debounce_read_field "pending_since_epoch")"
+  case "$pending_since_epoch" in
+    ''|*[!0-9]*)
+      pending_since_epoch="$now_epoch"
+      wiki_debounce_write_field "pending_since_epoch" "$pending_since_epoch"
+      ;;
+  esac
+  pending_age=$((now_epoch - pending_since_epoch))
+
+  last_synth_at_epoch="$(wiki_debounce_read_field "last_synth_at_epoch")"
+  case "$last_synth_at_epoch" in
+    ''|*[!0-9]*) synth_age="" ;;
+    *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
+  esac
+
+  if [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; then
+    return 1
+  fi
+
+  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=$(runner_active_state_value "active_item")" \
+    "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
+    "active_stage=$(runner_active_state_value "active_stage")" \
+    "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=wiki_debounced"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=wiki_debounced" \
+    "changed_count=${changed_count}" \
+    "pending_since_epoch=${pending_since_epoch}" \
+    "pending_age_seconds=${pending_age}" \
+    "min_changes=${min_changes}" \
+    "max_age_seconds=${max_age_seconds}" \
+    "last_synth_age_seconds=${synth_age}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'adapter=%s\n' "$agent"
+  printf 'reason=wiki_debounced\n'
+  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'changed_count=%s\n' "$changed_count"
+  printf 'pending_since_epoch=%s\n' "$pending_since_epoch"
+  printf 'pending_age_seconds=%s\n' "$pending_age"
+  printf 'min_changes=%s\n' "$min_changes"
+  printf 'max_age_seconds=%s\n' "$max_age_seconds"
+  printf 'last_synth_age_seconds=%s\n' "$synth_age"
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
   printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
   exit 0
@@ -515,15 +674,20 @@ role_boundary_for_current_role() {
   esac
 }
 
-role_specific_required_flow_items() {
-  # Emit only role-relevant required-flow items. Items 1, 2, 4, 5, 6, 9,
-  # 10, 11 are shared and stay in the prompt body. Items 3, 7, 8 are
-  # role-specific and only ship when applicable.
+emit_required_flow() {
+  # Emit the full Required-flow numbered list in order. Items 1, 2, 4, 5, 6,
+  # 9, 10, 11 are always emitted. Items 3 and 7 are role-gated so they only
+  # ship for the roles that actually need them.
+  printf '%s\n' "1. Read the role instruction file and the current board state."
+  printf '%s\n' "2. Execute exactly one safe ${public_role} turn."
   case "$public_role" in
     planner|ticket|todo)
       printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
       ;;
   esac
+  printf '%s\n' "4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
+  printf '%s\n' "5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work."
+  printf '%s\n' "6. Use the runtime script when claiming or preparing board state if a runtime script is defined."
   case "$public_role" in
     ticket)
       printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
@@ -532,12 +696,15 @@ role_specific_required_flow_items() {
       printf '%s\n' "7. Do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime."
       ;;
   esac
+  printf '%s\n' "9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context."
+  printf '%s\n' "10. Do not rely on this prompt as future memory."
+  printf '%s\n' "11. Never git push."
 }
 
 write_agent_prompt() {
   local instruction_file="$1"
-  local role_specific_flow role_boundary_line
-  role_specific_flow="$(role_specific_required_flow_items)"
+  local required_flow_block role_boundary_line
+  required_flow_block="$(emit_required_flow)"
   role_boundary_line="$(role_boundary_for_current_role)"
 
   cat <<EOF
@@ -568,14 +735,7 @@ Language policy:
   their template or parser requires.
 
 Required flow:
-1. Read the role instruction file and the current board state.
-2. Execute exactly one safe ${public_role} turn.
-${role_specific_flow}4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage.
-5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work.
-6. Use the runtime script when claiming or preparing board state if a runtime script is defined.
-9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context.
-10. Do not rely on this prompt as future memory.
-11. Never git push.
+${required_flow_block}
 
 Role boundary:
 ${role_boundary_line}
@@ -1046,6 +1206,7 @@ case "$agent" in
 
     agent_runtime_preflight_or_exit
     maybe_skip_unchanged_wiki_turn || true
+    maybe_skip_debounced_wiki_turn || true
 
     started_at="$(runner_now_iso)"
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"

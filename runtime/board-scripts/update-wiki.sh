@@ -368,9 +368,13 @@ update_wiki() {
   fi
 
   mkdir -p "$wiki_root"
+  acquire_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"
+  trap 'release_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"' EXIT
   replace_managed_section "${wiki_root}/index.md" "work-map" "$index_body" "$index_default"
   replace_managed_section "${wiki_root}/log.md" "derived-timeline" "$log_body" "$log_default"
   replace_managed_section "${wiki_root}/project-overview.md" "project-summary" "$overview_body" "$overview_default"
+  release_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"
+  trap - EXIT
 
   printf 'status=updated\n'
   printf 'project_root=%s\n' "$PROJECT_ROOT"

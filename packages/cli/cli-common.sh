@@ -474,3 +474,26 @@ print_status_summary() {
   printf 'ticket_blocked_count=%s\n' "$ticket_blocked_count"
   printf 'verify_run_count=%s\n' "$verify_run_count"
 }
+
+# Wiki baseline write lock — serializes Impl AI inline update + Wiki AI tick.
+# Portable mkdir-based mutex (works on macOS without flock).
+acquire_wiki_baseline_lock() {
+  local lock_dir="$1"
+  local timeout_seconds="${2:-30}"
+  local i=0
+  mkdir -p "$(dirname "$lock_dir")"
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge "$timeout_seconds" ]; then
+      printf "wiki_baseline_lock=timeout path=\n" "$lock_dir" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  return 0
+}
+
+release_wiki_baseline_lock() {
+  local lock_dir="$1"
+  rm -rf "$lock_dir" 2>/dev/null || true
+}
