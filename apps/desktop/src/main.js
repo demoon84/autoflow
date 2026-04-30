@@ -1358,6 +1358,14 @@ async function readTextPreview(filePath) {
   }
 }
 
+function byName(a, b) {
+  return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
+}
+
+function byMostRecent(a, b) {
+  return String(b?.modifiedAt ?? "").localeCompare(String(a?.modifiedAt ?? ""));
+}
+
 async function listMarkdownFiles(directory, recursive = false) {
   if (!(await pathExists(directory))) {
     return [];
@@ -1375,7 +1383,7 @@ async function listMarkdownFiles(directory, recursive = false) {
     }
   }
 
-  return files.sort((a, b) => a.name.localeCompare(b.name));
+  return files.sort(byName);
 }
 
 async function listTicketFolders(ticketsRoot) {
@@ -1395,7 +1403,7 @@ async function listTicketFolders(ticketsRoot) {
         return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
           (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
       }
-      return left.localeCompare(right);
+      return String(left ?? "").localeCompare(String(right ?? ""));
     });
 }
 
@@ -1417,7 +1425,7 @@ async function listTextFiles(directory, extensions, recursive = false) {
     }
   }
 
-  return files.sort((a, b) => a.name.localeCompare(b.name));
+  return files.sort(byName);
 }
 
 function normalizeMetricSnapshot(rawSnapshot) {
@@ -1672,21 +1680,21 @@ async function readBoard({ projectRoot, boardDirName }) {
     runnersResult,
     tickets: ticketGroups,
     logs: logs
-      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
+      .sort((a, b) => byMostRecent(a, b))
       .slice(0, 12),
     runnerLogs: runnerLogs
-      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
+      .sort((a, b) => byMostRecent(a, b))
       .slice(0, 16),
     wikiFiles: wikiFiles
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => byName(a, b))
       .slice(0, 24),
     metricsFiles: metricsFiles
-      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
+      .sort((a, b) => byMostRecent(a, b))
       .slice(0, 8),
     metricsHistory,
     conversationFiles: conversationFiles
-      .filter((file) => file.name.toLowerCase() !== "readme.md")
-      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
+      .filter((file) => (file?.name || "").toLowerCase() !== "readme.md")
+      .sort((a, b) => byMostRecent(a, b))
       .slice(0, 24)
   };
 }
@@ -2813,6 +2821,25 @@ async function buildSystemPrompt(options) {
   return { systemPrompt: parts.join("\n\n"), attachedWikiPaths: snapshot.wikiAnswers.map((a) => a.path) };
 }
 
+function extractMarkdownImagePaths(text) {
+  if (!text) return [];
+  const paths = [];
+  const re = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    paths.push(match[1]);
+  }
+  return paths;
+}
+
+function appendImageAttachmentHints(content) {
+  if (!content) return "";
+  const paths = extractMarkdownImagePaths(content);
+  if (paths.length === 0) return content;
+  const hints = paths.map((p) => `[Attached image: ${p}]`).join("\n");
+  return `${content.trimEnd()}\n\n${hints}`;
+}
+
 function selectAttachedWikiPaths(systemPrompt) {
   const matches = systemPrompt.match(/wiki\/answers\/[A-Za-z0-9_\-]+\.md/g) || [];
   return Array.from(new Set(matches));
@@ -2908,7 +2935,7 @@ async function chatSend(options) {
     prefix += `## Current thread summary\n${thread.frontmatter.summary}\n\n`;
   }
   const conversation = messages
-    .map((m) => `## ${m.role}\n${m.content}`)
+    .map((m) => `## ${m.role}\n${appendImageAttachmentHints(m.content)}`)
     .join("\n\n");
   const fullPrompt = `${systemPrompt}\n\n${prefix}${conversation}\n\n## assistant\n`;
 
@@ -3097,6 +3124,111 @@ async function saveSpecFromChat(options) {
   return { ok: true, savedPath: target, file };
 }
 
+// ---------------------------------------------------------------------------
+// Desktop chat image attachments (prd_069)
+// ---------------------------------------------------------------------------
+
+const CHAT_ATTACHMENT_DIR_NAME = "desktop-chat-attachments";
+const CHAT_IMAGE_EXT_ALLOWLIST = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+const CHAT_DEFAULT_IMAGE_MAX_BYTES =
+  parseInt(process.env.AUTOFLOW_DESKTOP_CHAT_IMAGE_MAX_BYTES || "8388608", 10) || 8388608;
+
+function chatAttachmentsDirPath(boardRoot) {
+  return safeJoinUnderBoard(boardRoot, "conversations", CHAT_ATTACHMENT_DIR_NAME);
+}
+
+function safeAttachmentBaseName(name) {
+  const base = path.basename(name).replace(/\s+/g, "_");
+  const safe = base.replace(/[^A-Za-z0-9._\-]/g, "");
+  return safe || "image";
+}
+
+function attachmentTimestampPrefix() {
+  return new Date()
+    .toISOString()
+    .replace(/[:.]/g, "")
+    .replace(/(\d{8})T(\d{6}).*/, "$1T$2Z");
+}
+
+async function chatPickImages() {
+  const result = await dialog.showOpenDialog({
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      {
+        name: "Images",
+        extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"]
+      }
+    ]
+  });
+  if (result.canceled) return { ok: true, paths: [] };
+  const paths = result.filePaths.filter((p) => {
+    const ext = path.extname(p).toLowerCase();
+    return CHAT_IMAGE_EXT_ALLOWLIST.has(ext);
+  });
+  return { ok: true, paths };
+}
+
+async function chatAttachImages(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const targetDir = chatAttachmentsDirPath(boardRoot);
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const sources = Array.isArray(options.sourcePaths) ? options.sourcePaths : [];
+  const maxBytes = Math.max(1024, parseInt(options.maxBytes, 10) || CHAT_DEFAULT_IMAGE_MAX_BYTES);
+  const accepted = [];
+  const rejected = [];
+
+  for (const source of sources) {
+    if (typeof source !== "string" || !source) {
+      rejected.push({ source, reason: "invalid_source" });
+      continue;
+    }
+    const ext = path.extname(source).toLowerCase();
+    if (!CHAT_IMAGE_EXT_ALLOWLIST.has(ext)) {
+      rejected.push({ source, reason: `extension_not_allowed:${ext || "(none)"}` });
+      continue;
+    }
+    let stat;
+    try {
+      stat = await fs.stat(source);
+    } catch {
+      rejected.push({ source, reason: "stat_failed" });
+      continue;
+    }
+    if (!stat.isFile()) {
+      rejected.push({ source, reason: "not_a_file" });
+      continue;
+    }
+    if (stat.size > maxBytes) {
+      rejected.push({ source, reason: `too_large:${stat.size}>${maxBytes}` });
+      continue;
+    }
+    const stamp = attachmentTimestampPrefix();
+    const safeName = safeAttachmentBaseName(source);
+    const targetPath = path.join(targetDir, `${stamp}-${safeName}`);
+    const resolved = path.resolve(targetPath);
+    const dirResolved = path.resolve(targetDir) + path.sep;
+    if (!resolved.startsWith(dirResolved)) {
+      rejected.push({ source, reason: "path_escape" });
+      continue;
+    }
+    try {
+      await fs.copyFile(source, resolved);
+    } catch (error) {
+      rejected.push({ source, reason: `copy_failed:${error.code || error.message}` });
+      continue;
+    }
+    const relativePath = path.relative(boardRoot, resolved).split(path.sep).join("/");
+    accepted.push({ source, savedPath: resolved, relativePath });
+  }
+
+  return { ok: rejected.length === 0, accepted, rejected };
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
@@ -3143,6 +3275,8 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:chatReset", withTimeout(withScopeMemory(chatReset), 30000));
   ipcMain.handle("autoflow:saveMemo", withTimeout(withScopeMemory(saveMemoFromChat), 30000));
   ipcMain.handle("autoflow:saveSpec", withTimeout(withScopeMemory(saveSpecFromChat), 30000));
+  ipcMain.handle("autoflow:chatPickImages", withTimeout(() => chatPickImages(), 60000));
+  ipcMain.handle("autoflow:chatAttachImages", withTimeout(withScopeMemory(chatAttachImages), 60000));
   // Cancel a still-running long IPC call by invocationId. No timeout: the
   // call must always be reachable so the user can recover from a hung action.
   ipcMain.handle("autoflow:cancelInvocation", (_event, invocationId) =>

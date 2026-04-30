@@ -281,11 +281,40 @@ interface Window {
       title?: string;
       body: string;
     }) => Promise<{ ok: boolean; savedPath: string; file: string }>;
+    chatPickImages: () => Promise<AutoflowChatPickResult>;
+    chatAttachImages: (options: {
+      projectRoot: string;
+      boardDirName: string;
+      sourcePaths: string[];
+      maxBytes?: number;
+    }) => Promise<AutoflowChatAttachResult>;
     cancelInvocation: (
       invocationId: string
     ) => Promise<{ ok: boolean; cancelled: boolean; reason?: string }>;
   };
 }
+
+type AutoflowChatPickResult = {
+  ok: boolean;
+  paths: string[];
+};
+
+type AutoflowChatAttachItem = {
+  source: string;
+  savedPath: string;
+  relativePath: string;
+};
+
+type AutoflowChatAttachRejection = {
+  source: string;
+  reason: string;
+};
+
+type AutoflowChatAttachResult = {
+  ok: boolean;
+  accepted: AutoflowChatAttachItem[];
+  rejected: AutoflowChatAttachRejection[];
+};
 
 type AutoflowChatMessage = {
   role: "user" | "assistant" | "system";

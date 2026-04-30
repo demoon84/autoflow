@@ -56,23 +56,31 @@ for prompt in chat-base.txt spec-author.txt order-intake.txt board-snapshot.tpl.
   done
 done
 
-# 3. preload.js exposes all seven chat APIs.
+# 3. preload.js exposes the chat APIs (prd_068) plus image attach APIs (prd_069).
 preload="${REPO_ROOT}/apps/desktop/src/preload.js"
-for api in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec; do
+for api in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec chatAttachImages; do
   require_grep "$preload" "$api: \\(options\\) => ipcRenderer.invoke" "preload exposes $api"
 done
+require_grep "$preload" 'chatPickImages: \(\) => ipcRenderer.invoke' "preload exposes chatPickImages"
 
-# 4. main.js registers all seven chat IPC handlers and provides the helper
-# functions referenced by them.
+# 4. main.js registers all chat IPC handlers (prd_068 + prd_069) and provides the
+# helper functions referenced by them.
 main_js="${REPO_ROOT}/apps/desktop/src/main.js"
-for channel in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec; do
+for channel in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec chatPickImages chatAttachImages; do
   require_grep "$main_js" "ipcMain\\.handle\\(\"autoflow:${channel}\"" "main.js registers autoflow:${channel}"
 done
 for fn in chatLoad chatAppend chatSend chatSummarize chatReset saveMemoFromChat saveSpecFromChat \
   buildBoardSnapshot buildWikiAnswerCatalog selectRelevantWikiAnswers buildSystemPrompt \
-  nextNumberedSlot safeJoinUnderBoard chatThreadPath chatArchiveDirPath; do
+  nextNumberedSlot safeJoinUnderBoard chatThreadPath chatArchiveDirPath \
+  chatPickImages chatAttachImages chatAttachmentsDirPath safeAttachmentBaseName \
+  appendImageAttachmentHints extractMarkdownImagePaths; do
   require_grep "$main_js" "function ${fn}\\b" "main.js declares ${fn}"
 done
+require_grep "$main_js" 'desktop-chat-attachments' "attachments directory name present"
+require_grep "$main_js" 'CHAT_IMAGE_EXT_ALLOWLIST' "image extension allowlist constant present"
+require_grep "$main_js" 'AUTOFLOW_DESKTOP_CHAT_IMAGE_MAX_BYTES' "image max bytes env var present"
+require_grep "$main_js" 'appendImageAttachmentHints\(m\.content\)' "chatSend pipes content through hint helper"
+require_grep "$main_js" '\[Attached image: \$\{p\}\]' "adapter hint serialization pattern present"
 require_grep "$main_js" 'desktop-chat\.md' "single thread filename present"
 require_grep "$main_js" 'desktop-chat-archive' "archive directory name present"
 require_grep "$main_js" 'AUTOFLOW_DESKTOP_CHAT_CONTEXT' "context window env var present"
@@ -112,10 +120,26 @@ require_grep "$renderer" 'Wiki 인용' "Wiki citation toggle label present"
 require_grep "$renderer" '이전 요약 인계' "Prior summary handover toggle label present"
 require_grep "$renderer" '메모로 저장' "Memo save button label present"
 require_grep "$renderer" 'PRD로 저장' "PRD save button label present"
+require_grep "$renderer" 'function ChatAvatar\(' "ChatAvatar component declared"
+require_grep "$renderer" 'function formatRelativeTime\(' "formatRelativeTime helper declared"
+require_grep "$renderer" 'window\.autoflow\.chatPickImages' "ChatView calls chatPickImages"
+require_grep "$renderer" 'window\.autoflow\.chatAttachImages' "ChatView calls chatAttachImages"
+require_grep "$renderer" 'pendingAttachments' "pending attachments state present"
+require_grep "$renderer" 'chat-attachment-chip' "attachment chip class used in renderer"
+require_grep "$renderer" 'chat-image-preview-dialog' "image preview dialog class used in renderer"
+require_grep "$renderer" 'chat-bubble-user' "user bubble class used in renderer"
+require_grep "$renderer" 'chat-bubble-ai' "AI bubble class used in renderer"
+# Header should not render the raw ISO timestamp directly (only via title tooltip).
+if grep -E '<span className="chat-message-time">\{m\.at\}</span>' "$renderer" >/dev/null 2>&1; then
+  echo "[chat-smoke] chat-message-time should not render raw ISO directly" >&2
+  exit 1
+fi
 
 # 6. styles.css contains chat surface classes used by the renderer.
 styles="${REPO_ROOT}/apps/desktop/src/renderer/styles.css"
-for cls in chat-shell chat-toolbar chat-message-list chat-input-bar chat-dialog; do
+for cls in chat-shell chat-toolbar chat-message-list chat-input-bar chat-dialog chat-thread \
+  chat-message-row chat-bubble-user chat-bubble-ai chat-avatar chat-attachment-chip \
+  chat-message-image chat-image-preview-dialog chat-input-bar-dragover; do
   require_grep "$styles" "\\.${cls}" "styles.css defines .${cls}"
 done
 
@@ -123,9 +147,12 @@ done
 types_file="${REPO_ROOT}/apps/desktop/src/renderer/vite-env.d.ts"
 require_grep "$types_file" 'AutoflowChatLoadResult' "AutoflowChatLoadResult type declared"
 require_grep "$types_file" 'AutoflowChatSendResult' "AutoflowChatSendResult type declared"
-for api in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec; do
+for api in chatLoad chatAppend chatSend chatSummarize chatReset saveMemo saveSpec chatAttachImages; do
   require_grep "$types_file" "${api}: \\(options:" "ambient declares ${api}"
 done
+require_grep "$types_file" 'chatPickImages: \(\) => Promise<' "ambient declares chatPickImages"
+require_grep "$types_file" 'AutoflowChatPickResult' "ambient declares AutoflowChatPickResult"
+require_grep "$types_file" 'AutoflowChatAttachResult' "ambient declares AutoflowChatAttachResult"
 
 # 8. Smoke for next NNN slot logic via a tiny inline node script that exercises
 # nextNumberedSlot with a temporary directory of sample files.

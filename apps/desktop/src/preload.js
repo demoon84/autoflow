@@ -24,5 +24,7 @@ contextBridge.exposeInMainWorld("autoflow", {
   chatReset: (options) => ipcRenderer.invoke("autoflow:chatReset", options),
   saveMemo: (options) => ipcRenderer.invoke("autoflow:saveMemo", options),
   saveSpec: (options) => ipcRenderer.invoke("autoflow:saveSpec", options),
+  chatPickImages: () => ipcRenderer.invoke("autoflow:chatPickImages"),
+  chatAttachImages: (options) => ipcRenderer.invoke("autoflow:chatAttachImages", options),
   cancelInvocation: (invocationId) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId)
 });

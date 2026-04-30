@@ -25,6 +25,7 @@ import {
   Layers3,
   Loader2,
   MessageSquare,
+  Paperclip,
   Play,
   RefreshCw,
   RotateCcw,
@@ -5790,6 +5791,87 @@ type ChatRenderMessage = AutoflowChatMessage & {
   attachedWikiPaths?: string[];
 };
 
+type PendingAttachment = {
+  source: string;
+  fileUrl: string;
+};
+
+const CHAT_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
+
+function chatImagePathsFromMarkdown(text: string): string[] {
+  if (!text) return [];
+  const out: string[] = [];
+  CHAT_IMAGE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CHAT_IMAGE_RE.exec(text)) !== null) {
+    out.push(m[1]);
+  }
+  return out;
+}
+
+function chatBodyWithoutImages(text: string): string {
+  if (!text) return "";
+  return text.replace(CHAT_IMAGE_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function chatRelativeFileUrl(boardRelativePath: string, projectRoot: string, boardDirName: string) {
+  if (!boardRelativePath || !projectRoot) return "";
+  const cleanProject = projectRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+  const dir = boardDirName || ".autoflow";
+  return `file://${cleanProject}/${dir}/${boardRelativePath}`;
+}
+
+function formatRelativeTime(at: string, now: Date = new Date()): string {
+  if (!at) return "";
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return at;
+  const diffMs = now.getTime() - d.getTime();
+  const diffSec = Math.round(diffMs / 1000);
+  if (diffSec < 30) return "방금";
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}분 전`;
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) {
+    const hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, "0");
+    const period = hours < 12 ? "오전" : "오후";
+    const hh = ((hours + 11) % 12) + 1;
+    return `오늘 ${period} ${hh}:${minutes}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate();
+  if (isYesterday) {
+    const hours = d.getHours();
+    const minutes = d.getMinutes().toString().padStart(2, "0");
+    const period = hours < 12 ? "오전" : "오후";
+    const hh = ((hours + 11) % 12) + 1;
+    return `어제 ${period} ${hh}:${minutes}`;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function ChatAvatar({ role }: { role: "user" | "assistant" | "system" }) {
+  if (role === "user") {
+    return (
+      <div className="chat-avatar chat-avatar-user" aria-hidden="true">
+        나
+      </div>
+    );
+  }
+  return (
+    <div className="chat-avatar chat-avatar-ai" aria-hidden="true">
+      <Sparkles className="h-4 w-4" aria-hidden="true" />
+    </div>
+  );
+}
+
 function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
   const [messages, setMessages] = React.useState<ChatRenderMessage[]>([]);
   const [frontmatter, setFrontmatter] = React.useState<AutoflowChatFrontmatter>({});
@@ -5805,8 +5887,17 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
   const [previewMode, setPreviewMode] = React.useState<null | "memo" | "prd">(null);
   const [previewBody, setPreviewBody] = React.useState("");
   const [savedToast, setSavedToast] = React.useState<{ kind: "memo" | "prd"; path: string } | null>(null);
+  const [pendingAttachments, setPendingAttachments] = React.useState<PendingAttachment[]>([]);
+  const [imagePreview, setImagePreview] = React.useState<string | null>(null);
+  const [dragOver, setDragOver] = React.useState(false);
+  const [now, setNow] = React.useState<Date>(() => new Date());
   const invocationRef = React.useRef<string>("");
   const messageEndRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const reload = React.useCallback(async () => {
     if (!projectRoot) {
@@ -5852,12 +5943,91 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
     [projectRoot, boardDirName]
   );
 
+  const removePendingAttachment = React.useCallback((source: string) => {
+    setPendingAttachments((prev) => prev.filter((p) => p.source !== source));
+  }, []);
+
+  const addPendingFromPaths = React.useCallback((paths: string[]) => {
+    if (!Array.isArray(paths) || paths.length === 0) return;
+    setPendingAttachments((prev) => {
+      const seen = new Set(prev.map((p) => p.source));
+      const next = [...prev];
+      for (const source of paths) {
+        if (!source || seen.has(source)) continue;
+        next.push({ source, fileUrl: `file://${encodeURI(source)}` });
+        seen.add(source);
+      }
+      return next;
+    });
+  }, []);
+
+  const onPickImages = React.useCallback(async () => {
+    if (!projectRoot) return;
+    try {
+      const result = await window.autoflow.chatPickImages();
+      if (result?.ok && result.paths.length > 0) {
+        addPendingFromPaths(result.paths);
+      }
+    } catch (error) {
+      setErrorText((error as Error)?.message || "이미지 선택에 실패했습니다.");
+    }
+  }, [projectRoot, addPendingFromPaths]);
+
+  const onDrop = React.useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setDragOver(false);
+      const files = Array.from(event.dataTransfer?.files || []) as Array<File & { path?: string }>;
+      const allowed = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+      const sources: string[] = [];
+      for (const file of files) {
+        const ext = (file.name.split(".").pop() || "").toLowerCase();
+        if (!allowed.has(ext)) continue;
+        if (file.path) sources.push(file.path);
+      }
+      if (sources.length === 0) {
+        setErrorText("이미지(png/jpg/jpeg/gif/webp/svg) 파일만 첨부할 수 있습니다.");
+        return;
+      }
+      addPendingFromPaths(sources);
+    },
+    [addPendingFromPaths]
+  );
+
   const onSend = React.useCallback(async () => {
     const content = draft.trim();
-    if (!content || !projectRoot) return;
+    if (!projectRoot) return;
+    if (!content && pendingAttachments.length === 0) return;
     setErrorText("");
+
+    let attachmentMarkdown = "";
+    if (pendingAttachments.length > 0) {
+      try {
+        const attached = await window.autoflow.chatAttachImages({
+          projectRoot,
+          boardDirName,
+          sourcePaths: pendingAttachments.map((p) => p.source)
+        });
+        if (attached.rejected.length > 0) {
+          const reasons = attached.rejected.map((r) => `${r.source}: ${r.reason}`).join("\n");
+          setErrorText(`일부 첨부가 거부되었습니다:\n${reasons}`);
+        }
+        const links = attached.accepted.map((a) => `![attached](${a.relativePath})`);
+        if (links.length === 0 && attached.rejected.length > 0) {
+          return;
+        }
+        attachmentMarkdown = links.join("\n");
+      } catch (error) {
+        setErrorText((error as Error)?.message || "이미지 첨부 복사에 실패했습니다.");
+        return;
+      }
+    }
+
+    const composed = [attachmentMarkdown, content].filter(Boolean).join("\n\n").trim();
     setDraft("");
-    await appendMessage("user", content);
+    setPendingAttachments([]);
+    await appendMessage("user", composed);
+
     setBusy(true);
     const invocationId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     invocationRef.current = invocationId;
@@ -5886,6 +6056,7 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
     }
   }, [
     draft,
+    pendingAttachments,
     projectRoot,
     boardDirName,
     mode,
@@ -6063,56 +6234,92 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
           </Button>
         </div>
       </header>
-      <div className="chat-meta">
-        <span className="chat-meta-item">
-          스레드: <code>{frontmatter.project_root || projectRoot}</code>
-        </span>
-        <span className="chat-meta-item">메시지: {messages.length}개</span>
-        {wikiCatalog.length > 0 ? (
-          <span className="chat-meta-item">위키 답변: {wikiCatalog.length}개 색인</span>
-        ) : null}
-        {(frontmatter.saved_paths || []).length > 0 ? (
-          <span className="chat-meta-item">
-            이 스레드에서 저장된 파일: {(frontmatter.saved_paths || []).length}개
-          </span>
-        ) : null}
-      </div>
       <div
         className="chat-message-list"
         role="log"
         aria-live="polite"
         aria-label="대화 메시지"
       >
-        {messages.length === 0 ? (
-          <div className="chat-empty-state">
-            <MessageSquare className="h-10 w-10 opacity-50" aria-hidden="true" />
-            <p>이 프로젝트와 관련된 작업을 자유롭게 적어 주세요. 보드와 위키 문맥은 자동으로 함께 전달됩니다.</p>
-          </div>
-        ) : (
-          messages.map((m, idx) => (
-            <article key={`${m.at}-${idx}`} className={`chat-message chat-message-${m.role}`}>
-              <header className="chat-message-meta">
-                <span className="chat-message-role">
-                  {m.role === "user" ? "사용자" : m.role === "assistant" ? "AI" : "System"}
-                </span>
-                <span className="chat-message-time">{m.at}</span>
-              </header>
-              <div className="chat-message-body">
-                <MarkdownViewer content={m.content || "(비어 있음)"} />
-              </div>
-              {m.role === "assistant" && m.attachedWikiPaths && m.attachedWikiPaths.length > 0 ? (
-                <div className="chat-message-citations" aria-label="참고된 위키 답변">
-                  {m.attachedWikiPaths.map((p) => (
-                    <Badge key={p} variant="outline" className="chat-citation-chip">
-                      참고: {p}
-                    </Badge>
-                  ))}
+        <div className="chat-thread">
+          {messages.length === 0 ? (
+            <div className="chat-empty-state">
+              <MessageSquare className="h-10 w-10 opacity-50" aria-hidden="true" />
+              <p>이 프로젝트와 관련된 작업을 자유롭게 적어 주세요. 보드와 위키 문맥은 자동으로 함께 전달됩니다.</p>
+            </div>
+          ) : (
+            messages.map((m, idx) => {
+              const imagePaths = chatImagePathsFromMarkdown(m.content);
+              const textBody = chatBodyWithoutImages(m.content);
+              const relTime = formatRelativeTime(m.at, now);
+              const isUser = m.role === "user";
+              return (
+                <div
+                  key={`${m.at}-${idx}`}
+                  className={`chat-message-row chat-message-row-${m.role}`}
+                >
+                  {!isUser ? <ChatAvatar role={m.role} /> : null}
+                  <div className="chat-message-column">
+                    <div className="chat-message-meta">
+                      <span className="chat-message-role">
+                        {m.role === "user" ? "나" : m.role === "assistant" ? "AI" : "System"}
+                      </span>
+                      <span className="chat-message-time" title={m.at}>
+                        {relTime}
+                      </span>
+                    </div>
+                    {imagePaths.length > 0 ? (
+                      <div className="chat-message-images">
+                        {imagePaths.map((p, i) => {
+                          const url = chatRelativeFileUrl(p, projectRoot, boardDirName);
+                          return (
+                            <button
+                              key={`${p}-${i}`}
+                              type="button"
+                              className="chat-message-image"
+                              onClick={() => setImagePreview(url)}
+                              title={p}
+                            >
+                              <img src={url} alt={p} loading="lazy" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {textBody ? (
+                      isUser ? (
+                        <div className="chat-bubble chat-bubble-user">
+                          <MarkdownViewer content={textBody} />
+                        </div>
+                      ) : (
+                        <div className="chat-bubble chat-bubble-ai">
+                          <MarkdownViewer content={textBody} />
+                        </div>
+                      )
+                    ) : null}
+                    {m.role === "assistant" && m.attachedWikiPaths && m.attachedWikiPaths.length > 0 ? (
+                      <div className="chat-message-citations" aria-label="참고된 위키 답변">
+                        {m.attachedWikiPaths.map((p) => (
+                          <Badge key={p} variant="outline" className="chat-citation-chip">
+                            참고: {p}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  {isUser ? <ChatAvatar role={m.role} /> : null}
                 </div>
-              ) : null}
-            </article>
-          ))
-        )}
-        <div ref={messageEndRef} />
+              );
+            })
+          )}
+          <div ref={messageEndRef} />
+        </div>
+      </div>
+      <div className="chat-meta-strip">
+        <span>메시지 {messages.length}개</span>
+        {wikiCatalog.length > 0 ? <span>· 위키 답변 {wikiCatalog.length}개 색인</span> : null}
+        {(frontmatter.saved_paths || []).length > 0 ? (
+          <span>· 저장된 산출물 {(frontmatter.saved_paths || []).length}개</span>
+        ) : null}
       </div>
       {errorText ? (
         <Alert severity="warning" className="chat-error">
@@ -6141,37 +6348,82 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
           PRD로 저장
         </Button>
       </div>
-      <footer className="chat-input-bar">
-        <textarea
-          rows={3}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setDraft("");
-              return;
-            }
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              if (!busy) onSend();
-            }
-          }}
-          placeholder="메시지를 입력하고 Cmd/Ctrl+Enter 로 전송하세요"
-          disabled={busy}
-          className="chat-input"
-          aria-label="대화 입력"
-        />
-        {busy ? (
-          <Button type="button" variant="outline" onClick={onCancel} className="chat-cancel-button">
-            <X className="h-4 w-4 mr-1" aria-hidden="true" />
-            취소
+      <footer
+        className={`chat-input-bar${dragOver ? " chat-input-bar-dragover" : ""}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+      >
+        {pendingAttachments.length > 0 ? (
+          <div className="chat-attachment-chips" aria-label="첨부 미리보기">
+            {pendingAttachments.map((p) => (
+              <div key={p.source} className="chat-attachment-chip" title={p.source}>
+                <img src={p.fileUrl} alt="첨부 미리보기" />
+                <span className="chat-attachment-chip-name">{p.source.split("/").pop() || p.source}</span>
+                <button
+                  type="button"
+                  className="chat-attachment-chip-remove"
+                  onClick={() => removePendingAttachment(p.source)}
+                  aria-label="첨부 제거"
+                  title="첨부 제거"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="chat-input-row">
+          <Button
+            type="button"
+            variant="outline"
+            className="chat-attach-button"
+            onClick={onPickImages}
+            disabled={busy}
+            title="이미지 첨부"
+            aria-label="이미지 첨부"
+          >
+            <Paperclip className="h-4 w-4" aria-hidden="true" />
           </Button>
-        ) : (
-          <Button type="button" onClick={onSend} disabled={!draft.trim()} className="chat-send-button">
-            <Send className="h-4 w-4 mr-1" aria-hidden="true" />
-            전송
-          </Button>
-        )}
+          <textarea
+            rows={3}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setDraft("");
+                return;
+              }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (!busy) onSend();
+              }
+            }}
+            placeholder="메시지를 입력하고 Cmd/Ctrl+Enter 로 전송하세요. 이미지는 첨부 버튼이나 드래그&드롭으로 추가할 수 있어요."
+            disabled={busy}
+            className="chat-input"
+            aria-label="대화 입력"
+          />
+          {busy ? (
+            <Button type="button" variant="outline" onClick={onCancel} className="chat-cancel-button">
+              <X className="h-4 w-4 mr-1" aria-hidden="true" />
+              취소
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={onSend}
+              disabled={!draft.trim() && pendingAttachments.length === 0}
+              className="chat-send-button"
+            >
+              <Send className="h-4 w-4 mr-1" aria-hidden="true" />
+              전송
+            </Button>
+          )}
+        </div>
       </footer>
       <Dialog open={resetOpen} onOpenChange={(open) => !open && setResetOpen(false)}>
         <DialogContent className="chat-dialog">
@@ -6210,6 +6462,17 @@ function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
             </Button>
             <Button type="button" onClick={confirmSave} disabled={!previewBody.trim()}>
               저장
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
+        <DialogContent className="chat-image-preview-dialog">
+          <DialogTitle>이미지 미리보기</DialogTitle>
+          {imagePreview ? <img src={imagePreview} alt="이미지 미리보기" /> : null}
+          <div className="chat-dialog-actions">
+            <Button type="button" variant="outline" onClick={() => setImagePreview(null)}>
+              닫기
             </Button>
           </div>
         </DialogContent>
