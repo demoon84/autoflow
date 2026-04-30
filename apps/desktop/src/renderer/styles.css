@@ -2801,6 +2801,10 @@ pre {
   padding-top: 0;
 }
 
+.ai-progress-config-with-agent {
+  grid-template-columns: minmax(74px, 0.7fr) minmax(0, 1.15fr) minmax(0, 0.9fr) minmax(64px, 0.48fr) !important;
+}
+
 .ai-progress-config .runner-select {
   width: 100%;
   min-width: 0;
@@ -5288,6 +5292,10 @@ pre {
 
   .ai-progress-current > div {
     justify-content: flex-start;
+  }
+
+  .ai-progress-config-with-agent {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 
   .settings-content .runner-grid {

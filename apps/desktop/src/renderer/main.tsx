@@ -5302,6 +5302,7 @@ function AiProgressRow({
   };
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
+  const showAgentConfig = runner.role === "wiki-maintainer" || runner.role === "wiki";
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
@@ -5474,8 +5475,8 @@ function AiProgressRow({
           onSelectRunner={onSelectRunner!}
           onDraftChange={onDraftChange!}
           onConfigure={onConfigure!}
-          showAgent={false}
-          className="ai-progress-config runner-config"
+          showAgent={showAgentConfig}
+          className={`ai-progress-config runner-config${showAgentConfig ? " ai-progress-config-with-agent" : ""}`}
         />
       ) : null}
       {showConversation ? (

@@ -12,17 +12,17 @@ Each entry should cite its source ticket or log.
 - `prd_001` - Restructure Wiki & Handoff panel — handoff as wiki source, not a peer. Source: `tickets/done/prd_001/prd_001.md`.
 - `prd_004` - Add in-app Help section explaining sidebar and core terms. Source: `tickets/done/prd_004/prd_004.md`.
 - `prd_005` - Rename "spec" terminology to "PRD" (UI + docs + CLI alias). Source: `tickets/done/prd_005/prd_005.md`.
-- `prd_012` - Rename runner ids to role-aligned slugs (planner / worker / wiki-maintainer). [NOT APPLIED - Superseded] Source: `tickets/done/prd_012/tickets_012.md`.
+- `prd_012` - Historical runner-id rename proposal for role-aligned slugs (planner / worker / wiki-maintainer); the change was superseded and not applied, so active runner ids remain the current topology values documented in AGENTS and config. Source: `tickets/done/prd_012/tickets_012.md`.
 - `prd_016` - Pin AI progress board to a 2-left / 1-right tall layout when three runners are present. Source: `tickets/done/prd_016/tickets_016.md`.
 - `prd_021` - Workflow page UI overhaul — collapse sidebar label, wrap progress bar, simplify card titles, hoist AI controls into the cards. Source: `tickets/done/prd_021/tickets_021.md`.
 - `prd_023` - Remove left-border color accents from AI progress cards and all workflow pin bars. Source: `tickets/done/prd_023/tickets_023.md`.
 - `learning` - Recorded how to resolve `dirty_scope_conflict` when the ticket patch is already present in `PROJECT_ROOT` but unrelated dirty edits remain in the same file. See [[learnings/merge-blocked-already-applied-patch]]. Source: `learnings/merge-blocked-already-applied-patch.md`.
 - `prd_024` - Convert ticket workspace right preview into a click-to-open layer like the workflow PRD pin. Source: `tickets/done/prd_024/tickets_024.md`.
+- `learning` - Manual Recovery and Worktree Consolidation (2026-04-27). See [[learnings/manual-merge-recovery-20260427]] for the consolidation path that resolved dirty-scope conflicts around tickets 012, 016, 021, and 025. Source: `learnings/manual-merge-recovery-20260427.md`.
 - `prd_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Source: `tickets/done/prd_025/prd_025.md`.
 - `prd_026` - Fix Gemini app icon in Desktop AI runner UI. Source: `tickets/done/prd_026/prd_026.md`.
 - `prd_027` - Replace the desktop design kit from shadcn/Radix/Tailwind to MUI. Source: `tickets/done/prd_027/prd_027.md`.
 - `prd_028` - Simplify desktop runner control buttons. Source: `tickets/done/prd_028/prd_028.md`.
-- `learning` - Manual Recovery and Worktree Consolidation (2026-04-27). Documented recovery from dirty scope conflicts for tickets 012, 016, 021, and 025. Source: `learnings/manual-merge-recovery-20260427.md`.
 - `prd_030` - Add Inbox tab to Ticket Workspace. Source: `tickets/done/prd_030/prd_030.md`.
 - `prd_035` - Apply MUI dashboard design to the Statistics page. Source: `tickets/done/prd_035/prd_035.md`.
 - `prd_037` - Fix Statistics page scrolling. Source: `tickets/done/prd_037/prd_037.md`.
@@ -41,7 +41,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-04-29T23:54:26Z
+- Last rebuilt: 2026-04-30T08:31:42Z
 
 ### Completed Tickets
 

@@ -7,6 +7,11 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/desktop-full-page-loading-overlay-20260430]]** (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`): Summarized `prd_065` as the desktop-wide loading overlay restoration that should reuse existing loading flags and restore a full-page MUI `Backdrop` + `CircularProgress` flow when prior implementation evidence exists.
+- **[[answers/finish-ticket-owner-cleanup-status-regression-20260430]]** (`wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`): Captured the current `finish-ticket-owner` output contract around `cleanup_status=ok` and linked the related reject history from `verify_003` and `prd_049`.
+- **[[answers/desktop-navigation-refinements-20260430]]** (`wiki/answers/desktop-navigation-refinements-20260430.md`): Summarized the Desktop navigation refinements that put the inbox pin before PRD in the workflow strip and moved the Logs sidebar item after 통계.
+- **[[answers/recent-desktop-ui-refinements-20260429]]** (`wiki/answers/recent-desktop-ui-refinements-20260429.md`): Captured the 2026-04-29 Desktop UI snapshot that renamed user-facing memo labels to order and, at that time, placed the Logs sidebar item at the end before later navigation-order follow-ups moved it again.
+- **[[answers/desktop-sidebar-navigation-order]]** (`wiki/answers/desktop-sidebar-navigation-order.md`): Captured `tickets_065` under `prd_064`, the sidebar-order-only change that moves `로그` after `통계` while leaving the `settingsNavigation` keys, icons, and page render blocks untouched.
 - **[[answers/wiki-preview-top-alignment]]** (`wiki/answers/wiki-preview-top-alignment.md`): Captured the `tickets_059` adjustment that keeps the Wiki query right preview aligned to the top while preserving the existing split-pane preview flow.
 - **[[answers/finish-ticket-owner-cleanup-status-contract]]** (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`): Summarized the `verify_003` / `reject_003` failure caused by the missing `cleanup_status=ok` line in the `finish-ticket-owner` pass-output contract.
 - **[[answers/korean-board-writing-policy]]** (`wiki/answers/korean-board-writing-policy.md`): Captured the board-writing policy that user-facing PRD, ticket, and memo prose defaults to Korean while parser-sensitive fields keep their original format.
@@ -57,7 +62,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[decisions/prd-terminology-rename]] (`wiki/decisions/prd-terminology-rename.md`)
   - [[decisions/worker-display-policy]] (`wiki/decisions/worker-display-policy.md`)
 - `architecture/`
-  - [[architecture/runner-role-slugs]] (`wiki/architecture/runner-role-slugs.md`)
+  - [[architecture/runner-role-slugs]] (`wiki/architecture/runner-role-slugs.md`) - current retained runner-id scheme (`planner-1`, `owner-1`, `wiki-1`); slug rename proposal was superseded.
 - `learnings/`
   - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
@@ -65,6 +70,11 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/desktop-full-page-loading-overlay-20260430]] (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`)
+  - [[answers/finish-ticket-owner-cleanup-status-regression-20260430]] (`wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`)
+  - [[answers/desktop-navigation-refinements-20260430]] (`wiki/answers/desktop-navigation-refinements-20260430.md`)
+  - [[answers/recent-desktop-ui-refinements-20260429]] (`wiki/answers/recent-desktop-ui-refinements-20260429.md`)
+  - [[answers/desktop-sidebar-navigation-order]] (`wiki/answers/desktop-sidebar-navigation-order.md`)
   - [[answers/wiki-preview-top-alignment]] (`wiki/answers/wiki-preview-top-alignment.md`)
   - [[answers/finish-ticket-owner-cleanup-status-contract]] (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`)
   - [[answers/korean-board-writing-policy]] (`wiki/answers/korean-board-writing-policy.md`)
@@ -96,11 +106,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 58
+- Done tickets: 60
 - Reject records: 2
-- Verifier logs: 258
+- Verifier logs: 261
 - Conversation handoffs: 2
-- Last updated: 2026-04-29T23:54:26Z
+- Last updated: 2026-04-30T08:31:42Z
 
 ## Completed Tickets
 
