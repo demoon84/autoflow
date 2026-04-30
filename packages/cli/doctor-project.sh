@@ -1171,6 +1171,60 @@ if [ "$error_count" -gt 0 ]; then
   status="fail"
 fi
 
+recovery_candidate_count=0
+recovery_recovered_count=0
+recovery_skipped_count=0
+recovery_log="$(mktemp)"
+trap 'rm -f "$check_output" "$detail_output" "$ticket_locations_output" "$duplicate_ticket_ids_output" "$worktree_heads_output" "$recovery_log"' EXIT
+
+if [ -d "${board_root}/tickets/inprogress" ]; then
+  fix_threshold="${AUTOFLOW_DOCTOR_FIX_FAIL_THRESHOLD:-3}"
+  fix_now="${AUTOFLOW_DOCTOR_FIX:-0}"
+  while IFS= read -r live_ticket; do
+    [ -n "$live_ticket" ] || continue
+    raw_id="$(basename "$live_ticket" .md)"
+    raw_id="${raw_id#tickets_}"
+    case "$raw_id" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    fail_count=$(find "${board_root}/logs" -maxdepth 1 -type f -name "verifier_${raw_id}_*_fail.md" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${fail_count:-0}" -lt "$fix_threshold" ]; then
+      continue
+    fi
+    recovery_candidate_count=$((recovery_candidate_count + 1))
+    printf 'recovery.candidate.%s.ticket=%s\n' "$raw_id" "$live_ticket" >> "$recovery_log"
+    printf 'recovery.candidate.%s.fail_count=%s\n' "$raw_id" "$fail_count" >> "$recovery_log"
+    if [ "$fix_now" != "1" ]; then
+      recovery_skipped_count=$((recovery_skipped_count + 1))
+      continue
+    fi
+    reject_dir="${board_root}/tickets/reject"
+    mkdir -p "$reject_dir"
+    reject_target="${reject_dir}/$(basename "$live_ticket")"
+    if [ -e "$reject_target" ]; then
+      printf 'recovery.candidate.%s.skip=reject_target_exists:%s\n' "$raw_id" "$reject_target" >> "$recovery_log"
+      recovery_skipped_count=$((recovery_skipped_count + 1))
+      continue
+    fi
+    mv "$live_ticket" "$reject_target"
+    {
+      printf '\n## Reject Reason\n\n'
+      printf -- '- doctor --fix: stale inprogress with %s consecutive verifier failures (recovered at %s).\n' \
+        "$fail_count" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >> "$reject_target"
+    verify_source="${board_root}/tickets/inprogress/verify_${raw_id}.md"
+    if [ -f "$verify_source" ]; then
+      verify_target="${reject_dir}/verify_${raw_id}.md"
+      if [ -e "$verify_target" ]; then
+        verify_target="${reject_dir}/verify_${raw_id}.$(date -u +%Y%m%dT%H%M%SZ).md"
+      fi
+      mv "$verify_source" "$verify_target" 2>/dev/null || true
+    fi
+    printf 'recovery.candidate.%s.moved_to=%s\n' "$raw_id" "$reject_target" >> "$recovery_log"
+    recovery_recovered_count=$((recovery_recovered_count + 1))
+  done < <(find "${board_root}/tickets/inprogress" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null | sort)
+fi
+
 printf 'project_root=%s\n' "$project_root"
 printf 'board_root=%s\n' "$board_root"
 printf 'board_dir_name=%s\n' "$board_dir_name"
@@ -1178,8 +1232,13 @@ printf 'status=%s\n' "$status"
 printf 'package_version=%s\n' "$package_version"
 printf 'error_count=%s\n' "$error_count"
 printf 'warning_count=%s\n' "$warning_count"
+printf 'recovery_candidate_count=%s\n' "$recovery_candidate_count"
+printf 'recovery_recovered_count=%s\n' "$recovery_recovered_count"
+printf 'recovery_skipped_count=%s\n' "$recovery_skipped_count"
+printf 'recovery_fix_mode=%s\n' "${AUTOFLOW_DOCTOR_FIX:-0}"
 cat "$check_output"
 cat "$detail_output"
+cat "$recovery_log"
 
 if [ "$error_count" -gt 0 ]; then
   exit 1

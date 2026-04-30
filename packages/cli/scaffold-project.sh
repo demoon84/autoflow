@@ -90,6 +90,27 @@ while IFS='|' read -r asset_kind source_rel target_rel; do
   record_host_skill_action "$SYNC_ACTION_RESULT"
 done < <(managed_host_skill_asset_entries)
 
+adapter_probe_count_ok=0
+adapter_probe_count_missing=0
+adapter_probe() {
+  local name="$1"
+  local bin="$2"
+  local resolved
+  if resolved="$(command -v "$bin" 2>/dev/null)"; then
+    printf 'adapter.%s=ok\n' "$name"
+    printf 'adapter.%s.path=%s\n' "$name" "$resolved"
+    adapter_probe_count_ok=$((adapter_probe_count_ok + 1))
+  else
+    printf 'adapter.%s=missing\n' "$name"
+    adapter_probe_count_missing=$((adapter_probe_count_missing + 1))
+  fi
+}
+adapter_probe "claude" "claude"
+adapter_probe "codex" "codex"
+adapter_probe "gemini" "gemini"
+printf 'adapter_probe_ok=%s\n' "$adapter_probe_count_ok"
+printf 'adapter_probe_missing=%s\n' "$adapter_probe_count_missing"
+
 printf 'project_root=%s\n' "$TARGET_PROJECT_ROOT"
 printf 'board_root=%s\n' "$TARGET_BOARD_ROOT"
 printf 'host_agents=%s\n' "$HOST_AGENTS_PATH"

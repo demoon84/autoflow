@@ -631,6 +631,7 @@ case "$outcome" in
     printf 'inline_merge_exit=%s\n' "$inline_merge_exit"
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
       printf 'inline_merge=done; wiki+log written\n'
+      printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/'
     elif [ -n "$inline_merge_output" ]; then
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
     fi
