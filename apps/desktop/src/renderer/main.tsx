@@ -1,10 +1,12 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
+import Alert from "@mui/material/Alert";
 import ButtonBase from "@mui/material/ButtonBase";
 import Checkbox from "@mui/material/Checkbox";
 import CssBaseline from "@mui/material/CssBaseline";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormGroup from "@mui/material/FormGroup";
+import Snackbar from "@mui/material/Snackbar";
 import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
 import {
@@ -862,6 +864,46 @@ function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
 
+function RunnerHealthBanner({ runners }: { runners: AutoflowRunner[] }) {
+  const unhealthy = React.useMemo(
+    () =>
+      runners.filter((runner) => {
+        if ((runner.enabled || "").toLowerCase() === "false") return false;
+        const stateStatus = (runner.stateStatus || "").toLowerCase();
+        const activeStage = (runner.activeStage || "").toLowerCase();
+        const lastResult = (runner.lastResult || "").toLowerCase();
+        return (
+          runnerHealthNeedsAttention(stateStatus) ||
+          runnerHealthNeedsAttention(activeStage) ||
+          runnerHealthNeedsAttention(lastResult)
+        );
+      }),
+    [runners],
+  );
+  if (unhealthy.length === 0) return null;
+  return (
+    <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }} role="alert">
+      <strong>런너 점검 필요 ({unhealthy.length})</strong>
+      <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.25rem" }}>
+        {unhealthy.map((runner) => {
+          const display = displayWorkflowRunnerId(runner.id, runners);
+          const parts = [
+            runner.stateStatus,
+            runner.activeStage,
+            runner.lastResult ? `결과: ${runner.lastResult}` : "",
+          ].filter(Boolean);
+          return (
+            <li key={runner.id}>
+              <strong>{display}</strong>
+              {parts.length ? ` — ${parts.join(" · ")}` : ""}
+            </li>
+          );
+        })}
+      </ul>
+    </Alert>
+  );
+}
+
 function App() {
   const [projectRoot, setProjectRoot] = React.useState(() => initialSetting("autoflow.projectRoot", ""));
   const [defaultFlowFolder, setDefaultFlowFolder] = React.useState(() =>
@@ -889,6 +931,12 @@ function App() {
   const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
   const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
   const [sourcesOpen, setSourcesOpen] = React.useState(true);
+  const [logsLimit, setLogsLimit] = React.useState<number | null>(200);
+  const [globalToast, setGlobalToast] = React.useState<{
+    severity: "error" | "warning" | "info" | "success";
+    message: string;
+  } | null>(null);
+  const wikiQueryInvocationIdRef = React.useRef<string>("");
   const [metricsActionKey, setMetricsActionKey] = React.useState("");
   const [metricsError, setMetricsError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
@@ -993,14 +1041,23 @@ function App() {
       return undefined;
     }
 
+    let cancelled = false;
+
     const refreshSnapshot = async () => {
-      if (autoRefreshInFlightRef.current) {
+      if (cancelled || autoRefreshInFlightRef.current) {
         return;
       }
 
       autoRefreshInFlightRef.current = true;
       try {
         await loadBoard();
+      } catch (error) {
+        // Swallow polling-tick errors so a single transient failure does not
+        // leave the in-flight flag stuck and freeze the auto-refresh loop.
+        // loadBoard already routes the error to setSetupError when it can.
+        if (typeof console !== "undefined") {
+          console.warn("autoflow.refreshSnapshot failed", error);
+        }
       } finally {
         autoRefreshInFlightRef.current = false;
       }
@@ -1012,7 +1069,10 @@ function App() {
       void refreshSnapshot();
     }, 5000);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [loadBoard, options.projectRoot]);
 
   useAutomaticWikiUpdate(board, options, loadBoard, setWikiError);
@@ -1029,6 +1089,11 @@ function App() {
     }
     setWikiError("");
     setWikiQueryRunning(true);
+    const invocationId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `wiki-query-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    wikiQueryInvocationIdRef.current = invocationId;
     try {
       const result = await window.autoflow.controlWiki({
         action: "query",
@@ -1036,8 +1101,14 @@ function App() {
         limit: 10,
         includeTickets: wikiQueryIncludeTickets,
         includeHandoffs: wikiQueryIncludeHandoffs,
+        invocationId,
         ...options
       });
+      if (result.cancelled) {
+        setWikiError("위키 검색을 취소했습니다.");
+        setWikiQueryResult(null);
+        return;
+      }
       if (!result.ok) {
         setWikiError(result.stderr || result.stdout || "위키 검색에 실패했습니다.");
         setWikiQueryResult(null);
@@ -1058,9 +1129,12 @@ function App() {
       }));
       setWikiQueryResult({ ...parsed, results: absResults });
     } catch (error) {
-      setWikiError(error instanceof Error ? error.message : "위키 검색에 실패했습니다.");
+      const message = error instanceof Error ? error.message : "위키 검색에 실패했습니다.";
+      setWikiError(message);
       setWikiQueryResult(null);
+      setGlobalToast({ severity: "error", message: `위키 검색 실패: ${message}` });
     } finally {
+      wikiQueryInvocationIdRef.current = "";
       setWikiQueryRunning(false);
     }
   }, [
@@ -1071,6 +1145,15 @@ function App() {
     wikiQueryInput,
     wikiQueryRunning
   ]);
+
+  const cancelWikiQuery = React.useCallback(() => {
+    const invocationId = wikiQueryInvocationIdRef.current;
+    if (!invocationId) return;
+    void window.autoflow.cancelInvocation(invocationId).catch(() => {
+      // best effort — the user already sees the running state and a fresh
+      // failure surface will come through runWikiQuery's own catch.
+    });
+  }, []);
 
   React.useEffect(() => {
     const runners = board?.runners || [];
@@ -1600,6 +1683,7 @@ function App() {
               {activeSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
                   <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
+                    <RunnerHealthBanner runners={board?.runners ?? []} />
                     {runnerError ? <div className="runner-error">{runnerError}</div> : null}
                     <WorkflowStatStrip board={board} />
                     <TicketBoard
@@ -1640,6 +1724,7 @@ function App() {
                             query={wikiQueryInput}
                             onQueryChange={setWikiQueryInput}
                             onSubmit={runWikiQuery}
+                            onCancel={cancelWikiQuery}
                             isRunning={wikiQueryRunning}
                             result={wikiQueryResult}
                             selectedPath={selectedLogPath}
@@ -1683,35 +1768,52 @@ function App() {
                 </section>
               )}
 
-              {activeSettingsSection === "logs" && (
-                <section className="dashboard-area" aria-label="로그">
-                  <section className="board-section board-section-flush" aria-label="로그 본문">
-                    <PageLayout className="knowledge-page">
-                      <div className="knowledge-split">
-                        <div className="tool-panel knowledge-list-pane">
-                          <div className="section-heading compact">
-                            <div>
-                              <div className="section-kicker">전체</div>
-                              <h3>로그</h3>
+              {activeSettingsSection === "logs" && (() => {
+                const totalLogs = (board?.logs?.length || 0) + (board?.runnerLogs?.length || 0);
+                const showingAll = logsLimit === null;
+                const showingCount = showingAll ? totalLogs : Math.min(logsLimit, totalLogs);
+                return (
+                  <section className="dashboard-area" aria-label="로그">
+                    <section className="board-section board-section-flush" aria-label="로그 본문">
+                      <PageLayout className="knowledge-page">
+                        <div className="knowledge-split">
+                          <div className="tool-panel knowledge-list-pane">
+                            <div className="section-heading compact">
+                              <div>
+                                <div className="section-kicker">{showingAll ? `전체 ${totalLogs}건` : `최근 ${showingCount} / 전체 ${totalLogs}건`}</div>
+                                <h3>로그</h3>
+                              </div>
+                              <Terminal className="h-4 w-4 text-muted-foreground" />
                             </div>
-                            <Terminal className="h-4 w-4 text-muted-foreground" />
+                            <LogList
+                              board={board}
+                              selectedPath={selectedLogPath}
+                              onSelect={readLog}
+                              limit={logsLimit}
+                              className="log-list-fill"
+                            />
+                            {totalLogs > 200 ? (
+                              <div className="log-list-footer">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() => setLogsLimit((prev) => (prev === null ? 200 : null))}
+                                >
+                                  {showingAll ? "최근 200개만 보기" : `전체 ${totalLogs}건 모두 보기`}
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
-                          <LogList
-                            board={board}
-                            selectedPath={selectedLogPath}
-                            onSelect={readLog}
-                            limit={null}
-                            className="log-list-fill"
-                          />
+                          <div className="knowledge-preview-pane">
+                            <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
+                          </div>
                         </div>
-                        <div className="knowledge-preview-pane">
-                          <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
-                        </div>
-                      </div>
-                    </PageLayout>
+                      </PageLayout>
+                    </section>
                   </section>
-                </section>
-              )}
+                );
+              })()}
 
             {activeSettingsSection === "snapshot" && (
               <section className="dashboard-area" aria-label="통계">
@@ -1780,6 +1882,26 @@ function App() {
           </section>
         </section>
       </main>
+      <Snackbar
+        open={Boolean(globalToast)}
+        autoHideDuration={6000}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        onClose={(_event, reason) => {
+          if (reason === "clickaway") return;
+          setGlobalToast(null);
+        }}
+      >
+        {globalToast ? (
+          <Alert
+            severity={globalToast.severity}
+            variant="filled"
+            onClose={() => setGlobalToast(null)}
+            sx={{ width: "100%" }}
+          >
+            {globalToast.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </div>
   );
 }
@@ -1871,14 +1993,23 @@ function EssentialApp() {
       return undefined;
     }
 
+    let cancelled = false;
+
     const refreshSnapshot = async () => {
-      if (autoRefreshInFlightRef.current) {
+      if (cancelled || autoRefreshInFlightRef.current) {
         return;
       }
 
       autoRefreshInFlightRef.current = true;
       try {
         await loadBoard();
+      } catch (error) {
+        // Swallow polling-tick errors so a single transient failure does not
+        // leave the in-flight flag stuck and freeze the auto-refresh loop.
+        // loadBoard already routes the error to setSetupError when it can.
+        if (typeof console !== "undefined") {
+          console.warn("autoflow.refreshSnapshot failed", error);
+        }
       } finally {
         autoRefreshInFlightRef.current = false;
       }
@@ -1890,7 +2021,10 @@ function EssentialApp() {
       void refreshSnapshot();
     }, 5000);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [loadBoard, options.projectRoot]);
 
   React.useEffect(() => {
@@ -4696,7 +4830,10 @@ function TicketBoard({
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const inboxMemos = (board?.tickets.inbox || [])
     .filter(isMemoBoardFile)
-    .map((file) => ({ ...file, stateLabel: "ORDER", stateTone: "neutral" } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
+  const doneMemos = (board?.tickets.done || [])
+    .filter((file) => file.name.startsWith("memo_"))
+    .map((file) => ({ ...file } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
@@ -4718,14 +4855,14 @@ function TicketBoard({
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
-  const memoFiles: WorkflowFileEntry[] = inboxMemos.sort(
+  const memoFiles: WorkflowFileEntry[] = [...inboxMemos, ...doneMemos].sort(
     (a, b) => memoNumericId(b.name) - memoNumericId(a.name)
   );
   const todoFiles: WorkflowFileEntry[] = todoTickets.sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD ${specFiles.length}건${backlogSpecs.length ? ` · 대기 ${backlogSpecs.length}건` : ""}`;
-  const memoPinTitle = `ORDER ${memoFiles.length}건`;
+  const memoPinTitle = `ORDER ${memoFiles.length}건${inboxMemos.length ? ` · 대기 ${inboxMemos.length}건` : ""}`;
   const todoPinTitle = `TODO ${todoFiles.length}건`;
   const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
 
@@ -4738,19 +4875,6 @@ function TicketBoard({
           <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
             {hasWorkflowPins ? (
               <WorkflowPinLayer
-                files={specFiles}
-                options={options}
-                pinTitle={prdPinTitle}
-                pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
-                variant="default"
-                layerHeading={prdPinTitle}
-                layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
-                emptyText="아직 작성된 PRD가 없습니다."
-                showWhenEmpty
-              />
-            ) : null}
-            {hasWorkflowPins ? (
-              <WorkflowPinLayer
                 files={memoFiles}
                 options={options}
                 pinTitle={memoPinTitle}
@@ -4759,6 +4883,19 @@ function TicketBoard({
                 layerHeading={memoPinTitle}
                 layerHelpText="인박스에 들어온 빠른 오더 목록입니다. 항목을 클릭하면 오더 본문이 이 화면에서 열립니다."
                 emptyText="아직 들어온 오더가 없습니다."
+                showWhenEmpty
+              />
+            ) : null}
+            {hasWorkflowPins ? (
+              <WorkflowPinLayer
+                files={specFiles}
+                options={options}
+                pinTitle={prdPinTitle}
+                pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
+                variant="default"
+                layerHeading={prdPinTitle}
+                layerHelpText="작성된 PRD 목록입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
+                emptyText="아직 작성된 PRD가 없습니다."
                 showWhenEmpty
               />
             ) : null}
@@ -5446,6 +5583,7 @@ function WikiQueryPanel({
   query,
   onQueryChange,
   onSubmit,
+  onCancel,
   isRunning,
   result,
   selectedPath,
@@ -5458,6 +5596,7 @@ function WikiQueryPanel({
   query: string;
   onQueryChange: (value: string) => void;
   onSubmit: () => void;
+  onCancel?: () => void;
   isRunning: boolean;
   result: WikiQueryParsed | null;
   selectedPath: string;
@@ -5487,6 +5626,12 @@ function WikiQueryPanel({
           {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           <span>검색</span>
         </Button>
+        {isRunning && onCancel ? (
+          <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+            <Square className="h-4 w-4" />
+            <span>취소</span>
+          </Button>
+        ) : null}
       </form>
       <FormGroup className="wiki-query-toggles" role="group" aria-label="위키 검색 필터 옵션">
         <FormControlLabel

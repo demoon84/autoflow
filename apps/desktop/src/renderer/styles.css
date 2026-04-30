@@ -4045,6 +4045,19 @@ pre {
   gap: 8px;
 }
 
+.log-list.log-list-fill {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.log-list-footer {
+  display: flex;
+  justify-content: center;
+  padding: 8px 10px 12px;
+  flex: 0 0 auto;
+}
+
 .knowledge-stack {
   display: flex;
   flex: 1 1 auto;

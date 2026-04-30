@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld("autoflow", {
   writeMetricsSnapshot: (options) => ipcRenderer.invoke("autoflow:writeMetricsSnapshot", options),
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options) => ipcRenderer.invoke("autoflow:controlWatcher", options),
-  readBoardFile: (options) => ipcRenderer.invoke("autoflow:readBoardFile", options)
+  readBoardFile: (options) => ipcRenderer.invoke("autoflow:readBoardFile", options),
+  cancelInvocation: (invocationId) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId)
 });

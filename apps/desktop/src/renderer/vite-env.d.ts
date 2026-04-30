@@ -8,6 +8,8 @@ type AutoflowRunResult = {
   code: number;
   stdout: string;
   stderr: string;
+  signal?: string;
+  cancelled?: boolean;
 };
 
 type AutoflowFilePreview = {
@@ -160,6 +162,7 @@ interface Window {
     installBoard: (options: {
       projectRoot: string;
       boardDirName: string;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     listRunners: (options: {
       projectRoot: string;
@@ -170,6 +173,7 @@ interface Window {
       runnerId: string;
       projectRoot: string;
       boardDirName: string;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     listRunnerArtifacts: (options: {
       runnerId: string;
@@ -182,12 +186,14 @@ interface Window {
       projectRoot: string;
       boardDirName: string;
       dryRun?: boolean;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     configureRunner: (options: {
       runnerId: string;
       projectRoot: string;
       boardDirName: string;
       config: AutoflowRunnerConfigUpdate;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     createRunner: (options: {
       runnerId: string;
@@ -195,6 +201,7 @@ interface Window {
       projectRoot: string;
       boardDirName: string;
       config: AutoflowRunnerConfigUpdate;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     controlWiki: (options: {
       action: "update" | "lint" | "query";
@@ -206,25 +213,32 @@ interface Window {
       includeTickets?: boolean;
       includeHandoffs?: boolean;
       includeSnippets?: boolean;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     writeMetricsSnapshot: (options: {
       projectRoot: string;
       boardDirName: string;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     controlStopHook: (options: {
       action: "install" | "remove" | "status";
       projectRoot: string;
       boardDirName: string;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     controlWatcher: (options: {
       action: "start" | "stop" | "status";
       projectRoot: string;
       boardDirName: string;
+      invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     readBoardFile: (options: {
       projectRoot: string;
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
+    cancelInvocation: (
+      invocationId: string
+    ) => Promise<{ ok: boolean; cancelled: boolean; reason?: string }>;
   };
 }

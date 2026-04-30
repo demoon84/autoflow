@@ -70,6 +70,10 @@ const allowedRunnerConfigKeys = new Set([
   "command"
 ]);
 const safeIdPattern = /^[A-Za-z0-9_.-]+$/;
+// Board directory name must be a single safe path component — no separators,
+// no `..`. Defense-in-depth: the renderer is in-process so this is not a
+// security boundary, but keeps a malformed message from reaching the CLI.
+const safeBoardDirNamePattern = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 const boardFileReadLimitBytes = 196 * 1024;
 const metricsHistoryReadLimitBytes = 512 * 1024;
 const runnerTerminalPreviewLimitBytes = 32 * 1024;
@@ -189,7 +193,37 @@ const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticCache = new Map();
 const knownProjectScopes = new Map();
 const activeChildProcesses = new Set();
+// invocationId → child process. Lets the renderer cancel a long-running
+// CLI call (runRole / controlWiki --synth / installBoard / etc.) by id.
+const cancellableInvocations = new Map();
 let runnerShutdownInProgress = false;
+
+function registerCancellableInvocation(invocationId, child) {
+  if (typeof invocationId !== "string" || !invocationId) return;
+  cancellableInvocations.set(invocationId, child);
+}
+
+function clearCancellableInvocation(invocationId) {
+  if (typeof invocationId !== "string" || !invocationId) return;
+  cancellableInvocations.delete(invocationId);
+}
+
+function cancelInvocation(invocationId) {
+  if (typeof invocationId !== "string" || !invocationId) {
+    return { ok: false, cancelled: false, reason: "invalid_id" };
+  }
+  const child = cancellableInvocations.get(invocationId);
+  if (!child) {
+    return { ok: true, cancelled: false, reason: "not_found" };
+  }
+  try {
+    child.kill("SIGTERM");
+  } catch (error) {
+    return { ok: false, cancelled: false, reason: error.message || "kill_failed" };
+  }
+  cancellableInvocations.delete(invocationId);
+  return { ok: true, cancelled: true };
+}
 
 function appConfig() {
   return {
@@ -297,6 +331,8 @@ function runAutoflowArgs(args, options = {}) {
       }
     });
     activeChildProcesses.add(child);
+    const invocationId = typeof options.invocationId === "string" ? options.invocationId : "";
+    registerCancellableInvocation(invocationId, child);
 
     let stdout = "";
     let stderr = "";
@@ -317,6 +353,7 @@ function runAutoflowArgs(args, options = {}) {
 
     child.on("error", (error) => {
       activeChildProcesses.delete(child);
+      clearCancellableInvocation(invocationId);
       resolve({
         ok: false,
         command: label,
@@ -326,14 +363,18 @@ function runAutoflowArgs(args, options = {}) {
       });
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       activeChildProcesses.delete(child);
+      clearCancellableInvocation(invocationId);
+      const cancelled = signal === "SIGTERM" || signal === "SIGKILL";
       resolve({
-        ok: isSuccessfulAutoflowResult(code, stdout),
+        ok: !cancelled && isSuccessfulAutoflowResult(code, stdout),
         command: label,
         code,
+        signal: signal || "",
+        cancelled,
         stdout,
-        stderr
+        stderr: cancelled ? `${stderr}\n[cancelled by renderer]` : stderr
       });
     });
   });
@@ -1475,6 +1516,18 @@ async function readBoardFile(options = {}) {
   }
 
   const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!isSafeBoardDirName(boardDirName)) {
+    return {
+      ok: false,
+      filePath: "",
+      name: "",
+      content: "",
+      truncated: false,
+      modifiedAt: "",
+      size: 0,
+      stderr: "Invalid board directory name."
+    };
+  }
   const boardRoot = path.resolve(options.projectRoot, boardDirName);
   const targetPath = path.resolve(filePath);
   const relativePath = path.relative(boardRoot, targetPath);
@@ -1555,6 +1608,14 @@ async function readBoardFile(options = {}) {
 
 async function readBoard({ projectRoot, boardDirName }) {
   const normalizedBoardDirName = boardDirName || defaultBoardDirName;
+  if (!isSafeBoardDirName(normalizedBoardDirName)) {
+    return {
+      repoRoot,
+      boardRoot: "",
+      exists: false,
+      stderr: "Invalid board directory name."
+    };
+  }
   const boardRoot = path.join(projectRoot || "", normalizedBoardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
   const exists = await pathExists(boardRoot);
@@ -2076,6 +2137,29 @@ function withScopeMemory(handler) {
   };
 }
 
+// Wrap an IPC handler so a hung underlying call (e.g. CLI subprocess that
+// never exits) surfaces to the renderer as a rejection instead of leaving
+// the UI frozen on a permanent loading state. Pass ms <= 0 to disable.
+function withTimeout(handler, ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return handler;
+  }
+  return (...args) =>
+    Promise.race([
+      Promise.resolve().then(() => handler(...args)),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`autoflow IPC handler timed out after ${ms}ms`)),
+          ms
+        )
+      )
+    ]);
+}
+
+function isSafeBoardDirName(value) {
+  return typeof value === "string" && safeBoardDirNamePattern.test(value);
+}
+
 function listChildPids(parentPid) {
   try {
     const { spawnSync } = require("node:child_process");
@@ -2230,13 +2314,23 @@ app.whenReady().then(() => {
     return result.filePaths[0];
   });
 
-  ipcMain.handle("autoflow:getConfig", () => appConfig());
-  ipcMain.handle("autoflow:listInstalledAgentProfiles", () => readInstalledAgentProfiles());
-  ipcMain.handle("autoflow:readBoard", withScopeMemory(readBoard));
+  // Read-type handlers: bound by a 30s timeout so a hung CLI subprocess does
+  // not freeze the renderer indefinitely. Action handlers (install/control/
+  // run/configure/create/write) intentionally have no timeout because they
+  // can legitimately run for minutes (CLI work, AI synth, etc).
+  ipcMain.handle("autoflow:getConfig", withTimeout(() => appConfig(), 30000));
+  ipcMain.handle(
+    "autoflow:listInstalledAgentProfiles",
+    withTimeout(() => readInstalledAgentProfiles(), 30000)
+  );
+  ipcMain.handle("autoflow:readBoard", withTimeout(withScopeMemory(readBoard), 30000));
   ipcMain.handle("autoflow:installBoard", withScopeMemory(installBoard));
-  ipcMain.handle("autoflow:listRunners", withScopeMemory(listRunners));
+  ipcMain.handle("autoflow:listRunners", withTimeout(withScopeMemory(listRunners), 30000));
   ipcMain.handle("autoflow:controlRunner", withScopeMemory(controlRunner));
-  ipcMain.handle("autoflow:listRunnerArtifacts", withScopeMemory(listRunnerArtifacts));
+  ipcMain.handle(
+    "autoflow:listRunnerArtifacts",
+    withTimeout(withScopeMemory(listRunnerArtifacts), 30000)
+  );
   ipcMain.handle("autoflow:runRole", withScopeMemory(runRole));
   ipcMain.handle("autoflow:configureRunner", withScopeMemory(configureRunner));
   ipcMain.handle("autoflow:createRunner", withScopeMemory(createRunner));
@@ -2244,7 +2338,12 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
-  ipcMain.handle("autoflow:readBoardFile", withScopeMemory(readBoardFile));
+  ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  // Cancel a still-running long IPC call by invocationId. No timeout: the
+  // call must always be reachable so the user can recover from a hung action.
+  ipcMain.handle("autoflow:cancelInvocation", (_event, invocationId) =>
+    cancelInvocation(invocationId)
+  );
 
   createWindow();
 
