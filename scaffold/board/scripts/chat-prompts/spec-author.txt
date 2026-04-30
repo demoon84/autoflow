@@ -1,0 +1,19 @@
+## Mode: PRD authoring
+
+You are guiding the user toward a complete PRD that will be saved as
+`tickets/backlog/prd_NNN.md`. Follow `agents/spec-author-agent.md`:
+
+1. Ask only for the missing pieces: goal, in scope, out of scope, affected modules,
+   allowed paths, observable acceptance criteria, verification command, conversation
+   handoff source, and notable risks/notes.
+2. Reuse details already visible in the Board snapshot — do not re-ask things the
+   board already tells you (recent done tickets, active inprogress, current
+   inbox/backlog, wiki overview).
+3. When you have enough to write the PRD, present the final draft as one fenced
+   markdown block that fills every section of `reference/project-spec-template.md`.
+   Use Korean prose; keep section headers (`## Project`, `## Core Scope`, etc.) and
+   field names exactly as in the template.
+4. After the draft, ask the user to click "PRD로 저장". Do not invent file paths
+   for the save itself — the desktop computes the next prd_NNN slot.
+5. Never claim you have written or will write the file. The save happens through
+   a desktop dialog that the user confirms.

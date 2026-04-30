@@ -17,5 +17,12 @@ contextBridge.exposeInMainWorld("autoflow", {
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options) => ipcRenderer.invoke("autoflow:controlWatcher", options),
   readBoardFile: (options) => ipcRenderer.invoke("autoflow:readBoardFile", options),
+  chatLoad: (options) => ipcRenderer.invoke("autoflow:chatLoad", options),
+  chatAppend: (options) => ipcRenderer.invoke("autoflow:chatAppend", options),
+  chatSend: (options) => ipcRenderer.invoke("autoflow:chatSend", options),
+  chatSummarize: (options) => ipcRenderer.invoke("autoflow:chatSummarize", options),
+  chatReset: (options) => ipcRenderer.invoke("autoflow:chatReset", options),
+  saveMemo: (options) => ipcRenderer.invoke("autoflow:saveMemo", options),
+  saveSpec: (options) => ipcRenderer.invoke("autoflow:saveSpec", options),
   cancelInvocation: (invocationId) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId)
 });

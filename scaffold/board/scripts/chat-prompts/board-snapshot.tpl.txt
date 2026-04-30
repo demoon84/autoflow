@@ -1,0 +1,6 @@
+## Board snapshot
+
+The lines below are a live snapshot of the user's Autoflow board. Treat them as
+the source of truth even when older messages in the conversation say otherwise.
+Each subsection is bounded; "(none)" means the section is empty, "(truncated)"
+means the section was cut off due to budget limits.

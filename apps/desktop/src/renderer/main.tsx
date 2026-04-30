@@ -2,10 +2,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import Alert from "@mui/material/Alert";
 import ButtonBase from "@mui/material/ButtonBase";
-import Checkbox from "@mui/material/Checkbox";
 import CssBaseline from "@mui/material/CssBaseline";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormGroup from "@mui/material/FormGroup";
 import Snackbar from "@mui/material/Snackbar";
 import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
@@ -27,15 +24,19 @@ import {
   KanbanSquare,
   Layers3,
   Loader2,
+  MessageSquare,
   Play,
   RefreshCw,
+  RotateCcw,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   Square,
   Terminal,
   TriangleAlert,
   PieChart,
+  Trash2,
   TrendingUp,
   Workflow,
   X
@@ -137,6 +138,7 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
+  { key: "chat", label: "대화", icon: MessageSquare },
   { key: "progress", label: "작업", icon: Workflow },
   { key: "kanban", label: "Tickets", icon: KanbanSquare },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
@@ -928,8 +930,6 @@ function App() {
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
   const [wikiQueryRunning, setWikiQueryRunning] = React.useState(false);
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
-  const [wikiQueryIncludeTickets, setWikiQueryIncludeTickets] = React.useState(true);
-  const [wikiQueryIncludeHandoffs, setWikiQueryIncludeHandoffs] = React.useState(true);
   const [sourcesOpen, setSourcesOpen] = React.useState(true);
   const [logsLimit, setLogsLimit] = React.useState<number | null>(200);
   const [globalToast, setGlobalToast] = React.useState<{
@@ -943,14 +943,14 @@ function App() {
   const [recentProjects, setRecentProjects] = React.useState(() => readRecentProjects(projectRoot));
   const [projectMenuOpen, setProjectMenuOpen] = React.useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = React.useState<SettingsSection>(() => {
-    const stored = initialSetting("autoflow.activeSettingsSection", "progress");
+    const stored = initialSetting("autoflow.activeSettingsSection", "chat");
     if (stored === "logs") {
       return "snapshot";
     }
     if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor") {
       return "progress";
     }
-    return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "progress";
+    return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "chat";
   });
   const projectSwitcherRef = React.useRef<HTMLDivElement>(null);
   const previousSettingsSectionRef = React.useRef<SettingsSection>(activeSettingsSection);
@@ -1099,8 +1099,8 @@ function App() {
         action: "query",
         terms,
         limit: 10,
-        includeTickets: wikiQueryIncludeTickets,
-        includeHandoffs: wikiQueryIncludeHandoffs,
+        includeTickets: true,
+        includeHandoffs: true,
         invocationId,
         ...options
       });
@@ -1140,8 +1140,6 @@ function App() {
   }, [
     board,
     options,
-    wikiQueryIncludeHandoffs,
-    wikiQueryIncludeTickets,
     wikiQueryInput,
     wikiQueryRunning
   ]);
@@ -1680,6 +1678,14 @@ function App() {
                 </p>
               ) : null}
 
+              {activeSettingsSection === "chat" && (
+                <section className="dashboard-area" aria-label="대화">
+                  <section className="board-section board-section-flush" aria-label="Autoflow AI 대화">
+                    <ChatView projectRoot={options.projectRoot} boardDirName={options.boardDirName} />
+                  </section>
+                </section>
+              )}
+
               {activeSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
                   <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
@@ -1729,10 +1735,6 @@ function App() {
                             result={wikiQueryResult}
                             selectedPath={selectedLogPath}
                             onSelect={readWikiLog}
-                            includeTickets={wikiQueryIncludeTickets}
-                            onIncludeTicketsChange={setWikiQueryIncludeTickets}
-                            includeHandoffs={wikiQueryIncludeHandoffs}
-                            onIncludeHandoffsChange={setWikiQueryIncludeHandoffs}
                           />
                           <div className="knowledge-stack">
                             <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
@@ -2483,7 +2485,7 @@ function RunnerConsole({
       runner.role === "plan" ||
       runner.role === "wiki-maintainer" ||
       runner.role === "wiki" ||
-      isCoordinatorRole(runner.role)
+      (isCoordinatorRole(runner.role) && runnerIsEnabled(runner.enabled))
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
   const stoppedCount = runners.filter((runner) => (runner.stateStatus || "") === "stopped").length;
@@ -4861,9 +4863,9 @@ function TicketBoard({
   const todoFiles: WorkflowFileEntry[] = todoTickets.sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
-  const prdPinTitle = `PRD ${specFiles.length}건${backlogSpecs.length ? ` · 대기 ${backlogSpecs.length}건` : ""}`;
-  const memoPinTitle = `ORDER ${memoFiles.length}건${inboxMemos.length ? ` · 대기 ${inboxMemos.length}건` : ""}`;
-  const todoPinTitle = `TODO ${todoFiles.length}건`;
+  const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
+  const memoPinTitle = `ORDER (${inboxMemos.length}/${memoFiles.length})`;
+  const todoPinTitle = `TODO (${todoFiles.length}/${todoFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
 
   const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length);
@@ -5302,7 +5304,13 @@ function AiProgressRow({
   };
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
-  const showAgentConfig = runner.role === "wiki-maintainer" || runner.role === "wiki";
+  const showAgentConfig =
+    runner.role === "wiki-maintainer" ||
+    runner.role === "wiki" ||
+    runner.role === "ticket-owner" ||
+    runner.role === "owner" ||
+    runner.role === "planner" ||
+    runner.role === "plan";
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
@@ -5588,11 +5596,7 @@ function WikiQueryPanel({
   isRunning,
   result,
   selectedPath,
-  onSelect,
-  includeTickets,
-  onIncludeTicketsChange,
-  includeHandoffs,
-  onIncludeHandoffsChange
+  onSelect
 }: {
   query: string;
   onQueryChange: (value: string) => void;
@@ -5602,10 +5606,6 @@ function WikiQueryPanel({
   result: WikiQueryParsed | null;
   selectedPath: string;
   onSelect: (filePath: string) => void;
-  includeTickets: boolean;
-  onIncludeTicketsChange: (value: boolean) => void;
-  includeHandoffs: boolean;
-  onIncludeHandoffsChange: (value: boolean) => void;
 }) {
   return (
     <div className="wiki-query-panel">
@@ -5634,30 +5634,6 @@ function WikiQueryPanel({
           </Button>
         ) : null}
       </form>
-      <FormGroup className="wiki-query-toggles" role="group" aria-label="위키 검색 필터 옵션">
-        <FormControlLabel
-          className="wiki-query-toggle"
-          control={
-            <Checkbox
-              size="small"
-              checked={includeTickets}
-              onChange={(event) => onIncludeTicketsChange(event.target.checked)}
-            />
-          }
-          label="완료/거절 티켓 포함"
-        />
-        <FormControlLabel
-          className="wiki-query-toggle"
-          control={
-            <Checkbox
-              size="small"
-              checked={includeHandoffs}
-              onChange={(event) => onIncludeHandoffsChange(event.target.checked)}
-            />
-          }
-          label="인수인계 포함"
-        />
-      </FormGroup>
       {result ? (
         result.results.length === 0 ? (
           <div className="empty-panel">일치하는 결과가 없습니다</div>
@@ -5798,6 +5774,458 @@ function LogPreview({
       {error ? <div className="log-preview-error">{error}</div> : null}
       {!error && preview ? <pre>{preview.content || "(비어 있음)"}</pre> : null}
       {!error && !preview ? <div className="empty-panel log-preview-empty">선택된 로그가 없습니다</div> : null}
+    </div>
+  );
+}
+
+type ChatMode = "auto" | "memo" | "prd";
+
+type ChatViewProps = {
+  projectRoot: string;
+  boardDirName: string;
+};
+
+type ChatRenderMessage = AutoflowChatMessage & {
+  pending?: boolean;
+  attachedWikiPaths?: string[];
+};
+
+function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
+  const [messages, setMessages] = React.useState<ChatRenderMessage[]>([]);
+  const [frontmatter, setFrontmatter] = React.useState<AutoflowChatFrontmatter>({});
+  const [wikiCatalog, setWikiCatalog] = React.useState<AutoflowChatWikiCatalogEntry[]>([]);
+  const [suggestedMode, setSuggestedMode] = React.useState<"memo" | "prd">("memo");
+  const [mode, setMode] = React.useState<ChatMode>("auto");
+  const [wikiCite, setWikiCite] = React.useState(true);
+  const [summaryHandover, setSummaryHandover] = React.useState(true);
+  const [draft, setDraft] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [errorText, setErrorText] = React.useState("");
+  const [resetOpen, setResetOpen] = React.useState(false);
+  const [previewMode, setPreviewMode] = React.useState<null | "memo" | "prd">(null);
+  const [previewBody, setPreviewBody] = React.useState("");
+  const [savedToast, setSavedToast] = React.useState<{ kind: "memo" | "prd"; path: string } | null>(null);
+  const invocationRef = React.useRef<string>("");
+  const messageEndRef = React.useRef<HTMLDivElement>(null);
+
+  const reload = React.useCallback(async () => {
+    if (!projectRoot) {
+      setMessages([]);
+      setFrontmatter({});
+      setWikiCatalog([]);
+      return;
+    }
+    setErrorText("");
+    try {
+      const result = await window.autoflow.chatLoad({ projectRoot, boardDirName });
+      setMessages(result.messages.map((m) => ({ ...m })));
+      setFrontmatter(result.frontmatter || {});
+      setWikiCatalog(result.wikiAnswerCatalog || []);
+      setSuggestedMode(result.suggestedMode || "memo");
+    } catch (error) {
+      setErrorText((error as Error)?.message || "대화 스레드를 불러오지 못했습니다.");
+    }
+  }, [projectRoot, boardDirName]);
+
+  React.useEffect(() => {
+    reload();
+  }, [reload]);
+
+  React.useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length]);
+
+  const appendMessage = React.useCallback(
+    async (role: "user" | "assistant", content: string, attachedWikiPaths?: string[]) => {
+      const at = new Date().toISOString();
+      try {
+        await window.autoflow.chatAppend({
+          projectRoot,
+          boardDirName,
+          message: { role, content, at }
+        });
+      } catch (error) {
+        setErrorText((error as Error)?.message || "메시지를 저장하지 못했습니다.");
+      }
+      setMessages((prev) => [...prev, { role, at, content, attachedWikiPaths }]);
+    },
+    [projectRoot, boardDirName]
+  );
+
+  const onSend = React.useCallback(async () => {
+    const content = draft.trim();
+    if (!content || !projectRoot) return;
+    setErrorText("");
+    setDraft("");
+    await appendMessage("user", content);
+    setBusy(true);
+    const invocationId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    invocationRef.current = invocationId;
+    try {
+      const result = await window.autoflow.chatSend({
+        projectRoot,
+        boardDirName,
+        mode,
+        wikiCite,
+        summaryHandover,
+        invocationId
+      });
+      if (!result.ok) {
+        const reason = result.reason || "어댑터 호출이 실패했습니다.";
+        setErrorText(`AI 호출 오류: ${reason}`);
+        await appendMessage("assistant", `(오류) ${reason}\n\n${result.stderr || ""}`.trim());
+      } else {
+        await appendMessage("assistant", result.response, result.attachedWikiPaths);
+      }
+    } catch (error) {
+      setErrorText((error as Error)?.message || "AI 호출에 실패했습니다.");
+    } finally {
+      setBusy(false);
+      invocationRef.current = "";
+      reload();
+    }
+  }, [
+    draft,
+    projectRoot,
+    boardDirName,
+    mode,
+    wikiCite,
+    summaryHandover,
+    appendMessage,
+    reload
+  ]);
+
+  const onCancel = React.useCallback(async () => {
+    if (!invocationRef.current) return;
+    try {
+      await window.autoflow.cancelInvocation(invocationRef.current);
+      setErrorText("취소되었습니다.");
+    } catch (error) {
+      setErrorText((error as Error)?.message || "취소에 실패했습니다.");
+    }
+    invocationRef.current = "";
+    setBusy(false);
+  }, []);
+
+  const onReset = React.useCallback(async () => {
+    setResetOpen(false);
+    if (!projectRoot) return;
+    try {
+      const result = await window.autoflow.chatReset({ projectRoot, boardDirName });
+      if (result.ok) {
+        await reload();
+      } else {
+        setErrorText("대화 초기화에 실패했습니다.");
+      }
+    } catch (error) {
+      setErrorText((error as Error)?.message || "대화 초기화에 실패했습니다.");
+    }
+  }, [projectRoot, boardDirName, reload]);
+
+  const buildDraftFromConversation = React.useCallback(
+    (kind: "memo" | "prd") => {
+      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+      const fenced = lastAssistant?.content.match(/```(?:markdown)?\n([\s\S]*?)```/);
+      if (fenced) return fenced[1].trim();
+      if (kind === "memo") {
+        const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        return [
+          "# Autoflow Memo",
+          "",
+          "## Request",
+          "",
+          (lastUser?.content || "").trim(),
+          "",
+          "## Notes",
+          "",
+          "- 데스크톱 대화 메뉴에서 저장된 메모입니다."
+        ].join("\n");
+      }
+      return [
+        "# Project PRD",
+        "",
+        "## Project",
+        "",
+        "- ID: prd_NNN",
+        "- Title: TODO",
+        "- AI: ticket-owner",
+        "- Status: draft",
+        "",
+        "## Core Scope",
+        "",
+        "- Goal: TODO",
+        "",
+        "## Conversation Handoff",
+        "",
+        "- Source: 데스크톱 대화 메뉴",
+        "- Summary: TODO"
+      ].join("\n");
+    },
+    [messages]
+  );
+
+  const openPreview = React.useCallback(
+    (kind: "memo" | "prd") => {
+      setPreviewMode(kind);
+      setPreviewBody(buildDraftFromConversation(kind));
+    },
+    [buildDraftFromConversation]
+  );
+
+  const closePreview = React.useCallback(() => {
+    setPreviewMode(null);
+    setPreviewBody("");
+  }, []);
+
+  const confirmSave = React.useCallback(async () => {
+    if (!previewMode || !projectRoot) return;
+    try {
+      const fn = previewMode === "memo" ? window.autoflow.saveMemo : window.autoflow.saveSpec;
+      const result = await fn({ projectRoot, boardDirName, body: previewBody });
+      if (result.ok) {
+        setSavedToast({ kind: previewMode, path: result.savedPath });
+        await appendMessage(
+          "assistant",
+          `(저장 완료) ${previewMode === "memo" ? "메모" : "PRD"}: ${result.savedPath}`
+        );
+        await reload();
+      } else {
+        setErrorText("저장에 실패했습니다.");
+      }
+    } catch (error) {
+      setErrorText((error as Error)?.message || "저장 도중 오류가 발생했습니다.");
+    } finally {
+      closePreview();
+    }
+  }, [previewMode, previewBody, projectRoot, boardDirName, appendMessage, reload, closePreview]);
+
+  const recommendedAction = mode === "memo" ? "memo" : mode === "prd" ? "prd" : suggestedMode;
+
+  if (!projectRoot) {
+    return (
+      <div className="chat-empty">
+        <p>먼저 좌측 하단에서 프로젝트 폴더를 선택하세요.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-shell">
+      <header className="chat-toolbar" aria-label="대화 도구 막대">
+        <div className="chat-toolbar-left">
+          <span className="chat-toolbar-label">모드</span>
+          <div className="chat-mode-toggle" role="radiogroup" aria-label="대화 모드">
+            {([
+              { key: "auto", label: "Auto" },
+              { key: "memo", label: "Memo only" },
+              { key: "prd", label: "PRD only" }
+            ] as const).map((opt) => (
+              <Button
+                key={opt.key}
+                type="button"
+                variant={mode === opt.key ? "default" : "outline"}
+                role="radio"
+                aria-checked={mode === opt.key}
+                onClick={() => setMode(opt.key)}
+                className="chat-mode-button"
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="chat-toolbar-right">
+          <label className="chat-toggle">
+            <input
+              type="checkbox"
+              checked={wikiCite}
+              onChange={(e) => setWikiCite(e.target.checked)}
+            />
+            <span>Wiki 인용</span>
+          </label>
+          <label className="chat-toggle">
+            <input
+              type="checkbox"
+              checked={summaryHandover}
+              onChange={(e) => setSummaryHandover(e.target.checked)}
+            />
+            <span>이전 요약 인계</span>
+          </label>
+          <Button
+            type="button"
+            variant="outline"
+            className="chat-reset-button"
+            onClick={() => setResetOpen(true)}
+            title="대화 초기화"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            <span>초기화</span>
+          </Button>
+        </div>
+      </header>
+      <div className="chat-meta">
+        <span className="chat-meta-item">
+          스레드: <code>{frontmatter.project_root || projectRoot}</code>
+        </span>
+        <span className="chat-meta-item">메시지: {messages.length}개</span>
+        {wikiCatalog.length > 0 ? (
+          <span className="chat-meta-item">위키 답변: {wikiCatalog.length}개 색인</span>
+        ) : null}
+        {(frontmatter.saved_paths || []).length > 0 ? (
+          <span className="chat-meta-item">
+            이 스레드에서 저장된 파일: {(frontmatter.saved_paths || []).length}개
+          </span>
+        ) : null}
+      </div>
+      <div
+        className="chat-message-list"
+        role="log"
+        aria-live="polite"
+        aria-label="대화 메시지"
+      >
+        {messages.length === 0 ? (
+          <div className="chat-empty-state">
+            <MessageSquare className="h-10 w-10 opacity-50" aria-hidden="true" />
+            <p>이 프로젝트와 관련된 작업을 자유롭게 적어 주세요. 보드와 위키 문맥은 자동으로 함께 전달됩니다.</p>
+          </div>
+        ) : (
+          messages.map((m, idx) => (
+            <article key={`${m.at}-${idx}`} className={`chat-message chat-message-${m.role}`}>
+              <header className="chat-message-meta">
+                <span className="chat-message-role">
+                  {m.role === "user" ? "사용자" : m.role === "assistant" ? "AI" : "System"}
+                </span>
+                <span className="chat-message-time">{m.at}</span>
+              </header>
+              <div className="chat-message-body">
+                <MarkdownViewer content={m.content || "(비어 있음)"} />
+              </div>
+              {m.role === "assistant" && m.attachedWikiPaths && m.attachedWikiPaths.length > 0 ? (
+                <div className="chat-message-citations" aria-label="참고된 위키 답변">
+                  {m.attachedWikiPaths.map((p) => (
+                    <Badge key={p} variant="outline" className="chat-citation-chip">
+                      참고: {p}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          ))
+        )}
+        <div ref={messageEndRef} />
+      </div>
+      {errorText ? (
+        <Alert severity="warning" className="chat-error">
+          {errorText}
+        </Alert>
+      ) : null}
+      <div className="chat-actions">
+        <Button
+          type="button"
+          variant={recommendedAction === "memo" ? "default" : "outline"}
+          onClick={() => openPreview("memo")}
+          disabled={busy || messages.length === 0}
+          title={recommendedAction === "memo" ? "추천: 짧은 메모로 저장" : "메모로 저장"}
+        >
+          <Inbox className="h-4 w-4 mr-1" aria-hidden="true" />
+          메모로 저장
+        </Button>
+        <Button
+          type="button"
+          variant={recommendedAction === "prd" ? "default" : "outline"}
+          onClick={() => openPreview("prd")}
+          disabled={busy || messages.length === 0}
+          title={recommendedAction === "prd" ? "추천: 정식 PRD로 저장" : "PRD로 저장"}
+        >
+          <ClipboardList className="h-4 w-4 mr-1" aria-hidden="true" />
+          PRD로 저장
+        </Button>
+      </div>
+      <footer className="chat-input-bar">
+        <textarea
+          rows={3}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setDraft("");
+              return;
+            }
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              if (!busy) onSend();
+            }
+          }}
+          placeholder="메시지를 입력하고 Cmd/Ctrl+Enter 로 전송하세요"
+          disabled={busy}
+          className="chat-input"
+          aria-label="대화 입력"
+        />
+        {busy ? (
+          <Button type="button" variant="outline" onClick={onCancel} className="chat-cancel-button">
+            <X className="h-4 w-4 mr-1" aria-hidden="true" />
+            취소
+          </Button>
+        ) : (
+          <Button type="button" onClick={onSend} disabled={!draft.trim()} className="chat-send-button">
+            <Send className="h-4 w-4 mr-1" aria-hidden="true" />
+            전송
+          </Button>
+        )}
+      </footer>
+      <Dialog open={resetOpen} onOpenChange={(open) => !open && setResetOpen(false)}>
+        <DialogContent className="chat-dialog">
+          <DialogTitle>대화를 초기화할까요?</DialogTitle>
+          <DialogDescription>
+            현재 스레드는 desktop-chat-archive 폴더로 옮겨지고 새 빈 스레드가 시작됩니다. "이전 요약 인계" 토글이 켜져 있으면 새 스레드 첫 호출에 직전 요약이 prefix 로 전달됩니다.
+          </DialogDescription>
+          <div className="chat-dialog-actions">
+            <Button type="button" variant="outline" onClick={() => setResetOpen(false)}>
+              취소
+            </Button>
+            <Button type="button" onClick={onReset} className="chat-dialog-confirm">
+              <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />
+              초기화
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!previewMode} onOpenChange={(open) => !open && closePreview()}>
+        <DialogContent className="chat-dialog chat-dialog-preview">
+          <DialogTitle>
+            {previewMode === "memo" ? "메모로 저장" : "PRD로 저장"} — 미리보기
+          </DialogTitle>
+          <DialogDescription>
+            아래 본문이 그대로 보드에 저장됩니다. 필요하면 수정한 뒤 "저장" 을 눌러 주세요. 저장 경로는 자동으로 다음 사용 가능한 번호로 결정됩니다.
+          </DialogDescription>
+          <textarea
+            className="chat-preview-textarea"
+            value={previewBody}
+            onChange={(e) => setPreviewBody((e.target as HTMLTextAreaElement).value)}
+            rows={20}
+          />
+          <div className="chat-dialog-actions">
+            <Button type="button" variant="outline" onClick={closePreview}>
+              취소
+            </Button>
+            <Button type="button" onClick={confirmSave} disabled={!previewBody.trim()}>
+              저장
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Snackbar
+        open={!!savedToast}
+        autoHideDuration={5000}
+        onClose={() => setSavedToast(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" onClose={() => setSavedToast(null)}>
+          {savedToast
+            ? `${savedToast.kind === "memo" ? "메모" : "PRD"} 저장 완료: ${savedToast.path}`
+            : ""}
+        </Alert>
+      </Snackbar>
     </div>
   );
 }

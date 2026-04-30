@@ -2301,6 +2301,802 @@ async function shutdownAllRunners() {
   return total;
 }
 
+// ---------------------------------------------------------------------------
+// Desktop chat surface (prd_068)
+// ---------------------------------------------------------------------------
+
+const CHAT_THREAD_FILE = "desktop-chat.md";
+const CHAT_ARCHIVE_DIR = "desktop-chat-archive";
+const CHAT_DEFAULT_CONTEXT = parseInt(process.env.AUTOFLOW_DESKTOP_CHAT_CONTEXT || "20", 10) || 20;
+const CHAT_DEFAULT_SUMMARY_THRESHOLD =
+  parseInt(process.env.AUTOFLOW_DESKTOP_CHAT_SUMMARY_THRESHOLD || "50", 10) || 50;
+const CHAT_DEFAULT_WIKI_ANSWERS_TOPK =
+  parseInt(process.env.AUTOFLOW_DESKTOP_CHAT_WIKI_ANSWERS_TOPK || "3", 10) || 3;
+const CHAT_DEFAULT_SNAPSHOT_BUDGET =
+  parseInt(process.env.AUTOFLOW_DESKTOP_CHAT_SNAPSHOT_BUDGET || "1500", 10) || 1500;
+const CHAT_PROMPT_FILE_NAMES = {
+  base: "chat-base.txt",
+  spec: "spec-author.txt",
+  order: "order-intake.txt",
+  boardSnapshot: "board-snapshot.tpl.txt",
+  wikiAnswers: "wiki-answers.tpl.txt"
+};
+const CHAT_MODES = new Set(["auto", "memo", "prd"]);
+
+function safeJoinUnderBoard(boardRoot, ...segments) {
+  const target = path.resolve(boardRoot, ...segments);
+  const rel = path.relative(boardRoot, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("chat_path_outside_board");
+  }
+  return target;
+}
+
+function chatThreadPath(boardRoot) {
+  return safeJoinUnderBoard(boardRoot, "conversations", CHAT_THREAD_FILE);
+}
+
+function chatArchiveDirPath(boardRoot) {
+  return safeJoinUnderBoard(boardRoot, "conversations", CHAT_ARCHIVE_DIR);
+}
+
+function parseChatFrontmatter(text) {
+  const empty = { frontmatter: {}, body: text || "" };
+  if (!text || !text.startsWith("---")) return empty;
+  const end = text.indexOf("\n---", 3);
+  if (end === -1) return empty;
+  const fmText = text.slice(4, end).trim();
+  const body = text.slice(end + 4).replace(/^\n/, "");
+  const frontmatter = {};
+  const lines = fmText.split("\n");
+  let arrayKey = null;
+  for (const raw of lines) {
+    const line = raw;
+    if (arrayKey && /^\s+-\s+/.test(line)) {
+      const value = line.replace(/^\s+-\s+/, "").trim().replace(/^["']|["']$/g, "");
+      frontmatter[arrayKey] = frontmatter[arrayKey] || [];
+      frontmatter[arrayKey].push(value);
+      continue;
+    }
+    arrayKey = null;
+    const m = line.match(/^([A-Za-z0-9_]+):\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    const rawValue = m[2];
+    if (rawValue === "" || rawValue === "[]") {
+      frontmatter[key] = rawValue === "[]" ? [] : "";
+      arrayKey = rawValue === "" ? key : null;
+      continue;
+    }
+    frontmatter[key] = rawValue.trim().replace(/^["']|["']$/g, "");
+  }
+  return { frontmatter, body };
+}
+
+function serializeChatFrontmatter(frontmatter) {
+  const lines = ["---"];
+  const ordered = [
+    "provider",
+    "model",
+    "project_root",
+    "created_at",
+    "last_active_at",
+    "mode",
+    "wiki_cite",
+    "summary_handover",
+    "summary",
+    "prior_summary",
+    "prior_archive_path",
+    "saved_paths"
+  ];
+  const keys = new Set(ordered);
+  for (const key of Object.keys(frontmatter)) {
+    if (!keys.has(key)) ordered.push(key);
+    keys.add(key);
+  }
+  for (const key of ordered) {
+    if (!Object.prototype.hasOwnProperty.call(frontmatter, key)) continue;
+    const value = frontmatter[key];
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        lines.push(`${key}: []`);
+      } else {
+        lines.push(`${key}:`);
+        for (const item of value) {
+          lines.push(`  - "${String(item).replace(/"/g, '\\"')}"`);
+        }
+      }
+    } else if (value === undefined || value === null || value === "") {
+      lines.push(`${key}: ""`);
+    } else {
+      const stringified = String(value);
+      if (/[:#"\n]/.test(stringified)) {
+        lines.push(`${key}: "${stringified.replace(/"/g, '\\"')}"`);
+      } else {
+        lines.push(`${key}: ${stringified}`);
+      }
+    }
+  }
+  lines.push("---", "");
+  return lines.join("\n");
+}
+
+function parseChatMessages(body) {
+  const messages = [];
+  const lines = (body || "").split("\n");
+  let current = null;
+  for (const line of lines) {
+    const m = line.match(/^##\s+(user|assistant|system)\s+@\s+([^\s]+)\s*$/i);
+    if (m) {
+      if (current) {
+        current.content = current.content.replace(/\n+$/, "");
+        messages.push(current);
+      }
+      current = { role: m[1].toLowerCase(), at: m[2], content: "" };
+      continue;
+    }
+    if (current) {
+      current.content += line + "\n";
+    }
+  }
+  if (current) {
+    current.content = current.content.replace(/\n+$/, "");
+    messages.push(current);
+  }
+  return messages;
+}
+
+function serializeChatMessages(messages) {
+  return messages
+    .map((m) => `## ${m.role} @ ${m.at}\n\n${(m.content || "").trim()}\n`)
+    .join("\n");
+}
+
+async function ensureChatDirs(boardRoot) {
+  await fs.mkdir(path.dirname(chatThreadPath(boardRoot)), { recursive: true });
+  await fs.mkdir(chatArchiveDirPath(boardRoot), { recursive: true });
+}
+
+async function readChatThread(boardRoot) {
+  await ensureChatDirs(boardRoot);
+  const threadPath = chatThreadPath(boardRoot);
+  let text = "";
+  try {
+    text = await fs.readFile(threadPath, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return { exists: false, frontmatter: {}, messages: [], threadPath };
+  }
+  const { frontmatter, body } = parseChatFrontmatter(text);
+  const messages = parseChatMessages(body);
+  return { exists: true, frontmatter, messages, threadPath };
+}
+
+async function writeChatThread(boardRoot, frontmatter, messages) {
+  const threadPath = chatThreadPath(boardRoot);
+  await ensureChatDirs(boardRoot);
+  const fm = { ...frontmatter };
+  fm.last_active_at = new Date().toISOString();
+  if (!fm.created_at) fm.created_at = fm.last_active_at;
+  const text = serializeChatFrontmatter(fm) + serializeChatMessages(messages);
+  await fs.writeFile(threadPath, text, "utf8");
+  return { threadPath, frontmatter: fm };
+}
+
+function clipText(value, maxBytes) {
+  if (!value) return "(none)";
+  const limit = maxBytes > 0 ? maxBytes : CHAT_DEFAULT_SNAPSHOT_BUDGET;
+  const buf = Buffer.from(value, "utf8");
+  if (buf.length <= limit) return value;
+  return buf.subarray(0, limit).toString("utf8") + "\n…(truncated)";
+}
+
+async function readFirstParagraph(filePath, maxBytes) {
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    return clipText(text.trim(), maxBytes);
+  } catch (error) {
+    if (error.code === "ENOENT") return "(none)";
+    throw error;
+  }
+}
+
+async function readMarkdownTitle(filePath) {
+  try {
+    const text = await fs.readFile(filePath, "utf8");
+    const stripped = text.replace(/^---[\s\S]*?\n---\n/, "");
+    const m = stripped.match(/^#\s+(.+)$/m);
+    if (m) return m[1].trim();
+    const headings = stripped.match(/^##\s+(.+)$/m);
+    if (headings) return headings[1].trim();
+    return path.basename(filePath, ".md");
+  } catch {
+    return path.basename(filePath, ".md");
+  }
+}
+
+async function listMarkdownFiles(dir) {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile() && e.name.endsWith(".md"))
+      .map((e) => e.name)
+      .sort();
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function buildWikiAnswerCatalog(boardRoot, budgetBytes) {
+  const dir = path.join(boardRoot, "wiki", "answers");
+  const files = await listMarkdownFiles(dir);
+  const catalog = [];
+  for (const file of files) {
+    if (file === "README.md") continue;
+    const filePath = path.join(dir, file);
+    let text = "";
+    try {
+      text = await fs.readFile(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const { frontmatter } = parseChatFrontmatter(text);
+    const slug = frontmatter.slug || path.basename(file, ".md");
+    const titleMatch = text.match(/^#\s+(.+)$/m);
+    const title = titleMatch ? titleMatch[1].trim() : slug;
+    const terms = Array.isArray(frontmatter.terms) ? frontmatter.terms : [];
+    catalog.push({ slug, title, terms, path: `wiki/answers/${file}`, fullPath: filePath, raw: text });
+  }
+  if (!budgetBytes) return catalog;
+  let used = 0;
+  const trimmed = [];
+  for (const entry of catalog) {
+    const line = `- ${entry.slug} :: ${entry.title} :: ${entry.terms.join(", ")}\n`;
+    used += Buffer.byteLength(line, "utf8");
+    trimmed.push(entry);
+    if (used >= budgetBytes) break;
+  }
+  return trimmed;
+}
+
+async function listSubdirEntries(dir, limit) {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort()
+      .slice(0, limit);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function listRecentDoneTickets(boardRoot, limit) {
+  const doneRoot = path.join(boardRoot, "tickets", "done");
+  let projects;
+  try {
+    projects = await fs.readdir(doneRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const collected = [];
+  for (const proj of projects) {
+    if (!proj.isDirectory()) continue;
+    const projDir = path.join(doneRoot, proj.name);
+    let files;
+    try {
+      files = await fs.readdir(projDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".md")) continue;
+      if (!/^tickets_\d+\.md$/.test(file.name)) continue;
+      const filePath = path.join(projDir, file.name);
+      let stat;
+      try {
+        stat = await fs.stat(filePath);
+      } catch {
+        continue;
+      }
+      collected.push({ projectKey: proj.name, file: file.name, mtime: stat.mtimeMs, filePath });
+    }
+  }
+  collected.sort((a, b) => b.mtime - a.mtime);
+  const top = collected.slice(0, limit);
+  const enriched = [];
+  for (const entry of top) {
+    const title = await readMarkdownTitle(entry.filePath);
+    enriched.push({ projectKey: entry.projectKey, file: entry.file, title });
+  }
+  return enriched;
+}
+
+async function listInprogressTickets(boardRoot) {
+  const dir = path.join(boardRoot, "tickets", "inprogress");
+  const files = await listMarkdownFiles(dir);
+  const result = [];
+  for (const file of files) {
+    if (!/^tickets_\d+\.md$/.test(file)) continue;
+    const title = await readMarkdownTitle(path.join(dir, file));
+    result.push({ file, title });
+  }
+  return result;
+}
+
+async function listInboxBacklog(boardRoot, sub) {
+  const dir = path.join(boardRoot, "tickets", sub);
+  const files = await listMarkdownFiles(dir);
+  const result = [];
+  for (const file of files) {
+    const title = await readMarkdownTitle(path.join(dir, file));
+    result.push({ file, title });
+  }
+  return result;
+}
+
+async function buildBoardSnapshot(boardRoot, options = {}) {
+  const budget = options.budgetBytes || CHAT_DEFAULT_SNAPSHOT_BUDGET;
+  const wiki = path.join(boardRoot, "wiki");
+  const sections = [];
+  sections.push("### wiki/index.md");
+  sections.push(await readFirstParagraph(path.join(wiki, "index.md"), budget));
+  sections.push("");
+  sections.push("### wiki/project-overview.md");
+  sections.push(await readFirstParagraph(path.join(wiki, "project-overview.md"), budget));
+  sections.push("");
+  sections.push("### wiki/log.md (recent entries)");
+  sections.push(await readFirstParagraph(path.join(wiki, "log.md"), budget));
+  sections.push("");
+
+  const answers = await buildWikiAnswerCatalog(boardRoot, budget);
+  sections.push("### wiki/answers/ catalogue (slug :: title :: terms)");
+  if (answers.length === 0) {
+    sections.push("(none)");
+  } else {
+    for (const a of answers) {
+      sections.push(`- ${a.slug} :: ${a.title} :: ${a.terms.join(", ") || "(no terms)"}`);
+    }
+  }
+  sections.push("");
+
+  for (const sub of ["architecture", "decisions", "features", "learnings", "sources"]) {
+    const files = await listSubdirEntries(path.join(wiki, sub), 10);
+    sections.push(`### wiki/${sub}/ (top 10 files)`);
+    sections.push(files.length === 0 ? "(none)" : files.map((f) => `- ${f}`).join("\n"));
+    sections.push("");
+  }
+
+  const done = await listRecentDoneTickets(boardRoot, 10);
+  sections.push("### tickets/done/ (most recent 10)");
+  if (done.length === 0) {
+    sections.push("(none)");
+  } else {
+    for (const d of done) {
+      sections.push(`- ${d.projectKey}/${d.file} :: ${d.title}`);
+    }
+  }
+  sections.push("");
+
+  const inprogress = await listInprogressTickets(boardRoot);
+  sections.push("### tickets/inprogress/ (active)");
+  if (inprogress.length === 0) {
+    sections.push("(none)");
+  } else {
+    for (const t of inprogress) {
+      sections.push(`- ${t.file} :: ${t.title}`);
+    }
+  }
+  sections.push("");
+
+  const inbox = await listInboxBacklog(boardRoot, "inbox");
+  sections.push("### tickets/inbox/ (memos awaiting promotion)");
+  if (inbox.length === 0) {
+    sections.push("(none)");
+  } else {
+    for (const m of inbox) {
+      sections.push(`- ${m.file} :: ${m.title}`);
+    }
+  }
+  sections.push("");
+
+  const backlog = await listInboxBacklog(boardRoot, "backlog");
+  sections.push("### tickets/backlog/ (PRDs awaiting execution)");
+  if (backlog.length === 0) {
+    sections.push("(none)");
+  } else {
+    for (const p of backlog) {
+      sections.push(`- ${p.file} :: ${p.title}`);
+    }
+  }
+  sections.push("");
+
+  return { text: sections.join("\n"), wikiAnswers: answers };
+}
+
+function tokenizeForWikiMatch(text) {
+  if (!text) return [];
+  return String(text)
+    .toLowerCase()
+    .split(/[^a-z0-9가-힣_\-]+/)
+    .filter((tok) => tok && tok.length >= 2);
+}
+
+function scoreWikiAnswer(answer, tokens) {
+  if (tokens.length === 0) return 0;
+  const slugTokens = tokenizeForWikiMatch(answer.slug);
+  const termTokens = tokenizeForWikiMatch((answer.terms || []).join(" "));
+  const titleTokens = tokenizeForWikiMatch(answer.title);
+  const haystack = new Set([...slugTokens, ...termTokens, ...titleTokens]);
+  let score = 0;
+  for (const tok of tokens) {
+    if (haystack.has(tok)) score += 2;
+    for (const term of answer.terms || []) {
+      if (String(term).toLowerCase().includes(tok)) score += 1;
+    }
+    if (answer.slug && answer.slug.toLowerCase().includes(tok)) score += 1;
+  }
+  return score;
+}
+
+function selectRelevantWikiAnswers(catalog, recentUserMessages, topK) {
+  const tokens = recentUserMessages
+    .flatMap((msg) => tokenizeForWikiMatch(msg))
+    .filter((tok, idx, arr) => arr.indexOf(tok) === idx);
+  if (tokens.length === 0) return [];
+  const scored = catalog
+    .map((entry) => ({ entry, score: scoreWikiAnswer(entry, tokens) }))
+    .filter((row) => row.score > 0);
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, Math.max(0, topK)).map((row) => row.entry);
+}
+
+async function readChatPromptText(promptName) {
+  const repoRootChatPrompts = path.join(repoRoot, "runtime", "board-scripts", "chat-prompts", promptName);
+  try {
+    return await fs.readFile(repoRootChatPrompts, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return "";
+  }
+}
+
+async function buildSystemPrompt(options) {
+  const {
+    boardRoot,
+    mode,
+    wikiCite,
+    summaryHandover,
+    snapshotBudgetBytes,
+    wikiTopK,
+    recentUserMessages
+  } = options;
+  const base = await readChatPromptText(CHAT_PROMPT_FILE_NAMES.base);
+  const modeFile =
+    mode === "memo"
+      ? CHAT_PROMPT_FILE_NAMES.order
+      : mode === "prd"
+        ? CHAT_PROMPT_FILE_NAMES.spec
+        : null;
+  const modeText = modeFile ? await readChatPromptText(modeFile) : "";
+  const boardHeader = await readChatPromptText(CHAT_PROMPT_FILE_NAMES.boardSnapshot);
+  const wikiHeader = await readChatPromptText(CHAT_PROMPT_FILE_NAMES.wikiAnswers);
+
+  const snapshot = await buildBoardSnapshot(boardRoot, { budgetBytes: snapshotBudgetBytes });
+  let wikiSection = wikiHeader;
+  if (!wikiCite) {
+    wikiSection += "\n(disabled — Wiki citation toggle is OFF)\n";
+  } else {
+    const matched = selectRelevantWikiAnswers(snapshot.wikiAnswers, recentUserMessages, wikiTopK);
+    if (matched.length === 0) {
+      wikiSection += "\n(none)\n";
+    } else {
+      wikiSection += "\n";
+      for (const ans of matched) {
+        wikiSection += `\n--- wiki/answers/${ans.slug}.md ---\n${ans.raw.trim()}\n`;
+      }
+    }
+  }
+
+  const parts = [];
+  parts.push(base.trim());
+  if (modeText) parts.push(modeText.trim());
+  parts.push(`${boardHeader.trim()}\n\n${snapshot.text}`);
+  parts.push(wikiSection.trim());
+  parts.push(
+    `## Toggle state\n- mode=${mode}\n- wiki_cite=${wikiCite ? "on" : "off"}\n- summary_handover=${summaryHandover ? "on" : "off"}`
+  );
+  return { systemPrompt: parts.join("\n\n"), attachedWikiPaths: snapshot.wikiAnswers.map((a) => a.path) };
+}
+
+function selectAttachedWikiPaths(systemPrompt) {
+  const matches = systemPrompt.match(/wiki\/answers\/[A-Za-z0-9_\-]+\.md/g) || [];
+  return Array.from(new Set(matches));
+}
+
+function shouldRecommendMemo(messages) {
+  const userTurns = messages.filter((m) => m.role === "user").length;
+  return userTurns < 3;
+}
+
+async function chatLoad(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const thread = await readChatThread(boardRoot);
+  const snapshot = await buildBoardSnapshot(boardRoot, {
+    budgetBytes: CHAT_DEFAULT_SNAPSHOT_BUDGET
+  });
+  return {
+    threadPath: thread.threadPath,
+    frontmatter: thread.frontmatter,
+    messages: thread.messages,
+    boardSnapshotPreview: snapshot.text,
+    wikiAnswerCatalog: snapshot.wikiAnswers.map((a) => ({
+      slug: a.slug,
+      title: a.title,
+      terms: a.terms,
+      path: a.path
+    })),
+    suggestedMode: shouldRecommendMemo(thread.messages) ? "memo" : "prd"
+  };
+}
+
+async function chatAppend(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const message = options.message || {};
+  if (!message.role || !message.content) throw new Error("invalid_message");
+  const at = message.at || new Date().toISOString();
+  const role = String(message.role).toLowerCase();
+  if (!["user", "assistant", "system"].includes(role)) throw new Error("invalid_role");
+  const thread = await readChatThread(boardRoot);
+  const fm = thread.frontmatter || {};
+  if (!fm.project_root) fm.project_root = projectRoot;
+  fm.last_active_at = at;
+  const messages = thread.messages.concat([{ role, at, content: String(message.content).trim() }]);
+  await writeChatThread(boardRoot, fm, messages);
+  return { ok: true, count: messages.length };
+}
+
+async function chatSend(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const mode = CHAT_MODES.has(options.mode) ? options.mode : "auto";
+  const wikiCite = options.wikiCite !== false;
+  const summaryHandover = options.summaryHandover !== false;
+  const contextLimit = Math.max(2, parseInt(options.contextLimit, 10) || CHAT_DEFAULT_CONTEXT);
+  const wikiTopK = Math.max(0, parseInt(options.wikiTopK, 10) || CHAT_DEFAULT_WIKI_ANSWERS_TOPK);
+  const snapshotBudget =
+    Math.max(256, parseInt(options.snapshotBudgetBytes, 10) || CHAT_DEFAULT_SNAPSHOT_BUDGET);
+  const agent = options.agent || "claude";
+  const model = options.model || "";
+  const reasoning = options.reasoning || "";
+  const invocationId = typeof options.invocationId === "string" ? options.invocationId : "";
+
+  const thread = await readChatThread(boardRoot);
+  const messages = thread.messages.slice(-contextLimit);
+  const recentUser = messages.filter((m) => m.role === "user").slice(-3).map((m) => m.content);
+
+  const { systemPrompt } = await buildSystemPrompt({
+    boardRoot,
+    mode,
+    wikiCite,
+    summaryHandover,
+    snapshotBudgetBytes: snapshotBudget,
+    wikiTopK,
+    recentUserMessages: recentUser
+  });
+
+  let prefix = "";
+  if (summaryHandover && thread.frontmatter.prior_summary) {
+    prefix += `## Prior thread summary\n${thread.frontmatter.prior_summary}\n\n`;
+  }
+  if (thread.frontmatter.summary) {
+    prefix += `## Current thread summary\n${thread.frontmatter.summary}\n\n`;
+  }
+  const conversation = messages
+    .map((m) => `## ${m.role}\n${m.content}`)
+    .join("\n\n");
+  const fullPrompt = `${systemPrompt}\n\n${prefix}${conversation}\n\n## assistant\n`;
+
+  const tmpDir = path.join(os.tmpdir(), "autoflow-desktop-chat");
+  await fs.mkdir(tmpDir, { recursive: true });
+  const promptFile = path.join(tmpDir, `prompt-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  await fs.writeFile(promptFile, fullPrompt, "utf8");
+
+  const chatScript = path.join(repoRoot, "runtime", "board-scripts", "chat-once.sh");
+  const args = [
+    chatScript,
+    "--agent",
+    agent,
+    "--prompt-file",
+    promptFile,
+    "--working-root",
+    projectRoot
+  ];
+  if (model) args.push("--model", model);
+  if (reasoning) args.push("--reasoning", reasoning);
+
+  return await new Promise((resolve) => {
+    const child = spawn("bash", args, { cwd: projectRoot });
+    if (invocationId) registerCancellableInvocation(invocationId, child);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("close", async (code) => {
+      if (invocationId) clearCancellableInvocation(invocationId);
+      try {
+        await fs.unlink(promptFile);
+      } catch {}
+      const ok = code === 0 && /status=ok/.test(stderr);
+      const reason = (stderr.match(/reason=([^\n]+)/) || [, ""])[1].trim();
+      resolve({
+        ok,
+        exitCode: code,
+        response: stdout.trim(),
+        stderr: stderr.trim(),
+        reason: ok ? "" : reason || "adapter_failed",
+        attachedWikiPaths: selectAttachedWikiPaths(systemPrompt)
+      });
+    });
+  });
+}
+
+async function chatSummarize(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const thread = await readChatThread(boardRoot);
+  if (thread.messages.length < CHAT_DEFAULT_SUMMARY_THRESHOLD) {
+    return { ok: true, updated: false, reason: "below_threshold" };
+  }
+  const transcript = thread.messages.map((m) => `## ${m.role}\n${m.content}`).join("\n\n");
+  const sys =
+    "Summarize the user's chat with the Autoflow Desktop assistant in Korean. " +
+    "Focus on key decisions, open questions, and user preferences. <= 8 bullet lines.";
+  const tmpDir = path.join(os.tmpdir(), "autoflow-desktop-chat");
+  await fs.mkdir(tmpDir, { recursive: true });
+  const promptFile = path.join(tmpDir, `summary-${Date.now()}.txt`);
+  await fs.writeFile(promptFile, `${sys}\n\n${transcript}`, "utf8");
+  const chatScript = path.join(repoRoot, "runtime", "board-scripts", "chat-once.sh");
+  const args = [
+    chatScript,
+    "--agent",
+    options.agent || "claude",
+    "--prompt-file",
+    promptFile,
+    "--working-root",
+    projectRoot
+  ];
+  return await new Promise((resolve) => {
+    const child = spawn("bash", args, { cwd: projectRoot });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.on("close", async () => {
+      try {
+        await fs.unlink(promptFile);
+      } catch {}
+      const summary = stdout.trim();
+      if (!summary) return resolve({ ok: false, updated: false, reason: "empty_summary" });
+      const fm = { ...(thread.frontmatter || {}) };
+      fm.summary = summary;
+      await writeChatThread(boardRoot, fm, thread.messages);
+      resolve({ ok: true, updated: true, summary });
+    });
+  });
+}
+
+async function chatReset(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const thread = await readChatThread(boardRoot);
+  if (!thread.exists) {
+    await ensureChatDirs(boardRoot);
+    return { ok: true, archivedTo: "", priorSummary: "" };
+  }
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[:.]/g, "")
+    .replace(/(\d{8})T(\d{6}).*/, "$1-$2Z");
+  const archivePath = path.join(chatArchiveDirPath(boardRoot), `${stamp}.md`);
+  await ensureChatDirs(boardRoot);
+  await fs.rename(thread.threadPath, archivePath);
+  const priorSummary = (thread.frontmatter && thread.frontmatter.summary) || "";
+  const newFm = {
+    project_root: projectRoot,
+    created_at: new Date().toISOString(),
+    saved_paths: [],
+    prior_summary: priorSummary,
+    prior_archive_path: archivePath
+  };
+  await writeChatThread(boardRoot, newFm, []);
+  return { ok: true, archivedTo: archivePath, priorSummary };
+}
+
+async function nextNumberedSlot(dir, prefix, extension) {
+  await fs.mkdir(dir, { recursive: true });
+  const entries = await fs.readdir(dir);
+  const re = new RegExp("^" + prefix + "_(\\d+)" + extension.replace(".", "\\.") + "$");
+  let max = 0;
+  for (const entry of entries) {
+    const m = entry.match(re);
+    if (!m) continue;
+    const n = parseInt(m[1], 10);
+    if (n > max) max = n;
+  }
+  const next = max + 1;
+  return String(next).padStart(3, "0");
+}
+
+async function appendSavedPath(boardRoot, savedPath) {
+  const thread = await readChatThread(boardRoot);
+  if (!thread.exists) return;
+  const fm = { ...(thread.frontmatter || {}) };
+  const list = Array.isArray(fm.saved_paths) ? fm.saved_paths : [];
+  if (!list.includes(savedPath)) list.push(savedPath);
+  fm.saved_paths = list;
+  await writeChatThread(boardRoot, fm, thread.messages);
+}
+
+async function saveMemoFromChat(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const inboxDir = safeJoinUnderBoard(boardRoot, "tickets", "inbox");
+  const slot = await nextNumberedSlot(inboxDir, "memo", ".md");
+  const file = `memo_${slot}.md`;
+  const target = path.join(inboxDir, file);
+  const body = String(options.body || "").trim();
+  if (!body) throw new Error("empty_memo_body");
+  await fs.writeFile(target, body.endsWith("\n") ? body : body + "\n", "utf8");
+  await appendSavedPath(boardRoot, target);
+  return { ok: true, savedPath: target, file };
+}
+
+async function saveSpecFromChat(options) {
+  const projectRoot = options.projectRoot || "";
+  if (!projectRoot) throw new Error("missing_project_root");
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!safeBoardDirNamePattern.test(boardDirName)) throw new Error("invalid_board_dir_name");
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const backlogDir = safeJoinUnderBoard(boardRoot, "tickets", "backlog");
+  const slot = await nextNumberedSlot(backlogDir, "prd", ".md");
+  const file = `prd_${slot}.md`;
+  const target = path.join(backlogDir, file);
+  const body = String(options.body || "").trim();
+  if (!body) throw new Error("empty_spec_body");
+  await fs.writeFile(target, body.endsWith("\n") ? body : body + "\n", "utf8");
+  await appendSavedPath(boardRoot, target);
+  return { ok: true, savedPath: target, file };
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
@@ -2339,6 +3135,14 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  // Desktop chat surface (prd_068).
+  ipcMain.handle("autoflow:chatLoad", withTimeout(withScopeMemory(chatLoad), 30000));
+  ipcMain.handle("autoflow:chatAppend", withTimeout(withScopeMemory(chatAppend), 30000));
+  ipcMain.handle("autoflow:chatSend", withScopeMemory(chatSend));
+  ipcMain.handle("autoflow:chatSummarize", withScopeMemory(chatSummarize));
+  ipcMain.handle("autoflow:chatReset", withTimeout(withScopeMemory(chatReset), 30000));
+  ipcMain.handle("autoflow:saveMemo", withTimeout(withScopeMemory(saveMemoFromChat), 30000));
+  ipcMain.handle("autoflow:saveSpec", withTimeout(withScopeMemory(saveSpecFromChat), 30000));
   // Cancel a still-running long IPC call by invocationId. No timeout: the
   // call must always be reachable so the user can recover from a hung action.
   ipcMain.handle("autoflow:cancelInvocation", (_event, invocationId) =>
