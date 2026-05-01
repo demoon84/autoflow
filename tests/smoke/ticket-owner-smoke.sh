@@ -98,6 +98,7 @@ plan_output="${project_dir}/plan.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
 finish_output="${project_dir}/finish.out"
+resume_merge_output="${project_dir}/resume-merge.out"
 merge_output="${project_dir}/merge.out"
 status_output="${project_dir}/status.out"
 runner_list_output="${project_dir}/runner-list.out"
@@ -332,6 +333,15 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_
 require_line "$finish_output" "status=needs_ai_merge"
 require_line "$finish_output" "outcome=pass"
 require_line "$finish_output" "commit_status=ai_merge_required"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/start-ticket-owner.sh >"$resume_merge_output"
+require_line "$resume_merge_output" "status=resume"
+require_line "$resume_merge_output" "stage=merging"
+require_line "$resume_merge_output" "next_action=Continue AI-led merge for ticket 001: integrate verified worktree changes into PROJECT_ROOT/main, rerun verification, then rerun finish-ticket-owner pass."
+require_pattern "${project_dir}/.autoflow/tickets/inprogress/tickets_001.md" '^- Worktree Commit: [0-9a-f]{40}$'
+require_line "${project_dir}/.autoflow/tickets/inprogress/tickets_001.md" "- Integration Status: needs_ai_merge"
+require_line "${project_dir}/.autoflow/tickets/inprogress/tickets_001.md" "- Next: continue AI-led merge for this ticket. Manually integrate verified worktree changes into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun required verification from PROJECT_ROOT, then rerun \`scripts/finish-ticket-owner.sh 001 pass \"<summary>\"\`. Do not claim another ticket or call merge-ready-ticket directly."
+require_line "${project_dir}/.autoflow/tickets/inprogress/tickets_001.md" "- Result: previous pass is waiting for AI-led PROJECT_ROOT merge and post-merge verification by worker-smoke"
 
 cp "${implementation_root}/owner-done.txt" "${project_dir}/owner-done.txt"
 test -f "${project_dir}/owner-done.txt"

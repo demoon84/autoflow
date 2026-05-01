@@ -52,6 +52,7 @@ Plan AI todo ticket
 - Do not hide failed verification. Record the failure and either fix it or move to reject with a concrete reason.
 - Do not push to any remote.
 - If the repository is dirty outside the ticket scope, stop before committing and record the blocker.
+- If `finish-ticket-owner.* pass` or `merge-ready-ticket.*` returns `status=needs_ai_merge`, keep working the same ticket: merge verified worktree changes into `PROJECT_ROOT`/main, rerun verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.* pass`.
 
 ## Idle Behavior
 

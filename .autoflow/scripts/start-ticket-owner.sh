@@ -308,7 +308,7 @@ prepare_ticket_owner_context() {
   local ticket_id timestamp worktree_output implementation_root run_file worktree_evidence
   local project_key project_note ticket_note verification_note stage done_target reject_target
   local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
-  local shared_head_blockers shared_head_summary
+  local shared_head_blockers shared_head_summary integration_status merge_continuation=false next_action_line verification_block
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
@@ -453,11 +453,28 @@ prepare_ticket_owner_context() {
   done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
   reject_target="$(reject_ticket_path_for_ticket_file "$ticket_file")"
   stage="$(ticket_stage "$ticket_file")"
+  integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
   case "${stage:-}" in
     ""|todo|claimed)
       stage="executing"
       ;;
   esac
+  case "${stage}:${integration_status}" in
+    ready_to_merge:*|ready-to-merge:*|merging:*|*:needs_ai_merge|*:ready_to_merge)
+      merge_continuation=true
+      ;;
+  esac
+  if [ "$merge_continuation" = "true" ]; then
+    next_action_line="- Next: continue AI-led merge for this ticket. Manually integrate verified worktree changes into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun required verification from PROJECT_ROOT, then rerun \`scripts/finish-ticket-owner.sh ${ticket_id} pass \"<summary>\"\`. Do not claim another ticket or call merge-ready-ticket directly."
+    verification_block="- Run file: \`tickets/inprogress/$(basename "$run_file")\`
+- Log file: pending merge continuation
+- Result: previous pass is waiting for AI-led PROJECT_ROOT merge and post-merge verification by ${display_id}"
+  else
+    next_action_line="- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
+    verification_block="- Run file: \`tickets/inprogress/$(basename "$run_file")\`
+- Log file: pending
+- Result: pending ticket-owner by ${display_id}"
+  fi
 
   replace_scalar_field_in_section "$run_file" "## Meta" "PRD Key" "$project_key"
   replace_scalar_field_in_section "$run_file" "## Meta" "Status" "pending"
@@ -473,10 +490,8 @@ prepare_ticket_owner_context() {
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
-- Log file: pending
-- Result: pending ticket-owner by ${display_id}"
-  replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
+  replace_section_block "$ticket_file" "Verification" "$verification_block"
+  replace_section_block "$ticket_file" "Next Action" "$next_action_line"
   append_note_replacing "$ticket_file" \
     "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")" \
     "AI ${display_id} prepared ${source_kind}"
@@ -496,7 +511,11 @@ prepare_ticket_owner_context() {
   printf 'reject_target=%s\n' "$reject_target"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Follow ticket-owner-agent.md flow for ticket %s.\n' "$ticket_id"
+  if [ "$merge_continuation" = "true" ]; then
+    printf 'next_action=Continue AI-led merge for ticket %s: integrate verified worktree changes into PROJECT_ROOT/main, rerun verification, then rerun finish-ticket-owner pass.\n' "$ticket_id"
+  else
+    printf 'next_action=Follow ticket-owner-agent.md flow for ticket %s.\n' "$ticket_id"
+  fi
 }
 
 active_file="$(find_active_context_ticket || true)"

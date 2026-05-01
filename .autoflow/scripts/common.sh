@@ -322,7 +322,7 @@ ticket_uses_project_root_workspace() {
 
 ticket_project_root_conflict_stage() {
   case "${1:-}" in
-    planning|claimed|executing|ready_for_verification|verifying|blocked|ready-to-merge|merge-blocked)
+    planning|claimed|executing|ready_for_verification|verifying|blocked|ready_to_merge|ready-to-merge|merging|merge_blocked|merge-blocked)
       return 0
       ;;
     *)
@@ -1658,6 +1658,7 @@ Completion audit before finish:
 - Inspect actual files, command output, git diff/status, ticket Result, and verification evidence; passing tests alone are only proxy evidence when they cover all requirements.
 - If the objective is not complete, update Notes, Resume Context, and Next Action with concrete progress before the adapter exits.
 - If the objective is complete, run verification yourself, manually integrate verified work into PROJECT_ROOT when product files changed, rerun needed verification from PROJECT_ROOT, then call finish-ticket-owner pass.
+- If a prior finish returned needs_ai_merge, or the ticket Stage is merging/ready_to_merge, do not treat the ticket as complete yet: continue the same ticket, integrate into PROJECT_ROOT/main, rerun verification, then rerun finish-ticket-owner pass.
 - If progress is blocked or the same tick would repeat, call finish-ticket-owner fail with a concrete reason or record a blocked Next Action in the ticket.
 EOF
 }
@@ -2122,6 +2123,7 @@ cleanup_stale_todo_worktree_before_claim() {
 ensure_ticket_worktree() {
   local ticket_file="$1"
   local ticket_id git_root base_commit branch worktree_path parent_root existing_path existing_branch fallback_reason
+  local existing_base_commit existing_worktree_commit existing_integration_status recorded_base_commit recorded_worktree_commit recorded_integration_status
 
   if worktree_mode_disabled; then
     replace_section_block "$ticket_file" "Worktree" "- Path:
@@ -2178,6 +2180,9 @@ ensure_ticket_worktree() {
   mkdir -p "$parent_root" || return 1
   cleanup_stale_todo_worktree_before_claim "$ticket_file" "$branch" "$worktree_path" "$git_root" "$base_commit"
 
+  existing_base_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Base Commit")")"
+  existing_worktree_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Worktree Commit")")"
+  existing_integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
   existing_path="$(ticket_worktree_path_from_file "$ticket_file")"
   if [ -n "$existing_path" ] && git -C "$existing_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     worktree_path="$existing_path"
@@ -2191,11 +2196,24 @@ ensure_ticket_worktree() {
     git -C "$git_root" worktree add -b "$branch" "$worktree_path" "$base_commit" >/dev/null || return 1
   fi
 
+  recorded_base_commit="${existing_base_commit:-$base_commit}"
+  recorded_worktree_commit="$existing_worktree_commit"
+  recorded_integration_status="${existing_integration_status:-pending}"
+  case "$recorded_integration_status" in
+    ""|pending_claim)
+      recorded_integration_status="pending"
+      ;;
+    worktree_missing|blocked_recovery_missing_worktree|blocked_worktree_setup_failed)
+      recorded_worktree_commit=""
+      recorded_integration_status="pending"
+      ;;
+  esac
+
   replace_section_block "$ticket_file" "Worktree" "- Path: \`${worktree_path}\`
 - Branch: ${branch}
-- Base Commit: ${base_commit}
-- Worktree Commit:
-- Integration Status: pending"
+- Base Commit: ${recorded_base_commit}
+- Worktree Commit: ${recorded_worktree_commit}
+- Integration Status: ${recorded_integration_status}"
   printf 'worktree_status=ready\n'
   printf 'worktree_path=%s\n' "$worktree_path"
   printf 'worktree_branch=%s\n' "$branch"
@@ -2205,7 +2223,7 @@ ensure_ticket_worktree() {
 
 stage_is_execution_candidate() {
   case "${1:-}" in
-    ""|claimed|executing|blocked)
+    ""|claimed|executing|blocked|ready_to_merge|ready-to-merge|merging)
       return 0
       ;;
     *)
@@ -2865,7 +2883,7 @@ count_verification_load_for_owner() {
     [ "$verifier_owner" = "$wanted_owner" ] || continue
     stage="$(ticket_stage "$file")"
     case "${stage:-}" in
-      ""|claimed|executing|ready_for_verification|verifying|blocked)
+      ""|claimed|executing|ready_for_verification|verifying|blocked|ready_to_merge|ready-to-merge|merging)
       count=$((count + 1))
       ;;
     esac

@@ -57,13 +57,14 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 9. Rerun the needed verification after merge from the correct root.
 10. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
 11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, refresh deterministic wiki sections, and create the local completion commit, but it must not perform the merge.
-12. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
-13. Never push.
-14. Do not hide state in chat. Durable state belongs in board files.
-15. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
-16. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
-17. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
-18. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
+12. If `finish-ticket-owner.* pass` or `merge-ready-ticket.*` returns `status=needs_ai_merge`, do not treat the ticket as done and do not claim another ticket. Continue the same ticket: integrate verified worktree changes into `PROJECT_ROOT`/main inside `Allowed Paths`, rerun required verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.* pass`.
+13. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
+14. Never push.
+15. Do not hide state in chat. Durable state belongs in board files.
+16. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
+17. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
+18. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
+19. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
 
 ## Procedure
 
