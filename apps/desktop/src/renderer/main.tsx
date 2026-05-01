@@ -1781,10 +1781,12 @@ function App() {
                       <PageLayout className="knowledge-page">
                         <div className="knowledge-split">
                           <div className="tool-panel knowledge-list-pane">
-                            <div className="section-heading compact">
-                              <div>
-                                <div className="section-kicker">{showingAll ? `전체 ${totalLogs}건` : `최근 ${showingCount} / 전체 ${totalLogs}건`}</div>
+                            <div className="section-heading compact log-list-heading">
+                              <div className="log-heading-copy">
                                 <h3>로그</h3>
+                                <div className="section-kicker log-count-text">
+                                  {showingAll ? `전체 ${totalLogs}건` : `최근 ${showingCount} / 전체 ${totalLogs}건`}
+                                </div>
                               </div>
                               <Terminal className="h-4 w-4 text-muted-foreground" />
                             </div>

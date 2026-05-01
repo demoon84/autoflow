@@ -1359,6 +1359,33 @@ pre {
   line-height: 1;
 }
 
+.log-list-heading {
+  align-items: center;
+}
+
+.log-list-heading > svg {
+  flex: 0 0 auto;
+}
+
+.log-heading-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+}
+
+.log-heading-copy h3 {
+  flex: 0 0 auto;
+}
+
+.log-count-text {
+  min-width: 0;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 .board-section > .section-heading {
   margin-bottom: 16px;
   border-bottom: 1px solid var(--border);

@@ -41,7 +41,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-05-01T00:46:18Z
+- Last rebuilt: 2026-05-01T13:26:23Z
 
 ### Completed Tickets
 
@@ -94,6 +94,7 @@ Each entry should cite its source ticket or log.
 - reject_003. Source: `tickets/done/prd_003/reject_003.md`.
 - reject_049. Source: `tickets/done/prd_049/reject_049.md`.
 - reject_003. Source: `tickets/reject/reject_003.md`.
+- reject_071. Source: `tickets/reject/reject_071.md`.
 
 ### Conversation Handoffs
 
