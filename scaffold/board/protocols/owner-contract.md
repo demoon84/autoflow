@@ -12,6 +12,12 @@ The AI owns judgment: planning, scope interpretation, recovery decisions, verifi
 
 Shell helpers may claim board state, create or clean worktrees/branches, record evidence, move files, run guards, stage/commit an already accepted result, and report blockers. They must not become the actor that decides the ticket is correct, silently expands scope, resolves semantic conflicts, or chooses recovery direction without the AI recording that decision in markdown.
 
+## Local Change Isolation
+
+`PROJECT_ROOT` dirty changes are treated as user/other-runner work until they are explicitly committed, stashed, or integrated by the AI with evidence. Ticket-owner must not start fresh implementation, finish pass, or finalize merge over dirty files that overlap the ticket's concrete `Allowed Paths` and differ from the ticket worktree result.
+
+Runtime helpers should report this as `dirty_project_root_conflict` / `blocked_dirty_project_root`; the owner should resolve the local change boundary first, then rerun the ticket. This protects user edits and prevents a later worktree merge from restoring older file contents over newer local work.
+
 ## Commit Message Contract
 
 All Autoflow pass/completion commits must use this subject format:

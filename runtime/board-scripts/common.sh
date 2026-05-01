@@ -294,6 +294,107 @@ worktree_auto_fallback_reason() {
   return 1
 }
 
+project_root_path_matches_worktree() {
+  local ticket_file="$1"
+  local repo_rel_path="$2"
+  local worktree_path root_path
+
+  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  [ -n "$worktree_path" ] || return 0
+
+  root_path="${PROJECT_ROOT}/${repo_rel_path}"
+  worktree_path="${worktree_path}/${repo_rel_path}"
+
+  if [ ! -e "$root_path" ] && [ ! -e "$worktree_path" ]; then
+    return 0
+  fi
+
+  if [ ! -e "$root_path" ] || [ ! -e "$worktree_path" ]; then
+    return 1
+  fi
+
+  if [ -d "$root_path" ] && [ -d "$worktree_path" ]; then
+    diff -qr "$root_path" "$worktree_path" >/dev/null 2>&1
+    return $?
+  fi
+
+  cmp -s "$root_path" "$worktree_path"
+}
+
+ticket_path_has_dirty_project_root_conflict() {
+  local ticket_file="$1"
+  local repo_rel_path="$2"
+  local git_root="${3:-$PROJECT_ROOT}"
+
+  [ -n "$repo_rel_path" ] || return 1
+  if ! git -C "$git_root" status --porcelain --untracked-files=all -- "$repo_rel_path" | grep -q .; then
+    return 1
+  fi
+
+  project_root_path_matches_worktree "$ticket_file" "$repo_rel_path" && return 1
+  return 0
+}
+
+ticket_dirty_project_root_conflict_paths() {
+  local ticket_file="$1"
+  local git_root="${2:-$PROJECT_ROOT}"
+  local allowed_path found=false
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete_repo_path "$allowed_path" || continue
+    if ticket_path_has_dirty_project_root_conflict "$ticket_file" "$allowed_path" "$git_root"; then
+      printf '%s\n' "$allowed_path"
+      found=true
+    fi
+  done < <(extract_ticket_allowed_paths "$ticket_file")
+
+  [ "$found" = "true" ]
+}
+
+dirty_project_root_paths_summary() {
+  awk '
+    NF > 0 {
+      if (out != "") out = out ", "
+      out = out $0
+    }
+    END { print out }
+  '
+}
+
+mark_ticket_dirty_project_root_blocked() {
+  local ticket_file="$1"
+  local worker="$2"
+  local timestamp="$3"
+  local dirty_paths="$4"
+  local summary display_worker
+
+  display_worker="$(display_worker_id "$worker")"
+  summary="$(printf '%s\n' "$dirty_paths" | dirty_project_root_paths_summary)"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_dirty_project_root"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "dirty_project_root_conflict"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "dirty Allowed Paths in PROJECT_ROOT: ${summary}"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Commit, stash, or explicitly integrate the PROJECT_ROOT changes before this ticket continues."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (${summary}). Commit/stash those changes or intentionally integrate them before ticket-owner continues."
+
+  if ! grep -Fq "Runtime auto-blocked: dirty_project_root_conflict" "$ticket_file"; then
+    append_note "$ticket_file" "Runtime auto-blocked: dirty_project_root_conflict at ${timestamp}; dirty_paths=${summary}"
+  fi
+}
+
 ticket_uses_project_root_workspace() {
   local ticket_file="$1"
   local status path physical_path physical_project_root

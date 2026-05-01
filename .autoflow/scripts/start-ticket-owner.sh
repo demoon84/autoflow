@@ -309,6 +309,7 @@ prepare_ticket_owner_context() {
   local project_key project_note ticket_note verification_note stage done_target reject_target
   local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
   local shared_head_blockers shared_head_summary integration_status merge_continuation=false next_action_line verification_block
+  local dirty_project_root_paths dirty_project_root_summary dirty_path
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
@@ -464,6 +465,29 @@ prepare_ticket_owner_context() {
       merge_continuation=true
       ;;
   esac
+  if [ "$merge_continuation" != "true" ]; then
+    dirty_project_root_paths="$(ticket_dirty_project_root_conflict_paths "$ticket_file" "$(git_root_path || true)" || true)"
+    if [ -n "$dirty_project_root_paths" ]; then
+      dirty_project_root_summary="$(printf '%s\n' "$dirty_project_root_paths" | dirty_project_root_paths_summary)"
+      mark_ticket_dirty_project_root_blocked "$ticket_file" "$worker_id" "$timestamp" "$dirty_project_root_paths"
+      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+      sync_runner_active_state "$ticket_file" "blocked"
+      ticket_goal_block "$ticket_file" "dirty_project_root_conflict"
+      printf 'status=blocked\n'
+      printf 'reason=dirty_project_root_conflict\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      while IFS= read -r dirty_path; do
+        [ -n "$dirty_path" ] || continue
+        printf 'dirty_path=%s\n' "$dirty_path"
+      done <<< "$dirty_project_root_paths"
+      printf '%s\n' "$worktree_output"
+      printf 'next_action=Commit/stash or intentionally integrate PROJECT_ROOT dirty changes before ticket-owner continues: %s\n' "$dirty_project_root_summary"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+    fi
+  fi
   if [ "$merge_continuation" = "true" ]; then
     next_action_line="- Next: continue AI-led merge for this ticket. Manually integrate verified worktree changes into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun required verification from PROJECT_ROOT, then rerun \`scripts/finish-ticket-owner.sh ${ticket_id} pass \"<summary>\"\`. Do not claim another ticket or call merge-ready-ticket directly."
     verification_block="- Run file: \`tickets/inprogress/$(basename "$run_file")\`

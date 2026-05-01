@@ -225,6 +225,7 @@ prepare_ticket_worktree_for_merge() {
   local ticket_id worktree_path worktree_commit integration_status timestamp
   local -a allowed_paths=()
   local -a add_paths=()
+  local -a dirty_project_root_paths=()
   local allowed_path already_in_project_root
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
@@ -305,6 +306,22 @@ prepare_ticket_worktree_for_merge() {
       append_note "$ticket_file" "Allowed path was not present in worktree during merge preparation at ${timestamp}, so it was skipped: ${allowed_path}"
     fi
   done
+
+  if [ "${#add_paths[@]}" -gt 0 ]; then
+    for allowed_path in "${add_paths[@]}"; do
+      if ticket_path_has_dirty_project_root_conflict "$ticket_file" "$allowed_path" "${project_root_git:-$PROJECT_ROOT}"; then
+        dirty_project_root_paths+=("$allowed_path")
+      fi
+    done
+  fi
+  if [ "${#dirty_project_root_paths[@]}" -gt 0 ]; then
+    mark_ticket_dirty_project_root_blocked "$ticket_file" "$worker_id" "$timestamp" "$(printf '%s\n' "${dirty_project_root_paths[@]}")"
+    printf 'status=blocked\n'
+    printf 'reason=dirty_project_root_conflict\n'
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'dirty_path=%s\n' "${dirty_project_root_paths[@]}"
+    return 1
+  fi
 
   already_in_project_root=1
   if [ "${#add_paths[@]}" -eq 0 ]; then

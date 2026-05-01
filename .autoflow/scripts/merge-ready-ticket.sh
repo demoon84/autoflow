@@ -263,6 +263,7 @@ merge_ticket_worktree() {
   local -a invalid_paths=()
   local -a already_applied_paths=()
   local -a not_applied_paths=()
+  local -a dirty_project_root_paths=()
   local allowed_path repo_rel_path
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
@@ -345,6 +346,22 @@ merge_ticket_worktree() {
     printf 'status=blocked\n'
     printf 'reason=invalid_worktree_commit_scope\n'
     printf 'invalid_path=%s\n' "${invalid_paths[@]}"
+    return 1
+  fi
+
+  for repo_rel_path in "${commit_paths[@]}"; do
+    [ -n "$repo_rel_path" ] || continue
+    if ticket_path_has_dirty_project_root_conflict "$ticket_file" "$repo_rel_path" "$git_root"; then
+      dirty_project_root_paths+=("$repo_rel_path")
+    fi
+  done
+  if [ "${#dirty_project_root_paths[@]}" -gt 0 ]; then
+    mark_ticket_dirty_project_root_blocked "$ticket_file" "$worker_id" "$timestamp" "$(printf '%s\n' "${dirty_project_root_paths[@]}")"
+    printf 'status=blocked\n'
+    printf 'reason=dirty_project_root_conflict\n'
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'worktree_commit=%s\n' "$worktree_commit"
+    printf 'dirty_path=%s\n' "${dirty_project_root_paths[@]}"
     return 1
   fi
 
