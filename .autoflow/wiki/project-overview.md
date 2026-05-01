@@ -4,7 +4,7 @@
 
 Autoflow is an AI-native project orchestration system.
 As of the latest deterministic wiki refresh, the project has reached a stable 3-runner topology (`planner-1`, `owner-1`, `wiki-1`) with a polished Desktop UI. See [[architecture/runner-role-slugs]] for the runner naming baseline.
-The managed summary below currently reports 66 completed tickets, updated via automated ticket-owner flow and direct PRD-to-done transitions.
+The managed summary below currently reports 67 completed tickets, updated via automated ticket-owner flow and direct PRD-to-done transitions.
 Ticket ids are not contiguous: higher ids such as `tickets_058` or `tickets_059` can appear in focused synthesis even when the completed-ticket count is lower because retries, rejects, and PRD-only archives also consume sequence numbers.
 Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]]. Recent May 1 work such as `prd_088` (`[[answers/done-when-checklist-state]]`), `prd_089` (`[[answers/order-inbox-memo-delete]]`), and `prd_090` (`[[answers/desktop-sidebar-korean-labels]]`) is tracked in [[index]] under `Recent Synthesis`.
 
@@ -21,7 +21,7 @@ Historical ticket snapshots below are examples from the deterministic baseline, 
 
 - UI polishing and bug fixes across the desktop application (e.g., [[features/desktop-statistics-page]]).
 - Keeping Desktop UI work aligned with the current local component direction: local React/shadcn-style ownership with `lucide-react` icons for new changes, while preserving older MUI-era pages where they already exist.
-- Stabilizing the unified ticket workspace and handling workflow edge cases such as durable `Done When` checklist state and scoped inbox memo deletion.
+- Stabilizing the unified ticket workspace and handling workflow edge cases such as durable `Done When` checklist state ([[answers/done-when-checklist-state]]) and scoped inbox memo deletion ([[answers/order-inbox-memo-delete]]).
 - Wiki Bot adapter support now includes Codex while preserving Gemini as a selectable provider ([[features/wiki-bot-codex-adapter]]).
 
 ## Open Questions
@@ -33,11 +33,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 67
-- Reject records: 4
-- Verifier logs: 290
+- Done tickets: 68
+- Reject records: 5
+- Verifier logs: 293
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T13:45:44Z
+- Last updated: 2026-05-01T19:12:50Z
 
 ## Latest Completed Work
 

@@ -7,6 +7,10 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/xs-density-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/xs-density-dirty-root-finalization-blocker-20260501.md`): Captured `verify_076` as an xs-density follow-up blocker: the scoped `Button`/`Input` density patch passed in the ticket worktree, but pass finalization must wait until the broader dirty Desktop UI rewrite in `PROJECT_ROOT` is landed or isolated.
+- **[[answers/ticket-detail-layer-meta-layout-20260501]]** (`wiki/answers/ticket-detail-layer-meta-layout-20260501.md`): Captured `prd_077`, which keeps `TicketDetailLayer` metadata on a one-line-first flex-wrap layout instead of a fixed 3-column grid while preserving the existing narrow-screen fallback.
+- **[[answers/desktop-renderer-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md`): Captured `reject_071` as a replay blocker: when visible criteria are already embedded in a broad dirty `renderer` rewrite, finalization must wait for either that rewrite to land or a fresh isolated current-HEAD diff.
+- **[[answers/open-layer-flicker-finalization-blocker-20260501]]** (`wiki/answers/open-layer-flicker-finalization-blocker-20260501.md`): Captured the layer-flicker reject path that requires stable ticket-detail/workflow-pin layer identity during board snapshot refresh without widening scope beyond the affected layer flows.
 - **[[answers/done-when-checklist-state]]** (`wiki/answers/done-when-checklist-state.md`): Captured `prd_088`, which makes completed `## Done When` items persist as checked `[x]` state in the ticket document instead of staying as a static acceptance list.
 - **[[answers/order-inbox-memo-delete]]** (`wiki/answers/order-inbox-memo-delete.md`): Captured `prd_089`, the Order-tab workflow that limits deletion to pending `tickets/inbox/memo_*.md` cards with confirmation and defensive IPC path checks.
 - **[[answers/desktop-sidebar-korean-labels]]** (`wiki/answers/desktop-sidebar-korean-labels.md`): Captured `prd_090`, which keeps the existing sidebar order and route keys while renaming labels to `AI 대쉬보드`, `티켓`, and `LLM 위키`.
@@ -28,11 +32,11 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
 - **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
 - **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
-- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so new user-visible attribution prefers `worker-N` while legacy `AI-N` ownership matching remains compatible (`prd_039`).
+- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`, [[answers/singleton-runner-display-labels]]).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
 - **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
 - **[[features/desktop-runner-controls]]** (`wiki/features/desktop-runner-controls.md`): Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
-- **[[decisions/design-kit-mui-migration]]** (`wiki/decisions/design-kit-mui-migration.md`): Decided to migrate the desktop design kit from shadcn/Tailwind to MUI (Material UI) for better consistency and developer velocity.
+- **[[decisions/design-kit-mui-migration]]** (`wiki/decisions/design-kit-mui-migration.md`): Preserved as historical migration context only; current Desktop UI work follows the newer board rule that prefers local shadcn-style components with `lucide-react`.
 - **[[features/desktop-gemini-icon]]** (`wiki/features/desktop-gemini-icon.md`): Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
 - **[[features/ai-workflow-board]]** (`wiki/features/ai-workflow-board.md`): Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
 
@@ -71,8 +75,12 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
-- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변. LLM-Wiki 패턴의 file-back 권고를 따른다. 자세한 규약은 `wiki/answers/README.md` 참고.
+- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 `wiki/answers/README.md` 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/xs-density-dirty-root-finalization-blocker-20260501]] (`wiki/answers/xs-density-dirty-root-finalization-blocker-20260501.md`)
+  - [[answers/ticket-detail-layer-meta-layout-20260501]] (`wiki/answers/ticket-detail-layer-meta-layout-20260501.md`)
+  - [[answers/desktop-renderer-dirty-root-finalization-blocker-20260501]] (`wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md`)
+  - [[answers/open-layer-flicker-finalization-blocker-20260501]] (`wiki/answers/open-layer-flicker-finalization-blocker-20260501.md`)
   - [[answers/done-when-checklist-state]] (`wiki/answers/done-when-checklist-state.md`)
   - [[answers/order-inbox-memo-delete]] (`wiki/answers/order-inbox-memo-delete.md`)
   - [[answers/desktop-sidebar-korean-labels]] (`wiki/answers/desktop-sidebar-korean-labels.md`)
@@ -112,11 +120,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 67
-- Reject records: 4
-- Verifier logs: 290
+- Done tickets: 68
+- Reject records: 5
+- Verifier logs: 293
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T13:45:44Z
+- Last updated: 2026-05-01T19:12:50Z
 
 ## Completed Tickets
 
