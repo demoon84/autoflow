@@ -1,0 +1,94 @@
+# PRD Handoff
+
+- Project: project_091
+- Spec: tickets/backlog/prd_091.md
+- Source: autoflow spec create
+
+## Conversation Summary
+
+```text
+# Project PRD
+
+## Meta
+
+- Project Key: prd_091
+- Title: 반려 최대 재시도 오케스트레이터 처리
+- Status: populated
+
+## Goal
+
+반려 티켓이 `AUTOFLOW_REJECT_MAX_RETRIES` 기본값 10회에 도달했을 때 자동 재시도를 멈추는 기존 안전장치는 유지하되, Planner AI 오케스트레이터가 해당 상태를 명확한 복구/주차 상태로 처리하도록 만든다. 10회 초과 후에는 같은 티켓을 다시 todo로 보내지 않고, 실패 원인을 보드에 durable하게 요약하며, 필요한 경우 별도 복구 티켓으로 전환할 수 있어야 한다.
+
+## Core Scope
+
+### In Scope
+
+- `max_retries_reached` reject 상태를 planner/orchestrator recovery signal로 노출한다.
+- Planner AI가 retry limit에 도달한 reject를 `Recovery State` 중심으로 진단/주차하도록 계약을 추가한다.
+- 자동 재시도는 계속 금지하되, 실패 원인 분류와 후속 복구 티켓화 기준을 보드 문서/프롬프트에 남긴다.
+- retry limit 도달 후 같은 reject가 다시 todo로 발급되지 않는 smoke test를 추가하거나 보강한다.
+- active runtime script와 installed board script mirror를 동기화한다.
+
+### Out of Scope
+
+- `AUTOFLOW_REJECT_MAX_RETRIES` 기본값 10 변경.
+- 10회 이후 동일 티켓을 자동으로 11번째 재시도하는 동작.
+- 제품 UI 기능 수정.
+- 원격 push.
+
+## Main Screens / Modules
+
+- `runtime/board-scripts/common.sh`
+- `.autoflow/scripts/common.sh`
+- `runtime/board-scripts/start-plan.sh`
+- `.autoflow/scripts/start-plan.sh`
+- `packages/cli/run-role.sh`
+- `runtime/board-scripts/run-role.sh`
+- `.autoflow/agents/plan-to-ticket-agent.md`
+- `scaffold/board/agents/plan-to-ticket-agent.md`
+- `.autoflow/protocols/recovery.md`
+- `scaffold/board/protocols/recovery.md`
+- `tests/smoke/ticket-owner-replan-smoke.sh`
+- 신규 또는 보강 smoke test 파일
+
+## Allowed Paths
+
+- runtime/board-scripts/common.sh
+- .autoflow/scripts/common.sh
+- runtime/board-scripts/start-plan.sh
+- .autoflow/scripts/start-plan.sh
+- packages/cli/run-role.sh
+- runtime/board-scripts/run-role.sh
+- .autoflow/agents/plan-to-ticket-agent.md
+- scaffold/board/agents/plan-to-ticket-agent.md
+- dogfood-board/agents/plan-to-ticket-agent.md
+- .autoflow/protocols/recovery.md
+- scaffold/board/protocols/recovery.md
+- tests/smoke/ticket-owner-replan-smoke.sh
+- tests/smoke/planner-orchestrator-*.sh
+
+## Global Acceptance Criteria
+
+- [ ] `retry_count >= AUTOFLOW_REJECT_MAX_RETRIES`인 reject는 기존처럼 todo로 재발급되지 않는다.
+- [ ] 해당 reject는 planner recovery signal에 `reason=max_retries_reached` 또는 동등한 명확한 reason으로 노출된다.
+- [ ] Planner AI 프롬프트/계약은 retry limit 도달 상태에서 동일 티켓 재시도 금지, 실패 원인 진단, `Recovery State: needs_user`, `Failure Class: retry_limit` 기록을 지시한다.
+- [ ] Planner가 안전한 board-only 복구를 만들 수 없으면 티켓을 `needs_user`로 주차하고, owner가 같은 티켓을 반복 claim하지 않는다.
+- [ ] 필요한 경우 새 복구 PRD/todo 후보를 만들 수 있는 기준이 문서화된다. 단, 같은 원 티켓을 자동으로 11번째 재시도하지 않는다.
+- [ ] active runtime script와 `.autoflow/scripts/` mirror가 변경 파일 기준으로 동기화된다.
+- [ ] 관련 smoke에서 retry limit 도달 케이스가 `max_retries_reached` metadata, recovery state, no requeue를 검증한다.
+
+## Verification
+
+- Command: bash -n runtime/board-scripts/common.sh .autoflow/scripts/common.sh runtime/board-scripts/start-plan.sh .autoflow/scripts/start-plan.sh packages/cli/run-role.sh runtime/board-scripts/run-role.sh
+- Command: bash tests/smoke/ticket-owner-replan-smoke.sh
+- Command: bash tests/smoke/board-protocol-scaffold-sync-smoke.sh
+- Command: bash tests/smoke/planner-orchestrator-needs-user-wait-smoke.sh
+- Command: git diff --check
+
+## Notes
+
+- 현재 설계의 10회 제한은 안전장치로 유지한다.
+- 오케스트레이터의 역할은 재시도 횟수를 늘리는 것이 아니라 실패 루프를 끊고 원인을 board state로 승격하는 것이다.
+- 반복 실패 예시는 환경/의존성 문제, 런타임 출력 계약 문제, scope 과다, acceptance criteria 모순, 사용자 결정 필요 상태를 포함한다.
+- Planner AI는 같은 reject를 다시 todo로 보내는 대신 `Recovery State`와 `Next Action`에 다음 안전한 결정을 남겨야 한다.
+```
