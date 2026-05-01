@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/progress-card-header-layout-20260502]]** (`wiki/answers/progress-card-header-layout-20260502.md`): Captured `tickets_084` / `prd_086`, which rearrange the progress card header so token usage stays beside the runner name, action buttons stay right-aligned, and `ai-progress-track` moves onto its own lower row.
 - **[[answers/todo-pin-open-vs-issued-count-20260502]]** (`wiki/answers/todo-pin-open-vs-issued-count-20260502.md`): Captured `tickets_083`, which changes the workflow `TODO` pin so the numerator stays on open todo tickets while the denominator reflects all issued `tickets_*.md` files across `todo`, `inprogress`, `done`, and `reject`.
 - **[[answers/dirty-root-finalization-blockers-20260502]]** (`wiki/answers/dirty-root-finalization-blockers-20260502.md`): 묶음 제약 요약으로 `reject_071`, `reject_074`, `verify_076`이 공통으로 남긴 dirty-root finalization blocker 패턴을 재사용 가능한 planner/owner 참고 지식으로 정리했다.
 - **[[answers/xs-density-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/xs-density-dirty-root-finalization-blocker-20260501.md`): Captured `verify_076` as an xs-density follow-up blocker: the scoped `Button`/`Input` density patch passed in the ticket worktree, but pass finalization must wait until the broader dirty Desktop UI rewrite in `PROJECT_ROOT` is landed or isolated.
@@ -80,6 +81,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 `wiki/answers/README.md` 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/progress-card-header-layout-20260502]] (`wiki/answers/progress-card-header-layout-20260502.md`)
   - [[answers/todo-pin-open-vs-issued-count-20260502]] (`wiki/answers/todo-pin-open-vs-issued-count-20260502.md`)
   - [[answers/xs-density-dirty-root-finalization-blocker-20260501]] (`wiki/answers/xs-density-dirty-root-finalization-blocker-20260501.md`)
   - [[answers/ticket-detail-layer-meta-layout-20260501]] (`wiki/answers/ticket-detail-layer-meta-layout-20260501.md`)
@@ -125,11 +127,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 75
+- Done tickets: 76
 - Reject records: 5
-- Verifier logs: 302
+- Verifier logs: 303
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T19:36:29Z
+- Last updated: 2026-05-01T19:40:40Z
 
 ## Completed Tickets
 
