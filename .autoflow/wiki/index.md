@@ -14,6 +14,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[answers/done-when-checklist-state]]** (`wiki/answers/done-when-checklist-state.md`): Captured `prd_088`, which makes completed `## Done When` items persist as checked `[x]` state in the ticket document instead of staying as a static acceptance list.
 - **[[answers/order-inbox-memo-delete]]** (`wiki/answers/order-inbox-memo-delete.md`): Captured `prd_089`, the Order-tab workflow that limits deletion to pending `tickets/inbox/memo_*.md` cards with confirmation and defensive IPC path checks.
 - **[[answers/desktop-sidebar-korean-labels]]** (`wiki/answers/desktop-sidebar-korean-labels.md`): Captured `prd_090`, which keeps the existing sidebar order and route keys while renaming labels to `AI 대쉬보드`, `티켓`, and `LLM 위키`.
+- **[[answers/desktop-workflow-pin-min-width-20260501]]** (`wiki/answers/desktop-workflow-pin-min-width-20260501.md`): Captured `prd_080`, which keeps ORDER / PRD / TODO workflow pins on one row near the 1040px desktop minimum by lowering the 2-column fallback breakpoint to `1020px`.
 - **[[answers/desktop-full-page-loading-overlay-20260430]]** (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`): Summarized `prd_065` as the desktop-wide loading overlay restoration that should reuse existing loading flags and restore a full-page MUI `Backdrop` + `CircularProgress` flow when prior implementation evidence exists.
 - **[[answers/finish-ticket-owner-cleanup-status-regression-20260430]]** (`wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`): Captured the current `finish-ticket-owner` output contract around `cleanup_status=ok` and linked the related reject history from `verify_003` and `prd_049`.
 - **[[answers/desktop-navigation-refinements-20260430]]** (`wiki/answers/desktop-navigation-refinements-20260430.md`): Summarized the Desktop navigation refinements that put the inbox pin before PRD in the workflow strip and moved the Logs sidebar item after 통계.
@@ -84,6 +85,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[answers/done-when-checklist-state]] (`wiki/answers/done-when-checklist-state.md`)
   - [[answers/order-inbox-memo-delete]] (`wiki/answers/order-inbox-memo-delete.md`)
   - [[answers/desktop-sidebar-korean-labels]] (`wiki/answers/desktop-sidebar-korean-labels.md`)
+  - [[answers/desktop-workflow-pin-min-width-20260501]] (`wiki/answers/desktop-workflow-pin-min-width-20260501.md`)
   - [[answers/desktop-full-page-loading-overlay-20260430]] (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`)
   - [[answers/finish-ticket-owner-cleanup-status-regression-20260430]] (`wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`)
   - [[answers/desktop-navigation-refinements-20260430]] (`wiki/answers/desktop-navigation-refinements-20260430.md`)
@@ -120,11 +122,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 70
+- Done tickets: 71
 - Reject records: 5
-- Verifier logs: 295
+- Verifier logs: 296
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T19:19:01Z
+- Last updated: 2026-05-01T19:21:05Z
 
 ## Completed Tickets
 
