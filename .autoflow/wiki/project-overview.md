@@ -4,14 +4,14 @@
 
 Autoflow is an AI-native project orchestration system.
 As of the latest deterministic wiki refresh, the project has reached a stable 3-runner topology (`planner-1`, `owner-1`, `wiki-1`) with a polished Desktop UI. See [[architecture/runner-role-slugs]] for the runner naming baseline.
-The managed summary below currently reports 58 completed tickets, updated via automated ticket-owner flow and direct PRD-to-done transitions.
+The managed summary below currently reports 66 completed tickets, updated via automated ticket-owner flow and direct PRD-to-done transitions.
 Ticket ids are not contiguous: higher ids such as `tickets_058` or `tickets_059` can appear in focused synthesis even when the completed-ticket count is lower because retries, rejects, and PRD-only archives also consume sequence numbers.
-Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]].
+Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]]. Recent May 1 work such as `prd_088` (`[[answers/done-when-checklist-state]]`), `prd_089` (`[[answers/order-inbox-memo-delete]]`), and `prd_090` (`[[answers/desktop-sidebar-korean-labels]]`) is tracked in [[index]] under `Recent Synthesis`.
 
 
 ## Key Decisions
 
-- **[[decisions/design-kit-mui-migration]]**: Migrating the desktop design kit foundation to MUI (Material UI) to improve UI consistency and development speed (`prd_027`).
+- **[[decisions/design-kit-mui-migration]]**: Historical April 2026 migration decision toward MUI; keep it as architecture context, but follow the current board rule that new Desktop UI work prefers local shadcn-style components with `lucide-react`.
 - **[[decisions/prd-terminology-rename]]**: Unified requirement terminology from "spec" to "PRD" across UI and documentation (`prd_005`).
 - **[[decisions/handoff-as-raw-source]]**: Conversation handoffs are treated as raw ingest for the wiki, not as peer wiki outputs (`prd_001`).
 - **[[decisions/manual-resolution-policy]]**: Repeated automation failures (shared path blocks) require manual intervention ([[learnings/ticket-overlap-no-op]]).
@@ -20,8 +20,8 @@ Historical ticket snapshots below are examples from the deterministic baseline, 
 ## Current Work
 
 - UI polishing and bug fixes across the desktop application (e.g., [[features/desktop-statistics-page]]).
-- Ongoing migration to MUI-backed dashboard components.
-- Stabilizing the unified ticket workspace and handling workflow edge cases.
+- Keeping Desktop UI work aligned with the current local component direction: local React/shadcn-style ownership with `lucide-react` icons for new changes, while preserving older MUI-era pages where they already exist.
+- Stabilizing the unified ticket workspace and handling workflow edge cases such as durable `Done When` checklist state and scoped inbox memo deletion.
 - Wiki Bot adapter support now includes Codex while preserving Gemini as a selectable provider ([[features/wiki-bot-codex-adapter]]).
 
 ## Open Questions
@@ -33,11 +33,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 66
+- Done tickets: 67
 - Reject records: 4
-- Verifier logs: 288
+- Verifier logs: 290
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T13:26:23Z
+- Last updated: 2026-05-01T13:45:44Z
 
 ## Latest Completed Work
 

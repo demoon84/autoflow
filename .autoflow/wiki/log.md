@@ -6,6 +6,7 @@ Chronological notes derived from completed tickets, reject learnings, and operat
 
 Generated entries may be inserted here.
 This curated milestone list summarizes representative milestones from the early board foundation through the recent wiki/runtime refinements. For current counts and broader work context, use [[index]] and [[project-overview]].
+Recent synthesis answers for newer completed work are intentionally filed back through [[index]]; for example, May 1 additions covering `prd_088`, `prd_089`, and `prd_090` are linked under `Recent Synthesis` there rather than repeated verbatim in this historical timeline.
 
 Each entry should cite its source ticket or log.
 
@@ -21,7 +22,7 @@ Each entry should cite its source ticket or log.
 - `learning` - Manual Recovery and Worktree Consolidation (2026-04-27). See [[learnings/manual-merge-recovery-20260427]] for the consolidation path that resolved dirty-scope conflicts around tickets 012, 016, 021, and 025. Source: `learnings/manual-merge-recovery-20260427.md`.
 - `prd_025` - Audit AI progress stages and fix dot alignment so the bar matches runtime-observable signals. Source: `tickets/done/prd_025/prd_025.md`.
 - `prd_026` - Fix Gemini app icon in Desktop AI runner UI. Source: `tickets/done/prd_026/prd_026.md`.
-- `prd_027` - Replace the desktop design kit from shadcn/Radix/Tailwind to MUI. Source: `tickets/done/prd_027/prd_027.md`.
+- `prd_027` - Historical design-kit migration attempt from shadcn/Radix/Tailwind to MUI; keep as context for older Desktop surfaces, not as the current blanket rule for new UI work. Source: `tickets/done/prd_027/prd_027.md`.
 - `prd_028` - Simplify desktop runner control buttons. Source: `tickets/done/prd_028/prd_028.md`.
 - `prd_030` - Add Inbox tab to Ticket Workspace. Source: `tickets/done/prd_030/prd_030.md`.
 - `prd_035` - Apply MUI dashboard design to the Statistics page. Source: `tickets/done/prd_035/prd_035.md`.
@@ -41,7 +42,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-05-01T13:26:23Z
+- Last rebuilt: 2026-05-01T13:45:44Z
 
 ### Completed Tickets
 

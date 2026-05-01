@@ -2664,13 +2664,15 @@ pre {
 }
 
 .ticket-detail-layer-meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 8px;
   margin: 0;
 }
 
 .ticket-detail-layer-meta div {
+  flex: 1 1 140px;
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--border) 84%, white);
   border-radius: 12px;
@@ -2747,6 +2749,7 @@ pre {
   }
 
   .ticket-detail-layer-meta {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
