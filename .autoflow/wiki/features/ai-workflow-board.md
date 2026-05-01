@@ -19,7 +19,10 @@ The AI Workflow Board (작업 흐름) provides a real-time, visual summary of th
 
 - **PRD Pin Bar**: Displays the currently pinned/active Product Requirement Document (PRD) along with a count of total and pending PRDs (`tickets/done/prd_015/tickets_015.md`).
 - **Stat Strip**: Hoisted above the ticket board and aligned with the PRD pin bar, it displays real-time resource utilization, such as raw token counts and code-volume changes (`tickets/done/prd_013/tickets_013.md`, `tickets/done/prd_018/tickets_018.md`).
-- **Runner Cards**: Cards in the workflow reflect active agents. Their metadata displays a simplified role label (Planner, Worker, 위키봇) for clarity, with model and reasoning controls hoisted directly into the card for immediate configuration (`tickets/done/prd_021/prd_021.md`).
+- **Runner Cards**: Cards in the workflow reflect active agents. Their metadata displays a simplified role label for clarity, with model and reasoning controls hoisted directly into the card for immediate configuration (`tickets/done/prd_021/prd_021.md`).
+  - **Planner**: Labeled as `Planner AI (오케스트레이터)` to reflect its role in PRD promotion, reject replanning, and recovery orchestration (`tickets/done/prd_096/prd_096.md`).
+  - **Worker**: Uses a flex-aligned layout for icons, labels, and token usage, ensuring stable vertical centering and consistent horizontal baseline even with long token strings (`tickets/done/prd_094/prd_094.md`).
+  - **Wiki AI**: Labeled as `Wiki AI` or `위키봇`.
 - **Progress Indicator**: Displays the active state of agents using dots and labels.
   - **Planner/Wiki**: 4-stage flow.
   - **Worker**: Simplified to 4 stages (`대기 / 구현 / 완료 / 반려`) to match runtime-observable signals (`tickets/done/prd_025/tickets_025.md`).

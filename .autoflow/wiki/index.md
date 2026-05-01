@@ -7,6 +7,8 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/recent-core-and-ui-refinements-20260502]]** (`wiki/answers/recent-core-and-ui-refinements-20260502.md`): Captured the recent core and UI refinements spanning `prd_091` through `prd_097`, including Desktop TODO layer layout fixes, Planner orchestrator recovery for max retries, Worker lifecycle isolation (worktree/branch), flex-alignment for UI progress rows, Codex fast reasoning (low), and Planner/Orchestrator role label normalization.
+- **[[answers/planner-worker-lifecycle-boundaries-20260502]]** (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`): Captured the core architectural boundaries between Planner and Worker roles defined in `prd_092` and `prd_093`, focusing on retry-limit recovery signals and task-level isolation.
 - **[[answers/desktop-workflow-board-refinements-20260502]]** (`wiki/answers/desktop-workflow-board-refinements-20260502.md`): Captured the recent workflow-board polish across `prd_082` through `prd_084`, including unified `prd-NNN`/`order-NNN`/`ticket-NNN` display IDs, role labels normalized to `Planner AI`/`Worker AI`/`Wiki AI`, and the always-visible kanban column baseline.
 - **[[answers/desktop-xs-density-and-workflow-pin-width-20260502]]** (`wiki/answers/desktop-xs-density-and-workflow-pin-width-20260502.md`): Captured the recent Desktop density/layout pass that keeps general Button/Input controls on an `xs` rhythm and preserves a 3-column workflow pin strip around the 1040px minimum desktop width.
 - **[[answers/dirty-root-finalization-blockers-20260502]]** (`wiki/answers/dirty-root-finalization-blockers-20260502.md`): Captured the shared finalization blocker across `reject_071` and `reject_074`: when accepted state already lives inside a broad dirty Desktop rewrite with out-of-scope typing/preload dependencies, replay must restart from a clean current-HEAD baseline instead of force-finishing the old ticket.
@@ -48,6 +50,8 @@ Generated summaries may be written here by `autoflow wiki update`.
 - [[log]]
 - `features/`
   - [[features/ai-workflow-board]] (`wiki/features/ai-workflow-board.md`)
+  - [[features/reject-auto-replan]] (`wiki/features/reject-auto-replan.md`)
+  - [[features/worker-lifecycle-isolation]] (`wiki/features/worker-lifecycle-isolation.md`)
   - [[features/self-improvement-trial]] (`wiki/features/self-improvement-trial.md`)
   - [[features/ticket-workspace-tabs]] (`wiki/features/ticket-workspace-tabs.md`)
   - [[features/wiki-preview-flow]] (`wiki/features/wiki-preview-flow.md`)
@@ -79,6 +83,8 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/recent-core-and-ui-refinements-20260502]] (`wiki/answers/recent-core-and-ui-refinements-20260502.md`)
+  - [[answers/planner-worker-lifecycle-boundaries-20260502]] (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`)
   - [[answers/desktop-workflow-board-refinements-20260502]] (`wiki/answers/desktop-workflow-board-refinements-20260502.md`)
   - [[answers/desktop-xs-density-and-workflow-pin-width-20260502]] (`wiki/answers/desktop-xs-density-and-workflow-pin-width-20260502.md`)
   - [[answers/dirty-root-finalization-blockers-20260502]] (`wiki/answers/dirty-root-finalization-blockers-20260502.md`)
@@ -128,7 +134,7 @@ Tickets, verification records, and logs remain authoritative.
 - Reject records: 5
 - Verifier logs: 306
 - Conversation handoffs: 4
-- Last updated: 2026-05-01T22:32:54Z
+- Last updated: 2026-05-01T23:03:49Z
 
 ## Completed Tickets
 
