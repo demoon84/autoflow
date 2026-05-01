@@ -213,6 +213,12 @@ require_line "$max_output" "reason=no_actionable_plan_input"
 require_line "$max_output" "replan_skipped.1=tickets/reject/reject_002.md"
 require_line "$max_output" "replan_skipped.1.reason=max_retries_reached"
 require_line "$max_output" "replan_skipped.1.retry_count=2"
+require_line "$max_output" "replan_skipped.1.failure_class=retry_limit"
+require_line "$max_output" "replan_skipped.1.recovery_state=needs_user"
+if grep -Eq '^todo_ticket=' "$max_output"; then
+  echo "Expected max retry reject to stay in reject without creating todo_ticket" >&2
+  exit 1
+fi
 
 if [ ! -f "${project_dir}/.autoflow/tickets/reject/reject_002.md" ]; then
   echo "Expected max retry reject to remain in reject/" >&2

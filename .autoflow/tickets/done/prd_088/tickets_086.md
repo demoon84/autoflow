@@ -84,7 +84,7 @@
 - [ ] Runtime updates do not erase existing manual `[x]`/`[ ]` state in the ticket `## Done When` section.
 - [ ] Installed scripts under `.autoflow/scripts` and source mirrors under `runtime/board-scripts` stay behaviorally aligned for any touched runtime helper.
 - [ ] `tests/smoke/ticket-owner-smoke.sh` or equivalent smoke coverage verifies the pass path leaves checked `Done When` items in the done ticket.
-- [ ] Implementation stays inside Allowed Paths.
+- [x] Implementation stays inside Allowed Paths.
 - [ ] `rg -n "Done When|\\[x\\]|\\[ \\]" .autoflow/agents .autoflow/reference runtime/board-scripts .autoflow/scripts && bash tests/smoke/ticket-owner-smoke.sh` passes.
 
 ## Next Action

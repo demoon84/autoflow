@@ -43,6 +43,10 @@ emit_replan_skipped_metadata() {
     printf 'replan_skipped.%s=%s\n' "$index" "$rel"
     printf 'replan_skipped.%s.reason=%s\n' "$index" "$reason"
     printf 'replan_skipped.%s.retry_count=%s\n' "$index" "$retry_count"
+    if [ "$reason" = "max_retries_reached" ]; then
+      printf 'replan_skipped.%s.failure_class=retry_limit\n' "$index"
+      printf 'replan_skipped.%s.recovery_state=needs_user\n' "$index"
+    fi
   done < "$skipped_file"
 }
 

@@ -1389,22 +1389,102 @@ append_note() {
 
 mark_ticket_done_when_checked() {
   local ticket_file="$1"
+  local run_file="${2:-}"
+  local criteria_file=""
   local tmp
+
+  if [ -n "$run_file" ] && [ -f "$run_file" ]; then
+    criteria_file="$(autoflow_mktemp)"
+    awk '
+      /^## Criteria Checked/ {
+        in_criteria = 1
+        next
+      }
+      in_criteria && /^## / {
+        in_criteria = 0
+      }
+      in_criteria && $0 ~ /^- \[[xX]\] / {
+        line=$0
+        sub(/^- \[[xX]\] /, "", line)
+        gsub(/`/, "", line)
+        gsub(/[[:space:]]+/, " ", line)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        line=tolower(line)
+        print line
+      }
+    ' "$run_file" > "$criteria_file"
+    if [ ! -s "$criteria_file" ]; then
+      rm -f "$criteria_file"
+      criteria_file=""
+    fi
+  fi
 
   tmp="$(autoflow_mktemp)"
   awk '
+    function normalize_check(text,    n) {
+      n = tolower(text)
+      gsub(/`/, "", n)
+      gsub(/[^A-Za-z0-9]+/, " ", n)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", n)
+      gsub(/([[:space:]])+/, " ", n)
+      return n
+    }
+
+    function load_criteria(line, i) {
+      if (criteria_file == "") {
+        return
+      }
+      while ((getline line < criteria_file) > 0) {
+        if (line == "") {
+          continue
+        }
+        criteria_count = criteria_count + 1
+        criteria_values[criteria_count] = normalize_check(line)
+      }
+      close(criteria_file)
+    }
+
+    function criteria_has_match(text,    i, candidate, line) {
+      if (text == "" || criteria_count == 0) {
+        return 0
+      }
+      line = normalize_check(text)
+      for (i = 1; i <= criteria_count; i += 1) {
+        candidate = criteria_values[i]
+        if (line == candidate) {
+          return 1
+        }
+        if (index(line, candidate) > 0) {
+          return 1
+        }
+        if (index(candidate, line) > 0) {
+          return 1
+        }
+      }
+      return 0
+    }
+
+    BEGIN {
+      if (criteria_file != "") {
+        load_criteria()
+      }
+    }
+
     /^## Done When/ { in_section = 1 }
     in_section && /^## / && $0 != "## Done When" {
       in_section = 0
     }
     {
-      if (in_section && $0 ~ /^- \[ \] /) {
+      if (in_section && $0 ~ /^- \[ \] / && criteria_has_match(substr($0, 7))) {
         sub(/^- \[ \] /, "- [x] ")
       }
       print
     }
   ' "$ticket_file" > "$tmp"
   mv "$tmp" "$ticket_file"
+  if [ -n "$criteria_file" ]; then
+    rm -f "$criteria_file"
+  fi
 }
 
 # Append a new note while replacing any prior note line whose body begins with

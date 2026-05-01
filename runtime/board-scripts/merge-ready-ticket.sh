@@ -695,6 +695,19 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
       printf 'project_root=%s\n' "$PROJECT_ROOT"
       exit 0
       ;;
+    dirty_project_root_conflict)
+      ticket_goal_block "$ticket_file" "dirty_project_root_conflict"
+      printf 'status=blocked\n'
+      printf 'reason=dirty_project_root_conflict\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf 'run=%s\n' "$run_file"
+      printf '%s\n' "$merge_output"
+      printf 'next_action=Commit/stash or intentionally integrate PROJECT_ROOT dirty changes before merge finalization continues.\n'
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+      ;;
     cherry_pick_conflict|invalid_worktree_commit_scope|missing_worktree_commit|missing_allowed_paths|rebase_conflict)
       ticket_file="$(move_ticket_to_merge_blocked "$ticket_file" "$run_file" "$current_reason")"
       rm -f "$merge_retry_state_file"
@@ -747,17 +760,13 @@ rm -f "$merge_retry_state_file"
 
 done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
 mkdir -p "$(dirname "$done_target")"
-replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "done"
-replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-replace_section_block "$ticket_file" "Next Action" "- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit."
-append_note "$ticket_file" "Inline merge finalizer (worker ${display_id}) finalized this verified ticket at ${timestamp}."
-if [ "$ticket_file" != "$done_target" ]; then
-  mv "$ticket_file" "$done_target"
-  ticket_file="$done_target"
-fi
 
 pre_cleanup_stage_output="$(stage_integrated_product_paths_before_cleanup "$(git_root_path || true)" "$ticket_file" 2>&1)"
 cleanup_output="$(cleanup_completed_ticket_worktree "$ticket_file" "$ticket_id" 2>&1)" || {
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_post_merge_cleanup"
+  replace_section_block "$ticket_file" "Next Action" "- Fail: final merge cleanup failed after verification. AI/owner must rerun merge finalization only after cleanup is resolved; do not claim another ticket until this ticket is cleared by owner or planner."
   ticket_goal_block "$ticket_file" "post_merge_cleanup_failed"
   printf 'status=blocked\n'
   printf 'reason=post_merge_cleanup_failed\n'
@@ -769,6 +778,15 @@ cleanup_output="$(cleanup_completed_ticket_worktree "$ticket_file" "$ticket_id" 
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   exit 0
 }
+
+replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "done"
+replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+replace_section_block "$ticket_file" "Next Action" "- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit."
+append_note "$ticket_file" "Inline merge finalizer (worker ${display_id}) finalized this verified ticket at ${timestamp}."
+if [ "$ticket_file" != "$done_target" ]; then
+  mv "$ticket_file" "$done_target"
+  ticket_file="$done_target"
+fi
 log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
 wiki_output="$(auto_update_wiki)"
 # Inline AI synthesis is intentionally skipped here. wiki-1 (the dedicated

@@ -324,6 +324,9 @@ if [ -z "$implementation_root" ]; then
 fi
 : >"${implementation_root}/owner-done.txt"
 
+ticket_inprogress_file="${project_dir}/.autoflow/tickets/inprogress/tickets_001.md"
+perl -0pi -e 's/- \[ \] Implementation stays inside Allowed Paths/- [x] Implementation stays inside Allowed Paths/' "$ticket_inprogress_file"
+
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/verify-ticket-owner.sh 001 >"$verify_output"
 require_line "$verify_output" "status=pass"
 require_line "$verify_output" "ticket_id=001"
@@ -369,8 +372,9 @@ if ! rg -q "^- \\[x\\] " "$done_ticket"; then
   rg "^- \\[ \\]" "$done_ticket" >&2
   exit 1
 fi
-if rg -q "^- \\[ \\]" "$done_ticket"; then
-  echo "All Done When items should be checked after pass path in the smoke ticket." >&2
+require_line "$done_ticket" "- [x] Implementation stays inside Allowed Paths"
+if ! rg -q "^- \\[ \\]" "$done_ticket"; then
+  echo "Unchanged unchecked Done When items should remain when only explicit evidence is checked." >&2
   rg "^- \\[ \\]" "$done_ticket" >&2
   exit 1
 fi

@@ -583,6 +583,18 @@ case "$outcome" in
         printf 'project_root=%s\n' "$PROJECT_ROOT"
         exit 0
       fi
+      if [ "$merge_prep_status" = "blocked" ]; then
+        ticket_goal_block "$ticket_file" "${merge_prep_reason:-merge_preparation_failed}"
+        printf 'status=blocked\n'
+        printf 'reason=%s\n' "${merge_prep_reason:-merge_preparation_failed}"
+        printf 'ticket=%s\n' "$ticket_file"
+        printf 'ticket_id=%s\n' "$ticket_id"
+        printf '%s\n' "$merge_prep_output"
+        printf 'next_action=Resolve the merge preparation blocker before ticket-owner continues. Runtime scripts will not overwrite dirty PROJECT_ROOT paths.\n'
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        exit 0
+      fi
       merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
       append_note "$ticket_file" "AI pass finish blocked during merge preparation at ${timestamp}: ${merge_prep_output_single_line}"
@@ -606,7 +618,7 @@ case "$outcome" in
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- Next: ticket-owner AI manually integrates verified worktree changes into PROJECT_ROOT if needed, reruns verification, then reruns finish. The runtime finalizer only archives/logs/commits an already AI-merged result."
     append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp}; runtime finalizer will not perform merge operations."
-    mark_ticket_done_when_checked "$ticket_file"
+    mark_ticket_done_when_checked "$ticket_file" "$run_file"
     replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
 - Log file: pending AI merge finalization
 - Result: passed by ${display_id} at ${timestamp}"
