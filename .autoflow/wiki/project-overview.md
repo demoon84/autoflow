@@ -4,7 +4,7 @@
 
 Autoflow is an AI-native project orchestration system.
 As of the latest deterministic wiki baseline refresh, the project has reached a stable 3-runner topology (`planner-1`, `owner-1`, `wiki-1`) with a polished Desktop UI. Focused AI synthesis pages may be added after that baseline timestamp without immediately advancing the managed summary block below. See [[architecture/runner-role-slugs]] for the runner naming baseline.
-The managed summary block below is a deterministic baseline snapshot that currently lists 76 completed tickets; focused synth pages may describe newer follow-ups before the next baseline refresh rewrites this section.
+The managed summary block below is a deterministic baseline snapshot that currently lists 77 completed tickets; focused synth pages may describe newer follow-ups before the next baseline refresh rewrites this section.
 Ticket ids are not contiguous: higher ids such as `tickets_058` or `tickets_059` can appear in focused synthesis even when the completed-ticket count is lower because retries, rejects, and PRD-only archives also consume sequence numbers.
 Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]]. Recent synthesis now also tracks May 2 follow-ups such as `prd_085` / `tickets_083` (`[[answers/todo-pin-open-vs-issued-count-20260502]]`) alongside `prd_088` (`[[answers/done-when-checklist-state]]`), `prd_089` (`[[answers/order-inbox-memo-delete]]`), and `prd_090` (`[[answers/desktop-sidebar-korean-labels]]`) in [[index]] under `Recent Synthesis`.
 
@@ -33,11 +33,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 77
+- Done tickets: 78
 - Reject records: 5
-- Verifier logs: 304
+- Verifier logs: 305
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T19:51:49Z
+- Last updated: 2026-05-01T19:53:53Z
 
 ## Latest Completed Work
 
