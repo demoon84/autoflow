@@ -106,6 +106,7 @@ runner_set_output="${project_dir}/runner-set.out"
 runner_dry_run_output="${project_dir}/runner-dry-run.out"
 wiki_codex_dry_run_output="${project_dir}/wiki-codex-dry-run.out"
 wiki_runner_dry_run_output="${project_dir}/wiki-runner-dry-run.out"
+wiki_update_output="${project_dir}/wiki-update.out"
 runner_loop_start_output="${project_dir}/runner-loop-start.out"
 runner_loop_list_output="${project_dir}/runner-loop-list.out"
 runner_loop_stop_output="${project_dir}/runner-loop-stop.out"
@@ -351,6 +352,8 @@ test -f "${project_dir}/owner-done.txt"
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified" >"$finish_output"
 require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
+require_line "$finish_output" "inline_merge=done; log written; wiki deferred to Wiki AI"
+require_line "$finish_output" "wiki.status=ai_owned"
 require_line "$finish_output" "commit_status=committed_via_inline_merge"
 completion_subject="$(git -C "$project_dir" log -1 --pretty=%s)"
 if [ "$completion_subject" != "[prd_001] owner smoke artifact verified" ]; then
@@ -359,6 +362,11 @@ if [ "$completion_subject" != "[prd_001] owner smoke artifact verified" ]; then
 fi
 if ! git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD | grep -Fxq "owner-done.txt"; then
   echo "Completion commit must include the product file change." >&2
+  git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD >&2
+  exit 1
+fi
+if git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD | grep -q '^.autoflow/wiki/'; then
+  echo "Completion commit must not include wiki files; Wiki AI owns wiki updates." >&2
   git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD >&2
   exit 1
 fi
@@ -405,6 +413,10 @@ require_line "$merge_output" "reason=no_problem_detected"
 require_line "$merge_output" "coordinator.ready_to_merge_count=0"
 require_line "$merge_output" "coordinator.merge_attempted=false"
 require_line "$merge_output" "coordinator.merge_status=not_applicable"
+
+"${REPO_ROOT}/bin/autoflow" wiki update "$project_dir" >"$wiki_update_output"
+require_line "$wiki_update_output" "status=updated"
+require_line "$wiki_update_output" "changed_file_count=3"
 require_line "${project_dir}/.autoflow/wiki/index.md" "<!-- AUTOFLOW:BEGIN work-map -->"
 require_pattern "${project_dir}/.autoflow/wiki/project-overview.md" 'Done tickets: 1'
 

@@ -3161,7 +3161,7 @@ resolve_verifier_owner_for_claim() {
   printf '%s' "$selected_owner"
 }
 
-# Wiki baseline write lock — serializes Impl AI inline update + Wiki AI tick.
+# Wiki baseline write lock — serializes explicit Wiki AI/tool update calls.
 # Portable mkdir-based mutex (works on macOS without flock).
 acquire_wiki_baseline_lock() {
   local lock_dir="$1"

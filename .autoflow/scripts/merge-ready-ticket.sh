@@ -469,10 +469,6 @@ stage_ticket_commit_scope() {
     done < <(find "${BOARD_ROOT}/logs" -maxdepth 1 -type f -name "verifier_${ticket_id}_*.md" 2>/dev/null)
   fi
 
-  for wiki_file in index.md log.md project-overview.md; do
-    stage_git_path_if_present "$git_root" "${BOARD_ROOT}/wiki/${wiki_file}"
-  done
-
   while IFS= read -r allowed_path; do
     [ -n "$allowed_path" ] || continue
     allowed_path_is_concrete_repo_path "$allowed_path" || continue
@@ -621,46 +617,9 @@ cleanup_completed_ticket_worktree() {
   fi
 }
 
-prefix_wiki_output() {
-  awk '
-    index($0, "=") > 0 {
-      print "wiki." $0
-      next
-    }
-    NF > 0 {
-      count += 1
-      print "wiki.output." count "=" $0
-    }
-  '
-}
-
-auto_update_wiki() {
-  local wiki_output wiki_exit
-
-  if [ "${AUTOFLOW_SKIP_WIKI_UPDATE:-}" = "1" ]; then
-    printf 'wiki.status=skipped_by_env\n'
-    return 0
-  fi
-
-  if [ ! -x "${BOARD_ROOT}/scripts/update-wiki.sh" ]; then
-    printf 'wiki.status=missing_runtime\n'
-    printf 'wiki.script=%s\n' "${BOARD_ROOT}/scripts/update-wiki.sh"
-    return 0
-  fi
-
-  set +e
-  wiki_output="$("${BOARD_ROOT}/scripts/update-wiki.sh" 2>&1)"
-  wiki_exit="$?"
-  set -e
-
-  if [ "$wiki_exit" -eq 0 ]; then
-    printf '%s\n' "$wiki_output" | prefix_wiki_output
-    return 0
-  fi
-
-  printf 'wiki.status=failed\n'
-  printf 'wiki.exit_code=%s\n' "$wiki_exit"
-  printf '%s\n' "$wiki_output" | prefix_wiki_output
+wiki_ai_owned_notice() {
+  printf 'wiki.status=ai_owned\n'
+  printf 'wiki.next_action=Wiki AI inspects done/reject/log sources and runs scripts/update-wiki.sh only when material baseline drift exists.\n'
 }
 
 ticket_file="$(resolve_ready_ticket_file "$ticket_ref" || true)"
@@ -788,12 +747,10 @@ if [ "$ticket_file" != "$done_target" ]; then
   ticket_file="$done_target"
 fi
 log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
-wiki_output="$(auto_update_wiki)"
-# Inline AI synthesis is intentionally skipped here. wiki-1 (the dedicated
-# Wiki AI loop runner) layers `autoflow wiki query --synth` and
-# `autoflow wiki lint --semantic` on top of the deterministic update above
-# on its own tick, so we do not double-trigger the maintainer adapter
-# from inside the merge step.
+wiki_output="$(wiki_ai_owned_notice)"
+# Wiki baseline and synthesis are intentionally deferred to wiki-1. This
+# finalizer is a merge/evidence/commit tool; it must not rewrite wiki pages
+# just because a ticket was finalized.
 ticket_goal_complete "$ticket_file" "complete"
 commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
 clear_active_ticket_context_record || true

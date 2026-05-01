@@ -114,46 +114,9 @@ git_commit_if_possible() {
   printf 'commit_hash=%s\n' "$(git -C "$git_root" rev-parse --verify HEAD)"
 }
 
-prefix_wiki_output() {
-  awk '
-    index($0, "=") > 0 {
-      print "wiki." $0
-      next
-    }
-    NF > 0 {
-      count += 1
-      print "wiki.output." count "=" $0
-    }
-  '
-}
-
-auto_update_wiki() {
-  local wiki_output wiki_exit
-
-  if [ "${AUTOFLOW_SKIP_WIKI_UPDATE:-}" = "1" ]; then
-    printf 'wiki.status=skipped_by_env\n'
-    return 0
-  fi
-
-  if [ ! -x "${BOARD_ROOT}/scripts/update-wiki.sh" ]; then
-    printf 'wiki.status=missing_runtime\n'
-    printf 'wiki.script=%s\n' "${BOARD_ROOT}/scripts/update-wiki.sh"
-    return 0
-  fi
-
-  set +e
-  wiki_output="$("${BOARD_ROOT}/scripts/update-wiki.sh" 2>&1)"
-  wiki_exit="$?"
-  set -e
-
-  if [ "$wiki_exit" -eq 0 ]; then
-    printf '%s\n' "$wiki_output" | prefix_wiki_output
-    return 0
-  fi
-
-  printf 'wiki.status=failed\n'
-  printf 'wiki.exit_code=%s\n' "$wiki_exit"
-  printf '%s\n' "$wiki_output" | prefix_wiki_output
+wiki_ai_owned_notice() {
+  printf 'wiki.status=ai_owned\n'
+  printf 'wiki.next_action=Wiki AI inspects done/reject/log sources and runs scripts/update-wiki.sh only when material baseline drift exists.\n'
 }
 
 ticket_file="$(resolve_ticket_file "$ticket_ref" || true)"
@@ -202,7 +165,7 @@ case "$outcome" in
     fi
 
     log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
-    wiki_output="$(auto_update_wiki)"
+    wiki_output="$(wiki_ai_owned_notice)"
     commit_output="$(git_commit_if_possible "$ticket_file")"
 
     printf 'status=done\n'
@@ -245,7 +208,7 @@ case "$outcome" in
     fi
 
     log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" fail)"
-    wiki_output="$(auto_update_wiki)"
+    wiki_output="$(wiki_ai_owned_notice)"
 
     printf 'status=rejected\n'
     printf 'outcome=fail\n'

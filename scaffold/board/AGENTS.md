@@ -30,11 +30,11 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 기본 토폴로지는 **Orchestrator AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. 멀티 owner 로 인한 worktree base drift / Allowed Paths 충돌 때문에 단일 Impl AI 로 직렬화했고, 세 역할은 디스조인트한 경로만 쓰기 때문에 동시에 ticking 해도 충돌이 발생하지 않는다.
 
 - `planner-1` (role=`planner`): Orchestrator AI. 입력은 `tickets/inbox/` memo, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드/worktree 는 절대 건드리지 않는다.
-- `owner-1` (role=`ticket-owner`): Impl AI. `tickets/todo/` claim → `tickets/inprogress/` worktree → mini-plan + 구현 + 검증 + AI-led merge + `tickets/done/` 까지 한 턴에 끝낸다. 머지 직후 `update-wiki.sh` 를 inline 으로 호출해 wiki 의 deterministic baseline 을 즉시 갱신한다.
-- `wiki-1` (role=`wiki-maintainer`): Wiki AI. 1분 tick. `.autoflow/tickets/done/` 와 `.autoflow/tickets/reject/` 변동을 감지하면 `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 같은 AI synthesis 를 수행해 `.autoflow/wiki/` 의 의미적 정리를 갱신한다. 변동 없으면 idle.
+- `owner-1` (role=`ticket-owner`): Impl AI. `tickets/todo/` claim → `tickets/inprogress/` worktree → mini-plan + 구현 + 검증 + AI-led merge + `tickets/done/` 까지 한 턴에 끝낸다. 완료 finalizer 는 evidence/log/commit 만 처리하고 wiki 는 직접 갱신하지 않는다.
+- `wiki-1` (role=`wiki-maintainer`): Wiki AI. 1분 tick. `.autoflow/tickets/done/` 와 `.autoflow/tickets/reject/` 변동을 먼저 판단하고, 실제 baseline drift 가 있을 때만 `autoflow wiki update` / `update-wiki.sh` 를 도구로 호출한다. 확인-only 이력은 `.autoflow/runners/state/wiki-baseline.history` 에 남기고, 내용 변화가 없으면 idle 또는 `status=unchanged` 로 끝낸다.
 - `coordinator`, `merge-bot`, 추가 owner 는 신규 보드에서 더 이상 기본 runner 가 아니다. role 식별자 자체는 호환성을 위해 살아 있지만, `.autoflow/runners/config.toml` 의 디폴트는 `planner-1` + `owner-1` + `wiki-1` 세 개만이다.
 
-경로 분할이 충돌 방지의 핵심이다. Orchestrator AI ⊂ `.autoflow/tickets/{inbox,backlog,todo,inprogress,reject,done}/` 의 markdown-only 계획/복구 상태, Impl AI ⊂ product 코드 + 해당 ticket worktree + `tickets/{todo,inprogress,done,reject}/` 의 자기 티켓 파일 + 머지 시 `.autoflow/wiki/`(deterministic update), Wiki AI ⊂ `.autoflow/wiki/` (AI synthesis only).
+경로 분할이 충돌 방지의 핵심이다. Orchestrator AI ⊂ `.autoflow/tickets/{inbox,backlog,todo,inprogress,reject,done}/` 의 markdown-only 계획/복구 상태, Impl AI ⊂ product 코드 + 해당 ticket worktree + `tickets/{todo,inprogress,done,reject}/` 의 자기 티켓 파일, Wiki AI ⊂ `.autoflow/wiki/` 의 실제 wiki content update + `.autoflow/runners/state/wiki-baseline.history` 의 확인 이력. Impl AI 는 wiki 파일을 ticket completion commit 에 섞지 않는다.
 
 ## Root Rules
 
@@ -58,7 +58,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 15a. 터미널 / adapter / heartbeat 에서 사용자가 읽는 AI 대화, 진행 요약, 설명 문장은 기본적으로 한국어로 쓴다. 단, key=value 출력, 경로, 명령어, 코드, ticket 필드, parser 가 읽는 형식, AI용 보드 계약은 원래 포맷과 언어를 유지한다.
 16. 사용자 노출 worker 표기(`ticket`, `verification`, `log`, desktop markdown preview`)는 storage 식별자 `owner-N` / legacy `ai-N` 를 preferred display wording 으로 정규화한다. 해당 역할의 enabled runner 가 1개뿐이면 `worker`처럼 숫자 접미사를 숨기고, 2개 이상이면 `worker-N` 형태를 유지한다. runner state 파일 이름, runtime role 키, config 상의 실제 worker id 는 바꾸지 않는다.
 17. 데스크톱 UI 컴포넌트(`apps/desktop/src/components/ui/` + 그 위 화면)는 **shadcn/ui 컴포넌트(또는 동일한 Radix 기반 wrapper)를 우선** 사용한다. modal/dialog/sheet/popover/tooltip/dropdown/command/toast 등 인터랙션 패턴이 있으면 직접 `<div>` + custom CSS 로 짓지 말고 shadcn 의 표준 컴포넌트를 추가(또는 추가 후 wrap)해 그 위에서 스타일·variant 만 확장한다. shadcn 에 없는 정말 도메인 특수 컴포넌트만 자체 구현이 허용되며, 그 경우에도 ARIA / focus trap / keyboard escape 같은 접근성 요건을 충족한다. 기존 자체 구현이 같은 패턴을 다루고 있다면 shadcn 으로 점진 마이그레이션한다.
-18. wiki 자동화 규칙: 3-runner 토폴로지에서 wiki 는 두 단계로 갱신된다. (1) Impl AI 의 `finish-ticket-owner.sh` pass 분기가 inline 으로 부르는 `merge-ready-ticket.sh` 가 deterministic `update-wiki.sh` 를 실행해 `.autoflow/wiki/` 의 baseline (index/log/overview) 을 즉시 동기화한다. (2) 별도 `wiki-1` (role=`wiki-maintainer`) loop runner 가 1분 tick 마다 `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 같은 AI synthesis 를 layer 한다. (1) 의 inline 호출은 단일 출처 원칙을 위해 AI synthesis 를 더 이상 트리거하지 않으며, AI 합성은 모두 wiki-1 의 책임이다.
+18. wiki 자동화 규칙: wiki 는 Wiki AI(`wiki-1`) 가 소유한다. Impl AI 의 `finish-ticket-owner.sh` / `merge-ready-ticket.sh` finalizer 는 `update-wiki.sh` 를 자동 호출하거나 `.autoflow/wiki/` 를 completion commit 에 stage 하지 않는다. `wiki-1` 이 source 변화와 기존 managed baseline 을 먼저 보고 실제 수정이 필요할 때만 `autoflow wiki update` 를 도구로 호출한다. 내용 변화가 없고 확인 시간만 있는 경우에는 `.autoflow/runners/state/wiki-baseline.history` 만 갱신하며 wiki commit 을 만들지 않는다. AI synthesis 는 `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 로 별도 수행한다.
 
 ## Trigger Interpretation
 

@@ -3,8 +3,8 @@
 > **DEPRECATED:** Coordinator is no longer a default runner in the
 > 3-runner topology (planner-1 + owner-1 + wiki-1). Its responsibilities
 > have been split: Impl AI (`owner-1`) does its own AI-led merge inside
-> `finish-ticket-owner.*`, and Wiki AI (`wiki-1`) layers AI synthesis on
-> the deterministic baseline. The role identifier is kept for backwards
+> `finish-ticket-owner.*`, and Wiki AI (`wiki-1`) owns deterministic wiki
+> baseline refresh plus AI synthesis. The role identifier is kept for backwards
 > compatibility with existing user configs that opt into a coordinator
 > runner; new boards should not add one.
 
@@ -35,7 +35,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - Worktree health findings: missing worktree, non-git worktree, branch mismatch, project-root fallback, or shared non-base HEAD.
 - Dirty `PROJECT_ROOT` overlap findings for active ticket `Allowed Paths`.
 - If a ready ticket exists, finalizer runtime output for one ready ticket.
-- Updated derived wiki pages or a concise wiki maintenance skip/failure status from the merge/wiki runtime.
+- A concise wiki handoff or explicit wiki maintenance status from the merge/wiki runtime.
 - A recommended next safe action.
 - For every auto-remediation taken, a structured `coordinator_<ts>_remediation_<kind>_<subject>.md` log under `.autoflow/logs/` with YAML frontmatter (`type`, `kind`, `subject`, `fingerprint`, `timestamp`, `source`) so the wiki maintainer can ingest remediation history.
 - `coordinator.runner_failure_pattern_*` and `coordinator.shared_head_remediation_log_paths` keys list the remediation events emitted this turn.
@@ -65,7 +65,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 7. If no merge was attempted and `coordinator.diagnosis_attempted=true`, inspect `doctor_output` and summarize blockers.
 8. If `coordinator.diagnosis_attempted=false`, report idle health or the unchanged-problem skip reason without inventing a new diagnosis.
 9. If finalization was attempted, inspect `merge_output` and summarize done, needs_ai_merge, blocked, or failed result.
-10. If `merge_output` includes `wiki.*` or `wiki_maintainer.*`, summarize whether deterministic wiki rebuild and wiki-bot maintenance updated, skipped, or failed.
+10. If `merge_output` includes `wiki.*` or `wiki_maintainer.*`, summarize whether wiki work was handed off to Wiki AI, updated, skipped, or failed.
 11. For an explicit wiki-bot turn, update derived wiki pages from the latest done ticket, related verification log, conversation handoff, and existing related wiki pages. Use managed sections and cite sources.
 12. For every `check.ticket_NNN_shared_path_blockers=warning`, read `doctor.ticket.NNN.blockers`.
 13. For every worktree warning, inspect `doctor.ticket.NNN.worktree_*` fields before suggesting action.

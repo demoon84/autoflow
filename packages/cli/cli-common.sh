@@ -475,7 +475,7 @@ print_status_summary() {
   printf 'verify_run_count=%s\n' "$verify_run_count"
 }
 
-# Wiki baseline write lock — serializes Impl AI inline update + Wiki AI tick.
+# Wiki baseline write lock — serializes explicit Wiki AI/tool update calls.
 # Portable mkdir-based mutex (works on macOS without flock).
 acquire_wiki_baseline_lock() {
   local lock_dir="$1"

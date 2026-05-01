@@ -236,7 +236,7 @@
   - 문제가 감지된 경우에만 `doctor-project.sh` 진단을 실행하고, 같은 문제 fingerprint 가 반복되면 full doctor 를 스킵한다.
   - 직접 구현하거나 검증 판정을 바꾸지 않고, rebase/cherry-pick/conflict resolution/product-code merge 도 수행하지 않는다.
   - finalizer/runtime 출력과 doctor 출력을 함께 key=value 로 남긴다.
-  - 3-runner topology 에서는 Impl AI 의 `finish-ticket-owner pass` 가 inline 으로 deterministic wiki rebuild 를 실행하고, AI synthesis 는 `wiki-1` 이 별도 tick 으로 layer 한다. coordinator 의 wiki-bot adapter 재사용 분기는 round 1 (commit db8cc57) 에서 제거됐다.
+  - 3-runner topology 에서는 wiki baseline 과 AI synthesis 를 모두 `wiki-1` 이 소유한다. Impl AI 의 `finish-ticket-owner pass` / `merge-ready-ticket` finalizer 는 `update-wiki.sh` 를 자동 호출하거나 `.autoflow/wiki/` 를 ticket completion commit 에 stage 하지 않는다. `wiki-1` 이 source 변화와 managed baseline 을 확인한 뒤 실제 drift 가 있을 때만 `autoflow wiki update` 를 도구로 호출한다. coordinator 의 wiki-bot adapter 재사용 분기는 round 1 (commit db8cc57) 에서 제거됐다.
 
 - `upgrade-project.sh`
   - 공용 runtime/template 자산을 최신 패키지 기준으로 갱신한다.

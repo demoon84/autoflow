@@ -38,7 +38,7 @@ First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work c
 - `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, refresh wiki baseline, create local commit) only after you have merged the code yourself.
 - `scripts/integrate-worktree.*` — create or reuse a ticket worktree and detect overlapping Allowed Path conflicts. Called from inside the start/verify scripts; you can also invoke it directly when recovering from a missing worktree.
 - `scripts/merge-ready-ticket.*` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
-- `scripts/update-wiki.*` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Inline-called from the pass finalizer; AI synthesis is `wiki-1`'s job, never trigger it from this path.
+- `scripts/update-wiki.*` — Wiki AI's deterministic baseline refresh tool (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Do not call it from ticket completion unless the user explicitly assigns wiki maintenance to this runner; completion commits must not stage `.autoflow/wiki/`.
 - `autoflow wiki query --term <text>` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work.
 - `autoflow wiki lint [--semantic]` — reports wiki integrity issues (orphans, stale references). Use when triaging wiki gaps surfaced by `wiki query`.
 - `protocols/owner-contract.md`, `protocols/recovery.md` — planner/owner orchestration boundary and failure reporting contract.
@@ -58,7 +58,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 8. On pass, manually integrate the verified worktree changes into `PROJECT_ROOT`, resolving rebase/cherry-pick/content conflicts yourself as the AI owner. If conflict resolution changes the final content, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result inside Allowed Paths so the finalizer can validate it.
 9. Rerun the needed verification after merge from the correct root.
 10. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
-11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, refresh deterministic wiki sections, and create the local completion commit, but it must not perform the merge.
+11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, and create the local completion commit, but it must not perform the merge or update wiki pages.
 12. If `finish-ticket-owner.* pass` or `merge-ready-ticket.*` returns `status=needs_ai_merge`, do not treat the ticket as done and do not claim another ticket. Continue the same ticket: integrate verified worktree changes into `PROJECT_ROOT`/main inside `Allowed Paths`, rerun required verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.* pass`.
 13. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 14. Never push.

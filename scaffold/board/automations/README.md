@@ -8,8 +8,8 @@ Default 3-runner topology (planner-1 + owner-1 + wiki-1):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
 - `planner-1` (Orchestrator AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns memo promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
-- `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. Refreshes the deterministic wiki baseline inline at merge time.
-- `wiki-1` (Wiki AI): ticks every minute and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) over the deterministic baseline whenever `tickets/done/` or `tickets/reject/` changes. Path scope: `.autoflow/wiki/` only.
+- `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
+- `wiki-1` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
 - The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
 
 Legacy role-pipeline model (compatibility only — DEPRECATED):
@@ -115,13 +115,15 @@ fallback):
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
 - `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no separate wiki route is needed; Impl AI's `finish-ticket-owner pass` runs the deterministic `update-wiki.sh` inline so the baseline stays fresh, and `wiki-1` layers AI synthesis on its own heartbeat.
+- `tickets/done/`: no script-driven wiki route is needed. `wiki-1` inspects done/reject/log sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
 
 ## Operating Principle
 
 Board stage is authoritative. The chat transcript is not.
 
 Planner AI is the board orchestrator. Ticket-owner AI is the executor for one ticket. Runtime scripts are safety-kernel tools for claim/state/evidence/finalization; they must not be the actor that plans recovery, implements, verifies, rebases, cherry-picks, resolves conflicts, or merges product code.
+
+Wiki baseline updates follow the same AI-first rule. The Wiki AI inspects inputs first and calls `autoflow wiki update` as a deterministic tool only when a baseline refresh is warranted. The tool must not rewrite committed wiki pages for check timestamps alone; check metadata is recorded in `runners/state/wiki-baseline.history`.
 
 Protocol files under `protocols/` define the AI-first workflow:
 

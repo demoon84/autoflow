@@ -243,7 +243,62 @@ replace_managed_section() {
     }
   ' "$source_file" > "$tmp"
 
+  if wiki_files_match_without_check_timestamps "$file" "$tmp"; then
+    rm -f "$source_file" "$tmp"
+    return 1
+  fi
+
   mv "$tmp" "$file"
+  rm -f "$source_file"
+  return 0
+}
+
+wiki_files_match_without_check_timestamps() {
+  local left="$1"
+  local right="$2"
+  local left_normalized right_normalized
+
+  [ -f "$left" ] || return 1
+  [ -f "$right" ] || return 1
+
+  left_normalized="$(autoflow_mktemp)"
+  right_normalized="$(autoflow_mktemp)"
+
+  sed -E '/^- Last (updated|rebuilt): /d' "$left" > "$left_normalized"
+  sed -E '/^- Last (updated|rebuilt): /d' "$right" > "$right_normalized"
+
+  if cmp -s "$left_normalized" "$right_normalized"; then
+    rm -f "$left_normalized" "$right_normalized"
+    return 0
+  fi
+
+  rm -f "$left_normalized" "$right_normalized"
+  return 1
+}
+
+write_wiki_baseline_history() {
+  local wiki_root="$1"
+  local status="$2"
+  local timestamp="$3"
+  local done_count="$4"
+  local reject_count="$5"
+  local log_count="$6"
+  local handoff_count="$7"
+  local changed_count="$8"
+  local history_file="${BOARD_ROOT}/runners/state/wiki-baseline.history"
+
+  mkdir -p "$(dirname "$history_file")"
+  {
+    printf -- '---\n'
+    printf 'checked_at=%s\n' "$timestamp"
+    printf 'status=%s\n' "$status"
+    printf 'wiki_root=%s\n' "$wiki_root"
+    printf 'changed_file_count=%s\n' "$changed_count"
+    printf 'ticket_done_count=%s\n' "$done_count"
+    printf 'reject_count=%s\n' "$reject_count"
+    printf 'log_count=%s\n' "$log_count"
+    printf 'handoff_count=%s\n' "$handoff_count"
+  } >> "$history_file"
 }
 
 write_default_pages() {
@@ -284,6 +339,8 @@ update_wiki() {
   local done_count reject_count log_count timestamp
   local index_body log_body overview_body
   local index_default log_default overview_default
+  local status changed_count=0 changed_files_list
+  local changed_file idx
 
   if [ ! -d "${BOARD_ROOT}/tickets" ]; then
     printf 'status=blocked\n'
@@ -314,6 +371,8 @@ update_wiki() {
   index_default="$(autoflow_mktemp)"
   log_default="$(autoflow_mktemp)"
   overview_default="$(autoflow_mktemp)"
+  changed_files_list="$(autoflow_mktemp)"
+  : > "$changed_files_list"
   write_default_pages "$index_default" "$log_default" "$overview_default"
 
   {
@@ -370,23 +429,43 @@ update_wiki() {
   mkdir -p "$wiki_root"
   acquire_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"
   trap 'release_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"' EXIT
-  replace_managed_section "${wiki_root}/index.md" "work-map" "$index_body" "$index_default"
-  replace_managed_section "${wiki_root}/log.md" "derived-timeline" "$log_body" "$log_default"
-  replace_managed_section "${wiki_root}/project-overview.md" "project-summary" "$overview_body" "$overview_default"
+  if replace_managed_section "${wiki_root}/index.md" "work-map" "$index_body" "$index_default"; then
+    printf '%s\n' "${wiki_root}/index.md" >> "$changed_files_list"
+  fi
+  if replace_managed_section "${wiki_root}/log.md" "derived-timeline" "$log_body" "$log_default"; then
+    printf '%s\n' "${wiki_root}/log.md" >> "$changed_files_list"
+  fi
+  if replace_managed_section "${wiki_root}/project-overview.md" "project-summary" "$overview_body" "$overview_default"; then
+    printf '%s\n' "${wiki_root}/project-overview.md" >> "$changed_files_list"
+  fi
   release_wiki_baseline_lock "${BOARD_ROOT}/runners/state/wiki-baseline.lock"
   trap - EXIT
 
-  printf 'status=updated\n'
+  changed_count="$(count_lines "$changed_files_list")"
+  if [ "$changed_count" -gt 0 ]; then
+    status="updated"
+  else
+    status="unchanged"
+  fi
+  write_wiki_baseline_history "$wiki_root" "$status" "$timestamp" "$done_count" "$reject_count" "$log_count" "$handoff_count" "$changed_count"
+
+  printf 'status=%s\n' "$status"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'wiki_root=%s\n' "$wiki_root"
+  printf 'checked_at=%s\n' "$timestamp"
   printf 'ticket_done_count=%s\n' "$done_count"
   printf 'reject_count=%s\n' "$reject_count"
   printf 'log_count=%s\n' "$log_count"
   printf 'handoff_count=%s\n' "$handoff_count"
-  printf 'updated_file.1=%s\n' "${wiki_root}/index.md"
-  printf 'updated_file.2=%s\n' "${wiki_root}/log.md"
-  printf 'updated_file.3=%s\n' "${wiki_root}/project-overview.md"
+  printf 'changed_file_count=%s\n' "$changed_count"
+  printf 'history_file=%s\n' "${BOARD_ROOT}/runners/state/wiki-baseline.history"
+  idx=0
+  while IFS= read -r changed_file; do
+    [ -n "$changed_file" ] || continue
+    idx="$((idx + 1))"
+    printf 'updated_file.%s=%s\n' "$idx" "$changed_file"
+  done < "$changed_files_list"
 }
 
 dry_run="false"

@@ -94,13 +94,18 @@ Create owner-done.txt.
 - Command: test -f owner-done.txt
 SPEC
 
-git -C "$project_dir" add .autoflow .claude .codex bin
-git -C "$project_dir" commit -m "baseline" >/dev/null
-
+plan_output="${project_dir}/plan.out"
 start_output="${project_dir}/start.out"
 verify_output="${project_dir}/verify.out"
 finish_output="${project_dir}/finish.out"
 merge_output="${project_dir}/merge.out"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-1 ./scripts/start-plan.sh >"$plan_output"
+require_line "$plan_output" "status=ok"
+require_line "$plan_output" "source=backlog-to-todo"
+
+git -C "$project_dir" add .autoflow .claude .codex bin
+git -C "$project_dir" commit -m "baseline" >/dev/null
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
@@ -115,12 +120,13 @@ require_line "$verify_output" "status=pass"
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "owner done file verified" >"$finish_output"
 require_line "$finish_output" "status=ready_to_merge"
 
+cp "${worktree_path}/owner-done.txt" "${project_dir}/owner-done.txt"
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=coordinator-self ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
 require_line "$merge_output" "status=done"
-# auto_run_wiki_maintainer was removed in cce1ea5 (3-runner topology); AI
-# synthesis is wiki-1's exclusive responsibility and the inline call no
-# longer fires from merge-ready-ticket.sh, so wiki_maintainer.* keys are
-# intentionally absent from this output.
+# auto_run_wiki_maintainer was removed in cce1ea5 (3-runner topology), and
+# update-wiki is no longer auto-called from merge-ready-ticket.sh. Wiki work is
+# AI-owned, so finalization emits a handoff notice instead of mutating wiki.
+require_line "$merge_output" "wiki.status=ai_owned"
 require_line "$merge_output" "commit_status=committed"
 
 echo "status=ok"

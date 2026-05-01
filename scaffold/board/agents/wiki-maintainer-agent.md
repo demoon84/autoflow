@@ -32,13 +32,15 @@ include a repo-local CLI path in their context so this runner works when
 
 You are the Wiki AI synthesis owner, not the board orchestrator. The commands below are tools you call. The runner ticks you on a 1-minute heartbeat; never poll yourself, and never expect a script to drive the loop.
 
-- `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). The Impl AI's `finish-ticket-owner` pass already runs this inline on every ticket merge, so the baseline is usually fresh by the time you tick. Re-run only when you detect drift.
+First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
+
+- `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Run it only when you detect material baseline drift or new source files that are not reflected in the managed sections. If the tool emits `status=unchanged`, treat `history_file` as the check ledger and do not create a wiki commit from timestamp-only output.
 - `"$AUTOFLOW_CLI" wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
 - `"$AUTOFLOW_CLI" wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
 - `"$AUTOFLOW_CLI" wiki lint [--semantic]` — reports orphan pages, stale references, and citation gaps. Run after synthesis to catch new issues you introduced.
 - File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
-Single-source-of-AI-synthesis rule: AI-driven wiki synthesis lives only in this runner. The Impl AI's inline `update-wiki.sh` baseline path is deterministic only and must never trigger AI synthesis.
+Single-source-of-wiki rule: deterministic baseline refresh and AI-driven wiki synthesis both live in this runner. Ticket completion finalizers must not call `update-wiki.sh` or stage `.autoflow/wiki/`; they emit `wiki.status=ai_owned` so this runner can decide what to do on its tick.
 
 ## Rules
 
@@ -53,7 +55,7 @@ Single-source-of-AI-synthesis rule: AI-driven wiki synthesis lives only in this 
 ## Procedure
 
 1. Identify the input set for this run: latest done ticket, related verification log, conversation handoff, and any existing wiki page under `wiki/decisions/`, `wiki/features/`, `wiki/architecture/`, or `wiki/learnings/` that already covers the same topic.
-2. Run or inspect `autoflow wiki update` when available, then create or merge focused entity/concept pages from those inputs instead of copying ticket prose directly.
+2. Inspect the input diff and existing managed baseline. Run `autoflow wiki update` only when there is material drift or new source content to reflect; `status=unchanged` is a successful check, not a wiki content change.
 3. Keep the run idempotent: same sources should converge to the same managed content, duplicate headings should be merged, and repeated runs should not append near-identical bullets.
 4. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
 5. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.

@@ -410,12 +410,7 @@ stage_ticket_commit_scope() {
     done < <(find "${BOARD_ROOT}/logs" -maxdepth 1 -type f -name "verifier_${ticket_id}_*.md" 2>/dev/null)
   fi
 
-  # 5. Wiki managed sections updated by auto_update_wiki (index/log/overview).
-  for wiki_file in index.md log.md project-overview.md; do
-    stage_git_path_if_present "$git_root" "${BOARD_ROOT}/wiki/${wiki_file}"
-  done
-
-  # 6. Allowed Paths (product code under this ticket's scope).
+  # 5. Allowed Paths (product code under this ticket's scope).
   while IFS= read -r allowed_path; do
     [ -n "$allowed_path" ] || continue
     allowed_path_is_concrete_repo_path "$allowed_path" || continue
@@ -460,46 +455,9 @@ git_commit_if_possible() {
   printf 'commit_hash=%s\n' "$(git -C "$git_root" rev-parse --verify HEAD)"
 }
 
-prefix_wiki_output() {
-  awk '
-    index($0, "=") > 0 {
-      print "wiki." $0
-      next
-    }
-    NF > 0 {
-      count += 1
-      print "wiki.output." count "=" $0
-    }
-  '
-}
-
-auto_update_wiki() {
-  local wiki_output wiki_exit
-
-  if [ "${AUTOFLOW_SKIP_WIKI_UPDATE:-}" = "1" ]; then
-    printf 'wiki.status=skipped_by_env\n'
-    return 0
-  fi
-
-  if [ ! -x "${BOARD_ROOT}/scripts/update-wiki.sh" ]; then
-    printf 'wiki.status=missing_runtime\n'
-    printf 'wiki.script=%s\n' "${BOARD_ROOT}/scripts/update-wiki.sh"
-    return 0
-  fi
-
-  set +e
-  wiki_output="$("${BOARD_ROOT}/scripts/update-wiki.sh" 2>&1)"
-  wiki_exit="$?"
-  set -e
-
-  if [ "$wiki_exit" -eq 0 ]; then
-    printf '%s\n' "$wiki_output" | prefix_wiki_output
-    return 0
-  fi
-
-  printf 'wiki.status=failed\n'
-  printf 'wiki.exit_code=%s\n' "$wiki_exit"
-  printf '%s\n' "$wiki_output" | prefix_wiki_output
+wiki_ai_owned_notice() {
+  printf 'wiki.status=ai_owned\n'
+  printf 'wiki.next_action=Wiki AI inspects done/reject/log sources and runs scripts/update-wiki.sh only when material baseline drift exists.\n'
 }
 
 move_run_file_to_ready_to_merge() {
@@ -625,7 +583,7 @@ case "$outcome" in
     ticket_goal_activate "$ticket_file" "pass_pending_finalizer"
 
     # Finalization call: verifies that AI already integrated the work into
-    # PROJECT_ROOT, then archives evidence/wiki and creates the local commit.
+    # PROJECT_ROOT, then archives evidence and creates the local commit.
     # It intentionally refuses to perform rebase, cherry-pick, or conflict
     # resolution.
     merge_script="$(cd "$(dirname "$0")" && pwd)/merge-ready-ticket.sh"
@@ -673,8 +631,8 @@ case "$outcome" in
     printf '%s\n' "$merge_prep_output"
     printf 'inline_merge_exit=%s\n' "$inline_merge_exit"
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
-      printf 'inline_merge=done; wiki+log written\n'
-      printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/'
+      printf 'inline_merge=done; log written; wiki deferred to Wiki AI\n'
+      printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/ || /^wiki\.status=/ || /^wiki\.next_action=/'
     elif [ -n "$inline_merge_output" ]; then
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
     fi
@@ -726,7 +684,7 @@ case "$outcome" in
     fi
 
     log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" fail)"
-    wiki_output="$(auto_update_wiki)"
+    wiki_output="$(wiki_ai_owned_notice)"
     clear_active_ticket_context_record || true
     clear_runner_active_state
 
