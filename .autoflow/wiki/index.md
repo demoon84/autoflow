@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/dirty-root-finalization-blockers-20260502]]** (`wiki/answers/dirty-root-finalization-blockers-20260502.md`): 묶음 제약 요약으로 `reject_071`, `reject_074`, `verify_076`이 공통으로 남긴 dirty-root finalization blocker 패턴을 재사용 가능한 planner/owner 참고 지식으로 정리했다.
 - **[[answers/xs-density-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/xs-density-dirty-root-finalization-blocker-20260501.md`): Captured `verify_076` as an xs-density follow-up blocker: the scoped `Button`/`Input` density patch passed in the ticket worktree, but pass finalization must wait until the broader dirty Desktop UI rewrite in `PROJECT_ROOT` is landed or isolated.
 - **[[answers/ticket-detail-layer-meta-layout-20260501]]** (`wiki/answers/ticket-detail-layer-meta-layout-20260501.md`): Captured `prd_077`, which keeps `TicketDetailLayer` metadata on a one-line-first flex-wrap layout instead of a fixed 3-column grid while preserving the existing narrow-screen fallback.
 - **[[answers/desktop-renderer-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md`): Captured `reject_071` as a replay blocker: when visible criteria are already embedded in a broad dirty `renderer` rewrite, finalization must wait for either that rewrite to land or a fresh isolated current-HEAD diff.
@@ -122,11 +123,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 71
+- Done tickets: 72
 - Reject records: 5
-- Verifier logs: 296
+- Verifier logs: 298
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T19:21:05Z
+- Last updated: 2026-05-01T19:26:44Z
 
 ## Completed Tickets
 
