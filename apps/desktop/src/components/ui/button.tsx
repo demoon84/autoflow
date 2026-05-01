@@ -10,9 +10,16 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   size?: ButtonSize;
 }
 
+const resolveButtonSize = (size: ButtonSize): ButtonSize => {
+  if (size === "sm") return "xs";
+  if (size === "icon-sm" || size === "icon") return "icon-xs";
+  return size;
+};
+
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", size = "default", asChild = false, children, type = "button", ...props }, ref) => {
-    const buttonClassName = cn("af-button", `af-button-${variant}`, `af-button-${size}`, className);
+  ({ className, variant = "default", size = "xs", asChild = false, children, type = "button", ...props }, ref) => {
+    const resolvedSize = resolveButtonSize(size);
+    const buttonClassName = cn("af-button", `af-button-${variant}`, `af-button-${resolvedSize}`, className);
 
     if (asChild && React.isValidElement(children)) {
       const child = children as React.ReactElement<{ className?: string }>;

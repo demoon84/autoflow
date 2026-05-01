@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("autoflow", {
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options) => ipcRenderer.invoke("autoflow:controlWatcher", options),
   readBoardFile: (options) => ipcRenderer.invoke("autoflow:readBoardFile", options),
+  deleteInboxMemoFile: (options) => ipcRenderer.invoke("autoflow:deleteInboxMemoFile", options),
   projectExists: (projectRoot) => ipcRenderer.invoke("autoflow:projectExists", projectRoot),
   cancelInvocation: (invocationId) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId)
 });

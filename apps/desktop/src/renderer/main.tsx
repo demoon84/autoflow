@@ -740,7 +740,7 @@ function commandPreviewForRunner(
   }
 
   if (draft.agent === "gemini") {
-    return ["gemini --approval-mode auto_edit --prompt prompt", model ? `--model ${shellArg(model)}` : ""]
+    return ["gemini --skip-trust --approval-mode auto_edit --prompt prompt", model ? `--model ${shellArg(model)}` : ""]
       .filter(Boolean)
       .join(" ");
   }
@@ -1950,7 +1950,12 @@ function App() {
               {!setupRequired && visibleSettingsSection === "kanban" && (
                 <section className="dashboard-area" aria-label="티켓 정보">
                   <section className="board-section board-section-flush" aria-label="티켓 정보 보드">
-                    <TicketKanban board={board} options={options} />
+                    <TicketKanban
+                      board={board}
+                      options={options}
+                      onActionToast={pushToast}
+                      onRequestRefresh={loadBoard}
+                    />
                   </section>
                 </section>
               )}
@@ -4339,7 +4344,9 @@ function TicketWorkspaceKanbanView({
   runners,
   emptyTitle,
   emptyDescription,
-  ariaLabel = "폴더 기준 칸반"
+  ariaLabel = "폴더 기준 칸반",
+  onActionToast,
+  onRequestRefresh
 }: {
   files: AutoflowFilePreview[];
   options?: { projectRoot: string; boardDirName: string };
@@ -4347,6 +4354,8 @@ function TicketWorkspaceKanbanView({
   emptyTitle: string;
   emptyDescription: string;
   ariaLabel?: string;
+  onActionToast?: (severity: AlertSeverity, message: string) => void;
+  onRequestRefresh?: () => Promise<void> | void;
 }) {
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
   const [activeDetailPath, setActiveDetailPath] = React.useState("");
@@ -4355,7 +4364,10 @@ function TicketWorkspaceKanbanView({
   const [detailContentPath, setDetailContentPath] = React.useState("");
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
-  const itemButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const [deleteTarget, setDeleteTarget] = React.useState<TicketWorkspaceItem | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState("");
+  const itemButtonRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
 
   React.useEffect(() => {
     let cancelled = false;
@@ -4485,6 +4497,60 @@ function TicketWorkspaceKanbanView({
     setActiveDetailPath(filePath);
   }, [items]);
 
+  const requestDelete = React.useCallback((item: TicketWorkspaceItem) => {
+    setDeleteError("");
+    setDeleteTarget(item);
+  }, []);
+
+  const closeDeleteDialog = React.useCallback(() => {
+    if (deleteInProgress) return;
+    setDeleteTarget(null);
+    setDeleteError("");
+  }, [deleteInProgress]);
+
+  const confirmDelete = React.useCallback(async () => {
+    if (!deleteTarget || !options?.projectRoot) {
+      setDeleteError("삭제 대상을 찾을 수 없습니다.");
+      return;
+    }
+
+    if (!isInboxMemoBoardFile(deleteTarget)) {
+      const message = "대기 Order 항목만 삭제할 수 있습니다.";
+      setDeleteError(message);
+      onActionToast?.("warning", message);
+      return;
+    }
+
+    setDeleteInProgress(true);
+    setDeleteError("");
+    try {
+      const result = await window.autoflow.deleteInboxMemoFile({
+        ...options,
+        filePath: deleteTarget.filePath
+      });
+      if (!result.ok) {
+        const message = result.stderr || "삭제에 실패했습니다.";
+        setDeleteError(message);
+        onActionToast?.("error", message);
+        return;
+      }
+
+      onActionToast?.("success", `${deleteTarget.displayId} 삭제를 완료했습니다.`);
+      if (activeDetailPath === deleteTarget.filePath) {
+        closeDetailLayer();
+      }
+      setDeleteTarget(null);
+      setDeleteError("");
+      await onRequestRefresh?.();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "삭제 중 오류가 발생했습니다.";
+      setDeleteError(message);
+      onActionToast?.("error", message);
+    } finally {
+      setDeleteInProgress(false);
+    }
+  }, [activeDetailPath, closeDetailLayer, deleteTarget, onActionToast, onRequestRefresh, options]);
+
   React.useEffect(() => {
     let cancelled = false;
 
@@ -4580,26 +4646,55 @@ function TicketWorkspaceKanbanView({
                     <div className="ticket-kanban-card-list">
                       {columnItems.map((item) => {
                         const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
+                        const canDelete = item.kind === "memo";
+                        const isDeletingThis = deleteTarget?.filePath === item.filePath;
                         return (
-                          <button
+                          <div
                             key={item.filePath}
                             ref={(node) => {
                               itemButtonRefs.current[item.filePath] = node;
                             }}
-                            type="button"
                             className="ticket-kanban-card"
                             onClick={() => openDetailLayer(item.filePath)}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openDetailLayer(item.filePath);
+                              }
+                            }}
                             title={item.title}
                             aria-haspopup="dialog"
                           >
                             <span className="ticket-kanban-card-topline">
                               <span className="ticket-kanban-card-id">{item.displayId}</span>
-                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                              <span className="ticket-kanban-card-controls">
+                                <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                                {canDelete ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="ticket-kanban-card-delete-button"
+                                    disabled={isDeletingThis && deleteInProgress}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      requestDelete(item);
+                                    }}
+                                    title={`${item.displayId} 삭제`}
+                                    aria-label={`${item.displayId} 삭제`}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                  </Button>
+                                ) : null}
+                              </span>
                             </span>
                             <strong>{item.title}</strong>
                             <span className="ticket-kanban-card-meta">{metaText || item.filePath}</span>
                             <time>{formatDate(item.modifiedAt)}</time>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -4622,6 +4717,57 @@ function TicketWorkspaceKanbanView({
         }}
         onClose={closeDetailLayer}
       />
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDeleteDialog();
+          }
+        }}
+      >
+        <DialogContent
+          className="workflow-pin-layer-panel ticket-delete-confirm-dialog"
+          overlayClassName="workflow-pin-layer-overlay"
+          keepMounted
+          aria-describedby={undefined}
+        >
+          {deleteTarget ? (
+            <>
+              <div className="workflow-pin-layer-header">
+                <div className="workflow-pin-layer-heading">
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  <DialogTitle asChild>
+                    <strong>Order 항목 삭제 확인</strong>
+                  </DialogTitle>
+                </div>
+              </div>
+              <div className="ticket-delete-confirm-body">
+                <DialogDescription>
+                  삭제 대상 파일: <strong>{deleteTarget.displayId}</strong>
+                  <br />
+                  {deleteTarget.filePath}
+                </DialogDescription>
+                <p>이 항목을 삭제하면 파일이 즉시 제거되며, 되돌릴 수 없습니다.</p>
+                {deleteError ? <div className="workflow-pin-detail-error">{deleteError}</div> : null}
+                <div className="ticket-delete-confirm-actions">
+                  <Button type="button" variant="outline" size="sm" onClick={closeDeleteDialog} disabled={deleteInProgress}>
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void confirmDelete()}
+                    disabled={deleteInProgress}
+                  >
+                    {deleteInProgress ? "삭제 중..." : "삭제"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -4919,10 +5065,14 @@ function TicketWorkspaceDetailPane({
 
 function TicketKanban({
   board,
-  options
+  options,
+  onActionToast,
+  onRequestRefresh
 }: {
   board: AutoflowBoardSnapshot | null;
   options?: { projectRoot: string; boardDirName: string };
+  onActionToast?: (severity: AlertSeverity, message: string) => void;
+  onRequestRefresh?: () => Promise<void> | void;
 }) {
   const issuedFiles = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
   const prdFiles = React.useMemo(() => prdWorkspaceFiles(board), [board]);
@@ -4987,6 +5137,8 @@ function TicketKanban({
               emptyTitle="오더가 없습니다."
               emptyDescription="tickets/inbox/memo_*.md 또는 tickets/done의 memo가 생기면 폴더 기준 칸반으로 표시됩니다."
               ariaLabel="폴더 기준 Order 칸반"
+              onActionToast={onActionToast}
+              onRequestRefresh={onRequestRefresh}
             />
           ) : null}
           {activeWorkspaceTab === "issued" ? (

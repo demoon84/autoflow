@@ -143,6 +143,14 @@ type AutoflowFileContentResult = {
   stderr: string;
 };
 
+type AutoflowInboxMemoDeleteResult = {
+  ok: boolean;
+  filePath: string;
+  name: string;
+  message: string;
+  stderr: string;
+};
+
 type AutoflowAppConfig = {
   defaultBoardDirName: string;
 };
@@ -243,6 +251,11 @@ interface Window {
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
+    deleteInboxMemoFile: (options: {
+      projectRoot: string;
+      boardDirName: string;
+      filePath: string;
+    }) => Promise<AutoflowInboxMemoDeleteResult>;
     projectExists: (projectRoot: string) => Promise<{ exists: boolean }>;
     cancelInvocation: (
       invocationId: string

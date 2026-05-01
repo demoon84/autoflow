@@ -14,9 +14,9 @@
 [[runners]]
 id = "planner-1"
 role = "planner"
-agent = "codex"
-model = "gpt-5.5"
-reasoning = "xhigh"
+agent = "claude"
+model = "opus-1m"
+reasoning = "high"
 mode = "loop"
 interval_seconds = 60
 enabled = true
@@ -49,9 +49,9 @@ command = ""
 [[runners]]
 id = "wiki-1"
 role = "wiki-maintainer"
-agent = "codex"
-model = "gpt-5.4"
-reasoning = "medium"
+agent = "gemini"
+model = "gemini-3-flash-preview"
+reasoning = ""
 mode = "loop"
 interval_seconds = 60
 enabled = true

@@ -86,6 +86,11 @@ const runnerAuthNeededPatterns = [
   /\bnot authenticated\b/i,
   /\bunauthenticated\b/i,
   /\bplease authenticate\b/i,
+  /\bplease set an auth method\b/i,
+  /\bmanual authorization is required\b/i,
+  /\binvalid auth method selected\b/i,
+  /\bmust specify the GEMINI_API_KEY\b/i,
+  /\bGEMINI_API_KEY\b.*\b(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)\b/i,
   /\bsign in required\b/i,
   /로그인(?:이)? 필요/i
 ];
@@ -1790,6 +1795,106 @@ async function readBoardFile(options = {}) {
   }
 }
 
+async function deleteInboxMemoFile(options = {}) {
+  if (!options.projectRoot) {
+    return {
+      ok: false,
+      filePath: "",
+      name: "",
+      message: "",
+      stderr: "Project root is required."
+    };
+  }
+
+  const filePath = options.filePath || "";
+  if (!filePath) {
+    return {
+      ok: false,
+      filePath: "",
+      name: "",
+      message: "",
+      stderr: "File path is required."
+    };
+  }
+
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!isSafeBoardDirName(boardDirName)) {
+    return {
+      ok: false,
+      filePath: "",
+      name: path.basename(filePath),
+      message: "",
+      stderr: "Invalid board directory name."
+    };
+  }
+
+  const boardRoot = path.resolve(options.projectRoot, boardDirName);
+  const targetPath = path.resolve(filePath);
+  const relativePath = path.relative(boardRoot, targetPath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return {
+      ok: false,
+      filePath: targetPath,
+      name: path.basename(targetPath),
+      message: "",
+      stderr: "File must be inside the Autoflow board."
+    };
+  }
+
+  const normalizedRelativePath = relativePath.replace(/\\/g, "/");
+  const memoName = path.basename(relativePath);
+  if (!normalizedRelativePath.startsWith("tickets/inbox/") || !/^memo_\d+\.md$/i.test(memoName)) {
+    return {
+      ok: false,
+      filePath: targetPath,
+      name: memoName,
+      message: "",
+      stderr: "Only tickets/inbox/memo_*.md files can be deleted."
+    };
+  }
+
+  try {
+    const stat = await fs.stat(targetPath);
+    if (!stat.isFile()) {
+      return {
+        ok: false,
+        filePath: targetPath,
+        name: memoName,
+        message: "",
+        stderr: "Path is not a file."
+      };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      filePath: targetPath,
+      name: memoName,
+      message: "",
+      stderr: error.message || "Failed to read target file."
+    };
+  }
+
+  try {
+    await fs.unlink(targetPath);
+    return {
+      ok: true,
+      filePath: targetPath,
+      name: memoName,
+      message: `${memoName} 삭제 완료.`,
+      stderr: ""
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      filePath: targetPath,
+      name: memoName,
+      message: "",
+      stderr: error.message || "Failed to delete target file."
+    };
+  }
+}
+
 async function readBoard({ projectRoot, boardDirName }) {
   const normalizedBoardDirName = boardDirName || defaultBoardDirName;
   if (!isSafeBoardDirName(normalizedBoardDirName)) {
@@ -2523,6 +2628,7 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  ipcMain.handle("autoflow:deleteInboxMemoFile", withScopeMemory(deleteInboxMemoFile));
   ipcMain.handle(
     "autoflow:projectExists",
     withTimeout(async (_event, projectRoot) => {

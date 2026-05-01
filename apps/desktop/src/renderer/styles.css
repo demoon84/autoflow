@@ -2752,6 +2752,12 @@ pre {
   min-width: 0;
 }
 
+.ticket-kanban-card-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .ticket-kanban-card-id {
   overflow: hidden;
   color: var(--primary);
@@ -2760,6 +2766,40 @@ pre {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ticket-kanban-card-delete-button {
+  height: 1.6rem;
+  width: 1.6rem;
+  color: var(--muted-foreground);
+  opacity: 0.9;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--muted));
+  background: color-mix(in srgb, var(--card) 94%, white);
+}
+
+.ticket-kanban-card-delete-button:hover,
+.ticket-kanban-card-delete-button:focus-visible {
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+}
+
+.ticket-delete-confirm-dialog {
+  max-width: 460px;
+}
+
+.ticket-delete-confirm-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  color: var(--foreground);
+  font-size: var(--font-size-control-sm);
+}
+
+.ticket-delete-confirm-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .ticket-kanban-card strong {

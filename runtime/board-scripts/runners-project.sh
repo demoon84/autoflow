@@ -435,7 +435,7 @@ runner_command_preview() {
       printf ' prompt'
       ;;
     gemini)
-      cmd=(gemini --approval-mode auto_edit --prompt)
+      cmd=(gemini --skip-trust --approval-mode auto_edit --prompt)
       [ -z "$model" ] || cmd+=(--model "$model")
       runner_command_summary_from_array "${cmd[@]}"
       printf ' prompt'

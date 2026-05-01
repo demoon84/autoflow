@@ -1749,11 +1749,11 @@ run_default_adapter_command() {
     gemini)
       ensure_agent_on_path gemini || return 127
       prompt_text="$(cat "$prompt_file")"
-      cmd=(gemini --approval-mode yolo --prompt "$prompt_text")
+      cmd=(gemini --skip-trust --approval-mode yolo --prompt "$prompt_text")
       if [ -n "$model" ]; then
         cmd+=(--model "$model")
       fi
-      command_summary="$(command_summary_from_array "${cmd[@]:0:3}") prompt"
+      command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
       (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
       ;;
     *)
@@ -2161,7 +2161,7 @@ case "$agent" in
             command_summary="$(command_summary_from_array "${dry_cmd[@]}") prompt"
             ;;
           gemini)
-            dry_cmd=(gemini --approval-mode yolo --prompt)
+            dry_cmd=(gemini --skip-trust --approval-mode yolo --prompt)
             [ -z "$model" ] || dry_cmd+=(--model "$model")
             command_summary="$(command_summary_from_array "${dry_cmd[@]}") prompt"
             ;;

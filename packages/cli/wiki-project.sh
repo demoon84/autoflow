@@ -579,7 +579,7 @@ run_wiki_adapter_prompt() {
       ;;
     gemini)
       command -v gemini >/dev/null 2>&1 || return 127
-      cmd=(gemini --approval-mode auto_edit --prompt "$(cat "$prompt_file")")
+      cmd=(gemini --skip-trust --approval-mode auto_edit --prompt "$(cat "$prompt_file")")
       [ -z "$model" ] || cmd+=(--model "$model")
       AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
       ;;
