@@ -196,9 +196,9 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "progress", label: "작업", icon: Workflow },
-  { key: "kanban", label: "Tickets", icon: KanbanSquare },
-  { key: "knowledge", label: "Wiki", icon: BookOpenText },
+  { key: "progress", label: "AI 대쉬보드", icon: Workflow },
+  { key: "kanban", label: "티켓", icon: KanbanSquare },
+  { key: "knowledge", label: "LLM 위키", icon: BookOpenText },
   { key: "snapshot", label: "통계", icon: BarChart3 },
   { key: "logs", label: "로그", icon: Terminal }
 ] as const;
@@ -4825,8 +4825,8 @@ function WorkflowPinLayer({
                         onClick={() => handleOpenDetail(file)}
                         title={file.title || file.name}
                       >
-                        <strong>{workflowFileDisplayName(file.name)}</strong>
-                        {file.title ? <span>{file.title}</span> : null}
+                        <strong className="workflow-pin-item-id">{workflowFileDisplayName(file.name)}</strong>
+                        {file.title ? <span className="workflow-pin-item-title">{file.title}</span> : null}
                         {file.stateLabel ? (
                           <Badge
                             variant={file.stateTone === "destructive" ? "destructive" : file.stateTone === "success" ? "default" : "secondary"}
@@ -5623,33 +5623,14 @@ function AiProgressRow({
     >
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
-          <div>
-            <div className="ai-progress-agent-title">
-              <AgentAppIcon agent={runner.agent || ""} />
-              <strong>{agentTitle}</strong>
-            </div>
+          <div className="ai-progress-agent-title">
+            <AgentAppIcon agent={runner.agent || ""} />
+            <strong>{agentTitle}</strong>
             {tokenUsageLabel ? (
               <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
             ) : null}
           </div>
         </div>
-        {!hideProgressTrack ? (
-          <div
-            className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
-            style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
-            aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
-          >
-            {flowStages.map((step) => {
-              const stepState = flowStepState(step.key, currentKey, flowStages);
-              return (
-                <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
-                  <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
-                  <span>{step.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
         {canControl ? (
           <div className="ai-progress-actions" aria-label={`${agentTitle} 제어`}>
             {canStop ? (
@@ -5692,6 +5673,23 @@ function AiProgressRow({
           </div>
         ) : null}
       </div>
+      {!hideProgressTrack ? (
+        <div
+          className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
+          style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
+          aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
+        >
+          {flowStages.map((step) => {
+            const stepState = flowStepState(step.key, currentKey, flowStages);
+            return (
+              <div key={step.key} className={`ai-progress-step ai-progress-step-${stepState}`}>
+                <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
+                <span>{step.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="ai-progress-current">
         <Badge
