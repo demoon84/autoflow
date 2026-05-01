@@ -63,10 +63,11 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 13. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 14. Never push.
 15. Do not hide state in chat. Durable state belongs in board files.
-16. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
-17. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
-18. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
-19. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
+16. Pass/completion commit messages must use `[prd_NNN] 작업내용 요약본`, where `prd_NNN` comes from the ticket `PRD Key` / project key. Use `[tickets_NNN]` only for legacy tickets without a PRD key.
+17. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
+18. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
+19. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
+20. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
 
 ## Procedure
 

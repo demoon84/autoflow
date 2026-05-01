@@ -235,7 +235,7 @@ Do exactly one current hook turn:
 5. Browser policy: prefer non-browser checks; if rendering is required, do not use Playwright. Use the current agent browser tool instead: Codex uses the Codex browser tool, Claude uses the Claude browser tool. Close any opened browser tool tab before ending this turn unless the user explicitly asked to keep it open.
 6. Write or update \`${BOARD_PROMPT_ROOT}/tickets/runs/verify_NNN.md\`.
 7. Write a verifier completion log under \`${BOARD_PROMPT_ROOT}/logs/\`.
-8. Pass: move the ticket to the matching \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[ticket title] concise change summary\`; take the bracket text from the ticket \`Title\` and keep the summary to one short line.
+8. Pass: move the ticket to the matching \`${BOARD_PROMPT_ROOT}/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[prd_NNN] 작업내용 요약본\`; take the bracket text from the ticket \`PRD Key\` / project key, fall back to \`[tickets_NNN]\` only for legacy tickets without a PRD key, and keep the summary to one short line.
 9. Fail: append \`## Reject Reason\` and move the ticket to \`${BOARD_PROMPT_ROOT}/tickets/reject/reject_NNN.md\`.
 10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; rely on reference notes and board files for the next verification target.
 11. Never git push.

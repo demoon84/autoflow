@@ -163,11 +163,13 @@ fi
 
 ticket_id="$(extract_numeric_id "$target_file")"
 ticket_title="$(ticket_scalar_field "$target_file" "Title")"
-commit_ticket_name="${ticket_title:-tickets_${ticket_id}}"
-commit_ticket_name="$(printf '%s' "$commit_ticket_name" | tr '\r\n' '  ' | sed 's/"/'\''/g')"
+project_key="$(project_key_from_ticket_file "$target_file")"
+commit_project_key="$(ticket_scalar_field "$target_file" "PRD Key")"
+commit_project_key="${commit_project_key:-tickets_${ticket_id}}"
+commit_project_key="$(printf '%s' "$commit_project_key" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//; s/"/'\''/g')"
+[ -n "$commit_project_key" ] || commit_project_key="tickets_${ticket_id}"
 run_file="$(ensure_runs_file "$ticket_id")"
 timestamp="$(now_iso)"
-project_key="$(project_key_from_ticket_file "$target_file")"
 project_note="[[${project_key}]]"
 plan_note_name="$(plan_note_name_from_ticket_file "$target_file")"
 plan_note=""
@@ -230,6 +232,6 @@ printf 'stage=verifying\n'
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
 cat <<EOF
-routing_pass=If worktree_path is set, first run ${integration_command} to bring ticket code changes into PROJECT_ROOT without committing. Then move the ticket file to ${done_target_rel}, write a verifier completion log under logs/ (write-verifier-log clears the active runtime context), then from PROJECT_ROOT run: git add . && git commit -m "[${commit_ticket_name}] <간략 수정내용>". Replace <간략 수정내용> with a concise one-line summary from Result.Summary or the verified change. Never run git push.
+routing_pass=If worktree_path is set, first run ${integration_command} to bring ticket code changes into PROJECT_ROOT without committing. Then move the ticket file to ${done_target_rel}, write a verifier completion log under logs/ (write-verifier-log clears the active runtime context), then from PROJECT_ROOT run: git add . && git commit -m "[${commit_project_key}] <작업내용 요약본>". Replace <작업내용 요약본> with a concise one-line summary from Result.Summary or the verified change. Never run git push.
 routing_fail=Move the ticket file to ${reject_target_rel}, append a ## Reject Reason section describing what failed and what the planner should re-address, and write a verifier completion log under logs/ (write-verifier-log clears the active runtime context).
 EOF

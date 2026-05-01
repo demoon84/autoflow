@@ -47,6 +47,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 `autoflow run planner` (= Orchestrator AI) 와 `autoflow run ticket` (= Impl AI) 두 명령으로 충분하다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
 8. ticket owner 또는 verifier 는 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.
+8a. Autoflow pass/completion commit message 는 `[prd_NNN] 작업내용 요약본` 형식을 사용한다. bracket 값은 티켓의 `PRD Key` / project key 를 쓰고, PRD key 가 없는 legacy 티켓만 `[tickets_NNN]` 으로 fallback 한다. 티켓 `Title` 을 bracket 값으로 쓰지 않는다.
 9. 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
 10. 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
 11. ticket owner 또는 verifier 는 `.autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.

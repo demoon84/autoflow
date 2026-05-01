@@ -219,7 +219,7 @@
 - `start-verifier.sh` 가 출력한 `working_root` 에서 spec 의 `Verification.Command` 실행 + Acceptance Criteria 관찰
 - 검증 시작 시 `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
 - `logs/verifier_NNN_*.md` completion log 생성
-- **Pass**: worktree 가 있으면 `scripts/integrate-worktree.sh` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[티켓명] 간략 수정내용"` (local commit)
+- **Pass**: worktree 가 있으면 `scripts/integrate-worktree.sh` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[prd_NNN] 작업내용 요약본"` (local commit). bracket 값은 티켓의 `PRD Key` / project key 를 쓰고, PRD key 가 없는 legacy 티켓만 `[tickets_NNN]` 으로 fallback 한다.
 - **Fail**: 티켓 하단에 `## Reject Reason` 추가 후 `tickets/reject/reject_NNN.md` 로 mv. commit 하지 않음
 
 하면 안 되는 일:
@@ -361,7 +361,7 @@ Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `V
 1. 먼저 현재 스레드에 `verifier` 역할용 1분 heartbeat 자동화를 생성 또는 재개한다. 이 자동화는 사용자가 "멈춰"라고 할 때까지 유지한다.
 2. `scripts/start-verifier.sh` 실행. `status=idle` 이면 현재 wake-up 만 마치고 다음 tick 을 기다린다.
 3. `status=ok` 이면 `verify` / `run` / `working_root` / `integration_command` 경로를 읽고 `working_root` 에서 spec 의 `Verification.Command` + Acceptance Criteria 검사.
-4. **Pass**: run 파일에 pass 기록 → worktree 가 있으면 `integration_command` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓 `Stage=done`, `Result.Summary` 갱신 → 티켓을 `tickets/done/<project-key>/` 로 mv → `scripts/write-verifier-log.sh` 로 `logs/` completion log 생성 → git 시스템이 있으면 `git add . && git commit -m "[티켓명] 간략 수정내용"` (local). `티켓명` 은 티켓 `Title`, 수정내용은 `Result.Summary` 또는 검증된 변경의 짧은 한 줄 요약을 쓴다. **`git push` 절대 금지.**
+4. **Pass**: run 파일에 pass 기록 → worktree 가 있으면 `integration_command` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓 `Stage=done`, `Result.Summary` 갱신 → 티켓을 `tickets/done/<project-key>/` 로 mv → `scripts/write-verifier-log.sh` 로 `logs/` completion log 생성 → git 시스템이 있으면 `git add . && git commit -m "[prd_NNN] 작업내용 요약본"` (local). `prd_NNN` 은 티켓 `PRD Key` / project key, 작업내용 요약본은 `Result.Summary` 또는 검증된 변경의 짧은 한 줄 요약을 쓴다. **`git push` 절대 금지.**
 5. **Fail**: run 파일에 fail 기록 → 티켓 하단에 `## Reject Reason` 섹션 추가 → 티켓을 `tickets/reject/reject_NNN.md` 로 mv → `scripts/write-verifier-log.sh` 로 `logs/` completion log 생성. commit 하지 않음. working tree 변경은 그대로 두고 legacy planner 가 다음 tick 에서 재계획할 수 있다.
 
 ## Completion Standard

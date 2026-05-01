@@ -349,6 +349,11 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_
 require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
 require_line "$finish_output" "commit_status=committed_via_inline_merge"
+completion_subject="$(git -C "$project_dir" log -1 --pretty=%s)"
+if [ "$completion_subject" != "[prd_001] owner smoke artifact verified" ]; then
+  echo "Unexpected completion commit subject: $completion_subject" >&2
+  exit 1
+fi
 done_ticket="${project_dir}/.autoflow/tickets/done/prd_001/tickets_001.md"
 if ! test -f "$done_ticket"; then
   echo "Expected done ticket after inline finish: $done_ticket" >&2

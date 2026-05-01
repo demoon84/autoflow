@@ -4,7 +4,7 @@
 
 `#veri` heartbeat 에서 동작한다. 사용자가 `#veri` 라고 하면 먼저 현재 스레드에 1분 verifier heartbeat 를 생성 또는 재개하고, 그 heartbeat 가 `tickets/verifier/` 에 올라온 티켓을 `rules/verifier/` 와 티켓이 참조하는 spec 경로 (`tickets/backlog/` 또는 `tickets/done/<project-key>/`) 기준으로 검증하고, 결과에 따라 두 경로로 분기한다. verifier 가 처리를 끝낼 때마다 `logs/` 아래 completion log 도 남긴다:
 
-- **Pass** → `tickets/done/<project-key>/` 으로 이동 + git commit (`[티켓명] 간략 수정내용`). **`git push` 는 절대 하지 않는다.**
+- **Pass** → `tickets/done/<project-key>/` 으로 이동 + git commit (`[prd_NNN] 작업내용 요약본`). **`git push` 는 절대 하지 않는다.**
 - **Fail** → `tickets/reject/reject_NNN.md` 로 이동 + `## Reject Reason` 섹션 추가. planner heartbeat 가 다음 tick 에 재계획.
 
 ## Why This Agent Exists
@@ -40,7 +40,7 @@
 5. 기준 없이 임의 pass 금지.
 6. verifier 는 `BOARD_ROOT` / ticket worktree / `PROJECT_ROOT` 범위 안의 검증 명령 실행, 에이전트 내장 브라우저 도구 확인, 티켓/로그 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 **사용자에게 추가 허락을 묻지 않는다**. 이 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
 7. **`git push` 절대 금지.** 자동화 내부에서 push 를 호출하는 어떤 경로도 허용되지 않는다. remote 반영은 반드시 사람이 직접.
-8. pass 시 commit message 형식: `[티켓명] 간략 수정내용`. `티켓명` 은 티켓의 `Title` 값을 쓰고, 수정내용은 `Result.Summary` 또는 검증된 변경을 한 줄로 짧게 요약한다.
+8. pass 시 commit message 형식: `[prd_NNN] 작업내용 요약본`. `prd_NNN` 은 티켓의 `PRD Key` / project key 값을 쓰고, legacy 티켓에 PRD key 가 없을 때만 `[tickets_NNN]` 으로 fallback 한다. 작업내용 요약본은 `Result.Summary` 또는 검증된 변경을 한 줄로 짧게 요약한다.
 9. fail 시 `## Reject Reason` 섹션을 티켓 파일 하단에 추가. 한국어/영어 무관하나 planner 가 재계획에 쓸 수 있게 관찰 가능한 문장으로.
 10. fail 시 기존 코드 변경은 되돌리지 않는다 — 변경된 working tree 는 그대로 두고 reject 티켓만 남긴다 (planner 가 다음 tick 에 재계획할 때 현 상태를 고려).
 11. pass 후에는 먼저 `integration_command` 로 티켓 worktree 의 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한다. 그 다음 `PROJECT_ROOT` 에서 `git add . && git commit` 하여 ticket/log 이동 + 코드 변경을 한 커밋으로 묶는다.
@@ -77,7 +77,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 - `mv tickets/verifier/tickets_NNN.md tickets/done/<project-key>/tickets_NNN.md`
 - 티켓 `Stage = done`, `Result.Summary` 갱신
 - `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/inprogress/verify_NNN.md pass` 실행 후 검증 기록은 `tickets/done/<project-key>/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
-- `cd PROJECT_ROOT && git add . && git commit -m "[티켓명] 간략 수정내용"`
+- `cd PROJECT_ROOT && git add . && git commit -m "[prd_NNN] 작업내용 요약본"`
    - **절대 `git push` 하지 않는다.**
 8. **Fail 인 경우** (`routing_fail` 힌트 따라):
    - 티켓 파일 하단에 `## Reject Reason` 섹션 추가:

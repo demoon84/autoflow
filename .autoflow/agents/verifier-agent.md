@@ -44,6 +44,7 @@ Ticket Owner Mode performs verification inside the owner flow by default. Use th
 11. Never push.
 12. Pass requires all criteria and evidence.
 13. Fail requires a concrete reject reason and next fix hint.
+14. Pass/completion commit messages must use `[prd_NNN] 작업내용 요약본`, where `prd_NNN` comes from the ticket `PRD Key` / project key. Use `[tickets_NNN]` only for legacy tickets without a PRD key.
 
 ## Procedure
 

@@ -81,7 +81,7 @@ append_reject_reason() {
 
 git_commit_if_possible() {
   local ticket_file="$1"
-  local ticket_id title summary git_root commit_message
+  local ticket_id project_key summary git_root commit_message
 
   if [ "${AUTOFLOW_OWNER_SKIP_COMMIT:-}" = "1" ]; then
     printf 'commit_status=skipped_by_env\n'
@@ -95,11 +95,13 @@ git_commit_if_possible() {
   fi
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  title="$(ticket_scalar_field "$ticket_file" "Title")"
+  project_key="$(ticket_scalar_field "$ticket_file" "PRD Key")"
   summary="$(extract_scalar_field_in_section "$ticket_file" "Result" "Summary")"
-  [ -n "$title" ] || title="tickets_${ticket_id}"
+  project_key="$(printf '%s' "$project_key" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+  summary="$(printf '%s' "$summary" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+  [ -n "$project_key" ] || project_key="tickets_${ticket_id}"
   [ -n "$summary" ] || summary="complete ticket-owner work"
-  commit_message="[$title] $summary"
+  commit_message="[$project_key] $summary"
 
   git -C "$git_root" add .
   if git -C "$git_root" diff --cached --quiet; then

@@ -30,6 +30,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 - Move the ticket to `tickets/done/<project-key>/` only after evidence is recorded.
 - Leave a verifier-style record and completion log even though the owner performed the verification.
 - On pass, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> pass "<short summary>"`; it integrates worktree changes when needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when the project is a git repo.
+- Pass/completion commit messages must use `[prd_NNN] 작업내용 요약본`, where `prd_NNN` comes from the ticket `PRD Key` / project key. Use `[tickets_NNN]` only for legacy tickets without a PRD key.
 - On fail that cannot be fixed in scope, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> fail "<concrete reject reason>"`; it moves the ticket to reject, writes the verifier log, clears active context, and does not commit failed work.
 - Never run `git push`.
 

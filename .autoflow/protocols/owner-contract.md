@@ -12,6 +12,16 @@ The AI owns judgment: planning, scope interpretation, recovery decisions, verifi
 
 Shell helpers may claim board state, create or clean worktrees/branches, record evidence, move files, run guards, stage/commit an already accepted result, and report blockers. They must not become the actor that decides the ticket is correct, silently expands scope, resolves semantic conflicts, or chooses recovery direction without the AI recording that decision in markdown.
 
+## Commit Message Contract
+
+All Autoflow pass/completion commits must use this subject format:
+
+```text
+[prd_NNN] 작업내용 요약본
+```
+
+Use the ticket `PRD Key` / project key for the bracket value. If a legacy ticket has no PRD key, fall back to `[tickets_NNN]`. The summary must be one concise line from `Result.Summary` or the verified change. Do not use the ticket `Title` as the bracket value.
+
 ## Owner Responsibilities
 
 Impl AI owns:
