@@ -464,6 +464,28 @@ stage_ticket_commit_scope() {
   done < <(extract_ticket_allowed_paths "$ticket_file")
 }
 
+stage_integrated_product_paths_before_cleanup() {
+  local git_root="$1"
+  local ticket_file="$2"
+  local allowed_path staged_count=0
+
+  [ -n "$git_root" ] || {
+    printf 'pre_cleanup_staged_product_path_count=0\n'
+    return 0
+  }
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete_repo_path "$allowed_path" || continue
+    project_root_path_matches_worktree "$ticket_file" "$allowed_path" || continue
+    stage_git_path_if_present "$git_root" "${PROJECT_ROOT}/${allowed_path}"
+    staged_count=$((staged_count + 1))
+    printf 'pre_cleanup_staged_product_path=%s\n' "$allowed_path"
+  done < <(extract_ticket_allowed_paths "$ticket_file")
+
+  printf 'pre_cleanup_staged_product_path_count=%s\n' "$staged_count"
+}
+
 git_commit_if_possible() {
   local ticket_file="$1"
   local run_file="${2:-}"
@@ -717,6 +739,7 @@ if [ "$ticket_file" != "$done_target" ]; then
   ticket_file="$done_target"
 fi
 
+pre_cleanup_stage_output="$(stage_integrated_product_paths_before_cleanup "$(git_root_path || true)" "$ticket_file" 2>&1)"
 cleanup_output="$(cleanup_completed_ticket_worktree "$ticket_file" "$ticket_id" 2>&1)" || {
   ticket_goal_block "$ticket_file" "post_merge_cleanup_failed"
   printf 'status=blocked\n'
@@ -747,6 +770,7 @@ printf 'ticket=%s\n' "$ticket_file"
 printf 'ticket_id=%s\n' "$ticket_id"
 printf 'run=%s\n' "$(done_run_path_for_ticket_file "$ticket_file")"
 printf '%s\n' "$merge_output"
+printf '%s\n' "$pre_cleanup_stage_output"
 printf '%s\n' "$cleanup_output"
 printf '%s\n' "$log_output"
 printf '%s\n' "$wiki_output"
