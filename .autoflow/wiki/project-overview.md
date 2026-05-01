@@ -7,6 +7,7 @@ As of the latest deterministic wiki refresh, the project has reached a stable 3-
 The managed summary below reports the current completed-ticket and log counts, updated via automated ticket-owner flow and direct PRD-to-done transitions.
 Ticket ids are not contiguous: higher ids such as `tickets_058` or `tickets_059` can appear in focused synthesis even when the completed-ticket count is lower because retries, rejects, and PRD-only archives also consume sequence numbers.
 Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]]. Recent May 1 work such as `prd_088` (`[[answers/done-when-checklist-state]]`), `prd_089` (`[[answers/order-inbox-memo-delete]]`), and `prd_090` (`[[answers/desktop-sidebar-korean-labels]]`) is tracked in [[index]] under `Recent Synthesis`.
+The managed `Current Autoflow Summary` block is a deterministic baseline excerpt, and its `Latest Completed Work` subsection is not a recency-sorted feed. For newer work snapshots, use [[index]] under `Recent Synthesis`.
 
 
 ## Key Decisions
@@ -33,11 +34,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 76
+- Done tickets: 77
 - Reject records: 5
-- Verifier logs: 300
-- Conversation handoffs: 3
-- Last updated: 2026-05-01T21:26:32Z
+- Verifier logs: 301
+- Conversation handoffs: 4
+- Last updated: 2026-05-01T21:32:08Z
 
 ## Latest Completed Work
 
@@ -55,4 +56,5 @@ List unresolved questions with owner or source when known.
 - PRD Handoff. Source: `conversations/prd_022/spec-handoff.md`.
 - PRD Handoff. Source: `conversations/prd_038/spec-handoff.md`.
 - PRD Handoff. Source: `conversations/prd_091/spec-handoff.md`.
+- PRD Handoff. Source: `conversations/prd_093/spec-handoff.md`.
 <!-- AUTOFLOW:END project-summary -->

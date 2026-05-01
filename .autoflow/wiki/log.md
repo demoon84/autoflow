@@ -7,6 +7,7 @@ Chronological notes derived from completed tickets, reject learnings, and operat
 Generated entries may be inserted here.
 This curated milestone list summarizes representative milestones from the early board foundation through the recent wiki/runtime refinements. For current counts and broader work context, use [[index]] and [[project-overview]].
 Recent synthesis answers for newer completed work are intentionally filed back through [[index]]; for example, May 1 additions covering `prd_088`, `prd_089`, and `prd_090` are linked under `Recent Synthesis` there rather than repeated verbatim in this historical timeline.
+The managed `Derived Timeline` below is a deterministic baseline sample, not a full recency-sorted changelog. Treat [[index]] `Recent Synthesis` as the entrypoint for newer focused work.
 
 Each entry should cite its source ticket or log.
 
@@ -42,7 +43,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-05-01T21:26:32Z
+- Last rebuilt: 2026-05-01T21:32:08Z
 
 ### Completed Tickets
 
@@ -103,4 +104,5 @@ Each entry should cite its source ticket or log.
 - PRD Handoff. Source: `conversations/prd_022/spec-handoff.md`.
 - PRD Handoff. Source: `conversations/prd_038/spec-handoff.md`.
 - PRD Handoff. Source: `conversations/prd_091/spec-handoff.md`.
+- PRD Handoff. Source: `conversations/prd_093/spec-handoff.md`.
 <!-- AUTOFLOW:END derived-timeline -->
