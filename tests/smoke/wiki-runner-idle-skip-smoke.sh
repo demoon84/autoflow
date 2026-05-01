@@ -53,11 +53,11 @@ second_output="${project_dir}/second.out"
 third_output="${project_dir}/third.out"
 query_output="${project_dir}/query.out"
 
-"${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$first_output"
+AUTOFLOW_WIKI_DEBOUNCE=0 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$first_output"
 require_line "$first_output" "adapter_exit_code=0"
 require_marker_count 1
 
-"${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$second_output"
+AUTOFLOW_WIKI_DEBOUNCE=0 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$second_output"
 require_line "$second_output" "reason=wiki_inputs_unchanged"
 require_marker_count 1
 
@@ -66,7 +66,7 @@ cat >> "${project_dir}/.autoflow/wiki/page.md" <<'WIKI'
 Changed wiki input.
 WIKI
 
-"${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$third_output"
+AUTOFLOW_WIKI_DEBOUNCE=0 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" .autoflow --runner wiki-skip > "$third_output"
 require_line "$third_output" "adapter_exit_code=0"
 require_marker_count 2
 

@@ -113,7 +113,7 @@ ${change_line}
 
 Do exactly one current hook turn:
 1. Read the repo instructions, \`autoflow/agents/ticket-owner-agent.md\`, and the current board state.
-2. Run \`autoflow/scripts/start-ticket-owner.sh\` to resume an owned inprogress ticket, claim a ready ticket, adopt a legacy verifier ticket, or create one inprogress ticket from a populated backlog spec.
+2. Run \`autoflow/scripts/start-ticket-owner.sh\` to resume an owned inprogress ticket, claim a todo ticket, adopt a legacy verifier ticket, or resume a requested ticket. Backlog PRD to todo conversion is Plan AI's responsibility.
 3. Keep the same owner responsible for mini-plan, implementation, verification command execution, evidence recording, and done/reject movement. Do not split the work across planner/todo/verifier roles.
 4. Implement only within the ticket's Allowed Paths and record durable progress in Notes, Result, and Resume Context.
 5. When ready, run \`autoflow/scripts/verify-ticket-owner.sh <ticket-id>\` to write command/output/evidence, then \`autoflow/scripts/finish-ticket-owner.sh <ticket-id> pass "<summary>"\` or \`fail "<concrete reason>"\`.
@@ -141,12 +141,12 @@ ${change_line}
 Do exactly one current hook turn:
 1. Read the repo instructions and Autoflow board files.
 2. Inspect \`autoflow/tickets/backlog/\`, \`autoflow/tickets/plan/\`, \`autoflow/tickets/reject/\`, and the current ticket state.
-3. If a populated spec has no real plan or only a placeholder plan, create or update the matching plan draft.
-4. If a plan is actionable, generate todo tickets as appropriate.
-5. If \`reject_NNN.md\` files exist, fold each \`## Reject Reason\` back into the matching plan as a new execution candidate; after the retry todo is created, archive the reject file under \`autoflow/tickets/done/<project-key>/\`.
+3. If a populated spec is available, convert it into concrete todo ticket work and archive the consumed spec under \`autoflow/tickets/done/<project-key>/\`.
+4. If a legacy plan is actionable, generate todo tickets as appropriate.
+5. If \`reject_NNN.md\` files exist, fold each \`## Reject Reason\` back into the matching ticket retry context; after the retry todo is created, archive the reject file under \`autoflow/tickets/done/<project-key>/\`.
 6. If this hook was triggered by a pass into \`autoflow/tickets/done/<project-key>/\`, treat that as a signal to scan backlog again and continue with the next populated spec when one is waiting.
-7. Do not stop at the first generated plan if another populated backlog spec still lacks a real plan or only has a placeholder plan. Drain the backlog for planning work as far as this current hook turn reasonably can.
-8. Keep chat output short; durable context belongs in Obsidian links and board files, and the next hook turn should reload from \`autoflow/\` rather than chat history.
+7. Do not stop at the first generated todo if another populated backlog spec still needs Plan AI processing or only has a placeholder legacy plan. Drain the backlog for planning work as far as this current hook turn reasonably can.
+8. Keep chat output short; durable context belongs in reference notes and board files, and the next hook turn should reload from \`autoflow/\` rather than chat history.
 9. Do not claim todo work, do not implement code, do not verify, do not commit, and do not push.
 10. Exit after the current hook turn is complete.
 EOF
@@ -175,7 +175,7 @@ Do exactly one current hook turn:
 5. Update Notes, Last Updated, Next Action, and Resume Context as you work.
 6. Board stage is authoritative. If a ticket is in \`autoflow/tickets/todo/\` or \`autoflow/tickets/inprogress/\`, treat it as todo implementation work even when the Title, Goal, or Done When sounds like checking or verification.
 7. If Done When is satisfied, fill Result.Summary and run \`autoflow/scripts/handoff-todo.sh <ticket-id-or-path>\`. The handoff runtime moves the ticket to \`autoflow/tickets/verifier/\`, marks Verification pending, and clears only the active ticket context so the todo role can continue with the next ticket.
-8. Keep chat output short; durable context belongs in Resume Context, Notes, Result, and Obsidian links.
+8. Keep chat output short; durable context belongs in Resume Context, Notes, Result, and reference notes.
 9. Do not verify, do not commit, and do not push.
 10. Exit after the current hook turn is complete.
 EOF
@@ -207,7 +207,7 @@ Do exactly one current hook turn:
 7. Write a verifier completion log under \`autoflow/logs/\`.
 8. Pass: move the ticket to the matching \`autoflow/tickets/done/<project-key>/\` folder and make a local git commit if the project uses git. Use commit message format \`[ticket title] concise change summary\`; take the bracket text from the ticket \`Title\` and keep the summary to one short line.
 9. Fail: append \`## Reject Reason\` and move the ticket to \`autoflow/tickets/reject/reject_NNN.md\`.
-10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; rely on Obsidian links and board files for the next verification target.
+10. The write-verifier-log runtime clears the active runtime context after pass/fail logging; rely on reference notes and board files for the next verification target.
 11. Never git push.
 12. Exit after the current hook turn is complete.
 EOF

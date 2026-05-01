@@ -38,6 +38,9 @@ type AutoflowRunner = {
   activeTicketTitle: string;
   activeStage: string;
   activeSpecRef: string;
+  activeRecoveryReason: string;
+  activeRecoveryStatus: string;
+  activeRecoveryFailureClass: string;
   pid: string;
   startedAt: string;
   lastEventAt: string;
@@ -53,6 +56,9 @@ type AutoflowRunner = {
   artifactStderrStatus: string;
   lastLogLine: string;
   conversationPreview: string;
+  authRequired: boolean;
+  authMessage: string;
+  authUrl: string;
   statePath: string;
   logPath: string;
   tokenUsage?: number;
@@ -237,125 +243,9 @@ interface Window {
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
-    chatLoad: (options: {
-      projectRoot: string;
-      boardDirName: string;
-    }) => Promise<AutoflowChatLoadResult>;
-    chatAppend: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      message: { role: "user" | "assistant" | "system"; content: string; at?: string };
-    }) => Promise<{ ok: boolean; count: number }>;
-    chatSend: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      mode: "auto" | "memo" | "prd";
-      wikiCite: boolean;
-      summaryHandover: boolean;
-      agent?: string;
-      model?: string;
-      reasoning?: string;
-      contextLimit?: number;
-      wikiTopK?: number;
-      snapshotBudgetBytes?: number;
-      invocationId?: string;
-    }) => Promise<AutoflowChatSendResult>;
-    chatSummarize: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      agent?: string;
-    }) => Promise<{ ok: boolean; updated: boolean; summary?: string; reason?: string }>;
-    chatReset: (options: {
-      projectRoot: string;
-      boardDirName: string;
-    }) => Promise<{ ok: boolean; archivedTo: string; priorSummary: string }>;
-    saveMemo: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      title?: string;
-      body: string;
-    }) => Promise<{ ok: boolean; savedPath: string; file: string }>;
-    saveSpec: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      title?: string;
-      body: string;
-    }) => Promise<{ ok: boolean; savedPath: string; file: string }>;
-    chatPickImages: () => Promise<AutoflowChatPickResult>;
-    chatAttachImages: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      sourcePaths: string[];
-      maxBytes?: number;
-    }) => Promise<AutoflowChatAttachResult>;
+    projectExists: (projectRoot: string) => Promise<{ exists: boolean }>;
     cancelInvocation: (
       invocationId: string
     ) => Promise<{ ok: boolean; cancelled: boolean; reason?: string }>;
   };
 }
-
-type AutoflowChatPickResult = {
-  ok: boolean;
-  paths: string[];
-};
-
-type AutoflowChatAttachItem = {
-  source: string;
-  savedPath: string;
-  relativePath: string;
-};
-
-type AutoflowChatAttachRejection = {
-  source: string;
-  reason: string;
-};
-
-type AutoflowChatAttachResult = {
-  ok: boolean;
-  accepted: AutoflowChatAttachItem[];
-  rejected: AutoflowChatAttachRejection[];
-};
-
-type AutoflowChatMessage = {
-  role: "user" | "assistant" | "system";
-  at: string;
-  content: string;
-};
-
-type AutoflowChatFrontmatter = {
-  provider?: string;
-  model?: string;
-  project_root?: string;
-  created_at?: string;
-  last_active_at?: string;
-  mode?: string;
-  saved_paths?: string[];
-  summary?: string;
-  prior_summary?: string;
-  prior_archive_path?: string;
-};
-
-type AutoflowChatWikiCatalogEntry = {
-  slug: string;
-  title: string;
-  terms: string[];
-  path: string;
-};
-
-type AutoflowChatLoadResult = {
-  threadPath: string;
-  frontmatter: AutoflowChatFrontmatter;
-  messages: AutoflowChatMessage[];
-  boardSnapshotPreview: string;
-  wikiAnswerCatalog: AutoflowChatWikiCatalogEntry[];
-  suggestedMode: "memo" | "prd";
-};
-
-type AutoflowChatSendResult = {
-  ok: boolean;
-  exitCode: number;
-  response: string;
-  stderr: string;
-  reason: string;
-  attachedWikiPaths: string[];
-};

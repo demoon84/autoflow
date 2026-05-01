@@ -69,6 +69,69 @@ runner_now_iso() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+runner_file_has_quota_limit() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'quota|rateLimit|rate limit|RESOURCE_EXHAUSTED|MODEL_CAPACITY_EXHAUSTED|Too Many Requests|No capacity available' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+runner_pid_is_running() {
+  local pid="${1:-}"
+  local kill_output kill_status
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+runner_effective_state_status() {
+  local status="${1:-}"
+  local mode="${2:-}"
+  local pid="${3:-}"
+
+  [ -n "$status" ] || status="idle"
+  if [ "$status" = "running" ] && [ "$mode" = "loop" ] && ! runner_pid_is_running "$pid"; then
+    printf 'stopped'
+    return 0
+  fi
+
+  printf '%s' "$status"
+}
+
+runner_effective_state_pid() {
+  local status="${1:-}"
+  local mode="${2:-}"
+  local pid="${3:-}"
+
+  if [ "$status" = "running" ] && [ "$mode" = "loop" ] && ! runner_pid_is_running "$pid"; then
+    printf ''
+    return 0
+  fi
+
+  printf '%s' "$pid"
+}
+
 runner_validate_id() {
   local runner_id="${1:-}"
 

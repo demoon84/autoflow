@@ -3,15 +3,10 @@
 # DEPRECATED: smoke test for the legacy coordinator runner.
 #
 # Coordinator is no longer a default runner in the 3-runner topology
-# (planner-1 + owner-1 + wiki-1). This test scaffolds a backlog PRD
-# and expects the legacy ticket-owner→backlog→todo conversion path to
-# pick it up directly, which the new topology no longer supports
-# (Plan AI handles backlog→todo conversion separately). The test
-# therefore fails on the new topology with `status=idle /
-# no_actionable_ticket` regardless of the coordinator-specific
-# behavior it was originally built to verify. Kept here for repo
-# history; not wired into CI (only `ticket-owner-smoke.sh` is exposed
-# via package.json).
+# (planner-1 + owner-1 + wiki-1). This test still covers the legacy
+# coordinator shared-path release path by explicitly running Plan AI
+# first, then setting up the blocked owner state the coordinator should
+# release.
 
 set -euo pipefail
 
@@ -19,8 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+cache_dir="${project_dir}-cache"
+worktree_root="${cache_dir}/worktrees"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$cache_dir"
 }
 trap cleanup EXIT
 
@@ -54,7 +51,7 @@ run_temp_runtime() {
 
   (
     cd "$board_dir"
-    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT "$@"
+    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT XDG_CACHE_HOME="$cache_dir" AUTOFLOW_WORKTREE_ROOT="$worktree_root" "$@"
   )
 }
 
@@ -140,9 +137,18 @@ write_spec "project_002" "Shared path second ticket" >/dev/null
 
 start_one_output="${project_dir}/start-one.out"
 start_two_output="${project_dir}/start-two.out"
+plan_one_output="${project_dir}/plan-one.out"
+plan_two_output="${project_dir}/plan-two.out"
 doctor_output="${project_dir}/doctor.out"
 coordinator_output="${project_dir}/coordinator.out"
 ticket_two="${project_dir}/.autoflow/tickets/inprogress/tickets_002.md"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_one_output"
+require_line "$plan_one_output" "status=ok"
+require_line "$plan_one_output" "source=backlog-to-todo"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_two_output"
+require_line "$plan_two_output" "status=ok"
+require_line "$plan_two_output" "source=backlog-to-todo"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
@@ -162,7 +168,8 @@ EOF
 "${REPO_ROOT}/bin/autoflow" doctor "$project_dir" >"$doctor_output"
 require_line "$doctor_output" "doctor.shared_path_blocked_ticket_count=1"
 
-"${REPO_ROOT}/bin/autoflow" run coordinator "$project_dir" --runner coordinator-shell-1 >"$coordinator_output"
+XDG_CACHE_HOME="$cache_dir" AUTOFLOW_WORKTREE_ROOT="$worktree_root" \
+  "${REPO_ROOT}/bin/autoflow" run coordinator "$project_dir" --runner coordinator-shell-1 >"$coordinator_output"
 require_line "$coordinator_output" "status=ok"
 require_line "$coordinator_output" "reason=blocked_released"
 require_line "$coordinator_output" "coordinator.shared_path_release_attempted=true"

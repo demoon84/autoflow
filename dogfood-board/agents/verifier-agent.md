@@ -27,7 +27,7 @@
 
 - 검증 중에는 `tickets/inprogress/verify_NNN.md`, 완료 후에는 final ticket 옆으로 이동된 `verify_NNN.md` (pass/fail 기록)
 - 업데이트된 `logs/verifier_NNN_*.md` (verifier completion log)
-- 위 두 문서에는 `## Obsidian Links` 로 `project / plan / ticket / verify` note 연결을 남긴다
+- 위 두 문서에는 `## Reference Notes` 로 `project / plan / ticket / verify` note 연결을 남긴다
 - 이동된 티켓 파일: `tickets/verifier/ → tickets/done/<project-key>/` (pass) or `tickets/verifier/ → tickets/reject/reject_NNN.md` (fail)
 - pass 시: git commit (local repository 안에서만)
 
@@ -96,7 +96,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 9. 브라우저나 탭을 열었다면 pass / fail 처리 전에 정리 상태를 확인한다. 사용자가 유지하라고 하지 않았다면 열린 탭/페이지를 닫고 나서 현재 tick 을 마친다.
 10. git commit 은 pass 경로에서만. fail 경로에서는 commit 하지 않는다 (working tree 는 남지만 커밋 시점 판단은 다음 재계획 사이클에서).
 11. pass 로 `tickets/done/<project-key>/` 에 도착한 뒤 backlog 잔량이 있으면 planner 가 다음 plan 으로 이어갈 수 있으므로, verifier 는 현재 티켓만 마무리하고 전체 흐름을 끝난 것으로 선언하지 않는다.
-12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 Obsidian links, ticket `References`, 현재 위치의 `verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
+12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 reference notes, ticket `References`, 현재 위치의 `verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
 13. 현재 tick 을 마칠 때 Stop hook 이 active ticket context 를 비워 토큰 사용을 줄인다. 다음 verifier tick 은 `tickets/verifier/` 와 `tickets/inprogress/verify_NNN.md` 를 다시 읽는다.
 
 ## Pass / Fail 판정 가이드

@@ -1,0 +1,104 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_068
+- PRD Key: prd_066
+- Plan Candidate: Plan AI handoff from tickets/done/prd_066/prd_066.md
+- Title: Enable Gemini for Wiki Bot runner
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-04-30T06:34:55Z
+
+## Goal
+
+- 이번 작업의 목표: 데스크톱 UI 에서 `wiki-1`(`role = "wiki-maintainer"`) runner 의 agent 를 Gemini 로 선택해 저장하면 다음 wiki tick 에서 Gemini CLI 기반 Wiki AI synthesis 경로가 실제로 동작하도록, Desktop 저장 경로와 CLI/runtime wiki adapter 경로의 누락 또는 불일치를 확인하고 필요한 wire-up 을 보완한다.
+
+## References
+
+- PRD: tickets/done/prd_066/prd_066.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_066]]
+- Plan Note:
+- Ticket Note: [[tickets_068]]
+
+## Allowed Paths
+
+- `apps/desktop/src/renderer/main.tsx`
+- `apps/desktop/src/main.js`
+- `apps/desktop/src/renderer/vite-env.d.ts`
+- `packages/cli/run-role.sh`
+- `runtime/board-scripts/run-role.sh`
+- `packages/cli/wiki-project.sh`
+- `packages/cli/runners-project.sh`
+- `runtime/board-scripts/runners-project.sh`
+- `.autoflow/agents/wiki-maintainer-agent.md`
+- `scaffold/board/agents/wiki-maintainer-agent.md`
+- `.autoflow/runners/config.toml`
+- `tests/smoke`
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_068`
+- Branch: autoflow/tickets_068
+- Base Commit: c46b98d0a78314ad259f8c89a29006fd00e5a87e
+- Worktree Commit: 5cdcef71fdde2967f33281ba97953512ed84b6be
+- Integration Status: integrated
+
+## Done When
+
+- [x] Desktop runner settings for `wiki-1` expose `gemini` as an agent option and can save it without validation errors.
+- [x] Saving `wiki-1` as Gemini writes `agent = "gemini"`, a supported Gemini model, and no unsupported reasoning value to runner config.
+- [x] Reloading the board after save shows `wiki-1` still configured as Gemini in the Desktop UI.
+- [x] `./bin/autoflow run wiki . .autoflow --runner wiki-1 --dry-run` shows `adapter=gemini`, a Gemini command summary, and the Wiki Maintainer prompt contract.
+- [x] A Gemini-configured wiki synth path can invoke `./bin/autoflow wiki query . .autoflow --term <term> --synth --runner wiki-1` or an equivalent stubbed command and produce evidence that `run_wiki_adapter_prompt` selected Gemini.
+- [x] A Gemini-configured semantic lint path can invoke `./bin/autoflow wiki lint . .autoflow --semantic --runner wiki-1` or an equivalent stubbed command and produce evidence that `run_wiki_adapter_prompt` selected Gemini or skipped only for documented unchanged/no-adapter reasons.
+- [x] The wiki-maintainer adapter prompt can call the repo-local Autoflow CLI even when `autoflow` is not globally installed on PATH, or the prompt explicitly uses a repo-local command path.
+- [x] Runtime mirror files stay aligned with CLI source for the changed Gemini runner behavior.
+- [x] Existing Codex-backed Wiki Bot behavior from `prd_038` still works at dry-run level.
+- [x] Implementation stays inside Allowed Paths.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 backlog PRD 에서 todo 티켓을 생성한 직후.
+- 직전 작업: scripts/start-plan.sh 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
+- 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_066/prd_066.md at 2026-04-30T06:25:27Z.
+
+- Runtime hydrated worktree dependency at 2026-04-30T06:25:35Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-04-30T06:25:34Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_068; run=tickets/inprogress/verify_068.md
+- Mini-plan at 2026-04-30T06:30:15Z:
+  1. Desktop 쪽은 `runnerAgentOptions` / Gemini model / empty reasoning normalize / `configureRunner` 저장 경로가 이미 연결되어 있으므로 회귀 검증 중심으로 확인한다.
+  2. `packages/cli/wiki-project.sh`의 direct synth/semantic adapter 실행이 `packages/cli/run-role.sh`처럼 repo-local CLI와 agent PATH를 보강하지 않는 gap을 보완한다.
+  3. wiki-maintainer prompt에는 `AUTOFLOW_CLI` 우선 사용을 명시하고 scaffold copy도 맞춘다.
+  4. runtime mirror `runtime/board-scripts/run-role.sh`는 run-role Gemini behavior와 prompt context 변경을 함께 반영한다.
+- Wiki context: `tickets/done/prd_038/tickets_038.md`와 `wiki/features/wiki-bot-codex-adapter.md`는 Wiki Bot adapter 변경 시 `wiki-1` / `wiki-maintainer` id-role을 보존하고 provider-specific 처리는 runner adapter abstraction 뒤에 둬야 한다고 정리한다. `tickets/done/prd_050/prd_050.md`는 semantic lint adapter 호출이 unchanged gate로 skip될 수 있음을 검증 판단에 반영해야 한다. `tickets/done/prd_040/prd_040.md`는 Gemini 모델 선택지를 지원 모델로 제한해야 한다는 선행 결정이다.
+- Live config mutation for verification at 2026-04-30T06:30:15Z: `.autoflow/runners/config.toml` `wiki-1` changed from `agent = "codex"`, `model = "gpt-5.4"`, `reasoning = "medium"` to `agent = "gemini"`, `model = "gemini-2.5-pro"`, `reasoning = ""`. This is the intended final value for this ticket.
+- Implementation completed at 2026-04-30T06:35:12Z: `packages/cli/wiki-project.sh` now prepares repo-local `AUTOFLOW_CLI` and PATH before direct synth/semantic adapter calls, exports project/board env to adapter commands, and `run-role.sh` / runtime mirror include repo-local CLI prompt context plus adapter env export. Wiki maintainer agent prompts in live board and scaffold now instruct adapters to prefer `"$AUTOFLOW_CLI"`.
+- Merge note: PROJECT_ROOT already had an unrelated `.autoflow/runners/config.toml` change for `planner-1 reasoning=xhigh`; integration preserved it and applied only the `wiki-1` Gemini block for this ticket.
+- Prepared worktree commit 5cdcef71fdde2967f33281ba97953512ed84b6be at 2026-04-30T06:34:54Z; Impl AI integrates it into PROJECT_ROOT and the inline finalizer creates the local completion commit.
+- Impl AI worker marked verification pass at 2026-04-30T06:34:54Z; runtime finalizer will not perform merge operations.
+- Merge finalizer verified at 2026-04-30T06:34:55Z: AI already integrated worktree commit 5cdcef71fdde2967f33281ba97953512ed84b6be into PROJECT_ROOT; script performed no rebase or cherry-pick.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-04-30T06:34:55Z.
+- Coordinator post-merge cleanup at 2026-04-30T06:34:55Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_068 deleted_branch=autoflow/tickets_068.
+## Verification
+- Run file: `tickets/done/prd_066/verify_068.md`
+- Log file: `logs/verifier_068_20260430_063456Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Gemini Wiki Bot runner path wired and verified
+- Remaining risk: Live Gemini network/auth behavior was not exercised; verification used dry-run plus a stubbed Gemini command to prove adapter selection and environment wiring without a long-running or paid live call.

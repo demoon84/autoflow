@@ -1,19 +1,24 @@
 # Autoflow runner configuration.
 #
 # Default 3-runner topology (refactor 2026-04-27):
-#   planner-1 : Plan AI — backlog/PRD → todo, reject → todo (auto-replan).
+#   planner-1 : Orchestrator AI — backlog/PRD → todo, reject → todo
+#               (auto-replan), and markdown recovery for stalled/blocked work.
 #   owner-1   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
 #   wiki-1    : Wiki AI — periodically refreshes wiki/ when tickets/done or
-#               tickets/reject change. Path-disjoint from Plan AI and Impl AI
-#               so it never causes worktree/merge conflicts.
+#               tickets/reject change. Path-disjoint from Orchestrator AI and
+#               Impl AI so it never causes worktree/merge conflicts.
 # Impl AI still runs deterministic update-wiki.sh inline at merge time so the
 # wiki has a fresh baseline; wiki-1 layers AI synthesis on top.
 #
 # Change agent/model fields to claude, opencode, gemini, shell, or a custom
 # command when Codex CLI is not the desired local runner.
 #
-# Legacy `coordinator-1` and trial `self-improve-1` runners are kept reachable
-# only as backwards-compat / opt-in trials — they ship disabled by default.
+# Trial `self-improve-1` runner is kept reachable as an opt-in experiment —
+# it ships disabled by default.
+#
+# Legacy `coordinator-1` is no longer scaffolded. Existing boards that opted
+# into it keep working (the role identifier is still accepted), and new
+# installs can opt in with `autoflow runners add coordinator-1 coordinator`.
 
 [[runners]]
 id = "planner-1"
@@ -46,17 +51,6 @@ reasoning = ""
 mode = "loop"
 interval_seconds = 60
 enabled = true
-command = ""
-
-[[runners]]
-id = "coordinator-1"
-role = "coordinator"
-agent = "codex"
-model = ""
-reasoning = ""
-mode = "loop"
-interval_seconds = 60
-enabled = false
 command = ""
 
 [[runners]]

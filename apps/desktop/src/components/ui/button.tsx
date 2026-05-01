@@ -1,31 +1,17 @@
 import * as React from "react";
-import MuiButton, { type ButtonProps as MuiButtonProps } from "@mui/material/Button";
 import { cn } from "@/lib/utils";
 
 type ButtonVariant = "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
-type ButtonSize = "default" | "sm" | "lg" | "icon";
+type ButtonSize = "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
 
-export interface ButtonProps
-  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "color"> {
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   asChild?: boolean;
   variant?: ButtonVariant;
   size?: ButtonSize;
 }
 
-function muiVariant(variant: ButtonVariant): MuiButtonProps["variant"] {
-  if (variant === "outline") return "outlined";
-  if (variant === "ghost" || variant === "link") return "text";
-  return "contained";
-}
-
-function muiColor(variant: ButtonVariant): MuiButtonProps["color"] {
-  if (variant === "destructive") return "error";
-  if (variant === "secondary") return "secondary";
-  return "primary";
-}
-
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", size = "default", asChild = false, children, ...props }, ref) => {
+  ({ className, variant = "default", size = "default", asChild = false, children, type = "button", ...props }, ref) => {
     const buttonClassName = cn("af-button", `af-button-${variant}`, `af-button-${size}`, className);
 
     if (asChild && React.isValidElement(children)) {
@@ -36,16 +22,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     return (
-      <MuiButton
-        ref={ref}
-        className={buttonClassName}
-        color={muiColor(variant)}
-        size={size === "lg" ? "large" : size === "sm" || size === "icon" ? "small" : "medium"}
-        variant={muiVariant(variant)}
-        {...props}
-      >
+      <button ref={ref} type={type} className={buttonClassName} {...props}>
         {children}
-      </MuiButton>
+      </button>
     );
   }
 );

@@ -34,7 +34,7 @@ PROJECT_ROOT
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
-- `tickets/inbox/`: quick memo queue before Plan AI promotion.
+- `tickets/inbox/`: quick memo queue before Orchestrator AI promotion.
 - `tickets/backlog/`: approved spec queue before execution.
 - `tickets/plan/`: legacy planning queue.
 - `tickets/todo/`: legacy implementation queue.
@@ -43,6 +43,7 @@ Directory meanings:
 - `tickets/done/<project-key>/`: passed tickets, archived specs, archived plans, and archived reject records.
 - `tickets/reject/`: failed tickets with `## Reject Reason`.
 - `reference/`: templates and board reference material.
+- `protocols/`: AI-first orchestration, owner, and recovery contracts.
 - `rules/`: operating rules and verifier criteria.
 - `automations/`: hook, heartbeat, and runtime context contracts.
 - `agents/`: role prompts used by human or local runner agents.
@@ -64,7 +65,7 @@ At the start of work, read in this order:
 9. Role-specific files:
    - PRD handoff: `agents/spec-author-agent.md`
    - default execution: `agents/ticket-owner-agent.md`
-   - legacy planning: `agents/plan-to-ticket-agent.md`
+   - orchestration / legacy planning: `agents/plan-to-ticket-agent.md`
    - legacy todo implementation: `agents/todo-queue-agent.md`
    - legacy verification: `agents/verifier-agent.md`
    - wiki maintenance: `agents/wiki-maintainer-agent.md` or coordinator-backed wiki turns
@@ -77,10 +78,10 @@ At the start of work, read in this order:
 
 ## Core Rules
 
-1. Do not create plans or tickets without an approved spec or a clear quick memo promoted by Plan AI.
-2. Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, and compatibility aliases `#af` / `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
+1. Do not create plans or tickets without an approved spec or a clear quick memo promoted by Orchestrator AI.
+2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (renamed from the previous `memo` triggers). They write `tickets/inbox/memo_NNN.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes. The inbox filename prefix `memo_` and the CLI subcommand `autoflow memo create` are intentionally unchanged so existing scanning / tooling keeps working.
-4. The default executor is Ticket Owner Mode. Prefer `autoflow run ticket`, Desktop Owner runner, or `scripts/start-ticket-owner.*` over splitting planner/todo/verifier roles.
+4. The default execution path is Orchestrator AI plus Ticket Owner Mode: `planner-1` promotes memo/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `owner-1` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
@@ -92,7 +93,7 @@ At the start of work, read in this order:
 13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
 14. There must not be two copies of the same `tickets_NNN.md` in different state folders.
 15. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
-16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Obsidian Links`, run files, and logs.
+16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
 17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
 18. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after coordinator/merge completion. Failed records move to `tickets/reject/verify_NNN.md`.
 19. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Coordinator/merge completion automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
@@ -107,9 +108,9 @@ At the start of work, read in this order:
 
 ### 1. Spec Authoring Mode
 
-Trigger: Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or compatibility aliases `#af` / `#autoflow`.
+Trigger: Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`.
 
-Purpose: turn the conversation into one approved backlog spec.
+Purpose: turn the conversation into one approved backlog spec, or a small ordered PRD set when the scope is too large for one safe spec.
 
 Read:
 
@@ -121,10 +122,13 @@ Read:
 Do:
 
 - Run `scripts/start-spec.*` to reserve or resume a spec slot.
-- Ask for goal, scope, modules, allowed paths, acceptance criteria, and verification command.
-- Show the full spec draft in chat before writing.
-- Save only after explicit user confirmation.
-- Save only `tickets/backlog/prd_NNN.md` and optional conversation handoff.
+- Gather goal, scope, modules, allowed paths, acceptance criteria, and verification command through lightweight chat.
+- If the request spans multiple independent outcomes, modules, releases, or verification paths, propose a short PRD split map before drafting.
+- Use short questions and decision recaps; do not render the PRD template every turn.
+- Render the full spec draft only after the user gives an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
+- For a PRD set, render each PRD draft separately and include sibling references in `Conversation Handoff` or `Notes`.
+- Save only after separate explicit user confirmation. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
+- Save only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Multiple PRDs must be separate backlog files, saved one active slot at a time.
 
 Do not:
 
@@ -254,7 +258,7 @@ Every ticket must keep these sections or fields current:
 - `Verifier Owner`
 - `Goal`
 - `References`
-- `Obsidian Links`
+- `Reference Notes`
 - `Allowed Paths`
 - `Worktree`
 - `Done When`

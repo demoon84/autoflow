@@ -6,8 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+cache_dir="${project_dir}-cache"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$cache_dir"
 }
 trap cleanup EXIT
 
@@ -41,7 +42,7 @@ run_temp_runtime() {
 
   (
     cd "$board_dir"
-    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT "$@"
+    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT XDG_CACHE_HOME="$cache_dir" "$@"
   )
 }
 
@@ -112,10 +113,19 @@ write_spec "project_002" "Shared head second ticket" "b.txt" >/dev/null
 
 start_one_output="${project_dir}/start-one.out"
 start_two_output="${project_dir}/start-two.out"
+plan_one_output="${project_dir}/plan-one.out"
+plan_two_output="${project_dir}/plan-two.out"
 resume_two_output="${project_dir}/resume-two.out"
 runner_block_output="${project_dir}/runner-block.out"
 fake_bin="${project_dir}/fake-bin"
 fake_codex_marker="${project_dir}/codex-called"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_one_output"
+require_line "$plan_one_output" "status=ok"
+require_line "$plan_one_output" "source=backlog-to-todo"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_two_output"
+require_line "$plan_two_output" "status=ok"
+require_line "$plan_two_output" "source=backlog-to-todo"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
@@ -127,11 +137,13 @@ require_line "$start_two_output" "status=ok"
 require_line "$start_two_output" "ticket_id=002"
 require_line "$start_two_output" "worktree_status=ready"
 
-printf 'first change\n' >"${project_dir}/../.autoflow-worktrees/$(basename "$project_dir")/tickets_001/a.txt"
-git -C "${project_dir}/../.autoflow-worktrees/$(basename "$project_dir")/tickets_001" add a.txt
-git -C "${project_dir}/../.autoflow-worktrees/$(basename "$project_dir")/tickets_001" commit -m "first ticket change" >/dev/null
-shared_head="$(git -C "${project_dir}/../.autoflow-worktrees/$(basename "$project_dir")/tickets_001" rev-parse --verify HEAD)"
-git -C "${project_dir}/../.autoflow-worktrees/$(basename "$project_dir")/tickets_002" reset --hard "$shared_head" >/dev/null
+wt_one="$(awk -F= '$1 == "worktree_path" { print $2; exit }' "$start_one_output")"
+wt_two="$(awk -F= '$1 == "worktree_path" { print $2; exit }' "$start_two_output")"
+printf 'first change\n' >"${wt_one}/a.txt"
+git -C "$wt_one" add a.txt
+git -C "$wt_one" commit -m "first ticket change" >/dev/null
+shared_head="$(git -C "$wt_one" rev-parse --verify HEAD)"
+git -C "$wt_two" reset --hard "$shared_head" >/dev/null
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$resume_two_output"
 require_line "$resume_two_output" "status=blocked"

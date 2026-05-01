@@ -68,7 +68,7 @@ tickets/backlog/project_001.md              (사용자가 #af 로 채움)
   - legacy planner 대화 하나는 한 번에 `plan_*.md` 하나만 활성 처리한다. 같은 대화가 이미 가진 active plan 이 있으면 새 plan 대신 그 plan 을 재개한다.
   - `tickets_*.md` 에는 `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Owner`, `Worktree`, `Last Updated`, `Next Action`, `Resume Context` 필수
   - git 저장소에서는 Ticket Owner 또는 legacy `start-todo.sh` 가 티켓별 worktree 를 만들고 owner 는 그 worktree 에서 구현한다.
-  - worker runtime context 는 역할 문맥과 현재 ticket 문맥을 따로 가진다. 기능 단위 작업 완료 시 전체 context 삭제 대신 active ticket 문맥만 비우고, 다음 tick 은 Obsidian links / References / Resume Context 를 다시 읽는다.
+  - worker runtime context 는 역할 문맥과 현재 ticket 문맥을 따로 가진다. 기능 단위 작업 완료 시 전체 context 삭제 대신 active ticket 문맥만 비우고, 다음 tick 은 reference notes / References / Resume Context 를 다시 읽는다.
   - blocker 가 있으면 여기에 남김 (todo 로 되돌리지 않음)
   - 기본 Ticket Owner 는 구현과 검증을 같은 티켓에서 이어가고, legacy todo 는 구현 완료 시 `Notes`, `Result.Summary` 를 갱신한 뒤 `scripts/handoff-todo.*` 로 파일을 `verifier/` 로 넘긴다.
 - `verifier/`
@@ -118,7 +118,7 @@ tickets/backlog/project_001.md              (사용자가 #af 로 채움)
 - `Project Key`
 - `Goal`, `References`, `Allowed Paths`, `Done When`
 - `Worktree`
-- `Obsidian Links`
+- `Reference Notes`
 - `Last Updated`, `Next Action`, `Resume Context`
 - `Verification`, `Result`
 - `## Reject Reason` (reject 폴더로 갈 때만 추가)
@@ -131,6 +131,6 @@ tickets/backlog/project_001.md              (사용자가 #af 로 채움)
 - `todo/`, `inprogress/`, `verifier/`, `done/`, `reject/` 디렉터리는 상태 보드 자체이며 하위 README 없이 빈 폴더로 유지돼도 된다.
 - `done/<project-key>/` 티켓은 같은 폴더의 `verify_NNN.md` 검증 기록과 연결돼 있어야 한다.
 - owner / verifier 완료 후에는 `BOARD_ROOT/logs/` 아래 completion log 가 하나 이상 있어야 한다.
-- plan / ticket / verification note 는 `## Obsidian Links` 로 서로 연결하는 편이 좋다.
+- plan / ticket / verification note 는 `## Reference Notes` 로 서로 연결하는 편이 좋다.
 - heartbeat worker 는 스스로 멈추지 않는다. `status=idle` 도 정상 상태.
 - board stage 가 authoritative 다. 기본 흐름에서는 Ticket Owner 가 pass / fail 을 판정하고, legacy role-pipeline 에서는 verifier 만 판정한다.

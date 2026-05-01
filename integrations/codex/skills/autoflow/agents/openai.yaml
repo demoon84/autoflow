@@ -1,4 +1,4 @@
 interface:
   display_name: "Autoflow"
-  short_description: "Draft Autoflow PRD handoff"
-  default_prompt: "Use $autoflow to draft and save an approved Autoflow backlog PRD."
+  short_description: "Autoflow PRD handoff"
+  default_prompt: "Use $autoflow to gather requirements, split into multiple PRDs when needed, render drafts only on explicit request, and save only after approval."

@@ -106,7 +106,7 @@ plan_hook_reason() {
       [ -n "$spec_id" ] || continue
       plan_file="$(plan_path "$spec_id")"
       if [ ! -f "$plan_file" ] || plan_file_is_placeholder "$plan_file"; then
-        printf 'planner work remains: populated backlog spec %s still needs a real plan.' "$(basename "$spec_file")"
+        printf 'planner work remains: populated backlog spec %s still needs Plan AI processing.' "$(basename "$spec_file")"
         return 0
       fi
     done < <(find "$spec_root" -maxdepth 1 -type f -name 'project_*.md' | sort)
@@ -200,7 +200,7 @@ verifier_hook_reason() {
 }
 
 ticket_owner_hook_reason() {
-  local inprogress_file stage owner claimed_by execution_owner verifier_owner todo_file verifier_file spec_file
+  local inprogress_file stage owner claimed_by execution_owner verifier_owner todo_file verifier_file
 
   if [ -n "$hook_worker_id" ]; then
     while IFS= read -r inprogress_file; do
@@ -238,14 +238,6 @@ ticket_owner_hook_reason() {
     printf 'ticket-owner work remains: legacy verifier ticket %s should be finished by an owner.' "$(basename "$verifier_file")"
     return 0
   fi
-
-  while IFS= read -r spec_file; do
-    [ -n "$spec_file" ] || continue
-    if spec_is_populated "$spec_file"; then
-      printf 'ticket-owner work remains: populated backlog spec %s is waiting.' "$(basename "$spec_file")"
-      return 0
-    fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md')
 
   return 1
 }

@@ -62,6 +62,7 @@ find_owned_inprogress_ticket() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
+    ticket_owner_queue_parked_blocker "$file" && continue
     if ticket_owned_by_worker "$file"; then
       printf '%s' "$file"
       return 0
@@ -110,184 +111,6 @@ claim_existing_ticket() {
   esac
 }
 
-project_key_has_ticket() {
-  local project_key="$1"
-  local file current_project_key
-
-  while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    current_project_key="$(project_key_from_ticket_file "$file")"
-    [ "$current_project_key" = "$project_key" ] && return 0
-  done < <(list_ticket_record_files_under "${BOARD_ROOT}/tickets")
-
-  return 1
-}
-
-extract_section_checklist() {
-  local file="$1"
-  local heading="$2"
-
-  awk -v heading="$heading" '
-    $0 == "## " heading { in_section=1; next }
-    /^## / && in_section { in_section=0 }
-    in_section && /^[[:space:]]*- \[[ xX]\]/ { print }
-  ' "$file"
-}
-
-extract_spec_allowed_paths() {
-  local file="$1"
-
-  awk '
-    /^## Allowed Paths/ { in_section=1; next }
-    /^## / && in_section { in_section=0 }
-    in_section && /^[[:space:]]*[-*] / {
-      sub(/^[[:space:]]*[-*][[:space:]]+/, "", $0)
-      if ($0 != "" && $0 != "...") print "- " $0
-    }
-  ' "$file"
-}
-
-create_ticket_from_spec() {
-  local spec_file="$1"
-  local spec_ref project_key ticket_id ticket_file ticket_note project_note
-  local archived_spec_ref archived_spec_file title goal allowed_paths done_when verification_command timestamp
-
-  spec_ref="$(board_relative_path "$spec_file")"
-  project_key="$(project_key_from_spec_ref "$spec_ref")"
-
-  if project_key_has_ticket "$project_key"; then
-    printf 'status=blocked\n'
-    printf 'reason=project_already_has_ticket\n'
-    printf 'project_key=%s\n' "$project_key"
-    printf 'spec=%s\n' "$spec_file"
-    printf 'board_root=%s\n' "$BOARD_ROOT"
-    printf 'project_root=%s\n' "$PROJECT_ROOT"
-    exit 0
-  fi
-
-  archived_spec_ref="$(archive_spec_to_done_if_needed "$spec_ref")"
-  archived_spec_file="${BOARD_ROOT}/${archived_spec_ref}"
-  ticket_id="$(next_ticket_id)"
-  ticket_file="$(ticket_path "inprogress" "$ticket_id")"
-  ticket_note="[[tickets_${ticket_id}]]"
-  project_note="[[${project_key}]]"
-  timestamp="$(now_iso)"
-
-  title="$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Name")"
-  goal="$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Goal")"
-  verification_command="$(extract_scalar_field_in_section "$archived_spec_file" "Verification" "Command")"
-  allowed_paths="$(extract_spec_allowed_paths "$archived_spec_file")"
-  done_when="$(extract_section_checklist "$archived_spec_file" "Global Acceptance Criteria")"
-
-  [ -n "$title" ] || title="Ticket owner work for ${project_key}"
-  [ -n "$goal" ] || goal="Implement the approved spec for ${project_key}."
-  [ -n "$allowed_paths" ] || allowed_paths="- TODO: define concrete repo-relative paths before editing product code"
-  [ -n "$done_when" ] || done_when="- [ ] Ticket owner writes a concrete mini-plan into this ticket
-- [ ] Implementation stays inside Allowed Paths
-- [ ] Verification evidence is recorded before done/reject"
-
-  mkdir -p "$(dirname "$ticket_file")"
-  cat > "$ticket_file" <<EOF
-# Ticket
-
-## Ticket
-
-- ID: tickets_${ticket_id}
-- Project Key: ${project_key}
-- Plan Candidate: Direct ticket-owner handoff from ${archived_spec_ref}
-- Title: ${title}
-- Stage: planning
-- Owner: ${worker_id}
-- Claimed By: ${worker_id}
-- Execution Owner: ${worker_id}
-- Verifier Owner: ${worker_id}
-- Last Updated: ${timestamp}
-
-## Goal
-
-- 이번 작업의 목표: ${goal}
-
-## References
-
-- Project Spec: ${archived_spec_ref}
-- Feature Spec:
-- Plan Source: direct-ticket-owner
-
-## Obsidian Links
-
-- Project Note: ${project_note}
-- Plan Note:
-- Ticket Note: ${ticket_note}
-
-## Allowed Paths
-
-${allowed_paths}
-
-## Worktree
-
-- Path:
-- Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim
-
-## Done When
-
-${done_when}
-
-## Next Action
-
-- 다음에 바로 이어서 할 일: ticket owner mini-plan 을 이 티켓에 적고, Allowed Paths 가 TODO 이면 먼저 구체 경로로 좁힌 뒤 구현을 시작한다.
-
-## Resume Context
-
-- 현재 상태 요약: backlog spec 에서 ticket-owner 가 직접 생성한 inprogress 티켓.
-- 직전 작업: scripts/start-ticket-owner.sh 로 spec 을 보관하고 티켓을 생성.
-- 재개 시 먼저 볼 것: Project Spec, Goal, Allowed Paths, Done When, Notes.
-
-## Notes
-
-- Created by ${worker_id} from ${archived_spec_ref} at ${timestamp}.
-
-## Verification
-
-- Run file:
-- Log file:
-- Result: pending
-
-## Result
-
-- Summary:
-- Remaining risk:
-EOF
-
-  printf '%s' "$ticket_file"
-}
-
-select_populated_spec() {
-  local spec_file id
-
-  if [ -n "$requested_normalized" ]; then
-    spec_file="${BOARD_ROOT}/tickets/backlog/project_${requested_normalized}.md"
-    if [ -f "$spec_file" ] && ! spec_file_is_placeholder "$spec_file"; then
-      printf '%s' "$spec_file"
-      return 0
-    fi
-    return 1
-  fi
-
-  while IFS= read -r spec_file; do
-    [ -n "$spec_file" ] || continue
-    spec_file_is_placeholder "$spec_file" && continue
-    id="$(extract_numeric_id "$spec_file" 2>/dev/null || true)"
-    [ -n "$id" ] || continue
-    printf '%s' "$spec_file"
-    return 0
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md')
-
-  return 1
-}
-
 prepare_ticket_owner_context() {
   local ticket_file="$1"
   local source_kind="$2"
@@ -334,7 +157,7 @@ prepare_ticket_owner_context() {
   replace_scalar_field_in_section "$run_file" "## Meta" "Project Key" "$project_key"
   replace_scalar_field_in_section "$run_file" "## Meta" "Status" "pending"
   replace_scalar_field_in_section "$run_file" "## Meta" "Working Root" "$implementation_root"
-  replace_section_block "$run_file" "Obsidian Links" "- Project Note: ${project_note}
+  replace_section_block "$run_file" "Reference Notes" "- Project Note: ${project_note}
 - Plan Note:
 - Ticket Note: ${ticket_note}
 - Verification Note: ${verification_note}"
@@ -433,16 +256,11 @@ else
   fi
 fi
 
-spec_file="$(select_populated_spec || true)"
-if [ -n "$spec_file" ]; then
-  created_ticket="$(create_ticket_from_spec "$spec_file")"
-  printf 'status=ok\n'
-  prepare_ticket_owner_context "$created_ticket" "spec"
-  exit 0
-fi
-
+# Reject auto-replan and backlog/PRD ticket creation are Plan AI's
+# responsibility. Ticket Owner only claims todo/inprogress work.
 printf 'status=idle\n'
-printf 'reason=no_actionable_ticket_or_spec\n'
+printf 'reason=no_actionable_ticket\n'
+printf 'next_action=Plan AI feeds tickets/todo/. Impl AI will claim on the next tick when one is available.\n'
 printf 'worker_id=%s\n' "$worker_id"
 printf 'worker_role=%s\n' "$(worker_role)"
 printf 'board_root=%s\n' "$BOARD_ROOT"

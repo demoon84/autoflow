@@ -176,7 +176,7 @@ project_note="[[${project_key}]]"
 plan_note="[[plan_${plan_id}]]"
 plan_source_ref="$(board_relative_path "$target_plan")"
 
-replace_section_block "$target_plan" "Obsidian Links" "- Project Note: ${project_note}
+replace_section_block "$target_plan" "Reference Notes" "- Project Note: ${project_note}
 - Plan Note: ${plan_note}"
 
 pre_status="$(plan_status_value "$target_plan")"

@@ -111,7 +111,7 @@ worktree_mode_disabled() {
 
 worktree_parent_root() {
   local git_root="$1"
-  local configured repo_name parent_dir
+  local configured repo_name cache_root os_name parent_dir
 
   configured="${AUTOFLOW_WORKTREE_ROOT:-}"
   if [ -n "$configured" ]; then
@@ -120,8 +120,23 @@ worktree_parent_root() {
   fi
 
   repo_name="$(basename "$git_root")"
-  parent_dir="$(dirname "$git_root")"
-  printf '%s/.autoflow-worktrees/%s' "$parent_dir" "$repo_name"
+  if [ -n "${XDG_CACHE_HOME:-}" ]; then
+    cache_root="${XDG_CACHE_HOME}/autoflow/worktrees"
+  elif [ -n "${HOME:-}" ]; then
+    os_name="$(uname -s 2>/dev/null || true)"
+    case "$os_name" in
+      Darwin)
+        cache_root="${HOME}/Library/Caches/autoflow/worktrees"
+        ;;
+      *)
+        cache_root="${HOME}/.cache/autoflow/worktrees"
+        ;;
+    esac
+  else
+    parent_dir="$(dirname "$git_root")"
+    cache_root="${parent_dir}/.autoflow-worktrees"
+  fi
+  printf '%s/%s' "$(normalize_runtime_path "$cache_root")" "$repo_name"
 }
 
 ticket_worktree_branch_for_id() {
@@ -957,6 +972,19 @@ stage_is_execution_candidate() {
   esac
 }
 
+ticket_owner_queue_parked_blocker() {
+  local ticket_file="$1"
+  local stage recovery_status
+
+  stage="$(ticket_stage "$ticket_file")"
+  [ "$stage" = "blocked" ] || return 1
+
+  recovery_status="$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Status")"
+  [ "$recovery_status" = "needs_user" ] || return 1
+
+  return 0
+}
+
 stage_is_verification_candidate() {
   case "${1:-}" in
     ready_for_verification|verifying)
@@ -1535,6 +1563,7 @@ count_execution_load_for_owner() {
     [ -n "$file" ] || continue
     execution_owner="$(ticket_scalar_field "$file" "Execution Owner")"
     [ "$execution_owner" = "$wanted_owner" ] || continue
+    ticket_owner_queue_parked_blocker "$file" && continue
     stage="$(ticket_stage "$file")"
     if stage_is_execution_candidate "$stage"; then
       count=$((count + 1))

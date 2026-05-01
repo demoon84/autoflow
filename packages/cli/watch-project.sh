@@ -4,6 +4,29 @@ set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 
+watch_pid_is_running() {
+  local pid="${1:-}"
+  local kill_output kill_status
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 usage() {
   echo "Usage: $(basename "$0") [--background|--stop|--status] [project-root] [board-dir-name] [config-path]" >&2
 }
@@ -89,7 +112,7 @@ if [ "$status_mode" = "true" ]; then
 
   watch_pid="$(tr -d '\r\n' < "$pid_file")"
   printf 'pid=%s\n' "$watch_pid"
-  if [ -n "$watch_pid" ] && kill -0 "$watch_pid" 2>/dev/null; then
+  if watch_pid_is_running "$watch_pid"; then
     printf 'status=running\n'
     printf 'stdout=%s\n' "${hooks_log_dir}/watch-board.stdout.log"
     printf 'stderr=%s\n' "${hooks_log_dir}/watch-board.stderr.log"
@@ -107,8 +130,14 @@ if [ "$stop_mode" = "true" ]; then
   fi
 
   watch_pid="$(tr -d '\r\n' < "$pid_file")"
-  if [ -n "$watch_pid" ] && kill -0 "$watch_pid" 2>/dev/null; then
-    kill "$watch_pid" 2>/dev/null || true
+  if watch_pid_is_running "$watch_pid"; then
+    if ! kill "$watch_pid" 2>/dev/null; then
+      printf 'status=stop_failed\n'
+      printf 'reason=process_signal_failed\n'
+      printf 'pid=%s\n' "$watch_pid"
+      printf 'pid_file=%s\n' "$pid_file"
+      exit 0
+    fi
     rm -f "$pid_file"
     printf 'status=stopped\n'
     printf 'pid=%s\n' "$watch_pid"
@@ -131,7 +160,7 @@ fi
 if [ "$background_mode" = "true" ]; then
   if [ -f "$pid_file" ]; then
     existing_pid="$(tr -d '\r\n' < "$pid_file")"
-    if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
+    if watch_pid_is_running "$existing_pid"; then
       printf 'status=already_running\n'
       printf 'pid=%s\n' "$existing_pid"
       printf 'pid_file=%s\n' "$pid_file"

@@ -175,8 +175,86 @@ runner_log_tail_line() {
   '
 }
 
+runner_log_meaningful_last_result() {
+  local target_runner_id="$1"
+  local target_log_path
+
+  target_log_path="$(runner_log_path "$target_runner_id")"
+  [ -f "$target_log_path" ] || return 0
+
+  tail -n 40 "$target_log_path" | awk '
+    function value(line, key,   pattern, item) {
+      pattern = "(^| )" key "=[^ ]*"
+      if (match(line, pattern)) {
+        item = substr(line, RSTART, RLENGTH)
+        sub("^.*" key "=", "", item)
+        return item
+      }
+      return ""
+    }
+    {
+      lines[NR] = $0
+    }
+    END {
+      for (i = NR; i >= 1; i -= 1) {
+        event = value(lines[i], "event")
+        if (event == "adapter_skip") {
+          reason = value(lines[i], "reason")
+          if (reason != "") {
+            print reason
+            exit
+          }
+        }
+        if (event == "runtime_preflight_finish" || event == "runtime_finish") {
+          reason = value(lines[i], "reason")
+          if (reason != "") {
+            print reason
+            exit
+          }
+          status = value(lines[i], "runtime_status")
+          if (status != "") {
+            print status
+            exit
+          }
+        }
+        if (event == "adapter_finish") {
+          reason = value(lines[i], "reason")
+          if (reason != "") {
+            print reason
+            exit
+          }
+          exit_code = value(lines[i], "exit_code")
+          if (exit_code != "") {
+            print "adapter_exit_" exit_code
+            exit
+          }
+        }
+      }
+    }
+  '
+}
+
+runner_display_last_result() {
+  local target_runner_id="$1"
+  local raw_result="${2:-}"
+  local meaningful_result
+
+  case "$raw_result" in
+    loop_waiting_exit_0)
+      meaningful_result="$(runner_log_meaningful_last_result "$target_runner_id")"
+      if [ -n "$meaningful_result" ]; then
+        printf '%s' "$meaningful_result"
+        return 0
+      fi
+      ;;
+  esac
+
+  printf '%s' "$raw_result"
+}
+
 runner_pid_is_running() {
   local pid="${1:-}"
+  local kill_output kill_status
 
   case "$pid" in
     ""|*[!0-9]*)
@@ -184,7 +262,17 @@ runner_pid_is_running() {
       ;;
   esac
 
-  kill -0 "$pid" 2>/dev/null
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
 }
 
 runner_kill_process_tree() {
@@ -686,6 +774,12 @@ start_runner() {
       "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
       "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
       "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+      "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+      "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+      "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+      "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+      "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+      "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
       "pid=${loop_pid}" \
       "started_at=${timestamp}" \
       "last_event_at=${timestamp}" \
@@ -719,6 +813,12 @@ start_runner() {
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
     "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
     "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+    "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+    "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+    "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+    "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+    "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+    "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
     "last_event_at=${timestamp}"
@@ -809,6 +909,12 @@ restart_runner() {
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
     "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
     "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+    "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+    "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+    "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+    "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+    "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+    "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
     "last_event_at=${timestamp}"
@@ -823,7 +929,7 @@ restart_runner() {
 
 loop_runner_worker() {
   local target_runner_id="$1"
-  local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop
+  local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -923,6 +1029,12 @@ loop_runner_worker() {
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
     "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
     "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+    "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+    "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+    "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+    "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+    "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+    "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=${loop_pid}" \
     "started_at=${started_at}" \
     "last_event_at=${started_at}" \
@@ -964,6 +1076,16 @@ loop_runner_worker() {
     fi
 
     timestamp="$(runner_now_iso)"
+    last_result="$(runner_state_value_or_empty "$target_runner_id" "last_result")"
+    if [ "$run_exit" != "0" ]; then
+      last_result="loop_waiting_exit_${run_exit}"
+    else
+      case "$last_result" in
+        ""|loop_started|loop_running|loop_waiting_exit_*)
+          last_result="loop_waiting_exit_${run_exit}"
+          ;;
+      esac
+    fi
     runner_write_state "$target_runner_id" \
       "status=running" \
       "role=${role}" \
@@ -977,10 +1099,16 @@ loop_runner_worker() {
       "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
       "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
       "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+      "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+      "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+      "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+      "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+      "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+      "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
       "pid=${loop_pid}" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
-      "last_result=loop_waiting_exit_${run_exit}"
+      "last_result=${last_result}"
     runner_append_log "$target_runner_id" "loop_tick" \
       "role=${role}" \
       "mode=${mode}" \
@@ -1606,7 +1734,10 @@ list_runner_artifacts() {
 list_runners() {
   local config_stream runner_count index in_runner line key value
   local id role agent model reasoning mode interval_seconds enabled command
-  local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref pid started_at last_event_at last_result last_log_line
+  local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref
+  local active_recovery_reason active_recovery_status active_recovery_failure_class
+  local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
+  local pid started_at last_event_at last_result last_log_line
   local last_runtime_log last_prompt_log last_stdout_log last_stderr_log artifact_status
   local artifact_runtime_status artifact_prompt_status artifact_stdout_status artifact_stderr_status
 
@@ -1660,6 +1791,12 @@ list_runners() {
           active_ticket_title="$(runner_state_value_or_empty "$id" "active_ticket_title")"
           active_stage="$(runner_state_value_or_empty "$id" "active_stage")"
           active_spec_ref="$(runner_state_value_or_empty "$id" "active_spec_ref")"
+          active_recovery_reason="$(runner_state_value_or_empty "$id" "active_recovery_reason")"
+          active_recovery_status="$(runner_state_value_or_empty "$id" "active_recovery_status")"
+          active_recovery_failure_class="$(runner_state_value_or_empty "$id" "active_recovery_failure_class")"
+          active_recovery_worktree_path="$(runner_state_value_or_empty "$id" "active_recovery_worktree_path")"
+          active_recovery_worktree_status="$(runner_state_value_or_empty "$id" "active_recovery_worktree_status")"
+          active_recovery_board_state="$(runner_state_value_or_empty "$id" "active_recovery_board_state")"
           pid="$(runner_state_value_or_empty "$id" "pid")"
           started_at="$(runner_state_value_or_empty "$id" "started_at")"
           last_event_at="$(runner_state_value_or_empty "$id" "last_event_at")"
@@ -1677,7 +1814,9 @@ list_runners() {
           [ -n "$state_status" ] || state_status="idle"
           effective_state_status="$(runner_effective_state_status "$state_status" "$mode" "$pid")"
           if [ "$effective_state_status" != "$state_status" ]; then
-            last_result="${last_result:-stale_pid}"
+            last_result="stale_pid"
+          else
+            last_result="$(runner_display_last_result "$id" "$last_result")"
           fi
           pid="$(runner_effective_state_pid "$state_status" "$mode" "$pid")"
           state_status="$effective_state_status"
@@ -1699,6 +1838,12 @@ list_runners() {
           printf 'runner.%s.active_ticket_title=%s\n' "$index" "$active_ticket_title"
           printf 'runner.%s.active_stage=%s\n' "$index" "$active_stage"
           printf 'runner.%s.active_spec_ref=%s\n' "$index" "$active_spec_ref"
+          printf 'runner.%s.active_recovery_reason=%s\n' "$index" "$active_recovery_reason"
+          printf 'runner.%s.active_recovery_status=%s\n' "$index" "$active_recovery_status"
+          printf 'runner.%s.active_recovery_failure_class=%s\n' "$index" "$active_recovery_failure_class"
+          printf 'runner.%s.active_recovery_worktree_path=%s\n' "$index" "$active_recovery_worktree_path"
+          printf 'runner.%s.active_recovery_worktree_status=%s\n' "$index" "$active_recovery_worktree_status"
+          printf 'runner.%s.active_recovery_board_state=%s\n' "$index" "$active_recovery_board_state"
           printf 'runner.%s.pid=%s\n' "$index" "$pid"
           printf 'runner.%s.started_at=%s\n' "$index" "$started_at"
           printf 'runner.%s.last_event_at=%s\n' "$index" "$last_event_at"

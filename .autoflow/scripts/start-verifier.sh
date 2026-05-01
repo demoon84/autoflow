@@ -192,7 +192,7 @@ mkdir -p "$(dirname "$reject_target")"
 replace_scalar_field_in_section "$run_file" "## Meta" "PRD Key" "$project_key"
 replace_scalar_field_in_section "$run_file" "## Meta" "Status" "pending"
 replace_scalar_field_in_section "$run_file" "## Meta" "Working Root" "$working_root"
-replace_section_block "$run_file" "Obsidian Links" "- Project Note: ${project_note}
+replace_section_block "$run_file" "Reference Notes" "- Project Note: ${project_note}
 - Plan Note: ${plan_note}
 - Ticket Note: ${ticket_note}
 - Verification Note: ${verification_note}"

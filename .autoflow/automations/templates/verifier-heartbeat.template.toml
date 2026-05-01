@@ -55,7 +55,7 @@ Loop (run every wake-up):
 12. If this ticket reaches `.autoflow/tickets/done/<project-key>/`, treat that as completion of the current ticket only. If backlog still has another populated spec, planner automation or the `done/` hook will continue with the next plan.
 13. Never call `git push`.
 
-Context rule: Keep the chat response short after each ticket. The durable context is in Obsidian links, tickets, verification records, and logs; do not carry long summaries in chat. At the end of every wake-up, leave only role/worker context and clear active ticket context. The Stop hook also enforces this for verifier wake-ups, so the next tick reloads from `tickets/verifier/`, `tickets/inprogress/verify_NNN.md`, and logs.
+Context rule: Keep the chat response short after each ticket. The durable context is in reference notes, tickets, verification records, and logs; do not carry long summaries in chat. At the end of every wake-up, leave only role/worker context and clear active ticket context. The Stop hook also enforces this for verifier wake-ups, so the next tick reloads from `tickets/verifier/`, `tickets/inprogress/verify_NNN.md`, and logs.
 
 Stop rule: Unless the user has explicitly told you to stop, do NOT self-terminate. Exit the current turn cleanly. The heartbeat fires again in ~1 minute and picks up the next verification target from the board files.
 """

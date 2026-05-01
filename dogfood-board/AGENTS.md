@@ -72,7 +72,7 @@
 13. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
 14. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
 15. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
-16. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. Ticket Owner / legacy `#todo` / legacy `#veri` 는 tick 중에 active ticket context 를 잡아도 완료 시 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Obsidian Links, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
+16. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. Ticket Owner / legacy `#todo` / legacy `#veri` 는 tick 중에 active ticket context 를 잡아도 완료 시 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Reference Notes, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
 17. 여러 owner worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
 18. Ticket Owner / verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
 19. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다. ticket finish 는 위키 managed section 을 자동 갱신하므로 일반 완료 흐름에 별도 위키 실행기를 요구하지 않는다.
@@ -85,7 +85,7 @@
 
 ## Agent Modes
 
-이 보드에서 기본 실행은 `Ticket Owner Mode` 다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. legacy role-pipeline 이 필요할 때만 plan / todo / verifier heartbeat 를 분리해 쓴다.
+이 보드에서 기본 실행은 `Orchestrator AI Mode` + `Ticket Owner Mode` 다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. legacy role-pipeline 이 필요할 때만 plan / todo / verifier heartbeat 를 분리해 쓴다.
 
 ### 1. Spec Authoring Mode
 
@@ -118,12 +118,12 @@
 
 목적:
 
-- `ticket-owner` heartbeat 또는 `autoflow run ticket` 으로 동작. 한 owner 가 자기 `tickets/inprogress/` 티켓을 이어가거나, 없으면 `tickets/todo/`, `tickets/verifier/`, populated backlog spec 순서로 한 항목을 점유해 local plan, 구현, 검증, evidence, done/reject 이동까지 끝까지 처리한다.
+- `ticket-owner` heartbeat 또는 `autoflow run ticket` 으로 동작. 한 owner 가 자기 `tickets/inprogress/` 티켓을 이어가거나, 없으면 `tickets/todo/` 또는 legacy `tickets/verifier/` 항목을 점유해 local plan, 구현, 검증, evidence, done/reject 이동까지 끝까지 처리한다. Populated backlog spec 은 Plan AI 가 먼저 `tickets/todo/` 로 변환한다.
 
 반드시 읽을 파일:
 
 - `agents/ticket-owner-agent.md`
-- 대상 `tickets/inprogress/tickets_NNN.md`, `tickets/todo/tickets_NNN.md`, `tickets/verifier/tickets_NNN.md`, 또는 `tickets/backlog/prd_NNN.md`
+- 대상 `tickets/inprogress/tickets_NNN.md`, `tickets/todo/tickets_NNN.md`, 또는 legacy `tickets/verifier/tickets_NNN.md`
 - 참조된 `tickets/done/*/prd_*.md`
 - `rules/verifier/README.md`, `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`
 
@@ -142,25 +142,27 @@
 - 같은 owner 가 동시에 여러 active ticket 처리
 - `git push`
 
-### 3. Plan Automation Mode (legacy role-pipeline)
+### 3. Orchestrator AI Mode (default planner)
 
 목적:
 
-- `#plan` heartbeat 로 동작. spec 이 있고 대응하는 plan 이 없거나 draft 면 plan 을 도출해 쓰고, `tickets/reject/reject_NNN.md` 를 감시해 실패 원인을 새 Execution Candidate 로 재반영한다. `start-plan.sh` 가 ready plan 을 `tickets/inprogress/plan_NNN.md` 로 점유한 뒤 각 Candidate 에 대해 `pending_ticket` 블록을 출력하고, agent 가 그 블록마다 `tickets/todo/tickets_NNN.md` 본문을 직접 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
+- `planner-1` heartbeat 또는 `autoflow run planner` 로 동작. quick memo, populated backlog spec, reject 기록을 todo work 로 변환하고, blocked/stalled ticket 에는 `Recovery State` 기반 복구 지시를 남긴다. `start-plan.sh` 는 다음 plan-side work 를 선택하는 도구이고, agent 가 결과를 읽어 plan/ticket/recovery markdown 을 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
 
 반드시 읽을 파일:
 
 - `agents/plan-to-ticket-agent.md`
 - 대상 `tickets/backlog/project_{번호}.md`, `tickets/plan/plan_{번호}.md`, `tickets/inprogress/plan_{번호}.md`
+- `tickets/inbox/memo_*.md`, `tickets/reject/reject_*.md`, active `tickets/todo/` 또는 `tickets/inprogress/` recovery 대상
 - `reference/roadmap.md`
-- `tickets/reject/reject_*.md` (있다면)
 - `reference/ticket-template.md`
+- `protocols/board-orchestration.md`, `protocols/recovery.md`
 
 해야 하는 일:
 
 - spec 이 채워져 있는데 plan 이 없으면 plan 초안 생성 (Candidates 까지 채움, Status 는 draft 유지)
 - 다음 tick 에서 `start-plan.sh` 가 draft → ready 자동 flip + `tickets/inprogress/plan_NNN.md` 점유 + pending_ticket 블록 출력 → agent 가 같은 tick 에서 `tickets/todo/tickets_NNN.md` 본문 작성. 모든 Candidate 가 ticket 화되면 다음 tick 에서 script 가 spec/plan 을 done 으로 보관.
 - reject 티켓의 `## Reject Reason` 을 읽고 새 Candidate 추가 + plan Status 를 ready 로 되돌림. 재시도 todo 가 생성되면 해당 `reject_NNN.md` 는 `tickets/done/<project-key>/` 로 이동
+- blocked/stalled/repeated reject 상태는 product code 를 건드리지 않고 ticket markdown 의 `Recovery State`, `Next Action`, `Resume Context` 로 복구 지시를 남김
 
 하면 안 되는 일:
 
@@ -229,11 +231,13 @@
 
 ## Ticket Lifecycle
 
-기본 Ticket Owner 흐름 (아래 경로는 예시 번호 `001` 을 쓴 형식이며 각 보드가 번호를 직접 발급한다):
+기본 Orchestrator + Ticket Owner 흐름 (아래 경로는 예시 번호 `001` 을 쓴 형식이며 각 보드가 번호를 직접 발급한다):
 
 ```text
 tickets/backlog/project_001.md            (사용자가 #af 로 채움)
-  → tickets/inprogress/tickets_001.md   (Ticket Owner 가 spec 에서 직접 생성하거나 기존 티켓 점유)
+  → tickets/plan/plan_001.md           (Plan AI 가 도출 후 Candidates 채움)
+  → tickets/todo/tickets_001.md        (Plan AI 가 todo 본문 작성)
+  → tickets/inprogress/tickets_001.md  (Ticket Owner 가 todo claim)
   → tickets/inprogress/verify_001.md    (Ticket Owner 가 verify-ticket-owner 로 evidence 기록)
   → tickets/done/project_001/tickets_001.md  (pass: finish-ticket-owner 로 local commit + mv)
   ↘ tickets/done/project_001/project_001.md  (처리된 spec 보관)
@@ -279,7 +283,7 @@ tickets/backlog/project_001.md            (사용자가 #af 로 채움)
 - `Verifier Owner`
 - `Goal`
 - `References`
-- `Obsidian Links`
+- `Reference Notes`
 - `Allowed Paths`
 - `Worktree`
 - `Done When`

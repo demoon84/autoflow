@@ -58,7 +58,7 @@ if [ -n "$active_spec_file" ]; then
     printf 'requested_spec_id=%s\n' "$requested_spec_id"
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
-    printf 'next_action=Resume or finish the active PRD in this conversation before starting another. Use a new Codex conversation for parallel PRD authoring.\n'
+    printf 'next_action=Resume, save, cancel, or hand off the active PRD before reserving another slot. A single conversation may author a PRD set, but only one PRD slot is active at a time; use a new Codex conversation only for parallel PRD authoring.\n'
     exit 0
   fi
 
@@ -76,7 +76,7 @@ if [ -n "$active_spec_file" ]; then
   printf 'spec_is_placeholder=%s\n' "$spec_is_placeholder"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Resume the active PRD draft in this conversation; one Codex conversation authors one PRD at a time.\n'
+  printf 'next_action=Resume the active PRD draft in this conversation. If this is part of a larger PRD set, finish or save this PRD first, clear active context, then reserve the next slot.\n'
   printf 'confirmation_required=true\n'
   printf 'confirmation_phrases=저장,OK 저장,확정,save,go,yes save,좋아 저장해\n'
   exit 0
@@ -122,6 +122,6 @@ printf 'spec_created=false\n'
 printf 'spec_is_placeholder=%s\n' "$spec_is_placeholder"
 printf 'board_root=%s\n' "$BOARD_ROOT"
 printf 'project_root=%s\n' "$PROJECT_ROOT"
-printf 'next_action=1) Ask the user for the intent + scope + acceptance criteria. 2) Draft the full PRD inside THIS conversation as a fenced markdown block — do NOT write to %s yet. 3) Ask "이 내용으로 저장할까요? (저장 / 바꿔 / 취소)" and iterate in chat until the user replies with an explicit confirmation phrase (저장, OK 저장, 확정, save, go). 4) Only after explicit confirmation, overwrite %s. 5) Never create or modify files under tickets/plan/; after save, Ticket Owner should consume the PRD through autoflow run ticket or Desktop Owner execution.\n' "$spec_file" "$spec_file"
+printf 'next_action=1) Talk with the user in free-form chat to gather intent + scope + acceptance criteria + verification. Keep replies short — focused questions and bullet recaps, NOT the full PRD template every turn. 2) If scope is too large for one safe PRD, propose a lightweight split map with candidate PRDs, scope boundaries, dependency order, and verification focus. 3) Wait for an explicit draft trigger (초안, 초안 작성, 초안 보여줘, 정리해줘, draft, draft prd, show draft, or an equivalent clear request) before rendering full PRD draft(s) inside THIS conversation as fenced markdown blocks. Do NOT write to %s yet, and do NOT render the full template before the draft trigger. 4) After draft(s) are shown, ask "이 내용으로 저장할까요? (저장 / 바꿔 / 취소)" and iterate in chat until the user replies with an explicit save phrase (저장, OK 저장, 확정, save, go). A draft trigger is NOT save approval. Multiple PRDs require per-PRD approval or a clear save-all phrase (전부 저장, save all). 5) Only after explicit save approval, overwrite %s. For a PRD set, save one PRD slot, clear active context, then reserve the next slot. 6) Never create or modify files under tickets/plan/; after save, Ticket Owner should consume the PRD through autoflow run ticket or Desktop Owner execution.\n' "$spec_file" "$spec_file"
 printf 'confirmation_required=true\n'
 printf 'confirmation_phrases=저장,OK 저장,확정,save,go,yes save,좋아 저장해\n'

@@ -84,6 +84,7 @@ runner_file_has_quota_limit() {
 
 runner_pid_is_running() {
   local pid="${1:-}"
+  local kill_output kill_status
 
   case "$pid" in
     ""|*[!0-9]*)
@@ -91,7 +92,17 @@ runner_pid_is_running() {
       ;;
   esac
 
-  kill -0 "$pid" 2>/dev/null
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
 }
 
 runner_effective_state_status() {

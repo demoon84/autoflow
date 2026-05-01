@@ -10,7 +10,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 
 1. `README.md`
 2. `reference/tickets-board.md`
-3. The target spec in `tickets/backlog/` or archived `tickets/done/<project-key>/`
+3. The referenced spec archived under `tickets/done/<project-key>/`, when the ticket points to one
 4. The target ticket if one already exists
 5. `rules/verifier/README.md`
 6. `rules/verifier/checklist-template.md`
@@ -18,8 +18,8 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 
 ## Operating Contract
 
-- Claim or create exactly one ticket-sized unit of work.
-- Use `scripts/start-ticket-owner.sh` before editing. It resumes an owned ticket, claims a todo ticket, adopts a legacy verifier ticket, or creates an inprogress ticket from a populated backlog spec.
+- Claim exactly one ticket-sized unit of work.
+- Use `scripts/start-ticket-owner.sh` before editing. It resumes an owned ticket, claims a todo ticket, or adopts a legacy verifier ticket. Plan AI creates todo tickets from backlog PRDs.
 - Keep the ticket file as the source of truth.
 - Write a local mini-plan into the ticket before editing product code.
 - Implement within the ticket's `Allowed Paths`.
@@ -35,7 +35,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 ## Preferred Flow
 
 ```text
-spec/backlog or todo ticket
+Plan AI todo ticket
   -> ticket owner claim
   -> mini-plan
   -> implementation
@@ -55,4 +55,4 @@ spec/backlog or todo ticket
 
 ## Idle Behavior
 
-When no spec or ticket is actionable, leave runner state idle and explain the reason in runner logs.
+When no ticket is actionable, leave runner state idle and explain the reason in runner logs.

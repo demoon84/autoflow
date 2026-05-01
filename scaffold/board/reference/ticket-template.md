@@ -23,7 +23,7 @@
 - Feature PRD:
 - Plan:
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note:
 - Plan Note:
@@ -39,6 +39,30 @@
 - Path:
 - Base:
 - Created At:
+
+## Goal Runtime
+
+- Status:
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count: 0
+- Time Used Seconds: 0
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed: false
+- Last Event:
+- Last Progress Fingerprint:
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
 
 ## Done When
 
@@ -76,6 +100,6 @@
 - `References` are relative to `BOARD_ROOT`.
 - `Allowed Paths` are relative to the implementation worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
 - `Worktree` is filled during claim when a worktree is available.
-- `Obsidian Links` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[tickets_001]]`.
+- `Reference Notes` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[tickets_001]]`.
 - `Plan Candidate` must copy the exact candidate text from `Execution Candidates`. It is a duplicate-detection key.
 - Human-readable ticket prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

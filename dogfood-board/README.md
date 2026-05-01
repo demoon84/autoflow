@@ -148,7 +148,7 @@ legacy role-pipeline 이 필요할 때만 아래 역할을 켠다.
 
 - `References` 는 이 보드 루트 기준 상대 경로로 적는다.
 - `Allowed Paths` 는 repo-relative 경로로 적고, 구현 중에는 티켓 `Worktree.Path` 기준으로 해석한다. worktree 를 쓸 수 없는 환경에서만 호스트 프로젝트 루트 기준으로 fallback 한다.
-- `## Obsidian Links` 는 note 이름 기준 링크 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 로 적는다.
+- `## Reference Notes` 는 note 이름 기준 링크 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 로 적는다.
 
 예:
 

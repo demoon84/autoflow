@@ -16,7 +16,7 @@
 
 별도로, `Autoflow` 는 OS 파일 이벤트를 받는 file-watch hook 모드도 지원한다. `scripts/watch-board.sh` 가 폴더 변경을 감지해 route 별 one-shot 훅을 실행하며, watcher 프로세스 자체는 사용자가 멈출 때까지 계속 살아 있다.
 
-현재 기본 실행 모델은 `ticket-owner` 다. 한 owner 가 spec 에서 티켓을 만들고 mini-plan, 구현, 검증, evidence, done/reject 정리까지 이어서 책임진다. `plan` / `todo` / `verifier` route 는 기존 role-pipeline 보드와의 호환용으로 남아 있지만 기본 file-watch 설정에서는 꺼져 있다.
+현재 기본 실행 모델은 Plan AI + Ticket Owner 다. Plan AI 가 memo/backlog/reject 를 `tickets/todo/` 로 변환하고, 한 owner 가 todo claim 부터 mini-plan, 구현, 검증, evidence, done/reject 정리까지 이어서 책임진다. `todo` / `verifier` route 는 기존 role-pipeline 보드와의 호환용으로 남아 있지만 기본 file-watch 설정에서는 꺼져 있다.
 
 ## Trigger Contract
 
@@ -198,7 +198,7 @@ Ticket Owner 운영에서는 아래 환경 변수를 권장한다.
 권장 방식:
 
 - owner heartbeat 는 자기 `Owner` / `Claimed By` 와 맞는 `tickets/inprogress/` 티켓을 우선 이어간다.
-- 진행 중인 티켓이 없으면 `tickets/todo/`, `tickets/verifier/`, populated `tickets/backlog/` 순서로 안전하게 다음 일을 잡는다.
+- 진행 중인 티켓이 없으면 `tickets/todo/` 또는 legacy `tickets/verifier/` 순서로 안전하게 다음 일을 잡는다. Populated `tickets/backlog/` 는 Plan AI 가 먼저 todo 로 변환한다.
 - 한 owner 가 mini-plan, implementation, verification, evidence, done/reject 이동까지 같은 thread context 로 이어간다.
 - pass/fail 완료 뒤에는 active ticket context 를 비운다. 다음 tick 은 대화 히스토리보다 ticket `References`, verify/run/log 파일을 다시 읽어 재개한다.
 

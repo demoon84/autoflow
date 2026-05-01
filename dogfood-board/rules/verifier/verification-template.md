@@ -8,7 +8,7 @@
 - Status:
 - Working Root:
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note:
 - Plan Note:
@@ -59,4 +59,4 @@
 
 ## Notes
 
-- `Obsidian Links` 는 note 이름 기준 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 으로 적는다.
+- `Reference Notes` 는 note 이름 기준 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 으로 적는다.

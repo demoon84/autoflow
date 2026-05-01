@@ -55,6 +55,76 @@ relative_to_board() {
   esac
 }
 
+autoflow_cli_path() {
+  local project_root="$1"
+  local candidate
+
+  candidate="${project_root}/bin/autoflow"
+  if [ -x "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/bin/autoflow"
+  if [ -x "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  if command -v autoflow >/dev/null 2>&1; then
+    command -v autoflow
+    return 0
+  fi
+
+  printf 'autoflow\n'
+}
+
+prepare_wiki_adapter_env() {
+  local project_root="$1"
+  local cli_path cli_dir login_path root candidate ver_dir
+
+  cli_path="$(autoflow_cli_path "$project_root")"
+  export AUTOFLOW_CLI="$cli_path"
+
+  if [ -x "$cli_path" ]; then
+    cli_dir="$(dirname "$cli_path")"
+    case ":$PATH:" in
+      *":$cli_dir:"*) ;;
+      *)
+        PATH="${cli_dir}:${PATH}"
+        export PATH
+        ;;
+    esac
+  fi
+
+  login_path="$(bash -lc 'printf %s "$PATH"' 2>/dev/null || true)"
+  if [ -n "$login_path" ]; then
+    PATH="${PATH}:${login_path}"
+  fi
+
+  for root in "${HOME:-}" "${USERPROFILE:-}"; do
+    [ -n "$root" ] || continue
+    for candidate in \
+      "$root/AppData/Roaming/npm" \
+      "$root/AppData/Roaming/nvm/current" \
+      "$root/.local/bin" \
+      "$root/.npm-global/bin" \
+      "$root/bin"; do
+      [ -d "$candidate" ] || continue
+      PATH="${PATH}:${candidate}"
+    done
+
+    if [ -d "$root/AppData/Roaming/nvm" ]; then
+      while IFS= read -r ver_dir; do
+        [ -d "$ver_dir" ] || continue
+        PATH="${PATH}:${ver_dir}"
+      done < <(find "$root/AppData/Roaming/nvm" -maxdepth 1 -type d -name 'v*' 2>/dev/null | sort -r)
+    fi
+  done
+
+  export PATH
+}
+
 extract_md_field() {
   local file="$1"
   local field="$2"
@@ -466,6 +536,7 @@ run_wiki_adapter_prompt() {
   model="$(wiki_runner_field "$board_root" "$runner_id" "model")"
   reasoning="$(wiki_runner_field "$board_root" "$runner_id" "reasoning")"
   command_value="$(wiki_runner_field "$board_root" "$runner_id" "command")"
+  prepare_wiki_adapter_env "$project_root"
 
   case "${agent:-}" in
     ""|manual|shell)
@@ -474,7 +545,10 @@ run_wiki_adapter_prompt() {
   esac
 
   if [ -n "$command_value" ]; then
-    AUTOFLOW_PROMPT_FILE="$prompt_file" bash -lc "$command_value" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
+    AUTOFLOW_PROJECT_ROOT="$project_root" \
+      AUTOFLOW_BOARD_ROOT="$board_root" \
+      AUTOFLOW_PROMPT_FILE="$prompt_file" \
+      bash -lc "$command_value" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
     return $?
   fi
 
@@ -485,7 +559,7 @@ run_wiki_adapter_prompt() {
       [ -z "$model" ] || cmd+=(-m "$model")
       [ -z "$reasoning" ] || cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
       cmd+=(-)
-      "${cmd[@]}" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
+      AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" < "$prompt_file" > "$stdout_file" 2> "$stderr_file"
       ;;
     claude)
       command -v claude >/dev/null 2>&1 || return 127
@@ -493,7 +567,7 @@ run_wiki_adapter_prompt() {
       [ -z "$model" ] || cmd+=(--model "$model")
       [ -z "$reasoning" ] || cmd+=(--effort "$reasoning")
       cmd+=("$(cat "$prompt_file")")
-      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
       ;;
     opencode)
       command -v opencode >/dev/null 2>&1 || return 127
@@ -501,13 +575,13 @@ run_wiki_adapter_prompt() {
       [ -z "$model" ] || cmd+=(--model "$model")
       [ -z "$reasoning" ] || cmd+=(--variant "$reasoning")
       cmd+=("$(cat "$prompt_file")")
-      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
       ;;
     gemini)
       command -v gemini >/dev/null 2>&1 || return 127
       cmd=(gemini --approval-mode auto_edit --prompt "$(cat "$prompt_file")")
       [ -z "$model" ] || cmd+=(--model "$model")
-      "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
       ;;
     *)
       return 127

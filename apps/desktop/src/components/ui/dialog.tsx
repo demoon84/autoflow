@@ -1,6 +1,4 @@
 import * as React from "react";
-import MuiDialog from "@mui/material/Dialog";
-import IconButton from "@mui/material/IconButton";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
@@ -32,6 +30,15 @@ function Dialog({
     },
     [onOpenChange, open]
   );
+
+  React.useEffect(() => {
+    if (!actualOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [actualOpen, setOpen]);
 
   return <DialogContext.Provider value={{ open: actualOpen, onOpenChange: setOpen }}>{children}</DialogContext.Provider>;
 }
@@ -103,33 +110,62 @@ const DialogContent = React.forwardRef<
     showClose?: boolean;
     keepMounted?: boolean;
   }
->(({ className, children, overlayClassName, overlayDim = false, showClose = false, keepMounted = false, ...props }, ref) => {
+>(({ className, children, overlayClassName, overlayDim = false, showClose = false, keepMounted = true, ...props }, ref) => {
   const context = React.useContext(DialogContext);
+  const open = Boolean(context.open);
+  const [openCycle, setOpenCycle] = React.useState(0);
+  const wasOpenRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setOpenCycle((cycle) => cycle + 1);
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
+  if (!open && !keepMounted) return null;
 
   return (
-    <MuiDialog
-      open={Boolean(context.open)}
-      onClose={() => context.onOpenChange?.(false)}
-      keepMounted={keepMounted}
+    <div
       className={cn("af-dialog-root", overlayDim ? "af-dialog-root-dim" : undefined)}
-      slotProps={{
-        backdrop: {
-          className: cn("af-dialog-backdrop", overlayClassName)
-        },
-        paper: {
-          className: cn("af-dialog-content", className),
-          ref,
-          ...props
-        }
-      }}
+      role="presentation"
+      hidden={!open}
+      data-af-open={open ? "true" : "false"}
+      data-af-open-cycle={openCycle}
     >
-      {children}
-      {showClose ? (
-        <IconButton className="af-dialog-close" aria-label="닫기" onClick={() => context.onOpenChange?.(false)}>
-          <X className="h-4 w-4" />
-        </IconButton>
-      ) : null}
-    </MuiDialog>
+      <div
+        className={cn("af-dialog-backdrop", overlayClassName)}
+        aria-hidden="true"
+        onClick={() => context.onOpenChange?.(false)}
+      />
+      <div
+        {...props}
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        className={cn("af-dialog-content", className)}
+        data-af-open={open ? "true" : "false"}
+        data-af-open-cycle={openCycle}
+        onClick={(event) => {
+          props.onClick?.(event);
+          event.stopPropagation();
+        }}
+      >
+        {children}
+        {showClose ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="af-dialog-close"
+            aria-label="닫기"
+            onClick={() => context.onOpenChange?.(false)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 });
 DialogContent.displayName = "DialogContent";
@@ -150,14 +186,16 @@ const DialogTitle = React.forwardRef<
     });
   }
 
-  return <h2 ref={ref} className={cn("af-dialog-title", className)} {...props}>{children}</h2>;
+  return (
+    <h2 ref={ref} className={cn("af-dialog-title", className)} {...props}>
+      {children}
+    </h2>
+  );
 });
 DialogTitle.displayName = "DialogTitle";
 
 const DialogDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
-  ({ className, ...props }, ref) => (
-    <p ref={ref} className={cn("af-dialog-description", className)} {...props} />
-  )
+  ({ className, ...props }, ref) => <p ref={ref} className={cn("af-dialog-description", className)} {...props} />
 );
 DialogDescription.displayName = "DialogDescription";
 

@@ -10,7 +10,7 @@
 - Finished At:
 - Working Root:
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note:
 - Plan Note:

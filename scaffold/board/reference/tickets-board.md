@@ -137,7 +137,8 @@ Every ticket should keep these sections or fields:
 - `Project Key`
 - `Goal`, `References`, `Allowed Paths`, `Done When`
 - `Worktree`
-- `Obsidian Links`
+- `Goal Runtime`, `Recovery State`
+- `Reference Notes`
 - `Last Updated`, `Next Action`, `Resume Context`
 - `Verification`, `Result`
 - `## Reject Reason` (only after moving to `reject/`)
@@ -146,10 +147,12 @@ Important:
 
 - `References` paths are relative to `BOARD_ROOT`.
 - `Allowed Paths` are repository-relative. During implementation, resolve them from the ticket worktree root when present; otherwise resolve them from `PROJECT_ROOT`.
+- `Goal Runtime` is runner-owned durability metadata. It tracks active/blocked/complete status, tick count, elapsed time, no-progress suppression, and the last ticket fingerprint used by the adapter. Humans and agents may read it, but should not hand-edit it except for explicit board repair.
+- `Recovery State` is planner/owner orchestration metadata. Planner AI may edit it to diagnose stalled or blocked work, and Impl AI may edit it to report or clear blockers. It should include status, failure class, evidence, planner decision, and owner resume instruction when recovery is active.
 - A ticket number must exist in only one state folder at a time. Retries after reject receive a new ticket number.
 - `todo/`, `inprogress/`, `ready-to-merge/`, `merge-blocked/`, `verifier/`, `done/`, and `reject/` are the state board. They may stay empty without nested README files.
 - A `done/<project-key>/` ticket must link its final `verify_NNN.md` evidence.
 - Each completed owner / verifier run should leave at least one completion log under `BOARD_ROOT/logs/`.
-- Link related specs, plans, tickets, and verification notes with `## Obsidian Links`.
+- Link related specs, plans, tickets, and verification notes with `## Reference Notes`.
 - Heartbeat workers do not stop themselves. `status=idle` is a valid waiting state.
-- Board location is authoritative. In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI (`owner-1`) decides pass / fail after AI-led verification and runs the inline merge finalizer (`merge-ready-ticket.*`) itself; there is no separate coordinator integration step. In the legacy role-pipeline, only verifier mode decides pass / fail.
+- Board location is authoritative. In the 3-runner topology (planner-1 + owner-1 + wiki-1), planner-1 is the Orchestrator AI for board health and recovery, while Impl AI (`owner-1`) decides pass / fail after AI-led verification and runs the inline merge finalizer (`merge-ready-ticket.*`) itself. In the legacy role-pipeline, only verifier mode decides pass / fail.

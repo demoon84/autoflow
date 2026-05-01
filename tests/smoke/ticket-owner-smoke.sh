@@ -68,15 +68,24 @@ if [ -e "${project_dir}/autoflow" ]; then
 fi
 
 require_line "${project_dir}/.claude/skills/autoflow/SKILL.md" "2. If the current project has \`CLAUDE.md\`, \`AGENTS.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
-require_line "${project_dir}/.claude/skills/af/SKILL.md" "1. Treat \`#af\` and \`/af\` as Autoflow PRD handoff triggers."
-require_line "${project_dir}/.claude/skills/memo/SKILL.md" "1. Treat \`#memo\`, \`/memo\`, and \"quick Autoflow memo\" as memo triggers."
+require_line "${project_dir}/.claude/skills/order/SKILL.md" "1. Treat \`#order\`, \`/order\`, and \"quick Autoflow order\" as order triggers."
 require_line "${project_dir}/.codex/skills/autoflow/SKILL.md" "2. If the current project has \`AGENTS.md\`, \`CLAUDE.md\`, \`.autoflow/AGENTS.md\`, or \`.autoflow/agents/spec-author-agent.md\`, read the relevant files before drafting."
-require_line "${project_dir}/.codex/skills/af/SKILL.md" "1. Treat \`\$af\`, \`#af\`, and \`/af\` as Autoflow PRD handoff triggers."
-require_line "${project_dir}/.codex/skills/memo/SKILL.md" "1. Treat \`\$memo\`, \`#memo\`, \`/memo\`, and \"quick Autoflow memo\" as memo triggers."
+require_line "${project_dir}/.codex/skills/order/SKILL.md" "1. Treat \`\$order\`, \`#order\`, \`/order\`, and \"quick Autoflow order\" as order triggers."
 require_line "${project_dir}/.codex/skills/autoflow/agents/openai.yaml" "  display_name: \"Autoflow\""
-require_line "${project_dir}/.codex/skills/memo/agents/openai.yaml" "  display_name: \"Memo\""
+require_line "${project_dir}/.codex/skills/order/agents/openai.yaml" "  display_name: \"Order\""
+test ! -d "${project_dir}/.claude/skills/a""f"
+test ! -d "${project_dir}/.codex/skills/a""f"
+test ! -e "${project_dir}/.claude/skills/memo"
+test ! -e "${project_dir}/.codex/skills/memo"
 test -d "${project_dir}/.autoflow/tickets/inbox"
 test -f "${project_dir}/.autoflow/reference/memo.md"
+test -f "${project_dir}/.autoflow/protocols/board-orchestration.md"
+test -f "${project_dir}/.autoflow/protocols/owner-contract.md"
+test -f "${project_dir}/.autoflow/protocols/recovery.md"
+test -x "${project_dir}/.autoflow/scripts/board-guard.sh"
+require_pattern "${project_dir}/.autoflow/protocols/board-orchestration.md" "manage runner or OS processes directly"
+require_pattern "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" "Do not manage runner or OS processes"
+require_pattern "${project_dir}/.autoflow/runners/README.md" "\`last_result\` should preserve the most recent meaningful runtime or adapter result"
 
 spec_output="${project_dir}/spec.out"
 memo_output="${project_dir}/memo.out"
@@ -229,15 +238,15 @@ require_line "$spec_output" "status=created"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
-require_line "$runner_list_output" "runner_count=5"
+require_line "$runner_list_output" "runner_count=4"
 # Default 3-runner topology (refactor 2026-04-27): planner-1 / owner-1 /
 # wiki-1 are listed first in scaffold config.toml in that order, followed
-# by the legacy coordinator-1 (ships disabled) and the self-improve-1
-# trial (also disabled).
+# by the self-improve-1 trial (ships disabled). Legacy coordinator-1 is no
+# longer scaffolded — opt in via `autoflow runners add coordinator-1 coordinator`.
 require_line "$runner_list_output" "runner.1.id=planner-1"
 require_line "$runner_list_output" "runner.2.id=owner-1"
 require_line "$runner_list_output" "runner.3.id=wiki-1"
-require_line "$runner_list_output" "runner.4.id=coordinator-1"
+require_line "$runner_list_output" "runner.4.id=self-improve-1"
 require_line "$runner_list_output" "runner.4.enabled=false"
 
 "${REPO_ROOT}/bin/autoflow" runners set wiki-1 "$project_dir" agent=codex model=gpt-5.5 reasoning=medium >"$runner_set_output"
@@ -275,8 +284,8 @@ require_line "$runner_loop_start_output" "result=started"
 require_line "$runner_loop_start_output" "runner_id=coordinator-shell-loop"
 sleep 2
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_loop_list_output"
-require_line "$runner_loop_list_output" "runner.7.id=coordinator-shell-loop"
-require_line "$runner_loop_list_output" "runner.7.state_status=running"
+require_line "$runner_loop_list_output" "runner.6.id=coordinator-shell-loop"
+require_line "$runner_loop_list_output" "runner.6.state_status=running"
 "${REPO_ROOT}/bin/autoflow" runners stop coordinator-shell-loop "$project_dir" >"$runner_loop_stop_output"
 require_line "$runner_loop_stop_output" "status=ok"
 require_line "$runner_loop_stop_output" "runner_status=stopped"
@@ -329,10 +338,22 @@ test -f "${project_dir}/owner-done.txt"
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/finish-ticket-owner.sh 001 pass "owner smoke artifact verified" >"$finish_output"
 require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
-require_line "$finish_output" "cleanup_status=ok"
-require_pattern "$finish_output" '^cleanup_detail=removed_worktree='
-require_line "$finish_output" "cleanup_detail=deleted_branch=autoflow/tickets_001"
 require_line "$finish_output" "commit_status=committed_via_inline_merge"
+done_ticket="${project_dir}/.autoflow/tickets/done/prd_001/tickets_001.md"
+if ! test -f "$done_ticket"; then
+  echo "Expected done ticket after inline finish: $done_ticket" >&2
+  exit 1
+fi
+if ! rg -q "^- \\[x\\] " "$done_ticket"; then
+  echo "Expected at least one Done When item checked in done ticket." >&2
+  rg "^- \\[ \\]" "$done_ticket" >&2
+  exit 1
+fi
+if rg -q "^- \\[ \\]" "$done_ticket"; then
+  echo "All Done When items should be checked after pass path in the smoke ticket." >&2
+  rg "^- \\[ \\]" "$done_ticket" >&2
+  exit 1
+fi
 if [ -d "$implementation_root" ]; then
   echo "Merged ticket worktree should be deleted: $implementation_root" >&2
   exit 1

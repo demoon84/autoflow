@@ -14,7 +14,8 @@
 - 템플릿 파일만 있고 실제 스펙이 없으면 티켓을 만들지 않는다.
 - 스펙이 바뀌면 관련 티켓도 다시 점검한다.
 - 제품 코드 경로는 `PROJECT_ROOT` 기준으로 설명하는 편이 좋다.
-- `tickets/plan/` 은 backlog 를 읽고 순서와 티켓화를 정리한다.
-- planner 가 실제 todo ticket 을 만들면 대응 spec 은 `tickets/done/<project-key>/` 로 이동한다.
+- Plan AI 는 backlog PRD 를 읽어 구체적인 `tickets/todo/tickets_NNN.md` 작업으로 변환한다.
+- Impl AI / Ticket Owner 는 backlog PRD 를 직접 claim 하지 않고 Plan AI 가 만든 todo ticket 만 claim 한다.
+- Plan AI 가 실제 todo ticket 을 만들면 대응 spec 은 `tickets/done/<project-key>/` 로 이동한다.
 - 즉 `tickets/backlog/` 루트에는 아직 plan 전인 spec 만 남고, plan / todo / verifier 가 참조하는 처리 완료 spec 은 done 프로젝트 묶음 안에 남는다.
-- 생성되는 plan / ticket / verification 문서는 이 spec note 이름 (`project_NNN`) 을 `## Obsidian Links` 로 다시 연결한다.
+- 생성되는 plan / ticket / verification 문서는 이 spec note 이름 (`project_NNN`) 을 `## Reference Notes` 로 다시 연결한다.

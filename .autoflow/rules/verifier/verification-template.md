@@ -10,7 +10,7 @@
 - Finished At:
 - Working Root:
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note:
 - Plan Note:
@@ -19,7 +19,7 @@
 
 ## Criteria Checked
 
-- [ ] Done When items were checked.
+- [ ] Done When items were checked and reflected in the ticket `## Done When` checklist state.
 - [ ] Acceptance criteria were checked.
 - [ ] Allowed Paths were checked.
 - [ ] Verification command was run.

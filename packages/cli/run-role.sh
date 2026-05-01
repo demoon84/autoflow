@@ -119,6 +119,17 @@ board_root="$(board_root_path "$project_root" "$board_dir_name")"
 export AUTOFLOW_BOARD_ROOT="$board_root"
 export AUTOFLOW_PROJECT_ROOT="$project_root"
 adapter_working_root="$project_root"
+adapter_active_ticket_file=""
+adapter_active_ticket_id=""
+adapter_active_ticket_title=""
+adapter_active_stage=""
+adapter_active_spec_ref=""
+adapter_active_recovery_reason=""
+adapter_active_recovery_status=""
+adapter_active_recovery_failure_class=""
+adapter_active_recovery_worktree_path=""
+adapter_active_recovery_worktree_status=""
+adapter_active_recovery_board_state=""
 
 config_path="$(runner_config_path)"
 
@@ -160,6 +171,481 @@ runner_state_value() {
 
 runner_active_state_value() {
   runner_state_value "$1"
+}
+
+runner_ticket_id_from_active_item() {
+  local item="$1"
+  local name
+  local id
+
+  name="${item##*/}"
+  name="${name%.md}"
+  case "$name" in
+    tickets_[0-9]*)
+      id="$(printf '%s' "$name" | sed -n 's/^\(tickets_[0-9][0-9]*\).*/\1/p')"
+      [ -n "$id" ] && printf '%s' "$id"
+      ;;
+    verify_[0-9]*)
+      id="$(printf '%s' "$name" | sed -n 's/^\(verify_[0-9][0-9]*\).*/\1/p')"
+      [ -n "$id" ] && printf '%s' "$id"
+      ;;
+  esac
+}
+
+runner_adapter_state_value() {
+  local field="$1"
+  local derived_ticket_id
+
+  case "$field" in
+    active_item)
+      if [ -n "${adapter_active_ticket_file:-}" ]; then
+        printf '%s' "$adapter_active_ticket_file"
+      else
+        runner_active_state_value "$field"
+      fi
+      ;;
+    active_ticket_id)
+      if [ -n "${adapter_active_ticket_id:-}" ]; then
+        printf '%s' "$adapter_active_ticket_id"
+      elif [ -n "${adapter_active_ticket_file:-}" ]; then
+        derived_ticket_id="$(runner_ticket_id_from_active_item "$adapter_active_ticket_file")"
+        if [ -n "$derived_ticket_id" ]; then
+          printf '%s' "$derived_ticket_id"
+        else
+          runner_active_state_value "$field"
+        fi
+      else
+        runner_active_state_value "$field"
+      fi
+      ;;
+    active_ticket_title)
+      if [ -n "${adapter_active_ticket_title:-}" ]; then
+        printf '%s' "$adapter_active_ticket_title"
+      else
+        runner_active_state_value "$field"
+      fi
+      ;;
+    active_stage)
+      if [ -n "${adapter_active_stage:-}" ]; then
+        printf '%s' "$adapter_active_stage"
+      else
+        runner_active_state_value "$field"
+      fi
+      ;;
+    active_spec_ref)
+      if [ -n "${adapter_active_spec_ref:-}" ]; then
+        printf '%s' "$adapter_active_spec_ref"
+      else
+        runner_active_state_value "$field"
+      fi
+      ;;
+    *)
+      runner_active_state_value "$field"
+      ;;
+  esac
+}
+
+ticket_goal_common_call() {
+  local common_path="${board_root}/scripts/common.sh"
+
+  [ -f "$common_path" ] || return 1
+
+  (
+    export AUTOFLOW_BOARD_ROOT="$board_root"
+    export AUTOFLOW_PROJECT_ROOT="$project_root"
+    # shellcheck source=/dev/null
+    source "$common_path"
+    "$@"
+  )
+}
+
+ticket_goal_active_ticket_file() {
+  local file active_path active_id id candidate
+
+  [ "$public_role" = "ticket" ] || return 1
+
+  file="${adapter_active_ticket_file:-}"
+  if [ -n "$file" ]; then
+    case "$file" in
+      /*) ;;
+      *) file="${board_root}/${file}" ;;
+    esac
+    [ -f "$file" ] && printf '%s' "$file" && return 0
+  fi
+
+  active_path="$(runner_active_state_value "active_ticket_path")"
+  if [ -n "$active_path" ]; then
+    case "$active_path" in
+      /*) file="$active_path" ;;
+      *) file="${board_root}/${active_path}" ;;
+    esac
+    [ -f "$file" ] && printf '%s' "$file" && return 0
+  fi
+
+  active_id="${adapter_active_ticket_id:-$(runner_active_state_value "active_ticket_id")}"
+  id="$(printf '%s' "$active_id" | sed -n 's/^tickets_\([0-9][0-9][0-9]\)$/\1/p')"
+  [ -n "$id" ] || id="$(printf '%s' "$active_id" | sed -n 's/^\([0-9][0-9][0-9]\)$/\1/p')"
+  [ -n "$id" ] || return 1
+
+  for candidate in \
+    "${board_root}/tickets/inprogress/tickets_${id}.md" \
+    "${board_root}/tickets/ready-to-merge/tickets_${id}.md" \
+    "${board_root}/tickets/merge-blocked/tickets_${id}.md" \
+    "${board_root}/tickets/verifier/tickets_${id}.md" \
+    "${board_root}/tickets/todo/tickets_${id}.md"; do
+    [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
+  done
+
+  return 1
+}
+
+ticket_goal_prompt_block_for_current_ticket() {
+  local ticket_file
+
+  ticket_file="$(ticket_goal_active_ticket_file || true)"
+  [ -n "$ticket_file" ] || return 0
+  ticket_goal_common_call ticket_goal_prompt_block "$ticket_file"
+}
+
+ticket_goal_progress_fingerprint_for_current_ticket() {
+  local ticket_file
+
+  ticket_file="$(ticket_goal_active_ticket_file || true)"
+  [ -n "$ticket_file" ] || return 0
+  ticket_goal_common_call ticket_goal_progress_fingerprint "$ticket_file"
+}
+
+ticket_goal_record_adapter_result_for_current_ticket() {
+  local adapter_exit="$1"
+  local before_fingerprint="${2:-}"
+  local ticket_file
+
+  ticket_file="$(ticket_goal_active_ticket_file || true)"
+  [ -n "$ticket_file" ] || return 0
+  ticket_goal_common_call ticket_goal_record_adapter_result "$ticket_file" "$adapter_exit" "$before_fingerprint" "$runner_id"
+}
+
+planner_ticket_field() {
+  local file="$1"
+  local section="$2"
+  local field="$3"
+
+  ticket_goal_common_call extract_scalar_field_in_section "$file" "$section" "$field" 2>/dev/null || true
+}
+
+runner_active_ticket_file_from_item() {
+  local item="$1"
+  local ticket_name ticket_number file candidate
+
+  [ -n "$item" ] || return 1
+
+  case "$item" in
+    /*)
+      [ -f "$item" ] && printf '%s' "$item" && return 0
+      ;;
+    tickets/*)
+      file="${board_root}/${item}"
+      [ -f "$file" ] && printf '%s' "$file" && return 0
+      ;;
+    "${board_dir_name}/tickets/"*)
+      file="${project_root}/${item}"
+      [ -f "$file" ] && printf '%s' "$file" && return 0
+      ;;
+  esac
+
+  ticket_name="$(runner_ticket_id_from_active_item "$item")"
+  [ -n "$ticket_name" ] || return 1
+  ticket_number="${ticket_name#tickets_}"
+  ticket_number="${ticket_number#verify_}"
+
+  for candidate in \
+    "${board_root}/tickets/inprogress/${ticket_name}.md" \
+    "${board_root}/tickets/ready-to-merge/${ticket_name}.md" \
+    "${board_root}/tickets/merge-blocked/${ticket_name}.md" \
+    "${board_root}/tickets/verifier/${ticket_name}.md" \
+    "${board_root}/tickets/todo/${ticket_name}.md" \
+    "${board_root}/tickets/reject/${ticket_name}.md" \
+    "${board_root}/tickets/done"/*/"${ticket_name}.md" \
+    "${board_root}/tickets/inprogress/tickets_${ticket_number}.md" \
+    "${board_root}/tickets/ready-to-merge/tickets_${ticket_number}.md" \
+    "${board_root}/tickets/merge-blocked/tickets_${ticket_number}.md" \
+    "${board_root}/tickets/todo/tickets_${ticket_number}.md"; do
+    [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
+  done
+
+  return 1
+}
+
+runner_hydrate_active_ticket_metadata() {
+  local ticket_file ticket_id_from_file title stage spec_ref
+  local recovery_status recovery_failure_class recovery_reason
+
+  ticket_file="$(runner_active_ticket_file_from_item "${active_item:-}" || true)"
+  if [ -z "$ticket_file" ] && [ -n "${active_ticket_id:-}" ]; then
+    ticket_file="$(runner_active_ticket_file_from_item "$active_ticket_id" || true)"
+  fi
+  [ -n "$ticket_file" ] || return 0
+
+  ticket_id_from_file="$(runner_ticket_id_from_active_item "$ticket_file")"
+  if [ -z "${active_ticket_id:-}" ] && [ -n "$ticket_id_from_file" ]; then
+    active_ticket_id="$ticket_id_from_file"
+  fi
+
+  title="$(planner_ticket_field "$ticket_file" "Ticket" "Title")"
+  stage="$(planner_ticket_field "$ticket_file" "Ticket" "Stage")"
+  spec_ref="$(planner_ticket_field "$ticket_file" "Ticket" "PRD Key")"
+  [ -n "$spec_ref" ] || spec_ref="$(planner_ticket_field "$ticket_file" "References" "PRD")"
+  recovery_status="$(planner_ticket_field "$ticket_file" "Recovery State" "Status")"
+  recovery_failure_class="$(planner_ticket_field "$ticket_file" "Recovery State" "Failure Class")"
+  case "$recovery_status" in
+    stalled|blocked|repairing|requeued|needs_user)
+      recovery_reason="recovery_state_${recovery_status}"
+      ;;
+    *)
+      recovery_reason=""
+      ;;
+  esac
+
+  [ -n "${active_ticket_title:-}" ] || active_ticket_title="$title"
+  [ -n "${active_stage:-}" ] || active_stage="$stage"
+  [ -n "${active_spec_ref:-}" ] || active_spec_ref="$spec_ref"
+  [ -n "${active_recovery_reason:-}" ] || active_recovery_reason="$recovery_reason"
+  [ -n "${active_recovery_status:-}" ] || active_recovery_status="$recovery_status"
+  [ -n "${active_recovery_failure_class:-}" ] || active_recovery_failure_class="$recovery_failure_class"
+}
+
+runner_board_relative_path() {
+  local path="$1"
+
+  case "$path" in
+    "${board_root}/"*)
+      printf '%s' "${path#${board_root}/}"
+      ;;
+    *)
+      printf '%s' "$path"
+      ;;
+  esac
+}
+
+planner_ticket_file_for_ticket_ref() {
+  local ticket_ref="$1"
+  local ticket_num="${ticket_ref#tickets_}"
+  local candidate
+
+  for candidate in \
+    "${board_root}/tickets/inprogress/${ticket_ref}.md" \
+    "${board_root}/tickets/ready-to-merge/${ticket_ref}.md" \
+    "${board_root}/tickets/merge-blocked/${ticket_ref}.md" \
+    "${board_root}/tickets/verifier/${ticket_ref}.md" \
+    "${board_root}/tickets/todo/${ticket_ref}.md" \
+    "${board_root}/tickets/reject/${ticket_ref}.md" \
+    "${board_root}/tickets/reject/reject_${ticket_num}.md"; do
+    [ -f "$candidate" ] && {
+      printf '%s' "$candidate"
+      return 0
+    }
+  done
+
+  if [ -d "${board_root}/tickets/done" ]; then
+    find "${board_root}/tickets/done" -type f -name "${ticket_ref}.md" -print -quit
+  fi
+}
+
+planner_ticket_board_state() {
+  local file="$1"
+
+  case "$file" in
+    "${board_root}/tickets/inprogress/"*|"${board_root}/tickets/ready-to-merge/"*|"${board_root}/tickets/merge-blocked/"*|"${board_root}/tickets/verifier/"*|"${board_root}/tickets/todo/"*)
+      printf 'active'
+      ;;
+    "${board_root}/tickets/reject/"*)
+      printf 'rejected'
+      ;;
+    "${board_root}/tickets/done/"*)
+      printf 'done'
+      ;;
+    *)
+      printf 'unknown'
+      ;;
+  esac
+}
+
+planner_resolved_ticket_worktree_signal() {
+  local line worktree_path branch ticket_ref ticket_file board_state dirty_output
+  local reason ticket_id title stage spec_ref
+
+  git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      worktree\ *)
+        worktree_path="${line#worktree }"
+        branch=""
+        ;;
+      branch\ refs/heads/autoflow/tickets_[0-9][0-9][0-9]*)
+        branch="${line#branch refs/heads/}"
+        ticket_ref="${branch##*/}"
+        ticket_file="$(planner_ticket_file_for_ticket_ref "$ticket_ref")"
+        [ -n "$ticket_file" ] || continue
+        board_state="$(planner_ticket_board_state "$ticket_file")"
+        case "$board_state" in
+          rejected|done)
+            ;;
+          *)
+            continue
+            ;;
+        esac
+
+        dirty_output=""
+        if [ -d "$worktree_path" ]; then
+          dirty_output="$(git -C "$worktree_path" status --porcelain 2>/dev/null || true)"
+        fi
+        if [ -n "$dirty_output" ]; then
+          reason="resolved_ticket_worktree_dirty"
+        else
+          reason="resolved_ticket_worktree_leftover"
+        fi
+
+        ticket_id="$(planner_ticket_field "$ticket_file" "Ticket" "ID")"
+        [ -n "$ticket_id" ] || ticket_id="$ticket_ref"
+        title="$(planner_ticket_field "$ticket_file" "Ticket" "Title")"
+        stage="$(planner_ticket_field "$ticket_file" "Ticket" "Stage")"
+        [ -n "$stage" ] || stage="$board_state"
+        spec_ref="$(planner_ticket_field "$ticket_file" "Ticket" "PRD Key")"
+        [ -n "$spec_ref" ] || spec_ref="$(planner_ticket_field "$ticket_file" "References" "PRD")"
+
+        printf 'status=recovery\n'
+        printf 'reason=%s\n' "$reason"
+        printf 'ticket=%s\n' "$(runner_board_relative_path "$ticket_file")"
+        printf 'ticket_id=%s\n' "$ticket_id"
+        printf 'ticket_title=%s\n' "$title"
+        printf 'ticket_stage=%s\n' "$stage"
+        printf 'spec_ref=%s\n' "$spec_ref"
+        printf 'recovery_status=needs_user\n'
+        printf 'failure_class=leftover_worktree\n'
+        printf 'worktree_path=%s\n' "$worktree_path"
+        printf 'worktree_status=%s\n' "$([ -n "$dirty_output" ] && printf 'dirty' || printf 'clean')"
+        printf 'board_state=%s\n' "$board_state"
+        return 0
+        ;;
+      "")
+        worktree_path=""
+        branch=""
+        ;;
+    esac
+  done < <(git -C "$project_root" worktree list --porcelain 2>/dev/null || true)
+
+  return 1
+}
+
+planner_orchestration_signal() {
+  local file recovery_status failure_class goal_status suppressed stage integration_status
+  local worktree_path branch base_commit reason derived_recovery_status derived_failure_class
+  local ticket_id title spec_ref
+
+  [ "$public_role" = "planner" ] || return 1
+  [ -f "${board_root}/scripts/common.sh" ] || return 1
+
+  for file in \
+    "${board_root}"/tickets/inprogress/tickets_*.md \
+    "${board_root}"/tickets/merge-blocked/tickets_*.md \
+    "${board_root}"/tickets/ready-to-merge/tickets_*.md \
+    "${board_root}"/tickets/todo/tickets_*.md; do
+    [ -f "$file" ] || continue
+
+    recovery_status="$(planner_ticket_field "$file" "Recovery State" "Status")"
+    failure_class="$(planner_ticket_field "$file" "Recovery State" "Failure Class")"
+    goal_status="$(planner_ticket_field "$file" "Goal Runtime" "Status")"
+    suppressed="$(planner_ticket_field "$file" "Goal Runtime" "Continuation Suppressed")"
+    stage="$(planner_ticket_field "$file" "Ticket" "Stage")"
+    integration_status="$(planner_ticket_field "$file" "Worktree" "Integration Status")"
+    ticket_id="$(runner_ticket_id_from_active_item "$file")"
+    title="$(planner_ticket_field "$file" "Ticket" "Title")"
+    spec_ref="$(planner_ticket_field "$file" "Ticket" "PRD Key")"
+
+    case "$recovery_status" in
+      stalled|blocked|repairing|requeued|needs_user)
+        reason="recovery_state_${recovery_status}"
+        ;;
+      *)
+        reason=""
+        ;;
+    esac
+
+    if [ -z "$reason" ]; then
+      case "$goal_status" in
+        blocked|stalled)
+          reason="goal_runtime_${goal_status}"
+          ;;
+      esac
+    fi
+
+    if [ -z "$reason" ] && [ "$suppressed" = "true" ]; then
+      reason="goal_runtime_no_progress"
+    fi
+
+    if [ -z "$reason" ]; then
+      case "$stage" in
+        blocked|merge_blocked|merge-blocked)
+          reason="ticket_stage_${stage}"
+          ;;
+      esac
+    fi
+
+    if [ -z "$reason" ]; then
+      case "$file" in
+        "${board_root}"/tickets/todo/*)
+          worktree_path="$(planner_ticket_field "$file" "Worktree" "Path")"
+          branch="$(planner_ticket_field "$file" "Worktree" "Branch")"
+          base_commit="$(planner_ticket_field "$file" "Worktree" "Base Commit")"
+          case "$integration_status" in
+            ""|pending|pending_claim)
+              ;;
+            *)
+              reason="stale_todo_worktree_metadata"
+              ;;
+          esac
+          if [ -z "$reason" ] && { [ -n "$worktree_path" ] || [ -n "$branch" ] || [ -n "$base_commit" ]; }; then
+            reason="stale_todo_worktree_metadata"
+          fi
+          ;;
+      esac
+    fi
+
+    [ -n "$reason" ] || continue
+    derived_recovery_status="$recovery_status"
+    derived_failure_class="$failure_class"
+    case "$reason" in
+      stale_todo_worktree_metadata)
+        case "$derived_recovery_status" in ""|healthy) derived_recovery_status="blocked" ;; esac
+        [ -n "$derived_failure_class" ] || derived_failure_class="stale_todo_worktree"
+        ;;
+      goal_runtime_no_progress)
+        case "$derived_recovery_status" in ""|healthy) derived_recovery_status="stalled" ;; esac
+        [ -n "$derived_failure_class" ] || derived_failure_class="adapter_no_progress"
+        ;;
+      goal_runtime_blocked|ticket_stage_blocked|ticket_stage_merge_blocked|ticket_stage_merge-blocked)
+        case "$derived_recovery_status" in ""|healthy) derived_recovery_status="blocked" ;; esac
+        ;;
+      goal_runtime_stalled)
+        case "$derived_recovery_status" in ""|healthy) derived_recovery_status="stalled" ;; esac
+        ;;
+    esac
+    printf 'status=recovery\n'
+    printf 'reason=%s\n' "$reason"
+    printf 'ticket=%s\n' "$(runner_board_relative_path "$file")"
+    printf 'ticket_id=%s\n' "$ticket_id"
+    printf 'ticket_title=%s\n' "$title"
+    printf 'ticket_stage=%s\n' "$stage"
+    printf 'spec_ref=%s\n' "$spec_ref"
+    printf 'recovery_status=%s\n' "$derived_recovery_status"
+    printf 'failure_class=%s\n' "$derived_failure_class"
+    return 0
+  done
+
+  planner_resolved_ticket_worktree_signal && return 0
+
+  return 1
 }
 
 runner_state_pid_for_start() {
@@ -342,6 +828,82 @@ idle_preflight_fingerprint_path() {
   printf '%s/%s.%s-idle-inputs.fingerprint' "$(runner_state_dir)" "$runner_id" "$public_role"
 }
 
+planner_recovery_fingerprint_path() {
+  runner_ensure_dirs
+  printf '%s/%s.planner-recovery-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
+}
+
+planner_recovery_inputs_hash_stream() {
+  local preflight_status="$1"
+  local preflight_reason="$2"
+  local orchestration_output="$3"
+  local ticket_rel ticket_file field
+
+  printf 'preflight_status=%s\n' "$preflight_status"
+  printf 'preflight_reason=%s\n' "$preflight_reason"
+  printf 'orchestration_signal_begin\n'
+  cat "$orchestration_output" 2>/dev/null || true
+  printf 'orchestration_signal_end\n'
+
+  ticket_rel="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+  case "$ticket_rel" in
+    "")
+      return 0
+      ;;
+    "$board_root"/*)
+      ticket_file="$ticket_rel"
+      ticket_rel="${ticket_file#"$board_root"/}"
+      ;;
+    /*)
+      ticket_file="$ticket_rel"
+      ;;
+    *)
+      ticket_file="${board_root}/${ticket_rel}"
+      ;;
+  esac
+
+  printf 'ticket=%s\n' "$ticket_rel"
+  if [ ! -f "$ticket_file" ]; then
+    printf 'ticket_missing=true\n'
+    return 0
+  fi
+
+  for field in \
+    "Ticket:Stage" \
+    "Ticket:PRD Key" \
+    "Ticket:Title" \
+    "Worktree:Path" \
+    "Worktree:Branch" \
+    "Worktree:Base Commit" \
+    "Worktree:Integration Status" \
+    "Goal Runtime:Status" \
+    "Goal Runtime:Continuation Suppressed" \
+    "Goal Runtime:Last Event" \
+    "Goal Runtime:Last Progress Fingerprint" \
+    "Recovery State:Status" \
+    "Recovery State:Detected By" \
+    "Recovery State:Failure Class" \
+    "Recovery State:Evidence" \
+    "Recovery State:Planner Decision" \
+    "Recovery State:Owner Resume Instruction"; do
+    printf '%s=%s\n' "$field" "$(planner_ticket_field "$ticket_file" "${field%%:*}" "${field#*:}")"
+  done
+}
+
+planner_recovery_inputs_fingerprint() {
+  local preflight_status="$1"
+  local preflight_reason="$2"
+  local orchestration_output="$3"
+
+  if command -v shasum >/dev/null 2>&1; then
+    planner_recovery_inputs_hash_stream "$preflight_status" "$preflight_reason" "$orchestration_output" | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    planner_recovery_inputs_hash_stream "$preflight_status" "$preflight_reason" "$orchestration_output" | sha256sum | awk '{ print $1 }'
+  else
+    planner_recovery_inputs_hash_stream "$preflight_status" "$preflight_reason" "$orchestration_output" | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
 idle_preflight_skip_reason() {
   case "$public_role" in
     planner)
@@ -351,6 +913,168 @@ idle_preflight_skip_reason() {
       printf 'ticket_inputs_unchanged'
       ;;
   esac
+}
+
+maybe_skip_unchanged_planner_recovery_signal() {
+  local orchestration_reason="$1"
+  local preflight_status="$2"
+  local preflight_reason="$3"
+  local preflight_output="$4"
+  local preflight_log_path="$5"
+  local orchestration_output="$6"
+  local fingerprint_path current_fingerprint previous_fingerprint timestamp
+
+  [ "$public_role" = "planner" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_PLANNER_RECOVERY_IDLE_SKIP:-1}" != "0" ] || return 1
+
+  fingerprint_path="$(planner_recovery_fingerprint_path)"
+  current_fingerprint="$(planner_recovery_inputs_fingerprint "$preflight_status" "$preflight_reason" "$orchestration_output")"
+  previous_fingerprint=""
+  if [ -f "$fingerprint_path" ]; then
+    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$current_fingerprint" > "$fingerprint_path"
+
+  [ -n "$previous_fingerprint" ] || return 1
+  [ "$current_fingerprint" = "$previous_fingerprint" ] || return 1
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=${adapter_active_ticket_file}" \
+    "active_ticket_id=${adapter_active_ticket_id}" \
+    "active_ticket_title=${adapter_active_ticket_title}" \
+    "active_stage=${adapter_active_stage}" \
+    "active_spec_ref=${adapter_active_spec_ref}" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=planner_recovery_inputs_unchanged" \
+    "last_runtime_log=${preflight_log_path}"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=planner_recovery_inputs_unchanged" \
+    "recovery_reason=${orchestration_reason:-recovery}" \
+    "active_item=${adapter_active_ticket_file}" \
+    "active_ticket_id=${adapter_active_ticket_id}" \
+    "fingerprint=${current_fingerprint}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'runtime_script=%s\n' "$runtime_path"
+  printf 'runtime_status=%s\n' "$preflight_status"
+  printf 'runtime_exit_code=0\n'
+  printf 'reason=planner_recovery_inputs_unchanged\n'
+  printf 'runtime_reason=%s\n' "$preflight_reason"
+  printf 'recovery_reason=%s\n' "${orchestration_reason:-recovery}"
+  printf 'active_item=%s\n' "$adapter_active_ticket_file"
+  printf 'active_ticket_id=%s\n' "$adapter_active_ticket_id"
+  printf 'active_recovery_status=%s\n' "$adapter_active_recovery_status"
+  printf 'active_recovery_failure_class=%s\n' "$adapter_active_recovery_failure_class"
+  printf 'active_recovery_worktree_path=%s\n' "$adapter_active_recovery_worktree_path"
+  printf 'active_recovery_worktree_status=%s\n' "$adapter_active_recovery_worktree_status"
+  printf 'active_recovery_board_state=%s\n' "$adapter_active_recovery_board_state"
+  printf 'recovery_inputs_fingerprint=%s\n' "$current_fingerprint"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  printf 'runtime_output_begin\n'
+  cat "$preflight_output"
+  printf 'runtime_output_end\n'
+  printf 'recovery_signal_begin\n'
+  cat "$orchestration_output"
+  printf 'recovery_signal_end\n'
+  rm -f "$preflight_output" "$orchestration_output"
+  exit 0
+}
+
+maybe_skip_planner_needs_user_decision_signal() {
+  local orchestration_reason="$1"
+  local preflight_status="$2"
+  local preflight_reason="$3"
+  local preflight_output="$4"
+  local preflight_log_path="$5"
+  local orchestration_output="$6"
+  local timestamp
+
+  [ "$public_role" = "planner" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_PLANNER_NEEDS_USER_IDLE_SKIP:-1}" != "0" ] || return 1
+  [ "${adapter_active_recovery_status:-}" = "needs_user" ] || return 1
+  [ "${adapter_active_recovery_failure_class:-}" = "needs_user_decision" ] || return 1
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=${adapter_active_ticket_file}" \
+    "active_ticket_id=${adapter_active_ticket_id}" \
+    "active_ticket_title=${adapter_active_ticket_title}" \
+    "active_stage=${adapter_active_stage}" \
+    "active_spec_ref=${adapter_active_spec_ref}" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=planner_needs_user_decision_waiting" \
+    "last_runtime_log=${preflight_log_path}"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=planner_needs_user_decision_waiting" \
+    "recovery_reason=${orchestration_reason:-recovery}" \
+    "active_item=${adapter_active_ticket_file}" \
+    "active_ticket_id=${adapter_active_ticket_id}" \
+    "failure_class=${adapter_active_recovery_failure_class}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'runtime_script=%s\n' "$runtime_path"
+  printf 'runtime_status=%s\n' "$preflight_status"
+  printf 'runtime_exit_code=0\n'
+  printf 'reason=planner_needs_user_decision_waiting\n'
+  printf 'runtime_reason=%s\n' "$preflight_reason"
+  printf 'recovery_reason=%s\n' "${orchestration_reason:-recovery}"
+  printf 'active_item=%s\n' "$adapter_active_ticket_file"
+  printf 'active_ticket_id=%s\n' "$adapter_active_ticket_id"
+  printf 'active_recovery_status=%s\n' "$adapter_active_recovery_status"
+  printf 'active_recovery_failure_class=%s\n' "$adapter_active_recovery_failure_class"
+  printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  printf 'runtime_output_begin\n'
+  cat "$preflight_output"
+  printf 'runtime_output_end\n'
+  printf 'recovery_signal_begin\n'
+  cat "$orchestration_output"
+  printf 'recovery_signal_end\n'
+  rm -f "$preflight_output" "$orchestration_output"
+  exit 0
 }
 
 maybe_skip_unchanged_idle_preflight() {
@@ -650,7 +1374,7 @@ role_boundary_for_current_role() {
       printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
       ;;
     planner)
-      printf '%s\n' "- planner: promote quick memos into generated PRDs when safe, and create/update plans and todo ticket files only. Query the wiki before memo promotion, drafting, or ticket generation. Do not implement, verify, commit, or push."
+      printf '%s\n' "- planner: act as Orchestrator AI. Promote quick memos into generated PRDs, create/update plans and todo tickets, and repair board markdown when owner work stalls or breaks. Query the wiki before memo promotion, drafting, ticket generation, or recovery decisions. Do not implement product code, manage worktrees directly, manage runner or OS processes, verify, commit, or push."
       ;;
     todo)
       printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
@@ -674,7 +1398,7 @@ emit_required_flow() {
   # Emit the full Required-flow numbered list in order. Items 1, 2, 4, 5, 6,
   # 9, 10, 11 are always emitted. Items 3 and 7 are role-gated so they only
   # ship for the roles that actually need them.
-  printf '%s\n' "1. Read the role instruction file and the current board state."
+  printf '%s\n' "1. Read the role instruction file, any protocol files it references, and the current board state."
   printf '%s\n' "2. Execute exactly one safe ${public_role} turn."
   case "$public_role" in
     planner|ticket|todo)
@@ -688,6 +1412,9 @@ emit_required_flow() {
     ticket)
       printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
       ;;
+    planner)
+      printf '%s\n' "7. After AI-authored recovery edits, run 'autoflow guard' or 'scripts/board-guard.sh' and repair any guard errors before creating more work. Treat guard warnings as orchestration evidence: record leftover/dirty worktree cleanup candidates in Recovery State, Next Action, or Resume Context, but do not delete or reset worktrees yourself. Do not manage runner or OS processes: no kill/pkill, no runner start/stop/restart, no background process cleanup. If recovery evidence and decision are unchanged, do not append duplicate Notes or rewrite Last Recovery At; leave the ticket idempotently blocked and report the unchanged blocker."
+      ;;
     coordinator)
       printf '%s\n' "7. Do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime."
       ;;
@@ -699,9 +1426,14 @@ emit_required_flow() {
 
 write_agent_prompt() {
   local instruction_file="$1"
-  local required_flow_block role_boundary_line
+  local required_flow_block role_boundary_line goal_prompt_block active_item_display
   required_flow_block="$(emit_required_flow)"
   role_boundary_line="$(role_boundary_for_current_role)"
+  goal_prompt_block="$(ticket_goal_prompt_block_for_current_ticket || true)"
+  active_item_display="${adapter_active_ticket_file:-${adapter_active_ticket_id:-}}"
+  if [ -n "$active_item_display" ]; then
+    active_item_display="$(runner_board_relative_path "$active_item_display")"
+  fi
 
   cat <<EOF
 Autoflow Local Runner Mode
@@ -718,10 +1450,28 @@ Context:
 - Public role: ${public_role}
 - Runtime role: ${runtime_role}
 - Runtime script: ${runtime_path}
+- Active item: ${active_item_display}
+EOF
+
+  if [ -n "${adapter_active_recovery_reason:-}" ]; then
+    printf '%s\n' "- Active recovery reason: ${adapter_active_recovery_reason}"
+    printf '%s\n' "- Active recovery status: ${adapter_active_recovery_status:-}"
+    printf '%s\n' "- Active recovery failure class: ${adapter_active_recovery_failure_class:-}"
+    if [ -n "${adapter_active_recovery_worktree_path:-}" ]; then
+      printf '%s\n' "- Active recovery worktree path: ${adapter_active_recovery_worktree_path}"
+      printf '%s\n' "- Active recovery worktree status: ${adapter_active_recovery_worktree_status:-}"
+    fi
+    if [ -n "${adapter_active_recovery_board_state:-}" ]; then
+      printf '%s\n' "- Active recovery board state: ${adapter_active_recovery_board_state}"
+    fi
+  fi
+
+  cat <<EOF
 - Role instruction file: ${instruction_file}
 - Agent adapter: ${agent}
 - Model: ${model:-}
 - Reasoning: ${reasoning:-}
+- Repo-local CLI: $(autoflow_cli_path)
 
 Language policy:
 - Write all user-visible terminal/chat prose, progress summaries, explanations,
@@ -732,7 +1482,13 @@ Language policy:
 
 Required flow:
 ${required_flow_block}
+EOF
 
+  if [ -n "$goal_prompt_block" ]; then
+    printf '\nGoal guardrail:\n%s\n' "$goal_prompt_block"
+  fi
+
+  cat <<EOF
 Role boundary:
 ${role_boundary_line}
 When there is no actionable work, leave the runner and board in an idle state
@@ -743,6 +1499,7 @@ EOF
 run_custom_adapter_command() {
   local prompt_file="$1"
 
+  prepare_adapter_cli_env
   command_summary="$command_value"
   (
     cd "$adapter_working_root"
@@ -758,9 +1515,11 @@ run_custom_adapter_command() {
 }
 
 run_adapter_with_identity() {
+  prepare_adapter_cli_env
   AUTOFLOW_ROLE="$runtime_role" \
     AUTOFLOW_WORKER_ID="$runner_id" \
     AUTOFLOW_BACKGROUND=1 \
+    AUTOFLOW_CLI="${AUTOFLOW_CLI:-$(autoflow_cli_path)}" \
     AUTOFLOW_BOARD_ROOT="$board_root" \
     AUTOFLOW_PROJECT_ROOT="$project_root" \
     AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
@@ -840,6 +1599,44 @@ ensure_agent_on_path() {
   done
 
   return 1
+}
+
+autoflow_cli_path() {
+  local candidate="${project_root}/bin/autoflow"
+  if [ -x "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  candidate="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd)/bin/autoflow"
+  if [ -x "$candidate" ]; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+
+  if command -v autoflow >/dev/null 2>&1; then
+    command -v autoflow
+    return 0
+  fi
+
+  printf 'autoflow\n'
+}
+
+prepare_adapter_cli_env() {
+  local cli_path cli_dir
+
+  cli_path="$(autoflow_cli_path)"
+  export AUTOFLOW_CLI="$cli_path"
+  if [ -x "$cli_path" ]; then
+    cli_dir="$(dirname "$cli_path")"
+    case ":$PATH:" in
+      *":$cli_dir:"*) ;;
+      *)
+        PATH="${cli_dir}:${PATH}"
+        export PATH
+        ;;
+    esac
+  fi
 }
 
 runner_claude_base_cmd() {
@@ -984,8 +1781,11 @@ prepare_adapter_live_logs() {
 
 agent_runtime_preflight_or_exit() {
   local preflight_output preflight_exit preflight_status preflight_reason preflight_log_path
+  local orchestration_output orchestration_reason
   local started_at finished_at command_status runner_status last_result
   local active_item active_ticket_id active_ticket_title active_stage active_spec_ref
+  local active_recovery_reason active_recovery_status active_recovery_failure_class
+  local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
 
   case "$public_role" in
     ticket|planner)
@@ -1031,15 +1831,73 @@ agent_runtime_preflight_or_exit() {
   fi
   active_ticket_title=""
   active_spec_ref=""
+  active_recovery_reason=""
+  active_recovery_status=""
+  active_recovery_failure_class=""
+  active_recovery_worktree_path=""
+  active_recovery_worktree_status=""
+  active_recovery_board_state=""
+  runner_hydrate_active_ticket_metadata
   preflight_log_path="$(persist_run_artifact "$preflight_output" "runtime")"
 
   if [ "$preflight_exit" -eq 0 ] && { [ "$preflight_status" = "ok" ] || [ "$preflight_status" = "resume" ]; }; then
     if [ -n "$implementation_root" ] && [ -d "$implementation_root" ]; then
       adapter_working_root="$implementation_root"
     fi
+    adapter_active_ticket_file="$active_item"
+    adapter_active_ticket_id="$active_ticket_id"
+    adapter_active_ticket_title="$active_ticket_title"
+    adapter_active_stage="$active_stage"
+    adapter_active_spec_ref="$active_spec_ref"
+    adapter_active_recovery_reason="$active_recovery_reason"
+    adapter_active_recovery_status="$active_recovery_status"
+    adapter_active_recovery_failure_class="$active_recovery_failure_class"
     rm -f "$preflight_output"
     return 0
   fi
+
+  orchestration_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-orchestration-signal.XXXXXX")"
+  if [ "$preflight_exit" -eq 0 ] && [ "$public_role" = "planner" ] && planner_orchestration_signal > "$orchestration_output"; then
+    orchestration_reason="$(awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_ticket_id="$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_ticket_title="$(awk -F= '$1 == "ticket_title" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_stage="$(awk -F= '$1 == "ticket_stage" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_spec_ref="$(awk -F= '$1 == "spec_ref" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_recovery_status="$(awk -F= '$1 == "recovery_status" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_recovery_failure_class="$(awk -F= '$1 == "failure_class" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_recovery_worktree_path="$(awk -F= '$1 == "worktree_path" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_recovery_worktree_status="$(awk -F= '$1 == "worktree_status" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_recovery_board_state="$(awk -F= '$1 == "board_state" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$orchestration_output" 2>/dev/null || true)"
+    adapter_active_ticket_file="$active_item"
+    adapter_active_recovery_reason="${orchestration_reason:-recovery}"
+    maybe_skip_planner_needs_user_decision_signal \
+      "$orchestration_reason" \
+      "$preflight_status" \
+      "$preflight_reason" \
+      "$preflight_output" \
+      "$preflight_log_path" \
+      "$orchestration_output" || true
+    maybe_skip_unchanged_planner_recovery_signal \
+      "$orchestration_reason" \
+      "$preflight_status" \
+      "$preflight_reason" \
+      "$preflight_output" \
+      "$preflight_log_path" \
+      "$orchestration_output" || true
+    runner_append_log "$runner_id" "orchestrator_recovery_signal" \
+      "role=${public_role}" \
+      "reason=${orchestration_reason:-recovery}" \
+      "active_item=${active_item}" \
+      "active_ticket_id=${adapter_active_ticket_id}" \
+      "recovery_status=${adapter_active_recovery_status}" \
+      "failure_class=${adapter_active_recovery_failure_class}" \
+      "worktree_status=${adapter_active_recovery_worktree_status}" \
+      "board_state=${adapter_active_recovery_board_state}"
+    rm -f "$preflight_output" "$orchestration_output"
+    return 0
+  fi
+  rm -f "$orchestration_output"
 
   finished_at="$(runner_now_iso)"
   maybe_skip_unchanged_idle_preflight "$preflight_status" "$preflight_reason" "$preflight_output" "$preflight_log_path" || true
@@ -1069,6 +1927,12 @@ agent_runtime_preflight_or_exit() {
     "active_ticket_title=${active_ticket_title}" \
     "active_stage=${active_stage}" \
     "active_spec_ref=${active_spec_ref}" \
+    "active_recovery_reason=${active_recovery_reason}" \
+    "active_recovery_status=${active_recovery_status}" \
+    "active_recovery_failure_class=${active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${active_recovery_worktree_status}" \
+    "active_recovery_board_state=${active_recovery_board_state}" \
     "pid=$(runner_state_pid_for_finish)" \
     "started_at=$(runner_state_started_at "$started_at")" \
     "last_event_at=${finished_at}" \
@@ -1211,10 +2075,11 @@ case "$agent" in
 	    maybe_skip_unchanged_wiki_turn || true
 	    maybe_skip_debounced_wiki_turn || true
 
-	    started_at="$(runner_now_iso)"
-	    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
+    started_at="$(runner_now_iso)"
+    prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
     adapter_stdout=""
     adapter_stderr=""
+    ticket_goal_before_fingerprint="$(ticket_goal_progress_fingerprint_for_current_ticket || true)"
     prepare_adapter_live_logs
     write_agent_prompt "$instruction_file" > "$prompt_file"
 
@@ -1225,11 +2090,17 @@ case "$agent" in
       "mode=${mode}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
-      "active_item=$(runner_active_state_value "active_item")" \
-      "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-      "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-      "active_stage=$(runner_active_state_value "active_stage")" \
-      "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+      "active_item=$(runner_adapter_state_value "active_item")" \
+      "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+      "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+      "active_stage=$(runner_adapter_state_value "active_stage")" \
+      "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+      "active_recovery_reason=${adapter_active_recovery_reason}" \
+      "active_recovery_status=${adapter_active_recovery_status}" \
+      "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+      "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+      "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+      "active_recovery_board_state=${adapter_active_recovery_board_state}" \
       "pid=$(runner_state_pid_for_start)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${started_at}" \
@@ -1288,11 +2159,17 @@ case "$agent" in
         "mode=${mode}" \
         "model=${model}" \
         "reasoning=${reasoning}" \
-        "active_item=$(runner_active_state_value "active_item")" \
-        "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-        "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-        "active_stage=$(runner_active_state_value "active_stage")" \
-        "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+        "active_item=$(runner_adapter_state_value "active_item")" \
+        "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+        "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+        "active_stage=$(runner_adapter_state_value "active_stage")" \
+        "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+        "active_recovery_reason=${adapter_active_recovery_reason}" \
+        "active_recovery_status=${adapter_active_recovery_status}" \
+        "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+        "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+        "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+        "active_recovery_board_state=${adapter_active_recovery_board_state}" \
         "pid=$(runner_state_pid_for_finish)" \
         "started_at=$(runner_state_started_at "$started_at")" \
         "last_event_at=${finished_at}" \
@@ -1343,22 +2220,29 @@ case "$agent" in
 	    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
 	    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
 	    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
-	    if [ "$adapter_exit" -eq 0 ]; then
-	      wiki_record_inputs_fingerprint
-	    fi
+    if [ "$adapter_exit" -eq 0 ]; then
+      wiki_record_inputs_fingerprint
+    fi
+    ticket_goal_record_adapter_result_for_current_ticket "$adapter_exit" "$ticket_goal_before_fingerprint" || true
 
-	    runner_write_state "$runner_id" \
+    runner_write_state "$runner_id" \
       "status=${runner_status}" \
       "role=${public_role}" \
       "agent=${agent}" \
       "mode=${mode}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
-      "active_item=$(runner_active_state_value "active_item")" \
-      "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-      "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-      "active_stage=$(runner_active_state_value "active_stage")" \
-      "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+      "active_item=$(runner_adapter_state_value "active_item")" \
+      "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+      "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+      "active_stage=$(runner_adapter_state_value "active_stage")" \
+      "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+      "active_recovery_reason=${adapter_active_recovery_reason}" \
+      "active_recovery_status=${adapter_active_recovery_status}" \
+      "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+      "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+      "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+      "active_recovery_board_state=${adapter_active_recovery_board_state}" \
       "pid=$([ "$runner_status" = "stopped" ] && printf '' || runner_state_pid_for_finish)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \

@@ -6,8 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+cache_dir="${project_dir}-cache"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$cache_dir"
 }
 trap cleanup EXIT
 
@@ -41,7 +42,7 @@ run_temp_runtime() {
 
   (
     cd "$board_dir"
-    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT "$@"
+    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT XDG_CACHE_HOME="$cache_dir" "$@"
   )
 }
 
@@ -105,28 +106,34 @@ git -C "$project_dir" commit -m "baseline" >/dev/null
 write_spec >/dev/null
 
 start_output="${project_dir}/start.out"
+plan_output="${project_dir}/plan.out"
 finish_output="${project_dir}/finish.out"
 merge_output="${project_dir}/merge.out"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_output"
+require_line "$plan_output" "status=ok"
+require_line "$plan_output" "source=backlog-to-todo"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
 require_line "$start_output" "worktree_status=ready"
-require_pattern "$start_output" '^worktree_path=.*/\.autoflow-worktrees/.*/tickets_001$'
+require_pattern "$start_output" '^worktree_path=.*/autoflow/worktrees/.*/tickets_001$'
 
 worktree_path="$(awk -F= '$1 == "worktree_path" { print $2; exit }' "$start_output")"
 printf 'local root edit\n' >"${project_dir}/unrelated.txt"
 printf 'ticket update\n' >"${worktree_path}/target.txt"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$finish_output"
-require_line "$finish_output" "status=ready_to_merge"
+require_line "$finish_output" "status=needs_ai_merge"
 require_line "$finish_output" "outcome=pass"
-require_line "$finish_output" "commit_status=not_committed_waiting_for_merge_bot"
+require_line "$finish_output" "commit_status=ai_merge_required"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=merge-1 ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
+cp "${worktree_path}/target.txt" "${project_dir}/target.txt"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$merge_output"
 require_line "$merge_output" "status=done"
 require_line "$merge_output" "outcome=pass"
-require_line "$merge_output" "status=integrated"
+require_line "$merge_output" "commit_status=committed_via_inline_merge"
 
 grep -Fqx 'ticket update' "${project_dir}/target.txt"
 grep -Fqx 'local root edit' "${project_dir}/unrelated.txt"

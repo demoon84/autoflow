@@ -1,0 +1,183 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_003
+- PRD Key: prd_003
+- Plan Candidate: 사용자 직접 재활성 — 이전 reject_003 의 Manual Resolution 이 부분만 메인에 남아 PRD Done When 미충족
+- Title: Wiki 섹션 미리보기 토글 (PRD prd_003 마무리)
+- Stage: rejected
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-04-30T23:40:56Z
+
+## Goal
+
+- 이번 작업의 목표: PRD prd_003 의 Wiki 섹션 미리보기 토글 흐름을 완성한다. Wiki 진입 시 미리보기는 닫힌 상태로 시작, 결과 항목 클릭 시 펼쳐지고, 헤더 닫기(×)와 좌측 "미리보기 열기" 토글로 자유롭게 여닫을 수 있어야 한다.
+
+## References
+
+- PRD: tickets/done/prd_003/prd_003.md
+- Feature Spec:
+- Plan Source: 사용자 직접 재활성
+- 이전 시도 기록: tickets/done/prd_003/reject_003.md (retry 10/10 도달 + 2026-04-26 Manual Resolution 노트 보관)
+
+## Allowed Paths
+
+- apps/desktop/src/renderer/main.tsx
+- apps/desktop/src/renderer/styles.css
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_003`
+- Branch: autoflow/tickets_003
+- Base Commit: 4c2328357117af924d166fc529e615924b46c1b5
+- Worktree Commit:
+- Integration Status: pending
+
+## Done When
+
+- [ ] Wiki 섹션 진입 직후 LogPreview 가 보이지 않고, 좌측 목록 + 검색 패널이 패널 전체 폭을 차지한다.
+- [ ] WikiList / HandoffList / WikiQueryPanel 결과 중 어느 항목이든 클릭하면 우측에 LogPreview 가 펼쳐지고 좌측 목록 폭이 줄어든다.
+- [ ] 펼쳐진 LogPreview 헤더 우측에 닫기(×) 버튼이 보이고, 클릭하면 미리보기 영역이 사라지고 좌측이 다시 전체 폭이 된다.
+- [ ] 미리보기를 닫은 상태에서 `selectedLogPath` 가 남아 있으면, 좌측 패널 어딘가에 "미리보기 열기" 형태의 토글 버튼이 노출되어 다시 펼칠 수 있다.
+- [ ] Wiki 외 다른 settings 섹션(snapshot, automation 등)은 시각적 회귀 없음 — `.settings-section` 의 기본 grid 가 유지됨.
+- [ ] 다른 섹션으로 이동했다가 다시 Wiki 로 돌아오면 미리보기는 다시 닫힌 기본 상태로 시작.
+- [ ] `cd apps/desktop && npx tsc --noEmit` exit 0.
+- [ ] `cd apps/desktop && node scripts/check-syntax.mjs` exit 0.
+- [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
+
+## Next Action
+- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+
+## Resume Context
+
+- 현재 상태 요약: worktree 에 `isWikiPreviewOpen` state, Wiki 이탈 시 닫힘 리셋, 결과 선택 시 자동 open, LogPreview 닫기 버튼, 선택 항목이 남은 닫힘 상태의 "미리보기 열기" 버튼, `.knowledge-preview-pane--hidden` CSS 가 있다. `cd apps/desktop && npx tsc --noEmit` 과 `cd apps/desktop && node scripts/check-syntax.mjs` 는 통과했다. `bash tests/smoke/ticket-owner-smoke.sh` 는 `runner.7.id=coordinator-shell-loop` 미검출로 실패했다.
+- 2026-05-01T17:35:00+09:00 owner-1 재확인:
+  - Wiki 쿼리 재실행 결과 `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`, `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md` 를 재확인.
+  - `cd apps/desktop && npx tsc --noEmit` 는 `@mui/material` 모듈 타입 해석 실패로 `exit 2`.
+  - `cd apps/desktop && node scripts/check-syntax.mjs` 는 `exit 0`.
+  - `bash tests/smoke/ticket-owner-smoke.sh` 는 `Expected line not found: cleanup_status=ok`로 `exit 1`.
+  - 현 티켓 ALLOWED PATH 내 구현(`apps/desktop/src/renderer/main.tsx`, `apps/desktop/src/renderer/styles.css`)은 이전과 동일하며 추가 수정이 필요하지 않음.
+- 직전 작업: `./bin/autoflow wiki query . --term 'Wiki 섹션 미리보기 토글' --term 'LogPreview' --term 'cleanup_status=ok' --term 'finish-ticket-owner cleanup output contract' --term 'apps/desktop/src/renderer/main.tsx styles.css' --limit 8` 결과로 `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, `wiki/answers/finish-ticket-owner-cleanup-status-contract.md` 를 확인했다. Wiki 결과는 UI 구현 기준은 `prd_003`, 현재 pass blocker 는 runtime cleanup 출력 계약임을 재확인했다.
+- 재개 시 먼저 볼 것: `tests/smoke/ticket-owner-smoke.sh` 가 요구하는 `cleanup_status=ok` 와 `finish-ticket-owner` 출력 계약. 이 수정은 현재 Allowed Paths 밖이므로 이번 티켓에서는 fail 처리했다.
+- 추가 확인: 동일 명령으로 재실행한 smoke 검증은 `Expected line not found: runner.7.id=coordinator-shell-loop` 를 반환했습니다. 현재 스냅샷 기반 smoke 기대값이 최신 runner 구성과 불일치해 생긴 실패이므로, 관련 수정은 런타임/테스트 계약 정리에 둬야 합니다.
+
+## Notes
+
+- 사용자 요청으로 done/prd_003/reject_003.md 를 todo 로 재활성 (2026-04-30). Retry 카운트 0 으로 리셋. 이전 시도/사유 기록은 archive 에 그대로 보존.
+
+- Runtime hydrated worktree dependency at 2026-04-29T21:48:01Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- 2026-04-29T22:05:00Z mini-plan by worker-1:
+  - Treat `wiki/features/wiki-preview-flow.md` and `tickets/done/prd_003/reject_003.md` Manual Resolution as the implementation recipe for this reactivated ticket.
+  - Note the later `tickets/done/prd_032/prd_032.md` always-expanded behavior as a known conflict, but follow the currently active `tickets_003` Done When.
+  - Restore the narrow preview open/close state path only inside `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`, preserving selection data flow and non-Wiki settings layouts.
+  - Run `cd apps/desktop && npx tsc --noEmit`, `cd apps/desktop && node scripts/check-syntax.mjs`, and `bash tests/smoke/ticket-owner-smoke.sh`; then manually integrate into PROJECT_ROOT and rerun verification there.
+- 2026-04-29T22:05:00Z implementation note by worker-1:
+  - Added `isWikiPreviewOpen` state, Wiki leave-section reset, result-select auto-open, LogPreview header close button, left-pane "미리보기 열기" button, and hidden preview-pane class.
+  - Kept changes within Allowed Paths and did not alter wiki query, board loading, or other settings sections.
+- Ticket owner verification failed by worker-1 at 2026-04-29T22:39:01Z: command exited 1
+- AI worker-1 marked fail at 2026-04-29T22:39:15Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-29T22:40:39Z; retry_count=1
+- AI worker-1 prepared todo at 2026-04-29T22:45:18Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- AI worker-1 prepared resume at 2026-04-29T22:45:47Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- 2026-04-29T22:46:39Z owner-1 mini-plan / verification judgment:
+  - Cite `tickets/done/prd_003/prd_003.md` and `wiki/features/wiki-preview-flow.md` as the governing hidden-by-default Wiki preview behavior; note `tickets/done/prd_032/prd_032.md` as conflicting historical context only.
+  - Keep product/UI implementation within `apps/desktop/src/renderer/main.tsx` and `apps/desktop/src/renderer/styles.css`; do not edit runtime scripts or smoke tests because they are outside Allowed Paths.
+  - Verification observed: `cd apps/desktop && npx tsc --noEmit` exit 0; `cd apps/desktop && node scripts/check-syntax.mjs` exit 0; `bash tests/smoke/ticket-owner-smoke.sh` exit 1 because `cleanup_status=ok` is missing from `finish-ticket-owner` output.
+  - Since the only failing required check is outside this ticket scope, finish this ticket as fail with a concrete next fix hint instead of merging an incomplete pass.
+
+- 2026-05-01: 티켓 재개 후 재검증 실행. 구현 변경은 동일하며 Allowed Paths 조건에서 추가 수정은 없음. `cd apps/desktop && npx tsc --noEmit` (PROJECT_ROOT 기준) 및 `cd apps/desktop && node scripts/check-syntax.mjs` (PROJECT_ROOT 기준) pass. `bash tests/smoke/ticket-owner-smoke.sh` (PROJECT_ROOT 기준)는 `Expected line not found: runner.7.id=coordinator-shell-loop`로 실패해 스모크 계약 불일치 블로커가 그대로 남아 있음. 이건 `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`와 `tickets/done/prd_003/reject_003.md` 맥락과 정합.
+- Ticket owner verification failed by worker-1 at 2026-04-29T22:47:30Z: command exited 1
+- AI worker-1 marked fail at 2026-04-29T22:47:35Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-29T22:49:38Z; retry_count=2
+- Planner wiki context checkpoint by planner-1 at 2026-04-30T07:50:00+09:00: `bin/autoflow wiki query . --term 'Wiki 섹션 미리보기 토글' --term 'LogPreview' --term 'cleanup_status=ok' --term 'finish-ticket-owner cleanup output contract' --term 'apps/desktop/src/renderer/main.tsx styles.css' --limit 8` surfaced `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, and `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`. Planning constraint: this retry still carries the Wiki preview Done When, but the known blocking smoke failure is the `finish-ticket-owner` cleanup output contract, which is outside this ticket's current Allowed Paths.
+- Ticket automatically replanned from tickets/reject/tickets_003.md at 2026-04-30T05:55:50Z; retry_count=3
+- 2026-04-30T05:58:27Z owner-1 verification judgment:
+  - Wiki context pass found `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, and `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`.
+  - `cd apps/desktop && npx tsc --noEmit` passed.
+  - `cd apps/desktop && node scripts/check-syntax.mjs` passed.
+  - `bash tests/smoke/ticket-owner-smoke.sh` failed because `cleanup_status=ok` is still missing from `finish-ticket-owner` output.
+  - Failure remains outside this ticket's Allowed Paths, so this ticket is rejected without merging the renderer changes.
+- AI worker marked fail at 2026-04-30T05:59:17Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T05:59:25Z; retry_count=4
+- Ticket owner verification failed by worker at 2026-04-30T11:07:47Z: command exited 127
+- Ticket owner verification failed by worker at 2026-04-30T11:07:51Z: command exited 127
+- Ticket owner verification failed by worker at 2026-04-30T11:08:09Z: command exited 1
+- AI worker marked fail at 2026-04-30T11:08:51Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T11:09:02Z; retry_count=5
+- Planner wiki context checkpoint by planner-1 at 2026-04-30T20:09:44+0900: `./bin/autoflow wiki query . --term 'Wiki 섹션 미리보기 토글' --term 'LogPreview' --term 'cleanup_status=ok' --term 'finish-ticket-owner cleanup output contract' --term 'ticket-owner-smoke runner.7.id coordinator-shell-loop' --term 'apps/desktop/src/renderer/main.tsx styles.css' --limit 8` surfaced `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`, and `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`. Planning constraint: the Wiki preview UI Done When remains the active product goal, but repeated verification failures point to the `finish-ticket-owner` cleanup output contract / smoke runner expectation mismatch, which is outside this ticket's current Allowed Paths (`apps/desktop/src/renderer/main.tsx`, `apps/desktop/src/renderer/styles.css`).
+- AI worker marked fail at 2026-04-30T22:40:33Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T22:41:30Z; retry_count=6
+- AI worker marked fail at 2026-04-30T22:56:31Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T22:56:59Z; retry_count=7
+- AI worker marked fail at 2026-04-30T23:24:46Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T23:26:39Z; retry_count=8
+- AI worker marked fail at 2026-04-30T23:30:49Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T23:31:16Z; retry_count=9
+- AI worker marked fail at 2026-04-30T23:32:54Z.
+- Ticket automatically replanned from tickets/reject/reject_003.md at 2026-04-30T23:34:24Z; retry_count=10
+- AI worker prepared todo at 2026-04-30T23:40:07Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- AI worker prepared resume at 2026-04-30T23:40:15Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_003; run=tickets/inprogress/verify_003.md
+- AI worker marked fail at 2026-04-30T23:40:56Z.
+## Verification
+- Run file: `tickets/reject/verify_003.md`
+- Log file: `logs/verifier_003_20260430_234056Z_fail.md`
+- Result: failed
+
+## Result
+- Summary: `@mui/material` 타입 의존성 결여(`tsc_exit=2`) 및 `finish-ticket-owner` 출력 계약 미준수로 인한 스모크 실패(`Expected line not found: cleanup_status=ok`)가 반복되어 Done When의 UI 구현이 유효성 판정을 통과하지 못함.
+- Remaining risk: 런타임/스모크 계약( `cleanup_status=ok` ) 및 node_modules 타입 해석 환경 정합.
+
+## Retry
+- Retry Count: 10
+- Max Retries: 10
+
+## Reject Reason
+
+- UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification.
+
+## Reject History
+- 2026-04-30T23:24:46Z | retry_count=8 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_232446Z_fail.md`` | reason=Runner/스모크 계약 블로커( `runner.7.id=coordinator-shell-loop` 미검출 )가 남아 있어 `bash tests/smoke/ticket-owner-smoke.sh`가 실패. UI 구현은 `apps/desktop/src/renderer/main.tsx`, `apps/desktop/src/renderer/styles.css` 내 제한 범위에서 완료되어 있음.
+- 2026-04-29T22:40:39Z | retry_count=1 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260429_223915Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification.
+- 2026-04-29T22:49:38Z | retry_count=2 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260429_224735Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification.
+- 2026-04-30T05:55:50Z | retry_count=3 | source=`tickets/reject/tickets_003.md` | log=`pending` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. doctor --fix: stale inprogress with 13 consecutive verifier failures (recovered at 2026-04-30T05:54:54Z).
+- 2026-04-30T05:59:25Z | retry_count=4 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_055917Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. doctor --fix: stale inprogress with 13 consecutive verifier failures (recovered at 2026-04-30T05:54:54Z).
+- 2026-04-30T11:09:02Z | retry_count=5 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_110852Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. doctor --fix: stale inprogress with 13 consecutive verifier failures (recovered at 2026-04-30T05:54:54Z).
+- 2026-04-30T22:41:30Z | retry_count=6 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_224033Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. doctor --fix: stale inprogress with 13 consecutive verifier failures (recovered at 2026-04-30T05:54:54Z).
+- 2026-04-30T22:56:59Z | retry_count=7 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_225631Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. doctor --fix: stale inprogress with 13 consecutive verifier failures (recovered at 2026-04-30T05:54:54Z).
+- 2026-04-30T23:26:39Z | retry_count=8 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_232446Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. 2026-04-30T23:24:46Z: Runner contract mismatch (`runner.7.id=coordinator-shell-loop` 미검출) 및 동작 계약 정합 이슈로 재시도 필요.
+- 2026-04-30T23:31:16Z | retry_count=9 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_233049Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. 2026-04-30T23:24:46Z: Runner contract mismatch (`runner.7.id=coordinator-shell-loop` 미검출) 및 동작 계약 정합 이슈로 재시도 필요.
+- 2026-04-30T23:34:24Z | retry_count=10 | source=`tickets/reject/reject_003.md` | log=``logs/verifier_003_20260430_233254Z_fail.md`` | reason=UI toggle implementation is present in allowed renderer files and tsc/syntax checks passed, but required smoke verification fails outside this ticket scope because ticket-owner-smoke expects cleanup_status=ok from finish-ticket-owner output while current finish output only reports inline_merge=done and commit_status=committed_via_inline_merge. Fix the smoke/runtime cleanup output contract, then rerun this ticket verification. 2026-04-30T23:24:46Z: Runner contract mismatch (`runner.7.id=coordinator-shell-loop` 미검출) 및 동작 계약 정합 이슈로 재시도 필요.
+- 2026-05-01T17:35:00+09:00 | retry_count=10 | source=`tickets/reject/reject_003.md` | reason=재확인 결과 `tsc_exit=2` (`@mui/material` 타입 해석 실패) + `smoke_exit=1` (`cleanup_status=ok` 미출력)로 반복 블로커가 지속됨. 허용 범위를 벗어난 런타임 계약/환경 블로커이므로 다음 티켓에서 해결 필요.
+
+## Reject Reason
+
+  - 2026-04-30T23:24:46Z: Runner contract mismatch (`runner.7.id=coordinator-shell-loop` 미검출) 및 동작 계약 정합 이슈로 재시도 필요.
+
+## Resume Update (2026-05-01)
+- Wiki query checkpoint: `Wiki 섹션 미리보기 토글`, `LogPreview`, `selectedLogPath` (13개 hit), 주요 참조 `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`.
+- Required verification rerun 결과: `tsc_exit=2` (`@mui/material` 모듈 타입 미설치), `syntax_exit=0`, `smoke_exit=1` (`Expected line not found: cleanup_status=ok`).
+- Current status: 기능 구현은 기존 상태 유지, 허용 경로 외 계약/환경 블로커로 pass 불가.
+
+## Reject History (2026-05-01 Append)
+- 2026-05-01T08:35:00+09:00 | retry_count=9 | source=`tickets/reject/reject_003.md` | reason=재검증에서 tsc가 `@mui/material` 타입 의존성 실패, smoke가 `cleanup_status=ok` 미출력로 실패. UI 구현 자체는 완료 상태이나 계약/환경 블로커가 남아 있음.
+
+## Owner Recheck (2026-05-01T08:36:00+09:00)
+
+- 결과 판정: `fail` (retries 남음)
+- 검증 실행: `cd apps/desktop && npx tsc --noEmit`, `cd apps/desktop && node scripts/check-syntax.mjs`, `bash tests/smoke/ticket-owner-smoke.sh`
+- 확인 결과: `tsc_exit=2`, `syntax_exit=0`, `smoke_exit=1`
+- 핵심 실패:
+  - `@mui/material` 타입 의존성 해결 실패(`TS2307`)와 일부 암묵적 any 경고(`TS7006`)로 컴파일 판정 불가.
+  - smoke: `Expected line not found: cleanup_status=ok` (`finish-ticket-owner` 출력 계약 mismatch)
+- Wiki 근거 인용: `[[tickets/done/prd_003/prd_003.md]]`, `[[tickets/done/prd_003/reject_003.md]]`, `[[wiki/answers/finish-ticket-owner-cleanup-status-contract.md]]`, `[[wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md]]`
+- 다음 액션: 동일 티켓 재시도에서 UI 변경은 유지하고, 위 블로커는 허용 범위 외 변경으로 Planner/Runtime 계약 티켓에서 선행 해결 필요.
+
+## Planner Idle Checkpoint (2026-05-01T20:33:18+09:00)
+
+- planner-1 wiki context pass: `./bin/autoflow wiki query . --term 'Wiki 섹션 미리보기 토글' --term 'LogPreview' --term 'cleanup_status=ok' --term 'finish-ticket-owner output contract' --term 'ticket-owner-smoke runner.7.id coordinator-shell-loop' --term '@mui/material' --term 'apps/desktop/src/renderer/main.tsx styles.css' --limit 10`.
+- 관련 확인: `tickets/reject/reject_003.md` 가 현재 보드의 최상위 관련 결과이며, `tickets/done/prd_003/prd_003.md` 는 여전히 UI 요구사항 기준이다. `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md` 는 반복 블로커가 `cleanup_status=ok` finish 출력 계약임을 확인한다.
+- Runtime 결과: `scripts/start-plan.sh` 는 `status=idle`, `reason=no_actionable_plan_input` 을 반환했고, 이 reject 는 `max_retries_reached`, `retry_count=10` 으로 skip 됐다.
+- Planner 판단: 이번 턴에서는 이 reject 로 새 todo 를 만들지 않았다. 다음 actionable work 는 `tickets_003` 자동 재시도가 아니라 runtime/smoke 계약 또는 dependency 환경 블로커를 다루는 별도 planner input 이어야 한다.

@@ -295,7 +295,7 @@ create_todo_ticket_from_spec() {
 - Feature Spec:
 - Plan Source: plan-ai-direct
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note: ${project_note}
 - Plan Note:
@@ -312,6 +312,30 @@ ${allowed_paths}
 - Base Commit:
 - Worktree Commit:
 - Integration Status: pending_claim
+
+## Goal Runtime
+
+- Status:
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count: 0
+- Time Used Seconds: 0
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed: false
+- Last Event:
+- Last Progress Fingerprint:
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
 
 ## Done When
 

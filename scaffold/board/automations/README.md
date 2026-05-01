@@ -6,8 +6,8 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 
 Default 3-runner topology (planner-1 + owner-1 + wiki-1):
 
-- Claude `/af` / `/autoflow`, Codex `$af` / `$autoflow`, or `#af` / `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner-1` (Plan AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets. Path scope: `tickets/{inbox,backlog,todo,reject,done}/`. Owns memo promotion and reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`.
+- Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
+- `planner-1` (Orchestrator AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns memo promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
 - `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. Refreshes the deterministic wiki baseline inline at merge time.
 - `wiki-1` (Wiki AI): ticks every minute and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) over the deterministic baseline whenever `tickets/done/` or `tickets/reject/` changes. Path scope: `.autoflow/wiki/` only.
 - The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
@@ -20,14 +20,16 @@ Legacy role-pipeline model (compatibility only — DEPRECATED):
 
 ## Trigger Contract
 
-Autoflow skill handoff (`/af`, `/autoflow`, `$af`, `$autoflow`) and compatibility aliases (`#af`, `#autoflow`):
+Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#autoflow`):
 
-- Draft the spec in chat first.
-- Save only after explicit approval.
-- Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff.
+- Gather requirements in lightweight chat first; use short questions and decision recaps instead of rendering the PRD template every turn.
+- If scope is too large for one safe handoff, propose a lightweight PRD split map before drafting.
+- Render the full PRD draft(s) only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
+- Save only after separate explicit approval. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
+- Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Split PRDs are separate backlog files saved one active slot at a time.
 - Do not create plans, tickets, code, verification records, commits, or pushes.
 
-Memo skill handoff (`/memo`, `$memo`, `#memo`) and `autoflow memo create`:
+Order skill handoff (`/order`, `$order`, `#order`) and `autoflow memo create`:
 
 - Save only a quick memo under `tickets/inbox/memo_NNN.md`.
 - Preserve the original request and optional hints.
@@ -37,6 +39,7 @@ Memo skill handoff (`/memo`, `$memo`, `#memo`) and `autoflow memo create`:
 `ticket-owner`:
 
 - Claims or creates one active ticket.
+- Reads planner `Recovery State` / owner resume instruction when present.
 - Writes a mini-plan in the ticket.
 - Implements within `Allowed Paths`.
 - Runs verification commands directly, judges evidence, and records evidence.
@@ -118,7 +121,15 @@ fallback):
 
 Board stage is authoritative. The chat transcript is not.
 
-Ticket-owner AI is the actor. Runtime scripts are tools for claim/state/evidence/finalization; they must not be the actor that implements, verifies, rebases, cherry-picks, resolves conflicts, or merges product code.
+Planner AI is the board orchestrator. Ticket-owner AI is the executor for one ticket. Runtime scripts are safety-kernel tools for claim/state/evidence/finalization; they must not be the actor that plans recovery, implements, verifies, rebases, cherry-picks, resolves conflicts, or merges product code.
+
+Protocol files under `protocols/` define the AI-first workflow:
+
+- `board-orchestration.md`: planner-owned board supervision and shell safety boundary.
+- `recovery.md`: stalled/blocked/requeue classification and evidence rules.
+- `owner-contract.md`: owner execution contract and planner instruction handling.
+
+Use `autoflow guard` or `scripts/board-guard.sh` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
 
 ## Context Lifecycle
 
@@ -141,7 +152,7 @@ Recommended environment variables:
 
 Default (all sizes):
 
-- one Plan AI (`planner-1`),
+- one Orchestrator AI (`planner-1`),
 - one Impl AI (`owner-1`),
 - one Wiki AI (`wiki-1`).
 

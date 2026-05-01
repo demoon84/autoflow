@@ -558,11 +558,32 @@ coordinator_remediation_limit() {
 }
 
 coordinator_worktree_parent_root() {
-  local parent_dir repo_name
+  local configured parent_dir repo_name cache_root os_name
 
-  parent_dir="$(dirname "$project_root")"
+  configured="${AUTOFLOW_WORKTREE_ROOT:-}"
+  if [ -n "$configured" ]; then
+    printf '%s' "$configured"
+    return 0
+  fi
+
   repo_name="$(basename "$project_root")"
-  printf '%s/.autoflow-worktrees/%s' "$parent_dir" "$repo_name"
+  if [ -n "${XDG_CACHE_HOME:-}" ]; then
+    cache_root="${XDG_CACHE_HOME}/autoflow/worktrees"
+  elif [ -n "${HOME:-}" ]; then
+    os_name="$(uname -s 2>/dev/null || true)"
+    case "$os_name" in
+      Darwin)
+        cache_root="${HOME}/Library/Caches/autoflow/worktrees"
+        ;;
+      *)
+        cache_root="${HOME}/.cache/autoflow/worktrees"
+        ;;
+    esac
+  else
+    parent_dir="$(dirname "$project_root")"
+    cache_root="${parent_dir}/.autoflow-worktrees"
+  fi
+  printf '%s/%s' "$cache_root" "$repo_name"
 }
 
 remediation_log_dir() {
@@ -771,7 +792,7 @@ processed_ticket_already_seen() {
 }
 
 process_shared_nonbase_head_blockers() {
-  local limit idx group_head group_tickets old_ifs ticket_id ticket_file stage old_head
+  local limit idx group_head group_tickets old_ifs ticket_id ticket_file stage latest_event old_head
 
   blocked_processing_attempted="false"
   blocked_processed_count=0
@@ -802,13 +823,9 @@ process_shared_nonbase_head_blockers() {
       ticket_file="$(ticket_file_for_id "$ticket_id")"
       [ -f "$ticket_file" ] || continue
       stage="$(ticket_stage "$ticket_file")"
-      case "$stage" in
-        blocked|executing|pending|todo|"")
-          ;;
-        *)
-          continue
-          ;;
-      esac
+      [ "$stage" = "blocked" ] || continue
+      latest_event="$(ticket_latest_runtime_block_event "$ticket_file" || true)"
+      [ "$latest_event" = "runtime_shared_nonbase" ] || continue
 
       old_head="$(field_from_output "$doctor_output" "doctor.ticket.${ticket_id}.worktree_head")"
       [ -n "$old_head" ] || old_head="$group_head"

@@ -26,7 +26,7 @@ Recommended status values:
 - PRD:
 - Feature PRD:
 
-## Obsidian Links
+## Reference Notes
 
 - Project Note:
 - Plan Note:
@@ -55,5 +55,5 @@ Recommended status values:
 ## Notes
 
 - Allowed Paths are repo-relative. During implementation they are interpreted from the ticket worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
-- Obsidian Links use note names such as `[[prd_001]]` and `[[plan_001]]`.
+- Reference Notes use note names such as `[[prd_001]]` and `[[plan_001]]`.
 - Human-readable plan prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

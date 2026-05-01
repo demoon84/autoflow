@@ -24,13 +24,8 @@ TARGET_BOARD_ROOT="${TARGET_PROJECT_ROOT}/${BOARD_DIR_NAME}"
 ensure_package_templates_present
 
 status="initialized"
-if [ -d "$TARGET_BOARD_ROOT" ] && board_dir_has_entries "$TARGET_BOARD_ROOT"; then
-  if board_already_initialized "$TARGET_BOARD_ROOT"; then
-    status="already_initialized"
-  else
-    echo "Target board directory exists and is not empty: $TARGET_BOARD_ROOT" >&2
-    exit 1
-  fi
+if board_already_initialized "$TARGET_BOARD_ROOT"; then
+  status="already_initialized"
 fi
 
 if [ "$status" = "initialized" ]; then

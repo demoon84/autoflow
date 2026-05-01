@@ -9,9 +9,9 @@
 
 ## Rules
 
-- Autoflow skill handoff (`/af`, `/autoflow`, `$af`, `$autoflow`) and compatibility aliases (`#af`, `#autoflow`) may create or update one `prd_NNN.md` only after explicit user approval.
+- Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#autoflow`) may create or update one `prd_NNN.md` only after explicit user approval.
 - Plan AI may create a generated `prd_NNN.md` from `tickets/inbox/memo_NNN.md` when the memo is clear enough to make scope, Allowed Paths, Done When, and Verification concrete.
 - Ticket Owner consumes populated PRDs directly.
 - Legacy planner may convert populated specs into plans and todo tickets.
 - A consumed PRD moves to `tickets/done/<project-key>/`.
-- Generated plans, tickets, verification records, and logs should link back with `## Obsidian Links`.
+- Generated plans, tickets, verification records, and logs should link back with `## Reference Notes`.

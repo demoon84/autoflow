@@ -690,6 +690,7 @@ merge_output="$(merge_ticket_worktree "$ticket_file" 2>&1)" || {
       fi
       ;;
   esac
+  ticket_goal_block "$ticket_file" "${merge_reason:-merge_failed}"
   printf 'status=blocked\n'
   printf 'reason=%s\n' "${merge_reason:-merge_failed}"
   printf 'ticket=%s\n' "$ticket_file"
@@ -715,6 +716,7 @@ if [ "$ticket_file" != "$done_target" ]; then
 fi
 
 cleanup_output="$(cleanup_completed_ticket_worktree "$ticket_file" "$ticket_id" 2>&1)" || {
+  ticket_goal_block "$ticket_file" "post_merge_cleanup_failed"
   printf 'status=blocked\n'
   printf 'reason=post_merge_cleanup_failed\n'
   printf 'ticket=%s\n' "$ticket_file"
@@ -732,6 +734,7 @@ wiki_output="$(auto_update_wiki)"
 # `autoflow wiki lint --semantic` on top of the deterministic update above
 # on its own tick, so we do not double-trigger the maintainer adapter
 # from inside the merge step.
+ticket_goal_complete "$ticket_file" "complete"
 commit_output="$(git_commit_if_possible "$ticket_file" "$run_file")"
 clear_active_ticket_context_record || true
 clear_runner_active_state

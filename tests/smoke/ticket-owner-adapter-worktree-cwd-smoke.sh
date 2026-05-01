@@ -6,8 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+worktree_root="${project_dir}-worktrees"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$worktree_root"
 }
 trap cleanup EXIT
 
@@ -17,6 +18,18 @@ require_line() {
 
   if ! grep -Fqx -- "$expected" "$file"; then
     echo "Expected line not found: $expected" >&2
+    echo "--- $file ---" >&2
+    cat "$file" >&2
+    exit 1
+  fi
+}
+
+require_contains() {
+  local file="$1"
+  local expected="$2"
+
+  if ! grep -Fq -- "$expected" "$file"; then
+    echo "Expected text not found: $expected" >&2
     echo "--- $file ---" >&2
     cat "$file" >&2
     exit 1
@@ -82,22 +95,44 @@ git -C "$project_dir" commit -m "baseline" >/dev/null
 
 write_spec >/dev/null
 
+AUTOFLOW_ROLE=plan \
+  AUTOFLOW_WORKER_ID=planner-smoke \
+  AUTOFLOW_BOARD_ROOT="${project_dir}/.autoflow" \
+  AUTOFLOW_PROJECT_ROOT="$project_dir" \
+  "${project_dir}/.autoflow/scripts/start-plan.sh" >/dev/null
+
 fake_bin="${project_dir}/fake-bin"
 fake_args="${project_dir}/codex-args.txt"
+prompt_capture="${project_dir}/captured-prompt.txt"
 run_output="${project_dir}/run.out"
 mkdir -p "$fake_bin"
 cat >"${fake_bin}/codex" <<FAKE_CODEX
 #!/usr/bin/env bash
 printf '%s\n' "\$@" > "${fake_args}"
+cat > "${prompt_capture}"
 exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 AUTOFLOW_WORKTREE_ROOT="$worktree_root" PATH="${fake_bin}:$PATH" \
+  "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-1 >"$run_output"
 require_line "$run_output" "status=ok"
 require_line "$run_output" "runner_status=idle"
 
-ticket_file="${project_dir}/.autoflow/tickets/inprogress/tickets_001.md"
+ticket_file="$(find "${project_dir}/.autoflow/tickets/inprogress" -maxdepth 1 -type f -name 'tickets_*.md' | sort | head -n 1)"
+if [ -z "$ticket_file" ]; then
+  echo "Expected an in-progress ticket after owner run." >&2
+  cat "$run_output" >&2
+  exit 1
+fi
+require_line "$ticket_file" "## Recovery State"
+require_line "$ticket_file" "- Status: healthy"
+ticket_rel="tickets/inprogress/$(basename "$ticket_file")"
+require_contains "$prompt_capture" "Active item: ${ticket_rel}"
+require_contains "$prompt_capture" "The AI owns implementation, verification judgment, and merge judgment end to end."
+require_contains "${project_dir}/.autoflow/agents/ticket-owner-agent.md" "protocols/owner-contract.md"
+require_contains "${project_dir}/.autoflow/agents/ticket-owner-agent.md" "Owner Resume Instruction"
+require_contains "${project_dir}/.autoflow/protocols/owner-contract.md" "Impl AI must treat it as the current orchestration instruction."
 expected_worktree="$(awk -F': ' '/^- Path:/ { gsub(/`/, "", $2); print $2; exit }' "$ticket_file")"
 actual_worktree="$(awk 'previous == "-C" { print; exit } { previous = $0 }' "$fake_args")"
 

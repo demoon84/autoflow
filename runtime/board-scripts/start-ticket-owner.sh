@@ -91,6 +91,7 @@ find_owned_inprogress_ticket() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
+    ticket_owner_queue_parked_blocker "$file" && continue
     if ticket_owned_by_worker "$file"; then
       printf '%s' "$file"
       return 0
@@ -124,6 +125,7 @@ find_adoptable_inprogress_ticket() {
 
   while IFS= read -r file; do
     [ -n "$file" ] || continue
+    ticket_owner_queue_parked_blocker "$file" && continue
     ticket_owned_by_worker "$file" && continue
     ticket_claimed_by_other_worker "$file" && continue
     ticket_referenced_by_runner_state "$file" && continue
@@ -243,10 +245,67 @@ auto_resume_finish_pass_or_continue() {
   fi
 }
 
+block_missing_worktree_after_setup() {
+  local ticket_file="$1"
+  local ticket_id="$2"
+  local timestamp="$3"
+  local worktree_output="$4"
+  local worktree_path display_evidence
+
+  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  display_evidence="worktree_status=ready but path is missing or not a git worktree: ${worktree_path:-empty}"
+
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_recovery_missing_worktree"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "missing_worktree"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "$display_evidence"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Repair or recreate the missing worktree before running implementation."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: missing worktree 경로를 복구하거나 AUTOFLOW_WORKTREE_ROOT 를 쓰기 가능한 위치로 조정한 뒤 ticket-owner 를 재개한다."
+  append_note "$ticket_file" "Runtime blocked missing worktree at ${timestamp}: ${display_evidence}"
+  set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+  sync_runner_active_state "$ticket_file" "blocked"
+  ticket_goal_block "$ticket_file" "missing_worktree"
+
+  printf 'status=blocked\n'
+  printf 'reason=missing_worktree_after_setup\n'
+  printf 'ticket=%s\n' "$ticket_file"
+  printf 'ticket_id=%s\n' "$ticket_id"
+  printf '%s\n' "$worktree_output"
+  printf 'worktree_path=%s\n' "${worktree_path:-}"
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  printf 'next_action=Repair or recreate the missing worktree before running implementation.\n'
+  exit 0
+}
+
+ensure_ready_worktree_exists_or_block() {
+  local ticket_file="$1"
+  local ticket_id="$2"
+  local timestamp="$3"
+  local worktree_output="$4"
+  local worktree_path
+
+  printf '%s\n' "$worktree_output" | grep -Fxq "worktree_status=ready" || return 0
+  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
+  if [ -n "$worktree_path" ] && git -C "$worktree_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  block_missing_worktree_after_setup "$ticket_file" "$ticket_id" "$timestamp" "$worktree_output"
+}
+
 prepare_ticket_owner_context() {
   local ticket_file="$1"
   local source_kind="$2"
-  local ticket_id timestamp worktree_output implementation_root run_file
+  local ticket_id timestamp worktree_output implementation_root run_file worktree_evidence
   local project_key project_note ticket_note verification_note stage done_target reject_target
   local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
   local shared_head_blockers shared_head_summary
@@ -291,6 +350,7 @@ prepare_ticket_owner_context() {
 
       set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
       sync_runner_active_state "$ticket_file" "blocked"
+      ticket_goal_block "$ticket_file" "$blocked_reason"
       printf 'status=blocked\n'
       printf 'reason=%s\n' "$blocked_reason"
       printf 'ticket=%s\n' "$ticket_file"
@@ -316,15 +376,25 @@ prepare_ticket_owner_context() {
     fi
   fi
   if [ "$worktree_failed" = "true" ]; then
+    worktree_evidence="$(printf '%s' "$worktree_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/[[:space:]]*$//')"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+    replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_worktree_setup_failed"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "tooling_failure"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "worktree setup failed: ${worktree_evidence}"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Fix the worktree setup failure, then rerun ticket-owner."
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: worktree 생성 실패를 해결한 뒤 ticket-owner 실행을 재개한다."
     append_note "$ticket_file" "AI ${display_id} worktree setup failed at ${timestamp}: ${worktree_output}"
     set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+    sync_runner_active_state "$ticket_file" "blocked"
+    ticket_goal_block "$ticket_file" "worktree_setup_failed"
     printf 'status=blocked\n'
     printf 'reason=worktree_setup_failed\n'
     printf 'ticket=%s\n' "$ticket_file"
@@ -334,12 +404,15 @@ prepare_ticket_owner_context() {
     exit 0
   fi
 
+  ensure_ready_worktree_exists_or_block "$ticket_file" "$ticket_id" "$timestamp" "$worktree_output"
+
   shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
   if [ -n "$shared_blockers" ]; then
     blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
     mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
     set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
     sync_runner_active_state "$ticket_file" "blocked"
+    ticket_goal_block "$ticket_file" "shared_allowed_path_conflict"
     printf 'status=blocked\n'
     printf 'reason=shared_allowed_path_conflict\n'
     printf 'ticket=%s\n' "$ticket_file"
@@ -358,6 +431,7 @@ prepare_ticket_owner_context() {
     mark_ticket_shared_nonbase_head_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_head_blockers"
     set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
     sync_runner_active_state "$ticket_file" "blocked"
+    ticket_goal_block "$ticket_file" "shared_nonbase_head_conflict"
     printf 'status=blocked\n'
     printf 'reason=shared_nonbase_head_conflict\n'
     printf 'ticket=%s\n' "$ticket_file"
@@ -388,7 +462,7 @@ prepare_ticket_owner_context() {
   replace_scalar_field_in_section "$run_file" "## Meta" "PRD Key" "$project_key"
   replace_scalar_field_in_section "$run_file" "## Meta" "Status" "pending"
   replace_scalar_field_in_section "$run_file" "## Meta" "Working Root" "$implementation_root"
-  replace_section_block "$run_file" "Obsidian Links" "- Project Note: ${project_note}
+  replace_section_block "$run_file" "Reference Notes" "- Project Note: ${project_note}
 - Plan Note:
 - Ticket Note: ${ticket_note}
 - Verification Note: ${verification_note}"
@@ -408,6 +482,7 @@ prepare_ticket_owner_context() {
     "AI ${display_id} prepared ${source_kind}"
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
+  ticket_goal_activate "$ticket_file" "$source_kind"
 
   printf 'ticket=%s\n' "$ticket_file"
   printf 'ticket_id=%s\n' "$ticket_id"

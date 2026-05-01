@@ -167,6 +167,9 @@ template_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 template_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
 template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
+template_text|protocols/board-orchestration.md|protocols/board-orchestration.md
+template_text|protocols/owner-contract.md|protocols/owner-contract.md
+template_text|protocols/recovery.md|protocols/recovery.md
 template_text|conversations/README.md|conversations/README.md
 template_text|automations/README.md|automations/README.md
 template_text|automations/state/README.md|automations/state/README.md
@@ -212,6 +215,7 @@ template_text|wiki/architecture/README.md|wiki/architecture/README.md
 template_text|wiki/learnings/README.md|wiki/learnings/README.md
 runtime_executable|common.sh|scripts/common.sh
 runtime_executable|runner-common.sh|scripts/runner-common.sh
+runtime_executable|board-guard.sh|scripts/board-guard.sh
 runtime_executable|check-stop.sh|scripts/check-stop.sh
 runtime_executable|file-watch-common.sh|scripts/file-watch-common.sh
 runtime_executable|install-stop-hook.sh|scripts/install-stop-hook.sh
@@ -241,6 +245,7 @@ managed_board_directory_entries() {
   cat <<'EOF'
 agents
 agents/adapters
+protocols
 automations
 automations/state
 automations/state/threads
@@ -296,14 +301,11 @@ EOF
 managed_host_skill_asset_entries() {
   cat <<'EOF'
 claude_skill_text|autoflow/SKILL.md|.claude/skills/autoflow/SKILL.md
-claude_skill_text|af/SKILL.md|.claude/skills/af/SKILL.md
-claude_skill_text|memo/SKILL.md|.claude/skills/memo/SKILL.md
+claude_skill_text|order/SKILL.md|.claude/skills/order/SKILL.md
 codex_skill_text|autoflow/SKILL.md|.codex/skills/autoflow/SKILL.md
 codex_skill_text|autoflow/agents/openai.yaml|.codex/skills/autoflow/agents/openai.yaml
-codex_skill_text|af/SKILL.md|.codex/skills/af/SKILL.md
-codex_skill_text|af/agents/openai.yaml|.codex/skills/af/agents/openai.yaml
-codex_skill_text|memo/SKILL.md|.codex/skills/memo/SKILL.md
-codex_skill_text|memo/agents/openai.yaml|.codex/skills/memo/agents/openai.yaml
+codex_skill_text|order/SKILL.md|.codex/skills/order/SKILL.md
+codex_skill_text|order/agents/openai.yaml|.codex/skills/order/agents/openai.yaml
 EOF
 }
 
@@ -539,13 +541,13 @@ replace_literal_in_file() {
   local file="$1"
   local before="$2"
   local after="$3"
-  local tmp before_escaped after_escaped
+  local tmp before_escaped replacement_escaped
 
   [ -f "$file" ] || return 1
   before_escaped="$(printf '%s' "$before" | sed 's/[\/&]/\\&/g')"
-  after_escaped="$(printf '%s' "$after" | sed 's/[\/&]/\\&/g')"
+  replacement_escaped="$(printf '%s' "$after" | sed 's/[\/&]/\\&/g')"
   tmp="$(mktemp)"
-  sed "s/${before_escaped}/${after_escaped}/g" "$file" > "$tmp"
+  sed "s/${before_escaped}/${replacement_escaped}/g" "$file" > "$tmp"
   if cmp -s "$tmp" "$file"; then
     rm -f "$tmp"
     return 1

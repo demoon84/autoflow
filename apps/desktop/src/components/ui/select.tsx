@@ -1,7 +1,5 @@
 import * as React from "react";
-import FormControl from "@mui/material/FormControl";
-import MenuItem from "@mui/material/MenuItem";
-import MuiSelect, { type SelectChangeEvent } from "@mui/material/Select";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type SelectItemRecord = {
@@ -25,9 +23,7 @@ const SelectContext = React.createContext<SelectContextValue | null>(null);
 
 function useSelectContext(component: string) {
   const context = React.useContext(SelectContext);
-  if (!context) {
-    throw new Error(`${component} must be used inside Select`);
-  }
+  if (!context) throw new Error(`${component} must be used inside Select`);
   return context;
 }
 
@@ -70,6 +66,7 @@ function Select({
     },
     [onValueChange, value]
   );
+
   const contextValue = React.useMemo(
     () => ({
       value: actualValue,
@@ -84,11 +81,7 @@ function Select({
     [actualValue, disabled, handleValueChange, items, placeholder, registerItem, unregisterItem]
   );
 
-  return (
-    <SelectContext.Provider value={contextValue}>
-      {children}
-    </SelectContext.Provider>
-  );
+  return <SelectContext.Provider value={contextValue}>{children}</SelectContext.Provider>;
 }
 
 const SelectGroup = ({ children }: { children: React.ReactNode }) => <>{children}</>;
@@ -103,39 +96,36 @@ function SelectValue({ placeholder }: { placeholder?: React.ReactNode }) {
   return null;
 }
 
-type SelectTriggerProps = Omit<React.HTMLAttributes<HTMLDivElement>, "color" | "onChange">;
+type SelectTriggerProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "onChange" | "value" | "defaultValue">;
 
-const SelectTrigger = React.forwardRef<HTMLDivElement, SelectTriggerProps>(
+const SelectTrigger = React.forwardRef<HTMLSelectElement, SelectTriggerProps>(
   ({ className, children, ...props }, ref) => {
     const context = useSelectContext("SelectTrigger");
 
-    React.Children.forEach(children, (child) => {
-      if (React.isValidElement(child) && child.type === SelectValue) {
-        // Rendering the child lets it register placeholder state.
-      }
-    });
-
     return (
-      <FormControl className={cn("af-select-trigger", className)} size="small" ref={ref} {...props}>
+      <span className={cn("af-select-trigger", className)}>
         {children}
-        <MuiSelect
+        <select
+          ref={ref}
           className="af-select-control"
           disabled={context.disabled}
-          displayEmpty
           value={context.value ?? ""}
-          onChange={(event: SelectChangeEvent<string>) => context.onValueChange?.(event.target.value)}
-          renderValue={(selected) => {
-            const selectedItem = context.items.find((item) => item.value === selected);
-            return selectedItem?.children ?? context.placeholder ?? "";
-          }}
+          onChange={(event) => context.onValueChange?.(event.target.value)}
+          aria-label={props["aria-label"]}
         >
+          {context.placeholder && !context.items.some((item) => item.value === "") ? (
+            <option value="" disabled>
+              {context.placeholder}
+            </option>
+          ) : null}
           {context.items.map((item) => (
-            <MenuItem key={item.value} value={item.value} disabled={item.disabled} className="af-select-item">
+            <option key={item.value} value={item.value} disabled={item.disabled}>
               {item.children}
-            </MenuItem>
+            </option>
           ))}
-        </MuiSelect>
-      </FormControl>
+        </select>
+        <ChevronDown className="af-select-chevron" aria-hidden="true" />
+      </span>
     );
   }
 );
@@ -143,7 +133,7 @@ SelectTrigger.displayName = "SelectTrigger";
 
 const SelectContent = ({ children }: { children: React.ReactNode }) => <>{children}</>;
 
-const SelectItem = React.forwardRef<HTMLDivElement, { value: string; disabled?: boolean; children: React.ReactNode }>(
+const SelectItem = React.forwardRef<HTMLSpanElement, { value: string; disabled?: boolean; children: React.ReactNode }>(
   ({ value, disabled, children }, ref) => {
     const { registerItem, unregisterItem } = useSelectContext("SelectItem");
 
@@ -152,7 +142,7 @@ const SelectItem = React.forwardRef<HTMLDivElement, { value: string; disabled?: 
       return () => unregisterItem(value);
     }, [children, disabled, registerItem, unregisterItem, value]);
 
-    return <div ref={ref} hidden />;
+    return <span ref={ref} hidden />;
   }
 );
 SelectItem.displayName = "SelectItem";

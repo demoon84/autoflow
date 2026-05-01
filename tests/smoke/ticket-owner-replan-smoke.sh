@@ -6,8 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+cache_dir="${project_dir}-cache"
+worktree_root="${cache_dir}/worktrees"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$cache_dir"
 }
 trap cleanup EXIT
 
@@ -41,7 +43,7 @@ run_temp_runtime() {
 
   (
     cd "$board_dir"
-    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT "$@"
+    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT XDG_CACHE_HOME="$cache_dir" AUTOFLOW_WORKTREE_ROOT="$worktree_root" "$@"
   )
 }
 
@@ -77,6 +79,10 @@ Exercise ticket-owner reject auto replan flow.
 
 - \`owner-replan.txt\`
 
+## Allowed Paths
+
+- owner-replan.txt
+
 ## Global Acceptance Criteria
 
 - \`owner-replan.txt\` exists.
@@ -98,25 +104,32 @@ git -C "$project_dir" config user.name "Autoflow Smoke"
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
 
 spec1_output="${project_dir}/spec-1.out"
+plan1_output="${project_dir}/plan-1.out"
 start1_output="${project_dir}/start-1.out"
 fail1_output="${project_dir}/fail-1.out"
 replan_output="${project_dir}/replan.out"
 claim_output="${project_dir}/claim.out"
 verify_output="${project_dir}/verify.out"
 pass_output="${project_dir}/pass.out"
-merge_output="${project_dir}/merge.out"
 status_output="${project_dir}/status.out"
 spec2_output="${project_dir}/spec-2.out"
+plan2_output="${project_dir}/plan-2.out"
 start2_output="${project_dir}/start-2.out"
 fail2_output="${project_dir}/fail-2.out"
 max_output="${project_dir}/max.out"
 spec3_output="${project_dir}/spec-3.out"
+plan3_output="${project_dir}/plan-3.out"
 start3_output="${project_dir}/start-3.out"
 fail3_output="${project_dir}/fail-3.out"
 off_output="${project_dir}/off.out"
 
 create_spec "project_001" "Owner replan smoke project" "$spec1_output"
 require_line "$spec1_output" "status=created"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$plan1_output"
+require_line "$plan1_output" "status=ok"
+require_line "$plan1_output" "source=backlog-to-todo"
+require_pattern "$plan1_output" 'todo_ticket=.*/tickets/todo/tickets_001.md$'
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/start-ticket-owner.sh >"$start1_output"
 require_line "$start1_output" "status=ok"
@@ -126,13 +139,12 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_
 require_line "$fail1_output" "status=rejected"
 require_line "$fail1_output" "outcome=fail"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/start-ticket-owner.sh >"$replan_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$replan_output"
 require_line "$replan_output" "status=ok"
-require_line "$replan_output" "source=replan"
-require_line "$replan_output" "ticket_id=001"
-require_line "$replan_output" "stage=todo"
+require_line "$replan_output" "source=reject-replan"
 require_line "$replan_output" "retry_count=1"
 require_line "$replan_output" "reject_origin=tickets/reject/reject_001.md"
+require_pattern "$replan_output" 'todo_ticket=.*/tickets/todo/tickets_001.md$'
 
 todo_ticket="${project_dir}/.autoflow/tickets/todo/tickets_001.md"
 if [ ! -f "$todo_ticket" ]; then
@@ -166,12 +178,9 @@ require_line "$verify_output" "status=pass"
 require_line "$verify_output" "ticket_id=001"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/finish-ticket-owner.sh 001 pass "replanned owner ticket verified" >"$pass_output"
-require_line "$pass_output" "status=ready_to_merge"
+require_line "$pass_output" "status=done"
 require_line "$pass_output" "outcome=pass"
-
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=merge-replan ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
-require_line "$merge_output" "status=done"
-require_line "$merge_output" "outcome=pass"
+require_line "$pass_output" "inline_merge=done; wiki+log written"
 
 "${REPO_ROOT}/bin/autoflow" status "$project_dir" >"$status_output"
 require_line "$status_output" "ticket_done_count=1"
@@ -179,6 +188,11 @@ require_line "$status_output" "ticket_inprogress_count=0"
 
 create_spec "project_002" "Owner replan max retry smoke" "$spec2_output"
 require_line "$spec2_output" "status=created"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$plan2_output"
+require_line "$plan2_output" "status=ok"
+require_line "$plan2_output" "source=backlog-to-todo"
+require_pattern "$plan2_output" 'todo_ticket=.*/tickets/todo/tickets_002.md$'
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/start-ticket-owner.sh >"$start2_output"
 require_line "$start2_output" "ticket_id=002"
@@ -193,8 +207,9 @@ cat >>"${project_dir}/.autoflow/tickets/reject/reject_002.md" <<'EOF'
 - Max Retries: 2
 EOF
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/start-ticket-owner.sh >"$max_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$max_output"
 require_line "$max_output" "status=idle"
+require_line "$max_output" "reason=no_actionable_plan_input"
 require_line "$max_output" "replan_skipped.1=tickets/reject/reject_002.md"
 require_line "$max_output" "replan_skipped.1.reason=max_retries_reached"
 require_line "$max_output" "replan_skipped.1.retry_count=2"
@@ -209,6 +224,11 @@ rm -f "${project_dir}/.autoflow/tickets/reject/reject_002.md"
 create_spec "project_003" "Owner replan disabled smoke" "$spec3_output"
 require_line "$spec3_output" "status=created"
 
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$plan3_output"
+require_line "$plan3_output" "status=ok"
+require_line "$plan3_output" "source=backlog-to-todo"
+require_pattern "$plan3_output" 'todo_ticket=.*/tickets/todo/tickets_[0-9][0-9][0-9]\.md$'
+
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/start-ticket-owner.sh >"$start3_output"
 ticket3_id="$(sed -n 's/^ticket_id=//p' "$start3_output" | head -n 1)"
 if [ -z "$ticket3_id" ]; then
@@ -220,9 +240,9 @@ fi
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan ./scripts/finish-ticket-owner.sh "$ticket3_id" fail "disabled replan reject" >"$fail3_output"
 require_line "$fail3_output" "status=rejected"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-replan AUTOFLOW_REJECT_AUTO_REPLAN=off ./scripts/start-ticket-owner.sh >"$off_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan AUTOFLOW_REJECT_AUTO_REPLAN=off ./scripts/start-plan.sh >"$off_output"
 require_line "$off_output" "status=idle"
-require_line "$off_output" "reason=no_actionable_ticket_or_spec"
+require_line "$off_output" "reason=no_actionable_plan_input"
 
 if [ ! -f "${project_dir}/.autoflow/tickets/reject/reject_${ticket3_id}.md" ]; then
   echo "Expected reject_${ticket3_id}.md to remain in reject when auto replan is off" >&2

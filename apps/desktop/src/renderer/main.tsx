@@ -1,10 +1,5 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import Alert from "@mui/material/Alert";
-import ButtonBase from "@mui/material/ButtonBase";
-import CssBaseline from "@mui/material/CssBaseline";
-import Snackbar from "@mui/material/Snackbar";
-import { ThemeProvider } from "@mui/material/styles";
 import AnsiToHtml from "ansi-to-html";
 import {
   Activity,
@@ -13,7 +8,6 @@ import {
   BookOpenText,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ClipboardCheck,
   ClipboardList,
@@ -24,16 +18,16 @@ import {
   KanbanSquare,
   Layers3,
   Loader2,
-  MessageSquare,
-  Paperclip,
+  Moon,
   Play,
   RefreshCw,
   RotateCcw,
   Search,
-  Send,
+  PanelRightOpen,
   ShieldCheck,
   Sparkles,
   Square,
+  Sun,
   Terminal,
   TriangleAlert,
   PieChart,
@@ -60,13 +54,76 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
-import { desktopTheme } from "./theme";
+import { cn } from "@/lib/utils";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
 
+type AlertSeverity = "error" | "warning" | "info" | "success";
+type ThemeMode = "light" | "dark";
+
+function readThemeMode(): ThemeMode {
+  return initialSetting("autoflow.theme", "dark") === "light" ? "light" : "dark";
+}
+
+function AlertBox({
+  severity,
+  className,
+  children,
+  onClose,
+  role = "alert"
+}: {
+  severity: AlertSeverity;
+  className?: string;
+  children: React.ReactNode;
+  onClose?: () => void;
+  role?: React.AriaRole;
+}) {
+  return (
+    <div className={cn("af-alert", `af-alert-${severity}`, className)} role={role}>
+      <div className="af-alert-content">{children}</div>
+      {onClose ? (
+        <Button type="button" variant="ghost" size="icon" className="af-alert-close" onClick={onClose} aria-label="닫기">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 const ticketFolders = ["backlog", "inbox", "todo", "inprogress", "done", "reject"] as const;
+
+function DesktopGlobalLoading({
+  open,
+  label = "로딩 중"
+}: {
+  open: boolean;
+  label?: string;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="desktop-global-loading-backdrop">
+      <div className="desktop-global-loading-content" role="status" aria-live="polite" aria-label={label}>
+        <Loader2 className="desktop-global-loading-spinner" aria-hidden="true" />
+        <span className="desktop-global-loading-text">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function FullPageLoading({
+  open,
+  label = "로딩 중"
+}: {
+  open: boolean;
+  label?: string;
+}) {
+  return <DesktopGlobalLoading open={open} label={label} />;
+}
 
 const ownerFlowStages = [
   { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
@@ -139,7 +196,6 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "chat", label: "대화", icon: MessageSquare },
   { key: "progress", label: "작업", icon: Workflow },
   { key: "kanban", label: "Tickets", icon: KanbanSquare },
   { key: "knowledge", label: "Wiki", icon: BookOpenText },
@@ -225,6 +281,43 @@ function readRecentProjects(currentProjectRoot: string) {
 
 function persistRecentProjects(projects: string[]) {
   window.localStorage.setItem("autoflow.recentProjects", JSON.stringify(projects));
+}
+
+type ProjectExistsResult = boolean | { exists: boolean };
+
+function readProjectExistsResult(result: ProjectExistsResult) {
+  if (typeof result === "boolean") {
+    return result;
+  }
+
+  return Boolean(result?.exists);
+}
+
+async function filterExistingRecentProjects(projects: string[]) {
+  const normalized = normalizeProjectList(projects);
+  if (!normalized.length) {
+    return [];
+  }
+
+  const validatedEntries = await Promise.all(
+    normalized.map(async (project) => {
+      try {
+        const result = await window.autoflow.projectExists(project);
+        return {
+          project,
+          exists: readProjectExistsResult(result)
+        };
+      } catch {
+        return { project, exists: false };
+      }
+    })
+  );
+
+  return validatedEntries.filter((entry) => entry.exists).map((entry) => entry.project);
+}
+
+function projectExistsPathLabel(projectRoot: string) {
+  return projectRoot ? `"${basename(projectRoot)}" 프로젝트 폴더를 찾을 수 없습니다.` : "프로젝트 폴더를 찾을 수 없습니다.";
 }
 
 function countTickets(board: AutoflowBoardSnapshot | null) {
@@ -681,7 +774,9 @@ function recentLogs(board: AutoflowBoardSnapshot | null, limit: number | null = 
   const boardLogs = (board?.logs || []).map((log) => ({ ...log, source: "Board" as const }));
   const runnerLogs = (board?.runnerLogs || []).map((log) => ({ ...log, source: "Runner" as const }));
 
-  const sorted = [...boardLogs, ...runnerLogs].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  const sorted = [...boardLogs, ...runnerLogs].sort((a, b) =>
+    String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))
+  );
   return limit == null ? sorted : sorted.slice(0, limit);
 }
 
@@ -867,44 +962,51 @@ function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
 
-function RunnerHealthBanner({ runners }: { runners: AutoflowRunner[] }) {
-  const unhealthy = React.useMemo(
-    () =>
-      runners.filter((runner) => {
-        if ((runner.enabled || "").toLowerCase() === "false") return false;
-        const stateStatus = (runner.stateStatus || "").toLowerCase();
-        const activeStage = (runner.activeStage || "").toLowerCase();
-        const lastResult = (runner.lastResult || "").toLowerCase();
-        return (
-          runnerHealthNeedsAttention(stateStatus) ||
-          runnerHealthNeedsAttention(activeStage) ||
-          runnerHealthNeedsAttention(lastResult)
-        );
-      }),
-    [runners],
-  );
-  if (unhealthy.length === 0) return null;
-  return (
-    <Alert severity="warning" variant="outlined" sx={{ mb: 1.5 }} role="alert">
-      <strong>런너 점검 필요 ({unhealthy.length})</strong>
-      <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.25rem" }}>
-        {unhealthy.map((runner) => {
-          const display = displayWorkflowRunnerId(runner.id, runners);
-          const parts = [
-            runner.stateStatus,
-            runner.activeStage,
-            runner.lastResult ? `결과: ${runner.lastResult}` : "",
-          ].filter(Boolean);
-          return (
-            <li key={runner.id}>
-              <strong>{display}</strong>
-              {parts.length ? ` — ${parts.join(" · ")}` : ""}
-            </li>
-          );
-        })}
-      </ul>
-    </Alert>
-  );
+function runnersNeedingAttention(runners: AutoflowRunner[]) {
+  return runners.filter((runner) => {
+    if ((runner.enabled || "").toLowerCase() === "false") return false;
+    const stateStatus = (runner.stateStatus || "").toLowerCase();
+    const activeStage = (runner.activeStage || "").toLowerCase();
+    const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
+    const lastResult = (runner.lastResult || "").toLowerCase();
+    return (
+      runnerHealthNeedsAttention(stateStatus) ||
+      runnerHealthNeedsAttention(activeStage) ||
+      runnerHealthNeedsAttention(activeRecoveryStatus) ||
+      runnerHealthNeedsAttention(lastResult)
+    );
+  });
+}
+
+function runnerHealthToastKey(runners: AutoflowRunner[]) {
+  return runners
+    .map((runner) =>
+      [
+        runner.id,
+        runner.stateStatus,
+        runner.activeStage,
+        runner.activeRecoveryStatus,
+        runner.activeRecoveryFailureClass,
+        runner.lastResult
+      ].join(":")
+    )
+    .join("|");
+}
+
+function runnerHealthToastMessage(unhealthy: AutoflowRunner[], allRunners: AutoflowRunner[]) {
+  const preview = unhealthy.slice(0, 3).map((runner) => {
+    const display = displayWorkflowRunnerId(runner.id, allRunners);
+    const parts = [
+      runner.stateStatus,
+      runner.activeStage,
+      runner.activeRecoveryStatus ? `복구: ${runner.activeRecoveryStatus}` : "",
+      runner.activeRecoveryFailureClass ? `원인: ${runner.activeRecoveryFailureClass}` : "",
+      runner.lastResult ? `결과: ${runner.lastResult}` : "",
+    ].filter(Boolean);
+    return parts.length ? `${display} — ${parts.join(" · ")}` : display;
+  });
+  const suffix = unhealthy.length > preview.length ? ` 외 ${unhealthy.length - preview.length}개` : "";
+  return `런너 점검 필요 (${unhealthy.length}): ${preview.join(" / ")}${suffix}`;
 }
 
 function App() {
@@ -916,6 +1018,7 @@ function App() {
   const [isBoardLoading, setIsBoardLoading] = React.useState(false);
   const [isPageRefreshing, setIsPageRefreshing] = React.useState(false);
   const [isInstalling, setIsInstalling] = React.useState(false);
+  const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => readThemeMode());
   const [installedAgentProfiles, setInstalledAgentProfiles] = React.useState<InstalledAgentProfiles>({});
   const [runnerActionKey, setRunnerActionKey] = React.useState("");
   const [runnerError, setRunnerError] = React.useState("");
@@ -931,7 +1034,7 @@ function App() {
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
   const [wikiQueryRunning, setWikiQueryRunning] = React.useState(false);
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
-  const [sourcesOpen, setSourcesOpen] = React.useState(true);
+  const [isWikiPreviewOpen, setIsWikiPreviewOpen] = React.useState(false);
   const [logsLimit, setLogsLimit] = React.useState<number | null>(200);
   const [globalToast, setGlobalToast] = React.useState<{
     severity: "error" | "warning" | "info" | "success";
@@ -943,24 +1046,96 @@ function App() {
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [recentProjects, setRecentProjects] = React.useState(() => readRecentProjects(projectRoot));
   const [projectMenuOpen, setProjectMenuOpen] = React.useState(false);
+  const [isRefreshingRecentProjects, setIsRefreshingRecentProjects] = React.useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = React.useState<SettingsSection>(() => {
-    const stored = initialSetting("autoflow.activeSettingsSection", "chat");
+    const stored = initialSetting("autoflow.activeSettingsSection", "progress");
     if (stored === "logs") {
       return "snapshot";
     }
-    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor") {
+    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor" || stored === "chat") {
       return "progress";
     }
-    return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "chat";
+    return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "progress";
   });
   const projectSwitcherRef = React.useRef<HTMLDivElement>(null);
   const previousSettingsSectionRef = React.useRef<SettingsSection>(activeSettingsSection);
+  const authToastKeyRef = React.useRef("");
+  const runnerHealthToastKeyRef = React.useRef("");
 
   const options = React.useMemo(
     () => ({ projectRoot: projectRoot.trim(), boardDirName: defaultFlowFolder.trim() || fallbackFlowFolder }),
     [defaultFlowFolder, projectRoot]
   );
   const autoRefreshInFlightRef = React.useRef(false);
+
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    window.localStorage.setItem("autoflow.theme", themeMode);
+  }, [themeMode]);
+
+  React.useEffect(() => {
+    if (!globalToast) return;
+    const timeout = window.setTimeout(() => setGlobalToast(null), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [globalToast]);
+
+  const pushToast = React.useCallback(
+    (severity: "error" | "warning" | "info" | "success", message: string) => {
+      const trimmed = (message || "").trim();
+      if (!trimmed) {
+        setGlobalToast(null);
+        return;
+      }
+      setGlobalToast({ severity, message: trimmed });
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    if (setupError) pushToast("error", setupError);
+  }, [setupError, pushToast]);
+  React.useEffect(() => {
+    if (runnerError) pushToast("error", runnerError);
+  }, [runnerError, pushToast]);
+  React.useEffect(() => {
+    if (wikiError) pushToast("error", wikiError);
+  }, [wikiError, pushToast]);
+  React.useEffect(() => {
+    if (metricsError) pushToast("error", metricsError);
+  }, [metricsError, pushToast]);
+
+  React.useEffect(() => {
+    const authRunner = (board?.runners || []).find((runner) => runnerNeedsLogin(runner));
+    if (!authRunner) {
+      authToastKeyRef.current = "";
+      return;
+    }
+
+    const toastKey = `${authRunner.id}:${authRunner.authMessage || ""}`;
+    if (authToastKeyRef.current === toastKey) {
+      return;
+    }
+
+    authToastKeyRef.current = toastKey;
+    pushToast("warning", `${runnerLoginMessage(authRunner)} 외부 터미널에서 로그인하고 돌아오세요.`);
+  }, [board?.runners, pushToast]);
+
+  React.useEffect(() => {
+    const runners = board?.runners || [];
+    const unhealthy = runnersNeedingAttention(runners);
+    if (!unhealthy.length) {
+      runnerHealthToastKeyRef.current = "";
+      return;
+    }
+
+    const toastKey = runnerHealthToastKey(unhealthy);
+    if (runnerHealthToastKeyRef.current === toastKey) {
+      return;
+    }
+
+    runnerHealthToastKeyRef.current = toastKey;
+    pushToast("warning", runnerHealthToastMessage(unhealthy, runners));
+  }, [board?.runners, pushToast]);
 
   const selectRunner = React.useCallback((runnerId: string) => {
     setSelectedRunnerId((current) => (current === runnerId ? current : runnerId));
@@ -1131,9 +1306,8 @@ function App() {
       setWikiQueryResult({ ...parsed, results: absResults });
     } catch (error) {
       const message = error instanceof Error ? error.message : "위키 검색에 실패했습니다.";
-      setWikiError(message);
+      setWikiError(`위키 검색 실패: ${message}`);
       setWikiQueryResult(null);
-      setGlobalToast({ severity: "error", message: `위키 검색 실패: ${message}` });
     } finally {
       wikiQueryInvocationIdRef.current = "";
       setWikiQueryRunning(false);
@@ -1227,6 +1401,7 @@ function App() {
       activeSettingsSection !== "knowledge"
     ) {
       setSelectedLogPath("");
+      setIsWikiPreviewOpen(false);
       setLogPreview(null);
       setLogError("");
     }
@@ -1234,9 +1409,47 @@ function App() {
     previousSettingsSectionRef.current = activeSettingsSection;
   }, [activeSettingsSection]);
 
-  const chooseProjectRoot = React.useCallback((selected: string) => {
+  const refreshRecentProjects = React.useCallback(async () => {
+    setIsRefreshingRecentProjects(true);
+    try {
+      const next = await filterExistingRecentProjects(recentProjects);
+      if (next.length === recentProjects.length) {
+        return;
+      }
+
+      persistRecentProjects(next);
+      setRecentProjects(next);
+      if (next.length < recentProjects.length) {
+        pushToast("warning", "삭제된 최근 프로젝트 경로를 목록에서 제거했습니다.");
+      }
+    } finally {
+      setIsRefreshingRecentProjects(false);
+    }
+  }, [pushToast, recentProjects]);
+
+  React.useEffect(() => {
+    if (options.projectRoot && !projectMenuOpen) {
+      return;
+    }
+
+    void refreshRecentProjects();
+  }, [options.projectRoot, projectMenuOpen, refreshRecentProjects]);
+
+  const chooseProjectRoot = React.useCallback(async (selected: string) => {
     const normalized = selected.trim();
     if (!normalized) {
+      return;
+    }
+
+    const exists = await window.autoflow.projectExists(normalized);
+    if (!readProjectExistsResult(exists)) {
+      setProjectMenuOpen(false);
+      setRecentProjects((current) => {
+        const next = normalizeProjectList(current.filter((project) => project !== normalized));
+        persistRecentProjects(next);
+        return next;
+      });
+      pushToast("warning", `${projectExistsPathLabel(normalized)} 목록에서 제거했습니다.`);
       return;
     }
 
@@ -1250,7 +1463,7 @@ function App() {
       persistRecentProjects(next);
       return next;
     });
-  }, [options.projectRoot]);
+  }, [options.projectRoot, pushToast]);
 
   const browseProject = React.useCallback(async () => {
     setProjectMenuOpen(false);
@@ -1420,6 +1633,7 @@ function App() {
       if (!filePath) {
         return;
       }
+      setIsWikiPreviewOpen(true);
       await readLog(filePath);
     },
     [readLog]
@@ -1563,97 +1777,122 @@ function App() {
     }
   }, [loadBoard, metricsActionKey, options, readLog]);
 
-  const boardExists = Boolean(board?.exists);
-  const showInstallButton = Boolean(options.projectRoot && (isInstalling || (board && !board.exists)));
+  const boardInitialized = board?.status?.initialized === "true";
+  const boardMissing = Boolean(options.projectRoot && board && !boardInitialized);
+  const runnerCount = (board?.runners || []).filter(
+    (runner) => (runner.role || "").toLowerCase() !== "self-improve"
+  ).length;
+  const runnersUnconfigured = Boolean(options.projectRoot && boardInitialized && runnerCount === 0);
+  const setupRequired = boardMissing || runnersUnconfigured;
+  const showInstallButton = Boolean(options.projectRoot && (isInstalling || setupRequired));
   const ticketTotal = countTickets(board);
   const projectLabel = options.projectRoot ? basename(options.projectRoot) : "프로젝트 없음";
+  const visibleSettingsSection = setupRequired ? "progress" : activeSettingsSection;
   const selectedSettingsItem =
-    settingsNavigation.find((item) => item.key === activeSettingsSection) || settingsNavigation[0];
+    settingsNavigation.find((item) => item.key === visibleSettingsSection) || settingsNavigation[0];
+  const showGlobalLoading = isBoardLoading || isInstalling;
 
   return (
     <div className="viewer-shell">
       <div className="window-drag-region" aria-hidden="true" />
       <main className="workspace-layout">
-        <section className="settings-page" aria-label="Autoflow">
-          <aside className="settings-nav" aria-label="메뉴">
-            <nav className="settings-nav-list" aria-label="Autoflow 메뉴">
-              {settingsNavigation.map(({ key, label, icon: Icon }) => (
-                <Button
-                  key={key}
-                  variant="ghost"
-                  type="button"
-                  className={`settings-nav-item${activeSettingsSection === key ? " settings-nav-item-active" : ""}`}
-                  aria-current={activeSettingsSection === key ? "page" : undefined}
-                  title={label}
-                  onClick={() => selectSettingsSection(key)}
-                >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                  <span>{label}</span>
-                </Button>
-              ))}
-            </nav>
-            <div className="settings-nav-footer">
-              <div className="toolbar-project-controls" ref={projectSwitcherRef}>
-                <Button
-                  variant="outline"
-                  className="footer-project-button"
-                  title={options.projectRoot || "프로젝트 폴더 선택"}
-                  aria-expanded={projectMenuOpen}
-                  onClick={() => setProjectMenuOpen((current) => !current)}
-                >
-                  {isBoardLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-                  <span>{options.projectRoot ? projectLabel : "프로젝트 폴더 선택"}</span>
-                </Button>
-                {showInstallButton ? (
+        <section className={`settings-page${boardMissing ? " settings-page-setup" : ""}`} aria-label="Autoflow">
+          {!boardMissing ? (
+            <aside className="settings-nav" aria-label="메뉴">
+              <nav className="settings-nav-list" aria-label="Autoflow 메뉴">
+                {settingsNavigation.map(({ key, label, icon: Icon }) => (
+                  <Button
+                    key={key}
+                    variant="ghost"
+                    type="button"
+                    className={`settings-nav-item${visibleSettingsSection === key ? " settings-nav-item-active" : ""}`}
+                    aria-current={visibleSettingsSection === key ? "page" : undefined}
+                    title={label}
+                    disabled={setupRequired}
+                    onClick={() => selectSettingsSection(key)}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                    <span>{label}</span>
+                  </Button>
+                ))}
+              </nav>
+              <Button
+                type="button"
+                variant="ghost"
+                className="settings-nav-item sidebar-theme-toggle"
+                onClick={() => setThemeMode((current) => (current === "dark" ? "light" : "dark"))}
+                title={themeMode === "dark" ? "라이트 테마로 전환" : "다크 테마로 전환"}
+                aria-label={themeMode === "dark" ? "라이트 테마로 전환" : "다크 테마로 전환"}
+              >
+                {themeMode === "dark" ? (
+                  <Sun className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Moon className="h-4 w-4" aria-hidden="true" />
+                )}
+                <span>{themeMode === "dark" ? "라이트 테마" : "다크 테마"}</span>
+              </Button>
+              <div className="settings-nav-footer">
+                <div className="toolbar-project-controls" ref={projectSwitcherRef}>
                   <Button
                     variant="outline"
-                    className="footer-project-install-button"
-                    title="설치"
-                    aria-label="설치"
-                    data-tooltip="설치"
-                    disabled={isInstalling}
-                    onClick={() => void installFlow()}
+                    className="footer-project-button"
+                    title={options.projectRoot || "프로젝트 폴더 선택"}
+                    aria-expanded={projectMenuOpen}
+                    onClick={() => setProjectMenuOpen((current) => !current)}
                   >
-                    {isInstalling ? "설치 중" : "설치"}
+                    {isBoardLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
+                    <span>{options.projectRoot ? projectLabel : "프로젝트 폴더 선택"}</span>
                   </Button>
-                ) : null}
-                {projectMenuOpen ? (
-                  <div className="project-menu" role="menu" aria-label="최근 프로젝트">
-                    <div className="project-menu-kicker">최근</div>
-                    <div className="project-menu-list">
-                      {recentProjects.map((project) => {
-                        const selected = project === options.projectRoot;
-                        return (
+                  {showInstallButton ? (
+                    <Button
+                      variant="outline"
+                      className="footer-project-install-button"
+                      aria-label="설치"
+                      disabled={isInstalling}
+                      onClick={() => void installFlow()}
+                    >
+                      {isInstalling ? "설치 중" : "설치"}
+                    </Button>
+                  ) : null}
+                  {projectMenuOpen ? (
+                    <div className="project-menu" role="menu" aria-label="최근 프로젝트">
+                      <div className="project-menu-kicker">최근</div>
+                      <div className="project-menu-list">
+                        {recentProjects.map((project) => {
+                          const selected = project === options.projectRoot;
+                          return (
                           <Button
                             key={project}
                             variant="ghost"
                             type="button"
                             className="project-menu-item"
-                            title={project}
+                            title={isRefreshingRecentProjects ? "최근 프로젝트 경로를 확인 중입니다." : project}
                             role="menuitem"
+                            disabled={isRefreshingRecentProjects}
                             onClick={() => chooseProjectRoot(project)}
                           >
                             <span>{basename(project)}</span>
                             {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
-                          </Button>
-                        );
-                      })}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      <div className="project-menu-separator" />
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        className="project-menu-item project-menu-open"
+                        role="menuitem"
+                        onClick={browseProject}
+                      >
+                        <span>폴더 열기...</span>
+                      </Button>
                     </div>
-                    <div className="project-menu-separator" />
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      className="project-menu-item project-menu-open"
-                      role="menuitem"
-                      onClick={browseProject}
-                    >
-                      <span>폴더 열기...</span>
-                    </Button>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </aside>
+            </aside>
+          ) : null}
 
           <section
             className="settings-content settings-content-progress"
@@ -1664,34 +1903,32 @@ function App() {
                 <h1>{selectedSettingsItem.label}</h1>
               </div>
               <div className="settings-title-status" aria-live="polite">
-                {isPageRefreshing ? (
-                  <Loader2 className="page-refresh-spinner h-4 w-4 animate-spin" aria-label="페이지 갱신 중" />
-                ) : null}
                 <span className="content-updated-at">
                   {lastUpdated ? `마지막 업데이트 ${formatDate(lastUpdated)}` : "미표기"}
                 </span>
               </div>
             </div>
             <div className="settings-content-body">
-              {setupError ? (
-                <p className="setup-error" role="alert">
-                  {setupError}
-                </p>
-              ) : null}
-
-              {activeSettingsSection === "chat" && (
-                <section className="dashboard-area" aria-label="대화">
-                  <section className="board-section board-section-flush" aria-label="Autoflow AI 대화">
-                    <ChatView projectRoot={options.projectRoot} boardDirName={options.boardDirName} />
-                  </section>
+              {setupRequired && visibleSettingsSection === "progress" ? (
+                <section className="setup-required-panel" aria-label="Autoflow 설치 안내">
+                  <h2>
+                    {boardMissing
+                      ? "Autoflow가 아직 설치되지 않았습니다."
+                      : "Autoflow 러너 설정이 비어 있습니다."}
+                  </h2>
+                  <p>
+                    {boardMissing
+                      ? "이 프로젝트에서 작업 상태를 보려면 먼저 Autoflow 보드를 설치해 주세요."
+                      : "진행 상태를 보려면 Autoflow 보드를 다시 설치해 기본 러너를 준비해 주세요."}
+                  </p>
+                  <Button className="setup-required-button" disabled={isInstalling} onClick={() => void installFlow()}>
+                    {isInstalling ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
+                    <span>{isInstalling ? "설치 중" : "설치"}</span>
+                  </Button>
                 </section>
-              )}
-
-              {activeSettingsSection === "progress" && (
+              ) : !setupRequired && visibleSettingsSection === "progress" && (
                 <section className="dashboard-area" aria-label="Autoflow 진행 상태">
                   <section className="board-section board-section-flush" aria-label="코덱스 작업 흐름">
-                    <RunnerHealthBanner runners={board?.runners ?? []} />
-                    {runnerError ? <div className="runner-error">{runnerError}</div> : null}
                     <WorkflowStatStrip board={board} />
                     <TicketBoard
                       board={board}
@@ -1710,7 +1947,7 @@ function App() {
                 </section>
               )}
 
-              {activeSettingsSection === "kanban" && (
+              {!setupRequired && visibleSettingsSection === "kanban" && (
                 <section className="dashboard-area" aria-label="티켓 정보">
                   <section className="board-section board-section-flush" aria-label="티켓 정보 보드">
                     <TicketKanban board={board} options={options} />
@@ -1718,7 +1955,7 @@ function App() {
                 </section>
               )}
 
-              {activeSettingsSection === "knowledge" && (
+              {!setupRequired && visibleSettingsSection === "knowledge" && (
                 <section className="dashboard-area" aria-label="Wiki">
                   <section className="board-section board-section-flush" aria-label="Wiki 본문">
                     <PageLayout
@@ -1726,7 +1963,24 @@ function App() {
                     >
                       <div className="knowledge-split">
                         <div className="tool-panel knowledge-list-pane">
-                          {wikiError ? <div className="knowledge-error">{wikiError}</div> : null}
+                          <div className="knowledge-page-toolbar">
+                            <div className="runner-page-summary">
+                              <Badge variant="outline">Wiki</Badge>
+                              <span>목록</span>
+                            </div>
+                            {!isWikiPreviewOpen && selectedLogPath ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                type="button"
+                                className="knowledge-preview-open-toggle"
+                                onClick={() => setIsWikiPreviewOpen(true)}
+                              >
+                                <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
+                                <span>미리보기 열기</span>
+                              </Button>
+                            ) : null}
+                          </div>
                           <WikiQueryPanel
                             query={wikiQueryInput}
                             onQueryChange={setWikiQueryInput}
@@ -1737,32 +1991,28 @@ function App() {
                             selectedPath={selectedLogPath}
                             onSelect={readWikiLog}
                           />
-                          <div className="knowledge-stack">
-                            <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
-                            <section className="knowledge-sources" aria-label="Sources">
-                              <Button
-                                variant="ghost"
-                                type="button"
-                                className="panel-subheading knowledge-sources-toggle"
-                                onClick={() => setSourcesOpen((prev) => !prev)}
-                                aria-expanded={sourcesOpen}
-                              >
-                                <ChevronDown className={`h-4 w-4 knowledge-sources-chevron${sourcesOpen ? "" : " knowledge-sources-chevron-closed"}`} aria-hidden="true" />
-                                <span>Sources</span>
-                              </Button>
-                              {sourcesOpen && (
-                                <HandoffList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
-                              )}
-                            </section>
-                          </div>
+                          <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
                         </div>
                         <div
-                          className="knowledge-preview-pane"
+                          className={`knowledge-preview-pane${isWikiPreviewOpen ? "" : " knowledge-preview-pane--hidden"}`}
+                          aria-hidden={!isWikiPreviewOpen}
                         >
                           <LogPreview
                             preview={logPreview}
                             isLoading={isReadingLog}
                             error={logError}
+                            headerAction={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                type="button"
+                                className="log-preview-close"
+                                onClick={() => setIsWikiPreviewOpen(false)}
+                                aria-label="미리보기 닫기"
+                              >
+                                <X className="h-4 w-4" aria-hidden="true" />
+                              </Button>
+                            }
                           />
                         </div>
                       </div>
@@ -1771,7 +2021,7 @@ function App() {
                 </section>
               )}
 
-              {activeSettingsSection === "logs" && (() => {
+              {!setupRequired && visibleSettingsSection === "logs" && (() => {
                 const totalLogs = (board?.logs?.length || 0) + (board?.runnerLogs?.length || 0);
                 const showingAll = logsLimit === null;
                 const showingCount = showingAll ? totalLogs : Math.min(logsLimit, totalLogs);
@@ -1820,7 +2070,7 @@ function App() {
                 );
               })()}
 
-            {activeSettingsSection === "snapshot" && (
+            {!setupRequired && visibleSettingsSection === "snapshot" && (
               <section className="dashboard-area" aria-label="통계">
                 <section className="board-section board-section-flush" aria-label="통계 본문">
                   <PageLayout
@@ -1836,10 +2086,8 @@ function App() {
                             variant="outline"
                             size="icon"
                             className="snapshot-action-button"
-                            title="지표 스냅샷 저장"
                             aria-label="지표 스냅샷 저장"
-                            data-tooltip="지표 스냅샷 저장"
-                            disabled={!boardExists || Boolean(metricsActionKey)}
+                            disabled={!boardInitialized || Boolean(metricsActionKey)}
                             onClick={writeMetricsSnapshot}
                           >
                             {metricsActionKey === "write" ? (
@@ -1848,35 +2096,15 @@ function App() {
                               <ClipboardCheck className="h-4 w-4" />
                             )}
                           </Button>
-                          <Badge variant={boardExists ? "default" : options.projectRoot ? "destructive" : "secondary"}>
-                            {boardExists ? "추적 중" : "없음"}
+                          <Badge variant={boardInitialized ? "default" : options.projectRoot ? "destructive" : "secondary"}>
+                            {boardInitialized ? "추적 중" : "없음"}
                           </Badge>
                         </div>
                       </div>
                     }
                   >
                     <div className="snapshot-panel report-panel">
-                      {metricsError ? <div className="snapshot-error">{metricsError}</div> : null}
                       <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
-                      <BoardSearch
-                        board={board}
-                        query={boardSearch}
-                        selectedPath={selectedLogPath}
-                        onQueryChange={setBoardSearch}
-                        onSelect={readLog}
-                      />
-                      <MetricsHistory board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                      <div className="snapshot-subsection">
-                        <div className="section-heading compact">
-                          <div>
-                            <div className="section-kicker">이력</div>
-                            <h3>최근 로그</h3>
-                          </div>
-                          <Clock3 className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <LogList board={board} selectedPath={selectedLogPath} onSelect={readLog} />
-                      </div>
-                      <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
                     </div>
                   </PageLayout>
                 </section>
@@ -1887,26 +2115,51 @@ function App() {
           </section>
         </section>
       </main>
-      <Snackbar
-        open={Boolean(globalToast)}
-        autoHideDuration={6000}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        onClose={(_event, reason) => {
-          if (reason === "clickaway") return;
-          setGlobalToast(null);
-        }}
-      >
-        {globalToast ? (
-          <Alert
-            severity={globalToast.severity}
-            variant="filled"
-            onClose={() => setGlobalToast(null)}
-            sx={{ width: "100%" }}
-          >
+      {!options.projectRoot ? (
+        <div className="project-required-overlay" role="dialog" aria-modal="true" aria-label="프로젝트 폴더 선택">
+          <div className="project-required-card">
+            <p className="project-required-description">
+              Autoflow를 사용할 프로젝트 폴더를 먼저 선택해주세요.
+            </p>
+            <Button
+              type="button"
+              className="project-required-button"
+              onClick={browseProject}
+            >
+              <FolderOpen className="h-4 w-4" aria-hidden="true" />
+              <span>프로젝트 폴더 선택</span>
+            </Button>
+            {recentProjects.length > 0 ? (
+              <div className="project-required-recent" aria-label="최근 프로젝트">
+                <div className="project-required-recent-label">최근 프로젝트</div>
+                <div className="project-required-recent-list">
+                  {recentProjects.slice(0, 5).map((project) => (
+                    <Button
+                      key={project}
+                      type="button"
+                      variant="ghost"
+                      className="project-required-recent-item"
+                      title={isRefreshingRecentProjects ? "최근 프로젝트 경로를 확인 중입니다." : project}
+                      disabled={isRefreshingRecentProjects}
+                      onClick={() => chooseProjectRoot(project)}
+                    >
+                      <span>{basename(project)}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <FullPageLoading open={showGlobalLoading} label="잠시만 기다려 주세요" />
+      {globalToast ? (
+        <div className="af-toast-region" aria-live="polite">
+          <AlertBox severity={globalToast.severity} className="af-toast" onClose={() => setGlobalToast(null)}>
             {globalToast.message}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
+          </AlertBox>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1927,6 +2180,7 @@ function EssentialApp() {
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [recentProjects, setRecentProjects] = React.useState(() => readRecentProjects(projectRoot));
   const [projectMenuOpen, setProjectMenuOpen] = React.useState(false);
+  const [isRefreshingRecentProjects, setIsRefreshingRecentProjects] = React.useState(false);
   const projectSwitcherRef = React.useRef<HTMLDivElement>(null);
   const autoRefreshInFlightRef = React.useRef(false);
 
@@ -2045,13 +2299,52 @@ function EssentialApp() {
     }
   }, [board, selectedLogPath]);
 
-  const chooseProjectRoot = React.useCallback((selected: string) => {
+  const sanitizeRecentProjects = React.useCallback(async () => {
+    setIsRefreshingRecentProjects(true);
+    try {
+    const next = await filterExistingRecentProjects(recentProjects);
+    if (next.length === recentProjects.length) {
+      return;
+    }
+
+    persistRecentProjects(next);
+    setRecentProjects(next);
+    if (next.length < recentProjects.length) {
+      setSetupError("삭제된 최근 프로젝트 경로를 목록에서 제거했습니다.");
+    }
+    } finally {
+      setIsRefreshingRecentProjects(false);
+    }
+  }, [recentProjects]);
+
+  React.useEffect(() => {
+    if (options.projectRoot) {
+      return;
+    }
+
+    void sanitizeRecentProjects();
+  }, [options.projectRoot, sanitizeRecentProjects]);
+
+  const chooseProjectRoot = React.useCallback(async (selected: string) => {
     const normalized = selected.trim();
     if (!normalized) {
       return;
     }
 
+    const exists = await window.autoflow.projectExists(normalized);
+    if (!readProjectExistsResult(exists)) {
+      setProjectMenuOpen(false);
+      setRecentProjects((current) => {
+        const next = normalizeProjectList(current.filter((project) => project !== normalized));
+        persistRecentProjects(next);
+        return next;
+      });
+      setSetupError(`${projectExistsPathLabel(normalized)} 목록에서 제거했습니다.`);
+      return;
+    }
+
     setProjectRoot(normalized);
+    setSetupError("");
     setProjectMenuOpen(false);
     setRecentProjects((current) => {
       const next = normalizeProjectList([normalized, ...current]);
@@ -2154,10 +2447,10 @@ function EssentialApp() {
     [options]
   );
 
-  const boardExists = Boolean(board?.exists);
+  const boardInitialized = board?.status?.initialized === "true";
   const projectLabel = options.projectRoot ? basename(options.projectRoot) : "프로젝트 없음";
-  const boardStatusLabel = !options.projectRoot ? "프로젝트 없음" : boardExists ? "추적 중" : "설정 필요";
-  const boardStatusVariant = boardExists ? "default" : options.projectRoot ? "destructive" : "secondary";
+  const boardStatusLabel = !options.projectRoot ? "프로젝트 없음" : boardInitialized ? "추적 중" : "설정 필요";
+  const boardStatusVariant = boardInitialized ? "default" : options.projectRoot ? "destructive" : "secondary";
 
   return (
     <div className="viewer-shell">
@@ -2180,20 +2473,21 @@ function EssentialApp() {
                 <div className="project-menu" role="menu" aria-label="최근 프로젝트">
                   <div className="project-menu-kicker">최근</div>
                   <div className="project-menu-list">
-                    {recentProjects.map((project) => {
-                      const selected = project === options.projectRoot;
-                      return (
-                        <Button
-                          key={project}
-                          variant="ghost"
-                          type="button"
-                          className="project-menu-item"
-                          title={project}
-                          role="menuitem"
-                          onClick={() => chooseProjectRoot(project)}
-                        >
-                          <span>{basename(project)}</span>
-                          {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+                        {recentProjects.map((project) => {
+                          const selected = project === options.projectRoot;
+                          return (
+                            <Button
+                              key={project}
+                              variant="ghost"
+                              type="button"
+                              className="project-menu-item"
+                              title={isRefreshingRecentProjects ? "최근 프로젝트 경로를 확인 중입니다." : project}
+                              role="menuitem"
+                              disabled={isRefreshingRecentProjects}
+                              onClick={() => chooseProjectRoot(project)}
+                            >
+                              <span>{basename(project)}</span>
+                              {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
                         </Button>
                       );
                     })}
@@ -2213,7 +2507,7 @@ function EssentialApp() {
             </div>
 
             <div className="essential-topbar-actions">
-              {options.projectRoot && !boardExists ? (
+              {options.projectRoot && !boardInitialized ? (
                 <Button
                   variant="outline"
                   size="sm"
@@ -2229,9 +2523,7 @@ function EssentialApp() {
                 variant="outline"
                 size="icon"
                 className="essential-icon-button"
-                title="새로고침"
                 aria-label="새로고침"
-                data-tooltip="새로고침"
                 disabled={!options.projectRoot}
                 onClick={() => void loadBoard()}
               >
@@ -2267,7 +2559,7 @@ function EssentialApp() {
                   <span>폴더 열기</span>
                 </Button>
               </section>
-            ) : !boardExists ? (
+            ) : !boardInitialized ? (
               <section className="essential-empty" aria-label="Autoflow 설치">
                 <FolderPlus className="h-5 w-5" aria-hidden="true" />
                 <h2>Autoflow 설정</h2>
@@ -2607,8 +2899,6 @@ function RunnerConsole({
                         variant="outline"
                         size="icon"
                         className="runner-icon-button runner-plain-icon-button"
-                        title="중지"
-                        data-tooltip="중지"
                         aria-label={`${runner.id} 중지`}
                         disabled={Boolean(actionKey)}
                         onClick={() => {
@@ -2627,8 +2917,6 @@ function RunnerConsole({
                         variant="outline"
                         size="icon"
                         className="runner-icon-button runner-plain-icon-button"
-                        title={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
-                        data-tooltip={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
                         aria-label={`${runner.id} 시작`}
                         disabled={!canStart || Boolean(actionKey)}
                         onClick={() => {
@@ -2688,6 +2976,16 @@ function runnerConversationText(runner: AutoflowRunner) {
 
 function shouldShowConversation(runner: AutoflowRunner) {
   return Boolean(runnerConversationText(runner));
+}
+
+function runnerNeedsLogin(runner: AutoflowRunner) {
+  return Boolean(runner.authRequired);
+}
+
+function runnerLoginMessage(runner: AutoflowRunner) {
+  if (runner.authMessage) return runner.authMessage;
+  const agent = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "Agent";
+  return `${agent} 로그인이 필요합니다.`;
 }
 
 const ansiConverter = new AnsiToHtml({
@@ -2797,6 +3095,26 @@ function initialConversationDisplayLength(streamId: string, text: string) {
   return text.length;
 }
 
+function overlappingConversationPrefixLength(previous: string, next: string) {
+  if (!previous || !next) return 0;
+  if (next.startsWith(previous)) return previous.length;
+  if (previous.startsWith(next)) return next.length;
+
+  const tailMarker = "…\n";
+  const previousBody = previous.startsWith(tailMarker) ? previous.slice(tailMarker.length) : previous;
+  const nextOffset = next.startsWith(tailMarker) ? tailMarker.length : 0;
+  const nextBody = next.slice(nextOffset);
+  const maxOverlap = Math.min(previousBody.length, nextBody.length);
+
+  for (let length = maxOverlap; length >= 24; length -= 1) {
+    if (previousBody.slice(previousBody.length - length) === nextBody.slice(0, length)) {
+      return nextOffset + length;
+    }
+  }
+
+  return 0;
+}
+
 function ConversationStream({
   label,
   text,
@@ -2807,33 +3125,53 @@ function ConversationStream({
   streamId?: string;
 }) {
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const previousTextRef = React.useRef(conversationStreamTextCache.get(streamId) || text);
+  const streamIdRef = React.useRef(streamId);
+  const previousTextRef = React.useRef(conversationStreamTextCache.get(streamId) || "");
   const [displayedLength, setDisplayedLength] = React.useState(() =>
     initialConversationDisplayLength(streamId, text)
   );
 
   React.useEffect(() => {
-    const previous = previousTextRef.current;
+    const streamChanged = streamIdRef.current !== streamId;
     const cachedText = conversationStreamTextCache.get(streamId) || "";
 
-    if (!cachedText) {
-      if (text) {
-        setDisplayedLength((current) => current || Math.max(0, text.length - TYPING_TAIL_CHARS));
-      }
-      conversationStreamTextCache.set(streamId, text);
+    if (streamChanged) {
+      streamIdRef.current = streamId;
       previousTextRef.current = text;
+      setDisplayedLength(initialConversationDisplayLength(streamId, text));
+      conversationStreamTextCache.set(streamId, text);
       return;
     }
 
-    if (text === cachedText || cachedText.startsWith(text)) {
-      setDisplayedLength(text.length);
-    } else if (text.startsWith(previous)) {
-      setDisplayedLength((current) => Math.min(text.length, Math.max(current, previous.length)));
-    } else if (cachedText && text.startsWith(cachedText)) {
-      setDisplayedLength(cachedText.length);
-    } else {
-      setDisplayedLength(text.length);
-    }
+    const previous = previousTextRef.current;
+
+    setDisplayedLength((current) => {
+      if (!text) return 0;
+      const clampedCurrent = Math.min(current, text.length);
+
+      if (!previous) {
+        return Math.max(clampedCurrent, Math.max(0, text.length - TYPING_TAIL_CHARS));
+      }
+
+      if (text === previous || previous.startsWith(text)) {
+        return text.length;
+      }
+
+      if (text.startsWith(previous)) {
+        return clampedCurrent;
+      }
+
+      const overlapLength = overlappingConversationPrefixLength(previous, text);
+      if (overlapLength > 0) {
+        return Math.min(clampedCurrent, overlapLength);
+      }
+
+      if (cachedText && cachedText !== previous && text.startsWith(cachedText)) {
+        return Math.max(clampedCurrent, cachedText.length);
+      }
+
+      return text.length;
+    });
 
     previousTextRef.current = text;
     conversationStreamTextCache.set(streamId, text);
@@ -2870,15 +3208,21 @@ function ConversationStream({
     }
   }, [html]);
 
+  const isTyping = displayedLength < text.length;
+
   return (
     <div
       ref={ref}
-      className="ai-progress-conversation"
+      className={`ai-progress-conversation${isTyping ? " ai-progress-conversation-typing" : ""}`}
       role="log"
       aria-live="polite"
+      aria-busy={isTyping || undefined}
       aria-label={label}
     >
-      <pre dangerouslySetInnerHTML={{ __html: html }} />
+      <pre>
+        <span className="ai-progress-conversation-rendered" dangerouslySetInnerHTML={{ __html: html }} />
+        {isTyping ? <span className="ai-progress-conversation-caret" aria-hidden="true" /> : null}
+      </pre>
     </div>
   );
 }
@@ -3187,18 +3531,20 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
 
   return (
     <div className="workflow-stat-strip" aria-label="작업 흐름 지표 요약">
-      <div className="workflow-stat-cell">
-        <Badge variant="secondary">변경 코드량</Badge>
-        <strong>{formatCount(codeVolumeCount)}줄</strong>
-        <span>
-          {formatSignedCount(codeInsertionsCount)} / -{formatCount(codeDeletionsCount)} 라인 · 변경 파일{" "}
-          {formatCount(codeFilesChangedCount)}
-        </span>
-      </div>
-      <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
-        <Badge variant="secondary">토큰 사용량</Badge>
-        <strong>{formatCount(tokenUsageCount)}</strong>
-        <span>실행 로그 {formatCount(tokenReportCount)}개</span>
+      <div className="workflow-stat-row workflow-stat-row-2">
+        <div className="workflow-stat-cell">
+          <Badge variant="secondary">변경 코드량</Badge>
+          <strong>{formatCount(codeVolumeCount)}줄</strong>
+          <span>
+            {formatSignedCount(codeInsertionsCount)} / -{formatCount(codeDeletionsCount)} 라인 · 변경 파일{" "}
+            {formatCount(codeFilesChangedCount)}
+          </span>
+        </div>
+        <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
+          <Badge variant="secondary">토큰 사용량</Badge>
+          <strong>{formatCount(tokenUsageCount)}</strong>
+          <span>실행 로그 {formatCount(tokenReportCount)}개</span>
+        </div>
       </div>
     </div>
   );
@@ -3606,7 +3952,7 @@ const ticketWorkspaceTabs: Array<{
   description: string;
 }> = [
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
-  { key: "inbox", label: "인박스", description: "빠른 오더 intake" },
+  { key: "inbox", label: "Order", description: "빠른 오더 intake" },
   { key: "issued", label: "발급 티켓", description: "발급된 작업 티켓" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
@@ -3680,7 +4026,7 @@ function isRejectBoardFile(file: AutoflowFilePreview) {
 
 function markdownScalar(content: string, labels: string[]) {
   const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const match = content.match(new RegExp(`^- (?:${escaped.join("|")}):\\s*(.+)$`, "im"));
+  const match = content.match(new RegExp(`^- (?:${escaped.join("|")}):[ \\t]*(.*)$`, "im"));
   return match?.[1]?.trim() || "";
 }
 
@@ -3746,7 +4092,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
   }
 
   if (statusKey === "memo") {
-    return markdownScalar(content, ["Status"]) || "인박스";
+    return markdownScalar(content, ["Status"]) || "Order";
   }
 
   if (statusKey === "blocked") {
@@ -3826,30 +4172,41 @@ function prdWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
 }
 
 function inboxWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
-  return sortFilesByModifiedAt((board?.tickets.inbox || []).filter(isInboxMemoBoardFile));
+  const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
+    folderFiles.filter(isMemoBoardFile)
+  );
+
+  return sortFilesByModifiedAt(files);
 }
 
 function ticketWorkspaceTabFromStorage(value: string | null): TicketWorkspaceTabKey {
   return ticketWorkspaceTabs.some((tab) => tab.key === value) ? (value as TicketWorkspaceTabKey) : "issued";
 }
 
-function ticketKanbanColumnsForBoard(board: AutoflowBoardSnapshot | null) {
-  const existingKeys = new Set(Object.keys(board?.tickets || {}));
-  const orderedKeys = [
-    ...ticketKanbanFolderOrder.filter((key) => existingKeys.has(key)),
-    ...[...existingKeys].filter((key) => !ticketKanbanFolderOrder.includes(key as typeof ticketKanbanFolderOrder[number])).sort()
-  ];
-
-  return orderedKeys.map((key) => ({
-    key,
-    label: ticketKanbanFolderMeta[key]?.label || key,
-    path: `tickets/${key}`,
-    description: ticketKanbanFolderMeta[key]?.description || "사용자 정의 폴더"
-  }));
-}
-
 function ticketKanbanFolderForItem(item: TicketWorkspaceItem): TicketKanbanFolderKey {
   return ticketFolderKeyFromFile(item);
+}
+
+function boardFileNameFromPath(filePath: string) {
+  return filePath.split("/").pop() || filePath;
+}
+
+function resolveTicketWorkspaceDetailItem(
+  items: TicketWorkspaceItem[],
+  activeDetailPath: string,
+  fallback: TicketWorkspaceItem | null
+) {
+  if (!activeDetailPath) return null;
+
+  const exactItem = items.find((item) => item.filePath === activeDetailPath);
+  if (exactItem) return exactItem;
+
+  const activeName = boardFileNameFromPath(activeDetailPath);
+  const movedTicket = activeName.startsWith("tickets_")
+    ? items.find((item) => item.kind === "ticket" && item.name === activeName)
+    : null;
+
+  return movedTicket || fallback;
 }
 
 function TicketDetailLayer({
@@ -3949,23 +4306,51 @@ function TicketDetailLayer({
   );
 }
 
-function TicketWorkspaceListView({
+function ticketWorkspaceKanbanColumnsForFiles(files: AutoflowFilePreview[]) {
+  const folderKeys = new Set(
+    files.map(ticketFolderKeyFromFile).filter((key): key is string => Boolean(key))
+  );
+  const orderedKeys = [
+    ...ticketKanbanFolderOrder.filter((key) => folderKeys.has(key)),
+    ...[...folderKeys].filter((key) => !ticketKanbanFolderOrder.includes(key as typeof ticketKanbanFolderOrder[number])).sort()
+  ];
+
+  return orderedKeys.map((key) => ({
+    key,
+    label: ticketKanbanFolderMeta[key]?.label || key,
+    path: `tickets/${key}`,
+    description: ticketKanbanFolderMeta[key]?.description || "사용자 정의 폴더"
+  }));
+}
+
+function ticketWorkspaceItemKindForFile(file: AutoflowFilePreview): TicketWorkspaceItemKind {
+  if (isPrdBoardFile(file)) {
+    return "prd";
+  }
+  if (isMemoBoardFile(file)) {
+    return "memo";
+  }
+  return "ticket";
+}
+
+function TicketWorkspaceKanbanView({
   files,
-  kind,
   options,
   runners,
   emptyTitle,
-  emptyDescription
+  emptyDescription,
+  ariaLabel = "폴더 기준 칸반"
 }: {
   files: AutoflowFilePreview[];
-  kind: TicketWorkspaceItemKind;
   options?: { projectRoot: string; boardDirName: string };
   runners?: AutoflowRunner[];
   emptyTitle: string;
   emptyDescription: string;
+  ariaLabel?: string;
 }) {
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
   const [activeDetailPath, setActiveDetailPath] = React.useState("");
+  const [activeDetailSnapshot, setActiveDetailSnapshot] = React.useState<TicketWorkspaceItem | null>(null);
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailContentPath, setDetailContentPath] = React.useState("");
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -3995,7 +4380,9 @@ function TicketWorkspaceListView({
       );
 
       for (const { file, result } of results) {
-        const statusKey = ticketWorkspaceStatusForFile(file) || (kind === "memo" ? "memo" : "prd");
+        const fallbackKey: TicketWorkspaceStatusKey =
+          ticketWorkspaceStatusForFile(file) ||
+          (isMemoBoardFile(file) ? "memo" : isPrdBoardFile(file) ? "prd" : "todo");
         nextMeta[file.filePath] = result.ok
           ? extractTicketWorkspaceMeta(file, result.content || "", runners)
           : {
@@ -4006,9 +4393,9 @@ function TicketWorkspaceListView({
               aiLabel: "",
               claimedByLabel: "",
               lastUpdated: "",
-              statusKey,
-              statusLabel: ticketWorkspaceStatusLabel(statusKey, file, ""),
-              statusVariant: ticketWorkspaceStatusVariant(statusKey)
+              statusKey: fallbackKey,
+              statusLabel: ticketWorkspaceStatusLabel(fallbackKey, file, ""),
+              statusVariant: ticketWorkspaceStatusVariant(fallbackKey)
             };
       }
 
@@ -4022,16 +4409,20 @@ function TicketWorkspaceListView({
     return () => {
       cancelled = true;
     };
-  }, [files, kind, options, runners]);
+  }, [files, options, runners]);
 
   const items = React.useMemo<TicketWorkspaceItem[]>(
     () =>
       files.map((file) => {
         const meta = metaByPath[file.filePath];
-        const statusKey = meta?.statusKey || ticketWorkspaceStatusForFile(file) || (kind === "memo" ? "memo" : "prd");
+        const itemKind = ticketWorkspaceItemKindForFile(file);
+        const fallbackKey: TicketWorkspaceStatusKey =
+          ticketWorkspaceStatusForFile(file) ||
+          (itemKind === "memo" ? "memo" : itemKind === "prd" ? "prd" : "todo");
+        const statusKey = meta?.statusKey || fallbackKey;
         return {
           ...file,
-          kind,
+          kind: itemKind,
           displayId: workflowFileDisplayName(file.name),
           title: meta?.title || file.title || file.name,
           projectKey: meta?.projectKey || projectKeyFromBoardFile(file, ""),
@@ -4045,17 +4436,36 @@ function TicketWorkspaceListView({
           statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
         };
       }),
-    [files, kind, metaByPath]
+    [files, metaByPath]
   );
 
+  const kanbanColumns = React.useMemo(() => ticketWorkspaceKanbanColumnsForFiles(files), [files]);
+  const kanbanColumnStyle = {
+    "--ticket-kanban-column-count": Math.max(kanbanColumns.length, 1)
+  } as React.CSSProperties;
+
   const activeDetailItem = React.useMemo(
-    () => items.find((item) => item.filePath === activeDetailPath) || null,
-    [activeDetailPath, items]
+    () => resolveTicketWorkspaceDetailItem(items, activeDetailPath, activeDetailSnapshot),
+    [activeDetailPath, activeDetailSnapshot, items]
   );
+
+  React.useEffect(() => {
+    if (!activeDetailPath) {
+      setActiveDetailSnapshot(null);
+      return;
+    }
+    if (!activeDetailItem) return;
+
+    setActiveDetailSnapshot(activeDetailItem);
+    if (activeDetailItem.filePath !== activeDetailPath) {
+      setActiveDetailPath(activeDetailItem.filePath);
+    }
+  }, [activeDetailItem, activeDetailPath]);
 
   const closeDetailLayer = React.useCallback(() => {
     const previousPath = activeDetailPath;
     setActiveDetailPath("");
+    setActiveDetailSnapshot(null);
     setDetailContent(null);
     setDetailContentPath("");
     setDetailLoading(false);
@@ -4066,12 +4476,14 @@ function TicketWorkspaceListView({
   }, [activeDetailPath]);
 
   const openDetailLayer = React.useCallback((filePath: string) => {
+    const nextItem = items.find((item) => item.filePath === filePath) || null;
+    setActiveDetailSnapshot(nextItem);
     setDetailContent(null);
     setDetailContentPath("");
     setDetailError("");
     setDetailLoading(true);
     setActiveDetailPath(filePath);
-  }, []);
+  }, [items]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -4130,42 +4542,72 @@ function TicketWorkspaceListView({
   if (items.length === 0) {
     return (
       <div className="ticket-workspace-empty">
-        <strong>{emptyTitle}</strong>
-        <span>{emptyDescription}</span>
+        <div className="ticket-workspace-empty-card">
+          <div className="ticket-workspace-empty-icon" aria-hidden="true">
+            <Inbox className="h-5 w-5" />
+          </div>
+          <strong>{emptyTitle}</strong>
+          <span>{emptyDescription}</span>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      <div className="ticket-workspace-list-pane">
-        <div className="ticket-workspace-list">
-          {items.map((item) => {
-            const ItemIcon = item.kind === "memo" ? Inbox : ClipboardCheck;
-            return (
-              <ButtonBase
-                key={item.filePath}
-                ref={(node) => {
-                  itemButtonRefs.current[item.filePath] = node;
-                }}
-                type="button"
-                className="ticket-workspace-item"
-                onClick={() => openDetailLayer(item.filePath)}
-                title={item.title}
-                aria-haspopup="dialog"
-              >
-                <span className="ticket-workspace-item-icon">
-                  <ItemIcon className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <span className="ticket-workspace-item-main">
-                  <strong>{item.title}</strong>
-                  <span>{item.filePath}</span>
-                </span>
-                <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
-                <time>{formatDate(item.modifiedAt)}</time>
-              </ButtonBase>
-            );
-          })}
+      <div className="ticket-workspace-kanban-layout">
+        <div className="ticket-workspace-kanban-pane">
+          <div
+            className="ticket-workspace-kanban-columns"
+            aria-label={ariaLabel}
+            style={kanbanColumnStyle}
+          >
+            {kanbanColumns.map((column) => {
+              const columnItems = items.filter((item) => ticketKanbanFolderForItem(item) === column.key);
+              return (
+                <section key={column.key} className={`ticket-kanban-column ticket-kanban-column-${column.key}`}>
+                  <header className="ticket-kanban-column-header">
+                    <div>
+                      <strong>{column.label}</strong>
+                      <span>{column.path}</span>
+                    </div>
+                    <Badge variant="secondary">{columnItems.length}</Badge>
+                  </header>
+                  <div className="ticket-kanban-column-note">{column.description}</div>
+                  {columnItems.length === 0 ? (
+                    <div className="ticket-kanban-column-empty">비어 있음</div>
+                  ) : (
+                    <div className="ticket-kanban-card-list">
+                      {columnItems.map((item) => {
+                        const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
+                        return (
+                          <button
+                            key={item.filePath}
+                            ref={(node) => {
+                              itemButtonRefs.current[item.filePath] = node;
+                            }}
+                            type="button"
+                            className="ticket-kanban-card"
+                            onClick={() => openDetailLayer(item.filePath)}
+                            title={item.title}
+                            aria-haspopup="dialog"
+                          >
+                            <span className="ticket-kanban-card-topline">
+                              <span className="ticket-kanban-card-id">{item.displayId}</span>
+                              <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
+                            </span>
+                            <strong>{item.title}</strong>
+                            <span className="ticket-kanban-card-meta">{metaText || item.filePath}</span>
+                            <time>{formatDate(item.modifiedAt)}</time>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
         </div>
       </div>
       <TicketDetailLayer
@@ -4305,6 +4747,7 @@ function WorkflowPinLayer({
         <DialogContent
           className={`workflow-pin-layer-panel workflow-pin-layer-${variant}`}
           overlayClassName="workflow-pin-layer-overlay"
+          keepMounted
           aria-describedby={undefined}
         >
           <div className="workflow-pin-layer-header">
@@ -4481,196 +4924,17 @@ function TicketKanban({
   board: AutoflowBoardSnapshot | null;
   options?: { projectRoot: string; boardDirName: string };
 }) {
-  const files = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
+  const issuedFiles = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
   const prdFiles = React.useMemo(() => prdWorkspaceFiles(board), [board]);
   const inboxFiles = React.useMemo(() => inboxWorkspaceFiles(board), [board]);
-  const kanbanColumns = React.useMemo(() => ticketKanbanColumnsForBoard(board), [board]);
-  const kanbanColumnStyle = {
-    "--ticket-kanban-column-count": Math.max(kanbanColumns.length, 1)
-  } as React.CSSProperties;
   const [activeWorkspaceTab, setActiveWorkspaceTab] = React.useState<TicketWorkspaceTabKey>(() =>
     ticketWorkspaceTabFromStorage(window.localStorage.getItem("autoflow.activeTicketWorkspaceTab"))
   );
-  const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
-  const [activeDetailPath, setActiveDetailPath] = React.useState("");
-  const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
-  const [detailContentPath, setDetailContentPath] = React.useState("");
-  const [detailLoading, setDetailLoading] = React.useState(false);
-  const [detailError, setDetailError] = React.useState("");
-  const itemButtonRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadMeta = async () => {
-      if (!options?.projectRoot || files.length === 0) {
-        if (!cancelled) {
-          setMetaByPath({});
-        }
-        return;
-      }
-
-      const nextMeta: Record<string, TicketWorkspaceItemMeta> = {};
-      const results = await Promise.all(
-        files.map(async (file) => {
-          const result = await window.autoflow.readBoardFile({
-            ...options,
-            filePath: file.filePath
-          });
-          return { file, result };
-        })
-      );
-
-      for (const { file, result } of results) {
-        nextMeta[file.filePath] = result.ok
-          ? extractTicketWorkspaceMeta(file, result.content || "", board?.runners)
-          : {
-              id: workflowFileDisplayName(file.name),
-              title: file.title || file.name,
-              projectKey: projectKeyFromBoardFile(file, ""),
-              stage: "",
-              aiLabel: "",
-              claimedByLabel: "",
-              lastUpdated: "",
-              statusKey: ticketWorkspaceStatusForFile(file) || "todo",
-              statusLabel: ticketWorkspaceStatusLabel(ticketWorkspaceStatusForFile(file) || "todo", file, ""),
-              statusVariant: ticketWorkspaceStatusVariant(ticketWorkspaceStatusForFile(file) || "todo")
-            };
-      }
-
-      if (!cancelled) {
-        setMetaByPath(nextMeta);
-      }
-    };
-
-    void loadMeta();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [files, options, board?.runners]);
 
   React.useEffect(() => {
     window.localStorage.setItem("autoflow.activeTicketWorkspaceTab", activeWorkspaceTab);
   }, [activeWorkspaceTab]);
 
-  const items = React.useMemo<TicketWorkspaceItem[]>(
-    () =>
-      files.map((file) => {
-        const meta = metaByPath[file.filePath];
-        const statusKey = meta?.statusKey || ticketWorkspaceStatusForFile(file) || "todo";
-        return {
-          ...file,
-          kind: isPrdBoardFile(file) ? "prd" : isMemoBoardFile(file) ? "memo" : "ticket",
-          displayId: workflowFileDisplayName(file.name),
-          title: meta?.title || file.title || file.name,
-          projectKey: meta?.projectKey || projectKeyFromBoardFile(file, ""),
-          id: meta?.id || workflowFileDisplayName(file.name),
-          stage: meta?.stage || "",
-          aiLabel: meta?.aiLabel || "",
-          claimedByLabel: meta?.claimedByLabel || "",
-          lastUpdated: meta?.lastUpdated || "",
-          statusKey,
-          statusLabel: meta?.statusLabel || ticketWorkspaceStatusLabel(statusKey, file, ""),
-          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
-        };
-      }),
-    [files, metaByPath]
-  );
-
-  const activeDetailItem = React.useMemo(
-    () => items.find((item) => item.filePath === activeDetailPath) || null,
-    [activeDetailPath, items]
-  );
-
-  const restoreFocusToItem = React.useCallback((filePath: string) => {
-    window.setTimeout(() => itemButtonRefs.current[filePath]?.focus(), 0);
-  }, []);
-
-  const closeDetailLayer = React.useCallback(() => {
-    const previousPath = activeDetailPath;
-    setActiveDetailPath("");
-    setDetailContent(null);
-    setDetailContentPath("");
-    setDetailLoading(false);
-    setDetailError("");
-    if (previousPath) {
-      restoreFocusToItem(previousPath);
-    }
-  }, [activeDetailPath, restoreFocusToItem]);
-
-  const openDetailLayer = React.useCallback((filePath: string) => {
-    setDetailContent(null);
-    setDetailContentPath("");
-    setDetailError("");
-    setDetailLoading(true);
-    setActiveDetailPath(filePath);
-  }, []);
-
-  const handleDetailOpenChange = React.useCallback(
-    (open: boolean) => {
-      if (!open) {
-        closeDetailLayer();
-      }
-    },
-    [closeDetailLayer]
-  );
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadDetail = async () => {
-      setDetailContent(null);
-      setDetailContentPath("");
-      setDetailError("");
-      if (!activeDetailItem) {
-        setDetailLoading(false);
-        return;
-      }
-      if (!options?.projectRoot) {
-        if (!cancelled) {
-          setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
-          setDetailLoading(false);
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setDetailLoading(true);
-      }
-      try {
-        const result = await window.autoflow.readBoardFile({
-          ...options,
-          filePath: activeDetailItem.filePath
-        });
-        if (cancelled) {
-          return;
-        }
-        if (!result.ok) {
-          setDetailError(result.stderr || "파일 미리보기에 실패했습니다.");
-          return;
-        }
-        setDetailContent(result);
-        setDetailContentPath(activeDetailItem.filePath);
-      } catch (error) {
-        if (!cancelled) {
-          setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
-        }
-      } finally {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
-      }
-    };
-
-    void loadDetail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeDetailItem, options]);
-
-  const boardIsEmpty = items.length === 0;
   const activeTabMeta = ticketWorkspaceTabs.find((tab) => tab.key === activeWorkspaceTab) || ticketWorkspaceTabs[2];
 
   return (
@@ -4693,7 +4957,7 @@ function TicketKanban({
                 >
                   <span>{tab.label}</span>
                   <Badge variant="secondary">
-                    {tab.key === "prd" ? prdFiles.length : tab.key === "inbox" ? inboxFiles.length : items.length}
+                    {tab.key === "prd" ? prdFiles.length : tab.key === "inbox" ? inboxFiles.length : issuedFiles.length}
                   </Badge>
                 </Button>
               ))}
@@ -4704,99 +4968,40 @@ function TicketKanban({
       >
         <div className="ticket-workspace-tab-panel" role="tabpanel" aria-label={activeTabMeta.label}>
           {activeWorkspaceTab === "prd" ? (
-            <TicketWorkspaceListView
+            <TicketWorkspaceKanbanView
+              key="prd"
               files={prdFiles}
-              kind="prd"
               options={options}
               runners={board?.runners}
               emptyTitle="표시할 PRD가 없습니다."
-              emptyDescription="tickets/backlog 또는 tickets/done에 PRD가 생기면 여기에 표시됩니다."
+              emptyDescription="tickets/backlog 또는 tickets/done에 PRD가 생기면 폴더 기준 칸반으로 표시됩니다."
+              ariaLabel="폴더 기준 PRD 칸반"
             />
           ) : null}
           {activeWorkspaceTab === "inbox" ? (
-            <TicketWorkspaceListView
+            <TicketWorkspaceKanbanView
+              key="inbox"
               files={inboxFiles}
-              kind="memo"
               options={options}
               runners={board?.runners}
-              emptyTitle="인박스 오더가 없습니다."
-              emptyDescription="tickets/inbox/memo_*.md 파일이 있으면 읽기 전용 목록으로 표시됩니다."
+              emptyTitle="오더가 없습니다."
+              emptyDescription="tickets/inbox/memo_*.md 또는 tickets/done의 memo가 생기면 폴더 기준 칸반으로 표시됩니다."
+              ariaLabel="폴더 기준 Order 칸반"
             />
           ) : null}
           {activeWorkspaceTab === "issued" ? (
-            boardIsEmpty ? (
-              <div className="ticket-kanban-empty ticket-workspace-empty">
-                <strong>표시할 티켓이 없습니다.</strong>
-                <span>tickets 폴더에 티켓이 생기면 폴더 기준 칸반으로 표시됩니다.</span>
-              </div>
-            ) : (
-              <div className="ticket-workspace-kanban-layout">
-                <div className="ticket-workspace-kanban-pane">
-                  <div
-                    className="ticket-workspace-kanban-columns"
-                    aria-label="폴더 기준 티켓 칸반"
-                    style={kanbanColumnStyle}
-                  >
-                    {kanbanColumns.map((column) => {
-                      const columnItems = items.filter((item) => ticketKanbanFolderForItem(item) === column.key);
-                      return (
-                        <section key={column.key} className={`ticket-kanban-column ticket-kanban-column-${column.key}`}>
-                          <header className="ticket-kanban-column-header">
-                            <div>
-                              <strong>{column.label}</strong>
-                              <span>{column.path}</span>
-                            </div>
-                            <Badge variant="secondary">{columnItems.length}</Badge>
-                          </header>
-                          <div className="ticket-kanban-column-note">{column.description}</div>
-                          {columnItems.length === 0 ? (
-                            <div className="ticket-kanban-column-empty">비어 있음</div>
-                          ) : (
-                            <div className="ticket-kanban-card-list">
-                              {columnItems.map((item) => {
-                                const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
-                                return (
-                                  <ButtonBase
-                                    key={item.filePath}
-                                    ref={(node) => {
-                                      itemButtonRefs.current[item.filePath] = node;
-                                    }}
-                                    type="button"
-                                    className="ticket-kanban-card"
-                                    onClick={() => openDetailLayer(item.filePath)}
-                                    title={item.title}
-                                    aria-haspopup="dialog"
-                                  >
-                                    <span className="ticket-kanban-card-topline">
-                                      <span className="ticket-kanban-card-id">{item.displayId}</span>
-                                      <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
-                                    </span>
-                                    <strong>{item.title}</strong>
-                                    <span className="ticket-kanban-card-meta">{metaText || item.filePath}</span>
-                                    <time>{formatDate(item.modifiedAt)}</time>
-                                  </ButtonBase>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )
+            <TicketWorkspaceKanbanView
+              key="issued"
+              files={issuedFiles}
+              options={options}
+              runners={board?.runners}
+              emptyTitle="표시할 티켓이 없습니다."
+              emptyDescription="tickets 폴더에 티켓이 생기면 폴더 기준 칸반으로 표시됩니다."
+              ariaLabel="폴더 기준 티켓 칸반"
+            />
           ) : null}
         </div>
       </PageLayout>
-      <TicketDetailLayer
-        item={activeDetailItem}
-        content={detailContentPath === activeDetailPath ? detailContent : null}
-        loading={Boolean(activeDetailPath) && (detailLoading || (detailContentPath !== activeDetailPath && !detailError))}
-        error={detailError}
-        onOpenChange={handleDetailOpenChange}
-        onClose={closeDetailLayer}
-      />
     </section>
   );
 }
@@ -4826,21 +5031,35 @@ function TicketBoard({
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner) => void;
 }) {
+  if (!board) {
+    return (
+      <PageLayout>
+        <div className="ai-progress-board" data-runner-count={0} aria-label="AI별 작업 진행률" aria-busy="true" />
+      </PageLayout>
+    );
+  }
+
   const runners = (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve");
   const rejectFiles = (board?.tickets.reject || [])
-    .filter((file) => file.name.startsWith("reject_"))
+    .filter((file) => (file?.name || "").startsWith("reject_"))
     .map((file) => ({ ...file, stateLabel: "반려", stateTone: "destructive" } as WorkflowFileEntry));
   const backlogSpecs = (board?.tickets.backlog || [])
-    .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
+    .filter((file) => {
+      const name = file?.name || "";
+      return name.startsWith("prd_") || name.startsWith("project_");
+    })
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const inboxMemos = (board?.tickets.inbox || [])
     .filter(isMemoBoardFile)
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneMemos = (board?.tickets.done || [])
-    .filter((file) => file.name.startsWith("memo_"))
+    .filter((file) => (file?.name || "").startsWith("memo_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
-    .filter((file) => file.name.startsWith("prd_") || file.name.startsWith("project_"))
+    .filter((file) => {
+      const name = file?.name || "";
+      return name.startsWith("prd_") || name.startsWith("project_");
+    })
     .map((file) => ({ ...file } as WorkflowFileEntry));
   const todoTickets = (board?.tickets.todo || [])
     .filter(isTicketBoardFile)
@@ -4870,6 +5089,8 @@ function TicketBoard({
   const memoPinTitle = `ORDER (${inboxMemos.length}/${memoFiles.length})`;
   const todoPinTitle = `TODO (${todoFiles.length}/${todoFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
+  const boardInitialized = board?.status?.initialized === "true";
+  const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
 
   const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length);
 
@@ -4886,7 +5107,7 @@ function TicketBoard({
                 pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
                 variant="default"
                 layerHeading={memoPinTitle}
-                layerHelpText="인박스에 들어온 빠른 오더 목록입니다. 항목을 클릭하면 오더 본문이 이 화면에서 열립니다."
+                layerHelpText="들어온 빠른 오더 목록입니다. 항목을 클릭하면 오더 본문이 이 화면에서 열립니다."
                 emptyText="아직 들어온 오더가 없습니다."
                 showWhenEmpty
               />
@@ -4933,7 +5154,13 @@ function TicketBoard({
       }
     >
       <div className="ai-progress-board" data-runner-count={runners.length} aria-label="AI별 작업 진행률">
-        {runners.length ? (
+        {boardMissing ? (
+          <div className="ai-progress-empty ai-progress-empty-install">
+            <FolderPlus className="h-5 w-5" aria-hidden="true" />
+            <strong>Autoflow가 아직 설치되지 않았습니다.</strong>
+            <span>왼쪽 아래 설치 버튼을 눌러 이 프로젝트에 Autoflow 보드를 먼저 설치해 주세요.</span>
+          </div>
+        ) : runners.length ? (
           runners.map((runner) => (
             <AiProgressRow
               key={runner.id}
@@ -4951,7 +5178,6 @@ function TicketBoard({
           ))
         ) : (
           <div className="ai-progress-empty">
-            <strong>AI가 없습니다</strong>
             <span>runner 설정이 추가되면 진행 상태가 여기에 표시됩니다.</span>
           </div>
         )}
@@ -5039,8 +5265,18 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
+  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const hasActiveTicket = Boolean(runner.activeTicketId);
-  const stateSignalText = [runner.activeItem, runner.lastResult, runner.lastLogLine].join(" ").toLowerCase();
+  const stateSignalText = [
+    runner.activeItem,
+    runner.activeRecoveryReason,
+    runner.activeRecoveryStatus,
+    runner.activeRecoveryFailureClass,
+    runner.lastResult,
+    runner.lastLogLine
+  ]
+    .join(" ")
+    .toLowerCase();
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
   const isFailLike =
     status === "failed" ||
@@ -5065,6 +5301,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
     const hasPlannerIdleSignal =
       /\bno_actionable_plan_input\b|\bidle_wait_for_backlog_or_reject\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
     if (isFailLike) return "blocked";
+    if (/^(stalled|blocked|repairing|requeued|needs_user)$/.test(activeRecoveryStatus)) return "planning";
     if (hasPlannerIdleSignal && !hasActiveTicket && !runner.activeItem) return "idle";
     if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "done";
     if (status === "running" && (hasActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
@@ -5100,6 +5337,11 @@ function runnerHeartbeatStale(runner: AutoflowRunner) {
 }
 
 function runnerProgressDetail(runner: AutoflowRunner) {
+  if (runner.activeRecoveryReason) {
+    const failureClass = runner.activeRecoveryFailureClass ? ` · ${runner.activeRecoveryFailureClass}` : "";
+    return `복구: ${displayStatus(runner.activeRecoveryReason)}${failureClass}`;
+  }
+
   if (runner.activeTicketTitle) {
     return runner.activeTicketTitle;
   }
@@ -5229,6 +5471,15 @@ function projectKeyFromSpecRef(value: string) {
   return value.match(/(prd_\d+|project_\d+)/)?.[1] || "";
 }
 
+function displayActiveTicketNumber(value: string) {
+  const match = value.match(/^tickets_(\d+)$/i);
+  return match ? match[1] : value.replace(/\.md$/i, "");
+}
+
+function displayActiveTicketBadge(value: string) {
+  return `#${displayActiveTicketNumber(value)}`;
+}
+
 function activeTicketSummary(runner: AutoflowRunner) {
   if (!runner.activeTicketId) {
     return "";
@@ -5236,7 +5487,8 @@ function activeTicketSummary(runner: AutoflowRunner) {
 
   const title = runner.activeTicketTitle || runner.activeItem || "제목 없음";
   const projectKey = projectKeyFromSpecRef(runner.activeSpecRef);
-  return projectKey ? `${runner.activeTicketId} — ${title} (${projectKey})` : `${runner.activeTicketId} — ${title}`;
+  const ticketLabel = displayActiveTicketBadge(runner.activeTicketId);
+  return projectKey ? `${ticketLabel} — ${title} (${projectKey})` : `${ticketLabel} — ${title}`;
 }
 
 function activeTicketPath(runner: AutoflowRunner) {
@@ -5289,7 +5541,6 @@ function AiProgressRow({
   const animatedTokenUsage = useCountUp(tokenUsageValue);
   const tokenUsageLabel = animatedTokenUsage > 0 ? `${formatCount(animatedTokenUsage)} 토큰 사용` : "";
   const conversationText = runnerConversationText(runner);
-  const showConversation = shouldShowConversation(runner);
   const statusLower = status.toLowerCase();
   const mode = "loop";
   const isWorking = actionKey.endsWith(`:${runner.id}`);
@@ -5307,6 +5558,7 @@ function AiProgressRow({
   };
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
+  const showConversation = shouldShowConversation(runner);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
     runner.role === "wiki" ||
@@ -5405,8 +5657,6 @@ function AiProgressRow({
                 variant="outline"
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
-                title="중지"
-                data-tooltip="중지"
                 aria-label={`${runner.id} 중지`}
                 disabled={Boolean(actionKey)}
                 onClick={() => {
@@ -5425,8 +5675,6 @@ function AiProgressRow({
                 variant="outline"
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
-                title={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
-                data-tooltip={mode === "loop" ? "시작" : "반복 모드에서만 시작할 수 있습니다"}
                 aria-label={`${runner.id} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
@@ -5468,10 +5716,10 @@ function AiProgressRow({
             type="button"
             className="ai-progress-active-ticket-button"
             onClick={openTicketDialog}
-            title={`#${runner.activeTicketId} 티켓 보기`}
+            title={`${displayActiveTicketBadge(runner.activeTicketId)} 티켓 보기`}
           >
             <Badge variant="outline" className="ai-progress-active-ticket">
-              #{runner.activeTicketId}
+              {displayActiveTicketBadge(runner.activeTicketId)}
             </Badge>
           </Button>
         ) : null}
@@ -5497,6 +5745,7 @@ function AiProgressRow({
         <DialogContent
           className="workflow-pin-layer-panel workflow-pin-layer-default"
           overlayClassName="workflow-pin-layer-overlay"
+          keepMounted
           aria-describedby={undefined}
         >
           <div className="workflow-pin-layer-header">
@@ -5680,73 +5929,41 @@ function WikiList({
   selectedPath: string;
   onSelect: (filePath: string) => void;
 }) {
-  const pages = board?.wikiFiles || [];
+  const entries = [
+    ...(board?.wikiFiles || []).map((file) => ({ kind: "wiki" as const, file })),
+    ...(board?.conversationFiles || []).map((file) => ({ kind: "handoff" as const, file }))
+  ].sort((a, b) =>
+    String(b.file.modifiedAt || "").localeCompare(String(a.file.modifiedAt || ""))
+  );
 
-  if (!pages.length) {
+  if (!entries.length) {
     return <div className="empty-panel">No wiki pages</div>;
   }
 
   return (
     <div className="log-list knowledge-list">
-      {pages.map((page) => (
+      {entries.map(({ kind, file }) => (
         <Button
-          key={page.filePath}
+          key={file.filePath}
           variant="ghost"
           type="button"
-          className={`log-row${selectedPath === page.filePath ? " log-row-selected" : ""}`}
-          onClick={() => onSelect(page.filePath)}
+          className={`log-row${selectedPath === file.filePath ? " log-row-selected" : ""}`}
+          onClick={() => onSelect(file.filePath)}
         >
-          <BookOpenText className="h-4 w-4" />
+          {kind === "wiki" ? (
+            <BookOpenText className="h-4 w-4" />
+          ) : (
+            <ClipboardList className="h-4 w-4" />
+          )}
           <div className="min-w-0">
-            <strong>{page.name}</strong>
-            <span>Wiki · {formatDate(page.modifiedAt)}</span>
-            <p>{page.title}</p>
+            <strong>{file.name}</strong>
+            <span>
+              {kind === "wiki" ? "Wiki" : "Source · Handoff"} · {formatDate(file.modifiedAt)}
+            </span>
+            <p>{file.title}</p>
           </div>
         </Button>
       ))}
-    </div>
-  );
-}
-
-function HandoffList({
-  board,
-  selectedPath,
-  onSelect
-}: {
-  board: AutoflowBoardSnapshot | null;
-  selectedPath: string;
-  onSelect: (filePath: string) => void;
-}) {
-  const handoffs = board?.conversationFiles || [];
-
-  return (
-    <div className="handoff-block">
-      <div className="knowledge-source-header">
-        <span>Conversation handoff inputs</span>
-        <Badge variant="outline">{handoffs.length}</Badge>
-      </div>
-      {handoffs.length ? (
-        <div className="log-list handoff-list">
-          {handoffs.map((handoff) => (
-            <Button
-              key={handoff.filePath}
-              variant="ghost"
-              type="button"
-              className={`log-row${selectedPath === handoff.filePath ? " log-row-selected" : ""}`}
-              onClick={() => onSelect(handoff.filePath)}
-            >
-              <ClipboardList className="h-4 w-4" />
-              <div className="min-w-0">
-                <strong>{handoff.name}</strong>
-                <span>Source · Handoff · {formatDate(handoff.modifiedAt)}</span>
-                <p>{handoff.title}</p>
-              </div>
-            </Button>
-          ))}
-        </div>
-      ) : (
-        <div className="empty-panel handoff-empty">No source handoffs</div>
-      )}
     </div>
   );
 }
@@ -5781,725 +5998,9 @@ function LogPreview({
   );
 }
 
-type ChatMode = "auto" | "memo" | "prd";
-
-type ChatViewProps = {
-  projectRoot: string;
-  boardDirName: string;
-};
-
-type ChatRenderMessage = AutoflowChatMessage & {
-  pending?: boolean;
-  attachedWikiPaths?: string[];
-};
-
-type PendingAttachment = {
-  source: string;
-  fileUrl: string;
-};
-
-const CHAT_IMAGE_RE = /!\[[^\]]*\]\(([^)\s]+)\)/g;
-
-function chatImagePathsFromMarkdown(text: string): string[] {
-  if (!text) return [];
-  const out: string[] = [];
-  CHAT_IMAGE_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CHAT_IMAGE_RE.exec(text)) !== null) {
-    out.push(m[1]);
-  }
-  return out;
-}
-
-function chatBodyWithoutImages(text: string): string {
-  if (!text) return "";
-  return text.replace(CHAT_IMAGE_RE, "").replace(/\n{3,}/g, "\n\n").trim();
-}
-
-function chatRelativeFileUrl(boardRelativePath: string, projectRoot: string, boardDirName: string) {
-  if (!boardRelativePath || !projectRoot) return "";
-  const cleanProject = projectRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-  const dir = boardDirName || ".autoflow";
-  return `file://${cleanProject}/${dir}/${boardRelativePath}`;
-}
-
-function formatRelativeTime(at: string, now: Date = new Date()): string {
-  if (!at) return "";
-  const d = new Date(at);
-  if (Number.isNaN(d.getTime())) return at;
-  const diffMs = now.getTime() - d.getTime();
-  const diffSec = Math.round(diffMs / 1000);
-  if (diffSec < 30) return "방금";
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}분 전`;
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (sameDay) {
-    const hours = d.getHours();
-    const minutes = d.getMinutes().toString().padStart(2, "0");
-    const period = hours < 12 ? "오전" : "오후";
-    const hh = ((hours + 11) % 12) + 1;
-    return `오늘 ${period} ${hh}:${minutes}`;
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday =
-    d.getFullYear() === yesterday.getFullYear() &&
-    d.getMonth() === yesterday.getMonth() &&
-    d.getDate() === yesterday.getDate();
-  if (isYesterday) {
-    const hours = d.getHours();
-    const minutes = d.getMinutes().toString().padStart(2, "0");
-    const period = hours < 12 ? "오전" : "오후";
-    const hh = ((hours + 11) % 12) + 1;
-    return `어제 ${period} ${hh}:${minutes}`;
-  }
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function ChatAvatar({ role }: { role: "user" | "assistant" | "system" }) {
-  if (role === "user") {
-    return (
-      <div className="chat-avatar chat-avatar-user" aria-hidden="true">
-        나
-      </div>
-    );
-  }
-  return (
-    <div className="chat-avatar chat-avatar-ai" aria-hidden="true">
-      <Sparkles className="h-4 w-4" aria-hidden="true" />
-    </div>
-  );
-}
-
-function ChatView({ projectRoot, boardDirName }: ChatViewProps) {
-  const [messages, setMessages] = React.useState<ChatRenderMessage[]>([]);
-  const [frontmatter, setFrontmatter] = React.useState<AutoflowChatFrontmatter>({});
-  const [wikiCatalog, setWikiCatalog] = React.useState<AutoflowChatWikiCatalogEntry[]>([]);
-  const [suggestedMode, setSuggestedMode] = React.useState<"memo" | "prd">("memo");
-  const [mode, setMode] = React.useState<ChatMode>("auto");
-  const [wikiCite, setWikiCite] = React.useState(true);
-  const [summaryHandover, setSummaryHandover] = React.useState(true);
-  const [draft, setDraft] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [errorText, setErrorText] = React.useState("");
-  const [resetOpen, setResetOpen] = React.useState(false);
-  const [previewMode, setPreviewMode] = React.useState<null | "memo" | "prd">(null);
-  const [previewBody, setPreviewBody] = React.useState("");
-  const [savedToast, setSavedToast] = React.useState<{ kind: "memo" | "prd"; path: string } | null>(null);
-  const [pendingAttachments, setPendingAttachments] = React.useState<PendingAttachment[]>([]);
-  const [imagePreview, setImagePreview] = React.useState<string | null>(null);
-  const [dragOver, setDragOver] = React.useState(false);
-  const [now, setNow] = React.useState<Date>(() => new Date());
-  const invocationRef = React.useRef<string>("");
-  const messageEndRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 30000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const reload = React.useCallback(async () => {
-    if (!projectRoot) {
-      setMessages([]);
-      setFrontmatter({});
-      setWikiCatalog([]);
-      return;
-    }
-    setErrorText("");
-    try {
-      const result = await window.autoflow.chatLoad({ projectRoot, boardDirName });
-      setMessages(result.messages.map((m) => ({ ...m })));
-      setFrontmatter(result.frontmatter || {});
-      setWikiCatalog(result.wikiAnswerCatalog || []);
-      setSuggestedMode(result.suggestedMode || "memo");
-    } catch (error) {
-      setErrorText((error as Error)?.message || "대화 스레드를 불러오지 못했습니다.");
-    }
-  }, [projectRoot, boardDirName]);
-
-  React.useEffect(() => {
-    reload();
-  }, [reload]);
-
-  React.useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
-
-  const appendMessage = React.useCallback(
-    async (role: "user" | "assistant", content: string, attachedWikiPaths?: string[]) => {
-      const at = new Date().toISOString();
-      try {
-        await window.autoflow.chatAppend({
-          projectRoot,
-          boardDirName,
-          message: { role, content, at }
-        });
-      } catch (error) {
-        setErrorText((error as Error)?.message || "메시지를 저장하지 못했습니다.");
-      }
-      setMessages((prev) => [...prev, { role, at, content, attachedWikiPaths }]);
-    },
-    [projectRoot, boardDirName]
-  );
-
-  const removePendingAttachment = React.useCallback((source: string) => {
-    setPendingAttachments((prev) => prev.filter((p) => p.source !== source));
-  }, []);
-
-  const addPendingFromPaths = React.useCallback((paths: string[]) => {
-    if (!Array.isArray(paths) || paths.length === 0) return;
-    setPendingAttachments((prev) => {
-      const seen = new Set(prev.map((p) => p.source));
-      const next = [...prev];
-      for (const source of paths) {
-        if (!source || seen.has(source)) continue;
-        next.push({ source, fileUrl: `file://${encodeURI(source)}` });
-        seen.add(source);
-      }
-      return next;
-    });
-  }, []);
-
-  const onPickImages = React.useCallback(async () => {
-    if (!projectRoot) return;
-    try {
-      const result = await window.autoflow.chatPickImages();
-      if (result?.ok && result.paths.length > 0) {
-        addPendingFromPaths(result.paths);
-      }
-    } catch (error) {
-      setErrorText((error as Error)?.message || "이미지 선택에 실패했습니다.");
-    }
-  }, [projectRoot, addPendingFromPaths]);
-
-  const onDrop = React.useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      setDragOver(false);
-      const files = Array.from(event.dataTransfer?.files || []) as Array<File & { path?: string }>;
-      const allowed = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
-      const sources: string[] = [];
-      for (const file of files) {
-        const ext = (file.name.split(".").pop() || "").toLowerCase();
-        if (!allowed.has(ext)) continue;
-        if (file.path) sources.push(file.path);
-      }
-      if (sources.length === 0) {
-        setErrorText("이미지(png/jpg/jpeg/gif/webp/svg) 파일만 첨부할 수 있습니다.");
-        return;
-      }
-      addPendingFromPaths(sources);
-    },
-    [addPendingFromPaths]
-  );
-
-  const onSend = React.useCallback(async () => {
-    const content = draft.trim();
-    if (!projectRoot) return;
-    if (!content && pendingAttachments.length === 0) return;
-    setErrorText("");
-
-    let attachmentMarkdown = "";
-    if (pendingAttachments.length > 0) {
-      try {
-        const attached = await window.autoflow.chatAttachImages({
-          projectRoot,
-          boardDirName,
-          sourcePaths: pendingAttachments.map((p) => p.source)
-        });
-        if (attached.rejected.length > 0) {
-          const reasons = attached.rejected.map((r) => `${r.source}: ${r.reason}`).join("\n");
-          setErrorText(`일부 첨부가 거부되었습니다:\n${reasons}`);
-        }
-        const links = attached.accepted.map((a) => `![attached](${a.relativePath})`);
-        if (links.length === 0 && attached.rejected.length > 0) {
-          return;
-        }
-        attachmentMarkdown = links.join("\n");
-      } catch (error) {
-        setErrorText((error as Error)?.message || "이미지 첨부 복사에 실패했습니다.");
-        return;
-      }
-    }
-
-    const composed = [attachmentMarkdown, content].filter(Boolean).join("\n\n").trim();
-    setDraft("");
-    setPendingAttachments([]);
-    await appendMessage("user", composed);
-
-    setBusy(true);
-    const invocationId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    invocationRef.current = invocationId;
-    try {
-      const result = await window.autoflow.chatSend({
-        projectRoot,
-        boardDirName,
-        mode,
-        wikiCite,
-        summaryHandover,
-        invocationId
-      });
-      if (!result.ok) {
-        const reason = result.reason || "어댑터 호출이 실패했습니다.";
-        setErrorText(`AI 호출 오류: ${reason}`);
-        await appendMessage("assistant", `(오류) ${reason}\n\n${result.stderr || ""}`.trim());
-      } else {
-        await appendMessage("assistant", result.response, result.attachedWikiPaths);
-      }
-    } catch (error) {
-      setErrorText((error as Error)?.message || "AI 호출에 실패했습니다.");
-    } finally {
-      setBusy(false);
-      invocationRef.current = "";
-      reload();
-    }
-  }, [
-    draft,
-    pendingAttachments,
-    projectRoot,
-    boardDirName,
-    mode,
-    wikiCite,
-    summaryHandover,
-    appendMessage,
-    reload
-  ]);
-
-  const onCancel = React.useCallback(async () => {
-    if (!invocationRef.current) return;
-    try {
-      await window.autoflow.cancelInvocation(invocationRef.current);
-      setErrorText("취소되었습니다.");
-    } catch (error) {
-      setErrorText((error as Error)?.message || "취소에 실패했습니다.");
-    }
-    invocationRef.current = "";
-    setBusy(false);
-  }, []);
-
-  const onReset = React.useCallback(async () => {
-    setResetOpen(false);
-    if (!projectRoot) return;
-    try {
-      const result = await window.autoflow.chatReset({ projectRoot, boardDirName });
-      if (result.ok) {
-        await reload();
-      } else {
-        setErrorText("대화 초기화에 실패했습니다.");
-      }
-    } catch (error) {
-      setErrorText((error as Error)?.message || "대화 초기화에 실패했습니다.");
-    }
-  }, [projectRoot, boardDirName, reload]);
-
-  const buildDraftFromConversation = React.useCallback(
-    (kind: "memo" | "prd") => {
-      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
-      const fenced = lastAssistant?.content.match(/```(?:markdown)?\n([\s\S]*?)```/);
-      if (fenced) return fenced[1].trim();
-      if (kind === "memo") {
-        const lastUser = [...messages].reverse().find((m) => m.role === "user");
-        return [
-          "# Autoflow Memo",
-          "",
-          "## Request",
-          "",
-          (lastUser?.content || "").trim(),
-          "",
-          "## Notes",
-          "",
-          "- 데스크톱 대화 메뉴에서 저장된 메모입니다."
-        ].join("\n");
-      }
-      return [
-        "# Project PRD",
-        "",
-        "## Project",
-        "",
-        "- ID: prd_NNN",
-        "- Title: TODO",
-        "- AI: ticket-owner",
-        "- Status: draft",
-        "",
-        "## Core Scope",
-        "",
-        "- Goal: TODO",
-        "",
-        "## Conversation Handoff",
-        "",
-        "- Source: 데스크톱 대화 메뉴",
-        "- Summary: TODO"
-      ].join("\n");
-    },
-    [messages]
-  );
-
-  const openPreview = React.useCallback(
-    (kind: "memo" | "prd") => {
-      setPreviewMode(kind);
-      setPreviewBody(buildDraftFromConversation(kind));
-    },
-    [buildDraftFromConversation]
-  );
-
-  const closePreview = React.useCallback(() => {
-    setPreviewMode(null);
-    setPreviewBody("");
-  }, []);
-
-  const confirmSave = React.useCallback(async () => {
-    if (!previewMode || !projectRoot) return;
-    try {
-      const fn = previewMode === "memo" ? window.autoflow.saveMemo : window.autoflow.saveSpec;
-      const result = await fn({ projectRoot, boardDirName, body: previewBody });
-      if (result.ok) {
-        setSavedToast({ kind: previewMode, path: result.savedPath });
-        await appendMessage(
-          "assistant",
-          `(저장 완료) ${previewMode === "memo" ? "메모" : "PRD"}: ${result.savedPath}`
-        );
-        await reload();
-      } else {
-        setErrorText("저장에 실패했습니다.");
-      }
-    } catch (error) {
-      setErrorText((error as Error)?.message || "저장 도중 오류가 발생했습니다.");
-    } finally {
-      closePreview();
-    }
-  }, [previewMode, previewBody, projectRoot, boardDirName, appendMessage, reload, closePreview]);
-
-  const recommendedAction = mode === "memo" ? "memo" : mode === "prd" ? "prd" : suggestedMode;
-
-  if (!projectRoot) {
-    return (
-      <div className="chat-empty">
-        <p>먼저 좌측 하단에서 프로젝트 폴더를 선택하세요.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="chat-shell">
-      <header className="chat-toolbar" aria-label="대화 도구 막대">
-        <div className="chat-toolbar-left">
-          <span className="chat-toolbar-label">모드</span>
-          <div className="chat-mode-toggle" role="radiogroup" aria-label="대화 모드">
-            {([
-              { key: "auto", label: "Auto" },
-              { key: "memo", label: "Memo only" },
-              { key: "prd", label: "PRD only" }
-            ] as const).map((opt) => (
-              <Button
-                key={opt.key}
-                type="button"
-                variant={mode === opt.key ? "default" : "outline"}
-                role="radio"
-                aria-checked={mode === opt.key}
-                onClick={() => setMode(opt.key)}
-                className="chat-mode-button"
-              >
-                {opt.label}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <div className="chat-toolbar-right">
-          <label className="chat-toggle">
-            <input
-              type="checkbox"
-              checked={wikiCite}
-              onChange={(e) => setWikiCite(e.target.checked)}
-            />
-            <span>Wiki 인용</span>
-          </label>
-          <label className="chat-toggle">
-            <input
-              type="checkbox"
-              checked={summaryHandover}
-              onChange={(e) => setSummaryHandover(e.target.checked)}
-            />
-            <span>이전 요약 인계</span>
-          </label>
-          <Button
-            type="button"
-            variant="outline"
-            className="chat-reset-button"
-            onClick={() => setResetOpen(true)}
-            title="대화 초기화"
-          >
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            <span>초기화</span>
-          </Button>
-        </div>
-      </header>
-      <div
-        className="chat-message-list"
-        role="log"
-        aria-live="polite"
-        aria-label="대화 메시지"
-      >
-        <div className="chat-thread">
-          {messages.length === 0 ? (
-            <div className="chat-empty-state">
-              <MessageSquare className="h-10 w-10 opacity-50" aria-hidden="true" />
-              <p>이 프로젝트와 관련된 작업을 자유롭게 적어 주세요. 보드와 위키 문맥은 자동으로 함께 전달됩니다.</p>
-            </div>
-          ) : (
-            messages.map((m, idx) => {
-              const imagePaths = chatImagePathsFromMarkdown(m.content);
-              const textBody = chatBodyWithoutImages(m.content);
-              const relTime = formatRelativeTime(m.at, now);
-              const isUser = m.role === "user";
-              return (
-                <div
-                  key={`${m.at}-${idx}`}
-                  className={`chat-message-row chat-message-row-${m.role}`}
-                >
-                  {!isUser ? <ChatAvatar role={m.role} /> : null}
-                  <div className="chat-message-column">
-                    <div className="chat-message-meta">
-                      <span className="chat-message-role">
-                        {m.role === "user" ? "나" : m.role === "assistant" ? "AI" : "System"}
-                      </span>
-                      <span className="chat-message-time" title={m.at}>
-                        {relTime}
-                      </span>
-                    </div>
-                    {imagePaths.length > 0 ? (
-                      <div className="chat-message-images">
-                        {imagePaths.map((p, i) => {
-                          const url = chatRelativeFileUrl(p, projectRoot, boardDirName);
-                          return (
-                            <button
-                              key={`${p}-${i}`}
-                              type="button"
-                              className="chat-message-image"
-                              onClick={() => setImagePreview(url)}
-                              title={p}
-                            >
-                              <img src={url} alt={p} loading="lazy" />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {textBody ? (
-                      isUser ? (
-                        <div className="chat-bubble chat-bubble-user">
-                          <MarkdownViewer content={textBody} />
-                        </div>
-                      ) : (
-                        <div className="chat-bubble chat-bubble-ai">
-                          <MarkdownViewer content={textBody} />
-                        </div>
-                      )
-                    ) : null}
-                    {m.role === "assistant" && m.attachedWikiPaths && m.attachedWikiPaths.length > 0 ? (
-                      <div className="chat-message-citations" aria-label="참고된 위키 답변">
-                        {m.attachedWikiPaths.map((p) => (
-                          <Badge key={p} variant="outline" className="chat-citation-chip">
-                            참고: {p}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  {isUser ? <ChatAvatar role={m.role} /> : null}
-                </div>
-              );
-            })
-          )}
-          <div ref={messageEndRef} />
-        </div>
-      </div>
-      <div className="chat-meta-strip">
-        <span>메시지 {messages.length}개</span>
-        {wikiCatalog.length > 0 ? <span>· 위키 답변 {wikiCatalog.length}개 색인</span> : null}
-        {(frontmatter.saved_paths || []).length > 0 ? (
-          <span>· 저장된 산출물 {(frontmatter.saved_paths || []).length}개</span>
-        ) : null}
-      </div>
-      {errorText ? (
-        <Alert severity="warning" className="chat-error">
-          {errorText}
-        </Alert>
-      ) : null}
-      <div className="chat-actions">
-        <Button
-          type="button"
-          variant={recommendedAction === "memo" ? "default" : "outline"}
-          onClick={() => openPreview("memo")}
-          disabled={busy || messages.length === 0}
-          title={recommendedAction === "memo" ? "추천: 짧은 메모로 저장" : "메모로 저장"}
-        >
-          <Inbox className="h-4 w-4 mr-1" aria-hidden="true" />
-          메모로 저장
-        </Button>
-        <Button
-          type="button"
-          variant={recommendedAction === "prd" ? "default" : "outline"}
-          onClick={() => openPreview("prd")}
-          disabled={busy || messages.length === 0}
-          title={recommendedAction === "prd" ? "추천: 정식 PRD로 저장" : "PRD로 저장"}
-        >
-          <ClipboardList className="h-4 w-4 mr-1" aria-hidden="true" />
-          PRD로 저장
-        </Button>
-      </div>
-      <footer
-        className={`chat-input-bar${dragOver ? " chat-input-bar-dragover" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-      >
-        {pendingAttachments.length > 0 ? (
-          <div className="chat-attachment-chips" aria-label="첨부 미리보기">
-            {pendingAttachments.map((p) => (
-              <div key={p.source} className="chat-attachment-chip" title={p.source}>
-                <img src={p.fileUrl} alt="첨부 미리보기" />
-                <span className="chat-attachment-chip-name">{p.source.split("/").pop() || p.source}</span>
-                <button
-                  type="button"
-                  className="chat-attachment-chip-remove"
-                  onClick={() => removePendingAttachment(p.source)}
-                  aria-label="첨부 제거"
-                  title="첨부 제거"
-                >
-                  <X className="h-3 w-3" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="chat-input-row">
-          <Button
-            type="button"
-            variant="outline"
-            className="chat-attach-button"
-            onClick={onPickImages}
-            disabled={busy}
-            title="이미지 첨부"
-            aria-label="이미지 첨부"
-          >
-            <Paperclip className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <textarea
-            rows={3}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setDraft("");
-                return;
-              }
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                if (!busy) onSend();
-              }
-            }}
-            placeholder="메시지를 입력하고 Cmd/Ctrl+Enter 로 전송하세요. 이미지는 첨부 버튼이나 드래그&드롭으로 추가할 수 있어요."
-            disabled={busy}
-            className="chat-input"
-            aria-label="대화 입력"
-          />
-          {busy ? (
-            <Button type="button" variant="outline" onClick={onCancel} className="chat-cancel-button">
-              <X className="h-4 w-4 mr-1" aria-hidden="true" />
-              취소
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={onSend}
-              disabled={!draft.trim() && pendingAttachments.length === 0}
-              className="chat-send-button"
-            >
-              <Send className="h-4 w-4 mr-1" aria-hidden="true" />
-              전송
-            </Button>
-          )}
-        </div>
-      </footer>
-      <Dialog open={resetOpen} onOpenChange={(open) => !open && setResetOpen(false)}>
-        <DialogContent className="chat-dialog">
-          <DialogTitle>대화를 초기화할까요?</DialogTitle>
-          <DialogDescription>
-            현재 스레드는 desktop-chat-archive 폴더로 옮겨지고 새 빈 스레드가 시작됩니다. "이전 요약 인계" 토글이 켜져 있으면 새 스레드 첫 호출에 직전 요약이 prefix 로 전달됩니다.
-          </DialogDescription>
-          <div className="chat-dialog-actions">
-            <Button type="button" variant="outline" onClick={() => setResetOpen(false)}>
-              취소
-            </Button>
-            <Button type="button" onClick={onReset} className="chat-dialog-confirm">
-              <Trash2 className="h-4 w-4 mr-1" aria-hidden="true" />
-              초기화
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!previewMode} onOpenChange={(open) => !open && closePreview()}>
-        <DialogContent className="chat-dialog chat-dialog-preview">
-          <DialogTitle>
-            {previewMode === "memo" ? "메모로 저장" : "PRD로 저장"} — 미리보기
-          </DialogTitle>
-          <DialogDescription>
-            아래 본문이 그대로 보드에 저장됩니다. 필요하면 수정한 뒤 "저장" 을 눌러 주세요. 저장 경로는 자동으로 다음 사용 가능한 번호로 결정됩니다.
-          </DialogDescription>
-          <textarea
-            className="chat-preview-textarea"
-            value={previewBody}
-            onChange={(e) => setPreviewBody((e.target as HTMLTextAreaElement).value)}
-            rows={20}
-          />
-          <div className="chat-dialog-actions">
-            <Button type="button" variant="outline" onClick={closePreview}>
-              취소
-            </Button>
-            <Button type="button" onClick={confirmSave} disabled={!previewBody.trim()}>
-              저장
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
-        <DialogContent className="chat-image-preview-dialog">
-          <DialogTitle>이미지 미리보기</DialogTitle>
-          {imagePreview ? <img src={imagePreview} alt="이미지 미리보기" /> : null}
-          <div className="chat-dialog-actions">
-            <Button type="button" variant="outline" onClick={() => setImagePreview(null)}>
-              닫기
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <Snackbar
-        open={!!savedToast}
-        autoHideDuration={5000}
-        onClose={() => setSavedToast(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert severity="success" onClose={() => setSavedToast(null)}>
-          {savedToast
-            ? `${savedToast.kind === "memo" ? "메모" : "PRD"} 저장 완료: ${savedToast.path}`
-            : ""}
-        </Alert>
-      </Snackbar>
-    </div>
-  );
-}
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ThemeProvider theme={desktopTheme}>
-      <CssBaseline />
-      <App />
-    </ThemeProvider>
+    <App />
   </React.StrictMode>
 );

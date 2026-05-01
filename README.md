@@ -59,19 +59,19 @@ tetris/
 
 ## PRD Handoff Direction
 
-Codex/Claude 대화창에서는 설치된 Autoflow skill 을 **PRD handoff 전용 진입점**으로 둔다. Claude 는 `/af` / `/autoflow`, Codex 는 `$af` / `$autoflow` 를 1급 경로로 쓰고, `#af` / `#autoflow` 는 AGENTS/CLAUDE 호환 alias 로 남긴다.
+Codex/Claude 대화창에서는 설치된 Autoflow skill 을 **PRD handoff 전용 진입점**으로 둔다. Claude 는 `/autoflow`, Codex 는 `$autoflow` 를 1급 경로로 쓰고, `#autoflow` 는 AGENTS/CLAUDE 호환 alias 로 남긴다.
 
 - 대화창에서는 사용자 요구를 정리해 PRD 만 작성한다.
 - 실행 기준 저장 대상은 `.autoflow/tickets/backlog/prd_NNN.md` PRD 이다.
-- 작은 수정 요청은 Claude `/memo`, Codex `$memo`, `#memo`, 또는 `autoflow memo create` 로 `.autoflow/tickets/inbox/memo_NNN.md` 에 가볍게 저장할 수 있다. Plan AI 가 안전한 범위로 해석되면 generated PRD 와 todo ticket 으로 승격한다.
-- Autoflow install 은 프로젝트 로컬 `.claude/skills/{autoflow,af,memo}` 와 `.codex/skills/{autoflow,af,memo}` 를 함께 만든다.
+- 작은 수정 요청은 Claude `/order`, Codex `$order`, `#order`, 또는 `autoflow memo create` 로 `.autoflow/tickets/inbox/memo_NNN.md` 에 가볍게 저장할 수 있다. Plan AI 가 안전한 범위로 해석되면 generated PRD 와 todo ticket 으로 승격한다.
+- Autoflow install 은 프로젝트 로컬 `.claude/skills/{autoflow,order}` 와 `.codex/skills/{autoflow,order}` 를 함께 만든다.
 - Claude Code 는 `AGENTS.md` 를 직접 읽지 않으므로 Autoflow install 은 프로젝트 루트 `CLAUDE.md` 도 함께 만들고, 이 파일이 `AGENTS.md` 를 import 해 skill/alias handoff 원칙을 보강하게 한다.
 - skill 원본은 `integrations/claude/skills/` 와 `integrations/codex/skills/` 아래에 둔다.
 - CLI handoff 저장을 켜면 같은 승인 내용을 `.autoflow/conversations/prd_NNN/spec-handoff.md` 에도 보관한다.
 - ticket owner runner 가 Autoflow 보드에서 plan / implement / verify 를 한 번에 이어받는다.
 - 긴 대화가 작업 상태를 대신하지 않는다. 대화는 PRD 와 compact summary 로만 보드에 연결된다.
 
-현재 방향의 기본 실행 단위는 `ticket-owner` 다. PRD handoff 는 Claude/Codex skill 로 시작하고, 작은 요청은 memo skill 로 시작할 수 있다. 실행은 `autoflow prd create`, `autoflow memo create`, `autoflow run planner`, `autoflow run ticket`, Desktop Flow Viewer 의 runner controls, Codex/Claude/OpenCode/Gemini local CLI adapter 호출이 이어받는다. 앱은 PRD 입력 공간이 아니라 보드 상태와 runner 제어면이다. 기존 `todo/verifier` runner 는 role-pipeline 호환 경로로 남아 있지만 기본 운영 모델은 아니다.
+현재 방향의 기본 실행 단위는 `ticket-owner` 다. PRD handoff 는 Claude/Codex skill 로 시작하고, 작은 요청은 order skill 로 시작할 수 있다. 실행은 `autoflow prd create`, `autoflow memo create`, `autoflow run planner`, `autoflow run ticket`, Desktop Flow Viewer 의 runner controls, Codex/Claude/OpenCode/Gemini local CLI adapter 호출이 이어받는다. 앱은 PRD 입력 공간이 아니라 보드 상태와 runner 제어면이다. 기존 `todo/verifier` runner 는 role-pipeline 호환 경로로 남아 있지만 기본 운영 모델은 아니다.
 
 ## Distribution Model
 
@@ -309,9 +309,9 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 
 현재 보드가 제공하는 기본 로컬 작업 흐름:
 
-- Claude: `/af` 또는 `/autoflow`
-- Codex: `$af` 또는 `$autoflow`
-- 호환 alias: `#af` 또는 `#autoflow`
+- Claude: `/autoflow`
+- Codex: `$autoflow`
+- 호환 alias: `#autoflow`
 - `autoflow run ticket <project-root>`
 - 필요하면 Desktop Flow Viewer 의 runner controls 로 같은 ticket-owner 실행을 깨운다.
 - `#plan`, `#todo`, `#veri` 는 role-pipeline 호환 경로로만 남긴다.
@@ -330,7 +330,7 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 1. `autoflow init` 으로 보드를 만든다.
 2. 원하면 `autoflow install-stop-hook` 으로 현재 보드 `check-stop.*` 를 Codex Stop hook 에 연결한다. 그러면 Ticket Owner 또는 legacy role work 가 남아 있을 때 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 Stop hook 은 heartbeat / watcher 를 대체하지 않고 보완한다.
 3. `autoflow status` 와 `autoflow doctor` 로 초기 상태를 확인한다.
-4. Claude 에서는 `/af` 또는 `/autoflow`, Codex 에서는 `$af` 또는 `$autoflow` 로 사용자와 대화해 정리된 PRD 를 `tickets/backlog/` 에 남긴다. `#af` / `#autoflow` 는 호환 alias 로만 쓴다.
+4. Claude 에서는 `/autoflow`, Codex 에서는 `$autoflow` 로 사용자와 대화해 정리된 PRD 를 `tickets/backlog/` 에 남긴다. `#autoflow` 는 호환 alias 로만 쓴다.
 5. `autoflow run ticket <project-root>` 또는 Desktop Flow Viewer 의 Owner 실행으로 같은 owner 가 backlog PRD 에서 `tickets/inprogress/tickets_NNN.md` 를 만들고 mini-plan, 구현, 검증, evidence 기록, done/reject 이동까지 이어서 처리한다.
 6. 검증 command 는 티켓 또는 PRD 의 `## Verification` 아래 `- Command: ...` 로 둔다. owner 는 `start-ticket-owner`, `verify-ticket-owner`, `finish-ticket-owner` 런타임을 순서대로 써서 evidence 와 completion log 를 남긴다.
 7. role-pipeline 방식이 필요하면 호환 경로로 `#plan`, `#todo`, `#veri` 또는 `autoflow run planner/todo/verifier` 를 사용할 수 있지만 기본 운영 모델은 아니다.
@@ -343,7 +343,7 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 
 - 제품/배포 이름: `Autoflow`
 - 로컬 보드 폴더: `.autoflow/`
-- 현재 보드 명령 예시: `autoflow init`, `$af` / `/af`, `autoflow run ticket`
+- 현재 보드 명령 예시: `autoflow init`, `$autoflow` / `/autoflow`, `autoflow run ticket`
 
 즉 브랜드는 `Autoflow` 로 가져가되, 실제 프로젝트 경로는 `.autoflow/` 를 기본값으로 쓴다.
 
@@ -424,7 +424,7 @@ Ticket Owner 운영에서는 아래 환경 변수를 쓰는 편이 좋다.
 
 예:
 
-- PRD handoff: manual only (`/af` / `/autoflow`, `$af` / `$autoflow`, or `#af` / `#autoflow`)
+- PRD handoff: manual only (`/autoflow`, `$autoflow`, or `#autoflow`)
 - ticket owner: `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=owner-1`, `AUTOFLOW_BACKGROUND=1`
 
 Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 를 늘리고, 각 owner 를 별도 Codex/Claude/OpenCode/Gemini 대화 또는 runner process 에 묶는다.
@@ -478,7 +478,7 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 
 - `References` 는 `BOARD_ROOT` 상대 경로
 - `Allowed Paths` 는 repo-relative 경로이며, 구현 중에는 티켓 worktree 루트 기준으로 해석한다
-- `## Obsidian Links` 는 note 이름 기준 링크 (`[[prd_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 를 남긴다
+- `## Reference Notes` 는 note 이름 기준 링크 (`[[prd_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 를 남긴다
 
 ## 이 구조가 하려는 것
 
@@ -500,7 +500,7 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 - 티켓 생성 전에는 실제 `tickets/backlog/*.md` 가 있어야 한다.
 - Ticket Owner 가 backlog PRD 에서 직접 티켓을 만든 뒤 처리한 PRD 는 `tickets/done/<project-key>/` 로 이동해야 한다.
 - `Allowed Paths` 는 repo-relative 경로로 적고, 구현은 티켓 worktree 기준으로 진행한다. worktree 가 없을 때만 `PROJECT_ROOT` 기준으로 fallback 한다.
-- `$af` / `$autoflow`, `/af` / `/autoflow`, `#af` / `#autoflow` 는 PRD 저장까지만 맡고, 이후 기본 실행은 `ticket-owner` 가 이어받는다.
+- `$autoflow`, `/autoflow`, `#autoflow` 는 PRD 저장까지만 맡고, 이후 기본 실행은 `ticket-owner` 가 이어받는다.
 - Ticket Owner heartbeat 는 사용자가 멈추라고 하기 전까지 계속 살아 있어야 한다.
 - Ticket Owner 는 단순 이동 훅이 아니라 `PRD/todo/verifier claim + mini-plan + 구현 + 검증 + evidence + done/reject 이동` 훅이다.
 - `inprogress/` 티켓에는 항상 재개 가능한 상태 요약이 남아 있어야 한다.

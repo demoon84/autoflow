@@ -1,7 +1,4 @@
 import * as React from "react";
-import Box from "@mui/material/Box";
-import MuiTab from "@mui/material/Tab";
-import MuiTabs from "@mui/material/Tabs";
 import { cn } from "@/lib/utils";
 
 type TabsContextValue = {
@@ -36,35 +33,37 @@ function Tabs({
 
   return (
     <TabsContext.Provider value={{ value: actualValue, onValueChange: handleValueChange }}>
-      <Box className={cn("tabs-root", className)}>{children}</Box>
+      <div className={cn("tabs-root", className)}>{children}</div>
     </TabsContext.Provider>
   );
 }
 
-type TabsListProps = Omit<React.HTMLAttributes<HTMLDivElement>, "onChange">;
-
-const TabsList = React.forwardRef<HTMLDivElement, TabsListProps>(
-  ({ className, children, ...props }, ref) => {
-    const context = React.useContext(TabsContext);
-    return (
-      <MuiTabs
-        ref={ref}
-        className={cn("tabs-list", className)}
-        value={context.value ?? false}
-        onChange={(_, nextValue) => context.onValueChange?.(String(nextValue))}
-        {...props}
-      >
-        {children}
-      </MuiTabs>
-    );
-  }
+const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => <div ref={ref} role="tablist" className={cn("tabs-list", className)} {...props} />
 );
 TabsList.displayName = "TabsList";
 
-const TabsTrigger = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { value: string }>(
-  ({ className, children, value, ...props }, ref) => (
-    <MuiTab ref={ref} className={cn("tabs-trigger", className)} value={value} label={children} {...props} />
-  )
+const TabsTrigger = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }>(
+  ({ className, children, value, type = "button", ...props }, ref) => {
+    const context = React.useContext(TabsContext);
+    const selected = context.value === value;
+    return (
+      <button
+        ref={ref}
+        type={type}
+        role="tab"
+        aria-selected={selected}
+        className={cn("tabs-trigger", selected ? "tabs-trigger-active" : undefined, className)}
+        onClick={(event) => {
+          props.onClick?.(event);
+          context.onValueChange?.(value);
+        }}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
 );
 TabsTrigger.displayName = "TabsTrigger";
 

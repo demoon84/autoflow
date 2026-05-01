@@ -12,16 +12,18 @@ tags:
 
 # Decision: Migration to MUI Design Kit
 
+This page records a historical migration decision from late April 2026. It is not the current blanket rule for new Desktop work: the active board policy in `AGENTS.md` now prefers local shadcn-style React components owned in-app with `lucide-react` icons for new Desktop changes, while existing MUI-era surfaces remain part of the historical codebase and wiki record.
+
 ## Context
 The Autoflow desktop application initially used a custom design kit based on shadcn/ui, Radix primitives, and Tailwind CSS. While functional, the team decided to migrate to Material UI (MUI) to leverage its comprehensive component library, stable styling system (Emotion), and better consistency for complex desktop UI patterns.
 
 ## Decision
-We will replace the shadcn/Radix/Tailwind foundation with MUI Material for all desktop UI components.
+At the time of `prd_027`, the team chose to replace the shadcn/Radix/Tailwind foundation with MUI Material for desktop UI components.
 
 - **Primary Library**: `@mui/material`
 - **Styling Engine**: `@emotion/react`, `@emotion/styled`
 - **Theme Management**: MUI `ThemeProvider` with a custom theme that preserves Autoflow brand colors and density.
-- **Incremental Migration**: Existing components will be replaced gradually, but all new desktop UI work MUST use MUI primitives (Rule 17 in `AGENTS.md`).
+- **Incremental Migration**: Existing components would be replaced gradually under the April 2026 policy snapshot captured by this page.
 
 ## Rationale
 - **Consistency**: MUI provides a unified set of components with consistent behavior and accessibility.
@@ -34,8 +36,9 @@ We will replace the shadcn/Radix/Tailwind foundation with MUI Material for all d
 ## Consequences
 - **Positive**: Improved UI consistency, faster development of complex forms and dialogs, and robust theme support.
 - **Negative**: Increased bundle size (though less of a concern for a desktop app), and the need for a transition period where both styling systems might coexist.
+- **Later Update**: The board's current Desktop rule later moved back toward locally owned shadcn-style components plus `lucide-react` for new UI work, so this page should be read as historical context rather than the latest mandatory baseline.
 
 ## Citations
 - `prd_027` - Replace the desktop design kit from shadcn/Radix/Tailwind to MUI. Source: `tickets/done/prd_027/prd_027.md`.
 - `prd_029` - Reduce desktop app page-wide font size. Source: `tickets/done/prd_029/prd_029.md`.
-- `AGENTS.md` Rule 17 (added April 28, 2026).
+- Historical `AGENTS.md` Rule 17 snapshot from late April 2026.

@@ -537,6 +537,7 @@ case "$outcome" in
       blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
       replace_scalar_field_in_section "$run_file" "## Meta" "Status" "blocked"
       mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
+      ticket_goal_block "$ticket_file" "shared_allowed_path_conflict"
       printf 'status=blocked\n'
       printf 'reason=shared_allowed_path_conflict\n'
       printf 'ticket=%s\n' "$ticket_file"
@@ -552,6 +553,7 @@ case "$outcome" in
       merge_prep_status="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
       merge_prep_reason="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
       if [ "$merge_prep_status" = "needs_ai_merge" ]; then
+        ticket_goal_activate "$ticket_file" "needs_ai_merge"
         printf 'status=needs_ai_merge\n'
         [ -z "$merge_prep_reason" ] || printf 'reason=%s\n' "$merge_prep_reason"
         printf 'ticket=%s\n' "$ticket_file"
@@ -565,6 +567,7 @@ case "$outcome" in
       merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
       append_note "$ticket_file" "AI pass finish blocked during merge preparation at ${timestamp}: ${merge_prep_output_single_line}"
+      ticket_goal_block "$ticket_file" "merge_preparation_failed"
       printf 'status=blocked\n'
       printf 'reason=merge_preparation_failed\n'
       printf 'ticket=%s\n' "$ticket_file"
@@ -584,9 +587,11 @@ case "$outcome" in
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- Next: ticket-owner AI manually integrates verified worktree changes into PROJECT_ROOT if needed, reruns verification, then reruns finish. The runtime finalizer only archives/logs/commits an already AI-merged result."
     append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp}; runtime finalizer will not perform merge operations."
+    mark_ticket_done_when_checked "$ticket_file"
     replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
 - Log file: pending AI merge finalization
 - Result: passed by ${display_id} at ${timestamp}"
+    ticket_goal_activate "$ticket_file" "pass_pending_finalizer"
 
     # Finalization call: verifies that AI already integrated the work into
     # PROJECT_ROOT, then archives evidence/wiki and creates the local commit.
@@ -609,18 +614,25 @@ case "$outcome" in
     fi
     inline_merge_status="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
     inline_merge_reason="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
+    inline_ticket_file="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
+    if [ -n "$inline_ticket_file" ] && [ -f "$inline_ticket_file" ]; then
+      ticket_file="$inline_ticket_file"
+    fi
 
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
       printf 'status=done\n'
     elif [ "$inline_merge_status" = "needs_ai_merge" ]; then
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merging"
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+      ticket_goal_activate "$ticket_file" "needs_ai_merge"
       printf 'status=needs_ai_merge\n'
       printf 'reason=%s\n' "${inline_merge_reason:-ai_merge_required}"
     elif [ "$inline_merge_status" = "blocked" ]; then
+      ticket_goal_block "$ticket_file" "${inline_merge_reason:-inline_merge_blocked}"
       printf 'status=blocked\n'
       [ -z "$inline_merge_reason" ] || printf 'reason=%s\n' "$inline_merge_reason"
     else
+      ticket_goal_activate "$ticket_file" "inline_merge_failed_check_output"
       printf 'status=ready_to_merge\n'
     fi
     printf 'outcome=pass\n'
@@ -655,6 +667,7 @@ case "$outcome" in
     ;;
   fail)
     if [ -z "$message" ] && ! reject_reason_exists "$ticket_file"; then
+      ticket_goal_block "$ticket_file" "missing_reject_reason"
       printf 'status=blocked\n'
       printf 'reason=missing_reject_reason\n'
       printf 'ticket=%s\n' "$ticket_file"
@@ -675,6 +688,7 @@ case "$outcome" in
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다."
     append_note "$ticket_file" "AI ${display_id} marked fail at ${timestamp}."
+    ticket_goal_block "$ticket_file" "rejected"
     if [ "$ticket_file" != "$reject_target" ]; then
       mv "$ticket_file" "$reject_target"
       ticket_file="$reject_target"

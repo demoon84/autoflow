@@ -6,8 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 project_dir="$(mktemp -d)"
+cache_dir="${project_dir}-cache"
 cleanup() {
-  rm -rf "$project_dir"
+  rm -rf "$project_dir" "$cache_dir"
 }
 trap cleanup EXIT
 
@@ -41,7 +42,7 @@ run_temp_runtime() {
 
   (
     cd "$board_dir"
-    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT "$@"
+    env -u AUTOFLOW_BOARD_ROOT -u AUTOFLOW_PROJECT_ROOT XDG_CACHE_HOME="$cache_dir" "$@"
   )
 }
 
@@ -111,19 +112,28 @@ write_spec "project_002" "Dirty root second ticket" >/dev/null
 
 start_one_output="${project_dir}/start-one.out"
 start_two_output="${project_dir}/start-two.out"
+plan_one_output="${project_dir}/plan-one.out"
+plan_two_output="${project_dir}/plan-two.out"
 status_output="${project_dir}/status.out"
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_one_output"
+require_line "$plan_one_output" "status=ok"
+require_line "$plan_one_output" "source=backlog-to-todo"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_two_output"
+require_line "$plan_two_output" "status=ok"
+require_line "$plan_two_output" "source=backlog-to-todo"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
 require_line "$start_one_output" "ticket_id=001"
 require_line "$start_one_output" "worktree_status=ready"
-require_pattern "$start_one_output" '^worktree_path=.*/\.autoflow-worktrees/.*/tickets_001$'
+require_pattern "$start_one_output" '^worktree_path=.*/autoflow/worktrees/.*/tickets_001$'
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-2 ./scripts/start-ticket-owner.sh >"$start_two_output"
 require_line "$start_two_output" "status=ok"
 require_line "$start_two_output" "ticket_id=002"
 require_line "$start_two_output" "worktree_status=ready"
-require_pattern "$start_two_output" '^worktree_path=.*/\.autoflow-worktrees/.*/tickets_002$'
+require_pattern "$start_two_output" '^worktree_path=.*/autoflow/worktrees/.*/tickets_002$'
 
 "${REPO_ROOT}/bin/autoflow" status "$project_dir" >"$status_output"
 require_line "$status_output" "ticket_inprogress_count=2"

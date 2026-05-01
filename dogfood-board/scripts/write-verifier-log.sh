@@ -84,7 +84,7 @@ replace_section_block "$ticket_file" "Verification" "- Run file: \`${run_rel}\`
   printf -- '- Board Root: `%s`\n' "$BOARD_ROOT"
   printf -- '- Ticket Path: `%s`\n' "$ticket_rel"
   printf -- '- Run File: `%s`\n' "$run_rel"
-  printf '\n## Obsidian Links\n\n'
+  printf '\n## Reference Notes\n\n'
   printf -- '- Project Note: %s\n' "$project_note"
   printf -- '- Plan Note: %s\n' "$plan_note"
   printf -- '- Ticket Note: %s\n' "$ticket_note"

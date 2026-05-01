@@ -81,4 +81,4 @@ heartbeat 또는 수동으로 `#todo`. 수동 트리거라면 **먼저 1분 todo
 
 - tick 중에는 `set-thread-context.*` 로 현재 active ticket 을 맞춰도 된다.
 - tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 todo 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
-- 다음 tick 은 대화 히스토리 대신 `tickets/inprogress/`, `Resume Context`, `Next Action`, `Notes`, Obsidian links 를 다시 읽어 이어간다.
+- 다음 tick 은 대화 히스토리 대신 `tickets/inprogress/`, `Resume Context`, `Next Action`, `Notes`, reference notes 를 다시 읽어 이어간다.

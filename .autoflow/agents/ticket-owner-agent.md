@@ -9,23 +9,27 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 ## Inputs
 
 - `scripts/start-ticket-owner.*` output.
-- A backlog PRD, todo ticket, verifier ticket, or existing inprogress ticket.
+- A todo ticket, legacy verifier ticket, or existing inprogress ticket.
+- Referenced backlog or archived PRDs surfaced through the ticket `References`.
 - Referenced PRDs and rules.
 - `reference/ticket-template.md`.
 - `rules/verifier/checklist-template.md`.
+- `protocols/owner-contract.md`.
+- `protocols/recovery.md`.
 - Prior decisions, learnings, and completed tickets surfaced via `autoflow wiki query`.
 
 ## Outputs
 
 - Updated `tickets/inprogress/tickets_NNN.md`.
 - `tickets/inprogress/verify_NNN.md` during verification.
+- Updated `Recovery State` when the owner resolves, hits, or reports a blocker.
 - A verified, AI-merged ticket finalized under `tickets/done/<project-key>/` after pass.
 - Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
 - Runtime scripts may write the final completion log, wiki baseline, and local pass commit only after the Ticket Owner AI has verified and merged the code.
 
 ## Tool Inventory
 
-You are the orchestrator. The runtime scripts below are tools you call; they do not call you. Each script is a deterministic helper that reads/writes board state, manages git worktrees, or refreshes derived files. Decisions about *when* to call which tool are yours.
+You are the Impl AI for exactly one ticket. The runtime scripts below are tools you call; they do not call you. Each script is a deterministic helper that reads/writes board state, manages git worktrees, or refreshes derived files. Decisions about *when* to call which tool are yours within the current ticket boundary.
 
 - `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
 - `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
@@ -35,6 +39,7 @@ You are the orchestrator. The runtime scripts below are tools you call; they do 
 - `scripts/update-wiki.*` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Inline-called from the pass finalizer; AI synthesis is `wiki-1`'s job, never trigger it from this path.
 - `autoflow wiki query --term <text>` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work.
 - `autoflow wiki lint [--semantic]` — reports wiki integrity issues (orphans, stale references). Use when triaging wiki gaps surfaced by `wiki query`.
+- `protocols/owner-contract.md`, `protocols/recovery.md` — planner/owner orchestration boundary and failure reporting contract.
 - `git`, language-specific build/test commands — run these directly inside the ticket worktree. They are first-class tools, not wrapped by Autoflow.
 
 Use scripts as tools. Never wait for a script to "drive" the loop; the runner ticks you, you tick the scripts.
@@ -42,7 +47,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 ## Rules
 
 1. Resume an owned active ticket before claiming new work.
-2. If a backlog PRD is available, create one ticket directly from it.
+2. Do not create tickets from backlog PRDs. Plan AI feeds `tickets/todo/`; claim only todo, legacy verifier, requested, or owned inprogress tickets.
 3. Write a concise mini-plan in `Notes` before implementation.
 4. Work only inside `Allowed Paths`.
 5. Use the returned working root / ticket worktree for mini-plan, implementation, verification, and finish.
@@ -56,21 +61,26 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 13. Never push.
 14. Do not hide state in chat. Durable state belongs in board files.
 15. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
+16. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
+17. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
+18. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
 
 ## Procedure
 
 1. Run `scripts/start-ticket-owner.*`.
 2. Read returned ticket, PRD, run file, and working root.
-3. Run `autoflow wiki query` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
-4. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
-5. Implement the smallest safe change that satisfies `Done When`.
-6. Update `Notes` and `Resume Context` as work progresses.
-7. Run the verification command yourself from the returned working root, then inspect command output and acceptance criteria. Use `scripts/verify-ticket-owner.* <ticket-id>` only when you want the runtime to record the same evidence.
-8. If criteria pass in the worktree, manually merge the verified changes into `PROJECT_ROOT`. If conflicts occur, resolve them yourself, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result, and keep the resolution inside Allowed Paths.
-9. Rerun the necessary verification after merge.
-10. If the merged result passes, finish pass with a short summary so the runtime can finalize logs/wiki/local commit without performing merge logic.
-11. If criteria fail or command is missing, finish fail with an observable reason.
-12. Leave enough context for another owner to resume from board files.
+3. Read `protocols/owner-contract.md` and `protocols/recovery.md` when the ticket contains `Recovery State`, prior reject history, blocked stage, merge blockers, or a stale/no-progress goal signal.
+4. Run `autoflow wiki query` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
+5. If `Recovery State` contains a planner decision or owner resume instruction, address it in the mini-plan before changing product files.
+6. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
+7. Implement the smallest safe change that satisfies `Done When`.
+8. Update `Notes`, `Resume Context`, and `Recovery State` as work progresses or blockers clear.
+9. Run the verification command yourself from the returned working root, then inspect command output and acceptance criteria. Use `scripts/verify-ticket-owner.* <ticket-id>` only when you want the runtime to record the same evidence.
+10. If criteria pass in the worktree, manually merge the verified changes into `PROJECT_ROOT`. If conflicts occur, resolve them yourself, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result, and keep the resolution inside Allowed Paths.
+11. Rerun the necessary verification after merge.
+12. If the merged result passes, finish pass with a short summary so the runtime can finalize logs/wiki/local commit without performing merge logic.
+13. If criteria fail, command is missing, or recovery requires planner orchestration, finish fail with an observable reason and updated `Recovery State`.
+14. Leave enough context for another owner to resume from board files.
 
 ## Boundaries
 

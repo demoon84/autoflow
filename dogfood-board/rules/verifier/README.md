@@ -27,7 +27,7 @@
 - 실제 검증 명령은 `start-verifier.sh` 가 출력한 `working_root` 에서 실행한다. ticket worktree 가 있으면 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 가 fallback 이다.
 - 검증 기록 파일은 시작 시 `BOARD_ROOT/tickets/inprogress/verify_*.md` 로 만들고, 완료 후에는 pass 면 `tickets/done/<project-key>/verify_*.md`, fail 면 `tickets/reject/verify_*.md` 로 정리한다.
 - verifier 가 pass / fail 판정을 끝내면 `BOARD_ROOT/logs/` 에 completion log 를 남긴다.
-- 검증 기록과 completion log 에도 `## Obsidian Links` 를 남겨 `project / plan / ticket / verify` note 가 이어지게 한다.
+- 검증 기록과 completion log 에도 `## Reference Notes` 를 남겨 `project / plan / ticket / verify` note 가 이어지게 한다.
 - 브라우저 확인이 필요해도 기본값은 비브라우저 검증이다. HTTP 응답, 빌드 산출물, 로그, DOM 문자열 확인으로 충분하면 창을 열지 않는다.
 - 실제 렌더링 확인이 필요하면 Playwright 를 사용하지 않고 현재 에이전트의 브라우저 도구를 쓴다. Codex 는 Codex 브라우저 도구, Claude 는 Claude browser tool 을 사용한다.
 - 에이전트 브라우저 도구 탭을 현재 턴에서 열었다면, 사용자가 유지하라고 명시하지 않는 한 **같은 턴 안에서 반드시 닫고 끝낸다**.

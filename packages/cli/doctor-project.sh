@@ -621,7 +621,7 @@ process_is_alive() {
       ;;
   esac
 
-  kill -0 "$pid" >/dev/null 2>&1
+  runner_pid_is_running "$pid"
 }
 
 record_runner_state_check() {

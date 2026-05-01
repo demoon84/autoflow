@@ -6,6 +6,12 @@ Maintain the derived project wiki from completed Autoflow work.
 
 The wiki is not the source of truth. Tickets, verification records, and logs remain authoritative.
 
+When invoking the Autoflow CLI, prefer the `AUTOFLOW_CLI` environment variable
+when it is set, for example `"$AUTOFLOW_CLI" wiki query --term <text>`.
+Fallback to `autoflow` only when `AUTOFLOW_CLI` is empty. Runner prompts also
+include a repo-local CLI path in their context so this runner works when
+`autoflow` is not globally installed on `PATH`.
+
 ## Inputs
 
 - `tickets/done/<project-key>/`.
@@ -24,15 +30,15 @@ The wiki is not the source of truth. Tickets, verification records, and logs rem
 
 ## Tool Inventory
 
-You are the orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
+You are the Wiki AI synthesis owner, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
 
-- `autoflow wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). The Impl AI's `finish-ticket-owner` pass already runs this inline on every ticket merge, so the baseline is usually fresh by the time you tick. Re-run only when you detect drift.
-- `autoflow wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
-- `autoflow wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
-- `autoflow wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
-- `autoflow wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
-- `autoflow wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
-- `autoflow wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
+- `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). The Impl AI's `finish-ticket-owner` pass already runs this inline on every ticket merge, so the baseline is usually fresh by the time you tick. Re-run only when you detect drift.
+- `"$AUTOFLOW_CLI" wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
+- `"$AUTOFLOW_CLI" wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
+- `"$AUTOFLOW_CLI" wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
+- `"$AUTOFLOW_CLI" wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
+- `"$AUTOFLOW_CLI" wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
+- `"$AUTOFLOW_CLI" wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
 - File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
 Single-source-of-AI-synthesis rule: AI-driven wiki synthesis lives only in this runner. The Impl AI's inline `update-wiki.sh` baseline path is deterministic only and must never trigger AI synthesis.

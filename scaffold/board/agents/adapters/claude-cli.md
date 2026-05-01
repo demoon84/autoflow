@@ -19,4 +19,4 @@ Use this adapter when a runner delegates work to Claude Code.
 
 - Never push.
 - Preserve board state in files.
-- Do not create plans or tickets during `/af` / `/autoflow` / `#af` / `#autoflow` handoff.
+- Do not create plans or tickets during `/autoflow` / `#autoflow` handoff.

@@ -1,8 +1,0 @@
-## Relevant wiki answers
-
-The blocks below are LLM-synthesised wiki answers (`wiki/answers/*.md`) that
-matched keywords from the user's recent messages. They are an authoritative
-project memory — prefer them over your own guesses, and cite the exact
-`wiki/answers/<slug>.md` path when you use one. "(none)" means no answer
-matched this turn; "(disabled)" means the user turned off the Wiki citation
-toggle, in which case use only the catalogue from the Board snapshot.
