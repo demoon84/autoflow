@@ -43,14 +43,14 @@
 
 ## Done When
 
-- [ ] `setupRequired === true` 동안 `settingsNavigation` 으로 렌더되는 sidebar 화면 이동 버튼들은 실제 `disabled` 상태다.
-- [ ] `setupRequired === true` 동안 disabled 된 sidebar 화면 이동 버튼은 클릭해도 `activeSettingsSection` 을 다른 섹션으로 바꾸지 않고, 키보드 Tab 포커스도 받지 않는다.
-- [ ] `runnersUnconfigured === true` 이고 stale `activeSettingsSection` 이 `logs`, `knowledge`, `kanban`, `snapshot` 중 하나여도 사용자에게는 `progress` 설치/러너 설정 안내 화면만 보인다.
-- [ ] 테마 토글, 프로젝트 선택, 설치/러너 설정에 필요한 컨트롤은 `setupRequired` 상태에서도 계속 사용할 수 있다.
-- [ ] 설치/러너 설정이 완료되어 `setupRequired === false` 가 되면 기존 sidebar 메뉴들은 다시 클릭과 키보드 포커스가 가능하다.
-- [ ] `settingsNavigation` 배열의 순서, key, label, icon 값은 변경되지 않는다.
-- [ ] 구현은 Allowed Paths 안에만 머문다.
-- [ ] `apps/desktop` check command 가 통과한다.
+- [x] `setupRequired === true` 동안 `settingsNavigation` 으로 렌더되는 sidebar 화면 이동 버튼들은 실제 `disabled` 상태다.
+- [x] `setupRequired === true` 동안 disabled 된 sidebar 화면 이동 버튼은 클릭해도 `activeSettingsSection` 을 다른 섹션으로 바꾸지 않고, 키보드 Tab 포커스도 받지 않는다.
+- [x] `runnersUnconfigured === true` 이고 stale `activeSettingsSection` 이 `logs`, `knowledge`, `kanban`, `snapshot` 중 하나여도 사용자에게는 `progress` 설치/러너 설정 안내 화면만 보인다.
+- [x] 테마 토글, 프로젝트 선택, 설치/러너 설정에 필요한 컨트롤은 `setupRequired` 상태에서도 계속 사용할 수 있다.
+- [x] 설치/러너 설정이 완료되어 `setupRequired === false` 가 되면 기존 sidebar 메뉴들은 다시 클릭과 키보드 포커스가 가능하다.
+- [x] `settingsNavigation` 배열의 순서, key, label, icon 값은 변경되지 않는다.
+- [x] 구현은 Allowed Paths 안에만 머문다.
+- [x] `apps/desktop` check command 가 통과한다.
 
 ## Next Action
 - Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
