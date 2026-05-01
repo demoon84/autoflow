@@ -51,6 +51,17 @@ Planner AI must not:
 - run final pass/fail bookkeeping for Impl AI,
 - create commits or push.
 
+## Planner Recovery Action Contract
+
+When the runner wakes planner for `active_recovery_reason`, the tick is a board-repair turn before normal planning. Planner AI must leave a durable markdown decision first:
+
+- Read `protocols/board-orchestration.md` and `protocols/recovery.md`.
+- Update the affected ticket's `Recovery State`, `Next Action`, `Resume Context`, and `Notes` so the next owner turn has an explicit instruction.
+- Keep the edit idempotent when the evidence and planner decision are unchanged.
+- If no safe board-only repair exists, set `Recovery State` status to `needs_user`, choose an explicit failure class, and park the ticket with an owner resume instruction.
+- Run `autoflow guard` or `scripts/board-guard.sh` after the markdown repair and fix guard errors before creating any new plan or ticket work.
+- Do not call owner/verifier/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
+
 ## State Source
 
 The source of truth is ticket markdown and board folders. Chat output is only a tick summary.

@@ -1428,12 +1428,29 @@ emit_required_flow() {
   printf '%s\n' "11. Never git push."
 }
 
+emit_planner_recovery_action_contract() {
+  if [ "$public_role" != "planner" ] || [ -z "${adapter_active_recovery_reason:-}" ]; then
+    return 0
+  fi
+
+  cat <<'EOF'
+Planner recovery action contract:
+- This wake-up is for board-state repair and orchestration, not product-code implementation.
+- Read protocols/board-orchestration.md and protocols/recovery.md before editing ticket markdown.
+- Update the ticket markdown first: Recovery State, Next Action, Resume Context, and Notes must describe the chosen recovery decision.
+- If no safe board-only repair exists, set Recovery State Status to needs_user with an explicit Failure Class and Owner Resume Instruction.
+- After markdown repair, run autoflow guard or scripts/board-guard.sh and fix guard errors before creating new work.
+- Do not call start-ticket-owner, verify-ticket-owner, finish-ticket-owner, merge-ready-ticket, runner start/stop/restart, kill/pkill, or git worktree cleanup.
+EOF
+}
+
 write_agent_prompt() {
   local instruction_file="$1"
-  local required_flow_block role_boundary_line goal_prompt_block active_item_display
+  local required_flow_block role_boundary_line goal_prompt_block planner_recovery_contract_block active_item_display
   required_flow_block="$(emit_required_flow)"
   role_boundary_line="$(role_boundary_for_current_role)"
   goal_prompt_block="$(ticket_goal_prompt_block_for_current_ticket || true)"
+  planner_recovery_contract_block="$(emit_planner_recovery_action_contract || true)"
   active_item_display="${adapter_active_ticket_file:-${adapter_active_ticket_id:-}}"
   if [ -n "$active_item_display" ]; then
     active_item_display="$(runner_board_relative_path "$active_item_display")"
@@ -1490,6 +1507,10 @@ EOF
 
   if [ -n "$goal_prompt_block" ]; then
     printf '\nGoal guardrail:\n%s\n' "$goal_prompt_block"
+  fi
+
+  if [ -n "$planner_recovery_contract_block" ]; then
+    printf '\n%s\n' "$planner_recovery_contract_block"
   fi
 
   cat <<EOF

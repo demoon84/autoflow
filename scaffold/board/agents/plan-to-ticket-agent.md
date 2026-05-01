@@ -60,9 +60,10 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 12. Use `Recovery State` for recovery decisions. Do not delete failure evidence; preserve it in `Recovery State`, `Reject History`, or `Notes`.
 13. Recovery edits are idempotent: if evidence and planner decision are unchanged from the ticket's current `Recovery State`, `Next Action`, and `Resume Context`, do not append duplicate `Notes` or rewrite `Last Recovery At`.
 14. After AI-authored recovery edits, run `autoflow guard` when available; otherwise run `scripts/board-guard.sh`. If guard reports errors, repair board markdown before creating new work. Treat guard warnings as orchestration evidence: summarize cleanup candidates such as leftover ticket worktrees in `Recovery State`, `Next Action`, or `Resume Context`, but do not delete or reset worktrees yourself.
-15. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
-16. Idle is valid. Do not stop the heartbeat unless the user asks.
-17. Write generated PRD, plan, ticket, recovery notes, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
+15. If the adapter prompt includes `Planner recovery action contract`, complete that contract before normal PRD/ticket creation: markdown recovery decision first, guard second, new work only after the board is coherent.
+16. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
+17. Idle is valid. Do not stop the heartbeat unless the user asks.
+18. Write generated PRD, plan, ticket, recovery notes, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 
 ## Procedure
 

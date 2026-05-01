@@ -52,6 +52,7 @@ if ! diff -u \
 fi
 
 require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" "## Execution Boundary Matrix"
+require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" "## Planner Recovery Action Contract"
 require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" "Safety-kernel responsibility"
 require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" 'AI-owned decision'
 require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" 'If a helper reports `blocked`, `needs_ai_merge`, `warning`, or `error`'
@@ -59,6 +60,8 @@ require_contains "${REPO_ROOT}/.autoflow/protocols/board-orchestration.md" 'mana
 require_contains "${REPO_ROOT}/scaffold/board/protocols/board-orchestration.md" 'manage runner or OS processes directly'
 require_contains "${REPO_ROOT}/.autoflow/agents/plan-to-ticket-agent.md" 'Do not manage runner or OS processes'
 require_contains "${REPO_ROOT}/scaffold/board/agents/plan-to-ticket-agent.md" 'Do not manage runner or OS processes'
+require_contains "${REPO_ROOT}/.autoflow/agents/plan-to-ticket-agent.md" 'Planner recovery action contract'
+require_contains "${REPO_ROOT}/scaffold/board/agents/plan-to-ticket-agent.md" 'Planner recovery action contract'
 require_contains "${REPO_ROOT}/.autoflow/agents/plan-to-ticket-agent.md" 'Treat guard warnings as orchestration evidence'
 require_contains "${REPO_ROOT}/scaffold/board/agents/plan-to-ticket-agent.md" 'Treat guard warnings as orchestration evidence'
 require_contains "${REPO_ROOT}/.autoflow/agents/ticket-owner-agent.md" 'You are the Impl AI for exactly one ticket'
