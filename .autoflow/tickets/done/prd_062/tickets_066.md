@@ -75,21 +75,21 @@
 
 ## Done When
 
-- [ ] `.claude/skills/af/`, `.codex/skills/af/`, `integrations/claude/skills/af/`, `integrations/codex/skills/af/` 디렉터리가 제거된다.
-- [ ] CLI/desktop install 경로가 af alias skill 을 새로 만들거나 복사하지 않는다.
-- [ ] 현재 handoff skill 문서와 host/board/scaffold 문서에서 `/af`, `$af`, `#af`, `skills/af` 사용자 노출 안내가 제거되고 `/autoflow`, `$autoflow`, `#autoflow` 안내만 남는다.
-- [ ] `/order` / `#order`, `memo_NNN.md`, CLI `autoflow memo create`, legacy `#plan` / `#todo` / `#veri` 문구는 의도치 않게 제거되지 않는다.
-- [ ] smoke/test expectation 이 af alias skill 존재를 더 이상 요구하지 않는다.
-- [ ] archive, done ticket, wiki 회고, 현재 작업 PRD/ticket 같은 기록성 파일을 제외한 활성 소스에서 `/af`, `$af`, `#af`, `skills/af`, `.codex/skills/af`, `.claude/skills/af` 가 남지 않는다.
+- [x] `.claude/skills/af/`, `.codex/skills/af/`, `integrations/claude/skills/af/`, `integrations/codex/skills/af/` 디렉터리가 제거된다.
+- [x] CLI/desktop install 경로가 af alias skill 을 새로 만들거나 복사하지 않는다.
+- [x] 현재 handoff skill 문서와 host/board/scaffold 문서에서 `/af`, `$af`, `#af`, `skills/af` 사용자 노출 안내가 제거되고 `/autoflow`, `$autoflow`, `#autoflow` 안내만 남는다.
+- [x] `/order` / `#order`, `memo_NNN.md`, CLI `autoflow memo create`, legacy `#plan` / `#todo` / `#veri` 문구는 의도치 않게 제거되지 않는다.
+- [x] smoke/test expectation 이 af alias skill 존재를 더 이상 요구하지 않는다.
+- [x] archive, done ticket, wiki 회고, 현재 작업 PRD/ticket 같은 기록성 파일을 제외한 활성 소스에서 `/af`, `$af`, `#af`, `skills/af`, `.codex/skills/af`, `.claude/skills/af` 가 남지 않는다.
 
 ## Next Action
 - Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
 
 ## Resume Context
 
-- 현재 상태 요약: Plan AI 가 backlog PRD 에서 todo 티켓을 생성한 직후.
-- 직전 작업: scripts/start-plan.sh 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
-- 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When.
+- 현재 상태 요약: ticket-owner 가 `/af` alias skill 노출 제거를 구현하고 worktree/project root 검증을 통과시킨 뒤 done 처리했다.
+- 직전 작업: finalizer 가 `tickets/done/prd_062/`로 티켓과 검증 기록을 보관하고 local commit `c6d3034`를 만들었다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_062/verify_066.md`, `logs/verifier_066_20260501_001625Z_pass.md`, 활성 소스 `/af` 잔여 검색 결과.
 
 ## Notes
 
@@ -124,6 +124,7 @@
 - Impl AI worker marked verification pass at 2026-05-01T00:16:23Z; runtime finalizer will not perform merge operations.
 - Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-01T00:16:24Z.
 - Coordinator post-merge cleanup at 2026-05-01T00:16:24Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/tickets_066 deleted_branch=autoflow/tickets_066.
+- Verification evidence: worktree와 PROJECT_ROOT에서 PRD Verification command를 각각 실행했고 둘 다 exit 0이었다. PROJECT_ROOT smoke output은 `status=ok`, temp project commit `7b889d8384e2c3b43c0c385e7281cf7188d56f22`를 반환했다.
 ## Verification
 - Run file: `tickets/done/prd_062/verify_066.md`
 - Log file: `logs/verifier_066_20260501_001625Z_pass.md`
@@ -131,7 +132,7 @@
 
 ## Result
 - Summary: af handoff alias exposure removed and verified
-- Remaining risk:
+- Remaining risk: PROJECT_ROOT에는 다른 티켓/작업에서 온 기존 dirty 파일들이 다수 남아 있으나, 066 검증 명령은 현재 PROJECT_ROOT 상태에서 통과했다.
 
 ## Reject Reason
 
