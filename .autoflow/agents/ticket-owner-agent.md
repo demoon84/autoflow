@@ -31,6 +31,8 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 
 You are the Impl AI for exactly one ticket. The runtime scripts below are tools you call; they do not call you. Each script is a deterministic helper that reads/writes board state, manages git worktrees, or refreshes derived files. Decisions about *when* to call which tool are yours within the current ticket boundary.
 
+First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/fail decision.
+
 - `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
 - `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
 - `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, refresh wiki baseline, create local commit) only after you have merged the code yourself.

@@ -4,6 +4,14 @@
 
 Impl AI executes one ticket at a time. Planner AI orchestrates board health and recovery; Impl AI implements, verifies, merges, and reports durable progress.
 
+## First Principle
+
+Autoflow is AI-led. Runtime shell scripts are deterministic tools for the AI, not replacement workers and not hidden decision makers.
+
+The AI owns judgment: planning, scope interpretation, recovery decisions, verification judgment, pass/fail interpretation, merge judgment, and the next safe action. Shell helpers should make those actions convenient and repeatable by exposing narrow, inspectable operations with stable `key=value` output.
+
+Shell helpers may claim board state, create or clean worktrees/branches, record evidence, move files, run guards, stage/commit an already accepted result, and report blockers. They must not become the actor that decides the ticket is correct, silently expands scope, resolves semantic conflicts, or chooses recovery direction without the AI recording that decision in markdown.
+
 ## Owner Responsibilities
 
 Impl AI owns:

@@ -19,6 +19,7 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 ## Operating Contract
 
 - Claim exactly one ticket-sized unit of work.
+- Treat Autoflow as AI-led: shell scripts are deterministic tools that make the AI's work convenient, consistent, and auditable, not replacement workers or hidden decision makers.
 - Use `scripts/start-ticket-owner.sh` before editing. It resumes an owned ticket, claims a todo ticket, or adopts a legacy verifier ticket. Plan AI creates todo tickets from backlog PRDs.
 - Keep the ticket file as the source of truth.
 - Write a local mini-plan into the ticket before editing product code.

@@ -1403,7 +1403,7 @@ emit_required_flow() {
   # 9, 10, 11 are always emitted. Items 3 and 7 are role-gated so they only
   # ship for the roles that actually need them.
   printf '%s\n' "1. Read the role instruction file, any protocol files it references, and the current board state."
-  printf '%s\n' "2. Execute exactly one safe ${public_role} turn."
+  printf '%s\n' "2. Execute exactly one safe ${public_role} turn. Autoflow is AI-led: shell scripts are deterministic tools for claim/state/finalization, not replacement workers or hidden decision makers."
   case "$public_role" in
     planner|ticket|todo)
       printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
@@ -1411,7 +1411,7 @@ emit_required_flow() {
   esac
   printf '%s\n' "4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
   printf '%s\n' "5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work."
-  printf '%s\n' "6. Use the runtime script when claiming or preparing board state if a runtime script is defined."
+  printf '%s\n' "6. Use runtime scripts as tools when claiming or preparing board state if a runtime script is defined; inspect their key=value output before choosing the next action."
   case "$public_role" in
     ticket)
       printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
