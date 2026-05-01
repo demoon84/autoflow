@@ -106,11 +106,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 65
+- Done tickets: 67
 - Reject records: 3
-- Verifier logs: 276
+- Verifier logs: 279
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T00:16:25Z
+- Last updated: 2026-05-01T00:46:18Z
 
 ## Completed Tickets
 
