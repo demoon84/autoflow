@@ -35,7 +35,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[features/desktop-runner-model-options]]** (`wiki/features/desktop-runner-model-options.md`): Recorded the `prd_040` rule that Gemini stays selectable in Desktop, but unsupported Gemini 3.1 preview model ids stay out of `runnerAgentModelOptions.gemini`.
 - **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
 - **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
-- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
+- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the workspace tab flow and detail layer behavior.
 - **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`, [[answers/singleton-runner-display-labels]]).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
 - **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
@@ -127,11 +127,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 76
+- Done tickets: 77
 - Reject records: 5
-- Verifier logs: 303
+- Verifier logs: 304
 - Conversation handoffs: 2
-- Last updated: 2026-05-01T19:40:40Z
+- Last updated: 2026-05-01T19:51:49Z
 
 ## Completed Tickets
 
