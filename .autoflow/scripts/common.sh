@@ -3776,3 +3776,146 @@ release_wiki_baseline_lock() {
   local lock_dir="$1"
   rm -rf "$lock_dir" 2>/dev/null || true
 }
+
+# --- Iteration progress fingerprint (Ralph loop pattern (b)) ------------------
+#
+# Reject -> replan cascades can burn AUTOFLOW_REJECT_MAX_RETRIES retries with
+# zero board-visible progress. The fingerprint hashes the *semantic* parts of
+# a ticket — Reject Reason body, the most recent Reject History reason
+# (timestamps and retry_count are stripped), Failure Class, and Evidence — so
+# two attempts that fail for the same underlying reason produce the same
+# fingerprint even when their attempt metadata differs.
+
+compute_iteration_fingerprint() {
+  local ticket_path="$1"
+  local payload ticket_id failure_class evidence reject_reason last_history_reason
+
+  [ -f "$ticket_path" ] || return 1
+
+  ticket_id="$(awk -F': *' '/^- ID:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
+  failure_class="$(awk -F': *' '/^- Failure Class:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
+  evidence="$(awk -F': *' '/^- Evidence:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
+
+  reject_reason="$(awk '
+    /^## Reject Reason/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section { print }
+  ' "$ticket_path" 2>/dev/null | tr -s '[:space:]' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)"
+
+  last_history_reason="$(awk '
+    /^## Reject History/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /reason=/ {
+      sub(/^.*reason=/, "")
+      print
+    }
+  ' "$ticket_path" 2>/dev/null | tail -1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)"
+
+  payload="${ticket_id}|${failure_class}|${evidence}|${reject_reason}|${last_history_reason}"
+
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$payload" | shasum -a 256 | awk '{ print substr($1, 1, 12) }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$payload" | sha256sum | awk '{ print substr($1, 1, 12) }'
+  else
+    return 1
+  fi
+}
+
+read_iteration_fingerprints() {
+  local ticket_path="$1"
+  local raw
+
+  [ -f "$ticket_path" ] || return 0
+
+  raw="$(awk -F': *' '/^- Iteration Fingerprints:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
+  raw="$(printf '%s' "$raw" | sed -e 's/^\[//' -e 's/\]$//')"
+
+  [ -n "$raw" ] || return 0
+
+  printf '%s' "$raw" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true
+}
+
+append_iteration_fingerprint() {
+  local ticket_path="$1"
+  local new_fp="$2"
+  local existing latest joined tmp
+
+  [ -f "$ticket_path" ] || return 1
+  [ -n "$new_fp" ] || return 1
+
+  existing="$(read_iteration_fingerprints "$ticket_path")"
+  latest="$(printf '%s\n' "$existing" | tail -1)"
+
+  if [ "$latest" = "$new_fp" ]; then
+    return 0
+  fi
+
+  if [ -n "$existing" ]; then
+    joined="$(printf '%s\n%s' "$existing" "$new_fp" | paste -sd ',' -)"
+  else
+    joined="$new_fp"
+  fi
+
+  tmp="$(autoflow_mktemp)"
+  if grep -q '^- Iteration Fingerprints:' "$ticket_path"; then
+    awk -v list="$joined" '
+      /^- Iteration Fingerprints:/ { print "- Iteration Fingerprints: [" list "]"; next }
+      { print }
+    ' "$ticket_path" > "$tmp"
+  else
+    awk -v list="$joined" '
+      /^## Goal Runtime/ { in_section=1; print; next }
+      /^## / && in_section {
+        print "- Iteration Fingerprints: [" list "]"
+        in_section=0
+      }
+      { print }
+      END {
+        if (in_section) {
+          print "- Iteration Fingerprints: [" list "]"
+        }
+      }
+    ' "$ticket_path" > "$tmp"
+  fi
+
+  mv "$tmp" "$ticket_path"
+}
+
+iteration_fingerprint_matches_latest() {
+  local ticket_path="$1"
+  local candidate_fp="$2"
+  local latest
+
+  [ -n "$candidate_fp" ] || return 1
+
+  latest="$(read_iteration_fingerprints "$ticket_path" | tail -1)"
+  [ -n "$latest" ] || return 1
+  [ "$latest" = "$candidate_fp" ]
+}
+
+# Look up the most recent archived reject for a given PRD key and return its
+# fingerprint, computed from the archived reject markdown. Used by the planner
+# to detect whether a freshly-arrived reject is a no-progress repeat.
+latest_archived_reject_fingerprint() {
+  local prd_key="$1"
+  local exclude_path="${2:-}"
+  local archive_dir="${BOARD_ROOT}/tickets/done/${prd_key}"
+  local candidate
+
+  [ -n "$prd_key" ] || return 0
+  [ -d "$archive_dir" ] || return 0
+
+  candidate="$(
+    find "$archive_dir" -maxdepth 1 -type f -name 'reject_*.md' 2>/dev/null \
+      | sort -r \
+      | while IFS= read -r path; do
+          [ "$path" = "$exclude_path" ] && continue
+          printf '%s\n' "$path"
+          break
+        done
+  )"
+
+  [ -n "$candidate" ] || return 0
+  compute_iteration_fingerprint "$candidate"
+}

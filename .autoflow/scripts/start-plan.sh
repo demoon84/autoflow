@@ -61,6 +61,38 @@ extract_section_checklist() {
   ' "$file"
 }
 
+# --- Ralph loop guards (lint + iteration fingerprint) -------------------------
+
+lint_ticket_enabled() {
+  case "${AUTOFLOW_LINT_TICKET:-on}" in
+    off|false|0|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+iteration_fingerprint_enabled() {
+  case "${AUTOFLOW_ITERATION_FINGERPRINT:-on}" in
+    off|false|0|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Wraps lint-ticket.sh invocation. Captures exit code without tripping set -e
+# and prints lint output keys to stdout via the caller's printf chain. Returns
+# the lint exit code (0=ok|warn, 1=block).
+run_lint_ticket() {
+  local target="$1"
+  local lint_script="${SCRIPT_DIR}/lint-ticket.sh"
+
+  [ -x "$lint_script" ] || return 0
+
+  set +e
+  "$lint_script" "$target"
+  local rc=$?
+  set -e
+  return "$rc"
+}
+
 extract_spec_allowed_paths() {
   local file="$1"
 
@@ -378,9 +410,43 @@ EOF
 replan_skipped_file="$(autoflow_mktemp)"
 replanned_reject="$(find_replannable_reject "$replan_skipped_file" || true)"
 if [ -n "$replanned_reject" ]; then
+  # Iteration fingerprint check (Ralph loop pattern (b)): if the same fail
+  # reason has been seen in a previously archived reject for this PRD, do not
+  # consume another retry slot. Park as needs_user via source=iteration-no-progress.
+  if iteration_fingerprint_enabled; then
+    candidate_fp="$(compute_iteration_fingerprint "$replanned_reject" 2>/dev/null || true)"
+    candidate_prd_key="$(extract_ticket_prd_key "$replanned_reject" 2>/dev/null || true)"
+    if [ -n "$candidate_fp" ] && [ -n "$candidate_prd_key" ]; then
+      prior_fp="$(latest_archived_reject_fingerprint "$candidate_prd_key" "$replanned_reject" 2>/dev/null || true)"
+      if [ -n "$prior_fp" ] && [ "$prior_fp" = "$candidate_fp" ]; then
+        printf 'status=ok\n'
+        printf 'source=iteration-no-progress\n'
+        printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
+        printf 'prd_key=%s\n' "$candidate_prd_key"
+        printf 'fingerprint=%s\n' "$candidate_fp"
+        printf 'prior_fingerprint=%s\n' "$prior_fp"
+        printf 'failure_class=iteration_no_progress\n'
+        printf 'recovery_state=needs_user\n'
+        emit_replan_skipped_metadata "$replan_skipped_file"
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        printf 'next_action=Reject %s repeats the same Failure Class/Reject Reason as the previous archived attempt for %s. Park as needs_user; planner orchestrator AI must address the root cause (Allowed Paths, verification command, dependent PRD split) before another retry.\n' \
+          "$(basename "$replanned_reject")" \
+          "$candidate_prd_key"
+        exit 0
+      fi
+    fi
+  fi
+
   replanned_ticket="$(replan_reject_to_todo "$replanned_reject" || true)"
   if [ -z "$replanned_ticket" ]; then
     fail_or_idle "Reject ticket could not be replanned: $(board_relative_path "$replanned_reject")" "reject_replan_failed"
+  fi
+
+  # Record the fingerprint on the new todo so the planner orchestrator AI can
+  # see iteration history without re-deriving it from archived rejects.
+  if iteration_fingerprint_enabled && [ -n "${candidate_fp:-}" ]; then
+    append_iteration_fingerprint "$replanned_ticket" "$candidate_fp" 2>/dev/null || true
   fi
 
   printf 'status=ok\n'
@@ -388,6 +454,9 @@ if [ -n "$replanned_reject" ]; then
   printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
   printf 'todo_ticket=%s\n' "$replanned_ticket"
   printf 'retry_count=%s\n' "$(ticket_retry_count "$replanned_ticket")"
+  if [ -n "${candidate_fp:-}" ]; then
+    printf 'iteration_fingerprint=%s\n' "$candidate_fp"
+  fi
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -549,11 +618,51 @@ fi
 # --- Branch 3: backlog PRD -> todo ticket -------------------------------------
 spec_file="$(select_populated_spec || true)"
 if [ -n "$spec_file" ]; then
+  # Done When / Global Acceptance Criteria vagueness lint (Ralph loop pattern
+  # (a)): if the PRD's Completion Promise is too vague to verify, do not promote
+  # to todo. The planner orchestrator AI is expected to either rework the PRD
+  # via spec-author-agent or override AUTOFLOW_LINT_TICKET=off after review.
+  lint_status_value=""
+  lint_score_value=""
+  lint_terms_value=""
+  if lint_ticket_enabled; then
+    lint_output_file="$(autoflow_mktemp)"
+    set +e
+    "${SCRIPT_DIR}/lint-ticket.sh" "$spec_file" > "$lint_output_file" 2>&1
+    lint_rc=$?
+    set -e
+    lint_status_value="$(awk -F= '/^lint_status=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_score_value="$(awk -F= '/^vagueness_score=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_terms_value="$(awk -F= '/^vague_terms=/ { sub(/^vague_terms=/, ""); print; exit }' "$lint_output_file" 2>/dev/null || true)"
+    if [ "$lint_rc" -ne 0 ] || [ "$lint_status_value" = "block" ]; then
+      printf 'status=ok\n'
+      printf 'source=vague-done-when\n'
+      printf 'spec=%s\n' "$spec_file"
+      printf 'lint_status=%s\n' "${lint_status_value:-block}"
+      printf 'lint_vagueness_score=%s\n' "${lint_score_value:-unknown}"
+      printf 'lint_vague_terms=%s\n' "${lint_terms_value:-}"
+      printf 'failure_class=vague_completion_promise\n'
+      printf 'recovery_state=needs_user\n'
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=PRD %s has a vague Completion Promise (lint_status=%s, vagueness_score=%s). spec-author-agent must rework Done When / Global Acceptance Criteria with concrete signals (commands, file paths, exit codes, numeric metrics) before promoting to todo. Override only after review with AUTOFLOW_LINT_TICKET=off.\n' \
+        "$(board_relative_path "$spec_file")" \
+        "${lint_status_value:-block}" \
+        "${lint_score_value:-unknown}"
+      exit 0
+    fi
+  fi
+
   created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
   printf 'status=ok\n'
   printf 'source=backlog-to-todo\n'
   printf 'spec=%s\n' "$spec_file"
   printf 'todo_ticket=%s\n' "$created_ticket"
+  if [ -n "$lint_status_value" ]; then
+    printf 'lint_status=%s\n' "$lint_status_value"
+    printf 'lint_vagueness_score=%s\n' "${lint_score_value:-0}"
+  fi
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
