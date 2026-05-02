@@ -3966,7 +3966,21 @@ pre {
 }
 
 .workflow-pin-layer-overlay {
-  background: color-mix(in srgb, var(--foreground) 34%, transparent);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--background) 18%, transparent) 0%,
+      color-mix(in srgb, var(--foreground) 34%, transparent) 30%,
+      color-mix(in srgb, var(--foreground) 42%, transparent) 100%
+    ),
+    color-mix(in srgb, var(--foreground) 28%, transparent);
+  -webkit-backdrop-filter: saturate(115%) blur(1px);
+  backdrop-filter: saturate(115%) blur(1px);
+}
+
+.af-dialog-root:has(.workflow-pin-layer-panel) {
+  left: 0;
+  padding-left: calc(var(--af-dialog-left-offset, 16rem) + 24px);
 }
 
 .desktop-global-loading-backdrop {
