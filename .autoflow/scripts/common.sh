@@ -1121,7 +1121,7 @@ reject_auto_replan_enabled() {
 }
 
 reject_max_retries() {
-  local raw="${AUTOFLOW_REJECT_MAX_RETRIES:-10}"
+  local raw="${AUTOFLOW_REJECT_MAX_RETRIES:-3}"
 
   raw="${raw//[^0-9]/}"
   if [ -z "$raw" ]; then
