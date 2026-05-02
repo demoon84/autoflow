@@ -2634,6 +2634,54 @@ async function shutdownAllRunners() {
   return total;
 }
 
+// Final sweep: after the graceful SIGTERM window, any runner PID still listed
+// as `running` in a state file gets force-killed (SIGKILL). Detached runners
+// (PPID=1) survive parent death by design, so we can't rely on the TERM-only
+// graceful path alone — the user expects "app quit ⇒ runners gone".
+async function forceKillSurvivingRunners() {
+  for (const scope of knownProjectScopes.values()) {
+    const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
+    let entries;
+    try {
+      entries = await fs.readdir(stateDir);
+    } catch {
+      continue;
+    }
+    for (const name of entries.filter((value) => value.endsWith(".state"))) {
+      const filePath = path.join(stateDir, name);
+      let content;
+      try {
+        content = await fs.readFile(filePath, "utf8");
+      } catch {
+        continue;
+      }
+      const values = parseRunnerStateFile(content);
+      const pid = Number.parseInt(values.pid || "", 10);
+      if (!Number.isInteger(pid) || pid <= 0) continue;
+
+      let alive = true;
+      try {
+        process.kill(pid, 0);
+      } catch {
+        alive = false;
+      }
+      if (!alive) continue;
+
+      for (const target of collectProcessTree(pid)) {
+        try { process.kill(-target, "SIGKILL"); } catch {}
+        try { process.kill(target, "SIGKILL"); } catch {}
+      }
+
+      values.status = "stopped";
+      values.pid = "";
+      values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+      try {
+        await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+      } catch {}
+    }
+  }
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
@@ -2699,15 +2747,20 @@ app.on("before-quit", (event) => {
   if (runnerShutdownInProgress) {
     return;
   }
-  if (knownProjectScopes.size === 0 && activeChildProcesses.size === 0) {
-    return;
-  }
+  // Always intercept quit: detached runners (PPID=1) won't die just because
+  // the desktop window closes, so we must explicitly stop them. If there's
+  // truly nothing to clean up, the cleanup awaits resolve immediately and
+  // the final SIGKILL sweep is a no-op — the user-visible cost is at most
+  // a few extra ms before app.exit.
   event.preventDefault();
 
   const shutdownTimeoutMs = 5000;
   const cleanup = shutdownAllRunners().catch(() => 0);
   const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
-  Promise.race([cleanup, timeout]).finally(() => {
+  Promise.race([cleanup, timeout]).finally(async () => {
+    try {
+      await forceKillSurvivingRunners();
+    } catch {}
     app.exit(0);
   });
 });
