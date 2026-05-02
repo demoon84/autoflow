@@ -4,3 +4,9 @@ dist/
 .idea/
 .claude/scheduled_tasks.lock
 dogfood-board/.autoflow-upgrade-backups/
+
+# electron-builder / vite 빌드 산출물
+apps/desktop/build/
+
+# token-cache 등 metrics 도구가 만드는 임시 백업 (.bak.* timestamps)
+.autoflow/metrics/token-cache.tsv.bak.*
