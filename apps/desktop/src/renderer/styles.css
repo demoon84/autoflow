@@ -3499,7 +3499,9 @@ pre {
 .ai-progress-agent-label-cluster {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 2px;
   min-width: 0;
   max-width: 100%;
 }
@@ -3578,19 +3580,21 @@ pre {
 
 .ai-progress-agent span.ai-progress-token-usage {
   display: inline-block;
-  flex: 1 2 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: min(180px, 44%);
+  max-width: 100%;
   margin-top: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
   word-break: keep-all;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
 }
 
 .ai-progress-row-worker .ai-progress-agent span.ai-progress-token-usage {
-  flex: 1 1 auto;
-  max-width: min(220px, 52%);
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 .ai-progress-track {
