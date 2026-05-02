@@ -3461,6 +3461,27 @@ pre {
   max-width: 100%;
 }
 
+.ai-progress-row-worker .ai-progress-agent-title {
+  align-items: center;
+}
+
+.ai-progress-agent-title-worker {
+  align-items: center;
+}
+
+.ai-progress-agent-label-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ai-progress-row-worker .ai-progress-agent-label-cluster {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .ai-agent-app-icon {
   display: inline-grid;
   place-items: center;
@@ -3538,6 +3559,11 @@ pre {
   text-overflow: ellipsis;
   white-space: nowrap;
   word-break: keep-all;
+}
+
+.ai-progress-row-worker .ai-progress-agent span.ai-progress-token-usage {
+  flex: 1 1 auto;
+  max-width: min(220px, 52%);
 }
 
 .ai-progress-track {

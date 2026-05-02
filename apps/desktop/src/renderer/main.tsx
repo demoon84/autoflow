@@ -5775,12 +5775,14 @@ function AiProgressRow({
     >
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
-          <div className="ai-progress-agent-title">
+          <div className={`ai-progress-agent-title${isWorkerProgressRow ? " ai-progress-agent-title-worker" : ""}`}>
             <AgentAppIcon agent={runner.agent || ""} />
-            <strong>{agentTitle}</strong>
-            {tokenUsageLabel ? (
-              <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
-            ) : null}
+            <div className="ai-progress-agent-label-cluster">
+              <strong>{agentTitle}</strong>
+              {tokenUsageLabel ? (
+                <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
+              ) : null}
+            </div>
           </div>
         </div>
         {canControl ? (
