@@ -375,17 +375,31 @@ stage_ticket_commit_scope() {
   local git_root="$1"
   local ticket_file="$2"
   local run_file="$3"
-  local allowed_path ticket_id project_key done_root spec_archive
+  local allowed_path ticket_id project_key done_root lifecycle_path board_abs_root
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   project_key="$(project_key_from_ticket_file "$ticket_file" 2>/dev/null || true)"
+  board_abs_root="$(cd "$BOARD_ROOT" && pwd -P)"
 
   # Stage ONLY paths produced by this specific ticket — not the whole board.
   # This avoids pulling in other tickets' / logs' dirty changes when multiple
   # AIs share the same git working tree (worktree fallback).
 
-  # 1. The ticket file itself (and its origin if it was moved to done/reject).
+  # 1. The ticket file itself plus all same-id lifecycle source paths. A
+  # completed ticket may have moved todo -> inprogress -> done during one owner
+  # turn; staging only the final done path leaves tracked todo deletions dirty.
   stage_git_path_if_present "$git_root" "$ticket_file"
+  if [ -n "$ticket_id" ]; then
+    for lifecycle_path in \
+      "${board_abs_root}/tickets/todo/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/inprogress/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/verifier/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/ready-to-merge/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/merge-blocked/tickets_${ticket_id}.md"
+    do
+      stage_git_path_if_present "$git_root" "$lifecycle_path"
+    done
+  fi
   if [ -n "${reject_target:-}" ]; then
     stage_git_path_if_present "$git_root" "$reject_target"
   fi

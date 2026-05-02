@@ -446,12 +446,24 @@ stage_ticket_commit_scope() {
   local git_root="$1"
   local ticket_file="$2"
   local run_file="$3"
-  local allowed_path ticket_id project_key done_root
+  local allowed_path ticket_id project_key done_root lifecycle_path board_abs_root
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   project_key="$(project_key_from_ticket_file "$ticket_file" 2>/dev/null || true)"
+  board_abs_root="$(cd "$BOARD_ROOT" && pwd -P)"
 
   stage_git_path_if_present "$git_root" "$ticket_file"
+  if [ -n "$ticket_id" ]; then
+    for lifecycle_path in \
+      "${board_abs_root}/tickets/todo/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/inprogress/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/verifier/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/ready-to-merge/tickets_${ticket_id}.md" \
+      "${board_abs_root}/tickets/merge-blocked/tickets_${ticket_id}.md"
+    do
+      stage_git_path_if_present "$git_root" "$lifecycle_path"
+    done
+  fi
   if [ -n "${done_target:-}" ]; then
     stage_git_path_if_present "$git_root" "$done_target"
   fi

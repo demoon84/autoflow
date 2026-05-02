@@ -311,6 +311,8 @@ fi
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_output"
 require_line "$plan_output" "status=ok"
 require_line "$plan_output" "source=backlog-to-todo"
+git -C "$project_dir" add .autoflow/tickets/todo/tickets_001.md
+git -C "$project_dir" commit -m "track planned ticket" >/dev/null
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-smoke ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
@@ -365,6 +367,11 @@ if ! git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD | grep -
   git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD >&2
   exit 1
 fi
+if ! git -C "$project_dir" diff-tree --no-commit-id --name-status -r HEAD | grep -Fxq "D	.autoflow/tickets/todo/tickets_001.md"; then
+  echo "Completion commit must include the tracked todo ticket deletion." >&2
+  git -C "$project_dir" diff-tree --no-commit-id --name-status -r HEAD >&2
+  exit 1
+fi
 if git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD | grep -q '^.autoflow/wiki/'; then
   echo "Completion commit must not include wiki files; Wiki AI owns wiki updates." >&2
   git -C "$project_dir" diff-tree --no-commit-id --name-only -r HEAD >&2
@@ -397,6 +404,11 @@ fi
 if git -C "$project_dir" status --porcelain -- .autoflow/tickets/done/prd_001/tickets_001.md | grep -q .; then
   echo "Cleanup note should be included in the completion commit" >&2
   git -C "$project_dir" status --porcelain -- .autoflow/tickets/done/prd_001/tickets_001.md >&2
+  exit 1
+fi
+if git -C "$project_dir" status --porcelain -- .autoflow/tickets/todo/tickets_001.md | grep -q .; then
+  echo "Tracked todo deletion should be included in the completion commit" >&2
+  git -C "$project_dir" status --porcelain -- .autoflow/tickets/todo/tickets_001.md >&2
   exit 1
 fi
 
