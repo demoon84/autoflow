@@ -57,13 +57,13 @@
 
 ## Recovery State
 
-- Status: blocked
+- Status: needs_user
 - Detected By: owner-1
-- Failure Class: dirty_root
-- Evidence: owner-1 resumed the existing worktree, confirmed the dirty patch is the scoped open-layer stability fix, and ran `npm --prefix apps/desktop run check` in both the ticket worktree and PROJECT_ROOT with exit 0. The worktree remains scoped to `apps/desktop/src/components/ui/dialog.tsx` and `apps/desktop/src/renderer/main.tsx` with 87 insertions / 13 deletions. PROJECT_ROOT remains broadly dirty in overlapping/adjacent desktop files (`dialog.tsx`, `main.tsx`, `styles.css`, `preload.js`, and out-of-scope `vite-env.d.ts`) with 1822 insertions / 2335 deletions and root-only API/type dependencies such as `window.autoflow.projectExists` and runner auth fields.
-- Planner Decision: Prior planner instruction said not to create another retry and to finish fail with concrete evidence if the stale-worktree/dirty-root blocker remained. That condition still holds.
+- Failure Class: retry_limit
+- Evidence: `scripts/start-plan.sh` emitted `replan_skipped.3.reason=max_retries_reached` with `retry_count=1`; owner-1 resumed the existing worktree, confirmed the dirty patch is the scoped open-layer stability fix, and ran `npm --prefix apps/desktop run check` in both the ticket worktree and PROJECT_ROOT with exit 0. The worktree remains scoped to `apps/desktop/src/components/ui/dialog.tsx` and `apps/desktop/src/renderer/main.tsx` with 87 insertions / 13 deletions. PROJECT_ROOT remains broadly dirty in overlapping/adjacent desktop files (`dialog.tsx`, `main.tsx`, `styles.css`, `preload.js`, and out-of-scope `vite-env.d.ts`) with 1822 insertions / 2335 deletions and root-only API/type dependencies such as `window.autoflow.projectExists` and runner auth fields.
+- Planner Decision: Prior planner instruction said not to create another retry and to finish fail with concrete evidence if the stale-worktree/dirty-root blocker remained. That condition still holds, and this reject is now parked at retry limit until the broad desktop renderer/API rewrite is landed or isolated.
 - Owner Resume Instruction: Land or isolate the broad desktop renderer/API rewrite first, or create a fresh follow-up ticket from current PROJECT_ROOT HEAD with scope that includes the required root-side typing/preload dependencies. Do not pass/finalize `tickets_074` from the current worktree/root mismatch.
-- Last Recovery At: 2026-05-01T22:49:19+09:00
+- Last Recovery At: 2026-05-02T10:28:38+09:00
 
 ## Done When
 
@@ -76,10 +76,11 @@
 - [ ] desktop check command 가 통과한다.
 
 ## Next Action
-- reject 처리됨: broad desktop renderer/API rewrite 를 먼저 landing 또는 current HEAD 기준 isolated diff 로 분리한 뒤, 필요하면 새 티켓에서 open-layer stability fix 를 재적용한다. 현재 worktree/root mismatch 상태에서는 `tickets_074`를 다시 auto-retry 하지 않는다.
+- retry limit 도달: broad desktop renderer/API rewrite 를 먼저 landing 또는 current HEAD 기준 isolated diff 로 분리한 뒤, 필요하면 새 티켓에서 open-layer stability fix 를 재적용한다. 현재 worktree/root mismatch 상태에서는 `tickets_074`를 다시 auto-retry 하지 않는다.
 
 ## Resume Context
 
+- Planner recovery status (2026-05-02T10:28:38+09:00): `start-plan.sh` 가 `max_retries_reached` / `retry_count=1` 로 skip했다. 기존 dirty-root evidence는 유지하되, 보드 판단은 retry limit에 따른 `needs_user` 주차로 정리한다.
 - 현재 상태 요약: open-layer stability fix 는 worktree 와 PROJECT_ROOT 양쪽에서 check 를 통과하지만, pass finalization 은 동일한 dirty-root blocker 때문에 안전하지 않다.
 - 직전 작업: owner-1 이 `autoflow wiki query` 로 `tickets/done/prd_076/prd_076.md`, `tickets/done/prd_059/tickets_061.md`, `tickets/reject/reject_071.md` 를 재확인했고, `npm --prefix apps/desktop run check` 를 worktree 와 PROJECT_ROOT 에서 각각 exit 0 으로 확인했다.
 - 재개 시 먼저 볼 것: `tickets/reject/verify_074.md`, `tickets/reject/reject_071.md`, PROJECT_ROOT `git diff --stat -- apps/desktop/src/components/ui/dialog.tsx apps/desktop/src/renderer/main.tsx apps/desktop/src/renderer/styles.css apps/desktop/src/preload.js apps/desktop/src/renderer/vite-env.d.ts`. 현재 root dirty stat 은 5 files, 1822 insertions(+), 2335 deletions(-) 이며 out-of-scope `vite-env.d.ts`/`preload.js` 변경에 의존한다.
@@ -87,6 +88,7 @@
 ## Notes
 
 - Created by planner (Plan AI) from tickets/done/prd_076/prd_076.md at 2026-04-30T22:31:50Z.
+- Planner recovery decision (2026-05-02T10:28:38+09:00): `start-plan.sh` emitted `max_retries_reached` for retry_count 1. Preserve the dirty-root blocker evidence, keep this reject parked as `needs_user`, and do not auto-requeue until the broad desktop renderer/API rewrite is landed or isolated.
 - Wiki context command: `bin/autoflow wiki query /Users/demoon2016/Documents/project/autoflow .autoflow --term "다이얼로그 레이어 깜박임" --term "dialog layer flicker" --term "af-dialog-content" --term "workflow-pin-layer overlay" --term "apps/desktop/src/components/ui/dialog.tsx" --limit 8`.
 - Planning constraint: preserve the prior `prd_059` stale-first-frame/backdrop-class fix and `prd_043` layer behavior/focus/scrolling constraints; this ticket specifically targets flicker while a layer is already open during background board refresh.
 

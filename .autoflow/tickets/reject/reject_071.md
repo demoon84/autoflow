@@ -49,10 +49,11 @@
 - [x] `npm run desktop:check` 가 통과한다.
 
 ## Next Action
-- reject 처리됨: 이 티켓은 자동 재시도하지 않는다. `apps/desktop/src/renderer/main.tsx` 의 broad dirty rewrite 를 먼저 landing 하거나 current HEAD 기준의 좁은 diff 로 분리한 뒤, 필요하면 새 티켓/수동 requeue 로 `setup-required-panel` 상단 아이콘 제거만 다시 실행한다.
+- retry limit 도달: 이 티켓은 자동 재시도하지 않는다. `apps/desktop/src/renderer/main.tsx` 의 broad dirty rewrite 를 먼저 landing 하거나 current HEAD 기준의 좁은 diff 로 분리한 뒤, 필요하면 새 티켓/수동 requeue 로 `setup-required-panel` 상단 아이콘 제거만 다시 실행한다.
 
 ## Resume Context
 
+- Planner recovery status (2026-05-02T10:28:38+09:00): `start-plan.sh` 가 `max_retries_reached` / `retry_count=8` 로 skip했다. 기존 dirty-root evidence는 유지하되, 보드 판단은 retry limit에 따른 `needs_user` 주차로 정리한다.
 - 현재 상태 요약: 2026-05-01T13:19:22Z 확인 기준 PROJECT_ROOT 최신 `apps/desktop/src/renderer/main.tsx` 에서 `setup-required-panel` 제목 위 단독 `FolderPlus` 렌더는 없고, 설치 버튼 내부 `FolderPlus` / `Loader2` 는 유지된다. PROJECT_ROOT `npm run desktop:check` 는 exit 0 으로 통과했다.
 - 직전 작업: wiki query 로 `tickets/done/prd_073/prd_073.md` 의 정확한 상단 아이콘 제거 범위와 `tickets/done/prd_074/tickets_072.md` 의 related `setupRequired` sidebar 변경 이력을 재확인했다.
 - 재개 시 먼저 볼 것: ticket worktree `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_071` 는 여전히 `setup-required-panel` 이 없는 older `essential-empty` 구조이며 `npm run desktop:check` 는 exit 2 (`@mui/material/*` module resolution 오류) 로 실패한다. PROJECT_ROOT 의 `apps/desktop/src/renderer/main.tsx` 는 broad dirty diff (`680 insertions(+), 1316 deletions(-)`) 상태이므로 이 티켓 pass finalizer 로 staging 하면 unrelated same-file 변경이 섞인다.
@@ -60,6 +61,7 @@
 ## Notes
 
 - Created by planner (Plan AI) from tickets/done/prd_073/prd_073.md at 2026-04-30T22:13:37Z.
+- Planner recovery decision (2026-05-02T10:28:38+09:00): `start-plan.sh` emitted `max_retries_reached` for retry_count 8. Preserve the dirty-root blocker evidence, keep this reject parked as `needs_user`, and do not auto-requeue until the broad renderer rewrite is landed or isolated.
 - Planner recovery decision (2026-05-01T22:18:21+09:00): `./bin/autoflow wiki query . .autoflow --term '진행 빈 상태 화면 상단 아이콘 제거' --term 'setupRequired' --term 'FolderPlus' --term 'setup-required-panel' --term 'dirty_root stale worktree manual merge' --term 'apps/desktop/src/renderer/main.tsx' --term 'Wiki 섹션 미리보기 토글' --term 'cleanup_status=ok' --term 'finish-ticket-owner output contract' --term 'ticket-owner-smoke runner.7.id coordinator-shell-loop' --limit 12` surfaced `tickets/done/prd_073/prd_073.md`, `tickets/done/prd_074/tickets_072.md`, and `tickets/reject/reject_003.md`. Constraint: visible criteria are satisfied only inside PROJECT_ROOT's broad dirty renderer rewrite, while prior reject history shows repeated unsafe finalization/contract blockers. Keep this ticket blocked until the renderer rewrite is landed or an isolated current-head diff exists.
 - Planner auto-replan guard (2026-05-01T22:21:11+09:00): lowered this ticket's `Max Retries` to the current `Retry Count` because repeated retries are unsafe until the dirty-root precondition is resolved. This preserves the failure evidence and makes `start-plan.sh` skip this reject as `max_retries_reached`.
 - Wiki context: `bin/autoflow wiki query --term setupRequired --term FolderPlus --term setup-required-panel --term "desktop empty state" --term "apps/desktop/src/renderer/main.tsx" --limit 10` 는 `setup-required-panel` 자체의 직접 선례를 찾지 못했고, broad results 는 데스크톱 renderer 변경이 `apps/desktop/src/renderer/main.tsx` 중심으로 누적되어 있음을 보여줬다.
@@ -137,13 +139,13 @@
 
 ## Recovery State
 
-- Status: blocked
+- Status: needs_user
 - Detected By: owner-1
-- Failure Class: dirty_root
-- Evidence: PROJECT_ROOT `git diff --stat -- apps/desktop/src/renderer/main.tsx` reports `680 insertions(+), 1316 deletions(-)`; PROJECT_ROOT `setup-required-panel` starts directly with `<h2>` and `npm run desktop:check` passed at 2026-05-01T13:19:22Z. Ticket worktree `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_071` does not contain the current `setup-required-panel` branch, still has the older `essential-empty` install icon, and its `npm run desktop:check` exits 2 on missing `@mui/material/*` modules.
-- Planner Decision: Keep `tickets_071` blocked and suppress automatic replan at the current retry count. Do not auto-requeue or let Impl AI finalize from the stale worktree; the safe recovery path is to land or isolate the broader renderer rewrite first, then replay only the `setup-required-panel` top-icon removal from current HEAD.
+- Failure Class: retry_limit
+- Evidence: `scripts/start-plan.sh` emitted `replan_skipped.2.reason=max_retries_reached` with `retry_count=8`; PROJECT_ROOT `git diff --stat -- apps/desktop/src/renderer/main.tsx` reports `680 insertions(+), 1316 deletions(-)`; PROJECT_ROOT `setup-required-panel` starts directly with `<h2>` and `npm run desktop:check` passed at 2026-05-01T13:19:22Z. Ticket worktree `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_071` does not contain the current `setup-required-panel` branch, still has the older `essential-empty` install icon, and its `npm run desktop:check` exits 2 on missing `@mui/material/*` modules.
+- Planner Decision: Keep `tickets_071` parked at retry limit and suppress automatic replan. Do not auto-requeue or let Impl AI finalize from the stale worktree; the safe recovery path is to land or isolate the broader renderer rewrite first, then replay only the `setup-required-panel` top-icon removal from current HEAD.
 - Owner Resume Instruction: Do not pass/finalize this ticket from the current worktree. After PROJECT_ROOT's broad `apps/desktop/src/renderer/main.tsx` rewrite is landed or isolated, replay this ticket from current HEAD as a narrow `setup-required-panel` top-icon removal diff and rerun `npm run desktop:check`.
-- Last Recovery At: 2026-05-01T22:21:11+09:00
+- Last Recovery At: 2026-05-02T10:28:38+09:00
 
 ## Reject Reason
 

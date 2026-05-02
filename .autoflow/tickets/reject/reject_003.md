@@ -36,6 +36,16 @@
 - Worktree Commit:
 - Integration Status: pending
 
+## Recovery State
+
+- Status: needs_user
+- Detected By: planner
+- Failure Class: retry_limit
+- Evidence: `scripts/start-plan.sh` emitted `replan_skipped.1.reason=max_retries_reached` with `retry_count=10`; wiki context query on `cleanup_status=ok`, `finish-ticket-owner output contract`, and `ticket-owner-smoke runner.7.id coordinator-shell-loop` resurfaced `tickets/reject/reject_003.md`, `tickets/reject/verify_003.md`, `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`, and `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`.
+- Planner Decision: Do not auto-requeue this reject. The repeated failure is outside this ticket's renderer Allowed Paths and is blocked on runtime/smoke output contract and dependency-environment alignment.
+- Owner Resume Instruction: Do not claim or retry `tickets_003` from this reject. First create or complete separate runtime/dependency work that makes `finish-ticket-owner` emit `cleanup_status=ok` and restores the desktop TypeScript dependency environment, then reactivate the Wiki preview UI scope only with an explicit fresh ticket.
+- Last Recovery At: 2026-05-02T10:28:38+09:00
+
 ## Done When
 
 - [ ] Wiki 섹션 진입 직후 LogPreview 가 보이지 않고, 좌측 목록 + 검색 패널이 패널 전체 폭을 차지한다.
@@ -49,10 +59,11 @@
 - [ ] `bash tests/smoke/ticket-owner-smoke.sh` exit 0.
 
 ## Next Action
-- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다.
+- retry limit 도달: 이 reject는 자동 재시도하지 않는다. `cleanup_status=ok` finish 출력 계약과 desktop TypeScript dependency 환경을 별도 작업으로 먼저 해결한 뒤 명시적인 새 티켓으로만 재개한다.
 
 ## Resume Context
 
+- Planner recovery status (2026-05-02T10:28:38+09:00): `start-plan.sh` 가 `max_retries_reached` / `retry_count=10` 으로 이 reject를 skip했고, wiki query 는 `finish-ticket-owner` cleanup output contract가 반복 블로커임을 재확인했다. 현재 보드 판단은 `needs_user`이며 자동 재시도는 막는다.
 - 현재 상태 요약: worktree 에 `isWikiPreviewOpen` state, Wiki 이탈 시 닫힘 리셋, 결과 선택 시 자동 open, LogPreview 닫기 버튼, 선택 항목이 남은 닫힘 상태의 "미리보기 열기" 버튼, `.knowledge-preview-pane--hidden` CSS 가 있다. `cd apps/desktop && npx tsc --noEmit` 과 `cd apps/desktop && node scripts/check-syntax.mjs` 는 통과했다. `bash tests/smoke/ticket-owner-smoke.sh` 는 `runner.7.id=coordinator-shell-loop` 미검출로 실패했다.
 - 2026-05-01T17:35:00+09:00 owner-1 재확인:
   - Wiki 쿼리 재실행 결과 `tickets/done/prd_003/prd_003.md`, `tickets/done/prd_003/reject_003.md`, `tickets/done/prd_049/reject_049.md`, `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`, `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md` 를 재확인.
@@ -67,6 +78,7 @@
 ## Notes
 
 - 사용자 요청으로 done/prd_003/reject_003.md 를 todo 로 재활성 (2026-04-30). Retry 카운트 0 으로 리셋. 이전 시도/사유 기록은 archive 에 그대로 보존.
+- Planner recovery decision (2026-05-02T10:28:38+09:00): `start-plan.sh` max retry skip evidence and wiki results show the blocker is the runtime/smoke `cleanup_status=ok` contract plus dependency environment, not additional renderer UI scope. Keep this reject in `needs_user` and do not generate another automatic retry from it.
 
 - Runtime hydrated worktree dependency at 2026-04-29T21:48:01Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
 - 2026-04-29T22:05:00Z mini-plan by worker-1:
