@@ -11,7 +11,7 @@ terms:
   - "stale worktree"
   - "renderer rewrite"
 citations:
-  - "tickets/reject/reject_071.md"
+  - "tickets/done/prd_073/reject_071.md"
   - "tickets/done/prd_073/prd_073.md"
   - "tickets/done/prd_074/verify_072.md"
   - "tickets/done/prd_006/tickets_006.md"
@@ -25,7 +25,7 @@ citations:
 
 ## Citations
 
-- `tickets/reject/reject_071.md`
+- `tickets/done/prd_073/reject_071.md`
 - `tickets/done/prd_073/prd_073.md`
 - `tickets/done/prd_074/verify_072.md`
 - `tickets/done/prd_006/tickets_006.md`

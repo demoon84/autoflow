@@ -12,9 +12,9 @@ terms:
   - "current PROJECT_ROOT HEAD"
   - "out-of-scope typing preload"
 citations:
-  - "tickets/reject/reject_074.md"
-  - "tickets/reject/verify_074.md"
-  - "tickets/reject/verify_071.md"
+  - "tickets/done/prd_076/reject_074.md"
+  - "tickets/done/prd_076/verify_074.md"
+  - "tickets/done/prd_073/verify_071.md"
 ---
 
 # dirty-root-finalization-blockers-20260502
@@ -25,9 +25,9 @@ reject_071과 reject_074의 공통 결론은 dirty PROJECT_ROOT baseline과 tick
 
 ## Citations
 
-- `tickets/reject/reject_074.md`
-- `tickets/reject/verify_074.md`
-- `tickets/reject/verify_071.md`
+- `tickets/done/prd_076/reject_074.md`
+- `tickets/done/prd_076/verify_074.md`
+- `tickets/done/prd_073/verify_071.md`
 
 ## Source
 

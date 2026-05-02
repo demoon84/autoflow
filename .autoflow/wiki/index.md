@@ -83,6 +83,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
   - [[answers/recent-core-and-ui-refinements-20260502]] (`wiki/answers/recent-core-and-ui-refinements-20260502.md`)
   - [[answers/planner-worker-lifecycle-boundaries-20260502]] (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`)
   - [[answers/desktop-workflow-board-refinements-20260502]] (`wiki/answers/desktop-workflow-board-refinements-20260502.md`)
@@ -130,11 +131,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 103
-- Reject records: 5
-- Verifier logs: 327
+- Done tickets: 104
+- Reject records: 4
+- Verifier logs: 328
 - Conversation handoffs: 4
-- Last updated: 2026-05-02T10:16:26Z
+- Last updated: 2026-05-02T23:18:43Z
 
 ## Completed Tickets
 
@@ -169,3 +170,4 @@ Tickets, verification records, and logs remain authoritative.
 - [[sources/prd-091-handoff]] (반려 최대 재시도 오케스트레이터 처리 PRD)
 
 - [[sources/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
+urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))

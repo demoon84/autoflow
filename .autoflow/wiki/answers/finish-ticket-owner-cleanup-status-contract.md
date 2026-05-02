@@ -11,8 +11,8 @@ terms:
   - "reject_003"
   - "verify_003"
 citations:
-  - "tickets/reject/verify_003.md"
-  - "tickets/done/prd_003/reject_003.md"
+  - "tickets/done/prd_003/verify_003.20260502T133609Z.md"
+  - "tickets/done/prd_003/reject_003.20260502T133608Z.md"
 ---
 
 # finish-ticket-owner-cleanup-status-contract
@@ -23,8 +23,8 @@ citations:
 
 ## Citations
 
-- `tickets/reject/verify_003.md`
-- `tickets/done/prd_003/reject_003.md`
+- `tickets/done/prd_003/verify_003.20260502T133609Z.md`
+- `tickets/done/prd_003/reject_003.20260502T133608Z.md`
 
 ## Source
 

@@ -133,3 +133,14 @@
 
 ## Reject History
 - 2026-05-01T13:42:26Z | retry_count=1 | source=`tickets/reject/reject_074.md` | log=``logs/verifier_074_20260501_134047Z_fail.md`` | reason=dirty PROJECT_ROOT baseline blocks safe pass finalization: scoped flicker fix passes checks, but root allowed files depend on out-of-scope desktop typing/preload changes; requeue from current PROJECT_ROOT HEAD or broaden follow-up scope
+
+
+## Manual Resolution (auto-close)
+
+- Decided By: planner runner (start-plan.sh auto-close branch).
+- Outcome: manually_resolved.
+- Resolved At: 2026-05-02T13:36:32Z
+- Trigger: retry cap reached (Retry Count: 1 / Max Retries: 1); PRD verification command passed at PROJECT_ROOT.
+- Verification Command: npm --prefix apps/desktop run check
+- Project Root: /Users/demoon2016/Documents/project/autoflow
+- Notes: 자동 close 는 PRD 의 Verification Command 가 root 에서 통과한 신호만 사용한다. 코드 마커 단위 또는 시각 회귀 확인은 다음 LLM tick 또는 사용자 수동 검증으로 보강할 수 있다.

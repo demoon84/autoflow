@@ -180,3 +180,14 @@
 - Continuation Suppressed: true
 - Last Event: rejected
 - Last Progress Fingerprint: 1224066823
+
+
+## Manual Resolution (auto-close)
+
+- Decided By: planner runner (start-plan.sh auto-close branch).
+- Outcome: manually_resolved.
+- Resolved At: 2026-05-02T13:36:24Z
+- Trigger: retry cap reached (Retry Count: 8 / Max Retries: 8); PRD verification command passed at PROJECT_ROOT.
+- Verification Command: npm run desktop:check
+- Project Root: /Users/demoon2016/Documents/project/autoflow
+- Notes: 자동 close 는 PRD 의 Verification Command 가 root 에서 통과한 신호만 사용한다. 코드 마커 단위 또는 시각 회귀 확인은 다음 LLM tick 또는 사용자 수동 검증으로 보강할 수 있다.

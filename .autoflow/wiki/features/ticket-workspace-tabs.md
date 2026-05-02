@@ -31,4 +31,5 @@ If a user's browser has stale keys from the previous multi-tab design (such as `
 ## Origins
 - **Initial Multi-Tab Design**: The workspace originally featured 7 distinct tabs to filter tickets by status (`tickets/done/prd_011/tickets_011.md`).
 - **Simplification**: The tabs were reduced to just PRD and Issued Tickets to streamline the interface and present a holistic view of all issued work (`tickets/done/prd_019/tickets_019.md`).
-- **Inbox Addition**: The Inbox tab was later added beside PRD for read-only memo intake review while preserving the issued-ticket tab behavior (`tickets/done/prd_030/prd_030.md`).
+- **Inbox Addition**: The Inbox tab was later added beside PRD for read-only order intake review while preserving the issued-ticket tab behavior (`tickets/done/prd_030/prd_030.md`).
+

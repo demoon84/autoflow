@@ -10,7 +10,7 @@ terms:
   - "verify_003"
   - "runtime log scope finish contract"
 citations:
-  - "tickets/reject/verify_003.md"
+  - "tickets/done/prd_003/verify_003.20260502T133609Z.md"
   - "wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md"
   - "wiki/answers/finish-ticket-owner-cleanup-status-contract.md"
 ---
@@ -23,7 +23,7 @@ citations:
 
 ## Citations
 
-- `tickets/reject/verify_003.md`
+- `tickets/done/prd_003/verify_003.20260502T133609Z.md`
 - `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`
 - `wiki/answers/finish-ticket-owner-cleanup-status-contract.md`
 

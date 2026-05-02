@@ -1,9 +1,16 @@
 ---
-id: memo_054
+id: memo_075
 title: 데스크톱 윈도우 가로 최소 폭 1200px 보장
-status: inbox
+status: archived-duplicate
 created: 2026-05-01
+archived: 2026-05-02
+duplicate_of: tickets/done/prd_109/memo_070.md
+related_prd: tickets/done/prd_109/prd_109.md
 ---
+
+## Planner Note
+
+- 이 메모는 `memo_070` → `prd_109` → `tickets_107` 로 이미 완료된 작업의 중복본이다. 결과: `apps/desktop/src/main.js:275` 에 `minWidth: 1200` 적용 완료. 별도 PRD 생성 없이 done 으로 아카이브한다.
 
 ## Request
 

@@ -14,9 +14,9 @@ terms:
   - "reject_071"
   - "current PROJECT_ROOT HEAD"
 citations:
-  - "tickets/reject/reject_074.md"
-  - "tickets/reject/reject_071.md"
-  - "tickets/reject/verify_074.md"
+  - "tickets/done/prd_076/reject_074.md"
+  - "tickets/done/prd_073/reject_071.md"
+  - "tickets/done/prd_076/verify_074.md"
 ---
 
 # open-layer-flicker-finalization-blocker-20260501
@@ -27,9 +27,9 @@ citations:
 
 ## Citations
 
-- `tickets/reject/reject_074.md`
-- `tickets/reject/reject_071.md`
-- `tickets/reject/verify_074.md`
+- `tickets/done/prd_076/reject_074.md`
+- `tickets/done/prd_073/reject_071.md`
+- `tickets/done/prd_076/verify_074.md`
 
 ## Source
 

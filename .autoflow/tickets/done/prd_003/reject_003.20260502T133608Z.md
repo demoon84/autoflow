@@ -193,3 +193,14 @@
 - 관련 확인: `tickets/reject/reject_003.md` 가 현재 보드의 최상위 관련 결과이며, `tickets/done/prd_003/prd_003.md` 는 여전히 UI 요구사항 기준이다. `wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md` 는 반복 블로커가 `cleanup_status=ok` finish 출력 계약임을 확인한다.
 - Runtime 결과: `scripts/start-plan.sh` 는 `status=idle`, `reason=no_actionable_plan_input` 을 반환했고, 이 reject 는 `max_retries_reached`, `retry_count=10` 으로 skip 됐다.
 - Planner 판단: 이번 턴에서는 이 reject 로 새 todo 를 만들지 않았다. 다음 actionable work 는 `tickets_003` 자동 재시도가 아니라 runtime/smoke 계약 또는 dependency 환경 블로커를 다루는 별도 planner input 이어야 한다.
+
+
+## Manual Resolution (auto-close)
+
+- Decided By: planner runner (start-plan.sh auto-close branch).
+- Outcome: manually_resolved.
+- Resolved At: 2026-05-02T13:36:08Z
+- Trigger: retry cap reached (Retry Count: 10 / Max Retries: 10); PRD verification command passed at PROJECT_ROOT.
+- Verification Command: cd apps/desktop && npx tsc --noEmit && node scripts/check-syntax.mjs && cd ../.. && bash tests/smoke/ticket-owner-smoke.sh
+- Project Root: /Users/demoon2016/Documents/project/autoflow
+- Notes: 자동 close 는 PRD 의 Verification Command 가 root 에서 통과한 신호만 사용한다. 코드 마커 단위 또는 시각 회귀 확인은 다음 LLM tick 또는 사용자 수동 검증으로 보강할 수 있다.

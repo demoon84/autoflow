@@ -1190,6 +1190,306 @@ find_replannable_reject() {
   return 1
 }
 
+ticket_at_max_retries() {
+  local file="$1"
+  local rc mr
+
+  [ -f "$file" ] || return 1
+  rc="$(ticket_retry_count "$file")"
+  mr="$(ticket_max_retries "$file")"
+  [ "$rc" -ge "$mr" ]
+}
+
+list_max_retried_rejects() {
+  local file
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if ticket_at_max_retries "$file"; then
+      printf '%s\n' "$file"
+    fi
+  done < <(list_reject_ticket_files)
+}
+
+extract_ticket_prd_key() {
+  local file="$1"
+
+  [ -f "$file" ] || return 0
+  extract_scalar_field_in_section "$file" "Ticket" "PRD Key" \
+    | tr -d '[:space:]' \
+    | head -n 1
+}
+
+prd_file_for_reject() {
+  local prd_key="$1"
+  local candidate
+
+  [ -n "$prd_key" ] || return 1
+
+  candidate="${BOARD_ROOT}/tickets/done/${prd_key}/${prd_key}.md"
+  if [ -f "$candidate" ]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  candidate="${BOARD_ROOT}/tickets/backlog/${prd_key}.md"
+  if [ -f "$candidate" ]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  return 1
+}
+
+extract_prd_verification_command() {
+  local prd_file="$1"
+
+  [ -f "$prd_file" ] || return 0
+  awk '
+    /^## Verification/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*-[[:space:]]*Command[[:space:]]*:/ {
+      sub(/^[[:space:]]*-[[:space:]]*Command[[:space:]]*:[[:space:]]*/, "", $0)
+      gsub(/^`+|`+$/, "", $0)
+      print $0
+      exit
+    }
+  ' "$prd_file"
+}
+
+reject_auto_close_enabled() {
+  case "${AUTOFLOW_REJECT_AUTO_CLOSE:-on}" in
+    0|off|OFF|false|FALSE|disabled|DISABLED)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+reject_auto_close_timeout_seconds() {
+  local raw="${AUTOFLOW_REJECT_AUTO_CLOSE_TIMEOUT_SECONDS:-300}"
+
+  raw="${raw//[^0-9]/}"
+  if [ -z "$raw" ]; then
+    raw="300"
+  fi
+
+  printf '%s' "$((10#$raw))"
+}
+
+run_verification_command_for_auto_close() {
+  local cmd="$1"
+  local timeout_s
+  local rc=0
+
+  [ -n "$cmd" ] || return 1
+
+  timeout_s="$(reject_auto_close_timeout_seconds)"
+
+  if command -v gtimeout >/dev/null 2>&1; then
+    ( cd "$PROJECT_ROOT" && gtimeout "${timeout_s}s" bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
+  elif command -v timeout >/dev/null 2>&1; then
+    ( cd "$PROJECT_ROOT" && timeout "${timeout_s}s" bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
+  else
+    ( cd "$PROJECT_ROOT" && bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
+  fi
+
+  return $rc
+}
+
+archive_reject_companion_files() {
+  local reject_file="$1"
+  local target_dir="$2"
+  local id reject_dir companion target_companion stamp_suffix
+
+  id="$(extract_numeric_id "$reject_file")"
+  [ -n "$id" ] || return 0
+  reject_dir="$(dirname "$reject_file")"
+
+  while IFS= read -r companion; do
+    [ -n "$companion" ] || continue
+    [ -f "$companion" ] || continue
+    target_companion="${target_dir}/$(basename "$companion")"
+    if [ -e "$target_companion" ]; then
+      stamp_suffix="$(date -u +%Y%m%dT%H%M%SZ)"
+      target_companion="${target_dir}/$(basename "${companion%.md}").${stamp_suffix}.md"
+    fi
+    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$PROJECT_ROOT" mv "$companion" "$target_companion" 2>/dev/null \
+        || mv "$companion" "$target_companion"
+    else
+      mv "$companion" "$target_companion"
+    fi
+  done < <(find "$reject_dir" -maxdepth 1 -type f -name "verify_${id}*.md")
+}
+
+blocked_auto_recover_enabled() {
+  case "${AUTOFLOW_BLOCKED_AUTO_RECOVER:-on}" in
+    0|off|OFF|false|FALSE|disabled|DISABLED)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+list_blocked_inprogress_tickets() {
+  local file
+  local stage
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ -f "$file" ] || continue
+    stage="$(ticket_stage "$file" 2>/dev/null || true)"
+    if [ "$stage" = "blocked" ]; then
+      printf '%s\n' "$file"
+    fi
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+}
+
+ticket_failure_class() {
+  local file="$1"
+
+  [ -f "$file" ] || return 0
+  extract_scalar_field_in_section "$file" "Recovery State" "Failure Class" \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | head -n 1
+}
+
+cleanup_blocked_inprogress_verify_companions() {
+  local ticket_id="$1"
+  local inprogress_dir="${BOARD_ROOT}/tickets/inprogress"
+  local companion
+
+  [ -n "$ticket_id" ] || return 0
+  [ -d "$inprogress_dir" ] || return 0
+
+  while IFS= read -r companion; do
+    [ -n "$companion" ] || continue
+    [ -f "$companion" ] || continue
+    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$PROJECT_ROOT" rm -f "$companion" >/dev/null 2>&1 \
+        || rm -f "$companion"
+    else
+      rm -f "$companion"
+    fi
+  done < <(find "$inprogress_dir" -maxdepth 1 -type f -name "verify_${ticket_id}*.md")
+}
+
+unblock_dirty_root_resolved_ticket() {
+  local ticket_file="$1"
+  local timestamp ticket_id target_file
+
+  [ -f "$ticket_file" ] || return 1
+  timestamp="$(now_iso)"
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  [ -n "$ticket_id" ] || return 1
+  target_file="${BOARD_ROOT}/tickets/todo/tickets_${ticket_id}.md"
+
+  if [ -e "$target_file" ] && [ "$target_file" != "$ticket_file" ]; then
+    return 1
+  fi
+
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "todo"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" ""
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" ""
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_section_block "$ticket_file" "Worktree" "- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: pending_claim"
+  replace_section_block "$ticket_file" "Goal Runtime" "- Status:
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count:
+- Time Used Seconds:
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed:
+- Last Event:
+- Last Progress Fingerprint:"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "resolved"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "dirty_root_cleared"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "PROJECT_ROOT no longer reports dirty Allowed Paths overlapping this ticket; auto-recovered at ${timestamp}."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Restart from todo with a fresh worktree based on current main; reuse the existing PRD, Allowed Paths, and Done When."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Resume from todo: PROJECT_ROOT is clean for this ticket's Allowed Paths; ticket-owner can claim this ticket and build a fresh worktree from current main."
+
+  append_note "$ticket_file" "Auto-recovery at ${timestamp}: dirty_project_root_conflict cleared; ticket returned to todo for fresh claim."
+
+  mkdir -p "$(dirname "$target_file")"
+  if [ "$ticket_file" != "$target_file" ]; then
+    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$PROJECT_ROOT" mv "$ticket_file" "$target_file" 2>/dev/null \
+        || mv "$ticket_file" "$target_file"
+    else
+      mv "$ticket_file" "$target_file"
+    fi
+  fi
+
+  cleanup_blocked_inprogress_verify_companions "$ticket_id"
+
+  printf '%s' "$target_file"
+}
+
+archive_reject_with_manual_resolution() {
+  local reject_file="$1"
+  local prd_key="$2"
+  local verification_cmd="$3"
+  local target_dir base_name target_file timestamp stamp_suffix
+  local rc mr
+
+  [ -f "$reject_file" ] || return 1
+  [ -n "$prd_key" ] || return 1
+
+  target_dir="${BOARD_ROOT}/tickets/done/${prd_key}"
+  mkdir -p "$target_dir"
+
+  base_name="$(basename "$reject_file")"
+  target_file="${target_dir}/${base_name}"
+  timestamp="$(now_iso)"
+
+  if [ -e "$target_file" ]; then
+    stamp_suffix="$(date -u +%Y%m%dT%H%M%SZ)"
+    target_file="${target_dir}/${base_name%.md}.${stamp_suffix}.md"
+  fi
+
+  rc="$(ticket_retry_count "$reject_file")"
+  mr="$(ticket_max_retries "$reject_file")"
+
+  cat >> "$reject_file" <<RESOLUTION
+
+## Manual Resolution (auto-close)
+
+- Decided By: planner runner (start-plan.sh auto-close branch).
+- Outcome: manually_resolved.
+- Resolved At: ${timestamp}
+- Trigger: retry cap reached (Retry Count: ${rc} / Max Retries: ${mr}); PRD verification command passed at PROJECT_ROOT.
+- Verification Command: ${verification_cmd}
+- Project Root: ${PROJECT_ROOT}
+- Notes: 자동 close 는 PRD 의 Verification Command 가 root 에서 통과한 신호만 사용한다. 코드 마커 단위 또는 시각 회귀 확인은 다음 LLM tick 또는 사용자 수동 검증으로 보강할 수 있다.
+RESOLUTION
+
+  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$PROJECT_ROOT" mv "$reject_file" "$target_file" 2>/dev/null \
+      || mv "$reject_file" "$target_file"
+  else
+    mv "$reject_file" "$target_file"
+  fi
+
+  archive_reject_companion_files "$reject_file" "$target_dir"
+
+  printf '%s' "$target_file"
+}
+
 plan_root_path() {
   if [ -d "${BOARD_ROOT}/tickets/plan" ]; then
     printf '%s/tickets/plan' "$BOARD_ROOT"
