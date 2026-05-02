@@ -1756,6 +1756,8 @@ pre {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .runner-page-summary {
@@ -1875,6 +1877,7 @@ pre {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .runner-row-selected {
@@ -2037,6 +2040,7 @@ pre {
   gap: 6px;
   flex: 0 0 auto;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .runner-icon-button {
@@ -2594,6 +2598,11 @@ pre {
   font-size: var(--font-size-label);
   line-height: 1.4;
   text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .ticket-workspace-layout {
