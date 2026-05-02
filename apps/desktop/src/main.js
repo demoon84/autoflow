@@ -1324,9 +1324,13 @@ function parseTokenUsageChunk(chunk, prior) {
       }
     }
 
-    const tokensUsedIdx = lower.indexOf("tokens used");
-    if (tokensUsedIdx >= 0) {
-      const after = clean.slice(tokensUsedIdx + "tokens used".length).replace(/,/g, "");
+    // Marker must be at the start of the line so ticket markdown fields
+    // (e.g. "- Tokens Used:") and wiki snippet text
+    // (e.g. "result.N.snippet.text=- Tokens Used: ... 335739843")
+    // are not mistaken for adapter token reports.
+    const tokensUsedLineMatch = lower.match(/^\s*tokens\s+used\b/);
+    if (tokensUsedLineMatch) {
+      const after = clean.slice(tokensUsedLineMatch[0].length).replace(/,/g, "");
       const inlineMatch = after.match(/[0-9]+/);
       if (inlineMatch) {
         total += Number.parseInt(inlineMatch[0], 10);
@@ -1336,15 +1340,20 @@ function parseTokenUsageChunk(chunk, prior) {
       continue;
     }
 
-    if (lower.match(totalTokensMarkerPattern) || lower.includes("totaltokens")) {
+    if (
+      /^\s*total[_ -]?tokens\b/.test(lower) ||
+      /^\s*totaltokens\b/.test(lower) ||
+      /"total[_-]?tokens"\s*:\s*[0-9]/.test(lower)
+    ) {
       const tokenLineTotal = tokenUsageFromLine(lower);
       if (tokenLineTotal > 0) total += tokenLineTotal;
       continue;
     }
 
     if (
-      /(input|output|prompt|completion|cache|cached|reasoning)[_ -]?tokens/.test(lower) ||
-      /(input|output|prompt|completion|cache|cached|reasoning)tokens/.test(lower)
+      /^\s*(input|output|prompt|completion|cache|cached|reasoning)[_ -]?tokens\b/.test(lower) ||
+      /^\s*(input|output|prompt|completion|cache|cached|reasoning)tokens\b/.test(lower) ||
+      /"(input|output|prompt|completion|cache_creation_input|cache_read_input|cached_input|reasoning)[_-]?tokens"\s*:\s*[0-9]/.test(lower)
     ) {
       const tokenLineTotal = tokenUsageFromLine(lower);
       if (tokenLineTotal > 0) total += tokenLineTotal;

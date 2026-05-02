@@ -375,7 +375,13 @@ token_usage_from_file() {
         }
       }
 
-      if (lower ~ /tokens[[:space:]]+used/) {
+      # Plain-text markers must be at line start so ticket markdown fields
+      # (e.g. "- Tokens Used:") and wiki snippet text
+      # (e.g. "result.N.snippet.text=- Tokens Used: ... 335739843")
+      # are not mistaken for adapter token reports. JSON-style markers
+      # (`"total_tokens": NUM`) are matched separately by their quote prefix
+      # so structured stderr usage payloads still count.
+      if (lower ~ /^tokens[[:space:]]+used([[:space:]:=]|$)/) {
         value = number_after_marker(clean, "tokens used")
         if (value >= 0) {
           total += value
@@ -383,10 +389,19 @@ token_usage_from_file() {
         } else {
           waiting_for_token_count = 1
         }
-      } else if (lower ~ /total[_ -]?tokens/) {
+      } else if (lower ~ /^total[[:space:]_-]?tokens([[:space:]:=]|$)/) {
         value = number_after_marker(clean, "total_tokens")
         if (value < 0) {
           value = number_after_marker(clean, "total tokens")
+        }
+        if (value >= 0) {
+          total += value
+          reports += 1
+        }
+      } else if (lower ~ /"total[_-]?tokens"[[:space:]]*:[[:space:]]*[0-9]/) {
+        value = number_after_marker(clean, "\"total_tokens\"")
+        if (value < 0) {
+          value = number_after_marker(clean, "\"total-tokens\"")
         }
         if (value >= 0) {
           total += value
