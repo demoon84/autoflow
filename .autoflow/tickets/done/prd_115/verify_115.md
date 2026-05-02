@@ -36,8 +36,6 @@
 ### stdout
 
 ```text
-M .autoflow/tickets/inprogress/tickets_115.md
-M .autoflow/tickets/inprogress/verify_115.md
 M scaffold/board/reference/README.md
 M scaffold/board/reference/backlog.md
 M scaffold/board/reference/tickets-board.md

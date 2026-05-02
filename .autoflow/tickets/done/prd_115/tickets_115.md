@@ -119,4 +119,4 @@
 ## Result
 
 - Summary: autoflow 범주 정리 commit 반영 후 pass: 허용 경로 산출물 정리 완료, scaffold board 변경은 제외.
-- Remaining risk: 없음 (잔여 변경 없음으로 판단). 
+- Remaining risk: `scaffold/board/reference/README.md`, `scaffold/board/reference/backlog.md`, `scaffold/board/reference/tickets-board.md`는 Allowed Paths(`.autoflow/**` 등) 밖이므로 제외. 
