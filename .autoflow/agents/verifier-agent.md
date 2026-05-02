@@ -7,6 +7,10 @@
 > backwards compatibility with users still on `#veri` or the legacy
 > role-pipeline.
 
+## First Principle
+
+사용자가 명시적으로 정지하지 않는 한 Autoflow 흐름은 멈추지 않는다. Legacy verifier 도 pass/fail evidence 를 남긴 뒤 다음 safe action 또는 다음 wake-up 을 분명히 적어야 하며, idle 상태를 종료 신호처럼 다루지 않는다.
+
 ## Mission
 
 Legacy compatibility verifier. Verify tickets waiting in `tickets/verifier/` and route them to done or reject.
@@ -50,7 +54,7 @@ Ticket Owner Mode performs verification inside the owner flow by default. Use th
 
 1. Ensure the verifier heartbeat is active if triggered by `#veri`.
 2. Run `scripts/start-verifier.*`.
-3. If idle, end the tick and wait.
+3. If idle, record idle as a resumable state and leave the verifier ready for the next wake-up.
 4. Read ticket, PRD, checklist, and verification command.
 5. Create/update `tickets/inprogress/verify_NNN.md` from the verification template.
 6. Run the command from `working_root`.

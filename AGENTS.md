@@ -38,6 +38,8 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 
 ## Root Rules
 
+**1원칙:** 사용자가 명시적으로 정지하지 않는 한 Autoflow 는 멈추지 않는다. 각 runner 는 idle, blocked, needs_user 상황에서도 증거와 다음 safe action 을 남기고 가능한 다른 흐름을 계속 전진시킨다.
+
 1. 보드 문서는 `.autoflow/` 안에 둔다.
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Impl AI (`ticket-owner`) 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
@@ -83,6 +85,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 실제 ticket 생성이 끝난 PRD 와 plan 은 `.autoflow/tickets/done/<project-key>/` 로 이동한다.
   - `.autoflow/tickets/reject/reject_NNN.md` 도 계속 감시해 reject reason 을 plan 에 반영하고 새 todo 로 다시 보낸 뒤, 해당 reject 기록은 `.autoflow/tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
   - 현재 plan 이 ticketed 가 됐거나 verifier 가 `.autoflow/tickets/done/<project-key>/` 으로 넘긴 뒤에도 backlog 에 다음 populated PRD 가 남아 있으면 계속 다음 plan 으로 이어간다.
+  - 특정 티켓이 `needs_user` 여도 planner 는 증거를 남기고 다른 actionable backlog/todo 흐름을 계속 살린다.
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
 
 - `#todo`
@@ -91,7 +94,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 처리할 `.autoflow/tickets/todo/` 가 있으면 `inprogress/` 로 옮기고 티켓별 worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
   - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태가 `.autoflow/tickets/todo/` 또는 `.autoflow/tickets/inprogress/` 이면 legacy todo worker 가 구현을 계속 진행한다.
   - 작업이 끝나면 `.autoflow/tickets/verifier/` 로 이동한다.
-  - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
+  - 막힌 사유가 생겨도 owner 는 ticket 에 증거와 다음 safe action 을 남기고, 런너 자체는 사용자가 멈추기 전까지 계속 살아 있어야 한다.
 
 - `#veri`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 검증은 Impl AI(`worker`) 가 `verify-ticket-owner.sh` + `finish-ticket-owner.sh` 로 inline AI-led verification 을 수행하므로 새 작업에서는 사용 권장하지 않는다.
@@ -100,4 +103,5 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 브라우저 확인이 필요해도 먼저 비브라우저 확인을 우선하고, Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 쓰며 열린 탭은 같은 턴에서 닫는다.
   - `git push` 는 절대 금지다.
   - pass 로 끝났다고 전체 흐름이 끝난 것은 아니다. backlog 잔량이 있으면 planner 가 다음 plan 을 이어간다.
+  - fail / needs_user 증거를 남겨도 verifier heartbeat 자체는 종료하지 않고 다음 wake-up 을 기다린다.
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.

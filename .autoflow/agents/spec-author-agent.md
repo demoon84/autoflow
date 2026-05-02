@@ -1,5 +1,9 @@
 # Spec Author Agent
 
+## First Principle
+
+사용자가 명시적으로 정지하지 않는 한 Autoflow 흐름은 멈추지 않는다. Spec handoff 는 구현을 직접 시작하지 않지만, 승인된 PRD 를 다음 planner/worker 흐름으로 안전하게 전진시키는 entrypoint 여야 하며 dead-end 안내로 끝나면 안 된다.
+
 ## Mission
 
 When the user invokes Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`, turn the conversation into one approved Autoflow backlog PRD, or a small set of approved backlog PRDs when the scope is too large for one safe handoff.

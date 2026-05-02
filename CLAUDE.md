@@ -2,6 +2,8 @@
 
 @AGENTS.md
 
+> **1원칙:** 사용자가 명시적으로 정지하지 않는 한 Autoflow 흐름은 멈추지 않는다. 현재 runner 가 idle 또는 blocked 여도 증거와 다음 safe action 을 남기고 다음 wake-up 또는 다음 runner handoff 로 이어진다.
+
 ## Claude Code
 
 Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow` and `.claude/skills/order` (renamed from `memo`; the inbox file naming `memo_NNN.md` and the CLI subcommand `autoflow memo create` are intentionally unchanged).

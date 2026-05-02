@@ -2,6 +2,8 @@
 
 `Autoflow` 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트를 위한 로컬 작업 하네스다.
 
+> **1원칙:** 사용자가 명시적으로 정지하지 않는 한 Autoflow 는 멈추지 않는다. runner 는 idle, blocked, needs_user 상태에서도 증거와 다음 safe action 을 남기고 가능한 다른 흐름을 계속 전진시킨다.
+
 현재 패키지는 공개 배포 가능한 `repo template + installer CLI` 방식으로, 프로젝트 안에 파일 기반 AI 작업 보드를 설치한다. Autoflow 가 직접 코딩 모델이 되는 것이 아니라, 여러 local agent runner 가 안전하게 같은 보드 큐를 소비할 수 있는 운영 레이어를 제공한다.
 
 핵심 목표는 이것이다.
