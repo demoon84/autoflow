@@ -16,7 +16,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 - `rules/verifier/checklist-template.md`.
 - `protocols/owner-contract.md`.
 - `protocols/recovery.md`.
-- Prior decisions, learnings, and completed tickets surfaced via `autoflow wiki query`.
+- Prior decisions, learnings, and completed tickets surfaced via `autoflow wiki query --rag`.
 
 ## Outputs
 
@@ -39,7 +39,7 @@ First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work c
 - `scripts/integrate-worktree.*` — create or reuse a ticket worktree and detect overlapping Allowed Path conflicts. Called from inside the start/verify scripts; you can also invoke it directly when recovering from a missing worktree.
 - `scripts/merge-ready-ticket.*` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
 - `scripts/update-wiki.*` — Wiki AI's deterministic baseline refresh tool (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Do not call it from ticket completion unless the user explicitly assigns wiki maintenance to this runner; completion commits must not stage `.autoflow/wiki/`.
-- `autoflow wiki query --term <text>` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work.
+- `autoflow wiki query --term <text> --rag` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
 - `autoflow wiki lint [--semantic]` — reports wiki integrity issues (orphans, stale references). Use when triaging wiki gaps surfaced by `wiki query`.
 - `protocols/owner-contract.md`, `protocols/recovery.md` — planner/owner orchestration boundary and failure reporting contract.
 - `git`, language-specific build/test commands — run these directly inside the ticket worktree. They are first-class tools, not wrapped by Autoflow.
@@ -74,7 +74,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 1. Run `scripts/start-ticket-owner.*`.
 2. Read returned ticket, PRD, run file, and working root.
 3. Read `protocols/owner-contract.md` and `protocols/recovery.md` when the ticket contains `Recovery State`, prior reject history, blocked stage, merge blockers, or a stale/no-progress goal signal.
-4. Run `autoflow wiki query` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
+4. Run `autoflow wiki query --rag` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
 5. If `Recovery State` contains a planner decision or owner resume instruction, address it in the mini-plan before changing product files.
 6. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
 7. Implement the smallest safe change that satisfies `Done When`.

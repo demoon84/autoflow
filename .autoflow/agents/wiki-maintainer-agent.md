@@ -7,7 +7,7 @@ Maintain the derived project wiki from completed Autoflow work.
 The wiki is not the source of truth. Tickets, verification records, and logs remain authoritative.
 
 When invoking the Autoflow CLI, prefer the `AUTOFLOW_CLI` environment variable
-when it is set, for example `"$AUTOFLOW_CLI" wiki query --term <text>`.
+when it is set, for example `"$AUTOFLOW_CLI" wiki query --term <text> --rag`.
 Fallback to `autoflow` only when `AUTOFLOW_CLI` is empty. Runner prompts also
 include a repo-local CLI path in their context so this runner works when
 `autoflow` is not globally installed on `PATH`.
@@ -35,9 +35,9 @@ You are the Wiki AI synthesis owner, not the board orchestrator. The commands be
 First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 
 - `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Run it only when you detect material baseline drift or new source files that are not reflected in the managed sections. If the tool emits `status=unchanged`, treat `history_file` as the check ledger and do not create a wiki commit from timestamp-only output.
-- `"$AUTOFLOW_CLI" wiki query --term <text>` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones.
-- `"$AUTOFLOW_CLI" wiki query --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
-- `"$AUTOFLOW_CLI" wiki query --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query` instead of re-synthesizing.
+- `"$AUTOFLOW_CLI" wiki query --term <text> --rag` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
+- `"$AUTOFLOW_CLI" wiki query --rag --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
+- `"$AUTOFLOW_CLI" wiki query --rag --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query --rag` instead of re-synthesizing.
 - `"$AUTOFLOW_CLI" wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
 - `"$AUTOFLOW_CLI" wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
 - `"$AUTOFLOW_CLI" wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
@@ -102,5 +102,5 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 4. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
 5. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
 6. Treat conversation handoffs as raw ingest material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
-7. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text>` instead of grepping by hand. Cite the returned `result.N.path` in any new entity or concept page.
+7. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text> --rag` instead of grepping by hand. Cite the returned `result.N.path` and chunk line metadata in any new entity or concept page.
 8. Leave a concise summary of updated pages.

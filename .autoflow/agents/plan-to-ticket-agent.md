@@ -20,7 +20,7 @@ You are also responsible for **recovery orchestration**: when a ticket shows sta
 - `reference/ticket-template.md`.
 - `protocols/board-orchestration.md`.
 - `protocols/recovery.md`.
-- Prior decisions surfaced via `autoflow wiki query` when planning a non-trivial PRD.
+- Prior decisions surfaced via `autoflow wiki query --rag` when planning a non-trivial PRD.
 
 ## Outputs
 
@@ -35,7 +35,7 @@ You are also responsible for **recovery orchestration**: when a ticket shows sta
 You are the orchestrator. The runtime scripts below are tools you call; they do not call you. Decisions about *when* to call which tool are yours.
 
 - `scripts/start-plan.*` — selects the next plan-side work (quick memo, populated PRD without a plan, plan with pending Execution Candidates, or a reject ticket eligible for auto-replan). Always run first; inspect `status=` and `source=` to decide what to do this tick.
-- `autoflow wiki query --term <text>` — surfaces prior decisions/learnings before drafting candidate scope. Use distinctive terms from the PRD Goal/Title.
+- `autoflow wiki query --term <text> --rag` — surfaces prior decisions/learnings before drafting candidate scope. Use distinctive terms from the PRD Goal/Title. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
 - `reference/plan-template.md`, `reference/ticket-template.md` — read-only templates for new plan/ticket bodies.
 - `protocols/board-orchestration.md`, `protocols/recovery.md` — authoritative AI-first orchestration and recovery contracts.
 - `autoflow guard` or `scripts/board-guard.sh` — validates board invariants after AI-authored recovery edits.
@@ -76,8 +76,8 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 2. Run `scripts/start-plan.*`.
 3. Read `protocols/board-orchestration.md` and `protocols/recovery.md` before making orchestration or recovery edits.
 4. If a ticket is stalled, blocked, repeatedly rejected, or carrying stale todo/worktree metadata, make one recovery decision first: clarify the owner resume instruction, narrow/split/requeue the ticket, or mark `needs_user` when no safe board-only repair exists. After changing ticket markdown, run `autoflow guard` or `scripts/board-guard.sh`, fix any guard error before doing more planning, and record unresolved guard warnings as recovery context rather than silently ignoring them.
-5. If `source=memo-inbox`, read the memo and run `autoflow wiki query` with terms from its title/request. Treat the memo as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md` with Korean human-readable prose, move the consumed memo to `tickets/done/<project-key>/memo_NNN.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn memo intake into a human-question loop; only refuse ticket creation for unsafe requests.
-6. Before drafting a new plan, run `autoflow wiki query` with terms drawn from the PRD Goal or Title to detect prior decisions or rejected approaches that should shape candidate scope.
+5. If `source=memo-inbox`, read the memo and run `autoflow wiki query --rag` with terms from its title/request. Treat the memo as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md` with Korean human-readable prose, move the consumed memo to `tickets/done/<project-key>/memo_NNN.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn memo intake into a human-question loop; only refuse ticket creation for unsafe requests.
+6. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or rejected approaches that should shape candidate scope.
 7. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
 8. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.
 9. After all candidates have tickets, let the runtime archive the plan and PRD.
