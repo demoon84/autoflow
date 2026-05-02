@@ -2596,19 +2596,6 @@ pre {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
 }
 
-.ticket-workspace-tab-trigger .af-badge {
-  height: 18px;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.ticket-workspace-tab-trigger[data-state="active"] .af-badge-secondary {
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
-}
-
 .ticket-workspace-tab-copy {
   min-width: 160px;
   max-width: 340px;

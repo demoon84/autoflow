@@ -5152,9 +5152,6 @@ function TicketKanban({
                   onClick={() => setActiveWorkspaceTab(tab.key)}
                 >
                   <span>{tab.label}</span>
-                  <Badge variant="secondary">
-                    {tab.key === "prd" ? prdFiles.length : tab.key === "inbox" ? inboxFiles.length : issuedFiles.length}
-                  </Badge>
                 </Button>
               ))}
             </div>
