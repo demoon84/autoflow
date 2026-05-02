@@ -3576,10 +3576,12 @@ pre {
 }
 
 .ai-progress-track {
-  --progress-value: 0%;
+  --progress-scale: 0;
   --stage-count: 4;
-  --progress-track-inset: calc(50% / var(--stage-count));
-  --progress-track-width: calc(100% - (100% / var(--stage-count)));
+  --progress-dot-size: 15px;
+  --progress-track-side-padding: clamp(8px, 2.2vw, 18px);
+  --progress-track-line-inset: calc(var(--progress-track-side-padding) + (var(--progress-dot-size) / 2));
+  --progress-track-width: calc(100% - (var(--progress-track-line-inset) * 2));
 
   position: relative;
   display: grid;
@@ -3588,6 +3590,7 @@ pre {
   column-gap: 0;
   min-width: 0;
   overflow: visible;
+  padding-inline: var(--progress-track-side-padding);
   padding-top: 14px;
 }
 
@@ -3596,20 +3599,21 @@ pre {
   display: block;
   position: absolute;
   top: 20px;
-  left: var(--progress-track-inset);
+  left: var(--progress-track-line-inset);
   height: 3px;
   border-radius: 999px;
   content: "";
 }
 
 .ai-progress-track::before {
-  right: var(--progress-track-inset);
+  right: var(--progress-track-line-inset);
   background: var(--border);
 }
 
 .ai-progress-track::after {
-  width: var(--progress-value);
-  max-width: var(--progress-track-width);
+  width: var(--progress-track-width);
+  transform: scaleX(var(--progress-scale));
+  transform-origin: left center;
   background: var(--primary);
 }
 
@@ -3631,6 +3635,16 @@ pre {
   font-weight: 430;
   line-height: 1.15;
   text-align: center;
+}
+
+.ai-progress-step:first-child {
+  justify-items: start;
+  text-align: left;
+}
+
+.ai-progress-step:last-child {
+  justify-items: end;
+  text-align: right;
 }
 
 .ai-progress-step span:last-child {

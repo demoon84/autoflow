@@ -5684,8 +5684,9 @@ function AiProgressRow({
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
   const stageCount = Math.max(1, flowStages.length);
-  const progressFillPercent = stageIndex > 0 ? (stageIndex / stageCount) * 100 : 0;
-  const progressValue = progressFillPercent <= 0 ? "0px" : `${progressFillPercent}%`;
+  const progressStepCount = Math.max(1, stageCount - 1);
+  const progressFillPercent = stageIndex > 0 ? (stageIndex / progressStepCount) * 100 : 0;
+  const progressScale = String(Math.max(0, Math.min(1, progressFillPercent / 100)));
   const status = runner.stateStatus || "idle";
   const role = (runner.role || "").toLowerCase();
   const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
@@ -5838,7 +5839,7 @@ function AiProgressRow({
       {!hideProgressTrack ? (
         <div
           className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
-          style={{ "--progress-value": progressValue, "--stage-count": String(flowStages.length) } as React.CSSProperties}
+          style={{ "--progress-scale": progressScale, "--stage-count": String(flowStages.length) } as React.CSSProperties}
           aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
         >
           {flowStages.map((step) => {
