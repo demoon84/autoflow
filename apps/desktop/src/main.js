@@ -272,7 +272,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 1040,
+    minWidth: 1200,
     minHeight: 720,
     title: "코덱스 작업 흐름",
     icon: appIconPath,
