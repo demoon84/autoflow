@@ -181,7 +181,7 @@ PROJECT_ROOT
 - `autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy
 - `autoflow wiki update [project-root] [board-dir-name] [--dry-run]`
 - `autoflow wiki lint [project-root] [board-dir-name] [--semantic]`
-- `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth]`
+- `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--rag] [--synth]`
 - `autoflow runners list [project-root] [board-dir-name]`
 - `autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...`
 - `autoflow runners remove <runner-id> [project-root] [board-dir-name]`
@@ -246,9 +246,14 @@ heartbeat to layer AI synthesis (`autoflow wiki query --synth`,
 environment variable have been removed; `wiki` is the single source of AI
 wiki synthesis.
 `autoflow wiki update` remains available for manual rebuilds.
-`autoflow wiki query --synth` adds a grounded LLM summary on top of grep
-results, and `autoflow wiki lint --semantic` adds semantic findings on top of
-the deterministic lint output. When no wiki-capable adapter is configured, both
+`autoflow wiki query` defaults to file-level grep-style retrieval. Add `--rag`
+to retrieve overlapping line chunks instead, with `result.N.chunk_start_line`
+and `result.N.chunk_end_line` metadata for higher-signal planner/worker
+context. `AUTOFLOW_WIKI_RAG_CHUNK_LINES` and
+`AUTOFLOW_WIKI_RAG_CHUNK_OVERLAP` tune chunk size. `autoflow wiki query
+--synth` adds a grounded LLM summary on top of retrieved results, and
+`autoflow wiki lint --semantic` adds semantic findings on top of the
+deterministic lint output. When no wiki-capable adapter is configured, both
 commands keep the base output and report `*_status=skipped_no_adapter`.
 
 `autoflow metrics` derives progress numbers from the board and verifier logs:

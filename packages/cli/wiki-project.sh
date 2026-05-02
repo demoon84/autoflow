@@ -10,7 +10,7 @@ usage() {
 Usage:
   wiki-project.sh update [project-root] [board-dir-name] [--dry-run]
   wiki-project.sh lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
-  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
+  wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--rag] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
   wiki-project.sh ingest [project-root] [board-dir-name] <source-file> [--slug SLUG] [--no-summary] [--runner RUNNER_ID]
   wiki-project.sh retrofit-frontmatter [project-root] [board-dir-name] [--dry-run] [--page BOARD_RELATIVE_PATH] [--allow-adapter] [--runner RUNNER_ID]
 
@@ -34,6 +34,8 @@ Environment:
   AUTOFLOW_WIKI_INGEST_PROMPT_BYTES  Byte cap for the ingest adapter prompt (default 16384).
   AUTOFLOW_WIKI_INGEST_DEBUG_PROMPT_PATH
                                      When set, the assembled ingest prompt is copied to that path.
+  AUTOFLOW_WIKI_RAG_CHUNK_LINES      Line count per chunk for `wiki query --rag` (default 32).
+  AUTOFLOW_WIKI_RAG_CHUNK_OVERLAP    Overlapping line count between RAG chunks (default 6).
   AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES
                                      Byte cap for the optional retrofit-frontmatter adapter prompt
                                      when --allow-adapter is passed (default 4096). The default
@@ -492,6 +494,85 @@ wiki_file_checksum() {
   else
     cksum "$file" | awk '{ print $1 ":" $2 }'
   fi
+}
+
+wiki_query_rag_chunk_lines() {
+  local chunk_lines="${AUTOFLOW_WIKI_RAG_CHUNK_LINES:-32}"
+
+  if ! [[ "$chunk_lines" =~ ^[0-9]+$ ]] || [ "$chunk_lines" -lt 4 ]; then
+    chunk_lines="32"
+  fi
+
+  printf '%s' "$chunk_lines"
+}
+
+wiki_query_rag_chunk_overlap() {
+  local chunk_lines="$1"
+  local overlap="${AUTOFLOW_WIKI_RAG_CHUNK_OVERLAP:-6}"
+
+  if ! [[ "$overlap" =~ ^[0-9]+$ ]]; then
+    overlap="6"
+  fi
+  if [ "$overlap" -ge "$chunk_lines" ]; then
+    overlap="$((chunk_lines / 4))"
+  fi
+
+  printf '%s' "$overlap"
+}
+
+wiki_query_score_file() {
+  local file="$1"
+  local terms_file="$2"
+  local file_score=0 hits term
+
+  while IFS= read -r term; do
+    [ -n "$term" ] || continue
+    hits="$(grep -Fic -- "$term" "$file" 2>/dev/null || printf '0')"
+    hits="${hits//[!0-9]/}"
+    [ -n "$hits" ] || hits=0
+    file_score=$((file_score + hits))
+  done < "$terms_file"
+
+  printf '%s' "$file_score"
+}
+
+wiki_query_score_chunks() {
+  local candidates="$1"
+  local terms_file="$2"
+  local scores="$3"
+  local chunk_lines="$4"
+  local chunk_overlap="$5"
+  local file line_count start end next_start chunk_file chunk_score
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    line_count="$(awk 'END { print NR }' "$file" 2>/dev/null || printf '0')"
+    line_count="${line_count//[!0-9]/}"
+    [ -n "$line_count" ] || line_count=0
+    [ "$line_count" -gt 0 ] || continue
+
+    start=1
+    while [ "$start" -le "$line_count" ]; do
+      end="$((start + chunk_lines - 1))"
+      if [ "$end" -gt "$line_count" ]; then
+        end="$line_count"
+      fi
+
+      chunk_file="$(autoflow_mktemp)"
+      sed -n "${start},${end}p" "$file" > "$chunk_file"
+      chunk_score="$(wiki_query_score_file "$chunk_file" "$terms_file")"
+      if [ "$chunk_score" -gt 0 ]; then
+        printf '%s\t%s\t%s\t%s\t%s\n' "$chunk_score" "$file" "$start" "$end" "$chunk_file" >> "$scores"
+      fi
+
+      [ "$end" -ge "$line_count" ] && break
+      next_start="$((end - chunk_overlap + 1))"
+      if [ "$next_start" -le "$start" ]; then
+        next_start="$((start + 1))"
+      fi
+      start="$next_start"
+    done
+  done < "$candidates"
 }
 
 hash_stream() {
@@ -1950,9 +2031,11 @@ run_query() {
   local synth_mode="${8:-false}"
   local synth_runner_id="${9:-}"
   local save_as_slug="${10:-}"
+  local rag_mode="${11:-false}"
 
   local board_root wiki_root candidates scores sorted synth_results
   local term_count=0 result_count=0 emitted=0
+  local chunk_lines chunk_overlap
 
   board_root="$(board_root_path "$project_root" "$board_dir_name")"
   wiki_root="${board_root}/wiki"
@@ -1996,23 +2079,23 @@ run_query() {
     fi
   fi
 
-  while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    local file_score=0 hits term
-    while IFS= read -r term; do
-      [ -n "$term" ] || continue
-      hits="$(grep -Fic -- "$term" "$file" 2>/dev/null || printf '0')"
-      hits="${hits//[!0-9]/}"
-      [ -n "$hits" ] || hits=0
-      file_score=$((file_score + hits))
-    done < "$terms_file"
-    if [ "$file_score" -gt 0 ]; then
-      printf '%s\t%s\n' "$file_score" "$file" >> "$scores"
-    fi
-  done < "$candidates"
+  chunk_lines="$(wiki_query_rag_chunk_lines)"
+  chunk_overlap="$(wiki_query_rag_chunk_overlap "$chunk_lines")"
+  if [ "$rag_mode" = "true" ]; then
+    wiki_query_score_chunks "$candidates" "$terms_file" "$scores" "$chunk_lines" "$chunk_overlap"
+  else
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      local file_score
+      file_score="$(wiki_query_score_file "$file" "$terms_file")"
+      if [ "$file_score" -gt 0 ]; then
+        printf '%s\t%s\n' "$file_score" "$file" >> "$scores"
+      fi
+    done < "$candidates"
+  fi
 
   if [ -s "$scores" ]; then
-    sort -t$'\t' -k1,1 -nr "$scores" > "$sorted"
+    sort -t$'\t' -k1,1nr -k2,2 -k3,3n "$scores" > "$sorted"
   fi
 
   result_count="$(count_lines "$sorted")"
@@ -2026,6 +2109,13 @@ run_query() {
   printf 'include_tickets=%s\n' "$include_tickets"
   printf 'include_handoffs=%s\n' "$include_handoffs"
   printf 'with_snippets=%s\n' "$with_snippets"
+  if [ "$rag_mode" = "true" ]; then
+    printf 'retrieval_mode=rag\n'
+    printf 'rag_chunk_lines=%s\n' "$chunk_lines"
+    printf 'rag_chunk_overlap=%s\n' "$chunk_overlap"
+  else
+    printf 'retrieval_mode=file\n'
+  fi
   printf 'term_count=%s\n' "$term_count"
 
   local idx=0 term
@@ -2045,7 +2135,7 @@ run_query() {
     return 0
   fi
 
-  while IFS=$'\t' read -r score file; do
+  while IFS=$'\t' read -r score file chunk_start chunk_end chunk_file; do
     [ -n "$file" ] || continue
     emitted=$((emitted + 1))
     [ "$emitted" -le "$limit" ] || break
@@ -2060,14 +2150,41 @@ run_query() {
     printf 'result.%d.title=%s\n' "$emitted" "$title"
     printf 'result.%d.kind=%s\n' "$emitted" "$kind"
     printf 'result.%d.score=%s\n' "$emitted" "$score"
+    if [ "$rag_mode" = "true" ]; then
+      printf 'result.%d.chunk_start_line=%s\n' "$emitted" "$chunk_start"
+      printf 'result.%d.chunk_end_line=%s\n' "$emitted" "$chunk_end"
+    fi
     {
       printf 'path=%s\n' "$rel"
       printf 'title=%s\n' "$title"
       printf 'kind=%s\n' "$kind"
       printf 'score=%s\n' "$score"
+      if [ "$rag_mode" = "true" ]; then
+        printf 'chunk_start_line=%s\n' "$chunk_start"
+        printf 'chunk_end_line=%s\n' "$chunk_end"
+      fi
     } >> "$synth_results"
 
-    [ "$with_snippets" = "true" ] || continue
+    if [ "$rag_mode" = "true" ]; then
+      local chunk_text
+      if [ "$with_snippets" = "true" ] && [ -f "$chunk_file" ]; then
+        chunk_text="$(trim_text "$(cat "$chunk_file")")"
+        printf 'result.%d.snippet.1.line=%s\n' "$emitted" "$chunk_start"
+        printf 'result.%d.snippet.1.text=%s\n' "$emitted" "$chunk_text"
+        printf 'result.%d.snippet_count=1\n' "$emitted"
+        printf 'snippet.1=%s-%s:%s\n' "$chunk_start" "$chunk_end" "$chunk_text" >> "$synth_results"
+      else
+        printf 'result.%d.snippet_count=0\n' "$emitted"
+      fi
+      printf -- '--\n' >> "$synth_results"
+      continue
+    fi
+
+    if [ "$with_snippets" != "true" ]; then
+      printf 'result.%d.snippet_count=0\n' "$emitted"
+      printf -- '--\n' >> "$synth_results"
+      continue
+    fi
 
     local snippets snippet_idx=0 lineno linetext snippet_line snippet_text
     snippets="$(autoflow_mktemp)"
@@ -2435,6 +2552,7 @@ query_limit="10"
 query_include_tickets="true"
 query_include_handoffs="true"
 query_with_snippets="true"
+query_rag="false"
 query_synth="false"
 query_save_as=""
 lint_semantic="false"
@@ -2477,6 +2595,9 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-snippets)
       query_with_snippets="false"
+      ;;
+    --rag)
+      query_rag="true"
       ;;
     --synth)
       query_synth="true"
@@ -2574,7 +2695,7 @@ case "$action" in
     fi
     run_query "$project_root" "$board_dir_name" "$query_terms_file" "$query_limit" \
       "$query_include_tickets" "$query_include_handoffs" "$query_with_snippets" \
-      "$query_synth" "$wiki_runner_id" "$query_save_as"
+      "$query_synth" "$wiki_runner_id" "$query_save_as" "$query_rag"
     ;;
   ingest)
     if [ -z "${positionals[2]:-}" ]; then
