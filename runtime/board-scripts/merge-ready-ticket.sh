@@ -514,7 +514,7 @@ stage_integrated_product_paths_before_cleanup() {
 git_commit_if_possible() {
   local ticket_file="$1"
   local run_file="${2:-}"
-  local ticket_id project_key summary git_root commit_message
+  local ticket_id project_key summary git_root commit_message commit_prefix
 
   if [ "${AUTOFLOW_MERGE_SKIP_COMMIT:-}" = "1" ]; then
     printf 'commit_status=skipped_by_env\n'
@@ -532,9 +532,14 @@ git_commit_if_possible() {
   summary="$(extract_scalar_field_in_section "$ticket_file" "Result" "Summary")"
   project_key="$(printf '%s' "$project_key" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
   summary="$(printf '%s' "$summary" | tr '\r\n' '  ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-  [ -n "$project_key" ] || project_key="tickets_${ticket_id}"
   [ -n "$summary" ] || summary="complete merged ticket-owner work"
-  commit_message="[$project_key] $summary"
+  if [ -n "$project_key" ]; then
+    project_key="$(printf '%s' "$project_key" | tr '[:lower:]' '[:upper:]')"
+    commit_prefix="[${project_key}][ticket_${ticket_id}]"
+  else
+    commit_prefix="[ticket_${ticket_id}]"
+  fi
+  commit_message="${commit_prefix} ${summary}"
 
   stage_ticket_commit_scope "$git_root" "$ticket_file" "$run_file"
   if git -C "$git_root" diff --cached --quiet; then

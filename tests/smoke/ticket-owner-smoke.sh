@@ -358,7 +358,7 @@ require_line "$finish_output" "inline_merge=done; log written; wiki deferred to 
 require_line "$finish_output" "wiki.status=ai_owned"
 require_line "$finish_output" "commit_status=committed_via_inline_merge"
 completion_subject="$(git -C "$project_dir" log -1 --pretty=%s)"
-if [ "$completion_subject" != "[prd_001] owner smoke artifact verified" ]; then
+if [ "$completion_subject" != "[PRD_001][ticket_001] owner smoke artifact verified" ]; then
   echo "Unexpected completion commit subject: $completion_subject" >&2
   exit 1
 fi
@@ -382,15 +382,15 @@ if ! test -f "$done_ticket"; then
   echo "Expected done ticket after inline finish: $done_ticket" >&2
   exit 1
 fi
-if ! rg -q "^- \\[x\\] " "$done_ticket"; then
+if ! grep -Eq "^- \\[x\\] " "$done_ticket"; then
   echo "Expected at least one Done When item checked in done ticket." >&2
-  rg "^- \\[ \\]" "$done_ticket" >&2
+  grep -E "^- \\[ \\]" "$done_ticket" >&2 || true
   exit 1
 fi
 require_line "$done_ticket" "- [x] Implementation stays inside Allowed Paths"
-if ! rg -q "^- \\[ \\]" "$done_ticket"; then
+if ! grep -Eq "^- \\[ \\]" "$done_ticket"; then
   echo "Unchanged unchecked Done When items should remain when only explicit evidence is checked." >&2
-  rg "^- \\[ \\]" "$done_ticket" >&2
+  grep -E "^- \\[ \\]" "$done_ticket" >&2 || true
   exit 1
 fi
 if [ -d "$implementation_root" ]; then

@@ -224,7 +224,7 @@ Do:
 - Keep a 1-minute heartbeat alive until the user stops it.
 - Use `scripts/start-verifier.*`.
 - Run verification from `working_root`.
-- Pass: integrate worktree, move to done, write completion log, create local commit. Commit message format is `[prd_NNN] 작업내용 요약본`; use the ticket `PRD Key` / project key for the bracket value and fall back to `[tickets_NNN]` only for legacy tickets without a PRD key.
+- Pass: integrate worktree, move to done, write completion log, create local commit. Commit message format is `[PRD_NNN][ticket_NNN] 작업내용 요약본`; use the ticket `PRD Key` / project key for the uppercase `PRD_` bracket, the ticket ID for the lower-case `ticket_` bracket, and fall back to `[ticket_NNN]` only for legacy tickets without a PRD key.
 - Fail: append `## Reject Reason`, move to reject, write completion log.
 
 Do not fix code, create tickets, or push.

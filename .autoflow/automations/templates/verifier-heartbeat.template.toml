@@ -38,7 +38,7 @@ Loop (run every wake-up):
    b. Update the ticket: `Stage: done`, fill `Result.Summary`.
    c. `mv` ticket from `.autoflow/tickets/verifier/` to the matching `.autoflow/tickets/done/<project-key>/` folder.
    d. Run `.autoflow/scripts/write-verifier-log.sh "<moved done ticket path>" ".autoflow/tickets/inprogress/verify_NNN.md" pass`. This archives the verification record to `.autoflow/tickets/done/<project-key>/verify_NNN.md`, updates the ticket `Verification` block with the final run/log paths, and clears the active runtime context for the next wake-up.
-   e. From the central host project root: `git add . && git commit -m "[ticket title] concise change summary"` (local commit only; use the ticket `Title` in brackets and a short one-line summary from `Result.Summary` or the verified change). This final commit must include both integrated code changes and Autoflow ticket/run/log updates.
+   e. From the central host project root: `git add . && git commit -m "[PRD_NNN][ticket_NNN] concise change summary"` (local commit only; use the ticket `PRD Key` / project key for the uppercase `PRD_` bracket, the ticket ID for the lower-case `ticket_` bracket, and a short one-line summary from `Result.Summary` or the verified change; legacy tickets without `PRD Key` use `[ticket_NNN] concise change summary`). This final commit must include both integrated code changes and Autoflow ticket/run/log updates.
    f. **DO NOT run `git push`.** Push is absolutely forbidden from any automation. Remote syncing is a manual action only a human may perform.
 10. **FAIL**:
    a. Update the run file: `Status: fail`, Findings, Blockers, Next Fix Hint.

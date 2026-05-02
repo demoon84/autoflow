@@ -23,10 +23,10 @@ Runtime helpers should report this as `dirty_project_root_conflict` / `blocked_d
 All Autoflow pass/completion commits must use this subject format:
 
 ```text
-[prd_NNN] 작업내용 요약본
+[PRD_NNN][ticket_NNN] 작업내용 요약본
 ```
 
-Use the ticket `PRD Key` / project key for the bracket value. If a legacy ticket has no PRD key, fall back to `[tickets_NNN]`. The summary must be one concise line from `Result.Summary` or the verified change. Do not use the ticket `Title` as the bracket value.
+Use the ticket `PRD Key` / project key for the uppercase `PRD_` bracket and the ticket `ID` or filename for the lower-case `ticket_` bracket. If a legacy ticket has no PRD key, fall back to `[ticket_NNN]`. The summary must be one concise line from `Result.Summary` or the verified change. Do not use the ticket `Title` as the bracket value.
 
 ## Owner Responsibilities
 
