@@ -2397,11 +2397,10 @@ pre {
 }
 
 .ai-progress-board[data-runner-count="3"] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(220px, 1fr) minmax(220px, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(220px, 1fr);
   grid-template-areas:
-    "plan impl"
-    "wiki impl";
+    "plan impl wiki";
 }
 
 .ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="planner"],
