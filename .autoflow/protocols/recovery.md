@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Recovery is AI-led. Planner AI diagnoses board and runner failure modes, then repairs markdown state or gives Impl AI a precise resume instruction. Shell helpers provide atomic checks and git/worktree safety only.
+Recovery is AI-led. Planner AI diagnoses board and runner failure modes, then repairs markdown state or gives Impl AI a precise resume instruction. Shell helpers provide atomic checks and git/worktree safety only, and their stable inventory is exposed via `autoflow tool list`.
 
 ## Recovery State Section
 

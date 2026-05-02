@@ -115,6 +115,17 @@ git -C "$project_dir" config user.name "Autoflow Smoke"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
 
+tool_list_output="${project_dir}/tool-list.out"
+"${REPO_ROOT}/bin/autoflow" tool list "$project_dir" >"$tool_list_output"
+require_line "$tool_list_output" "status=ok"
+require_line "$tool_list_output" "catalog_version=1"
+require_line "$tool_list_output" "tool.2.id=start-plan"
+require_line "$tool_list_output" "tool.3.id=start-ticket-owner"
+require_line "$tool_list_output" "tool.6.id=autoflow-guard"
+require_line "$tool_list_output" "tool.7.id=autoflow-wiki-query"
+require_line "$tool_list_output" "tool.9.id=board-helpers"
+require_line "$tool_list_output" "tool.10.id=worktree-helpers"
+
 spec1_output="${project_dir}/spec-1.out"
 plan1_output="${project_dir}/plan-1.out"
 start1_output="${project_dir}/start-1.out"

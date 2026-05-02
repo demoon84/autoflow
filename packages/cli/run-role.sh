@@ -7,6 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/cli-common.sh"
 source "$(runtime_scripts_root)/runner-common.sh"
 
+# Thin runtime contract:
+# - this entrypoint dispatches one runner tick and exposes state through stable
+#   key=value output;
+# - it never becomes the workflow brain for planning, verification, recovery, or merge.
+
 usage() {
   cat <<'EOF' >&2
 Usage:

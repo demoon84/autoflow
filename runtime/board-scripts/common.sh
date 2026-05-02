@@ -4,6 +4,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Thin helper contract:
+# - this library resolves board/worktree paths, reads/writes narrow ticket state,
+#   and reports git safety evidence with stable fields;
+# - it must not decide planning, verification, recovery direction, or merge policy;
+# - planner/worker/wiki AIs interpret these helper results and choose the next action.
+
 AUTOFLOW_TMP_FILES=()
 AUTOFLOW_TMP_REGISTRY="${TMPDIR:-/tmp}/autoflow-tmp-registry.$$"
 

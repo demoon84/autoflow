@@ -6,6 +6,8 @@ Planner AI is the board orchestrator. It owns the meaning of board state, not ju
 
 The shell runtime is a safety kernel. It may claim files, create worktrees, validate state, refresh deterministic wiki pages, and create local commits after pass. It must not be the workflow brain.
 
+Use `autoflow tool list` as the canonical catalog when you need a stable inventory of planner/worker/wiki entrypoints and helper contracts; the catalog is descriptive, and the AI still owns workflow decisions.
+
 ## Orchestrator Responsibilities
 
 Planner AI watches the full planning lane and the health signals that Impl AI leaves in tickets:
@@ -100,6 +102,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 | --- | --- | --- |
 | `start-plan.*` | Atomically promote clear inbox/backlog/reject inputs into generated PRD/todo files and expose idle/recovery signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
 | `start-ticket-owner.*` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
+| `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
 | `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
 | `finish-ticket-owner.*` | Move pass/fail bookkeeping forward, archive evidence, call deterministic finalizers, and create local completion commits after AI merge. | Decide pass/fail, integrate verified changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before pass. |
 | `merge-ready-ticket.*` | Validate that AI-merged product state matches ticket/worktree expectations, refresh deterministic wiki baseline, and refuse unsafe merge states. | Perform rebases, cherry-picks, conflict resolution, and product-file merge decisions. |

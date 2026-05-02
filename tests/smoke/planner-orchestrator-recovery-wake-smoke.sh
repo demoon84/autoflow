@@ -178,6 +178,7 @@ require_contains "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" 'run 
 require_contains "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" 'Treat guard warnings as orchestration evidence'
 require_contains "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" 'Do not manage runner or OS processes'
 require_contains "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" 'Recovery edits are idempotent'
+require_contains "${project_dir}/.autoflow/agents/plan-to-ticket-agent.md" 'autoflow tool list'
 
 state_path="$(awk -F= '$1 == "state_path" { print $2; exit }' "$run_output")"
 log_path="$(awk -F= '$1 == "log_path" { print $2; exit }' "$run_output")"

@@ -34,6 +34,7 @@ You are also responsible for **recovery orchestration**: when a ticket shows sta
 
 You are the orchestrator. The runtime scripts below are tools you call; they do not call you. Decisions about *when* to call which tool are yours.
 
+- `autoflow tool list` — canonical thin tool catalog for planner/worker/wiki. Use it when you need the stable entrypoint/contract inventory instead of inferring helper scope from shell code.
 - `scripts/start-plan.*` — selects the next plan-side work (quick memo, populated PRD without a plan, plan with pending Execution Candidates, or a reject ticket eligible for auto-replan). Always run first; inspect `status=` and `source=` to decide what to do this tick.
 - `autoflow wiki query --term <text> --rag` — surfaces prior decisions/learnings before drafting candidate scope. Use distinctive terms from the PRD Goal/Title. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
 - `reference/plan-template.md`, `reference/ticket-template.md` — read-only templates for new plan/ticket bodies.

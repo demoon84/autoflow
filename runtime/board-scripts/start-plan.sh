@@ -10,6 +10,11 @@
 # Legacy plan/ files (rules/plan or tickets/plan) are still consumed as a
 # transitional fallback when neither (1), (2), nor (3) yields work, so older
 # sample boards keep functioning.
+#
+# Thin runtime contract:
+# - this script atomically selects/promotes the next board-side input;
+# - it emits parseable state such as status/source/replan_skipped/board_root/project_root;
+# - it does not decide whether the planner should split, retry, park, or ask the user.
 
 set -euo pipefail
 
