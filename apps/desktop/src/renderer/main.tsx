@@ -539,8 +539,8 @@ const runnerRoleLabels: Record<string, string> = {
   "ticket-owner": "Impl AI",
   owner: "Impl AI",
   ticket: "Impl AI",
-  planner: "Plan AI (오케스트레이터)",
-  plan: "Plan AI (오케스트레이터)",
+  planner: "오케스트레이터",
+  plan: "오케스트레이터",
   "wiki-maintainer": "Wiki AI",
   wiki: "Wiki AI",
   coordinator: "coordinator (legacy)",
@@ -2811,7 +2811,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">Plan AI (오케스트레이터) / Impl AI / Wiki AI</span>
+            <span className="ticket-workspace-tab-copy">오케스트레이터 / Impl AI / Wiki AI</span>
           </div>
         }
       >
@@ -2972,7 +2972,7 @@ function RunnerConsole({
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
                 <span>
-                  Plan AI(오케스트레이터=planner) / Impl AI(ticket-owner) / Wiki AI(wiki-maintainer) runner가 추가되면 여기에 표시됩니다.
+                  오케스트레이터(planner) / Impl AI(ticket-owner) / Wiki AI(wiki-maintainer) runner가 추가되면 여기에 표시됩니다.
                 </span>
               </div>
             )}
@@ -5590,7 +5590,7 @@ function displayProgressRunnerLabel(runner: AutoflowRunner) {
 
 function displayProgressRoleLabel(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
-  if (role === "planner" || role === "plan") return "오케스트레이터 (Plan AI)";
+  if (role === "planner" || role === "plan") return "오케스트레이터";
   if (role === "ticket-owner" || role === "owner") return "Worker";
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "위키봇";
 
