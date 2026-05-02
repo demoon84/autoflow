@@ -404,6 +404,9 @@ runner_command_preview() {
     cmd=(autoflow runners start "$target_runner_id" "$project_root" "$board_dir_name")
     printf 'loop every %ss: ' "$effective_interval"
     runner_command_summary_from_array "${cmd[@]}"
+    if [ "$agent" = "codex" ] && [ -n "$reasoning" ]; then
+      printf ' with runner codex flag: -c model_reasoning_effort="%s"' "$reasoning"
+    fi
     return 0
   fi
 

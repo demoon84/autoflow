@@ -179,6 +179,12 @@ const runnerAgentReasoningOptions: Record<string, string[]> = {
   gemini: []
 };
 const runnerOptionLabels: Record<string, Record<string, string>> = {
+  codex: {
+    low: "낮음 (fast)",
+    medium: "보통",
+    high: "높음",
+    xhigh: "매우 높음"
+  },
   claude: {
     opus: "Opus 4.7",
     "opus-1m": "Opus 4.7 1M",
