@@ -395,6 +395,143 @@ if [ -n "$replanned_reject" ]; then
   exit 0
 fi
 
+# --- Branch 1.5: reject auto-close after retry cap ----------------------------
+# When a reject is parked at retry cap (max_retries_reached), the planner tries
+# the PRD's Verification Command at PROJECT_ROOT. The first reject whose command
+# returns exit 0 is archived to tickets/done/<prd_key>/ with a
+# `## Manual Resolution (auto-close)` note. Verification failures for other
+# candidates are recorded as metadata so the next tick can retry them. At most
+# one reject is archived per tick to bound cost.
+if reject_auto_close_enabled; then
+  auto_close_attempt_index=0
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ -f "$candidate" ] || continue
+
+    candidate_prd_key="$(extract_ticket_prd_key "$candidate")"
+    if [ -z "$candidate_prd_key" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.result=missing_prd_key\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    candidate_prd_file="$(prd_file_for_reject "$candidate_prd_key" || true)"
+    if [ -z "$candidate_prd_file" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+      printf 'auto_close_attempt.%s.result=prd_file_not_found\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    candidate_command="$(extract_prd_verification_command "$candidate_prd_file")"
+    if [ -z "$candidate_command" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+      printf 'auto_close_attempt.%s.result=verification_command_empty\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    if run_verification_command_for_auto_close "$candidate_command"; then
+      auto_close_target="$(archive_reject_with_manual_resolution \
+        "$candidate" \
+        "$candidate_prd_key" \
+        "$candidate_command")"
+
+      printf 'status=ok\n'
+      printf 'source=reject-auto-close\n'
+      printf 'reject_origin=%s\n' "$(board_relative_path "$candidate")"
+      printf 'prd_key=%s\n' "$candidate_prd_key"
+      printf 'prd_file=%s\n' "$(board_relative_path "$candidate_prd_file")"
+      printf 'verification_command=%s\n' "$candidate_command"
+      printf 'archived_to=%s\n' "$(board_relative_path "$auto_close_target")"
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=Reject %s auto-closed to %s after PRD verification command passed at PROJECT_ROOT.\n' \
+        "$(basename "$candidate")" \
+        "$(board_relative_path "$auto_close_target")"
+      exit 0
+    fi
+
+    auto_close_attempt_index=$((auto_close_attempt_index + 1))
+    printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+    printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+    printf 'auto_close_attempt.%s.verification_command=%s\n' "$auto_close_attempt_index" "$candidate_command"
+    printf 'auto_close_attempt.%s.result=verification_failed\n' "$auto_close_attempt_index"
+  done < <(list_max_retried_rejects)
+fi
+
+# --- Branch 1.6: blocked inprogress dirty_root recovery -----------------------
+# When an inprogress ticket is parked at Stage=blocked because PROJECT_ROOT had
+# dirty changes overlapping its Allowed Paths, two outcomes are possible:
+#   (a) the dirty paths are now clean -> return the ticket to tickets/todo/ with
+#       a fresh Recovery State so ticket-owner can rebuild a worktree from main.
+#   (b) the dirty paths are still present -> emit a `blocked-dirty-orchestration`
+#       signal so the planner orchestrator AI can analyze, classify, and either
+#       integrate (local commit), stash, or escalate to needs_user. The shell
+#       runtime no longer rubber-stamps `needs_user`; it surfaces evidence and
+#       lets the orchestrator AI decide. `git push` is still forbidden (rule 8).
+if blocked_auto_recover_enabled; then
+  blocked_attempt_index=0
+  while IFS= read -r blocked_ticket; do
+    [ -n "$blocked_ticket" ] || continue
+    [ -f "$blocked_ticket" ] || continue
+
+    blocked_failure_class="$(ticket_failure_class "$blocked_ticket")"
+    case "$blocked_failure_class" in
+      dirty_root|dirty_project_root_conflict)
+        ;;
+      *)
+        blocked_attempt_index=$((blocked_attempt_index + 1))
+        printf 'blocked_recover_skip.%s=%s\n' "$blocked_attempt_index" "$(board_relative_path "$blocked_ticket")"
+        printf 'blocked_recover_skip.%s.failure_class=%s\n' "$blocked_attempt_index" "$blocked_failure_class"
+        printf 'blocked_recover_skip.%s.reason=failure_class_out_of_scope\n' "$blocked_attempt_index"
+        continue
+        ;;
+    esac
+
+    blocked_dirty_paths="$(ticket_dirty_project_root_conflict_paths "$blocked_ticket" 2>/dev/null || true)"
+    if [ -n "$blocked_dirty_paths" ]; then
+      blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
+      printf 'status=ok\n'
+      printf 'source=blocked-dirty-orchestration\n'
+      printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+      printf 'failure_class=%s\n' "$blocked_failure_class"
+      printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=Orchestrator AI must group dirty PROJECT_ROOT paths by Allowed Paths ownership and integrate each group into a local commit ([PRD_NNN][ticket_NNN] orchestration cleanup: ... or [ticket_NNN] orchestration cleanup: misc housekeeping for ambiguous paths). Default is integrate; the Autoflow 1원칙 (do not stop) outranks classification perfectionism. Re-check git status after the commits; the next planner tick will surface source=blocked-auto-recover when paths are clean. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
+      exit 0
+    fi
+
+    blocked_target="$(unblock_dirty_root_resolved_ticket "$blocked_ticket" || true)"
+    if [ -z "$blocked_target" ]; then
+      blocked_attempt_index=$((blocked_attempt_index + 1))
+      printf 'blocked_recover_attempt.%s=%s\n' "$blocked_attempt_index" "$(board_relative_path "$blocked_ticket")"
+      printf 'blocked_recover_attempt.%s.failure_class=%s\n' "$blocked_attempt_index" "$blocked_failure_class"
+      printf 'blocked_recover_attempt.%s.result=unblock_helper_failed\n' "$blocked_attempt_index"
+      continue
+    fi
+
+    printf 'status=ok\n'
+    printf 'source=blocked-auto-recover\n'
+    printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+    printf 'failure_class=%s\n' "$blocked_failure_class"
+    printf 'returned_to=%s\n' "$(board_relative_path "$blocked_target")"
+    emit_replan_skipped_metadata "$replan_skipped_file"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'next_action=Blocked ticket %s returned to todo at %s after PROJECT_ROOT cleared dirty Allowed Paths; ticket-owner will rebuild a fresh worktree on the next claim.\n' \
+      "$(basename "$blocked_ticket")" \
+      "$(board_relative_path "$blocked_target")"
+    exit 0
+  done < <(list_blocked_inprogress_tickets)
+fi
+
 # --- Branch 2: quick memo inbox -> AI-generated PRD/todo ----------------------
 memo_file="$(select_inbox_memo || true)"
 if [ -n "$memo_file" ]; then

@@ -46,12 +46,21 @@ Planner AI may perform these actions directly in markdown:
 
 Planner AI must not:
 
-- modify product code,
+- author new product code (it may stage and commit changes that are *already* dirty in PROJECT_ROOT during blocked-dirty orchestration, but it does not write fresh implementation),
 - create or delete git worktrees directly,
 - manage runner or OS processes directly (`kill`, `pkill`, runner start/stop/restart, background cleanup),
-- resolve merge conflicts in product files,
+- resolve merge conflicts in product files (during blocked-dirty orchestration, planner integrates already-dirty changes only — actual conflict resolution belongs to Impl AI),
 - run final pass/fail bookkeeping for Impl AI,
-- create commits or push.
+- push (`git push` is forbidden in every mode), `git reset --hard`, `git clean -fd`, amend non-orchestration commits, or `git rm` files.
+
+Planner AI **may** during blocked-dirty orchestration only:
+
+- read PROJECT_ROOT working tree (`git status`, `git diff`, `git log`, `git show`),
+- `git add` paths the runtime listed under `dirty_paths`,
+- create local commits using `[PRD_NNN][ticket_NNN] orchestration cleanup: <summary>` (or `[ticket_NNN] ...` when no PRD key),
+- `git stash push -m "<ticket_id>: ..."` instead of committing when committing is genuinely impossible.
+
+Default action is integrate, not stop. The Autoflow first principle (`멈추지 않는다`) outranks classification perfectionism.
 
 ## Planner Recovery Action Contract
 
@@ -100,7 +109,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 
 | Helper or command | Safety-kernel responsibility | AI-owned decision |
 | --- | --- | --- |
-| `start-plan.*` | Atomically promote clear inbox/backlog/reject inputs into generated PRD/todo files and expose idle/recovery signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
+| `start-plan.*` | Atomically promote clear inbox/backlog/reject inputs into generated PRD/todo files, expose idle/recovery signals, and surface `source=blocked-dirty-orchestration` with a `dirty_paths` inventory when a blocked ticket's PROJECT_ROOT is dirty. | Decide whether the source request is safe, whether to split/requeue, what recovery instruction belongs in markdown, and (under `blocked-dirty-orchestration`) how to group + commit the dirty paths. |
 | `start-ticket-owner.*` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
 | `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
 | `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
