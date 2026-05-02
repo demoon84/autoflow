@@ -5279,7 +5279,13 @@ function TicketBoard({
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
-  const memoFiles: WorkflowFileEntry[] = [...inboxMemos, ...doneMemos].sort(
+  const memoFilesById = new Map<string, WorkflowFileEntry>();
+  for (const memo of [...inboxMemos, ...doneMemos]) {
+    if (!memoFilesById.has(memo.name)) {
+      memoFilesById.set(memo.name, memo);
+    }
+  }
+  const memoFiles: WorkflowFileEntry[] = Array.from(memoFilesById.values()).sort(
     (a, b) => memoNumericId(b.name) - memoNumericId(a.name)
   );
   const todoFiles: WorkflowFileEntry[] = todoTickets.sort(
