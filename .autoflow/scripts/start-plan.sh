@@ -5,7 +5,7 @@
 # Plan AI now owns three responsibilities — all purely board-side, no product
 # code edits — and emits a ticket in tickets/todo/ as the only output:
 #   1. Auto-replan rejected tickets back to todo (reject/ -> todo/).
-#   2. Promote lightweight memos in tickets/inbox/ into PRD/todo work.
+#   2. Promote lightweight orders in tickets/inbox/ into PRD/todo work.
 #   3. Convert populated PRDs in backlog/ into a fresh tickets_NNN.md in todo/.
 # Legacy plan/ files (rules/plan or tickets/plan) are still consumed as a
 # transitional fallback when neither (1), (2), nor (3) yields work, so older
@@ -119,14 +119,14 @@ select_populated_spec() {
   return 1
 }
 
-memo_ref_is_already_promoted() {
-  local memo_ref="$1"
+order_ref_is_already_promoted() {
+  local order_ref="$1"
   local spec_file
 
   while IFS= read -r spec_file; do
     [ -n "$spec_file" ] || continue
     [ -f "$spec_file" ] || continue
-    if grep -Fq -- "Source: \`${memo_ref}\`" "$spec_file" || grep -Fq -- "Source: ${memo_ref}" "$spec_file"; then
+    if grep -Fq -- "Source: \`${order_ref}\`" "$spec_file" || grep -Fq -- "Source: ${order_ref}" "$spec_file"; then
       return 0
     fi
   done < <(
@@ -142,17 +142,17 @@ memo_ref_is_already_promoted() {
   return 1
 }
 
-memo_file_is_actionable() {
-  local memo_file="$1"
-  local memo_ref status
+order_file_is_actionable() {
+  local order_file="$1"
+  local order_ref status
 
-  [ -f "$memo_file" ] || return 1
-  memo_ref="$(board_relative_path "$memo_file")"
-  if memo_ref_is_already_promoted "$memo_ref"; then
+  [ -f "$order_file" ] || return 1
+  order_ref="$(board_relative_path "$order_file")"
+  if order_ref_is_already_promoted "$order_ref"; then
     return 1
   fi
 
-  status="$(extract_scalar_field_in_section "$memo_file" "Memo" "Status")"
+  status="$(extract_scalar_field_in_section "$order_file" "Order" "Status")"
   status="$(trim_spaces "$status")"
 
   case "$status" in
@@ -165,31 +165,31 @@ memo_file_is_actionable() {
   esac
 }
 
-select_inbox_memo() {
-  local memo_file id
+select_inbox_order() {
+  local order_file id
 
   if [ -n "$requested_normalized" ]; then
-    memo_file="${BOARD_ROOT}/tickets/inbox/memo_${requested_normalized}.md"
-    if memo_file_is_actionable "$memo_file"; then
-      printf '%s' "$memo_file"
+    order_file="${BOARD_ROOT}/tickets/inbox/order_${requested_normalized}.md"
+    if order_file_is_actionable "$order_file"; then
+      printf '%s' "$order_file"
       return 0
     fi
     return 1
   fi
 
-  while IFS= read -r memo_file; do
-    [ -n "$memo_file" ] || continue
-    memo_file_is_actionable "$memo_file" || continue
-    id="$(extract_numeric_id "$memo_file" 2>/dev/null || true)"
+  while IFS= read -r order_file; do
+    [ -n "$order_file" ] || continue
+    order_file_is_actionable "$order_file" || continue
+    id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
     [ -n "$id" ] || continue
-    printf '%s' "$memo_file"
+    printf '%s' "$order_file"
     return 0
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'memo_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'order_*.md')
 
   return 1
 }
 
-extract_spec_source_memo_ref() {
+extract_spec_source_order_ref() {
   local file="$1"
 
   awk '
@@ -204,33 +204,33 @@ extract_spec_source_memo_ref() {
   ' "$file"
 }
 
-archive_source_memo_for_spec() {
+archive_source_order_for_spec() {
   local project_key="$1"
   local spec_file="$2"
-  local memo_ref memo_file target_file
+  local order_ref order_file target_file
 
-  memo_ref="$(extract_spec_source_memo_ref "$spec_file")"
-  case "$memo_ref" in
-    tickets/inbox/memo_*.md)
+  order_ref="$(extract_spec_source_order_ref "$spec_file")"
+  case "$order_ref" in
+    tickets/inbox/order_*.md)
       ;;
     *)
       return 0
       ;;
   esac
 
-  memo_file="${BOARD_ROOT}/${memo_ref}"
-  [ -f "$memo_file" ] || return 0
+  order_file="${BOARD_ROOT}/${order_ref}"
+  [ -f "$order_file" ] || return 0
 
-  target_file="${BOARD_ROOT}/tickets/done/${project_key}/$(basename "$memo_file")"
+  target_file="${BOARD_ROOT}/tickets/done/${project_key}/$(basename "$order_file")"
   if [ -f "$target_file" ]; then
-    if cmp -s "$memo_file" "$target_file"; then
-      rm -f "$memo_file"
+    if cmp -s "$order_file" "$target_file"; then
+      rm -f "$order_file"
     fi
     return 0
   fi
 
   mkdir -p "$(dirname "$target_file")"
-  mv "$memo_file" "$target_file"
+  mv "$order_file" "$target_file"
 }
 
 create_todo_ticket_from_spec() {
@@ -253,7 +253,7 @@ create_todo_ticket_from_spec() {
 
   archived_spec_ref="$(archive_spec_to_done_if_needed "$spec_ref")"
   archived_spec_file="${BOARD_ROOT}/${archived_spec_ref}"
-  archive_source_memo_for_spec "$project_key" "$archived_spec_file"
+  archive_source_order_for_spec "$project_key" "$archived_spec_file"
   ticket_id="$(next_ticket_id)"
   ticket_file="$(ticket_path "todo" "$ticket_id")"
   ticket_note="[[tickets_${ticket_id}]]"
@@ -532,17 +532,17 @@ if blocked_auto_recover_enabled; then
   done < <(list_blocked_inprogress_tickets)
 fi
 
-# --- Branch 2: quick memo inbox -> AI-generated PRD/todo ----------------------
-memo_file="$(select_inbox_memo || true)"
-if [ -n "$memo_file" ]; then
+# --- Branch 2: quick order inbox -> AI-generated PRD/todo ---------------------
+order_file="$(select_inbox_order || true)"
+if [ -n "$order_file" ]; then
   printf 'status=ok\n'
-  printf 'source=memo-inbox\n'
-  printf 'memo=%s\n' "$memo_file"
-  printf 'memo_id=%s\n' "$(extract_numeric_id "$memo_file")"
+  printf 'source=order-inbox\n'
+  printf 'order=%s\n' "$order_file"
+  printf 'order_id=%s\n' "$(extract_numeric_id "$order_file")"
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Promote memo %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$memo_file")"
+  printf 'next_action=Promote order %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$order_file")"
   exit 0
 fi
 

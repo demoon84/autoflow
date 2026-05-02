@@ -5,24 +5,24 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 
 usage() {
-  cat <<'EOF' >&2
+  cat <<'USAGE_EOF' >&2
 Usage:
-  memo-project.sh create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
+  order-project.sh create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
 
 Examples:
-  echo "Increase body font size by 2px" | memo-project.sh create /path/to/project --title "Increase body font"
-  memo-project.sh create /path/to/project --request "Make the success toast stay visible for 3 seconds" --allowed-path apps/desktop/src
-EOF
+  echo "Increase body font size by 2px" | order-project.sh create /path/to/project --title "Increase body font"
+  order-project.sh create /path/to/project --request "Make the success toast stay visible for 3 seconds" --allowed-path apps/desktop/src
+USAGE_EOF
 }
 
-normalize_memo_id() {
+normalize_order_id() {
   local raw="$1"
 
-  raw="${raw#memo_}"
+  raw="${raw#order_}"
   raw="${raw%.md}"
   case "$raw" in
     ''|*[!0-9]*)
-      echo "Invalid memo id: $1" >&2
+      echo "Invalid order id: $1" >&2
       exit 1
       ;;
   esac
@@ -30,7 +30,7 @@ normalize_memo_id() {
   printf '%03d' "$((10#$raw))"
 }
 
-next_memo_id() {
+next_order_id() {
   local board_root="$1"
   local max_id=0
   local file base id
@@ -38,7 +38,7 @@ next_memo_id() {
   while IFS= read -r file; do
     [ -n "$file" ] || continue
     base="$(basename "$file")"
-    id="${base#memo_}"
+    id="${base#order_}"
     id="${id%.md}"
     case "$id" in
       [0-9][0-9][0-9])
@@ -47,7 +47,7 @@ next_memo_id() {
         fi
         ;;
     esac
-  done < <(find "${board_root}/tickets" -type f -name 'memo_[0-9][0-9][0-9].md' 2>/dev/null | sort)
+  done < <(find "${board_root}/tickets" -type f -name 'order_[0-9][0-9][0-9].md' 2>/dev/null | sort)
 
   printf '%03d' "$((max_id + 1))"
 }
@@ -77,7 +77,7 @@ case "$action" in
     ;;
 esac
 
-memo_id=""
+order_id=""
 title=""
 request_text=""
 from_file=""
@@ -91,11 +91,11 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --id)
       shift || true
-      memo_id="${1:-}"
-      [ -n "$memo_id" ] || { echo "--id requires a value" >&2; exit 1; }
+      order_id="${1:-}"
+      [ -n "$order_id" ] || { echo "--id requires a value" >&2; exit 1; }
       ;;
     --id=*)
-      memo_id="${1#--id=}"
+      order_id="${1#--id=}"
       ;;
     --title)
       shift || true
@@ -176,18 +176,18 @@ fi
 memo_dir="${board_root}/tickets/inbox"
 mkdir -p "$memo_dir"
 
-if [ -n "$memo_id" ]; then
-  memo_id="$(normalize_memo_id "$memo_id")"
+if [ -n "$order_id" ]; then
+  order_id="$(normalize_order_id "$order_id")"
 else
-  memo_id="$(next_memo_id "$board_root")"
+  order_id="$(next_order_id "$board_root")"
 fi
 
-memo_file="${memo_dir}/memo_${memo_id}.md"
-if [ -e "$memo_file" ] && [ "$force" != "true" ]; then
+order_file="${memo_dir}/order_${order_id}.md"
+if [ -e "$order_file" ] && [ "$force" != "true" ]; then
   printf 'status=blocked\n'
-  printf 'reason=memo_already_exists\n'
-  printf 'memo_id=%s\n' "$memo_id"
-  printf 'memo_file=%s\n' "$memo_file"
+  printf 'reason=order_already_exists\n'
+  printf 'order_id=%s\n' "$order_id"
+  printf 'order_file=%s\n' "$order_file"
   printf 'next_action=Use --force to overwrite, or choose another --id.\n'
   exit 0
 fi
@@ -211,14 +211,14 @@ if [ -z "$request_text" ]; then
 fi
 
 request_first_line="$(printf '%s\n' "$request_text" | first_nonempty_line || true)"
-[ -n "$title" ] || title="${request_first_line:-memo_${memo_id}}"
+[ -n "$title" ] || title="${request_first_line:-order_${order_id}}"
 timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 tmp="$(autoflow_mktemp)"
 
 {
   printf '# Autoflow Order\n\n'
   printf '## Order\n\n'
-  printf -- '- ID: memo_%s\n' "$memo_id"
+  printf -- '- ID: order_%s\n' "$order_id"
   printf -- '- Title: %s\n' "$title"
   printf -- '- Status: inbox\n'
   printf -- '- Created At: %s\n' "$timestamp"
@@ -252,11 +252,11 @@ tmp="$(autoflow_mktemp)"
   printf -- '- Plan AI must not turn order intake into a repeated human-question loop. Only unsafe requests should be blocked; otherwise use the safest narrow interpretation.\n'
 } > "$tmp"
 
-mv "$tmp" "$memo_file"
+mv "$tmp" "$order_file"
 
 printf 'status=created\n'
-printf 'memo_id=%s\n' "$memo_id"
-printf 'memo_file=%s\n' "$memo_file"
+printf 'order_id=%s\n' "$order_id"
+printf 'order_file=%s\n' "$order_file"
 printf 'project_root=%s\n' "$project_root"
 printf 'board_root=%s\n' "$board_root"
 printf 'board_dir_name=%s\n' "$board_dir_name"

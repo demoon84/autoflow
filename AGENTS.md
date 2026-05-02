@@ -13,7 +13,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 1. `.autoflow/README.md`
 2. `.autoflow/rules/README.md`
 3. `.autoflow/reference/backlog.md`
-4. `.autoflow/reference/memo.md`
+4. `.autoflow/reference/order.md`
 5. `.autoflow/reference/plan.md`
 6. `.autoflow/automations/README.md`
 7. `.autoflow/reference/tickets-board.md`
@@ -29,7 +29,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 
 기본 토폴로지는 **Orchestrator AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. 멀티 owner 로 인한 worktree base drift / Allowed Paths 충돌 때문에 단일 Impl AI 로 직렬화했고, 세 역할은 디스조인트한 경로만 쓰기 때문에 동시에 ticking 해도 충돌이 발생하지 않는다.
 
-- `planner` (role=`planner`): Orchestrator AI. 입력은 `tickets/inbox/` memo, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드는 작성하지 않으며 worktree 도 직접 만들지 않는다. 단, **blocked-dirty orchestration** 시에는 PROJECT_ROOT 의 이미 dirty 한 변경을 읽고 적절한 grouping 으로 local commit (또는 push 없이 stash) 까지 직접 처리한다 — 1원칙(멈추지 않는다)을 위해 default 는 integrate 다.
+- `planner` (role=`planner`): Orchestrator AI. 입력은 `tickets/inbox/` order, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드는 작성하지 않으며 worktree 도 직접 만들지 않는다. 단, **blocked-dirty orchestration** 시에는 PROJECT_ROOT 의 이미 dirty 한 변경을 읽고 적절한 grouping 으로 local commit (또는 push 없이 stash) 까지 직접 처리한다 — 1원칙(멈추지 않는다)을 위해 default 는 integrate 다.
 - `worker` (role=`ticket-owner`): Impl AI. `tickets/todo/` claim → `tickets/inprogress/` worktree → mini-plan + 구현 + 검증 + 머지 + `tickets/done/` 까지 한 턴에 끝낸다. 완료 finalizer 는 evidence/log/commit 만 처리하고 wiki 는 직접 갱신하지 않는다.
 - `wiki` (role=`wiki-maintainer`): Wiki AI. 1분 tick + debounce. `.autoflow/tickets/done/`, `.autoflow/tickets/reject/`, 그리고 `.autoflow/wiki/` 의 변동을 먼저 판단한다. 실제 baseline drift 가 있을 때만 `autoflow wiki update` / `update-wiki.sh` 를 도구로 호출하고, 확인-only 이력은 `.autoflow/runners/state/wiki-baseline.history` 에 남긴다. 변동이 없으면 idle. 변동이 있어도 매 분 합성하지 않고, 누적 변동 파일이 `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (기본 3) 이상이거나 첫 변동 감지 후 `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (기본 1800s = 30분) 이상 경과한 tick 에만 `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 를 실행한다. `AUTOFLOW_WIKI_DEBOUNCE=0` 으로 debounce 를 끌 수 있다 (변동 즉시 합성).
 - `coordinator`, `merge-bot`, 추가 owner 는 신규 보드에서 더 이상 기본 runner 가 아니다. role 식별자 자체는 호환성을 위해 살아 있지만, `.autoflow/runners/config.toml` 의 디폴트는 `planner` + `worker` + `wiki` 세 개만이다.
@@ -44,7 +44,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Impl AI (`ticket-owner`) 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `.autoflow/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있다. 동시에 도는 Impl AI 가 1개뿐이므로 worktree 가 겹칠 일은 없지만, 향후 여러 개로 늘릴 가능성을 위해 worktree 안에서 수정하는 패턴은 유지한다.
-5. 기본 실행 모델은 **Orchestrator AI + Impl AI** 다. Orchestrator AI 가 memo/backlog/reject 를 PRD/todo 로 흘려보내고 stalled/blocked 작업을 `Recovery State` 로 복구 지시하면, Impl AI 가 todo claim 부터 머지까지 한 번에 끝낸다.
+5. 기본 실행 모델은 **Orchestrator AI + Impl AI** 다. Orchestrator AI 가 order/backlog/reject 를 PRD/todo 로 흘려보내고 stalled/blocked 작업을 `Recovery State` 로 복구 지시하면, Impl AI 가 todo claim 부터 머지까지 한 번에 끝낸다.
 5a. **Reject auto-replan / auto-close / blocked-dirty orchestration / board recovery 는 Orchestrator AI (`planner`, `start-plan.sh`) 의 책임**이다. `AUTOFLOW_REJECT_AUTO_REPLAN=off` 가 아니면 `tickets/reject/` 의 티켓을 최대 `AUTOFLOW_REJECT_MAX_RETRIES` 회까지 `tickets/todo/` 로 되돌린다. retry 한도(`max_retries_reached`)에 도달한 reject 는 `AUTOFLOW_REJECT_AUTO_CLOSE=off` 가 아니면 같은 tick 에서 PRD `## Verification` `Command:` 를 PROJECT_ROOT 에서 1회 실행한다. exit 0 이면 reject 파일에 `## Manual Resolution (auto-close)` 섹션을 자동 append 하고 `tickets/done/<prd_key>/` 로 archive 한다(verify_NNN*.md companion 도 같이 이동, 이름 충돌 시 timestamp suffix). 미통과면 기존처럼 `Recovery State: needs_user` 로 보존한다. `AUTOFLOW_BLOCKED_AUTO_RECOVER=off` 가 아니면 `tickets/inprogress/` 의 `Stage: blocked` ticket 중 `Failure Class` 가 `dirty_root` / `dirty_project_root_conflict` 인 것을 점검한다. dirty paths 가 모두 clean 으로 회복돼 있으면 ticket 을 `tickets/todo/` 로 되돌리고 Worktree / Goal Runtime 필드를 reset 한다(`source=blocked-auto-recover`). dirty paths 가 여전히 남아 있으면 runtime 은 더 이상 `still_dirty` 로 멈추지 않고 `source=blocked-dirty-orchestration` 시그널을 emit 한다 — Orchestrator AI 가 dirty inventory 를 받아 Allowed Paths 기준으로 grouping 하고 `[PRD_NNN][ticket_NNN] orchestration cleanup: ...` 형식의 local commit 을 만들어 정리한다. 1원칙(멈추지 않는다)이 분류 완벽주의보다 우선이며, ownership 이 모호하면 `[ticket_NNN] orchestration cleanup: misc housekeeping` bundle 로 묶는다. `needs_user` 는 git 자체가 동작 불가한 mechanical 한 경우만 남긴다. 한 tick 에 최대 1건씩 처리하며 reject auto-close command timeout 은 `AUTOFLOW_REJECT_AUTO_CLOSE_TIMEOUT_SECONDS` (기본 300s) 를 따른다. Impl AI 의 `start-ticket-owner.sh` 는 더 이상 reject 를 직접 재계획하지 않는다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 `autoflow run planner` (= Orchestrator AI) 와 `autoflow run ticket` (= Impl AI) 두 명령으로 충분하다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
@@ -54,9 +54,9 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 10. 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
 11. ticket owner 또는 verifier 는 `.autoflow/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
 12. `tickets/` 는 실행 원장이고, 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다. wiki 문서만으로 done/pass 를 판단하지 않는다.
-13. local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 별도 단계로 추가한다. 기본 자동화는 Claude `/autoflow` 또는 Codex `$autoflow` skill 로 PRD 를 backlog 에 전달하거나, Claude `/order` / Codex `$order` / `#order` (이전 이름 `memo` 에서 변경. inbox 파일 이름 `memo_NNN.md` 와 CLI `autoflow memo create` 는 그대로 유지) 로 짧은 요청을 `tickets/inbox/` 에 떨어뜨린 뒤, `autoflow run planner` (Plan AI) 가 generated PRD / todo 티켓을 만들고 `autoflow run ticket` (Impl AI) 가 그 티켓을 끝까지 가져가는 흐름이다. `#autoflow` 는 호환 alias 로 유지한다. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거로 남겨 두지만 새 작업에서 권장하지 않는다.
+13. local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 별도 단계로 추가한다. 기본 자동화는 Claude `/autoflow` 또는 Codex `$autoflow` skill 로 PRD 를 backlog 에 전달하거나, Claude `/order` / Codex `$order` / `#order` (이전 이름 `order` 에서 변경. inbox 파일 이름 `orderNNN.md` 와 CLI `autoflow order create` 는 그대로 유지) 로 짧은 요청을 `tickets/inbox/` 에 떨어뜨린 뒤, `autoflow run planner` (Plan AI) 가 generated PRD / todo 티켓을 만들고 `autoflow run ticket` (Impl AI) 가 그 티켓을 끝까지 가져가는 흐름이다. `#autoflow` 는 호환 alias 로 유지한다. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거로 남겨 두지만 새 작업에서 권장하지 않는다.
 14. heartbeat / runner tick 이 종료될 때는 현재 공정률을 표기한다. 가능하면 `autoflow metrics` 또는 보드의 PRD/ticket 집계를 기준으로 한 percent 를 tick 의 마지막 대화/로그 요약에 남긴다.
-15. 문서 언어 정책: 새로 생성되는 Autoflow PRD(`prd_NNN.md`), plan, ticket, 사용자 친화 memo 본문과 사용자 대상 설명은 기본적으로 한국어로 작성한다. 단, parser 가 읽는 섹션명, 필드명, key=value 출력, 경로, 명령어, 코드, ticket id, project key, runtime contract 는 기존 포맷과 언어를 유지한다. AI / runner 전용 계약 문서(`.autoflow/agents/`, `rules/`, `reference/` 등)는 parser 호환 구조를 유지하되, 사람이 읽는 placeholder / 설명 문장은 한국어 작성 기준을 반영할 수 있다.
+15. 문서 언어 정책: 새로 생성되는 Autoflow PRD(`prd_NNN.md`), plan, ticket, 사용자 친화 order 본문과 사용자 대상 설명은 기본적으로 한국어로 작성한다. 단, parser 가 읽는 섹션명, 필드명, key=value 출력, 경로, 명령어, 코드, ticket id, project key, runtime contract 는 기존 포맷과 언어를 유지한다. AI / runner 전용 계약 문서(`.autoflow/agents/`, `rules/`, `reference/` 등)는 parser 호환 구조를 유지하되, 사람이 읽는 placeholder / 설명 문장은 한국어 작성 기준을 반영할 수 있다.
 15a. 터미널 / adapter / heartbeat 에서 사용자가 읽는 AI 대화, 진행 요약, 설명 문장은 기본적으로 한국어로 쓴다. 단, key=value 출력, 경로, 명령어, 코드, ticket 필드, parser 가 읽는 형식, AI용 보드 계약은 원래 포맷과 언어를 유지한다.
 16. 사용자 노출 worker 표기(`ticket`, `verification`, `log`, desktop markdown preview`)는 storage 식별자 `owner-N` / legacy `ai-N` 를 preferred display wording 으로 정규화한다. 해당 역할의 enabled runner 가 1개뿐이면 `worker`처럼 숫자 접미사를 숨기고, 2개 이상이면 `worker-N` 형태를 유지한다. runner state 파일 이름, runtime role 키, config 상의 실제 worker id 는 바꾸지 않는다.
 17. Autoflow 개발에서 데스크톱 UI 컴포넌트(`apps/desktop/src/components/ui/` + 그 위 화면)는 **shadcn/ui 방식의 로컬 React 컴포넌트와 lucide-react 아이콘을 우선** 사용한다. UI 기능을 추가하거나 수정할 때는 shadcn CLI(`shadcn init`, `shadcn add`)의 구조처럼 컴포넌트를 앱 안에 소유하고, 아이콘은 lucide-react에서 가져온다. MUI Material / Emotion theme wrapper / MUI 전용 class(`Mui*`)는 새로 추가하지 않고, 기존 MUI 의존 코드가 같은 패턴을 다루고 있으면 shadcn/lucide 기반 로컬 컴포넌트로 점진 제거한다. modal/dialog/sheet/popover/tooltip/dropdown/command/toast 같은 인터랙션 패턴은 shadcn 스타일의 접근성 있는 컴포넌트로 구현하며, 키보드 Escape, focus management, ARIA 요건을 충족한다.
@@ -72,16 +72,16 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 이후 Plan AI 가 backlog PRD 를 todo 로 변환하고, ticket owner runner 가 Autoflow 보드에서 mini-plan / 구현 / 검증 / evidence 를 한 번에 이어받는다.
   - plan / ticket / 구현은 시작하지 않는다.
 
-- `#order` (이전 이름 `#memo` 에서 변경됨)
+- `#order` (이전 이름 `#order` 에서 변경됨)
   - Claude `/order`, Codex `$order` 와 같은 quick intake alias 다.
-  - 단순 수정 요청을 PRD 없이 `.autoflow/tickets/inbox/memo_{NNN}.md` 에 저장한다 (파일 이름 prefix `memo_` 와 CLI `autoflow memo create` 는 호환을 위해 그대로 둠).
+  - 단순 수정 요청을 PRD 없이 `.autoflow/tickets/inbox/order_NNN.md` 에 저장한다 (파일 이름 prefix `order` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
   - plan / ticket / 구현은 시작하지 않는다. 이후 Plan AI 가 inbox 의 노트를 구현 지시로 해석해 안전한 가장 좁은 범위의 generated PRD 와 todo ticket 으로 승격한다. order 는 반복 질문 루프를 만들지 않는다.
 
 - `#plan`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 plan 작업은 항상-on Plan AI(`planner`) loop runner 가 1분 tick 마다 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 planner heartbeat 를 1분 주기로 생성 또는 재개한다.
-  - actionable memo 또는 populated PRD 가 있으면 계속 처리해 generated PRD / plan 을 작성하고, start-plan 런타임으로 `.autoflow/tickets/todo/` 티켓을 만든다.
+  - actionable order 또는 populated PRD 가 있으면 계속 처리해 generated PRD / plan 을 작성하고, start-plan 런타임으로 `.autoflow/tickets/todo/` 티켓을 만든다.
   - 실제 ticket 생성이 끝난 PRD 와 plan 은 `.autoflow/tickets/done/<project-key>/` 로 이동한다.
   - `.autoflow/tickets/reject/reject_NNN.md` 도 계속 감시해 reject reason 을 plan 에 반영하고 새 todo 로 다시 보낸 뒤, 해당 reject 기록은 `.autoflow/tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
   - 현재 plan 이 ticketed 가 됐거나 verifier 가 `.autoflow/tickets/done/<project-key>/` 으로 넘긴 뒤에도 backlog 에 다음 populated PRD 가 남아 있으면 계속 다음 plan 으로 이어간다.

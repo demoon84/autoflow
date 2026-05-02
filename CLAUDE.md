@@ -6,7 +6,7 @@
 
 ## Claude Code
 
-Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow` and `.claude/skills/order` (renamed from `memo`; the inbox file naming `memo_*.md` and the CLI subcommand `autoflow order create` are intentionally unchanged).
+Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow` and `.claude/skills/order` (renamed from `memo`; the inbox file naming `order_*.md` and the CLI subcommand `autoflow order create` are intentionally unchanged).
 
 When the user invokes `/autoflow` or `#autoflow`, treat it as an Autoflow PRD handoff trigger:
 
@@ -19,10 +19,10 @@ When the user invokes `/autoflow` or `#autoflow`, treat it as an Autoflow PRD ha
 7. After the draft is shown, save only when the user explicitly confirms with words such as `save`, `저장`, `confirm`, `approved`, or `ready`. A draft trigger is **not** save approval. Multiple drafts need per-PRD approval or a clear `save all` / `전부 저장` confirmation.
 8. After saving, tell the user that `autoflow run planner` (Plan AI) will pick the PRD up and create a todo ticket on the next tick, and `autoflow run ticket` (Impl AI) will then claim and finish it.
 
-When the user invokes `/order` or `#order`, treat it as an Autoflow quick order trigger (this trigger was previously named `/memo` / `#memo`; the inbox filename prefix and CLI subcommand are still `memo`):
+When the user invokes `/order` or `#order`, treat it as an Autoflow quick order trigger (this trigger was previously named `/order` / `#order`; the inbox filename prefix and CLI subcommand are still `order`):
 
 1. Do not say the trigger is unknown.
-2. Save only a short note under `.autoflow/tickets/inbox/memo_*.md`.
+2. Save only a short note under `.autoflow/tickets/inbox/order_*.md`.
 3. Preserve the original request and add only obvious scope / Allowed Paths / Verification hints.
 4. Do not create a PRD, plan, ticket, implementation, verification, commit, or push.
 5. Tell the user that `autoflow run planner` (Plan AI) will promote the order into a generated PRD and todo ticket when safe.
@@ -33,4 +33,4 @@ Wiki AI note: Impl AI finalizers do not run `update-wiki.sh` inline or stage `.a
 
 User-visible worker notation rule: ticket / verification / log markdown and desktop previews should prefer display-only worker wording for runner attribution. Hide the numeric suffix when the role has one enabled runner (`worker`), but keep `worker-N` when multiple enabled runners need disambiguation. Keep storage ids such as `worker`, runtime role keys, and runner state filenames unchanged. Existing legacy ticket fields such as `AI`, `Execution AI`, and `Verifier AI` remain readable for compatibility.
 
-Language policy: write newly generated PRD, plan, ticket, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section names, field names, key=value output, paths, commands, code, ticket ids, project keys, and runtime contracts exactly as their templates require.
+Language policy: write newly generated PRD, plan, ticket, and user-friendly order prose in Korean by default. Preserve parser-sensitive section names, field names, key=value output, paths, commands, code, ticket ids, project keys, and runtime contracts exactly as their templates require.

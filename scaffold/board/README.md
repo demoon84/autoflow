@@ -15,7 +15,7 @@ Use Ticket Owner Mode by default:
 4. The agent renders a full PRD draft, or multiple PRD drafts from an accepted split map, only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
 5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
 6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
-7. The planner runner acts as Orchestrator AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
+7. The planner runner acts as Orchestrator AI: it promotes order/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
 8. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
 9. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
 10. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
@@ -83,11 +83,11 @@ Quick order intake never starts implementation.
 
 The agent must:
 
-1. Preserve the user's original request in `tickets/inbox/memo_*.md`.
+1. Preserve the user's original request in `tickets/inbox/order_*.md`.
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
-4. Let Orchestrator AI promote the memo into a generated PRD and todo ticket when safe.
-5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe memo should be blocked.
+4. Let Orchestrator AI promote the order into a generated PRD and todo ticket when safe.
+5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe order should be blocked.
 
 ## Ticket Owner Rules
 

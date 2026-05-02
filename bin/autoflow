@@ -233,9 +233,9 @@ case "$cmd" in
     shift || true
     exec "${REPO_ROOT}/packages/cli/spec-project.sh" "$@"
     ;;
-  order|memo)
+  order)
     shift || true
-    exec "${REPO_ROOT}/packages/cli/memo-project.sh" "$@"
+    exec "${REPO_ROOT}/packages/cli/order-project.sh" "$@"
     ;;
   run)
     shift || true

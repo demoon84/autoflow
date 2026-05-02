@@ -13,7 +13,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 1. `{{BOARD_DIR}}/README.md`
 2. `{{BOARD_DIR}}/rules/README.md`
 3. `{{BOARD_DIR}}/reference/backlog.md`
-4. `{{BOARD_DIR}}/reference/memo.md`
+4. `{{BOARD_DIR}}/reference/order.md`
 5. `{{BOARD_DIR}}/reference/plan.md`
 6. `{{BOARD_DIR}}/automations/README.md`
 7. `{{BOARD_DIR}}/reference/tickets-board.md`
@@ -31,7 +31,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Ticket Owner 또는 legacy todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `{{BOARD_DIR}}/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
-5. 기본 토폴로지는 **Plan AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. Plan AI(`planner`) 가 memo/backlog/reject 를 generated PRD/todo 로 흘려보내면, Impl AI(`worker`) 가 todo claim 부터 mini-plan, 구현, 검증, AI-led merge, done/reject 이동을 한 번에 끝낸다. Wiki AI(`wiki`) 는 `tickets/done/` + `tickets/reject/` 변동을 감지해 `{{BOARD_DIR}}/wiki/` 의 AI synthesis 를 갱신한다. 세 runner 는 디스조인트한 경로만 만지므로 동시에 ticking 해도 충돌이 발생하지 않는다.
+5. 기본 토폴로지는 **Plan AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. Plan AI(`planner`) 가 order/backlog/reject 를 generated PRD/todo 로 흘려보내면, Impl AI(`worker`) 가 todo claim 부터 mini-plan, 구현, 검증, AI-led merge, done/reject 이동을 한 번에 끝낸다. Wiki AI(`wiki`) 는 `tickets/done/` + `tickets/reject/` 변동을 감지해 `{{BOARD_DIR}}/wiki/` 의 AI synthesis 를 갱신한다. 세 runner 는 디스조인트한 경로만 만지므로 동시에 ticking 해도 충돌이 발생하지 않는다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 역할 분리보다 `autoflow run ticket` / owner runner 를 우선한다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
 8. ticket owner 또는 verifier 는 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.
@@ -54,16 +54,16 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 이후 ticket owner runner 가 Autoflow 보드에서 mini-plan / 구현 / 검증 / evidence 를 한 번에 이어받는다.
   - plan / ticket / 구현은 시작하지 않는다.
 
-- `#order` (이전 이름 `#memo` 에서 변경됨)
+- `#order` (이전 이름 `#order` 에서 변경됨)
   - Claude `/order`, Codex `$order` 와 같은 quick order handoff alias 다.
-  - 단순 수정 요청을 PRD 없이 `{{BOARD_DIR}}/tickets/inbox/memo_*.md` 에 저장한다 (파일 이름 prefix `memo_` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
+  - 단순 수정 요청을 PRD 없이 `{{BOARD_DIR}}/tickets/inbox/order_*.md` 에 저장한다 (파일 이름 prefix `order` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
   - plan / ticket / 구현은 시작하지 않는다. 이후 Plan AI 가 inbox 의 노트를 구현 지시로 해석해 안전한 가장 좁은 범위의 generated PRD 와 todo ticket 으로 승격한다. order 는 반복 질문 루프를 만들지 않는다.
 
 - `#plan`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 plan 작업은 항상-on Plan AI(`planner`) loop runner 가 1분 tick 마다 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 planner heartbeat 를 1분 주기로 생성 또는 재개한다.
-  - actionable memo 또는 populated spec 이 있으면 계속 처리해 generated PRD / plan 을 작성하고, start-plan 런타임으로 `{{BOARD_DIR}}/tickets/todo/` 티켓을 만든다.
+  - actionable order 또는 populated spec 이 있으면 계속 처리해 generated PRD / plan 을 작성하고, start-plan 런타임으로 `{{BOARD_DIR}}/tickets/todo/` 티켓을 만든다.
   - 실제 ticket 생성이 끝난 spec 과 plan 은 `{{BOARD_DIR}}/tickets/done/<project-key>/` 로 이동한다.
   - `{{BOARD_DIR}}/tickets/reject/reject_NNN.md` 도 계속 감시해 reject reason 을 plan 에 반영하고 새 todo 로 다시 보낸 뒤, 해당 reject 기록은 `{{BOARD_DIR}}/tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
   - 현재 plan 이 ticketed 가 됐거나 verifier 가 `{{BOARD_DIR}}/tickets/done/<project-key>/` 으로 넘긴 뒤에도 backlog 에 다음 populated spec 이 남아 있으면 계속 다음 plan 으로 이어간다.
