@@ -1026,7 +1026,23 @@ function App() {
   const [isInstalling, setIsInstalling] = React.useState(false);
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => readThemeMode());
   const [installedAgentProfiles, setInstalledAgentProfiles] = React.useState<InstalledAgentProfiles>({});
-  const [runnerActionKey, setRunnerActionKey] = React.useState("");
+  // Per-runner inflight tracker. Key = runner.id, value = action label
+  // ("start" / "stop" / "restart" / "run" / "dry-run" / "config"). A globally
+  // shared string used to gate every button at once; the new map lets each
+  // runner's button disable independently so users can fire start/stop on
+  // multiple runners in parallel.
+  const [runnerActionKeys, setRunnerActionKeys] = React.useState<Record<string, string>>({});
+  const setRunnerAction = React.useCallback((runnerId: string, action: string) => {
+    setRunnerActionKeys((prev) => {
+      if (action) {
+        if (prev[runnerId] === action) return prev;
+        return { ...prev, [runnerId]: action };
+      }
+      if (!(runnerId in prev)) return prev;
+      const { [runnerId]: _omit, ...rest } = prev;
+      return rest;
+    });
+  }, []);
   const [runnerError, setRunnerError] = React.useState("");
   const [runnerDrafts, setRunnerDrafts] = React.useState<Record<string, RunnerDraft>>({});
   const [selectedRunnerId, setSelectedRunnerId] = React.useState("");
@@ -1358,7 +1374,8 @@ function App() {
             previousDraft.enabled !== runnerDraft.enabled ||
             previousDraft.command !== runnerDraft.command
           : false;
-        const baseDraft = previousDraft && (runnerActionKey || previousIsDirty) ? previousDraft : runnerDraft;
+        const isThisRunnerWorking = Boolean(runnerActionKeys[runner.id]);
+        const baseDraft = previousDraft && (isThisRunnerWorking || previousIsDirty) ? previousDraft : runnerDraft;
         const normalized = normalizeRunnerSelections(
           baseDraft.agent || "codex",
           baseDraft.model || "",
@@ -1374,7 +1391,7 @@ function App() {
       }
       return next;
     });
-  }, [board?.runners, installedAgentProfiles, runnerActionKey]);
+  }, [board?.runners, installedAgentProfiles, runnerActionKeys]);
 
   React.useEffect(() => {
     const runners = board?.runners || [];
@@ -1539,13 +1556,12 @@ function App() {
 
   const controlRunner = React.useCallback(
     async (action: "start" | "stop" | "restart", runnerId: string) => {
-      if (!options.projectRoot || runnerActionKey) {
+      if (!options.projectRoot || runnerActionKeys[runnerId]) {
         return;
       }
 
-      const actionKey = `${action}:${runnerId}`;
       selectRunner(runnerId);
-      setRunnerActionKey(actionKey);
+      setRunnerAction(runnerId, action);
       setRunnerError("");
       try {
         const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
@@ -1600,10 +1616,10 @@ function App() {
 
         await loadBoard();
       } finally {
-        setRunnerActionKey("");
+        setRunnerAction(runnerId, "");
       }
     },
-    [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKey, runnerDrafts, selectRunner]
+    [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
   );
 
   const readLog = React.useCallback(
@@ -1647,13 +1663,12 @@ function App() {
 
   const runRunner = React.useCallback(
     async (runner: AutoflowRunner, dryRun = false) => {
-      if (!options.projectRoot || runnerActionKey) {
+      if (!options.projectRoot || runnerActionKeys[runner.id]) {
         return;
       }
 
-      const actionKey = `${dryRun ? "dry-run" : "run"}:${runner.id}`;
       selectRunner(runner.id);
-      setRunnerActionKey(actionKey);
+      setRunnerAction(runner.id, dryRun ? "dry-run" : "run");
       setRunnerError("");
       try {
         const result = await window.autoflow.runRole({
@@ -1672,10 +1687,10 @@ function App() {
           await readLog(artifactPath);
         }
       } finally {
-        setRunnerActionKey("");
+        setRunnerAction(runner.id, "");
       }
     },
-    [loadBoard, options, readLog, runnerActionKey, selectRunner]
+    [loadBoard, options, readLog, runnerActionKeys, selectRunner, setRunnerAction]
   );
 
   const updateRunnerDraft = React.useCallback((runnerId: string, field: keyof RunnerDraft, value: string) => {
@@ -1715,7 +1730,7 @@ function App() {
 
   const saveRunnerConfig = React.useCallback(
     async (runner: AutoflowRunner) => {
-      if (!options.projectRoot || runnerActionKey) {
+      if (!options.projectRoot || runnerActionKeys[runner.id]) {
         return;
       }
 
@@ -1729,9 +1744,8 @@ function App() {
         command: runner.command || ""
       };
       const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
-      const actionKey = `config:${runner.id}`;
       selectRunner(runner.id);
-      setRunnerActionKey(actionKey);
+      setRunnerAction(runner.id, "config");
       setRunnerError("");
       try {
         const result = await window.autoflow.configureRunner({
@@ -1753,10 +1767,31 @@ function App() {
 
         await loadBoard();
       } finally {
-        setRunnerActionKey("");
+        setRunnerAction(runner.id, "");
       }
     },
-    [installedAgentProfiles, loadBoard, options, runnerActionKey, runnerDrafts, selectRunner]
+    [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
+  );
+
+  // Bulk control: fire start/stop in parallel across every eligible runner.
+  // Each runner has its own mutex (controlRunner above guards by runner.id),
+  // so Promise.allSettled is safe and races between them are bounded by the
+  // CLI's per-runner state-file writes (atomic mv).
+  const controlAllRunners = React.useCallback(
+    async (action: "start" | "stop") => {
+      if (!options.projectRoot || !board?.runners) return;
+      const targets = board.runners.filter((runner) => {
+        const isLoopRunner = (runner.mode || "loop") === "loop";
+        if (!isLoopRunner) return false;
+        if (action === "start") {
+          return (runner.stateStatus || "") !== "running" && !runner.pid;
+        }
+        return (runner.stateStatus || "") === "running" || Boolean(runner.pid);
+      });
+      if (targets.length === 0) return;
+      await Promise.allSettled(targets.map((runner) => controlRunner(action, runner.id)));
+    },
+    [board?.runners, controlRunner, options.projectRoot]
   );
 
   const writeMetricsSnapshot = React.useCallback(async () => {
@@ -1942,10 +1977,11 @@ function App() {
                       selectedPath={selectedLogPath}
                       onSelect={readLog}
                       options={options}
-                      actionKey={runnerActionKey}
+                      actionKeys={runnerActionKeys}
                       drafts={runnerDrafts}
                       onSelectRunner={selectRunner}
                       onControl={controlRunner}
+                      onControlAll={controlAllRunners}
                       onDraftChange={updateRunnerDraft}
                       onConfigure={saveRunnerConfig}
                     />
@@ -2663,7 +2699,8 @@ function RunnerConfigControls({
     (runner.intervalSeconds || "60") !== "60" ||
     (runner.enabled || "true") !== "true" ||
     draft.command !== (runner.command || "");
-  const isWorking = actionKey.endsWith(`:${runner.id}`);
+  // actionKey holds the action label for THIS runner only ("" when idle).
+  const isWorking = Boolean(actionKey);
 
   return (
     <div className={`${className}${showAgent ? "" : " runner-config-no-agent"}`}>
@@ -2740,7 +2777,7 @@ function RunnerConfigControls({
           onConfigure(runner);
         }}
       >
-        {isWorking && actionKey.startsWith("config:") ? (
+        {isWorking && actionKey === "config" ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>저장</span>
@@ -2825,7 +2862,8 @@ function RunnerConsole({
             const status = runner.stateStatus || "idle";
             const mode = "loop";
             const intervalLabel = runner.intervalSeconds || runner.intervalEffectiveSeconds || "60";
-            const isWorking = actionKey.endsWith(`:${runner.id}`);
+            // actionKey holds the action label for THIS runner only ("" when idle).
+            const isWorking = Boolean(actionKey);
             const canStart = mode === "loop";
             const canStop = status === "running" || Boolean(runner.pid);
             const canEditConfig = status !== "running";
@@ -2917,7 +2955,7 @@ function RunnerConsole({
                           onControl("stop", runner.id);
                         }}
                       >
-                        {isWorking && actionKey.startsWith("stop:") ? (
+                        {isWorking && actionKey === "stop" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Square className="h-4 w-4" />
@@ -2935,7 +2973,7 @@ function RunnerConsole({
                           onControl("start", runner.id);
                         }}
                       >
-                        {isWorking && actionKey.startsWith("start:") ? (
+                        {isWorking && actionKey === "start" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Play className="h-4 w-4" />
@@ -5172,10 +5210,11 @@ function TicketBoard({
   selectedPath: _selectedPath,
   onSelect,
   options,
-  actionKey = "",
+  actionKeys = {},
   drafts = {},
   onSelectRunner,
   onControl,
+  onControlAll,
   onDraftChange,
   onConfigure
 }: {
@@ -5184,10 +5223,14 @@ function TicketBoard({
   selectedPath: string;
   onSelect: (filePath: string) => void;
   options?: { projectRoot: string; boardDirName: string };
-  actionKey?: string;
+  // Per-runner inflight tracker (key=runner.id, value=action label such as
+  // "start"/"stop"/"restart"/"run"/"dry-run"/"config"). Empty/missing means
+  // that runner's row is idle and its buttons are interactable.
+  actionKeys?: Record<string, string>;
   drafts?: Record<string, RunnerDraft>;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onControlAll?: (action: "start" | "stop") => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner) => void;
 }) {
@@ -5313,6 +5356,35 @@ function TicketBoard({
         ) : null
       }
     >
+      {!boardMissing && runners.length > 0 && onControlAll ? (
+        <div className="ai-progress-bulk-toolbar" role="group" aria-label="모든 AI 일괄 제어">
+          <Button
+            variant="outline"
+            size="sm"
+            className="ai-progress-bulk-button"
+            onClick={() => onControlAll("start")}
+            title="실행 중이 아닌 모든 AI를 동시에 시작합니다"
+          >
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>전체 시작</span>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ai-progress-bulk-button"
+            onClick={() => onControlAll("stop")}
+            title="실행 중인 모든 AI를 동시에 중지합니다"
+          >
+            <Square className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>전체 정지</span>
+          </Button>
+          {Object.keys(actionKeys).length > 0 ? (
+            <span className="ai-progress-bulk-status" aria-live="polite">
+              {Object.keys(actionKeys).length}개 진행 중
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="ai-progress-board" data-runner-count={runners.length} aria-label="AI별 작업 진행률">
         {boardMissing ? (
           <div className="ai-progress-empty ai-progress-empty-install">
@@ -5328,7 +5400,7 @@ function TicketBoard({
               onSelect={onSelect}
               installedAgentProfiles={installedAgentProfiles}
               options={options}
-              actionKey={actionKey}
+              actionKey={actionKeys[runner.id] || ""}
               draft={drafts[runner.id]}
               onSelectRunner={onSelectRunner}
               onControl={onControl}
@@ -5704,7 +5776,8 @@ function AiProgressRow({
   const conversationText = runnerConversationText(runner);
   const statusLower = status.toLowerCase();
   const mode = "loop";
-  const isWorking = actionKey.endsWith(`:${runner.id}`);
+  // actionKey holds the action label for THIS runner only ("" when idle).
+  const isWorking = Boolean(actionKey);
   const canStart = mode === "loop";
   const canStop = statusLower === "running" || Boolean(runner.pid);
   const canEditConfig = statusLower !== "running";
@@ -5808,7 +5881,7 @@ function AiProgressRow({
                   onControl?.("stop", runner.id);
                 }}
               >
-                {isWorking && actionKey.startsWith("stop:") ? (
+                {isWorking && actionKey === "stop" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Square className="h-4 w-4" />
@@ -5826,7 +5899,7 @@ function AiProgressRow({
                   onControl?.("start", runner.id);
                 }}
               >
-                {isWorking && actionKey.startsWith("start:") ? (
+                {isWorking && actionKey === "start" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="h-4 w-4" />

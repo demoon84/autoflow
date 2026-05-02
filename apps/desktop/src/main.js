@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -7,6 +7,8 @@ const path = require("node:path");
 
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
+const desktopRoot = path.resolve(__dirname, "..");
+const appIconPath = path.join(desktopRoot, "build", "app-icon.png");
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
@@ -273,6 +275,7 @@ function createWindow() {
     minWidth: 1040,
     minHeight: 720,
     title: "코덱스 작업 흐름",
+    icon: appIconPath,
     backgroundColor: "#f7f7f7",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 16 },
@@ -2050,6 +2053,12 @@ async function listRunners(options = {}) {
   };
 }
 
+// Per-(projectRoot, runnerId) inflight tracker. Renderer-side parallel
+// start/stop fires multiple `autoflow:controlRunner` IPC calls in flight;
+// without this guard a fast double-click on the same runner could spawn
+// duplicate `autoflow runners start` subprocesses or interleave start/stop
+// on the same state file. Different runner ids stay parallel.
+const runnerControlInflight = new Map();
 async function controlRunner(options = {}) {
   if (!options.projectRoot) {
     return Promise.resolve({
@@ -2084,7 +2093,21 @@ async function controlRunner(options = {}) {
   }
 
   const boardDirName = options.boardDirName || defaultBoardDirName;
-  return runAutoflowArgs(["runners", action, runnerId, options.projectRoot, boardDirName], options);
+  const lockKey = `${options.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const existing = runnerControlInflight.get(lockKey);
+  if (existing) {
+    return existing;
+  }
+  const promise = runAutoflowArgs(
+    ["runners", action, runnerId, options.projectRoot, boardDirName],
+    options
+  ).finally(() => {
+    if (runnerControlInflight.get(lockKey) === promise) {
+      runnerControlInflight.delete(lockKey);
+    }
+  });
+  runnerControlInflight.set(lockKey, promise);
+  return promise;
 }
 
 function listRunnerArtifacts(options = {}) {
@@ -2683,6 +2706,11 @@ async function forceKillSurvivingRunners() {
 }
 
 app.whenReady().then(() => {
+  const appIcon = nativeImage.createFromPath(appIconPath);
+  if (!appIcon.isEmpty() && process.platform === "darwin") {
+    app.dock.setIcon(appIcon);
+  }
+
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"]
