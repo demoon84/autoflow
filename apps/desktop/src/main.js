@@ -477,6 +477,41 @@ function runAutoflowCached(command, options = {}, ttlMs = readBoardDiagnosticCac
   return startCachedAutoflowRefresh(command, options, key).then(cloneRunResult);
 }
 
+function emptyCachedAutoflowResult(command, options = {}) {
+  return {
+    ok: true,
+    command: commandLabel(scopedArgs(command, options)),
+    code: 0,
+    signal: "",
+    cancelled: false,
+    stdout: "",
+    stderr: ""
+  };
+}
+
+function runAutoflowCachedOrRefresh(command, options = {}, ttlMs = readBoardDiagnosticCacheTtlMs) {
+  const key = readBoardDiagnosticCacheKey(command, options);
+  const entry = readBoardDiagnosticCache.get(key);
+  const now = Date.now();
+
+  if (entry?.result && now - entry.updatedAt < ttlMs) {
+    return Promise.resolve(cloneRunResult(entry.result));
+  }
+
+  if (entry?.result) {
+    if (!entry.promise) {
+      void startCachedAutoflowRefresh(command, options, key, entry);
+    }
+    return Promise.resolve(cloneRunResult(entry.result));
+  }
+
+  if (!entry?.promise) {
+    void startCachedAutoflowRefresh(command, options, key, entry);
+  }
+
+  return Promise.resolve(emptyCachedAutoflowResult(command, options));
+}
+
 function clearReadBoardDiagnosticCache(command, options = {}) {
   readBoardDiagnosticCache.delete(readBoardDiagnosticCacheKey(command, options));
 }
@@ -1924,7 +1959,7 @@ async function readBoard({ projectRoot, boardDirName }) {
         runAutoflow("status", { projectRoot, boardDirName: normalizedBoardDirName }),
         listRunners({ projectRoot, boardDirName: normalizedBoardDirName }),
         runAutoflowCached("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCached("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCachedOrRefresh("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
         runAutoflow("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
         runAutoflow("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
       ])
