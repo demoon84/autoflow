@@ -6127,6 +6127,55 @@ function WikiList({
   );
 }
 
+// AI 주도 sh 실행 원칙: runner 가 emit 한 protocol envelope (`*_begin`/`*_end`)
+// 과 raw `key=value` 라인은 사용자 view 에서 숨기고, AI 가 emit 한 prose 와
+// `narrative=...` 로 넘겨준 한국어 요약만 보이게 한다. 디버그가 필요하면
+// 원본은 .autoflow/runners/logs/ 의 raw 파일에서 확인한다.
+function summarizeRunnerLogForUserView(rawContent: string): { content: string; hidLines: number } {
+  if (!rawContent) {
+    return { content: rawContent, hidLines: 0 };
+  }
+  const ENVELOPE_MARKER = /^[a-z_][a-z0-9_.]*_(begin|end)$/;
+  const PROTOCOL_KV = /^[a-z_][a-z0-9_.]*=/;
+  const lines = rawContent.split(/\r?\n/);
+  const out: string[] = [];
+  let hid = 0;
+  let lastBlank = true;
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/u, "");
+    const trimmed = line.trim();
+    if (ENVELOPE_MARKER.test(trimmed)) {
+      hid++;
+      continue;
+    }
+    if (PROTOCOL_KV.test(line)) {
+      if (line.startsWith("narrative=")) {
+        const text = line.slice("narrative=".length);
+        if (text) {
+          out.push(text);
+          lastBlank = false;
+        }
+      } else {
+        hid++;
+      }
+      continue;
+    }
+    if (line === "") {
+      if (!lastBlank) {
+        out.push("");
+        lastBlank = true;
+      }
+      continue;
+    }
+    out.push(line);
+    lastBlank = false;
+  }
+  while (out.length && out[out.length - 1] === "") {
+    out.pop();
+  }
+  return { content: out.join("\n"), hidLines: hid };
+}
+
 function LogPreview({
   preview,
   isLoading,
@@ -6138,6 +6187,13 @@ function LogPreview({
   error: string;
   headerAction?: React.ReactNode;
 }) {
+  const [showRaw, setShowRaw] = React.useState(false);
+  const summary = React.useMemo(
+    () => (preview?.content ? summarizeRunnerLogForUserView(preview.content) : { content: "", hidLines: 0 }),
+    [preview?.content]
+  );
+  const displayContent = preview ? (showRaw ? preview.content : summary.content) : "";
+  const placeholder = showRaw ? "(비어 있음)" : "(AI 가 정리한 메시지가 없습니다)";
   return (
     <div className="log-preview">
       <div className="log-preview-header">
@@ -6148,10 +6204,22 @@ function LogPreview({
             일부만 표시
           </Badge>
         ) : null}
+        {!isLoading && preview && summary.hidLines > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="log-preview-raw-toggle"
+            onClick={() => setShowRaw((current) => !current)}
+            title={showRaw ? "AI 정리 본문만 보기" : `숨겨진 sh raw 라인 ${summary.hidLines}개 펼치기`}
+          >
+            {showRaw ? "AI 본문" : `raw +${summary.hidLines}`}
+          </Button>
+        ) : null}
         {headerAction}
       </div>
       {error ? <div className="log-preview-error">{error}</div> : null}
-      {!error && preview ? <pre>{preview.content || "(비어 있음)"}</pre> : null}
+      {!error && preview ? <pre>{displayContent || placeholder}</pre> : null}
       {!error && !preview ? <div className="empty-panel log-preview-empty">선택된 로그가 없습니다</div> : null}
     </div>
   );

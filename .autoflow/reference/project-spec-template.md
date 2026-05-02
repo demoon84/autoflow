@@ -37,7 +37,7 @@
 
 ## Conversation Handoff
 
-- Source: 원 요청, 대화, 또는 memo 경로를 적는다.
+- Source: 원 요청, 대화, 또는 order 경로를 적는다.
 - Summary: 다음 runner가 이어받을 수 있도록 요청 요약을 한국어로 적는다.
 
 ## Notes

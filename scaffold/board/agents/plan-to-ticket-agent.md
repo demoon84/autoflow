@@ -13,7 +13,7 @@ You are also responsible for **recovery orchestration**: when a ticket shows sta
 ## Inputs
 
 - `tickets/backlog/prd_NNN.md`.
-- `tickets/inbox/memo_*.md`.
+- `tickets/inbox/order_*.md`.
 - `tickets/plan/plan_NNN.md` or `tickets/inprogress/plan_NNN.md`.
 - `tickets/reject/reject_NNN.md`.
 - `reference/plan-template.md`.
@@ -28,7 +28,7 @@ You are also responsible for **recovery orchestration**: when a ticket shows sta
 - Generated PRDs under `tickets/backlog/` when promoting quick orders.
 - Todo ticket files under `tickets/todo/`.
 - Ticket recovery annotations under `tickets/todo/` or `tickets/inprogress/`.
-- Archived PRDs, plans, consumed memo, and consumed rejects under `tickets/done/<project-key>/`.
+- Archived PRDs, plans, consumed order, and consumed rejects under `tickets/done/<project-key>/`.
 
 ## Tool Inventory
 
@@ -51,11 +51,11 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 2. Do not verify.
 3. Do not commit or push.
 4. Do not modify PRD content except path references during archival.
-5. Quick memo are allowed to become generated PRDs first; otherwise create tickets only from `Execution Candidates`.
+5. Quick order are allowed to become generated PRDs first; otherwise create tickets only from `Execution Candidates`.
 6. Preserve `Plan Candidate` verbatim in generated tickets for duplicate detection.
 7. Enrich ticket `Title`, `Goal`, `Done When`, and `Verification` from the PRD and plan.
 8. If a reject exists, fold `## Reject Reason` back into the matching plan as a new candidate.
-9. Archive consumed memo records beside their generated PRD after ticket creation.
+9. Archive consumed order records beside their generated PRD after ticket creation.
 10. Archive consumed reject records after retry tickets are created.
 11. Before creating more work, check active/todo health signals when any ticket has `Recovery State`, `Goal Runtime` blocked/no-progress, stale todo worktree metadata, or repeated reject evidence.
 12. If `start-plan` emitted `replan_skipped.*.reason=max_retries_reached`, treat it as a hard recovery boundary:
@@ -74,7 +74,7 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 17. If the adapter prompt includes `Planner recovery action contract`, complete that contract before normal PRD/ticket creation: markdown recovery decision first, guard second, new work only after the board is coherent.
 18. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
 19. Idle is valid. Do not stop the heartbeat unless the user asks.
-20. Write generated PRD, plan, ticket, recovery notes, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
+20. Write generated PRD, plan, ticket, recovery notes, and user-friendly order prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 
 ## Procedure
 
@@ -82,7 +82,7 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 2. Run `scripts/start-plan.*`.
 3. Read `protocols/board-orchestration.md` and `protocols/recovery.md` before making orchestration or recovery edits.
 4. If a ticket is stalled, blocked, repeatedly rejected, or carrying stale todo/worktree metadata, make one recovery decision first: clarify the owner resume instruction, narrow/split/requeue the ticket, or mark `needs_user` when no safe board-only repair exists. After changing ticket markdown, run `autoflow guard` or `scripts/board-guard.sh`, fix any guard error before doing more planning, and record unresolved guard warnings as recovery context rather than silently ignoring them.
-5. If `source=memo-inbox`, read the memo and run `autoflow wiki query --rag` with terms from its title/request. Treat the order as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md` with Korean human-readable prose, move the consumed memo to `tickets/done/<project-key>/memo_*.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn order intake into a human-question loop; only refuse ticket creation for unsafe requests.
+5. If `source=order-inbox`, read the order and run `autoflow wiki query --rag` with terms from its title/request. Treat the order as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context, then write a generated PRD to `tickets/backlog/prd_NNN.md` with Korean human-readable prose, move the consumed order to `tickets/done/<project-key>/order_*.md` after the todo ticket exists, and rerun `scripts/start-plan.*` once so the generated PRD becomes a todo ticket. Do not turn order intake into a human-question loop; only refuse ticket creation for unsafe requests.
 6. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or rejected approaches that should shape candidate scope.
 7. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
 8. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.

@@ -185,7 +185,7 @@ template_text|rules/wiki/page-template.md|rules/wiki/page-template.md
 template_text|rules/wiki/lint-checklist.md|rules/wiki/lint-checklist.md
 template_text|reference/README.md|reference/README.md
 template_text|reference/backlog.md|reference/backlog.md
-template_text|reference/memo.md|reference/memo.md
+template_text|reference/order.md|reference/order.md
 template_text|reference/backlog-processed.md|reference/backlog-processed.md
 template_text|reference/project-spec-template.md|reference/project-spec-template.md
 template_text|reference/feature-spec-template.md|reference/feature-spec-template.md

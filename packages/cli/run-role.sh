@@ -1117,6 +1117,7 @@ maybe_skip_unchanged_planner_recovery_signal() {
     "fingerprint=${current_fingerprint}"
 
   print_run_header "ok"
+  printf 'narrative=Plan AI · 복구 입력 변동 없음 — 동일 fingerprint(%s) 유지. 다음 tick 까지 idle.\n' "${adapter_active_ticket_id:-no-ticket}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -1196,6 +1197,7 @@ maybe_skip_planner_needs_user_decision_signal() {
     "failure_class=${adapter_active_recovery_failure_class}"
 
   print_run_header "ok"
+  printf 'narrative=Plan AI · 사용자 결정 대기(needs_user_decision) — 티켓 %s. 새 입력이 들어올 때까지 idle.\n' "${adapter_active_ticket_id:-no-ticket}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -1281,6 +1283,7 @@ maybe_skip_unchanged_idle_preflight() {
     "fingerprint=${current_fingerprint}"
 
   print_run_header "ok"
+  printf 'narrative=%s · 새 입력 없음(%s) — 동일 fingerprint 유지. 다음 tick 까지 idle.\n' "${public_role}" "${skip_reason}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -1362,6 +1365,7 @@ maybe_skip_unchanged_wiki_turn() {
     "fingerprint=${WIKI_CURRENT_FINGERPRINT}"
 
   print_run_header "ok"
+  printf 'narrative=Wiki AI · wiki 입력 변동 없음 — 동일 fingerprint 유지. 다음 tick 까지 idle.\n'
   printf 'runner_status=idle\n'
   printf 'adapter=%s\n' "$agent"
   printf 'reason=wiki_inputs_unchanged\n'
@@ -1446,6 +1450,7 @@ maybe_skip_debounced_wiki_turn() {
     "last_synth_age_seconds=${synth_age}"
 
   print_run_header "ok"
+  printf 'narrative=Wiki AI · debounce 대기 중 — 변경 %s건 / 최소 %s건, 누적 %ss / 최대 %ss. 다음 tick 까지 idle.\n' "$changed_count" "$min_changes" "$pending_age" "$max_age_seconds"
   printf 'runner_status=idle\n'
   printf 'adapter=%s\n' "$agent"
   printf 'reason=wiki_debounced\n'
@@ -1545,7 +1550,7 @@ emit_required_flow() {
   printf '%s\n' "2. Execute exactly one safe ${public_role} turn. Autoflow is AI-led: shell scripts are deterministic tools for claim/state/finalization, not replacement workers or hidden decision makers."
   case "$public_role" in
     planner|ticket|todo)
-      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
+      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the order/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
       ;;
   esac
   printf '%s\n' "4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
@@ -1980,7 +1985,7 @@ agent_runtime_preflight_or_exit() {
   active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_ticket_id="$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   if [ "$public_role" = "planner" ]; then
-    active_item="$(awk -F= '$1 == "memo" || $1 == "spec" || $1 == "plan" || $1 == "reject_origin" || $1 == "todo_ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$preflight_output" 2>/dev/null || true)"
+    active_item="$(awk -F= '$1 == "order" || $1 == "spec" || $1 == "plan" || $1 == "reject_origin" || $1 == "todo_ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$preflight_output" 2>/dev/null || true)"
   fi
   if [ -n "$active_ticket_id" ]; then
     case "$active_ticket_id" in

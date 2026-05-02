@@ -10,7 +10,7 @@ This directory is the state board inside `BOARD_ROOT`.
 - `done/`: tickets that passed verification and were committed locally (`done/<project-key>/tickets_NNN.md`).
 - `reject/`: tickets that failed verification and include `## Reject Reason`.
 - `verify_NNN.md`: a verification evidence file created under `inprogress/` and moved beside the final ticket.
-- `inbox/`: quick memo intake files that Plan AI may promote into generated PRDs and todo tickets.
+- `inbox/`: quick order intake files that Plan AI may promote into generated PRDs and todo tickets.
 - `backlog/`: project specs that have not yet been converted into ticket work.
 - `plan/`: legacy role-pipeline plan documents.
 - `inprogress/plan_*.md`: legacy plans currently being consumed into tickets.
@@ -109,10 +109,10 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - One agent conversation should actively author one `project_*.md` file at a time.
   - After work begins, move the consumed PRD to `done/<project-key>/`.
 - `inbox/`
-  - Contains `memo_NNN.md` files for small requests that do not need a full PRD handoff.
-  - Memo skills and `autoflow memo create` may write here directly after an explicit memo request.
-  - Plan AI treats memos as implementation directives and promotes them into generated backlog PRDs and todo tickets using the safest narrow interpretation.
-  - Unsafe memos stay here with a concrete blocker note; ambiguity alone should not create a repeated human-question loop.
+  - Contains `orderNNN.md` files for small requests that do not need a full PRD handoff.
+  - Memo skills and `autoflow order create` may write here directly after an explicit order request.
+  - Plan AI treats orders as implementation directives and promotes them into generated backlog PRDs and todo tickets using the safest narrow interpretation.
+  - Unsafe orders stay here with a concrete blocker note; ambiguity alone should not create a repeated human-question loop.
   - Impl AI never claims directly from this folder.
 - `plan/`
   - Contains legacy plans before ticket generation.

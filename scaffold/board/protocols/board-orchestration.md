@@ -36,7 +36,7 @@ On each planner tick:
 
 Planner AI may perform these actions directly in markdown:
 
-- Promote a clear memo to a generated PRD.
+- Promote a clear order to a generated PRD.
 - Create todo tickets from a plan or generated PRD.
 - Fold reject evidence into a new ticket attempt.
 - Add or update `Recovery State` for a stalled or blocked ticket.
