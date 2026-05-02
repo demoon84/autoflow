@@ -96,7 +96,7 @@ git -C "$project_dir" config user.email autoflow-smoke@example.test
 git -C "$project_dir" config user.name "Autoflow Smoke"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set owner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set worker "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 printf 'base\n' >"${project_dir}/target.txt"
 git -C "$project_dir" add target.txt .autoflow .claude .codex
@@ -110,11 +110,11 @@ run_output="${project_dir}/run.out"
 fake_bin="${project_dir}/fake-bin"
 fake_args="${project_dir}/codex-args.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 fail "retry with a clearer plan" >"$fail_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 fail "retry with a clearer plan" >"$fail_output"
 require_line "$fail_output" "status=rejected"
 require_line "$fail_output" "outcome=fail"
 
@@ -126,7 +126,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner worker >"$run_output"
 require_line "$run_output" "status=ok"
 require_line "$run_output" "runner_status=idle"
 

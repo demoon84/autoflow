@@ -169,7 +169,7 @@
 - `run-hook.sh` (DEPRECATED — legacy script-driven trigger path)
   - Bash/macOS/Linux 쪽 file-watch watcher 가 route별 one-shot hook 을 dispatch 할 때 쓰는 단발 실행기다.
   - 현재 기본값은 `ticket` route 가 `codex exec` 로 Ticket Owner prompt 를 실행하고, legacy `plan` / `todo` / `verifier` route 는 설정을 켰을 때만 동작한다.
-  - 3-runner topology (planner-1 + owner-1 + wiki-1) 가 정식 경로이고, run-hook 은 `watch-bg` 사용자를 위한 backwards compatibility 만 유지한다.
+  - 3-runner topology (planner + worker + wiki) 가 정식 경로이고, run-hook 은 `watch-bg` 사용자를 위한 backwards compatibility 만 유지한다.
 
 - `watch-board.sh` (DEPRECATED — legacy script-driven loop)
   - Bash/macOS/Linux 에서 쓰는 polling watcher 다.
@@ -213,7 +213,7 @@
 - `wiki-project.sh`
   - `autoflow wiki update`, `autoflow wiki query`, `autoflow wiki lint` 구현체다.
   - `update` 는 done tickets, reject records, verifier logs 에서 `wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md` 의 managed section 을 갱신한다.
-  - `query --synth` 와 `lint --semantic` 은 enabled `wiki-maintainer` runner (3-runner topology 의 `wiki-1`) 를 wiki adapter 로 우선 사용한다. wiki-maintainer 가 없고 enabled coordinator/coord/doctor/diagnose runner 가 있으면 그 runner 를 fallback adapter 로 재사용한다(`find_wiki_runner` in wiki-project.sh). 적합한 runner 가 전혀 없으면 graceful skip 한다. round 1 (commit db8cc57) 에서 제거된 것은 `auto_run_wiki_maintainer` (Impl AI inline pass 안에서 coordinator 를 자동 호출하던 분기) 이며, `wiki query --synth` / `lint --semantic` 의 explicit adapter resolution 은 여전히 coordinator fallback 을 지원한다.
+  - `query --synth` 와 `lint --semantic` 은 enabled `wiki-maintainer` runner (3-runner topology 의 `wiki`) 를 wiki adapter 로 우선 사용한다. wiki-maintainer 가 없고 enabled coordinator/coord/doctor/diagnose runner 가 있으면 그 runner 를 fallback adapter 로 재사용한다(`find_wiki_runner` in wiki-project.sh). 적합한 runner 가 전혀 없으면 graceful skip 한다. round 1 (commit db8cc57) 에서 제거된 것은 `auto_run_wiki_maintainer` (Impl AI inline pass 안에서 coordinator 를 자동 호출하던 분기) 이며, `wiki query --synth` / `lint --semantic` 의 explicit adapter resolution 은 여전히 coordinator fallback 을 지원한다.
   - `lint` 는 wiki orphan page 와 completed-work citation gap 을 key=value 로 보고한다.
 
 - `metrics-project.sh`
@@ -236,7 +236,7 @@
   - 문제가 감지된 경우에만 `doctor-project.sh` 진단을 실행하고, 같은 문제 fingerprint 가 반복되면 full doctor 를 스킵한다.
   - 직접 구현하거나 검증 판정을 바꾸지 않고, rebase/cherry-pick/conflict resolution/product-code merge 도 수행하지 않는다.
   - finalizer/runtime 출력과 doctor 출력을 함께 key=value 로 남긴다.
-  - 3-runner topology 에서는 wiki baseline 과 AI synthesis 를 모두 `wiki-1` 이 소유한다. Impl AI 의 `finish-ticket-owner pass` / `merge-ready-ticket` finalizer 는 `update-wiki.sh` 를 자동 호출하거나 `.autoflow/wiki/` 를 ticket completion commit 에 stage 하지 않는다. `wiki-1` 이 source 변화와 managed baseline 을 확인한 뒤 실제 drift 가 있을 때만 `autoflow wiki update` 를 도구로 호출한다. coordinator 의 wiki-bot adapter 재사용 분기는 round 1 (commit db8cc57) 에서 제거됐다.
+  - 3-runner topology 에서는 wiki baseline 과 AI synthesis 를 모두 `wiki` 이 소유한다. Impl AI 의 `finish-ticket-owner pass` / `merge-ready-ticket` finalizer 는 `update-wiki.sh` 를 자동 호출하거나 `.autoflow/wiki/` 를 ticket completion commit 에 stage 하지 않는다. `wiki` 이 source 변화와 managed baseline 을 확인한 뒤 실제 drift 가 있을 때만 `autoflow wiki update` 를 도구로 호출한다. coordinator 의 wiki-bot adapter 재사용 분기는 round 1 (commit db8cc57) 에서 제거됐다.
 
 - `upgrade-project.sh`
   - 공용 runtime/template 자산을 최신 패키지 기준으로 갱신한다.
@@ -253,9 +253,9 @@
 - 이 스크립트들은 결정적인 보드 상태 전환을 맡는다.
 - 실제 구현 내용 자체는 여전히 에이전트가 수행한다.
 - 여러 대화창에서 동시에 실행될 수 있으므로 `start-ticket-owner.sh` 와 legacy `start-todo.sh` 는 `mv` 기반 점유를 사용한다.
-- 기본 Ticket Owner 운영에서는 `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=owner-1`, `AUTOFLOW_BACKGROUND=1` 을 같이 쓰는 편이 좋다.
+- 기본 Ticket Owner 운영에서는 `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=worker`, `AUTOFLOW_BACKGROUND=1` 을 같이 쓰는 편이 좋다.
 - 24시간 자동화에서는 `AUTOFLOW_BACKGROUND=1` 이 기본값으로 적합하다. legacy role-pipeline 에서만 pool / load 제한 변수를 추가로 쓴다.
-- owner worker 수는 heartbeat set 의 `owner_workers` 값으로 자유롭게 늘리거나 줄일 수 있다. 예를 들어 owner 3개면 `owner_workers = ["owner-1", "owner-2", "owner-3"]` 로 둔다.
+- owner worker 수는 heartbeat set 의 `owner_workers` 값으로 자유롭게 늘리거나 줄일 수 있다. 예를 들어 owner 3개면 `owner_workers = ["worker", "owner-2", "owner-3"]` 로 둔다.
 - 실제 Codex heartbeat payload template 은 `automations/templates/` 에 있고, 생성된 보드에도 같이 복사된다.
 - stop hook 을 쓰려면 현재 thread role 을 먼저 `set-thread-context.sh` 로 등록하고, hook 본체는 `check-stop.sh` 를 연결한다.
 - 보드 stop hook wiring 을 자동으로 붙이고 싶으면 `scripts/install-stop-hook.sh install` 을 한 번 실행한다.

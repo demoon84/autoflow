@@ -1,7 +1,7 @@
 # Todo Queue Agent — DEPRECATED (legacy role-pipeline)
 
 > **DEPRECATED:** Todo Queue is no longer a default runner in the 3-runner
-> topology (planner-1 + owner-1 + wiki-1). Impl AI (`owner-1`) claims
+> topology (planner + worker + wiki). Impl AI (`worker`) claims
 > directly from `tickets/todo/`, implements, verifies, and merges in one
 > flow. This file is kept for backwards compatibility with users still on
 > `#todo` or the legacy role-pipeline.

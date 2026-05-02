@@ -260,4 +260,4 @@ printf 'memo_file=%s\n' "$memo_file"
 printf 'project_root=%s\n' "$project_root"
 printf 'board_root=%s\n' "$board_root"
 printf 'board_dir_name=%s\n' "$board_dir_name"
-printf 'next_action=Run autoflow run planner or let planner-1 promote this memo into a generated PRD and todo ticket.\n'
+printf 'next_action=Run autoflow run planner or let planner promote this memo into a generated PRD and todo ticket.\n'

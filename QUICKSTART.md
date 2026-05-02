@@ -50,9 +50,9 @@ CLI 로 직접 만들 수도 있다.
 ~/code/autoflow/bin/autoflow run ticket  /path/to/your/project    # todo → done
 
 # 익숙해지면 loop 모드로 두 runner 를 켠다
-~/code/autoflow/bin/autoflow runners start planner-1 /path/to/your/project
-~/code/autoflow/bin/autoflow runners start owner-1   /path/to/your/project
-~/code/autoflow/bin/autoflow runners start wiki-1    /path/to/your/project
+~/code/autoflow/bin/autoflow runners start planner /path/to/your/project
+~/code/autoflow/bin/autoflow runners start worker   /path/to/your/project
+~/code/autoflow/bin/autoflow runners start wiki    /path/to/your/project
 ```
 
 상태는 `~/code/autoflow/bin/autoflow status /path/to/your/project` 로 본다.
@@ -69,7 +69,7 @@ npm run dev
 
 ## 6. 팀 출시 시 꼭 알 것
 
-- **Plan AI 는 한 머신에서만 돌린다.** 여러 명이 동시에 `planner-1` loop 을 켜면 `tickets/backlog` `tickets/todo` 가 git 충돌난다.
+- **Plan AI 는 한 머신에서만 돌린다.** 여러 명이 동시에 `planner` loop 을 켜면 `tickets/backlog` `tickets/todo` 가 git 충돌난다.
 - **티켓 보드는 git 으로 추적**된다. 각자 작업한 결과를 `git pull/push` 로 공유한다. 어댑터 키, runner state, 로그는 git 무시.
 - **막힌 티켓이 보이면**: `bin/autoflow doctor /path/to/your/project` 로 진단을 본다. 출력에 따라 `tickets/inprogress/` 의 파일을 `tickets/reject/` 로 옮기고 다음 tick 을 기다린다.
 
@@ -79,8 +79,8 @@ npm run dev
 |---|---|
 | `adapter.X=missing` 로그 | 어댑터 CLI 가 PATH 에 없음. 본인 셸의 `PATH` 를 확인. |
 | 티켓이 며칠째 inprogress | verifier 가 fail 사이클에 갇혔을 가능성. 최신 `.autoflow/logs/verifier_NNN_*_fail.md` 를 본다. |
-| Wiki 가 갱신 안 됨 | `wiki-1` 은 debounce(기본 3변동/30분)를 적용한다. 즉시 보고 싶으면 `bin/autoflow run wiki <project>` 를 한 번 직접 호출. |
-| 보드 충돌 | 여러 명이 같은 ticket 을 동시에 claim. Plan/Wiki AI 는 1명만, owner-1 은 자기 worktree 안에서만 동작. |
+| Wiki 가 갱신 안 됨 | `wiki` 은 debounce(기본 3변동/30분)를 적용한다. 즉시 보고 싶으면 `bin/autoflow run wiki <project>` 를 한 번 직접 호출. |
+| 보드 충돌 | 여러 명이 같은 ticket 을 동시에 claim. Plan/Wiki AI 는 1명만, worker 은 자기 worktree 안에서만 동작. |
 
 ## 8. 더 자세히
 

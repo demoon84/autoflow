@@ -49,7 +49,7 @@ require_marker_count() {
 }
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/inprogress"
 cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_999.md" <<'TICKET'
@@ -153,7 +153,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
 
 require_line "$run_output" "status=ok"
 require_line "$run_output" "adapter=codex"
@@ -211,7 +211,7 @@ This completed-board change must not cause the same blocked recovery item to wak
 NOISE
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
-require_line "$runner_list_output" "runner.1.id=planner-1"
+require_line "$runner_list_output" "runner.1.id=planner"
 require_line "$runner_list_output" "runner.1.active_item=tickets/inprogress/tickets_999.md"
 require_line "$runner_list_output" "runner.1.active_ticket_id=tickets_999"
 require_line "$runner_list_output" "runner.1.active_ticket_title=Recovery wake smoke"
@@ -221,7 +221,7 @@ require_line "$runner_list_output" "runner.1.active_recovery_reason=recovery_sta
 require_line "$runner_list_output" "runner.1.active_recovery_status=blocked"
 require_line "$runner_list_output" "runner.1.active_recovery_failure_class=adapter_no_progress"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$second_run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$second_run_output"
 require_line "$second_run_output" "status=ok"
 require_line "$second_run_output" "runner_status=idle"
 require_line "$second_run_output" "reason=planner_recovery_inputs_unchanged"
@@ -248,14 +248,14 @@ perl -0pi -e 's/^last_result=.*$/last_result=loop_waiting_exit_0/m' "$state_path
 require_line "$runner_list_output" "runner.1.last_result=planner_recovery_inputs_unchanged"
 
 perl -0pi -e 's/- Evidence: owner made no durable progress/- Evidence: owner made no durable progress after a new runtime log sample/' "${project_dir}/.autoflow/tickets/inprogress/tickets_999.md"
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$third_run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$third_run_output"
 require_line "$third_run_output" "status=ok"
 require_line "$third_run_output" "adapter=codex"
 require_line "$third_run_output" "adapter_exit_code=0"
 require_marker_count 2
 
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" mode=one-shot >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners start planner-1 "$project_dir" >"$runner_start_output"
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" mode=one-shot >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners start planner "$project_dir" >"$runner_start_output"
 require_line "$runner_start_output" "status=ok"
 require_line "$runner_start_output" "result=started"
 require_line "$state_path" "active_item=tickets/inprogress/tickets_999.md"

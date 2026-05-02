@@ -7,7 +7,7 @@
 # this script per route. This script then builds a role-specific prompt and
 # dispatches to an AI CLI (codex/claude) or a configured shell command.
 #
-# In the supported 3-runner topology (planner-1 + owner-1 + wiki-1), the
+# In the supported 3-runner topology (planner + worker + wiki), the
 # heartbeat-driven AI runner reads the board on every tick and decides what
 # to do — `run-hook.sh` is not part of that path. It is kept only for
 # backwards compatibility with users still on `autoflow watch-bg`.

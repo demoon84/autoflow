@@ -37,10 +37,10 @@ cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_001.md" <<'TICKET'
 - Plan Candidate: needs user parked blocker smoke
 - Title: Needs user parked blocker smoke
 - Stage: blocked
-- AI: owner-1
-- Claimed By: owner-1
-- Execution AI: owner-1
-- Verifier AI: owner-1
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
 - Last Updated:
 
 ## Goal
@@ -198,7 +198,7 @@ cat >"${project_dir}/.autoflow/tickets/todo/tickets_002.md" <<'TICKET'
 TICKET
 
 requested_output="${project_dir}/requested.out"
-AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 \
+AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker \
   "${project_dir}/.autoflow/scripts/start-ticket-owner.sh" 001 >"$requested_output"
 
 require_line "$requested_output" "status=blocked"
@@ -206,7 +206,7 @@ require_line "$requested_output" "reason=ticket_stage_blocked"
 require_line "$requested_output" "ticket_id=001"
 
 run_output="${project_dir}/run.out"
-AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 \
+AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker \
   "${project_dir}/.autoflow/scripts/start-ticket-owner.sh" >"$run_output"
 
 require_line "$run_output" "status=ok"

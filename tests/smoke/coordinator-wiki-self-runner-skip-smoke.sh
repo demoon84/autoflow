@@ -4,7 +4,7 @@
 # behavior in the wiki-bot adapter chain.
 #
 # Coordinator is no longer a default runner in the 3-runner topology
-# (planner-1 + owner-1 + wiki-1), and the auto_run_wiki_maintainer
+# (planner + worker + wiki), and the auto_run_wiki_maintainer
 # function this test exercised was removed in db8cc57 along with the
 # coordinator-as-wiki-bot fallback. This test scaffolds a backlog PRD
 # the same way as the other coordinator-* smoke tests, which the new
@@ -100,24 +100,24 @@ verify_output="${project_dir}/verify.out"
 finish_output="${project_dir}/finish.out"
 merge_output="${project_dir}/merge.out"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-1 ./scripts/start-plan.sh >"$plan_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner ./scripts/start-plan.sh >"$plan_output"
 require_line "$plan_output" "status=ok"
 require_line "$plan_output" "source=backlog-to-todo"
 
 git -C "$project_dir" add .autoflow .claude .codex bin
 git -C "$project_dir" commit -m "baseline" >/dev/null
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
 
 worktree_path="$(awk -F= '$1 == "worktree_path" { print $2; found=1; exit } END { exit(found ? 0 : 1) }' "$start_output")"
 touch "${worktree_path}/owner-done.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/verify-ticket-owner.sh 001 >"$verify_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/verify-ticket-owner.sh 001 >"$verify_output"
 require_line "$verify_output" "status=pass"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "owner done file verified" >"$finish_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 pass "owner done file verified" >"$finish_output"
 require_line "$finish_output" "status=ready_to_merge"
 
 cp "${worktree_path}/owner-done.txt" "${project_dir}/owner-done.txt"

@@ -9,9 +9,9 @@ board_root = ".autoflow/"
 # implementation, verification, and inline merge. Wiki AI periodically
 # inspects done/ + reject/ and calls wiki update only when content changes.
 # Path-disjoint set so concurrent ticks never produce merge conflicts.
-owner_workers = ["owner-1"]
-planner_workers = ["planner-1"]
-wiki_workers = ["wiki-1"]
+owner_workers = ["worker"]
+planner_workers = ["planner"]
+wiki_workers = ["wiki"]
 todo_workers = []
 verifier_workers = []
 merge_workers = []
@@ -30,11 +30,11 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 # target_thread_id. Values starting with REPLACE_WITH_ are treated as
 # missing at render time.
 [thread_ids]
-planner-1 = "REPLACE_WITH_PLANNER_1_THREAD_ID"
-owner-1 = "REPLACE_WITH_OWNER_1_THREAD_ID"
-wiki-1 = "REPLACE_WITH_WIKI_1_THREAD_ID"
+planner = "REPLACE_WITH_PLANNER_THREAD_ID"
+worker = "REPLACE_WITH_WORKER_THREAD_ID"
+wiki = "REPLACE_WITH_WIKI_THREAD_ID"
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-topology_rule = "Three-runner model: planner_workers=[\"planner-1\"], owner_workers=[\"owner-1\"], wiki_workers=[\"wiki-1\"]. Scale only after profiling shows the pipeline is starved."
+topology_rule = "Three-runner model: planner_workers=[\"planner\"], owner_workers=[\"worker\"], wiki_workers=[\"wiki\"]. Scale only after profiling shows the pipeline is starved."
 trigger_rule = "All three heartbeats keep running until the user explicitly says stop."
-wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.sh or stage .autoflow/wiki during ticket completion; wiki-1 inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."
+wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.sh or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."

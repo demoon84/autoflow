@@ -234,16 +234,16 @@ Coordinator merge completion automatically rebuilds managed sections in
 `wiki/index.md`, `wiki/log.md`, and `wiki/project-overview.md` from done
 tickets, reject records, and logs while preserving user-authored text outside
 those sections.
-In the current 3-runner topology (planner-1 + owner-1 + wiki-1), AI synthesis
-of the wiki is the exclusive responsibility of `wiki-1` (Wiki AI). Impl AI's
+In the current 3-runner topology (planner + worker + wiki), AI synthesis
+of the wiki is the exclusive responsibility of `wiki` (Wiki AI). Impl AI's
 `finish-ticket-owner` pass already runs the deterministic `update-wiki.sh`
 inline so the wiki baseline (`index.md`, `log.md`, `project-overview.md`) is
-fresh the moment a ticket lands in `done/`; `wiki-1` ticks on its own 1-minute
+fresh the moment a ticket lands in `done/`; `wiki` ticks on its own 1-minute
 heartbeat to layer AI synthesis (`autoflow wiki query --synth`,
 `autoflow wiki lint --semantic`) on top of that baseline whenever
 `tickets/done/` or `tickets/reject/` changes. The earlier inline
 `auto_run_wiki_maintainer` trigger and `AUTOFLOW_WIKI_MAINTAINER_AUTO`
-environment variable have been removed; `wiki-1` is the single source of AI
+environment variable have been removed; `wiki` is the single source of AI
 wiki synthesis.
 `autoflow wiki update` remains available for manual rebuilds.
 `autoflow wiki query --synth` adds a grounded LLM summary on top of grep
@@ -335,7 +335,7 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 6. 검증 command 는 티켓 또는 PRD 의 `## Verification` 아래 `- Command: ...` 로 둔다. owner 는 `start-ticket-owner`, `verify-ticket-owner`, `finish-ticket-owner` 런타임을 순서대로 써서 evidence 와 completion log 를 남긴다.
 7. role-pipeline 방식이 필요하면 호환 경로로 `#plan`, `#todo`, `#veri` 또는 `autoflow run planner/todo/verifier` 를 사용할 수 있지만 기본 운영 모델은 아니다.
 8. heartbeat 세트를 파일로 관리하고 싶다면 `automations/heartbeat-set.toml` 을 채우고 `autoflow render-heartbeats` 로 role별 heartbeat TOML 묶음을 만든다.
-9. (legacy) 파일 업로드나 폴더 변경에 바로 반응시키고 싶다면 `./bin/autoflow watch-bg <project-root>` 로 file-watch hook 루프를 백그라운드에서 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보내고 `logs/hooks/` 에 기록을 남긴다. 이 file-watch 경로는 script-driven 트리거이므로 새 보드는 3-runner heartbeat (planner-1 + owner-1 + wiki-1) 를 우선 사용하고, watcher 는 1분 heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다.
+9. (legacy) 파일 업로드나 폴더 변경에 바로 반응시키고 싶다면 `./bin/autoflow watch-bg <project-root>` 로 file-watch hook 루프를 백그라운드에서 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보내고 `logs/hooks/` 에 기록을 남긴다. 이 file-watch 경로는 script-driven 트리거이므로 새 보드는 3-runner heartbeat (planner + worker + wiki) 를 우선 사용하고, watcher 는 1분 heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다.
 
 ## Branding
 
@@ -425,14 +425,14 @@ Ticket Owner 운영에서는 아래 환경 변수를 쓰는 편이 좋다.
 예:
 
 - PRD handoff: manual only (`/autoflow`, `$autoflow`, or `#autoflow`)
-- ticket owner: `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=owner-1`, `AUTOFLOW_BACKGROUND=1`
+- ticket owner: `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=worker`, `AUTOFLOW_BACKGROUND=1`
 
 Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 를 늘리고, 각 owner 를 별도 Codex/Claude/OpenCode/Gemini 대화 또는 runner process 에 묶는다.
 
 - owner 1개:
-  - `owner_workers = ["owner-1"]`
+  - `owner_workers = ["worker"]`
 - owner 3개:
-  - `owner_workers = ["owner-1", "owner-2", "owner-3"]`
+  - `owner_workers = ["worker", "owner-2", "owner-3"]`
 
 레거시 role-pipeline 운영이 필요하면 `planner P / todo K / verifier M` 형태로 `#plan`, `#todo`, `#veri` 를 켤 수 있다. 새 작업의 기본값은 아니다.
 

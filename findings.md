@@ -3,14 +3,14 @@
 ## Wiki Runner Token Efficiency Findings
 
 - Live runner process inspection showed loop worker bash processes are small (~1MB RSS), while `codex`, `gemini`, and MCP child processes dominate memory.
-- Current snapshot measured approximate runner process trees: `planner-1` ~196MB RSS, `owner-1` ~194MB RSS, `wiki-1` ~297MB RSS.
+- Current snapshot measured approximate runner process trees: `planner` ~196MB RSS, `worker` ~194MB RSS, `wiki` ~297MB RSS.
 - `run-role.sh` creates a fresh prompt file and launches a fresh adapter process on every AI tick. This prevents chat-context accumulation, but it also means each tick can pay the full prompt + board/wiki reread cost.
 - Prompt artifacts are small: 671 prompt logs total ~1.8MB, average ~2.8KB. Token waste is not primarily the base prompt size.
 - Runner stdout artifacts dominate disk: `.autoflow/runners/logs` is ~462MB, with stdout logs ~266MB.
 - Current metrics report `autoflow_token_usage_count=52,977,703` over 554 token reports, average ~95.6k tokens/report.
 - Wiki semantic lint builds a prompt from every wiki page up to 220 lines per page, then invokes the configured wiki adapter. This is the most obvious high-token wiki path.
 - `wiki-project.sh` currently has synth/semantic adapter helpers, but no deterministic fingerprint gate for "inputs unchanged" before an AI semantic/synthesis pass.
-- `run-role.sh` invokes the wiki adapter turn for `wiki-1`; the wiki agent then decides what tools to call. A preflight gate at this layer can skip launching the model entirely when done/reject/conversation/wiki inputs are unchanged.
+- `run-role.sh` invokes the wiki adapter turn for `wiki`; the wiki agent then decides what tools to call. A preflight gate at this layer can skip launching the model entirely when done/reject/conversation/wiki inputs are unchanged.
 - Implemented skip point: loop-mode wiki runs hash `tickets/done`, `tickets/reject`, `logs`, `conversations`, and `wiki` source files, stores the hash under runner state, and skips adapter startup when the hash is unchanged.
 - Implemented low-value synth skip: `autoflow wiki query --synth` now returns `synth_status=skipped_no_results` when deterministic search returns zero results, avoiding an adapter call that cannot cite sources.
 
@@ -84,7 +84,7 @@
 
 ## Current Board Status
 - `./bin/autoflow status . autoflow` reports initialized, package/board version 0.1.0, no active specs/tickets, 5 done tickets, 5 verify runs, runner/wiki/metrics/conversation/adapter scaffold present.
-- Current runner config has one `owner-1` runner with `role = "ticket-owner"`, `agent = "codex"`, `mode = "one-shot"`.
+- Current runner config has one `worker` runner with `role = "ticket-owner"`, `agent = "codex"`, `mode = "one-shot"`.
 - File watcher enables the `ticket` route only by default; legacy `plan`, `todo`, and `verifier` routes are disabled.
 - The ticket owner agent contract explicitly says to keep the ticket file as source of truth, write a mini-plan, verify, record evidence, and finish pass/fail without splitting responsibility.
 
@@ -166,7 +166,7 @@
 - User screenshot shows multiple Codex Ticket Owner runners displayed as `실행 중`, current item `tickets_003`, `tickets_005`, `tickets_007`, `tickets_004`, with the visible pill `막힘`; one runner for `tickets_001` is at `구현 중`.
 - Initial git status shows several `.autoflow/tickets/inprogress/*.md`, verification files, reject files, wiki files, and desktop renderer/main files are already dirty before this debug pass.
 - Relevant board contract: `inprogress` tickets may remain blocked, but ticket owner mode should continue implementation and verification, and runner state should not replace ticket stage state.
-- Runner evidence before cleanup: owner-1 through owner-5 were loop workers with live PIDs and active tickets; owner-1/2/3/5 had `active_stage=blocked`, owner-4 had `active_stage=executing`.
+- Runner evidence before cleanup: worker through owner-5 were loop workers with live PIDs and active tickets; worker/2/3/5 had `active_stage=blocked`, owner-4 had `active_stage=executing`.
 - Repeated `막힘` is backed by real ticket state, not only a renderer label: tickets 003/004/005/007 carry `Stage: blocked` with `shared_allowed_path_conflict`; logs also show worktree dependency hydration and stale verification path failures.
 - Worktree cleanup archive: `.autoflow/logs/worktree-cleanup_20260426T042800Z/` contains status/diff/staged/untracked records for each removed worktree. Non-empty diffs existed for `autoflow_tickets_003`, `autoflow_tickets_006_local`, `autoflow_tickets_007`, and stale `autoflowLab_*` worktrees.
 - After cleanup, `git worktree list --porcelain` shows only `/Users/demoon/Documents/project/autoflow`; all Autoflow project owner runners are `stopped` with empty active ticket metadata.
@@ -222,10 +222,10 @@
 # Planner Needs-Info Token Gate Findings
 
 - `memo_005` is parked at `Status: needs-info`; `start-plan.sh` treats only empty, `inbox`, `ready`, and `pending` memo statuses as actionable.
-- The active `planner-1` runner is a Codex loop runner with `interval_seconds=60` and `reasoning=xhigh`, so every idle tick can be expensive if the adapter is launched before checking runtime state.
+- The active `planner` runner is a Codex loop runner with `interval_seconds=60` and `reasoning=xhigh`, so every idle tick can be expensive if the adapter is launched before checking runtime state.
 - `start-plan.sh` already provides a deterministic cheap runtime answer (`status=idle`, `reason=no_actionable_plan_input`) when no actionable planner input exists.
 - The current expensive path happens because `run-role.sh` only preflights ticket-owner runs; planner runs launch Codex first and let the AI call `start-plan.sh` itself.
 - For autonomous operation, `needs-info` cannot mean "ask a human every minute." User clarified memo intake should not ask questions; memos are directives that should be promoted by inference unless unsafe.
-- After `memo_005` was made actionable, live `planner-1` generated `prd_039` and `tickets_039`, but the source memo remained in `tickets/inbox/`. Without an archive/skip guard, the next planner tick could duplicate the generated PRD from the same memo.
+- After `memo_005` was made actionable, live `planner` generated `prd_039` and `tickets_039`, but the source memo remained in `tickets/inbox/`. Without an archive/skip guard, the next planner tick could duplicate the generated PRD from the same memo.
 - The runtime can deterministically recognize already-promoted memos by scanning backlog/done PRDs for `## Conversation Handoff` sources that reference the memo.
-- The live runner config set `planner-1` to `reasoning="xhigh"`, which made each mistaken planner tick expensive. Planner work does not need xhigh reasoning by default, so the current board config should use `medium`.
+- The live runner config set `planner` to `reasoning="xhigh"`, which made each mistaken planner tick expensive. Planner work does not need xhigh reasoning by default, so the current board config should use `medium`.

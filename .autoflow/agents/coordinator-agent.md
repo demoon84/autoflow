@@ -1,9 +1,9 @@
 # Coordinator Agent — DEPRECATED (not in default 3-runner topology)
 
 > **DEPRECATED:** Coordinator is no longer a default runner in the
-> 3-runner topology (planner-1 + owner-1 + wiki-1). Its responsibilities
-> have been split: Impl AI (`owner-1`) does its own AI-led merge inside
-> `finish-ticket-owner.*`, and Wiki AI (`wiki-1`) owns deterministic wiki
+> 3-runner topology (planner + worker + wiki). Its responsibilities
+> have been split: Impl AI (`worker`) does its own AI-led merge inside
+> `finish-ticket-owner.*`, and Wiki AI (`wiki`) owns deterministic wiki
 > baseline refresh plus AI synthesis. The role identifier is kept for backwards
 > compatibility with existing user configs that opt into a coordinator
 > runner; new boards should not add one.

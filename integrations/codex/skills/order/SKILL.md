@@ -17,6 +17,6 @@ Act as the lightweight Autoflow intake hook for small, clear changes.
 6. Prefer `autoflow memo create <project-root> <board-dir-name> --from-file <draft-file> --title <short title>` when the CLI is available.
 7. Fallback: write the same memo format directly under `{{BOARD_DIR}}/tickets/inbox/`.
 8. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
-9. After saving, tell the user the memo path and that `planner-1` or `autoflow run planner` will promote it into a generated PRD and todo ticket when safe.
+9. After saving, tell the user the memo path and that `planner` or `autoflow run planner` will promote it into a generated PRD and todo ticket when safe.
 
 If no Autoflow board is found, explain that the project needs an Autoflow board first and offer `autoflow init <project-root>` or the desktop install flow.

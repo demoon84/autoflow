@@ -120,7 +120,7 @@ stale_recovery_block_output="${project_dir}/stale-recovery-block.out"
 fake_bin="${project_dir}/fake-bin"
 fake_codex_marker="${project_dir}/codex-called"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
 require_line "$start_one_output" "ticket_id=001"
 require_line "$start_one_output" "worktree_status=project_root_fallback"
@@ -158,7 +158,7 @@ require_line "$finish_two_block_output" "status=blocked"
 require_line "$finish_two_block_output" "reason=shared_allowed_path_conflict"
 require_line "$finish_two_block_output" "blockers=tickets_001:shared.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "first ticket complete" >"$finish_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 pass "first ticket complete" >"$finish_one_output"
 require_line "$finish_one_output" "status=ready_to_merge"
 require_line "$finish_one_output" "outcome=pass"
 

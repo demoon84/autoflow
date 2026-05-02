@@ -71,7 +71,7 @@
 
 ## Done When
 
-- [ ] `.autoflow/runners/config.toml`의 `owner-1.reasoning`이 `low`로 저장되어 있고, `agent=codex` runner의 기본 실행이 fast 프리셋으로 동작한다.
+- [ ] `.autoflow/runners/config.toml`의 `worker.reasoning`이 `low`로 저장되어 있고, `agent=codex` runner의 기본 실행이 fast 프리셋으로 동작한다.
 - [ ] `scaffold/board/runners/config.toml`에서 codex agent를 쓰는 기본 runner들의 `reasoning`이 `low`로 명시되어, 새 보드 스캐폴드가 fast 모드로 출하된다.
 - [ ] `./bin/autoflow runners list /Users/demoon2016/Documents/project/autoflow .autoflow` 출력의 codex runner command preview가 `-c model_reasoning_effort="low"`를 포함한다.
 - [ ] 데스크톱 runner 설정 UI의 codex 행 reasoning select에서 `low` 옵션이 한국어 라벨로 보이고, fast 의미가 라벨로 식별된다.

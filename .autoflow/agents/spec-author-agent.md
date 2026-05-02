@@ -28,7 +28,7 @@ You are a user-triggered agent (Claude `/autoflow`, Codex `$autoflow`, compatibi
 - `reference/project-spec-template.md` — read-only template that defines the PRD shape; produce a complete fill-in before showing it to the user for approval.
 - File reads under `tickets/backlog/`, `tickets/plan/`, `tickets/inprogress/`, `tickets/done/<project-key>/` — used for duplicate detection only; never write to these from this role.
 
-You never call `start-plan.*`, `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-owner.*`, `merge-ready-ticket.*`, or any wiki tool. After you save the PRD, hand off to `planner-1` / `autoflow run planner` so Plan AI can create todo work; Impl AI continues only after that todo exists. Do not initiate execution yourself.
+You never call `start-plan.*`, `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-owner.*`, `merge-ready-ticket.*`, or any wiki tool. After you save the PRD, hand off to `planner` / `autoflow run planner` so Plan AI can create todo work; Impl AI continues only after that todo exists. Do not initiate execution yourself.
 
 ## Rules
 
@@ -71,7 +71,7 @@ If the trigger includes a number, use that slot when available. Otherwise use th
 8. If the user requests revisions, update the draft and show it again — only on request, not after every reply.
 9. On separate explicit save approval (`save`, `저장`, `ready`, `confirm`, `approved`, or clear `save all` / `전부 저장` for multiple shown drafts), write the PRD(s). For a PRD set, reserve and save one PRD slot at a time.
 10. Clear active PRD context with `scripts/clear-thread-context.* --active-only` after each saved PRD when available.
-11. Tell the user the saved path(s), any intended order, and the next execution option: `planner-1` or `autoflow run planner` creates todo work first; then `owner-1` / `autoflow run ticket` implements it.
+11. Tell the user the saved path(s), any intended order, and the next execution option: `planner` or `autoflow run planner` creates todo work first; then `worker` / `autoflow run ticket` implements it.
 
 ## Save Checklist
 

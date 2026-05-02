@@ -4,7 +4,7 @@
 #
 # `self-improve-1` is shipped with `enabled = false` in the default
 # `runners/config.toml` and is not part of the 3-runner topology
-# (planner-1 + owner-1 + wiki-1). The script is a deterministic log
+# (planner + worker + wiki). The script is a deterministic log
 # scanner that emits low-risk PRD candidates from accumulated runner
 # logs; it does not invoke an AI. It is kept reachable as a manual
 # trial for users who want to experiment with operational

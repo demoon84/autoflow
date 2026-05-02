@@ -113,7 +113,7 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_I
 require_line "$plan_output" "status=ok"
 require_line "$plan_output" "source=backlog-to-todo"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
 require_line "$start_output" "worktree_status=ready"
@@ -129,7 +129,7 @@ cat >>"$ticket_file" <<NOTE
 - Worktree path was missing during integration at 2026-05-01T00:00:00Z: ${stale_path}
 NOTE
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$blocked_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$blocked_output"
 require_line "$blocked_output" "status=resume"
 require_line "$blocked_output" "ticket_id=001"
 require_line "$blocked_output" "worktree_status=ready"
@@ -147,7 +147,7 @@ require_pattern "$ticket_file" 'Auto-recovery .*cleared blocked worktree fields'
 
 perl -0pi -e 's/- Stage: executing/- Stage: blocked/' "$ticket_file"
 perl -0pi -e 's/- Integration Status: pending/- Integration Status: blocked_missing_allowed_paths/' "$ticket_file"
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$manual_block_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$manual_block_output"
 require_line "$manual_block_output" "status=blocked"
 require_line "$manual_block_output" "reason=ticket_stage_blocked"
 require_line "$ticket_file" "- Integration Status: blocked_missing_allowed_paths"

@@ -2,8 +2,8 @@
 #
 # DEPRECATED: legacy verifier runtime.
 #
-# In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI
-# (`owner-1`) runs AI-led verification inline via
+# In the 3-runner topology (planner + worker + wiki), Impl AI
+# (`worker`) runs AI-led verification inline via
 # `verify-ticket-owner.sh` and decides pass/fail based on the
 # evidence. There is no separate verifier worker.
 #

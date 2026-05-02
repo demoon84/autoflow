@@ -5,7 +5,7 @@
 # command when Codex CLI is not the desired local runner.
 
 [[runners]]
-id = "owner-1"
+id = "worker"
 role = "ticket-owner"
 agent = "codex"
 model = ""

@@ -3,10 +3,10 @@
 # DEPRECATED: legacy coordinator runtime.
 #
 # Coordinator is no longer a default runner in the 3-runner topology
-# (planner-1 + owner-1 + wiki-1). Its responsibilities have been split:
-#   - Impl AI (`owner-1`) calls `merge-ready-ticket.*` inline from its
+# (planner + worker + wiki). Its responsibilities have been split:
+#   - Impl AI (`worker`) calls `merge-ready-ticket.*` inline from its
 #     `finish-ticket-owner.*` pass finalizer (AI-led merge).
-#   - Wiki AI (`wiki-1`) owns deterministic wiki baseline refresh plus AI
+#   - Wiki AI (`wiki`) owns deterministic wiki baseline refresh plus AI
 #     synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`).
 #
 # This script is kept reachable as `autoflow run coordinator` only for

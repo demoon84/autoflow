@@ -88,7 +88,7 @@ git -C "$project_dir" config user.email autoflow-smoke@example.test
 git -C "$project_dir" config user.name "Autoflow Smoke"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set owner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set worker "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 printf 'base\n' >"${project_dir}/target.txt"
 git -C "$project_dir" add target.txt .autoflow .claude .codex
@@ -114,7 +114,7 @@ FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
 AUTOFLOW_CODEX_DISABLE_PTY=1 AUTOFLOW_WORKTREE_ROOT="$worktree_root" PATH="${fake_bin}:$PATH" \
-  "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner owner-1 >"$run_output"
+  "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" --runner worker >"$run_output"
 
 require_line "$run_output" "status=ok"
 require_line "$run_output" "runner_status=idle"

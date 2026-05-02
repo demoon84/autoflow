@@ -4,7 +4,7 @@ set_name = "{{SET_NAME}}"
 target_thread_id = "{{THREAD_ID}}"
 board_root = ".autoflow/"
 
-owner_workers = ["owner-1"]
+owner_workers = ["worker"]
 
 # Legacy role-pipeline workers. Leave these empty for Ticket Owner Mode.
 planner_workers = []
@@ -25,7 +25,7 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 # its own target_thread_id. Workers without an entry fall back to the
 # top-level target_thread_id above.
 [thread_ids]
-owner-1 = "{{OWNER_1_THREAD_ID}}"
+worker = "{{WORKER_THREAD_ID}}"
 
 [notes]
 scaling_rule = "Scale Ticket Owner Mode by adding owner_workers and matching [thread_ids] entries. Use legacy planner/todo/verifier arrays only for role-pipeline compatibility."

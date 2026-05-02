@@ -1,7 +1,7 @@
 # Merge Bot Agent — DEPRECATED (folded into Impl AI)
 
 > **DEPRECATED:** Merge Bot is no longer a default runner. In the 3-runner
-> topology (planner-1 + owner-1 + wiki-1), Impl AI (`owner-1`) calls
+> topology (planner + worker + wiki), Impl AI (`worker`) calls
 > `merge-ready-ticket.*` inline from its `finish-ticket-owner.* pass`
 > finalizer; there is no separate merge-bot runner. The role identifier
 > is kept for backwards compatibility; new boards should not add one.

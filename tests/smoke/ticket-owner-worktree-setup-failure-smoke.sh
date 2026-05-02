@@ -106,7 +106,7 @@ printf 'not a directory\n' > "$blocked_root"
 
 AUTOFLOW_WORKTREE_ROOT="$blocked_root" \
   AUTOFLOW_ROLE=ticket-owner \
-  AUTOFLOW_WORKER_ID=owner-1 \
+  AUTOFLOW_WORKER_ID=worker \
   AUTOFLOW_BOARD_ROOT="${project_dir}/.autoflow" \
   AUTOFLOW_PROJECT_ROOT="$project_dir" \
   "${project_dir}/.autoflow/scripts/start-ticket-owner.sh" >"$start_output"

@@ -5,7 +5,7 @@
 # The canonical implementation of `autoflow runners ...` is
 # `packages/cli/runners-project.sh`. That file is what `bin/autoflow`
 # exec's and is the version maintained against the current 3-runner
-# topology (planner-1 + owner-1 + wiki-1).
+# topology (planner + worker + wiki).
 #
 # This `runtime/board-scripts/` copy is not referenced by any caller and
 # is not packaged into `.autoflow/scripts/` by the board scaffolder

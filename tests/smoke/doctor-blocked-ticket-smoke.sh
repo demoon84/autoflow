@@ -120,17 +120,17 @@ coordinator_runner_output="${project_dir}/coordinator-runner.out"
 coordinator_runner_repeat_output="${project_dir}/coordinator-runner-repeat.out"
 coordinator_codex_direct_output="${project_dir}/coordinator-codex-direct.out"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-1 ./scripts/start-plan.sh >"$plan_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner ./scripts/start-plan.sh >"$plan_one_output"
 require_line "$plan_one_output" "status=ok"
 require_line "$plan_one_output" "source=backlog-to-todo"
 require_pattern "$plan_one_output" 'todo_ticket=.*/tickets/todo/tickets_001.md$'
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-1 ./scripts/start-plan.sh >"$plan_two_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner ./scripts/start-plan.sh >"$plan_two_output"
 require_line "$plan_two_output" "status=ok"
 require_line "$plan_two_output" "source=backlog-to-todo"
 require_pattern "$plan_two_output" 'todo_ticket=.*/tickets/todo/tickets_002.md$'
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_WORKTREE_MODE=project-root-on-dirty AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
 require_line "$start_one_output" "ticket_id=001"
 require_line "$start_one_output" "worktree_status=project_root_fallback"

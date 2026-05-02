@@ -2,8 +2,8 @@
 #
 # DEPRECATED: legacy todo runtime.
 #
-# In the 3-runner topology (planner-1 + owner-1 + wiki-1), Impl AI
-# (`owner-1`) claims directly from `tickets/todo/` via
+# In the 3-runner topology (planner + worker + wiki), Impl AI
+# (`worker`) claims directly from `tickets/todo/` via
 # `start-ticket-owner.sh`, implements, verifies, and merges in one
 # flow. There is no separate todo worker.
 #

@@ -5,7 +5,7 @@
 # This script polls .autoflow/tickets/* fingerprints and dispatches one-shot
 # hooks via run-hook.sh. It runs autonomously (script-driven), which is the
 # pattern Autoflow has moved away from. The supported execution model is the
-# 3-runner topology (planner-1, owner-1, wiki-1) where an AI runner decides
+# 3-runner topology (planner, worker, wiki) where an AI runner decides
 # when to call scripts as tools, not the reverse.
 #
 # This loop is kept for backwards compatibility with users still on
@@ -200,7 +200,7 @@ debounce_sleep="$(ms_to_sleep_seconds "$debounce_ms")"
 stable_sleep="$(ms_to_sleep_seconds "$stable_write_delay_ms")"
 
 printf 'Autoflow file-watch hook is running (DEPRECATED legacy script-driven loop).\n'
-printf 'Recommended: use the heartbeat-driven AI runners in `.autoflow/runners/config.toml` (planner-1 + owner-1 + wiki-1).\n'
+printf 'Recommended: use the heartbeat-driven AI runners in `.autoflow/runners/config.toml` (planner + worker + wiki).\n'
 printf 'Board Root: %s\n' "$BOARD_ROOT"
 printf 'Config: %s\n' "$config_path"
 printf 'Watched routes: ticket, plan, todo, verifier\n'

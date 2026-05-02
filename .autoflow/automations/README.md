@@ -4,12 +4,12 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 
 ## Reference Model
 
-Default 3-runner topology (planner-1 + owner-1 + wiki-1):
+Default 3-runner topology (planner + worker + wiki):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner-1` (Orchestrator AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns memo promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
-- `owner-1` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
-- `wiki-1` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
+- `planner` (Orchestrator AI): converts quick memos, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns memo promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
+- `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
+- `wiki` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
 - The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
 
 Legacy role-pipeline model (compatibility only — DEPRECATED):
@@ -115,7 +115,7 @@ fallback):
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
 - `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no script-driven wiki route is needed. `wiki-1` inspects done/reject/log sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
+- `tickets/done/`: no script-driven wiki route is needed. `wiki` inspects done/reject/log sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
 
 ## Operating Principle
 
@@ -154,9 +154,9 @@ Recommended environment variables:
 
 Default (all sizes):
 
-- one Orchestrator AI (`planner-1`),
-- one Impl AI (`owner-1`),
-- one Wiki AI (`wiki-1`).
+- one Orchestrator AI (`planner`),
+- one Impl AI (`worker`),
+- one Wiki AI (`wiki`).
 
 The three are path-disjoint and tick on the same 1-minute heartbeat without conflicting. Scale only after profiling shows the pipeline is starved — running multiple Impl AI instances increases worktree base drift / Allowed Paths conflicts and is intentionally serialized to one Impl AI in the default config. Legacy role-pipeline (`#plan`, `#todo`, `#veri`, `coordinator`, `merge-bot`) and the file-watcher are kept reachable for backwards compatibility but are not part of the default topology.
 

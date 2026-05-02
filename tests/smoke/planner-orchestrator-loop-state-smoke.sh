@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 project_dir="$(mktemp -d)"
 cleanup() {
   if [ -d "$project_dir" ]; then
-    "${REPO_ROOT}/bin/autoflow" runners stop planner-1 "$project_dir" >/dev/null 2>&1 || true
+    "${REPO_ROOT}/bin/autoflow" runners stop planner "$project_dir" >/dev/null 2>&1 || true
     rm -rf "$project_dir"
   fi
 }
@@ -27,7 +27,7 @@ require_line() {
 }
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium interval_seconds=30 >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium interval_seconds=30 >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/inprogress"
 cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_997.md" <<'TICKET'
@@ -125,7 +125,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" runners start planner-1 "$project_dir" >"$runner_start_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" runners start planner "$project_dir" >"$runner_start_output"
 require_line "$runner_start_output" "status=ok"
 require_line "$runner_start_output" "result=started"
 
@@ -137,7 +137,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
   sleep 1
 done
 
-require_line "$runner_list_output" "runner.1.id=planner-1"
+require_line "$runner_list_output" "runner.1.id=planner"
 require_line "$runner_list_output" "runner.1.last_result=adapter_exit_0"
 require_line "$runner_list_output" "runner.1.active_item=tickets/inprogress/tickets_997.md"
 require_line "$runner_list_output" "runner.1.active_ticket_id=tickets_997"

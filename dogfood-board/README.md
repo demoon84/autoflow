@@ -24,7 +24,7 @@ Autoflow 보드는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이
 
 1. `#af` 또는 `#autoflow` 로 사용자와 대화해 내용을 정리하고, 저장이 확정되면 `tickets/backlog/project_{NNN}.md` 에 남긴다. Desktop/CLI handoff 저장을 켜면 같은 승인 내용을 `conversations/project_{NNN}/spec-handoff.md` 에도 보관한다.
 2. 원하면 `scripts/install-stop-hook.sh install` 을 한 번 실행한다. 그러면 현재 보드 `check-stop.sh` 가 Codex Stop hook 에 연결되어, Ticket Owner 또는 legacy role work 가 남아 있으면 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 훅은 heartbeat / watcher 를 대체하지 않고 보완한다.
-3. `autoflow run ticket` 으로 `owner-1` runner 를 깨운다. 이 runner 는 한 티켓의 local plan, implementation, verification, evidence, done/reject 이동까지 한 번에 책임진다.
+3. `autoflow run ticket` 으로 `worker` runner 를 깨운다. 이 runner 는 한 티켓의 local plan, implementation, verification, evidence, done/reject 이동까지 한 번에 책임진다.
 4. 검증 실패가 티켓 scope 안에서 고칠 수 있으면 같은 owner loop 안에서 수정하고 다시 검증한다. scope 밖이면 `reject` 기록으로 남긴다.
 5. 기존 `#plan`, `#todo`, `#veri` role-pipeline 흐름은 호환 경로로만 유지한다.
 6. 위 heartbeat 는 사용자가 명시적으로 "멈춰"라고 하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기다.

@@ -36,7 +36,7 @@ require_contains() {
 }
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/todo"
 cat >"${project_dir}/.autoflow/tickets/todo/tickets_777.md" <<'TICKET'
@@ -134,7 +134,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
 require_line "$run_output" "status=ok"
 require_line "$run_output" "adapter=codex"
 require_line "$run_output" "adapter_exit_code=0"

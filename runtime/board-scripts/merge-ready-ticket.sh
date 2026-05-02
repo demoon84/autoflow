@@ -748,7 +748,7 @@ if [ "$ticket_file" != "$done_target" ]; then
 fi
 log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
 wiki_output="$(wiki_ai_owned_notice)"
-# Wiki baseline and synthesis are intentionally deferred to wiki-1. This
+# Wiki baseline and synthesis are intentionally deferred to wiki. This
 # finalizer is a merge/evidence/commit tool; it must not rewrite wiki pages
 # just because a ticket was finalized.
 ticket_goal_complete "$ticket_file" "complete"

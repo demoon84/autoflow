@@ -63,9 +63,9 @@ Examples:
   autoflow watch-bg /path/to/project
   echo "Build the local runner harness" | autoflow prd create /path/to/project --title "Runner harness"
   echo "Increase body font size by 2px" | autoflow memo create /path/to/project --title "Increase body font"
-  autoflow run planner /path/to/project --runner planner-1
-  autoflow run ticket /path/to/project --runner owner-1
-  autoflow run wiki /path/to/project --runner wiki-1
+  autoflow run planner /path/to/project --runner planner
+  autoflow run ticket /path/to/project --runner worker
+  autoflow run wiki /path/to/project --runner wiki
   autoflow run coordinator /path/to/project --runner coordinator-1   # legacy
   autoflow run self-improve /path/to/project --runner self-improve-1  # trial
   autoflow wiki update /path/to/project

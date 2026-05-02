@@ -84,7 +84,7 @@ Reduce unnecessary wiki-bot LLM/token usage and long-running adapter memory cost
 - [x] Run verification commands and whitespace checks.
 
 ## Decisions
-- Do not stop live `planner-1`, `owner-1`, or `wiki-1` during investigation unless explicitly requested.
+- Do not stop live `planner`, `worker`, or `wiki` during investigation unless explicitly requested.
 - Avoid touching dirty desktop/UI/board files unrelated to this optimization.
 - Prefer deterministic input fingerprints over model-specific token accounting.
 
@@ -95,7 +95,7 @@ Reduce unnecessary wiki-bot LLM/token usage and long-running adapter memory cost
 
 ## Risks
 - A too-aggressive skip could miss meaningful wiki source changes.
-- Live `owner-1` is currently active on `tickets_038`; avoid overlapping edits to files it may be changing.
+- Live `worker` is currently active on `tickets_038`; avoid overlapping edits to files it may be changing.
 
 ---
 
@@ -133,7 +133,7 @@ Find why the desktop progress view repeatedly shows Ticket Owner runners as `막
 - [ ] Targeted unit/script check for status derivation, if available.
 - [ ] `npm --prefix apps/desktop run check`
 - [ ] Targeted whitespace check for changed files.
-- [x] `./bin/autoflow runners list . .autoflow` shows owner-1 through owner-5 stopped with no active ticket metadata.
+- [x] `./bin/autoflow runners list . .autoflow` shows worker through owner-5 stopped with no active ticket metadata.
 - [x] `git worktree list --porcelain` shows only the main project worktree after cleanup.
 - [x] `./bin/autoflow metrics . .autoflow` reports `reject_count=0` and `ticket_todo_count=1`.
 - [x] `./bin/autoflow status . .autoflow` reports `ticket_todo_count=6`, `ticket_inprogress_count=0`, `ticket_executing_count=0`, `ticket_blocked_count=0`, and `ticket_owner_active_count=0`.

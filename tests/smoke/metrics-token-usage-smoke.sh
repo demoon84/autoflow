@@ -41,17 +41,17 @@ runner_log_dir="${project_dir}/.autoflow/runners/logs"
 metrics_output="${project_dir}/metrics.out"
 metrics_write_output="${project_dir}/metrics-write.out"
 
-cat >"${runner_log_dir}/owner-1_2026-04-26T00-00-00Z_stdout.log" <<'LOG'
+cat >"${runner_log_dir}/worker_2026-04-26T00-00-00Z_stdout.log" <<'LOG'
 ticket work completed
 tokens used
 95,413
 LOG
 
-cat >"${runner_log_dir}/owner-1_2026-04-26T00-01-00Z_stderr.log" <<'LOG'
+cat >"${runner_log_dir}/worker_2026-04-26T00-01-00Z_stderr.log" <<'LOG'
 {"usage":{"total_tokens":1200}}
 LOG
 
-cat >"${runner_log_dir}/owner-1_2026-04-26T00-02-00Z_live_stdout.log" <<'LOG'
+cat >"${runner_log_dir}/worker_2026-04-26T00-02-00Z_live_stdout.log" <<'LOG'
 tokens used
 999,999
 LOG

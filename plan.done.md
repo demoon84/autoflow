@@ -119,11 +119,11 @@ The next implementation should extend this baseline instead of replacing it.
   runners/
     config.toml
     state/
-      planner-1.json
+      planner.json
       todo-1.json
       verifier-1.json
     logs/
-      planner-1.log
+      planner.log
       todo-1.log
       verifier-1.log
   conversations/
@@ -192,10 +192,10 @@ Required runner fields:
 Add these commands after the document contracts are stable:
 
 ```bash
-autoflow run planner [project-root] [board-dir-name] --runner planner-1
+autoflow run planner [project-root] [board-dir-name] --runner planner
 autoflow run todo [project-root] [board-dir-name] --runner todo-1
 autoflow run verifier [project-root] [board-dir-name] --runner verifier-1
-autoflow run wiki [project-root] [board-dir-name] --runner wiki-1
+autoflow run wiki [project-root] [board-dir-name] --runner wiki
 autoflow runners list [project-root] [board-dir-name]
 autoflow runners start [runner-id] [project-root] [board-dir-name]
 autoflow runners stop [runner-id] [project-root] [board-dir-name]

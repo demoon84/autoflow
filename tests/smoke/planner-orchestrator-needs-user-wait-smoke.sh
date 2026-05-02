@@ -49,7 +49,7 @@ require_marker_count() {
 }
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/inprogress"
 cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_996.md" <<'TICKET'
@@ -149,7 +149,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
 
 require_line "$run_output" "status=ok"
 require_line "$run_output" "runner_status=idle"
@@ -191,8 +191,8 @@ require_line "$runner_list_output" "runner.1.active_item=tickets/inprogress/tick
 require_line "$runner_list_output" "runner.1.active_recovery_status=needs_user"
 require_line "$runner_list_output" "runner.1.active_recovery_failure_class=needs_user_decision"
 
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" mode=one-shot >/dev/null
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$one_shot_output"
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" mode=one-shot >/dev/null
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$one_shot_output"
 require_line "$one_shot_output" "status=ok"
 require_line "$one_shot_output" "adapter=codex"
 require_line "$one_shot_output" "adapter_exit_code=0"

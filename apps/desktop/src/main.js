@@ -921,7 +921,7 @@ function extractAgentConversation(text, maxChars = 4000) {
   const useStrict = strict.length >= 3 || strict.length >= permissive.length;
   const result = useStrict ? strict : permissive;
 
-  // Single stray log/path line (e.g. wiki-1 stderr that contains only its own
+  // Single stray log/path line (e.g. wiki stderr that contains only its own
   // log filename) is not useful as a "conversation" — return empty so the
   // caller can fall through to the next candidate log.
   if (

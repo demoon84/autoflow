@@ -1,14 +1,14 @@
 # Autoflow runner configuration.
 #
 # Default 3-runner topology (refactor 2026-04-27):
-#   planner-1 : Orchestrator AI — backlog/PRD → todo, reject → todo
+#   planner : Orchestrator AI — backlog/PRD → todo, reject → todo
 #               (auto-replan), and markdown recovery for stalled/blocked work.
-#   owner-1   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
-#   wiki-1    : Wiki AI — periodically refreshes wiki/ when tickets/done or
+#   worker   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
+#   wiki    : Wiki AI — periodically refreshes wiki/ when tickets/done or
 #               tickets/reject change. Path-disjoint from Orchestrator AI and
 #               Impl AI so it never causes worktree/merge conflicts.
-# Impl AI still runs deterministic update-wiki.sh inline at merge time so the
-# wiki has a fresh baseline; wiki-1 layers AI synthesis on top.
+# Wiki AI owns material baseline refresh and AI synthesis. Impl AI finalizers
+# do not call update-wiki.sh or stage wiki/.
 #
 # Change agent/model fields to claude, opencode, gemini, shell, or a custom
 # command when Codex CLI is not the desired local runner.
@@ -21,7 +21,7 @@
 # installs can opt in with `autoflow runners add coordinator-1 coordinator`.
 
 [[runners]]
-id = "planner-1"
+id = "planner"
 role = "planner"
 agent = "codex"
 model = ""
@@ -32,7 +32,7 @@ enabled = true
 command = ""
 
 [[runners]]
-id = "owner-1"
+id = "worker"
 role = "ticket-owner"
 agent = "codex"
 model = ""
@@ -43,7 +43,7 @@ enabled = true
 command = ""
 
 [[runners]]
-id = "wiki-1"
+id = "wiki"
 role = "wiki-maintainer"
 agent = "codex"
 model = ""

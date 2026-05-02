@@ -52,9 +52,9 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Codex `$autoflow`: PRD handoff only.
 - `#autoflow`: compatibility alias for PRD handoff only.
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick order intake only.
-- `autoflow runners start planner-1`: Orchestrator AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
-- `autoflow run ticket` / `autoflow runners start owner-1`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
-- `autoflow runners start wiki-1`: Wiki AI loop runner — layers AI synthesis on the deterministic wiki baseline that Impl AI refreshes inline at merge time.
+- `autoflow runners start planner`: Orchestrator AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
+- `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
+- `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop Owner runner: default Impl AI execution from the UI.
 - `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not scaffolded by default — opt in via `autoflow runners add coordinator-1 coordinator`).
@@ -126,7 +126,7 @@ Use the wiki to summarize:
 
 ## Coordinator Rules (DEPRECATED)
 
-Coordinator is no longer a default runner in the 3-runner topology. Its responsibilities have been split: Impl AI (`owner-1`) runs AI-led verification and merge inline via `verify-ticket-owner.*` + `finish-ticket-owner.*` (which calls `merge-ready-ticket.*` as a non-merging finalizer); Wiki AI (`wiki-1`) layers AI synthesis on top of the deterministic baseline that Impl AI already refreshes inline. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
+Coordinator is no longer a default runner in the 3-runner topology. Its responsibilities have been split: Impl AI (`worker`) runs AI-led verification and merge inline via `verify-ticket-owner.*` + `finish-ticket-owner.*` (which calls `merge-ready-ticket.*` as a non-merging finalizer); Wiki AI (`wiki`) owns material wiki baseline refresh plus AI synthesis. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
 
 If you do run a legacy coordinator, the historical contract still applies: it diagnoses board health (shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, board scaffold issues) and may produce evidence for a next action. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code; product-code repair and merge are Impl AI's responsibility. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
 

@@ -191,7 +191,7 @@ Ticket Owner 운영에서는 아래 환경 변수를 권장한다.
 - `AUTOFLOW_ROLE`
   - `ticket-owner`
 - `AUTOFLOW_WORKER_ID`
-  - 예: `owner-1`
+  - 예: `worker`
 - `AUTOFLOW_BACKGROUND`
   - 예: `1`
 
@@ -211,9 +211,9 @@ worker 수를 고정하지 않는다. 기본 형태는 owner runner N개다.
 예:
 
 - owner 1개:
-  - `owner_workers = ["owner-1"]`
+  - `owner_workers = ["worker"]`
 - owner 3개:
-  - `owner_workers = ["owner-1", "owner-2", "owner-3"]`
+  - `owner_workers = ["worker", "owner-2", "owner-3"]`
 
 즉 scaling 은 "owner runner 추가 + heartbeat set 갱신" 으로 한다. legacy role-pipeline 이 필요하면 별도로 `planner P / todo K / verifier M` topology 를 켤 수 있다.
 

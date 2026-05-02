@@ -114,7 +114,7 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_I
 require_line "$plan_output" "status=ok"
 require_line "$plan_output" "source=backlog-to-todo"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
 require_line "$start_output" "ticket_id=001"
 require_line "$start_output" "worktree_status=ready"
@@ -124,13 +124,13 @@ worktree_path="$(awk -F= '$1 == "worktree_path" { print $2; exit }' "$start_outp
 printf 'local root edit\n' >"${project_dir}/unrelated.txt"
 printf 'ticket update\n' >"${worktree_path}/target.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$finish_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$finish_output"
 require_line "$finish_output" "status=needs_ai_merge"
 require_line "$finish_output" "outcome=pass"
 require_line "$finish_output" "commit_status=ai_merge_required"
 
 cp "${worktree_path}/target.txt" "${project_dir}/target.txt"
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$merge_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 pass "integrate dirty-unrelated root worktree" >"$merge_output"
 require_line "$merge_output" "status=done"
 require_line "$merge_output" "outcome=pass"
 require_line "$merge_output" "commit_status=committed_via_inline_merge"

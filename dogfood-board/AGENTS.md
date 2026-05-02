@@ -146,7 +146,7 @@
 
 목적:
 
-- `planner-1` heartbeat 또는 `autoflow run planner` 로 동작. quick memo, populated backlog spec, reject 기록을 todo work 로 변환하고, blocked/stalled ticket 에는 `Recovery State` 기반 복구 지시를 남긴다. `start-plan.sh` 는 다음 plan-side work 를 선택하는 도구이고, agent 가 결과를 읽어 plan/ticket/recovery markdown 을 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
+- `planner` heartbeat 또는 `autoflow run planner` 로 동작. quick memo, populated backlog spec, reject 기록을 todo work 로 변환하고, blocked/stalled ticket 에는 `Recovery State` 기반 복구 지시를 남긴다. `start-plan.sh` 는 다음 plan-side work 를 선택하는 도구이고, agent 가 결과를 읽어 plan/ticket/recovery markdown 을 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
 
 반드시 읽을 파일:
 

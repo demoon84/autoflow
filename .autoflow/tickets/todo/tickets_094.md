@@ -68,10 +68,10 @@
 
 ## Done When
 
-- [ ] AI 설정/대쉬보드에서 `planner-1` 카드의 역할 라벨이 "Plan AI" 만 단독 노출하지 않고, 오케스트레이터 역할이 함께 드러나는 한국어 표기로 보인다.
+- [ ] AI 설정/대쉬보드에서 `planner` 카드의 역할 라벨이 "Plan AI" 만 단독 노출하지 않고, 오케스트레이터 역할이 함께 드러나는 한국어 표기로 보인다.
 - [ ] `displayProgressRoleLabel` 이 planner role 에 대해 반환하는 짧은 라벨이 `"Planner"` 영문 단독에서 오케스트레이터 의미가 보이는 한국어(혹은 한국어 + 영문 보조) 표기로 바뀌어 진행 상태 카드/뱃지에 일관되게 노출된다.
 - [ ] AI 설정 페이지 우측의 역할 안내 카피와 runner 가 없는 빈 상태 문구가 Plan AI 의 오케스트레이터 역할을 함께 설명한다.
-- [ ] runner id (`planner-1`), runtime role 키 (`planner`/`plan`), runner state 파일 이름, board runtime 출력(`autoflow run planner` 등)에는 변화가 없다.
+- [ ] runner id (`planner`), runtime role 키 (`planner`/`plan`), runner state 파일 이름, board runtime 출력(`autoflow run planner` 등)에는 변화가 없다.
 - [ ] `Impl AI` / `Wiki AI` 카드의 라벨, 진행 상태 표시, 안내 문구는 회귀 없이 그대로 유지된다.
 - [ ] 라벨 길이가 늘어나도 runner 카드/툴바/빈 상태 영역에서 텍스트가 카드 밖으로 넘치거나 우측 시작/중지 버튼과 겹치지 않는다.
 - [ ] `cd apps/desktop && npx tsc --noEmit` 가 통과한다.

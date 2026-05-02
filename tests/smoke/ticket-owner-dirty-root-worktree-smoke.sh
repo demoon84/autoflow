@@ -123,7 +123,7 @@ run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_I
 require_line "$plan_two_output" "status=ok"
 require_line "$plan_two_output" "source=backlog-to-todo"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=owner-1 ./scripts/start-ticket-owner.sh >"$start_one_output"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_one_output"
 require_line "$start_one_output" "status=ok"
 require_line "$start_one_output" "ticket_id=001"
 require_line "$start_one_output" "worktree_status=ready"

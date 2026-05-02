@@ -103,7 +103,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 | `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
 | `finish-ticket-owner.*` | Move pass/fail bookkeeping forward, archive evidence, call deterministic finalizers, and create local completion commits after AI merge. | Decide pass/fail, integrate verified changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before pass. |
 | `merge-ready-ticket.*` | Validate that AI-merged product state matches ticket/worktree expectations, refresh deterministic wiki baseline, and refuse unsafe merge states. | Perform rebases, cherry-picks, conflict resolution, and product-file merge decisions. |
-| `update-wiki.*` | Refresh deterministic wiki baseline pages from done/reject board evidence. | Synthesize semantic wiki knowledge; this belongs to `wiki-1`, not inline owner finalization. |
+| `update-wiki.*` | Refresh deterministic wiki baseline pages from done/reject board evidence. | Synthesize semantic wiki knowledge; this belongs to `wiki`, not inline owner finalization. |
 | `autoflow guard` / `scripts/board-guard.sh` | Validate board invariants after AI-authored markdown edits. | Interpret guard output and repair ticket markdown before creating more work. |
 
 If a helper reports `blocked`, `needs_ai_merge`, `warning`, or `error`, do not route around it with another shell step. Preserve the evidence in board markdown and let the responsible AI role choose the next safe action.

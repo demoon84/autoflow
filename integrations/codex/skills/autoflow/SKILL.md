@@ -18,6 +18,6 @@ Act as the Autoflow PRD handoff entry point for Codex.
 7. Save only after a separate explicit save confirmation such as `save`, `저장`, `confirm`, `approved`, or `ready`. A draft trigger is **not** save approval. Multiple drafts need per-PRD approval or a clear `save all` / `전부 저장` confirmation.
 8. Save only backlog PRDs. Do not create plans, tickets, code changes, verification records, commits, or pushes.
 9. Prefer `autoflow spec create <project-root> <board-dir-name> --from-file <draft-file> --raw --save-handoff` when the CLI is available. Otherwise write approved markdown to `{{BOARD_DIR}}/tickets/backlog/prd_NNN.md`. For multiple PRDs, save separate `prd_NNN.md` files one active slot at a time.
-10. After saving, tell the user the saved path(s), intended order when relevant, and that `planner-1` or `autoflow run planner` will turn the PRD into todo work before `owner-1` / `autoflow run ticket` implements it.
+10. After saving, tell the user the saved path(s), intended order when relevant, and that `planner` or `autoflow run planner` will turn the PRD into todo work before `worker` / `autoflow run ticket` implements it.
 
 If no Autoflow board is found, explain that the project needs an Autoflow board first and offer `autoflow init <project-root>` or the desktop install flow.

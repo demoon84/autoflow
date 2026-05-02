@@ -46,7 +46,7 @@ STUB
 chmod +x "${stub_dir}/gemini"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set wiki-1 "$project_dir" .autoflow \
+"${REPO_ROOT}/bin/autoflow" runners set wiki "$project_dir" .autoflow \
   agent=gemini \
   model=gemini-2.5-pro \
   reasoning= >/dev/null
@@ -64,18 +64,18 @@ lint_output="${project_dir}/lint.out"
 PATH="${stub_dir}:/usr/bin:/bin" "${REPO_ROOT}/bin/autoflow" wiki query "$project_dir" .autoflow \
   --term "wiki bot gemini smoke" \
   --synth \
-  --runner wiki-1 > "$query_output"
+  --runner wiki > "$query_output"
 require_line "$query_output" "synth_status=ok"
-require_line "$query_output" "synth_runner=wiki-1"
+require_line "$query_output" "synth_runner=wiki"
 require_line "${project_dir}/gemini-env.log" "adapter=gemini"
 require_line "${project_dir}/gemini-env.log" "autoflow_cli=${REPO_ROOT}/bin/autoflow"
 require_line "${project_dir}/gemini-env.log" "autoflow_on_path=true"
 
 PATH="${stub_dir}:/usr/bin:/bin" "${REPO_ROOT}/bin/autoflow" wiki lint "$project_dir" .autoflow \
   --semantic \
-  --runner wiki-1 > "$lint_output"
+  --runner wiki > "$lint_output"
 require_line "$lint_output" "semantic_status=ok"
-require_line "$lint_output" "semantic_runner=wiki-1"
+require_line "$lint_output" "semantic_runner=wiki"
 require_line "$lint_output" "semantic_finding.none=true"
 
 echo "status=ok"

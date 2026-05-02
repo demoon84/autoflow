@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 project_dir="$(mktemp -d)"
 cleanup() {
   if [ -d "$project_dir" ]; then
-    "${REPO_ROOT}/bin/autoflow" runners stop owner-1 "$project_dir" >/dev/null 2>&1 || true
+    "${REPO_ROOT}/bin/autoflow" runners stop worker "$project_dir" >/dev/null 2>&1 || true
   fi
   rm -rf "$project_dir"
 }
@@ -39,9 +39,9 @@ cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_996.md" <<'TICKET'
 - Plan Candidate: owner blocked state metadata smoke
 - Title: Owner blocked state metadata smoke
 - Stage: blocked
-- AI: owner-1
-- Claimed By: owner-1
-- Execution AI: owner-1
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
 - Verifier AI:
 - Last Updated:
 
@@ -115,13 +115,13 @@ cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_996.md" <<'TICKET'
 TICKET
 
 run_output="${project_dir}/run.out"
-state_path="${project_dir}/.autoflow/runners/state/owner-1.state"
+state_path="${project_dir}/.autoflow/runners/state/worker.state"
 runners_output="${project_dir}/runners.out"
 display_fallback_output="${project_dir}/display-fallback.out"
 runner_start_output="${project_dir}/runner-start.out"
 loop_runners_output="${project_dir}/loop-runners.out"
 
-"${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner owner-1 >"$run_output"
+"${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner worker >"$run_output"
 
 require_line "$run_output" "status=blocked"
 require_line "$run_output" "runner_status=blocked"
@@ -137,7 +137,7 @@ require_line "$state_path" "active_recovery_status=blocked"
 require_line "$state_path" "active_recovery_failure_class=smoke_blocker"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runners_output"
-require_line "$runners_output" "runner.2.id=owner-1"
+require_line "$runners_output" "runner.2.id=worker"
 require_line "$runners_output" "runner.2.active_ticket_id=tickets_996"
 require_line "$runners_output" "runner.2.active_ticket_title=Owner blocked state metadata smoke"
 require_line "$runners_output" "runner.2.active_stage=blocked"
@@ -164,7 +164,7 @@ perl -0pi -e 's/^last_result=.*$/last_result=/m' "$state_path"
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$display_fallback_output"
 require_line "$display_fallback_output" "runner.2.last_result="
 
-"${REPO_ROOT}/bin/autoflow" runners start owner-1 "$project_dir" >"$runner_start_output"
+"${REPO_ROOT}/bin/autoflow" runners start worker "$project_dir" >"$runner_start_output"
 require_line "$runner_start_output" "status=ok"
 require_line "$runner_start_output" "result=started"
 

@@ -17,7 +17,7 @@ Do not use the wiki as the source of truth for active ticket stage, ownership, p
 
 ## Lint output keys
 
-`autoflow wiki lint` emits both the legacy keys (`orphan.*`, `citation_gap.*`, `stale_reference.*`) and a new `lint_*` family that the wiki-1 runner consumes:
+`autoflow wiki lint` emits both the legacy keys (`orphan.*`, `citation_gap.*`, `stale_reference.*`) and a new `lint_*` family that the wiki runner consumes:
 
 - `lint_orphan.<n>.page=<board-relative path>` — page never linked from `wiki/index.md` (alias of legacy `orphan.<n>=`).
 - `lint_broken_link.<n>.page=` + `lint_broken_link.<n>.target=` — `[[wikilink]]` whose final segment does not match any page stem in the wiki.

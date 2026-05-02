@@ -5564,7 +5564,7 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   }
   if (value === "merge-1") return "머지봇";
   if (/^merge-\d+$/.test(value)) return value.replace(/^merge-/, "머지봇-");
-  if (value === "wiki-maintainer-1" || value === "wiki-1") return singleton ? "위키봇" : "위키봇-1";
+  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "위키봇" : "위키봇-1";
   if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키봇-");
   if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키봇-");
   if (value === "coordinator-1") return "coordinator";

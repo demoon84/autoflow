@@ -182,7 +182,7 @@ echo "unexpected planner codex invocation" >&2
 exit 42
 FAKE_CODEX
 chmod +x "${fake_codex_dir}/codex"
-PATH="${fake_codex_dir}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$planner_idle_output"
+PATH="${fake_codex_dir}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$planner_idle_output"
 require_line "$planner_idle_output" "status=ok"
 require_line "$planner_idle_output" "runner_status=idle"
 require_line "$planner_idle_output" "runtime_status=idle"
@@ -241,19 +241,19 @@ require_line "$spec_output" "status=created"
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
 require_line "$runner_list_output" "status=ok"
 require_line "$runner_list_output" "runner_count=4"
-# Default 3-runner topology (refactor 2026-04-27): planner-1 / owner-1 /
-# wiki-1 are listed first in scaffold config.toml in that order, followed
+# Default 3-runner topology (refactor 2026-04-27): planner / worker /
+# wiki are listed first in scaffold config.toml in that order, followed
 # by the self-improve-1 trial (ships disabled). Legacy coordinator-1 is no
 # longer scaffolded — opt in via `autoflow runners add coordinator-1 coordinator`.
-require_line "$runner_list_output" "runner.1.id=planner-1"
-require_line "$runner_list_output" "runner.2.id=owner-1"
-require_line "$runner_list_output" "runner.3.id=wiki-1"
+require_line "$runner_list_output" "runner.1.id=planner"
+require_line "$runner_list_output" "runner.2.id=worker"
+require_line "$runner_list_output" "runner.3.id=wiki"
 require_line "$runner_list_output" "runner.4.id=self-improve-1"
 require_line "$runner_list_output" "runner.4.enabled=false"
 
-"${REPO_ROOT}/bin/autoflow" runners set wiki-1 "$project_dir" agent=codex model=gpt-5.5 reasoning=medium >"$runner_set_output"
+"${REPO_ROOT}/bin/autoflow" runners set wiki "$project_dir" agent=codex model=gpt-5.5 reasoning=medium >"$runner_set_output"
 require_line "$runner_set_output" "status=ok"
-require_line "$runner_set_output" "runner_id=wiki-1"
+require_line "$runner_set_output" "runner_id=wiki"
 require_line "$runner_set_output" "agent=codex"
 require_line "$runner_set_output" "model=gpt-5.5"
 require_line "$runner_set_output" "reasoning=medium"
@@ -261,7 +261,7 @@ require_line "$runner_set_output" "reasoning=medium"
 "${REPO_ROOT}/bin/autoflow" run wiki "$project_dir" --dry-run >"$wiki_codex_dry_run_output"
 require_line "$wiki_codex_dry_run_output" "status=dry_run"
 require_line "$wiki_codex_dry_run_output" "role=wiki"
-require_line "$wiki_codex_dry_run_output" "runner_id=wiki-1"
+require_line "$wiki_codex_dry_run_output" "runner_id=wiki"
 require_line "$wiki_codex_dry_run_output" "adapter=codex"
 require_pattern "$wiki_codex_dry_run_output" 'adapter_command=.*codex exec'
 require_pattern "$wiki_codex_dry_run_output" 'adapter_command=.*model_reasoning_effort=\\?"medium\\?"'

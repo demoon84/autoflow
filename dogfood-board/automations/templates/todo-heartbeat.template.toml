@@ -3,8 +3,8 @@ id = "{{AUTOMATION_ID}}"
 kind = "heartbeat"
 name = "{{AUTOMATION_NAME}}"
 prompt = """
-DEPRECATED LEGACY ROLE. The 3-runner topology (planner-1 + owner-1 + wiki-1)
-has Impl AI (`owner-1`) claim directly from `tickets/todo/`, implement,
+DEPRECATED LEGACY ROLE. The 3-runner topology (planner + worker + wiki)
+has Impl AI (`worker`) claim directly from `tickets/todo/`, implement,
 verify, and merge in one flow — there is no separate todo worker. This
 heartbeat template is kept only for backwards compatibility with users
 still on `#todo` or the legacy role-pipeline. New boards should use the

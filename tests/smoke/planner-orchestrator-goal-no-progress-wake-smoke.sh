@@ -36,7 +36,7 @@ require_contains() {
 }
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
-"${REPO_ROOT}/bin/autoflow" runners set planner-1 "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/inprogress"
 cat >"${project_dir}/.autoflow/tickets/inprogress/tickets_998.md" <<'TICKET'
@@ -134,7 +134,7 @@ exit 0
 FAKE_CODEX
 chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner-1 >"$run_output"
+AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
 
 require_line "$run_output" "status=ok"
 require_line "$run_output" "adapter=codex"
@@ -180,7 +180,7 @@ require_contains "$log_path" "recovery_status=stalled"
 require_contains "$log_path" "failure_class=adapter_no_progress"
 
 "${REPO_ROOT}/bin/autoflow" runners list "$project_dir" >"$runner_list_output"
-require_line "$runner_list_output" "runner.1.id=planner-1"
+require_line "$runner_list_output" "runner.1.id=planner"
 require_line "$runner_list_output" "runner.1.active_item=tickets/inprogress/tickets_998.md"
 require_line "$runner_list_output" "runner.1.active_ticket_id=tickets_998"
 require_line "$runner_list_output" "runner.1.active_ticket_title=Goal no-progress wake smoke"
