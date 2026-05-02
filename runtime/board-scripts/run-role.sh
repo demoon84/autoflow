@@ -177,6 +177,132 @@ runner_active_state_value() {
   runner_state_value "$1"
 }
 
+role_autocommit_scope_paths() {
+  case "$public_role" in
+    planner)
+      printf '%s\n' \
+        "${board_root}/tickets/inbox" \
+        "${board_root}/tickets/backlog" \
+        "${board_root}/tickets/todo" \
+        "${board_root}/tickets/inprogress" \
+        "${board_root}/tickets/reject" \
+        "${board_root}/tickets/done"
+      ;;
+    wiki)
+      printf '%s\n' \
+        "${board_root}/wiki" \
+        "${board_root}/wiki-raw"
+      ;;
+  esac
+}
+
+role_autocommit_capture_status() {
+  local output_file="$1"
+  local git_root path
+  local -a scope_paths=()
+
+  : > "$output_file"
+  case "$public_role" in
+    planner|wiki) ;;
+    *) return 0 ;;
+  esac
+
+  git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$git_root" ] || return 0
+
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    scope_paths+=("$path")
+  done < <(role_autocommit_scope_paths)
+  [ "${#scope_paths[@]}" -gt 0 ] || return 0
+
+  git -C "$git_root" status --porcelain -- "${scope_paths[@]}" > "$output_file" 2>/dev/null || true
+}
+
+role_autocommit_message() {
+  local git_root="$1"
+  shift
+  local project_key
+
+  project_key="$(git -C "$git_root" diff --cached --name-only -- "$@" |
+    sed -n 's#.*prd_\([0-9][0-9]*\).*#prd_\1#p' |
+    head -n 1)"
+
+  case "$public_role" in
+    planner)
+      [ -n "$project_key" ] || project_key="autoflow_planner"
+      printf '[%s] planner board update\n' "$project_key"
+      ;;
+    wiki)
+      if [ -n "$project_key" ]; then
+        printf '[%s] wiki knowledge update\n' "$project_key"
+      else
+        printf '[wiki] wiki knowledge update\n'
+      fi
+      ;;
+  esac
+}
+
+role_autocommit_after_adapter() {
+  local adapter_exit="$1"
+  local before_status_file="$2"
+  local git_root path commit_message
+  local -a scope_paths=()
+
+  case "$public_role" in
+    planner|wiki) ;;
+    *) return 0 ;;
+  esac
+
+  printf 'autocommit_role=%s\n' "$public_role"
+
+  if [ "${AUTOFLOW_RUNNER_SKIP_SCOPED_AUTOCOMMIT:-}" = "1" ]; then
+    printf 'autocommit_status=skipped_by_env\n'
+    return 0
+  fi
+  if [ "$adapter_exit" -ne 0 ]; then
+    printf 'autocommit_status=skipped_adapter_exit_%s\n' "$adapter_exit"
+    return 0
+  fi
+
+  git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -z "$git_root" ]; then
+    printf 'autocommit_status=not_git_repo\n'
+    return 0
+  fi
+
+  if [ -s "$before_status_file" ]; then
+    printf 'autocommit_status=skipped_preexisting_dirty_scope\n'
+    return 0
+  fi
+
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    scope_paths+=("$path")
+  done < <(role_autocommit_scope_paths)
+  if [ "${#scope_paths[@]}" -eq 0 ]; then
+    printf 'autocommit_status=no_scope\n'
+    return 0
+  fi
+
+  if [ -z "$(git -C "$git_root" status --porcelain -- "${scope_paths[@]}" 2>/dev/null)" ]; then
+    printf 'autocommit_status=no_changes\n'
+    return 0
+  fi
+
+  git -C "$git_root" add -A -- "${scope_paths[@]}"
+  if git -C "$git_root" diff --cached --quiet -- "${scope_paths[@]}"; then
+    printf 'autocommit_status=no_changes\n'
+    return 0
+  fi
+
+  commit_message="$(role_autocommit_message "$git_root" "${scope_paths[@]}")"
+  git -C "$git_root" commit -m "$commit_message" -- "${scope_paths[@]}" >/dev/null
+  printf 'autocommit_status=committed\n'
+  printf 'autocommit_hash=%s\n' "$(git -C "$git_root" rev-parse --verify HEAD)"
+  printf 'autocommit_message=%s\n' "$commit_message"
+}
+
 runner_ticket_id_from_active_item() {
   local item="$1"
   local name
@@ -1378,7 +1504,7 @@ role_boundary_for_current_role() {
       printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
       ;;
     planner)
-      printf '%s\n' "- planner: act as Orchestrator AI. Promote quick memos into generated PRDs, create/update plans and todo tickets, and repair board markdown when owner work stalls or breaks. Query the wiki before memo promotion, drafting, ticket generation, or recovery decisions. Do not implement product code, manage worktrees directly, manage runner or OS processes, verify, commit, or push."
+      printf '%s\n' "- planner: act as Orchestrator AI. Promote quick orders into generated PRDs, create/update plans and todo tickets, and repair board markdown when owner work stalls or breaks. Query the wiki before order promotion, drafting, ticket generation, or recovery decisions. Do not implement product code, manage worktrees directly, manage runner or OS processes, verify, manually git commit, or push. The runner harness creates a scoped local commit for planner-owned board changes after a successful turn."
       ;;
     todo)
       printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
@@ -1387,7 +1513,7 @@ role_boundary_for_current_role() {
       printf '%s\n' "- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline."
       ;;
     wiki)
-      printf '%s\n' "- wiki: inspect done tickets, reject records, logs, and existing managed sections, then update derived wiki pages only when content actually changes. In the 3-runner topology this is \`wiki\`'s exclusive responsibility: Impl AI finalizers do not call \`update-wiki.sh\` or stage \`.autoflow/wiki/\`. Check-only state belongs in \`runners/state/wiki-baseline.history\`. Never treat the wiki as proof of completion."
+      printf '%s\n' "- wiki: inspect done tickets, reject records, logs, and existing managed sections, then update derived wiki pages only when content actually changes. In the 3-runner topology this is \`wiki\`'s exclusive responsibility: Impl AI finalizers do not call \`update-wiki.sh\` or stage \`.autoflow/wiki/\`. Check-only state belongs in \`runners/state/wiki-baseline.history\`. Do not manually git commit; the runner harness creates a scoped local commit for wiki-owned content after a successful turn. Never treat the wiki as proof of completion."
       ;;
     coordinator)
       printf '%s\n' "- coordinator (legacy): diagnose board/runtime health, blocked ticket chains, worktree state, runner readiness, and wiki maintenance status. Not part of the default 3-runner topology; kept as a backwards-compat role identifier. Do not implement, verify, rebase, cherry-pick, resolve merge conflicts, or push."
@@ -2095,10 +2221,12 @@ case "$agent" in
 
     started_at="$(runner_now_iso)"
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
+    autocommit_before_status="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-before-status.XXXXXX")"
     adapter_stdout=""
     adapter_stderr=""
     ticket_goal_before_fingerprint="$(ticket_goal_progress_fingerprint_for_current_ticket || true)"
     prepare_adapter_live_logs
+    role_autocommit_capture_status "$autocommit_before_status"
     write_agent_prompt "$instruction_file" > "$prompt_file"
 
     runner_write_state "$runner_id" \
@@ -2207,7 +2335,7 @@ case "$agent" in
       printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
       printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
       emit_file_block "adapter_prompt" "$prompt_file"
-      rm -f "$prompt_file" "$adapter_stdout" "$adapter_stderr"
+      rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
       exit 0
     fi
 
@@ -2238,6 +2366,7 @@ case "$agent" in
     prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
     stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
     stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
+    autocommit_output="$(role_autocommit_after_adapter "$adapter_exit" "$autocommit_before_status" 2>&1)"
     if [ "$adapter_exit" -eq 0 ]; then
       wiki_record_inputs_fingerprint
     fi
@@ -2291,9 +2420,12 @@ case "$agent" in
     fi
     printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
     printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+    if [ -n "$autocommit_output" ]; then
+      printf '%s\n' "$autocommit_output"
+    fi
     emit_file_block "adapter_stdout" "$adapter_stdout"
     emit_file_block "adapter_stderr" "$adapter_stderr"
-    rm -f "$prompt_file" "$adapter_stdout" "$adapter_stderr"
+    rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
     if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
     fi

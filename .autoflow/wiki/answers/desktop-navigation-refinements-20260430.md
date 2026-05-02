@@ -17,7 +17,7 @@ citations:
 
 ## Answer
 
-`settingsNavigation` 기준 데스크톱 사이드바 순서는 `작업 -> Tickets -> Wiki -> 통계 -> 로그`이며, workflow pin strip 은 `inbox/order 입력 -> PRD -> TODO -> 반려` 흐름이 되도록 인박스 카드가 PRD 카드보다 앞에 오게 정리됐다.
+`settingsNavigation` 기준 데스크톱 사이드바 순서는 `AI 대쉬보드 -> 티켓 -> LLM 위키 -> 통계 -> 로그`이며, workflow pin strip 은 `inbox/order 입력 -> PRD -> TODO -> 반려` 흐름이 되도록 인박스 카드가 PRD 카드보다 앞에 오게 정리됐다.
 
 ## Citations
 

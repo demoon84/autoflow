@@ -16,7 +16,7 @@ citations:
 
 ## Answer
 
-좌측 사이드바 navigation order 는 `작업 -> Tickets -> Wiki -> 통계 -> 로그` 순서로 정리됐다. 구현은 `settingsNavigation` 배열에서 `logs` 항목을 `snapshot` 뒤, 즉 마지막으로 옮기는 단일 순서 변경으로 제한됐다.
+좌측 사이드바 navigation order 는 `AI 대쉬보드 -> 티켓 -> LLM 위키 -> 통계 -> 로그` 순서로 정리됐다. 구현은 `settingsNavigation` 배열에서 `logs` 항목을 `snapshot` 뒤, 즉 마지막으로 옮기는 단일 순서 변경으로 제한되었으며, 이후 `prd_090` 작업을 통해 메뉴 라벨들이 현재의 한국어 명칭으로 정규화되었다.
 
 ## Citations
 

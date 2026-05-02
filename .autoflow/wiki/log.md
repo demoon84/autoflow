@@ -29,7 +29,7 @@ Each entry should cite its source ticket or log.
 - `prd_035` - Apply MUI dashboard design to the Statistics page. Source: `tickets/done/prd_035/prd_035.md`.
 - `prd_037` - Fix Statistics page scrolling. Source: `tickets/done/prd_037/prd_037.md`.
 - `prd_038` - Enable Wiki Bot (`wiki-1`) to use the Codex adapter while preserving Gemini support. Source: `tickets/done/prd_038/tickets_038.md`.
-- `prd_039` - Replace user-visible `AI-N` worker attribution with `worker-N` while keeping legacy ownership matching compatible. Source: `tickets/done/prd_039/tickets_039.md`.
+- `prd_039` - Replace user-visible `AI-N` worker attribution with `worker-N` (later normalized to `Worker AI` in the UI) while keeping legacy ownership matching compatible. Source: `tickets/done/prd_039/tickets_039.md`.
 - `prd_040` - Removed unsupported Gemini 3.1 preview model ids from Desktop runner options. Source: `tickets/done/prd_040/tickets_040.md`.
 - `prd_042` - Kept the Ticket Workspace on the PRD / Inbox / Issued 3-tab layout while left-aligning list rows and preserving the detail layer. Source: `tickets/done/prd_042/tickets_042.md`.
 - `prd_045` - Shortened planner `next_action` output while preserving machine-readable runtime keys. Source: `tickets/done/prd_045/tickets_045.md`.

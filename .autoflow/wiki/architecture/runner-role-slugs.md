@@ -23,9 +23,9 @@ Autoflow uses standardized identifiers for the runners in its 3-runner topology.
 - **Stability**: Maintaining existing IDs prevents configuration drift and avoids breaking state persistence or UI mapping logic that expects the `-1` suffix.
 - **Scaling Readiness**: Numerical suffixes allow for future horizontal scaling (e.g., adding `owner-2`) without changing the base naming convention.
 - **UI Mapping**: The desktop application maps these internal IDs to user-friendly titles:
-  - `planner-1` → **Planner** (formerly Plan AI)
-  - `owner-1` → **Worker** (formerly Impl AI)
-  - `wiki-1` → **위키봇** (formerly Wiki AI)
+  - `planner-1` → **Planner AI** (formerly Plan AI)
+  - `owner-1` → **Worker AI** (formerly Impl AI)
+  - `wiki-1` → **Wiki AI** (formerly 위키봇 / Wiki AI)
 
 ## Status of Slug Rename
 - **Decision**: A proposal to rename IDs to `planner`, `worker`, and `wiki-maintainer` (`prd_012`) was **superseded**.
@@ -37,3 +37,5 @@ Autoflow uses standardized identifiers for the runners in its 3-runner topology.
 
 ## See Also
 - **[[decisions/worker-display-policy]]**: How internal IDs are normalized for user-facing display.
+- **[[answers/desktop-workflow-board-refinements-20260502]]**: Recent normalization of role labels to 'Planner AI', 'Worker AI', and 'Wiki AI'.
+- **[[answers/planner-worker-lifecycle-boundaries-20260502]]**: Core architectural boundaries and recovery signals between Planner and Worker roles.
