@@ -70,7 +70,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 
 - `#order` (이전 이름 `#memo` 에서 변경됨)
   - Claude `/order`, Codex `$order` 와 같은 quick order handoff alias 다.
-  - 단순 수정 요청을 PRD 없이 `.autoflow/tickets/inbox/memo_{NNN}.md` 에 저장한다 (파일 이름 prefix `memo_` 와 CLI `autoflow memo create` 는 호환을 위해 그대로 둠).
+  - 단순 수정 요청을 PRD 없이 `.autoflow/tickets/inbox/memo_*.md` 에 저장한다 (파일 이름 prefix `memo_` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
   - plan / ticket / 구현은 시작하지 않는다. 이후 Plan AI 가 inbox 의 노트를 구현 지시로 해석해 안전한 가장 좁은 범위의 generated PRD 와 todo ticket 으로 승격한다. order 는 반복 질문 루프를 만들지 않는다.
 

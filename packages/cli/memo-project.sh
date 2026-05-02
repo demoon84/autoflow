@@ -71,7 +71,7 @@ case "$action" in
     exit 0
     ;;
   *)
-    echo "Unknown memo action: ${action}" >&2
+    echo "Unknown order action: ${action}" >&2
     usage
     exit 1
     ;;
@@ -194,7 +194,7 @@ fi
 
 if [ -n "$from_file" ]; then
   if [ ! -f "$from_file" ]; then
-    echo "Memo source file not found: ${from_file}" >&2
+    echo "Order source file not found: ${from_file}" >&2
     exit 1
   fi
   request_text="$(cat "$from_file")"
@@ -206,7 +206,7 @@ if [ -z "$request_text" ] && [ -n "$title" ]; then
   request_text="$title"
 fi
 if [ -z "$request_text" ]; then
-  echo "Memo request is required via stdin, --request, --from-file, or --title." >&2
+  echo "Order request is required via stdin, --request, --from-file, or --title." >&2
   exit 1
 fi
 
@@ -216,13 +216,13 @@ timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 tmp="$(autoflow_mktemp)"
 
 {
-  printf '# Autoflow Memo\n\n'
-  printf '## Memo\n\n'
+  printf '# Autoflow Order\n\n'
+  printf '## Order\n\n'
   printf -- '- ID: memo_%s\n' "$memo_id"
   printf -- '- Title: %s\n' "$title"
   printf -- '- Status: inbox\n'
   printf -- '- Created At: %s\n' "$timestamp"
-  printf -- '- Source: autoflow memo create\n\n'
+  printf -- '- Source: autoflow order create\n\n'
   printf '## Request\n\n'
   printf '%s\n\n' "$request_text"
   printf '## Hints\n\n'
@@ -248,8 +248,8 @@ tmp="$(autoflow_mktemp)"
     printf -- '- Command: pending Plan AI inference\n\n'
   fi
   printf '## Planner Contract\n\n'
-  printf -- '- Plan AI treats this memo as an implementation directive, infers concrete scope from repository context, and promotes it into a generated backlog PRD and todo ticket.\n'
-  printf -- '- Plan AI must not turn memo intake into a repeated human-question loop. Only unsafe requests should be blocked; otherwise use the safest narrow interpretation.\n'
+  printf -- '- Plan AI treats this order as an implementation directive, infers concrete scope from repository context, and promotes it into a generated backlog PRD and todo ticket.\n'
+  printf -- '- Plan AI must not turn order intake into a repeated human-question loop. Only unsafe requests should be blocked; otherwise use the safest narrow interpretation.\n'
 } > "$tmp"
 
 mv "$tmp" "$memo_file"
@@ -260,4 +260,4 @@ printf 'memo_file=%s\n' "$memo_file"
 printf 'project_root=%s\n' "$project_root"
 printf 'board_root=%s\n' "$board_root"
 printf 'board_dir_name=%s\n' "$board_dir_name"
-printf 'next_action=Run autoflow run planner or let planner promote this memo into a generated PRD and todo ticket.\n'
+printf 'next_action=Run autoflow run planner or let planner promote this order into a generated PRD and todo ticket.\n'

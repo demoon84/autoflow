@@ -197,8 +197,8 @@
 - `spec-project.sh`
   - `autoflow spec create` 구현체다.
 - `memo-project.sh`
-  - `autoflow memo create` 구현체다.
-  - 짧은 수정 요청을 `tickets/inbox/memo_NNN.md` 로 저장해 Plan AI 가 PRD / todo ticket 으로 승격할 수 있게 한다.
+  - `autoflow order create` 구현체다.
+  - 짧은 수정 요청을 `tickets/inbox/memo_*.md` 로 저장해 Plan AI 가 PRD / todo ticket 으로 승격할 수 있게 한다.
   - stdin 또는 `--from-file` 내용을 `Conversation Handoff` 로 보존해 `tickets/backlog/prd_NNN.md` 를 만든다.
   - `--save-handoff` 를 쓰면 같은 내용을 `conversations/prd_NNN/spec-handoff.md` 에도 보관한다.
   - `--raw` 는 이미 작성된 markdown spec 을 그대로 저장하고, plan / todo / verifier 상태는 건드리지 않는다.

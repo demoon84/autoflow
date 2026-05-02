@@ -9,7 +9,7 @@ The chat window can start work, but the board owns work state.
 
 Use Ticket Owner Mode by default:
 
-1. User starts PRD handoff with Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`. For small changes, the user may instead drop a quick order with Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`.
+1. User starts PRD handoff with Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`. For small changes, the user may instead drop a quick order with Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`.
 2. The agent gathers requirements in lightweight chat with short questions and decision recaps.
 3. If the scope is too large for one safe handoff, the agent proposes a short PRD split map before drafting.
 4. The agent renders a full PRD draft, or multiple PRD drafts from an accepted split map, only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
@@ -26,7 +26,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 ## Important Directories
 
-- `tickets/inbox/`: quick memos waiting for Orchestrator AI promotion into generated PRDs and todo tickets.
+- `tickets/inbox/`: quick orders waiting for Orchestrator AI promotion into generated PRDs and todo tickets.
 - `tickets/backlog/`: approved or generated specs waiting for execution.
 - `tickets/inprogress/`: active Ticket Owner tickets and verification records.
 - `tickets/ready-to-merge/`: legacy/compatibility state for verified owner tickets waiting for finalization.
@@ -51,7 +51,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Claude `/autoflow`: PRD handoff only.
 - Codex `$autoflow`: PRD handoff only.
 - `#autoflow`: compatibility alias for PRD handoff only.
-- Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick order intake only.
+- Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`: quick order intake only.
 - `autoflow runners start planner`: Orchestrator AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
 - `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
@@ -77,17 +77,17 @@ The agent must:
 7. Save only after separate explicit user approval. The draft trigger is not save approval.
 8. Save only to `tickets/backlog/` and optional `conversations/` archive. Split PRDs must be separate backlog files with sibling references in `Conversation Handoff` or `Notes`.
 
-## Memo Intake Rules
+## Order Intake Rules
 
-Quick memo intake never starts implementation.
+Quick order intake never starts implementation.
 
 The agent must:
 
-1. Preserve the user's original request in `tickets/inbox/memo_NNN.md`.
+1. Preserve the user's original request in `tickets/inbox/memo_*.md`.
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
 4. Let Orchestrator AI promote the memo into a generated PRD and todo ticket when safe.
-5. Treat memo requests as directives and infer the safest narrow implementation scope; only unsafe memos should be blocked.
+5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe memo should be blocked.
 
 ## Ticket Owner Rules
 
