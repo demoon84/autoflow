@@ -76,15 +76,16 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 3. Read `protocols/owner-contract.md` and `protocols/recovery.md` when the ticket contains `Recovery State`, prior reject history, blocked stage, merge blockers, or a stale/no-progress goal signal.
 4. Run `autoflow wiki query --rag` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
 5. If `Recovery State` contains a planner decision or owner resume instruction, address it in the mini-plan before changing product files.
-6. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
-7. Implement the smallest safe change that satisfies `Done When`.
-8. Update `Notes`, `Resume Context`, and `Recovery State` as work progresses or blockers clear.
-9. Run the verification command yourself from the returned working root, then inspect command output and acceptance criteria. Use `scripts/verify-ticket-owner.* <ticket-id>` only when you want the runtime to record the same evidence.
-10. If criteria pass in the worktree, manually merge the verified changes into `PROJECT_ROOT`. If conflicts occur, resolve them yourself, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result, and keep the resolution inside Allowed Paths.
-11. Rerun the necessary verification after merge.
-12. If the merged result passes, finish pass with a short summary so the runtime can finalize logs/wiki/local commit without performing merge logic.
-13. If criteria fail, command is missing, or recovery requires planner orchestration, finish fail with an observable reason and updated `Recovery State`.
-14. Leave enough context for another owner to resume from board files.
+6. If planner/runtime auto-resolved leftover worktree cleanup or same-scope `Allowed Paths` expansion, cite that ticket `Notes` / `Recovery State` evidence in the mini-plan so the retry rationale stays durable.
+7. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
+8. Implement the smallest safe change that satisfies `Done When`.
+9. Update `Notes`, `Resume Context`, and `Recovery State` as work progresses or blockers clear.
+10. Run the verification command yourself from the returned working root, then inspect command output and acceptance criteria. Use `scripts/verify-ticket-owner.* <ticket-id>` only when you want the runtime to record the same evidence.
+11. If criteria pass in the worktree, manually merge the verified changes into `PROJECT_ROOT`. If conflicts occur, resolve them yourself, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result, and keep the resolution inside Allowed Paths.
+12. Rerun the necessary verification after merge.
+13. If the merged result passes, finish pass with a short summary so the runtime can finalize logs/wiki/local commit without performing merge logic.
+14. If criteria fail, command is missing, or recovery requires planner orchestration, finish fail with an observable reason and updated `Recovery State`.
+15. Leave enough context for another owner to resume from board files.
 
 ## Boundaries
 

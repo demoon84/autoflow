@@ -62,13 +62,18 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
     - write a clear `Recovery State` with `Status: needs_user` and `Failure Class: retry_limit` into the relevant in-progress/retry context.
     - set `Planner Decision`/`Evidence` with the retry_count and reason, and `Owner Resume Instruction` that explains why retry is blocked until human/board-level scope change is provided.
     - preserve the reject file in `tickets/reject/` and summarize any next safe fallback in `Notes` or `Next Action`.
-13. Use `Recovery State` for recovery decisions. Do not delete failure evidence; preserve it in `Recovery State`, `Reject History`, or `Notes`.
-14. Recovery edits are idempotent: if evidence and planner decision are unchanged from the ticket's current `Recovery State`, `Next Action`, and `Resume Context`, do not append duplicate `Notes` or rewrite `Last Recovery At`.
-15. After AI-authored recovery edits, run `autoflow guard` when available; otherwise run `scripts/board-guard.sh`. If guard reports errors, repair board markdown before creating new work. Treat guard warnings as orchestration evidence: summarize cleanup candidates such as leftover ticket worktrees in `Recovery State`, `Next Action`, or `Resume Context`, but do not delete or reset worktrees yourself.
-16. If the adapter prompt includes `Planner recovery action contract`, complete that contract before normal PRD/ticket creation: markdown recovery decision first, guard second, new work only after the board is coherent.
-17. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
-18. Idle is valid. Do not stop the heartbeat unless the user asks.
-19. Write generated PRD, plan, ticket, recovery notes, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
+13. If `AUTOFLOW_RECOVERY_AUTO` is not `off` (default `on`), resolve only safe recovery scenarios automatically:
+    - discard leftover worktrees from done/rejected tickets only when the worktree is clean, or when dirty changes are still agent-only: no post-base commits, no staged changes, no branch divergence, and every dirty path stays inside the ticket `Allowed Paths`.
+    - before discarding a dirty agent-only leftover, save a diff backup to `.autoflow/runners/state/recovery-discarded/<ticket>-<timestamp>.diff`.
+    - when a reject reason lists unmet Allowed Paths that all stay in the same scope as the current `Allowed Paths`, expand the retry ticket automatically and log the decision.
+    - log each auto-recovery decision in `.autoflow/runners/logs/planner.log` with `event=auto_recovery_resolved`, and mirror the decision into ticket `Recovery State`/`Notes`.
+14. Use `Recovery State` for recovery decisions. Do not delete failure evidence; preserve it in `Recovery State`, `Reject History`, or `Notes`.
+15. Recovery edits are idempotent: if evidence and planner decision are unchanged from the ticket's current `Recovery State`, `Next Action`, and `Resume Context`, do not append duplicate `Notes` or rewrite `Last Recovery At`.
+16. After AI-authored recovery edits, run `autoflow guard` when available; otherwise run `scripts/board-guard.sh`. If guard reports errors, repair board markdown before creating new work. Treat guard warnings as orchestration evidence: summarize cleanup candidates such as leftover ticket worktrees in `Recovery State`, `Next Action`, or `Resume Context`, but do not delete or reset worktrees yourself.
+17. If the adapter prompt includes `Planner recovery action contract`, complete that contract before normal PRD/ticket creation: markdown recovery decision first, guard second, new work only after the board is coherent.
+18. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
+19. Idle is valid. Do not stop the heartbeat unless the user asks.
+20. Write generated PRD, plan, ticket, recovery notes, and user-friendly memo prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 
 ## Procedure
 

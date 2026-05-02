@@ -638,6 +638,271 @@ mark_ticket_shared_nonbase_head_blocked() {
   fi
 }
 
+is_recovery_auto_enabled() {
+  case "${AUTOFLOW_RECOVERY_AUTO:-on}" in
+    0|off|OFF|false|FALSE|disabled|DISABLED)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+worktree_dirty_paths() {
+  local worktree_path="$1"
+  local path
+
+  git -C "$worktree_path" status --porcelain --untracked-files=all 2>/dev/null \
+    | while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        path="${path#?? }"
+        case "$path" in
+          *" -> "*) path="${path##* -> }" ;;
+        esac
+        [ -n "$path" ] && printf '%s\n' "$path"
+      done
+}
+
+path_is_same_or_child() {
+  local repo_rel_path="${1#./}"
+  local allowed_path="${2#./}"
+  local allowed_prefix="${allowed_path%/}"
+
+  [ -n "$repo_rel_path" ] || return 1
+  [ -n "$allowed_prefix" ] || return 1
+
+  case "$repo_rel_path" in
+    "$allowed_prefix"|"$allowed_prefix"/*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+is_agent_only_worktree() {
+  local ticket_file="$1"
+  local worktree_path="$2"
+  local base_commit="$3"
+  local allowed_path dirty_file covered branch_status
+
+  [ -d "$worktree_path" ] || return 1
+  [ -n "$base_commit" ] || return 1
+
+  if [ "$(git -C "$worktree_path" rev-parse HEAD 2>/dev/null)" != "$base_commit" ]; then
+    return 1
+  fi
+
+  if ! git -C "$worktree_path" diff --cached --quiet 2>/dev/null; then
+    return 1
+  fi
+
+  while IFS= read -r dirty_file; do
+    [ -n "$dirty_file" ] || continue
+    covered=false
+    while IFS= read -r allowed_path; do
+      [ -n "$allowed_path" ] || continue
+      if path_is_same_or_child "$dirty_file" "$allowed_path"; then
+        covered=true
+        break
+      fi
+    done < <(extract_ticket_allowed_paths "$ticket_file")
+    [ "$covered" = "true" ] || return 1
+  done < <(worktree_dirty_paths "$worktree_path")
+
+  branch_status="$(git -C "$worktree_path" status -sb --porcelain 2>/dev/null)"
+  if [[ "$branch_status" == *"ahead"* ]] || [[ "$branch_status" == *"behind"* ]] || [[ "$branch_status" == *"diverged"* ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+backup_diff_and_discard_worktree() {
+  local ticket_file="$1"
+  local worktree_path="$2"
+  local source_reason="$3"
+  local ticket_id timestamp backup_dir backup_file log_file
+
+  ticket_id="tickets_$(extract_numeric_id "$ticket_file")"
+  timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
+  backup_dir="${BOARD_ROOT}/runners/state/recovery-discarded"
+  mkdir -p "$backup_dir"
+  backup_file="${backup_dir}/${ticket_id}-${timestamp}.diff"
+
+  {
+    echo "# Ticket: ${ticket_id}"
+    echo "# Worktree Path: ${worktree_path}"
+    echo "# Source Reason: ${source_reason}"
+    echo "# Timestamp: $(now_iso)"
+    git -C "$worktree_path" diff HEAD || true
+    git -C "$worktree_path" diff --cached HEAD || true
+    git -C "$worktree_path" status --porcelain || true
+  } > "$backup_file"
+
+  if [ ! -s "$backup_file" ]; then
+    rm -f "$backup_file"
+    backup_file=""
+    # If it was dirty but diff is empty, it might be untracked files only.
+    # We still want to preserve the worktree if we couldn't back up something meaningful.
+    if git -C "$worktree_path" status --porcelain 2>/dev/null | grep -q .; then
+       return 1
+    fi
+  fi
+
+  if git -C "$PROJECT_ROOT" worktree remove -f "$worktree_path" 2>/dev/null; then
+    log_file="${BOARD_ROOT}/runners/logs/planner.log"
+    mkdir -p "$(dirname "$log_file")"
+    printf '%s event=auto_recovery_resolved reason=auto_discard_agent_only_leftover ticket=%s worktree=%s backup=%s\n' \
+      "$(now_iso)" "$ticket_id" "$worktree_path" "${backup_file:-none}" >> "$log_file"
+    
+    append_note_once "$ticket_file" "Auto-recovery: agent-only leftover worktree discarded at $(now_iso); backup=${backup_file:-none}"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "healthy"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "leftover_worktree"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "auto-discarded leftover worktree ${worktree_path}; backup=${backup_file:-none}; source_reason=${source_reason}"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "auto_discard_agent_only_leftover"
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "No manual cleanup is required; continue normal planning or retry flow."
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$(now_iso)"
+    return 0
+  fi
+
+  return 1
+}
+
+parse_unmet_paths_from_reject_reason() {
+  local reason="$1"
+
+  printf '%s\n' "$reason" \
+    | perl -ne '
+        my @candidates;
+        while (/[Uu]nmet Allowed Path(?:s)?:\s*([^()]+)/g) {
+          push @candidates, $1;
+        }
+        while (/\(([^()]*)\)/g) {
+          push @candidates, $1;
+        }
+
+        my %seen;
+        for my $value (@candidates) {
+          $value =~ s/[`"]//g;
+          $value =~ s/^\s+|\s+$//g;
+          next if $value eq q{};
+
+          my @parts = split /\s*,\s*/, $value;
+          my $base_dir = q{};
+          for my $item (@parts) {
+            $item =~ s/[`"]//g;
+            $item =~ s/^\s+|\s+$//g;
+            $item =~ s/[.!?;:]+$//;
+            next if $item eq q{};
+
+            if ($item =~ m{/}) {
+              print "$item\n" unless $seen{$item}++;
+              ($base_dir = $item) =~ s{/[^/]+$}{};
+              next;
+            }
+
+            next unless $base_dir ne q{} && $item =~ /^[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+$/;
+            my $path = "$base_dir/$item";
+            print "$path\n" unless $seen{$path}++;
+          }
+        }
+      '
+}
+
+is_same_scope_path() {
+  local unmet_path="$1"
+  local allowed_path="$2"
+  local unmet_dir allowed_dir
+
+  unmet_path="${unmet_path#./}"
+  allowed_path="${allowed_path#./}"
+
+  # 1. Exact match
+  [ "$unmet_path" = "$allowed_path" ] && return 0
+
+  if path_is_same_or_child "$unmet_path" "$allowed_path"; then
+    return 0
+  fi
+
+  unmet_dir="$(dirname "$unmet_path")"
+  allowed_dir="$(dirname "$allowed_path")"
+  if [ "$unmet_dir" = "$allowed_dir" ] && [ "$unmet_dir" != "." ] && [ "$unmet_dir" != "/" ]; then
+    return 0
+  fi
+
+  if [[ "$unmet_path" == "scaffold/board/reference/"* ]] && [[ "$allowed_path" == "scaffold/board/"* ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+auto_expand_allowed_paths_if_same_scope() {
+  local ticket_file="$1"
+  local unmet_path="$2"
+  local allowed_path expanded=false tmp log_file
+  local -a unmet_paths=() expanded_paths=()
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$unmet_path" ] || return 1
+
+  while IFS= read -r unmet_path; do
+    [ -n "$unmet_path" ] || continue
+    unmet_paths+=("${unmet_path#./}")
+  done < <(printf '%s\n' "$unmet_path")
+
+  [ "${#unmet_paths[@]}" -gt 0 ] || return 1
+
+  for unmet_path in "${unmet_paths[@]}"; do
+    expanded=false
+    while IFS= read -r allowed_path; do
+      [ -n "$allowed_path" ] || continue
+      if is_same_scope_path "$unmet_path" "$allowed_path"; then
+        expanded=true
+        break
+      fi
+    done < <(extract_ticket_allowed_paths "$ticket_file")
+    [ "$expanded" = "true" ] || return 1
+  done
+
+  tmp="$(autoflow_mktemp)"
+  extract_ticket_allowed_paths "$ticket_file" > "$tmp"
+  for unmet_path in "${unmet_paths[@]}"; do
+    if ! grep -Fqx -- "$unmet_path" "$tmp"; then
+      expanded_paths+=("$unmet_path")
+    fi
+  done
+  rm -f "$tmp"
+
+  [ "${#expanded_paths[@]}" -gt 0 ] || return 0
+
+  for unmet_path in "${expanded_paths[@]}"; do
+    tmp="$(autoflow_mktemp)"
+    awk -v path="$unmet_path" '
+      /^## Allowed Paths/ { in_allowed=1; print; next }
+      in_allowed && /^## / {
+        print "- " path
+        in_allowed=0
+      }
+      { print }
+      END { if (in_allowed) print "- " path }
+    ' "$ticket_file" > "$tmp"
+    mv "$tmp" "$ticket_file"
+
+    log_file="${BOARD_ROOT}/runners/logs/planner.log"
+    mkdir -p "$(dirname "$log_file")"
+    printf '%s event=auto_recovery_resolved reason=auto_expand_allowed_path ticket=%s path=%s\n' \
+      "$(now_iso)" "tickets_$(extract_numeric_id "$ticket_file")" "$unmet_path" >> "$log_file"
+
+    append_note_once "$ticket_file" "Auto-recovery: expanded Allowed Paths to include same-scope conflict path ${unmet_path}"
+  done
+
+  return 0
+}
+
 worktree_mode_disabled() {
   case "${AUTOFLOW_WORKTREE_MODE:-auto}" in
     0|off|OFF|false|FALSE|disabled|DISABLED)
@@ -1394,6 +1659,14 @@ append_note() {
   mv "$tmp" "$file"
 }
 
+append_note_once() {
+  local file="$1"
+  local note="$2"
+
+  grep -Fqx -- "- ${note}" "$file" 2>/dev/null && return 0
+  append_note "$file" "$note"
+}
+
 mark_ticket_done_when_checked() {
   local ticket_file="$1"
   local run_file="${2:-}"
@@ -1966,6 +2239,14 @@ replan_reject_to_todo() {
   )"
   if [ -z "$reject_reason" ]; then
     reject_reason="No recorded reject reason."
+  fi
+
+  if is_recovery_auto_enabled; then
+    local unmet_paths
+    unmet_paths="$(parse_unmet_paths_from_reject_reason "$reject_reason")"
+    if [ -n "$unmet_paths" ]; then
+      auto_expand_allowed_paths_if_same_scope "$reject_file" "$unmet_paths" || true
+    fi
   fi
 
   retry_count="$(bump_ticket_retry_count "$reject_file")"

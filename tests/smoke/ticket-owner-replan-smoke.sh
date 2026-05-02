@@ -37,6 +37,18 @@ require_pattern() {
   fi
 }
 
+require_contains() {
+  local file="$1"
+  local expected="$2"
+
+  if ! grep -Fq -- "$expected" "$file"; then
+    echo "Expected text not found: $expected" >&2
+    echo "--- $file ---" >&2
+    cat "$file" >&2
+    exit 1
+  fi
+}
+
 run_temp_runtime() {
   local board_dir="$1"
   shift
@@ -122,6 +134,7 @@ plan3_output="${project_dir}/plan-3.out"
 start3_output="${project_dir}/start-3.out"
 fail3_output="${project_dir}/fail-3.out"
 off_output="${project_dir}/off.out"
+same_scope_output="${project_dir}/same-scope.out"
 
 create_spec "project_001" "Owner replan smoke project" "$spec1_output"
 require_line "$spec1_output" "status=created"
@@ -255,6 +268,63 @@ if [ ! -f "${project_dir}/.autoflow/tickets/reject/reject_${ticket3_id}.md" ]; t
   echo "Expected reject_${ticket3_id}.md to remain in reject when auto replan is off" >&2
   exit 1
 fi
+rm -f "${project_dir}/.autoflow/tickets/reject/reject_${ticket3_id}.md"
+
+cat >"${project_dir}/.autoflow/tickets/reject/reject_004.md" <<'TICKET'
+# Ticket
+
+## Ticket
+
+- ID: tickets_004
+- PRD Key: prd_004
+- Plan Candidate: same-scope allowed path expansion smoke
+- Title: Same-scope allowed path expansion smoke
+- Stage: rejected
+- AI:
+- Claimed By:
+- Execution AI:
+- Verifier AI:
+- Last Updated:
+
+## Allowed Paths
+
+- scaffold/board/README.md
+
+## Worktree
+
+- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: rejected
+
+## Reject Reason
+
+- Allowed Paths conflict: negative wording check scans scaffold/board reference files outside ticket Allowed Paths (scaffold/board/reference/README.md, backlog.md, tickets-board.md), so pass would require planner scope repair.
+
+## Retry
+
+- Retry Count: 0
+- Max Retries: 3
+TICKET
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-replan ./scripts/start-plan.sh >"$same_scope_output"
+require_line "$same_scope_output" "status=ok"
+require_line "$same_scope_output" "source=reject-replan"
+require_line "$same_scope_output" "reject_origin=tickets/reject/reject_004.md"
+require_pattern "$same_scope_output" 'todo_ticket=.*/tickets/todo/tickets_004.md$'
+
+same_scope_ticket="${project_dir}/.autoflow/tickets/todo/tickets_004.md"
+[ -f "$same_scope_ticket" ] || {
+  echo "Expected same-scope retry ticket at $same_scope_ticket" >&2
+  exit 1
+}
+require_contains "$same_scope_ticket" "- scaffold/board/reference/README.md"
+require_contains "$same_scope_ticket" "- scaffold/board/reference/backlog.md"
+require_contains "$same_scope_ticket" "- scaffold/board/reference/tickets-board.md"
+require_pattern "$same_scope_ticket" 'Auto-recovery: expanded Allowed Paths to include same-scope conflict path scaffold/board/reference/README.md'
+require_pattern "$same_scope_ticket" 'Auto-recovery: expanded Allowed Paths to include same-scope conflict path scaffold/board/reference/backlog.md'
+require_pattern "$same_scope_ticket" 'Auto-recovery: expanded Allowed Paths to include same-scope conflict path scaffold/board/reference/tickets-board.md'
 
 echo "status=ok"
 echo "project_root=$project_dir"

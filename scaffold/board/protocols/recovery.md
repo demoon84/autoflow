@@ -82,12 +82,19 @@ Shell helpers may stop a tick to protect product files or git state. Treat these
 
 Planner runner preflight may also wake the adapter when normal backlog/reject input is idle but ticket metadata shows recovery work:
 
-| Wake reason | Recovery status | Recovery class | Meaning |
-| --- | --- | --- | --- |
-| `stale_todo_worktree_metadata` | `blocked` | `stale_todo_worktree` | A `tickets/todo/` file still has worktree metadata or non-pending integration status, so planner should decide whether to salvage, requeue, or cleanly reissue the work. |
-| `goal_runtime_no_progress` | `stalled` | `adapter_no_progress` | The owner adapter exited without durable ticket progress and continuation was suppressed. |
-| `resolved_ticket_worktree_leftover` | `needs_user` | `leftover_worktree` | A rejected or done ticket still has a clean ticket worktree. Planner should record the cleanup candidate and wait for explicit safe cleanup policy rather than deleting it. |
-| `resolved_ticket_worktree_dirty` | `needs_user` | `leftover_worktree` | A rejected or done ticket still has a dirty ticket worktree. Planner should preserve the dirty path as evidence and request/record an explicit salvage or cleanup decision. |
+| Wake reason | Recovery status | Recovery class | Meaning | Auto-recovery policy |
+| --- | --- | --- | --- | --- |
+| `stale_todo_worktree_metadata` | `blocked` | `stale_todo_worktree` | A `tickets/todo/` file still has worktree metadata or non-pending integration status, so planner should decide whether to salvage, requeue, or cleanly reissue the work. | No automatic cleanup. Leave evidence for planner/owner recovery. |
+| `goal_runtime_no_progress` | `stalled` | `adapter_no_progress` | The owner adapter exited without durable ticket progress and continuation was suppressed. | No automatic cleanup. Planner should inspect ticket state first. |
+| `resolved_ticket_worktree_leftover` | `needs_user` | `leftover_worktree` | A rejected or done ticket still has a clean ticket worktree. | If `AUTOFLOW_RECOVERY_AUTO` is not `off`, runtime/planner may discard the clean leftover worktree automatically. Otherwise, record the cleanup candidate and wait for explicit decision. |
+| `resolved_ticket_worktree_dirty` | `needs_user` | `leftover_worktree` | A rejected or done ticket still has a dirty ticket worktree. | If `AUTOFLOW_RECOVERY_AUTO` is not `off` and the dirty state is agent-only (no post-base commits, no staged changes, no branch divergence, and every dirty path stays inside `Allowed Paths`), save a diff backup to `.autoflow/runners/state/recovery-discarded/<ticket>-<timestamp>.diff` and discard the worktree automatically. Otherwise, preserve the dirty path as evidence and request user decision. |
+
+## Auto-Recovery Policies
+
+When `AUTOFLOW_RECOVERY_AUTO` is not `off` (default `on`), the following policies apply:
+
+1. **Agent-only dirty worktree auto-discard**: Leftover worktrees from `done` or `reject` tickets that contain only agent-generated changes are backed up as a diff and discarded automatically.
+2. **Same-scope allowed path conflict auto-expansion**: If every unmet Allowed Path named in a reject reason stays in the same scope as the current `Allowed Paths`, planner expands the retry ticket automatically and logs `event=auto_recovery_resolved`.
 
 ## Owner Recovery Actions
 

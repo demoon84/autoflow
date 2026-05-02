@@ -8,7 +8,9 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 project_dir="$(mktemp -d)"
 cleanup() {
   if [ -d "$project_dir" ] && git -C "$project_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "$project_dir" worktree remove --force "${project_dir}/tickets_221_wt" >/dev/null 2>&1 || true
     git -C "$project_dir" worktree remove --force "${project_dir}/tickets_222_wt" >/dev/null 2>&1 || true
+    git -C "$project_dir" worktree remove --force "${project_dir}/tickets_223_wt" >/dev/null 2>&1 || true
   fi
   rm -rf "$project_dir"
 }
@@ -44,12 +46,99 @@ git -C "$project_dir" config user.name "Smoke Test"
 printf 'base\n' >"${project_dir}/target.txt"
 git -C "$project_dir" add target.txt
 git -C "$project_dir" commit -q -m "base"
+base_commit="$(git -C "$project_dir" rev-parse HEAD)"
 
 "${REPO_ROOT}/bin/autoflow" init "$project_dir" >/dev/null
 "${REPO_ROOT}/bin/autoflow" runners set planner "$project_dir" agent=codex model=gpt-5.4 reasoning=medium >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/reject"
-cat >"${project_dir}/.autoflow/tickets/reject/reject_222.md" <<'TICKET'
+cat >"${project_dir}/.autoflow/tickets/reject/reject_221.md" <<TICKET
+# Ticket
+
+## Ticket
+
+- ID: tickets_221
+- PRD Key: prd_221
+- Plan Candidate: leftover worktree auto discard smoke
+- Title: Leftover worktree auto discard smoke
+- Stage: rejected
+- AI:
+- Claimed By:
+- Execution AI:
+- Verifier AI:
+- Last Updated:
+
+## Goal
+
+- Planner should auto-discard an agent-only dirty leftover worktree when recovery automation is on.
+
+## References
+
+- PRD:
+
+## Allowed Paths
+
+- target.txt
+
+## Worktree
+
+- Path:
+- Branch: autoflow/tickets_221
+- Base Commit: ${base_commit}
+- Worktree Commit:
+- Integration Status: rejected
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [ ] Planner auto-discards this dirty agent-only leftover worktree and records backup evidence.
+
+## Notes
+
+- Smoke fixture.
+TICKET
+
+git -C "$project_dir" worktree add -q -b autoflow/tickets_221 "${project_dir}/tickets_221_wt" HEAD
+printf 'agent-only dirty\n' >>"${project_dir}/tickets_221_wt/target.txt"
+
+fake_bin="${project_dir}/fake-bin"
+mkdir -p "$fake_bin"
+cat >"${fake_bin}/codex" <<'FAKE_CODEX'
+#!/usr/bin/env bash
+exit 0
+FAKE_CODEX
+chmod +x "${fake_bin}/codex"
+
+auto_output="${project_dir}/auto.out"
+AUTOFLOW_REJECT_AUTO_REPLAN=off AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$auto_output"
+
+if [ -d "${project_dir}/tickets_221_wt" ]; then
+  echo "Expected tickets_221_wt to be auto-discarded" >&2
+  cat "$auto_output" >&2
+  exit 1
+fi
+
+backup_diff="$(ls "${project_dir}/.autoflow/runners/state/recovery-discarded/tickets_221-"*.diff 2>/dev/null | head -n 1)"
+[ -n "$backup_diff" ] || {
+  echo "Expected backup diff for tickets_221" >&2
+  exit 1
+}
+require_contains "$backup_diff" "# Ticket: tickets_221"
+require_contains "$backup_diff" "+agent-only dirty"
+require_contains "${project_dir}/.autoflow/runners/logs/planner.log" "event=auto_recovery_resolved reason=auto_discard_agent_only_leftover ticket=tickets_221"
+require_contains "${project_dir}/.autoflow/tickets/reject/reject_221.md" "Auto-recovery: agent-only leftover worktree discarded"
+require_contains "${project_dir}/.autoflow/tickets/reject/reject_221.md" "Planner Decision: auto_discard_agent_only_leftover"
+
+cat >"${project_dir}/.autoflow/tickets/reject/reject_222.md" <<TICKET
 # Ticket
 
 ## Ticket
@@ -81,7 +170,7 @@ cat >"${project_dir}/.autoflow/tickets/reject/reject_222.md" <<'TICKET'
 
 - Path:
 - Branch: autoflow/tickets_222
-- Base Commit:
+- Base Commit: ${base_commit}
 - Worktree Commit:
 - Integration Status: rejected
 
@@ -137,17 +226,10 @@ TICKET
 git -C "$project_dir" worktree add -q -b autoflow/tickets_222 "${project_dir}/tickets_222_wt" HEAD
 printf 'dirty\n' >>"${project_dir}/tickets_222_wt/target.txt"
 
-fake_bin="${project_dir}/fake-bin"
 run_output="${project_dir}/run.out"
 runners_output="${project_dir}/runners.out"
-mkdir -p "$fake_bin"
-cat >"${fake_bin}/codex" <<'FAKE_CODEX'
-#!/usr/bin/env bash
-exit 0
-FAKE_CODEX
-chmod +x "${fake_bin}/codex"
 
-AUTOFLOW_REJECT_AUTO_REPLAN=off AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
+AUTOFLOW_REJECT_AUTO_REPLAN=off AUTOFLOW_RECOVERY_AUTO=off AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$run_output"
 require_line "$run_output" "status=ok"
 require_line "$run_output" "adapter=codex"
 require_line "$run_output" "adapter_exit_code=0"
@@ -206,6 +288,113 @@ require_contains "$runners_output" "runner.1.active_recovery_worktree_path="
 require_contains "$runners_output" "tickets_222_wt"
 require_line "$runners_output" "runner.1.active_recovery_worktree_status=dirty"
 require_line "$runners_output" "runner.1.active_recovery_board_state=rejected"
+
+cat >"${project_dir}/.autoflow/tickets/reject/reject_223.md" <<TICKET
+# Ticket
+
+## Ticket
+
+- ID: tickets_223
+- PRD Key: prd_223
+- Plan Candidate: leftover worktree non-agent smoke
+- Title: Leftover worktree non-agent smoke
+- Stage: rejected
+- AI:
+- Claimed By:
+- Execution AI:
+- Verifier AI:
+- Last Updated:
+
+## Goal
+
+- Planner should keep a dirty leftover worktree when dirty paths escape Allowed Paths.
+
+## References
+
+- PRD:
+
+## Allowed Paths
+
+- target.txt
+
+## Worktree
+
+- Path:
+- Branch: autoflow/tickets_223
+- Base Commit: ${base_commit}
+- Worktree Commit:
+- Integration Status: rejected
+
+## Goal Runtime
+
+- Status: blocked
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count: 0
+- Time Used Seconds: 0
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed: true
+- Last Event: rejected
+- Last Progress Fingerprint:
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [ ] Planner adapter receives this non-agent leftover worktree as an active recovery item.
+
+## Next Action
+
+- Planner should preserve the blocker because the dirty path is out of scope.
+
+## Resume Context
+
+- Current state: rejected ticket has a dirty leftover worktree outside Allowed Paths.
+
+## Notes
+
+- Smoke fixture.
+
+## Verification
+
+- Result: rejected
+
+## Result
+
+- Summary:
+TICKET
+
+git -C "$project_dir" worktree add -q -b autoflow/tickets_223 "${project_dir}/tickets_223_wt" HEAD
+printf 'outside scope\n' >"${project_dir}/tickets_223_wt/outside.txt"
+
+non_agent_output="${project_dir}/non-agent.out"
+AUTOFLOW_REJECT_AUTO_REPLAN=off AUTOFLOW_CODEX_DISABLE_PTY=1 PATH="${fake_bin}:$PATH" "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" --runner planner >"$non_agent_output"
+
+if [ ! -d "${project_dir}/tickets_223_wt" ]; then
+  echo "Expected tickets_223_wt to remain because dirty paths escaped Allowed Paths" >&2
+  cat "$non_agent_output" >&2
+  exit 1
+fi
+
+non_agent_prompt_log="$(awk -F= '$1 == "prompt_log_path" { print $2; exit }' "$non_agent_output")"
+[ -n "$non_agent_prompt_log" ] && [ -f "$non_agent_prompt_log" ] || {
+  echo "Expected persisted adapter prompt for tickets_223." >&2
+  cat "$non_agent_output" >&2
+  exit 1
+}
+require_contains "$non_agent_prompt_log" "Active item: tickets/reject/reject_223.md"
+require_contains "$non_agent_prompt_log" "Active recovery reason: resolved_ticket_worktree_dirty"
+require_contains "$non_agent_prompt_log" "Active recovery worktree status: dirty"
 
 echo "status=ok"
 echo "project_root=$project_dir"

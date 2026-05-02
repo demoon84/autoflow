@@ -636,6 +636,18 @@ planner_resolved_ticket_worktree_signal() {
           reason="resolved_ticket_worktree_leftover"
         fi
 
+        if ticket_goal_common_call is_recovery_auto_enabled; then
+          if [ -z "$dirty_output" ]; then
+            ticket_goal_common_call backup_diff_and_discard_worktree "$ticket_file" "$worktree_path" "$reason"
+            continue
+          fi
+          base_commit="$(planner_ticket_field "$ticket_file" "Worktree" "Base Commit")"
+          if ticket_goal_common_call is_agent_only_worktree "$ticket_file" "$worktree_path" "$base_commit"; then
+            ticket_goal_common_call backup_diff_and_discard_worktree "$ticket_file" "$worktree_path" "$reason"
+            continue
+          fi
+        fi
+
         ticket_id="$(planner_ticket_field "$ticket_file" "Ticket" "ID")"
         [ -n "$ticket_id" ] || ticket_id="$ticket_ref"
         title="$(planner_ticket_field "$ticket_file" "Ticket" "Title")"
