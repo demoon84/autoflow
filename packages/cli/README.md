@@ -213,6 +213,7 @@
 - `wiki-project.sh`
   - `autoflow wiki update`, `autoflow wiki query`, `autoflow wiki lint` 구현체다.
   - `update` 는 done tickets, reject records, verifier logs 에서 `wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md` 의 managed section 을 갱신한다.
+  - `query` 는 기본적으로 파일 단위 retrieval 을 유지하고, `--rag` 를 주면 line chunk 단위 retrieval 로 전환해 `chunk_start_line` / `chunk_end_line` 메타데이터와 chunk 스니펫을 출력한다.
   - `query --synth` 와 `lint --semantic` 은 enabled `wiki-maintainer` runner (3-runner topology 의 `wiki`) 를 wiki adapter 로 우선 사용한다. wiki-maintainer 가 없고 enabled coordinator/coord/doctor/diagnose runner 가 있으면 그 runner 를 fallback adapter 로 재사용한다(`find_wiki_runner` in wiki-project.sh). 적합한 runner 가 전혀 없으면 graceful skip 한다. round 1 (commit db8cc57) 에서 제거된 것은 `auto_run_wiki_maintainer` (Impl AI inline pass 안에서 coordinator 를 자동 호출하던 분기) 이며, `wiki query --synth` / `lint --semantic` 의 explicit adapter resolution 은 여전히 coordinator fallback 을 지원한다.
   - `lint` 는 wiki orphan page 와 completed-work citation gap 을 key=value 로 보고한다.
 
