@@ -8,7 +8,7 @@ const path = require("node:path");
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 const desktopRoot = path.resolve(__dirname, "..");
-const appIconPath = path.join(desktopRoot, "build", "app-icon.png");
+const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
