@@ -163,7 +163,8 @@
   - pass / fail log 작성 뒤 active runtime context 를 비워 다음 tick 이 보드 파일과 Obsidian links 로 재개하게 한다.
 
 - `runner-common.sh`
-  - runner config, state, log 경로와 `runners/config.toml` 의 작은 `[[runners]]` subset parser 를 제공한다.
+  - runner config, state, log 경로와 `runners/config.toml` / ignored `runners/config.local.toml` 의 작은 `[[runners]]` subset parser 를 제공한다.
+  - `config.toml` 은 tracked 기본 topology, `config.local.toml` 은 `autoflow runners set/add/remove` 가 쓰는 머신별 override 다. 읽기는 local 파일을 우선한다.
   - `autoflow runners list/add/remove/start/stop/restart/artifacts/set` 이 같은 state/log 계약을 쓰도록 하는 공통 helper 다.
 
 - `run-hook.sh` (DEPRECATED — legacy script-driven trigger path)

@@ -860,8 +860,9 @@ if [ -d "$board_root" ]; then
   fi
 
   runner_count=0
-  if [ -f "${board_root}/runners/config.toml" ]; then
-    export AUTOFLOW_BOARD_ROOT="$board_root"
+  export AUTOFLOW_BOARD_ROOT="$board_root"
+  runner_config_effective_path="$(runner_config_path)"
+  if [ -f "$runner_config_effective_path" ]; then
     current_id=""
     current_role=""
     current_agent=""
@@ -910,7 +911,7 @@ if [ -d "$board_root" ]; then
           current_command="${runner_line#command=}"
           ;;
       esac
-    done < <(runner_list_config "${board_root}/runners/config.toml")
+    done < <(runner_list_config "$runner_config_effective_path")
   fi
   printf 'runner_count=%s\n' "$runner_count" >> "$check_output"
   record_watcher_state_check

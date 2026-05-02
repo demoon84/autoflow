@@ -22,6 +22,7 @@ Modes:
 
 Rules:
 
+- `config.toml` is the tracked default topology. `autoflow runners set/add/remove` writes machine-local overrides to ignored `config.local.toml`; readers prefer `config.local.toml` when present.
 - Runner state is process state, not ticket state.
 - Tickets remain authoritative.
 - Active recovery fields (`active_recovery_reason`, `active_recovery_status`, `active_recovery_failure_class`) are display hints for the current runner tick. When planner recovery is about a resolved ticket worktree, state may also include `active_recovery_worktree_path`, `active_recovery_worktree_status`, and `active_recovery_board_state` so Desktop/CLI can show the cleanup target without deleting it.

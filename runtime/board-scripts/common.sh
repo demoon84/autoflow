@@ -98,12 +98,19 @@ display_role_is_singleton() {
 
 enabled_runner_role_count() {
   local target_role="${1:-}"
-  local config="${AUTOFLOW_RUNNER_CONFIG:-${BOARD_ROOT:-}/runners/config.toml}"
+  local config="${AUTOFLOW_RUNNER_CONFIG:-}"
 
   [ -n "$target_role" ] || {
     printf '0'
     return 0
   }
+  if [ -z "$config" ] && [ -n "${BOARD_ROOT:-}" ]; then
+    if [ -f "${BOARD_ROOT}/runners/config.local.toml" ]; then
+      config="${BOARD_ROOT}/runners/config.local.toml"
+    else
+      config="${BOARD_ROOT}/runners/config.toml"
+    fi
+  fi
   [ -f "$config" ] || {
     printf '0'
     return 0

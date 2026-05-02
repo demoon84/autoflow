@@ -53,8 +53,40 @@ runner_board_root() {
   runner_default_board_root
 }
 
-runner_config_path() {
+runner_config_base_path() {
   printf '%s/runners/config.toml' "$(runner_board_root)"
+}
+
+runner_config_local_path() {
+  printf '%s/runners/config.local.toml' "$(runner_board_root)"
+}
+
+runner_config_path() {
+  local local_path
+
+  local_path="$(runner_config_local_path)"
+  if [ -f "$local_path" ]; then
+    printf '%s' "$local_path"
+    return 0
+  fi
+
+  runner_config_base_path
+}
+
+runner_config_write_path() {
+  local base_path local_path local_dir
+
+  base_path="$(runner_config_base_path)"
+  local_path="$(runner_config_local_path)"
+  local_dir="$(dirname "$local_path")"
+
+  if [ ! -f "$local_path" ]; then
+    [ -f "$base_path" ] || return 1
+    mkdir -p "$local_dir"
+    cp "$base_path" "$local_path"
+  fi
+
+  printf '%s' "$local_path"
 }
 
 runner_state_dir() {

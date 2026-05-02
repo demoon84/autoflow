@@ -199,6 +199,7 @@ template_text|reference/wiki.md|reference/wiki.md
 template_text|reference/logs.md|reference/logs.md
 template_text|reference/hook-logs.md|reference/hook-logs.md
 template_text|runners/README.md|runners/README.md
+template_text|runners/.gitignore|runners/.gitignore
 template_text|runners/config.toml|runners/config.toml
 template_text|runners/state/README.md|runners/state/README.md
 template_text|runners/state/.gitignore|runners/state/.gitignore

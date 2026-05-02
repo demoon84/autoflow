@@ -115,6 +115,21 @@ export AUTOFLOW_BOARD_ROOT="$board_root"
 
 config_path="$(runner_config_path)"
 
+ensure_runner_config_write_path_or_block() {
+  local target_runner_id="$1"
+  local write_config_path
+
+  if ! write_config_path="$(runner_config_write_path)"; then
+    print_runner_common_header "blocked"
+    printf 'runner_id=%s\n' "$target_runner_id"
+    printf 'reason=runner_config_missing\n'
+    return 1
+  fi
+
+  config_path="$write_config_path"
+  return 0
+}
+
 print_runner_common_header() {
   local status="$1"
   printf 'status=%s\n' "$status"
@@ -1143,6 +1158,8 @@ set_runner_config() {
   local target_runner_id="$1"
   local pair key value updates_file temp_file timestamp updated_count
 
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
+
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
     printf 'runner_id=%s\n' "$target_runner_id"
@@ -1455,6 +1472,8 @@ add_runner_config() {
   local pair key value timestamp updated_count
   local agent_value model_value reasoning_value mode_value interval_seconds_value enabled_value command_value
 
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
+
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
     printf 'runner_id=%s\n' "$target_runner_id"
@@ -1575,6 +1594,8 @@ add_runner_config() {
 remove_runner_config() {
   local target_runner_id="$1"
   local temp_file trimmed_file timestamp state_path role agent mode model reasoning
+
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"

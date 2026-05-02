@@ -155,7 +155,7 @@ count_runner_artifact_status() {
 }
 
 count_runner_states() {
-  local config_path="${board_root}/runners/config.toml"
+  local config_path
   local config_stream line in_runner id role mode status pid enabled invalid_config artifact_status
 
   runner_total_count=0
@@ -170,9 +170,10 @@ count_runner_states() {
   runner_artifact_warning_count=0
   runner_artifact_not_applicable_count=0
 
+  export AUTOFLOW_BOARD_ROOT="$board_root"
+  config_path="$(runner_config_path)"
   [ -f "$config_path" ] || return 0
 
-  export AUTOFLOW_BOARD_ROOT="$board_root"
   config_stream="$(runner_list_config "$config_path" || true)"
   in_runner=0
   id=""
