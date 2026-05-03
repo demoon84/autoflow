@@ -305,6 +305,8 @@ check_recovery_state_values() {
     retry_limit
     needs_user_decision
     leftover_worktree
+    vague_completion_promise
+    iteration_no_progress
   )
 
   while IFS= read -r file; do

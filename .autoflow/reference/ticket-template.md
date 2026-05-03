@@ -53,6 +53,9 @@
 - Continuation Suppressed: false
 - Last Event:
 - Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
 
 ## Recovery State
 
