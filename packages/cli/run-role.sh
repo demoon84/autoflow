@@ -304,6 +304,46 @@ role_autocommit_after_adapter() {
   printf 'autocommit_message=%s\n' "$commit_message"
 }
 
+# adapter_exit==124 (timeout) 시 wiki working tree 의 partial 변경을 폐기한다.
+# Opt-in: AUTOFLOW_WIKI_TIMEOUT_DISCARD_PARTIAL=1 일 때만 수행.
+# Default 는 비활성 — 다음 tick 의 manifest hash 가 partial 을 input 으로 잡아서 자연 회복한다.
+role_post_adapter_cleanup_on_timeout() {
+  local adapter_exit="$1"
+  local discard_flag git_root wiki_path
+
+  [ "$adapter_exit" -eq 124 ] || return 0
+  case "$public_role" in
+    wiki) ;;
+    *) return 0 ;;
+  esac
+
+  discard_flag="${AUTOFLOW_WIKI_TIMEOUT_DISCARD_PARTIAL:-0}"
+  case "$discard_flag" in
+    ''|0|false|no|off|FALSE|NO|OFF) return 0 ;;
+  esac
+
+  git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -z "$git_root" ]; then
+    printf 'wiki_partial_discarded=skipped_not_git_repo\n'
+    return 0
+  fi
+
+  wiki_path="${board_root}/wiki"
+  if [ ! -d "$wiki_path" ]; then
+    printf 'wiki_partial_discarded=skipped_no_wiki_dir\n'
+    return 0
+  fi
+
+  if [ -z "$(git -C "$git_root" status --porcelain -- "$wiki_path" 2>/dev/null)" ]; then
+    printf 'wiki_partial_discarded=false\n'
+    return 0
+  fi
+
+  git -C "$git_root" checkout -- "$wiki_path" 2>/dev/null || true
+  git -C "$git_root" clean -fd -- "$wiki_path" 2>/dev/null || true
+  printf 'wiki_partial_discarded=true\n'
+}
+
 runner_ticket_id_from_active_item() {
   local item="$1"
   local name
@@ -1667,20 +1707,23 @@ EOF
 
 run_custom_adapter_command() {
   local prompt_file="$1"
+  local adapter_timeout_seconds adapter_kill_after_seconds
 
   prepare_adapter_cli_env
   command_summary="$command_value"
-  (
-    cd "$adapter_working_root"
-    AUTOFLOW_ROLE="$runtime_role" \
-      AUTOFLOW_WORKER_ID="$runner_id" \
-      AUTOFLOW_BACKGROUND=1 \
-      AUTOFLOW_BOARD_ROOT="$board_root" \
-      AUTOFLOW_PROJECT_ROOT="$project_root" \
-      AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
-    AUTOFLOW_PROMPT_FILE="$prompt_file" \
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
+  run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+    adapter_run_in_cwd "$adapter_working_root" \
+      env \
+        AUTOFLOW_ROLE="$runtime_role" \
+        AUTOFLOW_WORKER_ID="$runner_id" \
+        AUTOFLOW_BACKGROUND=1 \
+        AUTOFLOW_BOARD_ROOT="$board_root" \
+        AUTOFLOW_PROJECT_ROOT="$project_root" \
+        AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
+        AUTOFLOW_PROMPT_FILE="$prompt_file" \
       bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
-  )
 }
 
 run_adapter_with_identity() {
@@ -1693,6 +1736,100 @@ run_adapter_with_identity() {
     AUTOFLOW_PROJECT_ROOT="$project_root" \
     AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
     "$@"
+}
+
+# 정수 env var 해석 (비어있거나 non-numeric 이면 default 반환).
+runner_resolve_int_env() {
+  local var_name="$1"
+  local default_value="$2"
+  local value="${!var_name:-}"
+  if [ -z "$value" ]; then
+    printf '%s' "$default_value"
+    return 0
+  fi
+  case "$value" in
+    *[!0-9]*) printf '%s' "$default_value" ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+# adapter 호출용 timeout watchdog. macOS BSD (timeout/gtimeout 부재) 호환.
+# 사용: run_with_timeout TIMEOUT_SECONDS KILL_AFTER_SECONDS COMMAND [ARGS...]
+# - TIMEOUT_SECONDS 가 0/empty/non-numeric 이면 watchdog 비활성 (그대로 실행).
+# - timeout 으로 SIGTERM 보낸 뒤에도 KILL_AFTER_SECONDS 동안 살아있으면 SIGKILL.
+# - timeout 발생 시 exit code 124 반환. 그 외에는 child 의 exit code 그대로 반환.
+run_with_timeout() {
+  local timeout_s="${1:-0}"; shift || true
+  local kill_after_s="${1:-30}"; shift || true
+
+  case "$timeout_s" in
+    ''|*[!0-9]*) timeout_s=0 ;;
+  esac
+  case "$kill_after_s" in
+    ''|*[!0-9]*) kill_after_s=30 ;;
+  esac
+
+  if [ "$timeout_s" -le 0 ]; then
+    "$@"
+    return $?
+  fi
+
+  local marker prev_errexit prev_monitor
+  marker="$(mktemp "${TMPDIR:-/tmp}/autoflow-adapter-timeout.XXXXXX")"
+
+  # 호출자의 shell option (errexit, monitor) 보존을 위해 저장.
+  case "$-" in
+    *e*) prev_errexit=1 ;;
+    *) prev_errexit=0 ;;
+  esac
+  case "$-" in
+    *m*) prev_monitor=1 ;;
+    *) prev_monitor=0 ;;
+  esac
+  # 백그라운드 child 가 SIGTERM 으로 죽을 때 bash 가 stderr 에 "Terminated: 15" 노이즈 찍는 것 방지.
+  set +m
+
+  "$@" &
+  local child_pid=$!
+
+  (
+    sleep "$timeout_s"
+    if kill -0 "$child_pid" 2>/dev/null; then
+      printf 'timeout' > "$marker"
+      kill -TERM "$child_pid" 2>/dev/null || true
+      sleep "$kill_after_s"
+      if kill -0 "$child_pid" 2>/dev/null; then
+        kill -KILL "$child_pid" 2>/dev/null || true
+      fi
+    fi
+  ) &
+  local watcher_pid=$!
+
+  set +e
+  wait "$child_pid"
+  local child_exit=$?
+  if [ "$prev_errexit" = "1" ]; then set -e; fi
+
+  if kill -0 "$watcher_pid" 2>/dev/null; then
+    kill -TERM "$watcher_pid" 2>/dev/null || true
+    wait "$watcher_pid" 2>/dev/null || true
+  fi
+
+  if [ "$prev_monitor" = "1" ]; then set -m; fi
+
+  if [ -s "$marker" ]; then
+    rm -f "$marker"
+    return 124
+  fi
+  rm -f "$marker"
+  return "$child_exit"
+}
+
+# run_with_timeout 안에서 cd 후 명령을 실행할 때 사용 (cd 가 watchdog subshell 안에 머무름).
+adapter_run_in_cwd() {
+  local cwd="$1"; shift
+  cd "$cwd" || return 1
+  "$@"
 }
 
 normalize_claude_model_alias() {
@@ -1836,6 +1973,12 @@ run_default_adapter_command() {
   local prompt_text
   local cmd=()
   local command_exit codex_wrapper
+  local adapter_timeout_seconds adapter_kill_after_seconds
+
+  # adapter 호출 timeout. ECONNRESET 등으로 인한 무한 hang 을 끊기 위해 외부 watchdog 으로 강제 종료.
+  # 0 또는 unset 으로 두면 watchdog 비활성 (이전 동작 그대로).
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
 
   case "$agent" in
     codex)
@@ -1846,6 +1989,13 @@ run_default_adapter_command() {
       fi
       if [ -n "$reasoning" ]; then
         cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
+      fi
+      # Capture only the AI's final user-facing message into a sidecar file so
+      # the runner can surface it as a clean narrative; the raw transcript
+      # (tool calls / apply_patch diffs / shell command lines) stays in
+      # adapter_stdout for debug-only viewing.
+      if [ -n "${adapter_last_message:-}" ]; then
+        cmd+=(-o "$adapter_last_message")
       fi
       cmd+=(-)
       command_summary="$(command_summary_from_array "${cmd[@]}")"
@@ -1858,11 +2008,15 @@ run_default_adapter_command() {
           printf ' < "$1"\n'
         } > "$codex_wrapper"
         chmod +x "$codex_wrapper"
-        run_adapter_with_identity script -q /dev/null "$codex_wrapper" "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+          run_adapter_with_identity script -q /dev/null "$codex_wrapper" "$prompt_file" \
+          > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
         rm -f "$codex_wrapper"
       else
-        run_adapter_with_identity "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+          run_adapter_with_identity "${cmd[@]}" \
+          < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
       fi
       return "$command_exit"
@@ -1879,7 +2033,16 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
+        > "$adapter_stdout" 2> "$adapter_stderr"
+      command_exit=$?
+      # claude --output-format text 의 stdout 은 곧 어시스턴트의 최종 응답이므로
+      # 그대로 narrative sidecar 에 복사한다 (Codex 와 같은 통일 인터페이스).
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
       ;;
     opencode)
       ensure_agent_on_path opencode || return 127
@@ -1893,7 +2056,14 @@ run_default_adapter_command() {
       fi
       cmd+=("$prompt_text")
       command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
+        > "$adapter_stdout" 2> "$adapter_stderr"
+      command_exit=$?
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
       ;;
     gemini)
       ensure_agent_on_path gemini || return 127
@@ -1903,7 +2073,14 @@ run_default_adapter_command() {
         cmd+=(--model "$model")
       fi
       command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
-      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
+      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
+        > "$adapter_stdout" 2> "$adapter_stderr"
+      command_exit=$?
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
       ;;
     *)
       return 127
@@ -1944,8 +2121,13 @@ prepare_adapter_live_logs() {
   live_stamp="$(artifact_stamp)"
   adapter_stdout="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stdout.log"
   adapter_stderr="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stderr.log"
+  # AI 주도 sh 실행 원칙: Codex/Claude 같은 어댑터의 raw transcript 는 디버그용이고,
+  # 사용자 view 에는 AI 의 narrative 만 surface 한다. 어댑터 실행 종료 후 이 파일에
+  # AI 의 최종 메시지 (narrative) 만 담아 'narrative_text' envelope 으로 emit 한다.
+  adapter_last_message="$(runner_log_dir)/${runner_id}_${live_stamp}_last_message.txt"
   : > "$adapter_stdout"
   : > "$adapter_stderr"
+  : > "$adapter_last_message"
 }
 
 agent_runtime_preflight_or_exit() {
@@ -2249,10 +2431,18 @@ case "$agent" in
     autocommit_before_status="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-before-status.XXXXXX")"
     adapter_stdout=""
     adapter_stderr=""
+    adapter_last_message=""
     ticket_goal_before_fingerprint="$(ticket_goal_progress_fingerprint_for_current_ticket || true)"
     prepare_adapter_live_logs
     role_autocommit_capture_status "$autocommit_before_status"
     write_agent_prompt "$instruction_file" > "$prompt_file"
+
+    # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
+    # consecutive_timeout_count 같은 누적 필드는 보존해야 하므로 미리 읽어서 다시 함께 써준다.
+    preserved_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    case "${preserved_consecutive_timeouts:-0}" in
+      ''|*[!0-9]*) preserved_consecutive_timeouts=0 ;;
+    esac
 
     runner_write_state "$runner_id" \
       "status=running" \
@@ -2277,7 +2467,8 @@ case "$agent" in
       "last_event_at=${started_at}" \
       "last_result=" \
       "last_stdout_log=${adapter_stdout}" \
-      "last_stderr_log=${adapter_stderr}"
+      "last_stderr_log=${adapter_stderr}" \
+      "consecutive_timeout_count=${preserved_consecutive_timeouts}"
     runner_append_log "$runner_id" "adapter_start" \
       "role=${public_role}" \
       "runtime_role=${runtime_role}" \
@@ -2360,7 +2551,7 @@ case "$agent" in
       printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
       printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
       emit_file_block "adapter_prompt" "$prompt_file"
-      rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
+      rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
       exit 0
     fi
 
@@ -2377,6 +2568,11 @@ case "$agent" in
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"
+    elif [ "$adapter_exit" -eq 124 ]; then
+      # adapter watchdog timeout (run_with_timeout). 다음 tick 에서 재시도하도록 idle 로 둔다.
+      # 누적 timeout 처리는 consecutive_timeout_count 기반 fallback 에서 수행한다.
+      command_status="timeout"
+      runner_status="idle"
     elif [ "$adapter_exit" -eq 127 ]; then
       command_status="blocked"
       runner_status="blocked"
@@ -2392,10 +2588,33 @@ case "$agent" in
 	    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
 	    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
     autocommit_output="$(role_autocommit_after_adapter "$adapter_exit" "$autocommit_before_status" 2>&1)"
+    if [ "$adapter_exit" -eq 124 ]; then
+      timeout_cleanup_output="$(role_post_adapter_cleanup_on_timeout "$adapter_exit" 2>&1)"
+      if [ -n "$timeout_cleanup_output" ]; then
+        autocommit_output="${autocommit_output}${autocommit_output:+$'\n'}${timeout_cleanup_output}"
+      fi
+    fi
     if [ "$adapter_exit" -eq 0 ]; then
       wiki_record_inputs_fingerprint
     fi
     ticket_goal_record_adapter_result_for_current_ticket "$adapter_exit" "$ticket_goal_before_fingerprint" || true
+
+    # 직전 state 의 consecutive_timeout_count 를 읽어 갱신.
+    # adapter_exit==124 (timeout) 면 +1, 0 (성공) 이면 0 으로 reset, 그 외는 보존.
+    prev_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    case "${prev_consecutive_timeouts:-0}" in
+      ''|*[!0-9]*) prev_consecutive_timeouts=0 ;;
+    esac
+    if [ "$adapter_exit" -eq 124 ]; then
+      consecutive_timeout_count=$((prev_consecutive_timeouts + 1))
+    elif [ "$adapter_exit" -eq 0 ]; then
+      consecutive_timeout_count=0
+    else
+      consecutive_timeout_count="$prev_consecutive_timeouts"
+    fi
+    adapter_timeout_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+    adapter_kill_after_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
+    adapter_timeout_fallback_threshold="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_FALLBACK_THRESHOLD" 3)"
 
     runner_write_state "$runner_id" \
       "status=${runner_status}" \
@@ -2418,17 +2637,50 @@ case "$agent" in
       "pid=$([ "$runner_status" = "stopped" ] && printf '' || runner_state_pid_for_finish)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \
-      "last_result=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || printf 'adapter_exit_%s' "$adapter_exit")" \
+      "last_result=$(
+        if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 124 ]; then
+          if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
+            printf 'adapter_timeout_fallback';
+          else
+            printf 'adapter_timeout';
+          fi
+        else printf 'adapter_exit_%s' "$adapter_exit"; fi
+      )" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
-      "last_stderr_log=${stderr_log_path}"
+      "last_stderr_log=${stderr_log_path}" \
+      "consecutive_timeout_count=${consecutive_timeout_count}"
     runner_append_log "$runner_id" "adapter_finish" \
       "role=${public_role}" \
       "agent=${agent}" \
       "exit_code=${adapter_exit}" \
       "runner_status=${runner_status}" \
-      "reason=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || true)" \
+      "reason=$(
+        if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
+        else true; fi
+      )" \
+      "consecutive_timeout_count=${consecutive_timeout_count}" \
       "command=${command_summary}"
+    if [ "$adapter_exit" -eq 124 ]; then
+      runner_append_log "$runner_id" "adapter_timeout" \
+        "role=${public_role}" \
+        "agent=${agent}" \
+        "timeout_seconds=${adapter_timeout_seconds_for_log}" \
+        "kill_after_seconds=${adapter_kill_after_seconds_for_log}" \
+        "consecutive_count=${consecutive_timeout_count}" \
+        "command=${command_summary}"
+      if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
+        runner_append_log "$runner_id" "adapter_timeout_fallback" \
+          "role=${public_role}" \
+          "agent=${agent}" \
+          "consecutive_count=${consecutive_timeout_count}" \
+          "threshold=${adapter_timeout_fallback_threshold}" \
+          "fallback_action=needs_user_marker" \
+          "command=${command_summary}"
+      fi
+    fi
 
     print_run_header "$command_status"
     printf 'runner_status=%s\n' "$runner_status"
@@ -2440,6 +2692,12 @@ case "$agent" in
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$adapter_exit" -eq 124 ]; then
+      printf 'reason=adapter_timeout\n'
+      printf 'consecutive_timeout_count=%s\n' "${consecutive_timeout_count:-0}"
+      if [ "${consecutive_timeout_count:-0}" -ge "${adapter_timeout_fallback_threshold:-3}" ]; then
+        printf 'fallback=needs_user (consecutive_timeouts>=%s)\n' "${adapter_timeout_fallback_threshold:-3}"
+      fi
     elif [ "$runner_status" = "stopped" ]; then
       printf 'reason=quota_limited\n'
     fi
@@ -2450,8 +2708,13 @@ case "$agent" in
     fi
     emit_file_block "adapter_stdout" "$adapter_stdout"
     emit_file_block "adapter_stderr" "$adapter_stderr"
-    rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
-    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
+    # AI 의 최종 메시지(narrative_text) 만 사용자 view 에 surface 한다.
+    # renderer 는 adapter_stdout content 를 drop 하고 narrative_text content 를 keep.
+    if [ -n "${adapter_last_message:-}" ] && [ -f "$adapter_last_message" ] && [ -s "$adapter_last_message" ]; then
+      emit_file_block "narrative_text" "$adapter_last_message"
+    fi
+    rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
+    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 124 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
     fi
     exit 0
