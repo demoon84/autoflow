@@ -2389,65 +2389,13 @@ pre {
 
 .ai-progress-board {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: minmax(220px, 1fr);
   gap: 12px;
   min-width: 0;
   min-height: 0;
   flex: 1 1 0;
   overflow: visible;
-}
-
-.ai-progress-board[data-runner-count="3"] {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: minmax(220px, 1fr);
-  grid-template-areas:
-    "plan impl wiki";
-}
-
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="planner"],
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="plan"] {
-  grid-area: plan;
-}
-
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="ticket-owner"],
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="owner"],
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="ticket"] {
-  grid-area: impl;
-}
-
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="wiki-maintainer"],
-.ai-progress-board[data-runner-count="3"] .ai-progress-row[data-runner-role="wiki"] {
-  grid-area: wiki;
-}
-
-.ai-progress-board[data-runner-count="4"] {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(220px, 1fr));
-  grid-template-areas:
-    "plan impl"
-    "veri wiki";
-}
-
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="planner"],
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="plan"] {
-  grid-area: plan;
-}
-
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="ticket-owner"],
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="owner"],
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="ticket"] {
-  grid-area: impl;
-}
-
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="verifier"],
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="veri"] {
-  grid-area: veri;
-}
-
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="wiki-maintainer"],
-.ai-progress-board[data-runner-count="4"] .ai-progress-row[data-runner-role="wiki"] {
-  grid-area: wiki;
 }
 
 .ai-progress-row {
@@ -3424,6 +3372,7 @@ pre {
 .ai-progress-current .ai-progress-active-ticket-button {
   display: inline-flex;
   margin: 0 0 0 auto;
+  max-width: 100%;
   min-height: 0;
   height: auto;
   padding: 0;
@@ -3980,6 +3929,47 @@ pre {
 @media (max-width: 1160px) {
   .af-dialog-root {
     --af-dialog-left-offset: 200px;
+  }
+}
+
+@media (max-width: 1279px) {
+  .ai-progress-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-progress-row-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ai-progress-actions {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .ai-progress-config,
+  .ai-progress-config-with-agent {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .ai-progress-config .runner-save-button {
+    grid-column: 1 / -1;
+  }
+
+  .ai-progress-current {
+    min-width: 0;
+  }
+
+  .ai-progress-current .ai-progress-active-ticket-button {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .ai-progress-current .ai-progress-active-ticket {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -5951,26 +5941,7 @@ pre {
   }
 
   .ai-progress-board {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ai-progress-board[data-runner-count="3"] {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-template-areas:
-      "plan"
-      "impl"
-      "wiki";
-  }
-
-  .ai-progress-board[data-runner-count="4"] {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-template-areas:
-      "plan"
-      "impl"
-      "veri"
-      "wiki";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ai-progress-row-worker {
@@ -6005,6 +5976,30 @@ pre {
 
   .settings-content .runner-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .ai-progress-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-progress-row-top,
+  .ai-progress-row-no-track .ai-progress-row-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-progress-actions {
+    justify-content: flex-start;
+  }
+
+  .ai-progress-config,
+  .ai-progress-config-with-agent {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .ai-progress-config .runner-save-button {
+    grid-column: auto;
   }
 }
 
