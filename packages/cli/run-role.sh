@@ -512,7 +512,7 @@ run_role_record_worker_tick_telemetry() {
   start_epoch="$(telemetry_timestamp_to_epoch "$started_at" || true)"
   end_epoch="$(telemetry_timestamp_to_epoch "$ended_at" || true)"
   if [ -n "$start_epoch" ] && [ -n "$end_epoch" ] && [ "$end_epoch" -ge "$start_epoch" ]; then
-    duration_ms=$((end_epoch - start_epoch))
+    duration_ms=$(((end_epoch - start_epoch) * 1000))
   else
     duration_ms=0
   fi
