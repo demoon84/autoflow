@@ -5,6 +5,10 @@ set -euo pipefail
 source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 source "$(runtime_scripts_root)/runner-common.sh"
 
+# Token metrics now come from `.autoflow/telemetry/runs.jsonl`, and commit/code
+# volume metrics avoid per-ticket git log/show scans so desktop readBoard calls
+# do not block on raw runner log or done-ticket history traversal.
+
 usage() {
   cat <<'EOF' >&2
 Usage:
@@ -275,7 +279,8 @@ EOF
 }
 
 count_autoflow_commit_metrics() {
-  local git_root done_ticket commit_hash numstat_line added removed file_path board_root_relative seen_hashes
+  local git_root done_ticket_paths commit_hashes commit_hash added removed file_path board_root_relative
+  local numstat_stream in_commit
 
   autoflow_commit_count=0
   autoflow_code_files_changed_count=0
@@ -288,184 +293,79 @@ count_autoflow_commit_metrics() {
   [ -d "${board_root}/tickets/done" ] || return 0
 
   board_root_relative="${board_root#${git_root}/}"
-  seen_hashes=""
+  done_ticket_paths="$(find "${board_root}/tickets/done" -type f -name 'tickets_*.md' -print | sort)"
+  [ -n "$done_ticket_paths" ] || return 0
 
-  while IFS= read -r done_ticket; do
-    [ -n "$done_ticket" ] || continue
+  commit_hashes="$(git -C "$git_root" log --diff-filter=A --format='%H' -- $done_ticket_paths 2>/dev/null | awk 'NF && !seen[$0]++')"
+  [ -n "$commit_hashes" ] || return 0
 
-    commit_hash="$(git -C "$git_root" log --diff-filter=A --format='%H' -- "$done_ticket" 2>/dev/null | head -n 1 || true)"
-    [ -n "$commit_hash" ] || continue
+  autoflow_commit_count="$(printf '%s\n' "$commit_hashes" | awk 'NF { count += 1 } END { print count + 0 }')"
+  numstat_stream="$(git -C "$git_root" show --numstat --format='commit %H' $commit_hashes 2>/dev/null || true)"
 
-    case " ${seen_hashes} " in
-      *" ${commit_hash} "*) continue ;;
+  in_commit=0
+  while IFS=$'\t' read -r added removed file_path; do
+    case "$added" in
+      commit\ *)
+        commit_hash="${added#commit }"
+        case "$commit_hashes" in
+          *"$commit_hash"*) in_commit=1 ;;
+          *) in_commit=0 ;;
+        esac
+        continue
+        ;;
     esac
-    seen_hashes="${seen_hashes} ${commit_hash}"
-    autoflow_commit_count=$((autoflow_commit_count + 1))
+    [ "$in_commit" -eq 1 ] || continue
+    [ -n "$file_path" ] || continue
+    case "$file_path" in
+      "${board_root_relative}"|"${board_root_relative}"/*) continue ;;
+    esac
 
-    while IFS=$'\t' read -r added removed file_path; do
-      [ -n "$file_path" ] || continue
-      case "$file_path" in
-        "${board_root_relative}"|"${board_root_relative}"/*) continue ;;
-      esac
-
-      autoflow_code_files_changed_count=$((autoflow_code_files_changed_count + 1))
-      if [ "$added" != "-" ]; then
-        autoflow_code_insertions_count=$((autoflow_code_insertions_count + added))
-      fi
-      if [ "$removed" != "-" ]; then
-        autoflow_code_deletions_count=$((autoflow_code_deletions_count + removed))
-      fi
-    done < <(git -C "$git_root" show --numstat --format= "$commit_hash" 2>/dev/null || true)
-  done < <(find "${board_root}/tickets/done" -type f -name 'tickets_*.md' | sort)
+    autoflow_code_files_changed_count=$((autoflow_code_files_changed_count + 1))
+    if [ "$added" != "-" ]; then
+      autoflow_code_insertions_count=$((autoflow_code_insertions_count + added))
+    fi
+    if [ "$removed" != "-" ]; then
+      autoflow_code_deletions_count=$((autoflow_code_deletions_count + removed))
+    fi
+  done <<EOF
+$numstat_stream
+EOF
 
   autoflow_code_volume_count=$((autoflow_code_insertions_count + autoflow_code_deletions_count))
 }
 
-token_usage_from_file() {
-  local file="$1"
-
-  awk '
-    function strip_ansi(value) {
-      gsub(/\033\[[0-9;?;]*[A-Za-z]/, "", value)
-      return value
-    }
-
-    function number_from_text(value, cleaned, candidate) {
-      cleaned = strip_ansi(value)
-      gsub(/\r/, "", cleaned)
-      gsub(/,/, "", cleaned)
-      if (match(cleaned, /[0-9]+/)) {
-        candidate = substr(cleaned, RSTART, RLENGTH)
-        return candidate + 0
-      }
-      return -1
-    }
-
-    function number_after_marker(value, marker, lower_value, marker_index, after) {
-      lower_value = tolower(value)
-      marker_index = index(lower_value, marker)
-      if (marker_index == 0) {
-        return -1
-      }
-      after = substr(value, marker_index + length(marker))
-      return number_from_text(after)
-    }
-
-    BEGIN {
-      waiting_for_token_count = 0
-      total = 0
-      reports = 0
-    }
-
-    {
-      clean = strip_ansi($0)
-      gsub(/\r/, "", clean)
-      lower = tolower(clean)
-
-      if (waiting_for_token_count) {
-        value = number_from_text(clean)
-        if (value >= 0) {
-          total += value
-          reports += 1
-          waiting_for_token_count = 0
-          next
-        }
-        if (clean !~ /^[[:space:]]*$/) {
-          waiting_for_token_count = 0
-        }
-      }
-
-      # Plain-text markers must be at line start so ticket markdown fields
-      # (e.g. "- Tokens Used:") and wiki snippet text
-      # (e.g. "result.N.snippet.text=- Tokens Used: ... 335739843")
-      # are not mistaken for adapter token reports. JSON-style markers
-      # (`"total_tokens": NUM`) are matched separately by their quote prefix
-      # so structured stderr usage payloads still count.
-      if (lower ~ /^tokens[[:space:]]+used([[:space:]:=]|$)/) {
-        value = number_after_marker(clean, "tokens used")
-        if (value >= 0) {
-          total += value
-          reports += 1
-        } else {
-          waiting_for_token_count = 1
-        }
-      } else if (lower ~ /^total[[:space:]_-]?tokens([[:space:]:=]|$)/) {
-        value = number_after_marker(clean, "total_tokens")
-        if (value < 0) {
-          value = number_after_marker(clean, "total tokens")
-        }
-        if (value >= 0) {
-          total += value
-          reports += 1
-        }
-      } else if (lower ~ /"total[_-]?tokens"[[:space:]]*:[[:space:]]*[0-9]/) {
-        value = number_after_marker(clean, "\"total_tokens\"")
-        if (value < 0) {
-          value = number_after_marker(clean, "\"total-tokens\"")
-        }
-        if (value >= 0) {
-          total += value
-          reports += 1
-        }
-      }
-    }
-
-    END {
-      printf "%d %d\n", total, reports
-    }
-  ' "$file"
-}
-
 count_autoflow_token_metrics() {
-  local token_file token_result token_count report_count token_cache_file token_cache_next
-  local token_file_size token_file_mtime cached_result
+  local telemetry_runs_file token_result
 
   autoflow_token_usage_count=0
   autoflow_token_report_count=0
 
-  [ -d "${board_root}/runners/logs" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  telemetry_runs_file="$(telemetry_runs_jsonl_path "$project_root")"
+  [ -f "$telemetry_runs_file" ] || return 0
 
-  mkdir -p "$metrics_root"
-  token_cache_file="${metrics_root}/token-cache.tsv"
-  token_cache_next="$(mktemp "${TMPDIR:-/tmp}/autoflow-token-cache.XXXXXX")"
-
-  while IFS= read -r token_file; do
-    [ -n "$token_file" ] || continue
-    token_file_size="$(file_size_bytes "$token_file")"
-    token_file_mtime="$(file_mtime_epoch "$token_file")"
-
-    cached_result=""
-    if [ -f "$token_cache_file" ]; then
-      cached_result="$(
-        awk -F '\t' \
-          -v target_path="$token_file" \
-          -v target_size="$token_file_size" \
-          -v target_mtime="$token_file_mtime" \
-          '$1 == target_path && $2 == target_size && $3 == target_mtime { print $4 " " $5; found = 1; exit } END { if (!found) exit 1 }' \
-          "$token_cache_file" 2>/dev/null || true
-      )"
-    fi
-
-    if [ -n "$cached_result" ]; then
-      token_result="$cached_result"
-    else
-      token_result="$(token_usage_from_file "$token_file" 2>/dev/null || printf '0 0')"
-    fi
-
-    token_count="${token_result%% *}"
-    report_count="${token_result##* }"
-    case "$token_count" in
-      ''|*[!0-9]*) token_count=0 ;;
-    esac
-    case "$report_count" in
-      ''|*[!0-9]*) report_count=0 ;;
-    esac
-    autoflow_token_usage_count=$((autoflow_token_usage_count + token_count))
-    autoflow_token_report_count=$((autoflow_token_report_count + report_count))
-    printf '%s\t%s\t%s\t%s\t%s\n' "$token_file" "$token_file_size" "$token_file_mtime" "$token_count" "$report_count" >> "$token_cache_next"
-  done < <(find "${board_root}/runners/logs" -type f \( -name '*_stdout.log' -o -name '*_stderr.log' \) ! -name '*_live_*' | sort)
-
-  mv "$token_cache_next" "$token_cache_file"
+  token_result="$(
+    jq -rs '
+      reduce .[] as $row (
+        {usage: 0, reports: 0};
+        if ($row | type) == "object" then
+          .usage += (($row.token_input // 0) + ($row.token_output // 0) | tonumber? // 0)
+          | .reports += (if ($row | has("token_input") or has("token_output")) then 1 else 0 end)
+        else
+          .
+        end
+      )
+      | "\(.usage) \(.reports)"
+    ' "$telemetry_runs_file" 2>/dev/null || printf '0 0'
+  )"
+  autoflow_token_usage_count="${token_result%% *}"
+  autoflow_token_report_count="${token_result##* }"
+  case "$autoflow_token_usage_count" in
+    ''|*[!0-9]*) autoflow_token_usage_count=0 ;;
+  esac
+  case "$autoflow_token_report_count" in
+    ''|*[!0-9]*) autoflow_token_report_count=0 ;;
+  esac
 }
 
 write="false"

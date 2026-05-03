@@ -2701,7 +2701,7 @@ case "$agent" in
     fi
 
 	    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
-	    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
+	    stdout_log_path=""
 	    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
     autocommit_output="$(role_autocommit_after_adapter "$adapter_exit" "$autocommit_before_status" 2>&1)"
     if [ "$adapter_exit" -eq 124 ]; then
@@ -2764,7 +2764,6 @@ case "$agent" in
         else printf 'adapter_exit_%s' "$adapter_exit"; fi
       )" \
       "last_prompt_log=${prompt_log_path}" \
-      "last_stdout_log=${stdout_log_path}" \
       "last_stderr_log=${stderr_log_path}" \
       "consecutive_timeout_count=${consecutive_timeout_count}"
     runner_append_log "$runner_id" "adapter_finish" \
