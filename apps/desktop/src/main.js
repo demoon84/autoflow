@@ -1842,7 +1842,7 @@ async function readBoardFile(options = {}) {
   }
 }
 
-async function deleteInboxMemoFile(options = {}) {
+async function deleteInboxOrderFile(options = {}) {
   if (!options.projectRoot) {
     return {
       ok: false,
@@ -1890,14 +1890,14 @@ async function deleteInboxMemoFile(options = {}) {
   }
 
   const normalizedRelativePath = relativePath.replace(/\\/g, "/");
-  const memoName = path.basename(relativePath);
-  if (!normalizedRelativePath.startsWith("tickets/inbox/") || !/^memo_\d+\.md$/i.test(memoName)) {
+  const orderName = path.basename(relativePath);
+  if (!normalizedRelativePath.startsWith("tickets/inbox/") || !/^order_\d+\.md$/i.test(orderName)) {
     return {
       ok: false,
       filePath: targetPath,
-      name: memoName,
+      name: orderName,
       message: "",
-      stderr: "Only tickets/inbox/memo_*.md files can be deleted."
+        stderr: "Only tickets/inbox/order_*.md files can be deleted."
     };
   }
 
@@ -1905,18 +1905,18 @@ async function deleteInboxMemoFile(options = {}) {
     const stat = await fs.stat(targetPath);
     if (!stat.isFile()) {
       return {
-        ok: false,
-        filePath: targetPath,
-        name: memoName,
-        message: "",
-        stderr: "Path is not a file."
-      };
+      ok: false,
+      filePath: targetPath,
+      name: orderName,
+      message: "",
+      stderr: "Path is not a file."
+    };
     }
   } catch (error) {
     return {
       ok: false,
       filePath: targetPath,
-      name: memoName,
+      name: orderName,
       message: "",
       stderr: error.message || "Failed to read target file."
     };
@@ -1927,15 +1927,15 @@ async function deleteInboxMemoFile(options = {}) {
     return {
       ok: true,
       filePath: targetPath,
-      name: memoName,
-      message: `${memoName} 삭제 완료.`,
+      name: orderName,
+      message: `${orderName} 삭제 완료.`,
       stderr: ""
     };
   } catch (error) {
     return {
       ok: false,
       filePath: targetPath,
-      name: memoName,
+      name: orderName,
       message: "",
       stderr: error.message || "Failed to delete target file."
     };
@@ -2500,16 +2500,21 @@ function withTimeout(handler, ms) {
   if (!Number.isFinite(ms) || ms <= 0) {
     return handler;
   }
-  return (...args) =>
-    Promise.race([
+  return (...args) => {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`autoflow IPC handler timed out after ${ms}ms`)),
+        ms
+      );
+    });
+    return Promise.race([
       Promise.resolve().then(() => handler(...args)),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`autoflow IPC handler timed out after ${ms}ms`)),
-          ms
-        )
-      )
-    ]);
+      timeoutPromise
+    ]).finally(() => {
+      clearTimeout(timer);
+    });
+  };
 }
 
 function isSafeBoardDirName(value) {
@@ -2748,7 +2753,7 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
-  ipcMain.handle("autoflow:deleteInboxMemoFile", withScopeMemory(deleteInboxMemoFile));
+  ipcMain.handle("autoflow:deleteInboxOrderFile", withScopeMemory(deleteInboxOrderFile));
   ipcMain.handle(
     "autoflow:projectExists",
     withTimeout(async (_event, projectRoot) => {
