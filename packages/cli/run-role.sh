@@ -496,13 +496,174 @@ ticket_goal_record_adapter_result_for_current_ticket() {
   ticket_goal_common_call ticket_goal_record_adapter_result "$ticket_file" "$adapter_exit" "$before_fingerprint" "$runner_id"
 }
 
+telemetry_file_size_bytes() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    wc -c < "$file" 2>/dev/null | tr -d '[:space:]' || printf '0'
+  else
+    printf '0'
+  fi
+}
+
+telemetry_estimated_tokens_for_file() {
+  local file="$1"
+  local byte_count
+
+  byte_count="$(telemetry_file_size_bytes "$file")"
+  case "$byte_count" in
+    ''|*[!0-9]*) byte_count=0 ;;
+  esac
+  if [ "$byte_count" -le 0 ]; then
+    printf '0'
+    return 0
+  fi
+  printf '%s' $(((byte_count + 3) / 4))
+}
+
+telemetry_positive_integer_or_zero() {
+  local value="$1"
+
+  case "$value" in
+    ''|*[!0-9]*) printf '0' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+telemetry_extract_token_components_from_logs() {
+  awk '
+    function first_number(value) {
+      gsub(/,/, "", value)
+      if (match(value, /[0-9]+/)) {
+        return substr(value, RSTART, RLENGTH) + 0
+      }
+      return 0
+    }
+
+    function add_token_key_value(key, value, lower_key) {
+      lower_key = tolower(key)
+      if (value <= 0) {
+        return
+      }
+      if (lower_key ~ /total/) {
+        total += value
+      } else if (lower_key ~ /(prompt|input|cache|cached)/) {
+        input += value
+      } else if (lower_key ~ /(completion|output|candidate|reasoning)/) {
+        output += value
+      }
+    }
+
+    function scan_json_token_keys(value, fragment, key, number_text) {
+      while (match(value, /"[^"]*(token|Token)[^"]*"[[:space:]]*:[[:space:]]*[0-9][0-9,]*/)) {
+        fragment = substr(value, RSTART, RLENGTH)
+        key = fragment
+        sub(/^"/, "", key)
+        sub(/".*/, "", key)
+        number_text = fragment
+        sub(/^.*:[[:space:]]*/, "", number_text)
+        gsub(/,/, "", number_text)
+        add_token_key_value(key, number_text + 0)
+        value = substr(value, RSTART + RLENGTH)
+      }
+    }
+
+    {
+      line = $0
+      gsub(/\r$/, "", line)
+      gsub(/\033\[[0-9;?]*[A-Za-z]/, "", line)
+      lower = tolower(line)
+      scan_json_token_keys(line)
+
+      if (lower ~ /^[[:space:]]*tokens[[:space:]]+used[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        total += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(total[_ -]?tokens|totaltokens)[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        total += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(input|prompt|cache|cached)[_ -]?tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        input += value
+        next
+      }
+      if (lower ~ /^[[:space:]]*(input|prompt|cache|cached)tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        input += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(output|completion|reasoning)[_ -]?tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        output += value
+        next
+      }
+      if (lower ~ /^[[:space:]]*(output|completion|reasoning)tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        output += value
+        next
+      }
+    }
+
+    END {
+      printf "%d %d %d\n", input, output, total
+    }
+  ' "$@" 2>/dev/null || printf '0 0 0\n'
+}
+
+telemetry_adapter_token_usage() {
+  local prompt_file="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  local adapter_exit="$4"
+  local parsed token_input token_output token_total estimated_input estimated_output
+
+  parsed="$(telemetry_extract_token_components_from_logs "$stdout_file" "$stderr_file")"
+  token_input="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $1}')")"
+  token_output="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $2}')")"
+  token_total="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $3}')")"
+
+  if [ "$token_total" -gt 0 ] && [ $((token_input + token_output)) -le 0 ]; then
+    estimated_output="$(telemetry_estimated_tokens_for_file "$stdout_file")"
+    if [ "$estimated_output" -gt 0 ] && [ "$token_total" -gt 1 ]; then
+      if [ "$estimated_output" -ge "$token_total" ]; then
+        token_output=1
+      else
+        token_output="$estimated_output"
+      fi
+      token_input=$((token_total - token_output))
+    else
+      token_input="$token_total"
+      token_output=0
+    fi
+  fi
+
+  if [ "$adapter_exit" -ne 127 ] && [ $((token_input + token_output)) -le 0 ]; then
+    estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
+    estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
+    [ "$estimated_input" -gt 0 ] || estimated_input=1
+    [ "$estimated_output" -gt 0 ] || estimated_output=1
+    token_input="$estimated_input"
+    token_output="$estimated_output"
+  fi
+
+  printf '%s %s\n' "$token_input" "$token_output"
+}
+
 run_role_record_worker_tick_telemetry() {
   local started_at="$1"
   local ended_at="$2"
   local adapter_exit="$3"
-  local adapter_stderr_path="$4"
+  local adapter_stdout_path="$4"
+  local adapter_stderr_path="$5"
+  local prompt_path="$6"
   local telemetry_script telemetry_result telemetry_failure_class
   local start_epoch end_epoch duration_ms
+  local token_pair token_input token_output stdout_bytes stderr_bytes ticket_ref
 
   telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
   [ -x "$telemetry_script" ] || return 0
@@ -538,6 +699,13 @@ run_role_record_worker_tick_telemetry() {
     telemetry_failure_class="unknown_failure"
   fi
 
+  token_pair="$(telemetry_adapter_token_usage "$prompt_path" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_exit")"
+  token_input="$(telemetry_positive_integer_or_zero "$(printf '%s' "$token_pair" | awk '{print $1}')")"
+  token_output="$(telemetry_positive_integer_or_zero "$(printf '%s' "$token_pair" | awk '{print $2}')")"
+  stdout_bytes="$(telemetry_positive_integer_or_zero "$(telemetry_file_size_bytes "$adapter_stdout_path")")"
+  stderr_bytes="$(telemetry_positive_integer_or_zero "$(telemetry_file_size_bytes "$adapter_stderr_path")")"
+  ticket_ref="$(runner_adapter_state_value "active_ticket_id")"
+
   if [ "$telemetry_result" != "success" ]; then
     "$telemetry_script" record \
       --project-root "$project_root" \
@@ -546,6 +714,13 @@ run_role_record_worker_tick_telemetry() {
       --started-at "$started_at" \
       --ended-at "$ended_at" \
       --duration-ms "$duration_ms" \
+      --token-input "$token_input" \
+      --token-output "$token_output" \
+      --ticket-id "$ticket_ref" \
+      --prd-key "$(runner_adapter_state_value "active_spec_ref")" \
+      --model "$model" \
+      --stdout-bytes "$stdout_bytes" \
+      --stderr-bytes "$stderr_bytes" \
       --failure-class "$telemetry_failure_class" \
       >/dev/null 2>&1 || true
     return 0
@@ -558,6 +733,13 @@ run_role_record_worker_tick_telemetry() {
     --started-at "$started_at" \
     --ended-at "$ended_at" \
     --duration-ms "$duration_ms" \
+    --token-input "$token_input" \
+    --token-output "$token_output" \
+    --ticket-id "$ticket_ref" \
+    --prd-key "$(runner_adapter_state_value "active_spec_ref")" \
+    --model "$model" \
+    --stdout-bytes "$stdout_bytes" \
+    --stderr-bytes "$stderr_bytes" \
     >/dev/null 2>&1 || true
 }
 
@@ -2754,7 +2936,7 @@ case "$agent" in
     set -e
 
     finished_at="$(runner_now_iso)"
-    run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stderr" || true
+    run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stdout" "$adapter_stderr" "$prompt_file" || true
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"

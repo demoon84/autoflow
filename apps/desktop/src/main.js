@@ -1640,7 +1640,7 @@ async function aggregateLiveTokenUsage(logsDir) {
 }
 
 async function readRunnerTokenUsage(boardRoot) {
-  const totals = new Map();
+  const cacheTotals = new Map();
   const cachePath = path.join(boardRoot, "metrics", "token-cache.tsv");
 
   let raw;
@@ -1658,7 +1658,39 @@ async function readRunnerTokenUsage(boardRoot) {
     if (!Number.isFinite(tokenCount) || tokenCount <= 0) continue;
     const match = path.basename(parts[0]).match(runnerLogNamePattern);
     if (!match) continue;
-    totals.set(match[1], (totals.get(match[1]) || 0) + tokenCount);
+    cacheTotals.set(match[1], (cacheTotals.get(match[1]) || 0) + tokenCount);
+  }
+
+  const telemetryTotals = new Map();
+  const telemetryPath = path.join(boardRoot, "telemetry", "runs.jsonl");
+  let telemetryRaw;
+  try {
+    telemetryRaw = await fs.readFile(telemetryPath, "utf8");
+  } catch {
+    telemetryRaw = "";
+  }
+
+  for (const line of telemetryRaw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!row || typeof row !== "object") continue;
+    const runnerId = typeof row.runner_id === "string" ? row.runner_id : "";
+    if (!runnerId) continue;
+    const tokenCount = positiveIntegerValue(row.token_input) + positiveIntegerValue(row.token_output);
+    if (tokenCount <= 0) continue;
+    telemetryTotals.set(runnerId, (telemetryTotals.get(runnerId) || 0) + tokenCount);
+  }
+
+  const totals = new Map(telemetryTotals);
+  for (const [runnerId, count] of cacheTotals) {
+    if (!totals.has(runnerId)) {
+      totals.set(runnerId, count);
+    }
   }
 
   const liveTotals = await aggregateLiveTokenUsage(path.join(boardRoot, "runners", "logs"));
