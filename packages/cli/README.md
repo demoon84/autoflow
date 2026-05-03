@@ -208,6 +208,7 @@
   - 기본 `ticket` 실행은 Ticket Owner prompt 를 생성하고, runner 가 `start-ticket-owner` 런타임을 써서 한 티켓을 끝까지 소유하게 한다.
   - `shell` / `manual` runner 로 기존 board runtime (`start-plan`, `start-todo`, `start-verifier`) 또는 `wiki-project.sh update` 를 one-shot 으로 호출하고 runner state/log 를 남긴다.
   - `codex`, `claude`, `opencode`, `gemini` runner 는 role prompt 를 생성해 local CLI adapter 를 호출한다. `--dry-run` 은 prompt 와 command 만 출력한다.
+  - loop mode idle preflight 는 planner/ticket/verifier/wiki 입력 fingerprint 를 기록한다. 동일 입력이면 adapter 호출 전 종료하고 runner state/log 에 각각 `planner_inputs_unchanged`, `ticket_inputs_unchanged`, `verifier_inputs_unchanged`, `wiki_inputs_unchanged` 를 남긴다.
   - planner/worker/verifier adapter prompt 는 role별 byte cap 을 먼저 적용한다: `AUTOFLOW_PLANNER_PROMPT_BYTES` 기본 `65536`, `AUTOFLOW_WORKER_PROMPT_BYTES` 기본 `98304`, `AUTOFLOW_VERIFIER_PROMPT_BYTES` 기본 `32768`. cap 초과 시 prompt head 60% + tail 40% 를 남기고 `[... N bytes elided to save tokens ...]` marker 를 삽입한 뒤 호출을 계속 진행한다.
   - cap 이 실제로 발동하면 `.autoflow/runners/logs/*.log` 에 `event=prompt_cap_applied ... prompt_bytes_capped=NNN` 한 줄이 남는다. 기존 telemetry/token 기록 경로는 그대로 유지한다.
   - adapter final message/stdout 에는 role별 output cap 도 적용된다: `AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS` 기본 `8000`, `AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS` 기본 `16000`, `AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS` 기본 `4000`, `AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS` 기본 `2000`.
