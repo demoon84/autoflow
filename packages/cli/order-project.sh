@@ -7,7 +7,7 @@ source "$(cd "$(dirname "$0")" && pwd)/cli-common.sh"
 usage() {
   cat <<'USAGE_EOF' >&2
 Usage:
-  order-project.sh create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
+  order-project.sh create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--priority critical|high|normal|low] [--scope text] [--allowed-path path]... [--verification command] [--force]
 
 Examples:
   echo "Increase body font size by 2px" | order-project.sh create /path/to/project --title "Increase body font"
@@ -56,6 +56,18 @@ first_nonempty_line() {
   awk 'NF { print; exit }'
 }
 
+normalize_priority() {
+  case "$1" in
+    critical|high|normal|low)
+      printf '%s\n' "$1"
+      ;;
+    *)
+      echo "Invalid priority: $1 (expected critical, high, normal, or low)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 action="${1:-}"
 if [ -z "$action" ]; then
   usage
@@ -81,6 +93,7 @@ order_id=""
 title=""
 request_text=""
 from_file=""
+priority="normal"
 scope=""
 verification_command=""
 force="false"
@@ -120,6 +133,15 @@ while [ "$#" -gt 0 ]; do
       ;;
     --from-file=*)
       from_file="${1#--from-file=}"
+      ;;
+    --priority)
+      shift || true
+      priority="${1:-}"
+      [ -n "$priority" ] || { echo "--priority requires a value" >&2; exit 1; }
+      priority="$(normalize_priority "$priority")"
+      ;;
+    --priority=*)
+      priority="$(normalize_priority "${1#--priority=}")"
       ;;
     --scope)
       shift || true
@@ -162,6 +184,7 @@ done
 
 project_root_input="${positionals[0]:-.}"
 board_dir_name="${positionals[1]:-$(default_board_dir_name)}"
+priority="$(normalize_priority "$priority")"
 project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
 
@@ -221,6 +244,7 @@ tmp="$(autoflow_mktemp)"
   printf -- '- ID: order_%s\n' "$order_id"
   printf -- '- Title: %s\n' "$title"
   printf -- '- Status: inbox\n'
+  printf -- '- Priority: %s\n' "$priority"
   printf -- '- Created At: %s\n' "$timestamp"
   printf -- '- Source: autoflow order create\n\n'
   printf '## Request\n\n'
