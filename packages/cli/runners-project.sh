@@ -845,6 +845,8 @@ start_runner() {
       "pid=${loop_pid}" \
       "started_at=${timestamp}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=" \
       "last_result=loop_started"
     runner_append_log "$target_runner_id" "loop_start" \
       "status=running" \
@@ -883,7 +885,9 @@ start_runner() {
     "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=" \
+    "last_stop_reason="
   runner_append_log "$target_runner_id" "start" \
     "status=running" \
     "role=${role}" \
@@ -927,7 +931,10 @@ stop_runner() {
     "active_spec_ref=" \
     "pid=" \
     "started_at=${started_at}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=user" \
+    "last_stop_reason=user_requested" \
+    "last_result=user_stopped"
   runner_append_log "$target_runner_id" "stop" \
     "status=stopped" \
     "previous_status=${previous_status:-unknown}" \
@@ -979,7 +986,9 @@ restart_runner() {
     "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=" \
+    "last_stop_reason="
   runner_append_log "$target_runner_id" "start" \
     "status=running" \
     "role=${role}" \
@@ -991,7 +1000,7 @@ restart_runner() {
 
 loop_runner_worker() {
   local target_runner_id="$1"
-  local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result
+  local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result existing_stopped_by stop_reason
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -1018,6 +1027,13 @@ loop_runner_worker() {
       kill "$child_pid" 2>/dev/null || true
     fi
     timestamp="$(runner_now_iso)"
+    existing_stopped_by="$(runner_state_value_or_empty "$target_runner_id" "stopped_by")"
+    if [ "$existing_stopped_by" = "user" ]; then
+      stop_reason="user_requested"
+    else
+      existing_stopped_by=""
+      stop_reason="parent_terminated"
+    fi
     runner_write_state "$target_runner_id" \
       "status=stopped" \
       "role=${role}" \
@@ -1034,6 +1050,8 @@ loop_runner_worker() {
       "pid=" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=${existing_stopped_by}" \
+      "last_stop_reason=${stop_reason}" \
       "last_result=loop_stopped"
     runner_append_log "$target_runner_id" "loop_stop" \
       "status=stopped" \
@@ -1065,6 +1083,8 @@ loop_runner_worker() {
       "pid=" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=unexpected_exit" \
       "last_result=loop_exited_unexpectedly"
     runner_append_log "$target_runner_id" "loop_exit" \
       "status=stopped" \
@@ -1100,6 +1120,8 @@ loop_runner_worker() {
     "pid=${loop_pid}" \
     "started_at=${started_at}" \
     "last_event_at=${started_at}" \
+    "stopped_by=" \
+    "last_stop_reason=" \
     "last_result=loop_running"
   runner_append_log "$target_runner_id" "loop_worker_start" \
     "status=running" \
@@ -1174,6 +1196,8 @@ loop_runner_worker() {
       "pid=${loop_pid}" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=" \
       "last_result=${last_result}"
     runner_append_log "$target_runner_id" "loop_tick" \
       "role=${role}" \

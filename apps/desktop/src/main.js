@@ -378,8 +378,12 @@ function rememberProjectScope(options) {
   }
   const boardDirName = options.boardDirName || defaultBoardDirName;
   const key = `${options.projectRoot}\0${boardDirName}`;
+  const scope = { projectRoot: options.projectRoot, boardDirName };
   if (!knownProjectScopes.has(key)) {
-    knownProjectScopes.set(key, { projectRoot: options.projectRoot, boardDirName });
+    knownProjectScopes.set(key, scope);
+  }
+  if (!runnerShutdownInProgress) {
+    void selfHealStoppedRunnersForScope(scope);
   }
 }
 
@@ -2894,6 +2898,42 @@ function serializeRunnerState(values) {
     .join("\n") + "\n";
 }
 
+async function readRunnerStateValues(filePath) {
+  try {
+    return parseRunnerStateFile(await fs.readFile(filePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function shouldSelfHealStoppedRunner(runner, stateValues) {
+  return (
+    runner &&
+    runner.id &&
+    runner.enabled === "true" &&
+    runner.stateStatus === "stopped" &&
+    stateValues.stopped_by !== "user"
+  );
+}
+
+async function selfHealStoppedRunnersForScope(scope) {
+  const result = await listRunners(scope);
+  if (!result.ok) return;
+
+  await Promise.all(
+    result.runners.map(async (runner) => {
+      const stateValues = await readRunnerStateValues(runner.statePath);
+      if (!shouldSelfHealStoppedRunner(runner, stateValues)) return;
+      await controlRunner({
+        projectRoot: scope.projectRoot,
+        boardDirName: scope.boardDirName,
+        action: "start",
+        runnerId: runner.id
+      });
+    })
+  );
+}
+
 async function shutdownRunnersForScope(scope) {
   const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
   let entries;
@@ -2926,6 +2966,9 @@ async function shutdownRunnersForScope(scope) {
 
         values.status = "stopped";
         values.pid = "";
+        values.stopped_by = "";
+        values.last_stop_reason = "parent_terminated";
+        values.last_result = "loop_stopped";
         values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
         try {
           await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
@@ -2996,6 +3039,9 @@ async function forceKillSurvivingRunners() {
 
       values.status = "stopped";
       values.pid = "";
+      values.stopped_by = "";
+      values.last_stop_reason = "parent_terminated";
+      values.last_result = "loop_stopped";
       values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
       try {
         await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
