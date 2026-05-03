@@ -178,6 +178,129 @@ runner_active_state_value() {
   runner_state_value "$1"
 }
 
+run_role_count_markdown_files() {
+  local dir="$1"
+  local count
+
+  if [ ! -d "$dir" ]; then
+    printf '0'
+    return 0
+  fi
+
+  count="$(find "$dir" -type f -name '*.md' 2>/dev/null | wc -l | tr -d '[:space:]')"
+  case "$count" in
+    ''|*[!0-9]*) count=0 ;;
+  esac
+  printf '%s' "$count"
+}
+
+runner_agent_supports_reasoning() {
+  case "$agent" in
+    codex|opencode)
+      return 0
+      ;;
+    claude)
+      runner_claude_supports_effort
+      return $?
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_effective_reasoning_for_current_tick() {
+  local dynamic_flag
+  local planner_actionable_count ticket_actionable_count reject_count
+
+  configured_reasoning="$reasoning"
+  effective_reasoning="$configured_reasoning"
+  reasoning_complexity="configured"
+  reasoning_source="configured"
+  reasoning_supported="false"
+  reasoning_dynamic_enabled="false"
+  reasoning_actionable_count="0"
+  reasoning_reject_count="0"
+
+  if runner_agent_supports_reasoning; then
+    reasoning_supported="true"
+  fi
+
+  dynamic_flag="${AUTOFLOW_REASONING_DYNAMIC_ENABLED:-0}"
+  case "$dynamic_flag" in
+    1|true|yes|on|TRUE|YES|ON)
+      reasoning_dynamic_enabled="true"
+      ;;
+  esac
+
+  case "$public_role" in
+    planner)
+      planner_actionable_count=$(
+        run_role_count_markdown_files "${board_root}/tickets/inbox"
+      )
+      planner_actionable_count=$((planner_actionable_count + $(run_role_count_markdown_files "$(spec_root_path "$board_root")")))
+      reject_count="$(run_role_count_markdown_files "${board_root}/tickets/reject")"
+      planner_actionable_count=$((planner_actionable_count + reject_count))
+      reasoning_actionable_count="$planner_actionable_count"
+      reasoning_reject_count="$reject_count"
+      ;;
+    ticket)
+      if [ -n "${adapter_active_ticket_id:-}" ] || [ -n "${adapter_active_ticket_file:-}" ]; then
+        reasoning_actionable_count="1"
+      else
+        ticket_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/todo")"
+        reasoning_actionable_count="$ticket_actionable_count"
+      fi
+      ;;
+    verifier)
+      reasoning_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/verifier")"
+      ;;
+  esac
+
+  if [ "$reasoning_dynamic_enabled" != "true" ] || [ "$reasoning_supported" != "true" ]; then
+    if [ "$reasoning_dynamic_enabled" = "true" ] && [ "$reasoning_supported" != "true" ]; then
+      reasoning_source="configured_unsupported_agent"
+    fi
+    return 0
+  fi
+
+  if [ -n "${adapter_active_recovery_reason:-}" ] ||
+     { [ -n "${adapter_active_recovery_status:-}" ] && [ "${adapter_active_recovery_status}" != "healthy" ]; } ||
+     [ -n "${adapter_active_recovery_failure_class:-}" ]; then
+    effective_reasoning="high"
+    reasoning_complexity="complex"
+    reasoning_source="dynamic_recovery"
+    return 0
+  fi
+
+  case "${adapter_active_ticket_file:-}" in
+    *"/tickets/reject/"*|tickets/reject/*)
+      effective_reasoning="high"
+      reasoning_complexity="complex"
+      reasoning_source="dynamic_reject"
+      return 0
+      ;;
+  esac
+
+  if [ "${reasoning_reject_count:-0}" -gt 0 ]; then
+    effective_reasoning="high"
+    reasoning_complexity="complex"
+    reasoning_source="dynamic_reject_queue"
+  elif [ "${reasoning_actionable_count:-0}" -gt 1 ]; then
+    effective_reasoning="high"
+    reasoning_complexity="complex"
+    reasoning_source="dynamic_multi_actionable"
+  elif [ "${reasoning_actionable_count:-0}" -eq 1 ]; then
+    effective_reasoning="medium"
+    reasoning_complexity="normal"
+    reasoning_source="dynamic_single_actionable"
+  else
+    effective_reasoning="low"
+    reasoning_complexity="simple"
+    reasoning_source="dynamic_idle"
+  fi
+}
+
 role_autocommit_scope_paths() {
   case "$public_role" in
     planner)
@@ -3392,6 +3515,14 @@ configured_role="$(runner_field "role")"
 agent="$(runner_field "agent")"
 model="$(runner_field "model")"
 reasoning="$(runner_field "reasoning")"
+configured_reasoning="$reasoning"
+effective_reasoning="$reasoning"
+reasoning_complexity="configured"
+reasoning_source="configured"
+reasoning_supported="false"
+reasoning_dynamic_enabled="false"
+reasoning_actionable_count="0"
+reasoning_reject_count="0"
 mode="$(runner_field "mode")"
 enabled="$(runner_field "enabled")"
 command_value="$(runner_field "command")"
@@ -3509,6 +3640,8 @@ case "$agent" in
     prompt_cap_capped_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
     prompt_cap_byte_cap="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
     runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
+    resolve_effective_reasoning_for_current_tick
+    reasoning="$effective_reasoning"
 
     # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
     # consecutive_timeout_count 같은 누적 필드는 보존해야 하므로 미리 읽어서 다시 함께 써준다.
@@ -3524,6 +3657,9 @@ case "$agent" in
       "mode=${mode}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      "configured_reasoning=${configured_reasoning}" \
+      "reasoning_source=${reasoning_source}" \
+      "reasoning_complexity=${reasoning_complexity}" \
       "active_item=$(runner_adapter_state_value "active_item")" \
       "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
       "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
@@ -3546,7 +3682,13 @@ case "$agent" in
       "role=${public_role}" \
       "runtime_role=${runtime_role}" \
       "agent=${agent}" \
-      "mode=${mode}"
+      "mode=${mode}" \
+      "configured_reasoning=${configured_reasoning}" \
+      "effective_reasoning=${reasoning}" \
+      "reasoning_source=${reasoning_source}" \
+      "reasoning_complexity=${reasoning_complexity}" \
+      "reasoning_actionable_count=${reasoning_actionable_count}" \
+      "reasoning_reject_count=${reasoning_reject_count}"
     if [ "$prompt_cap_applied" = "true" ]; then
       runner_append_log "$runner_id" "prompt_cap_applied" \
         "role=${public_role}" \
@@ -3610,6 +3752,9 @@ case "$agent" in
         "mode=${mode}" \
         "model=${model}" \
         "reasoning=${reasoning}" \
+        "configured_reasoning=${configured_reasoning}" \
+        "reasoning_source=${reasoning_source}" \
+        "reasoning_complexity=${reasoning_complexity}" \
         "active_item=$(runner_adapter_state_value "active_item")" \
         "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
         "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
@@ -3629,11 +3774,23 @@ case "$agent" in
       runner_append_log "$runner_id" "adapter_dry_run" \
         "role=${public_role}" \
         "agent=${agent}" \
-        "command=${command_summary}"
+        "command=${command_summary}" \
+        "configured_reasoning=${configured_reasoning}" \
+        "effective_reasoning=${reasoning}" \
+        "reasoning_source=${reasoning_source}" \
+        "reasoning_complexity=${reasoning_complexity}" \
+        "reasoning_actionable_count=${reasoning_actionable_count}" \
+        "reasoning_reject_count=${reasoning_reject_count}"
 
       print_run_header "dry_run"
       printf 'runner_status=idle\n'
       printf 'adapter=%s\n' "$agent"
+      printf 'configured_reasoning=%s\n' "$configured_reasoning"
+      printf 'effective_reasoning=%s\n' "$reasoning"
+      printf 'reasoning_source=%s\n' "$reasoning_source"
+      printf 'reasoning_complexity=%s\n' "$reasoning_complexity"
+      printf 'reasoning_actionable_count=%s\n' "$reasoning_actionable_count"
+      printf 'reasoning_reject_count=%s\n' "$reasoning_reject_count"
       printf 'adapter_command=%s\n' "$command_summary"
       printf 'prompt_file=%s\n' "$prompt_file"
       printf 'prompt_log_path=%s\n' "$prompt_log_path"
@@ -3740,6 +3897,9 @@ case "$agent" in
       "mode=${mode}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      "configured_reasoning=${configured_reasoning}" \
+      "reasoning_source=${reasoning_source}" \
+      "reasoning_complexity=${reasoning_complexity}" \
       "active_item=$(runner_adapter_state_value "active_item")" \
       "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
       "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
@@ -3777,6 +3937,12 @@ case "$agent" in
       "output_cap_env=$(role_output_token_cap_env_name)" \
       "output_cap_target=${output_cap_target}" \
       "output_token_cap=${output_cap_token_cap}" \
+      "configured_reasoning=${configured_reasoning}" \
+      "effective_reasoning=${reasoning}" \
+      "reasoning_source=${reasoning_source}" \
+      "reasoning_complexity=${reasoning_complexity}" \
+      "reasoning_actionable_count=${reasoning_actionable_count}" \
+      "reasoning_reject_count=${reasoning_reject_count}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
@@ -3807,6 +3973,12 @@ case "$agent" in
     printf 'runner_status=%s\n' "$runner_status"
     printf 'adapter=%s\n' "$agent"
     printf 'adapter_exit_code=%s\n' "$adapter_exit"
+    printf 'configured_reasoning=%s\n' "$configured_reasoning"
+    printf 'effective_reasoning=%s\n' "$reasoning"
+    printf 'reasoning_source=%s\n' "$reasoning_source"
+    printf 'reasoning_complexity=%s\n' "$reasoning_complexity"
+    printf 'reasoning_actionable_count=%s\n' "$reasoning_actionable_count"
+    printf 'reasoning_reject_count=%s\n' "$reasoning_reject_count"
     printf 'adapter_command=%s\n' "$command_summary"
     if [ -n "${wiki_pre_adapter_summary_output:-}" ]; then
       printf 'wiki_pre_adapter_summary_begin\n'

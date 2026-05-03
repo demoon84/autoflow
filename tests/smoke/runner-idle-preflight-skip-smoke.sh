@@ -136,18 +136,9 @@ reject_line "$planner_dry_run" "reason=planner_inputs_unchanged"
 require_marker_count 0
 
 mkdir -p "${project_dir}/.autoflow/tickets/inbox"
-cat >"${project_dir}/.autoflow/tickets/inbox/memo_001.md" <<'MEMO'
-# Memo
-
-## Memo
-
-- ID: memo_001
-- Status: inbox
-
-## Request
-
-Planner should see this new memo as actionable.
-MEMO
+"${REPO_ROOT}/bin/autoflow" order create "$project_dir" .autoflow \
+  --title "planner wake" \
+  --request "Planner should see this new order as actionable." >/dev/null
 
 "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" .autoflow --runner planner-idle >"$planner_changed"
 require_line "$planner_changed" "adapter_exit_code=0"
@@ -168,13 +159,25 @@ require_line "$ticket_second" "runtime_reason=no_actionable_ticket"
 grep -Eq '^idle_inputs_fingerprint=.+' "$ticket_second"
 require_marker_count 0
 
-write_spec >/dev/null
-rm -f "${project_dir}/.autoflow/tickets/inbox/memo_001.md"
-AUTOFLOW_ROLE=plan \
-  AUTOFLOW_WORKER_ID=planner-smoke \
-  AUTOFLOW_BOARD_ROOT="${project_dir}/.autoflow" \
-  AUTOFLOW_PROJECT_ROOT="$project_dir" \
-  "${project_dir}/.autoflow/scripts/start-plan.sh" >/dev/null
+mkdir -p "${project_dir}/.autoflow/tickets/todo"
+cat >"${project_dir}/.autoflow/tickets/todo/tickets_001.md" <<'TICKET'
+# Ticket
+
+## Ticket
+
+- ID: tickets_001
+- PRD Key: project_001
+- Title: Idle skip wake fixture
+- Stage: todo
+
+## Allowed Paths
+
+- target.txt
+
+## Done When
+
+- [ ] Ticket runner adapter is invoked after a todo ticket appears.
+TICKET
 
 "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner ticket-idle >"$ticket_changed"
 require_line "$ticket_changed" "adapter_exit_code=0"
