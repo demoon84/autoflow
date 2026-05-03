@@ -3213,7 +3213,7 @@ function SnapshotGrid({
         "0"
       )} 주의`
     ],
-    ["인수인계", statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0))],
+    ["전달된 요청", statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0))],
     ["업데이트", lastUpdated ? formatDate(lastUpdated) : "-"]
   ];
 
@@ -3235,6 +3235,13 @@ type ReportDatum = {
   displayValue?: string;
   detail?: string;
   color: string;
+};
+
+type ReportInlineStat = {
+  label: string;
+  value: string;
+  detail?: string;
+  title?: string;
 };
 
 const reportColors = {
@@ -3298,7 +3305,23 @@ function reportingHistory(board: AutoflowBoardSnapshot | null, ticketTotal: numb
     history.push(current);
   }
 
-  return history.slice(-30);
+  const latest = history[history.length - 1];
+  if (!latest?.timestamp) {
+    return history.slice(-30);
+  }
+
+  const latestTime = new Date(latest.timestamp).getTime();
+  if (Number.isNaN(latestTime)) {
+    return history.slice(-30);
+  }
+
+  const weekStart = latestTime - 7 * 24 * 60 * 60 * 1000;
+  const weeklyHistory = history.filter((snapshot) => {
+    const snapshotTime = new Date(snapshot.timestamp).getTime();
+    return Number.isFinite(snapshotTime) && snapshotTime >= weekStart;
+  });
+
+  return (weeklyHistory.length ? weeklyHistory : [latest]).slice(-30);
 }
 
 function ReportMetricCard({
@@ -3307,7 +3330,8 @@ function ReportMetricCard({
   detail,
   icon: Icon,
   tone,
-  className = ""
+  className = "",
+  title
 }: {
   label: string;
   value: string;
@@ -3315,9 +3339,10 @@ function ReportMetricCard({
   icon: React.ComponentType<{ className?: string }>;
   tone: string;
   className?: string;
+  title?: string;
 }) {
   return (
-    <Card className={`report-metric-card ${tone} ${className}`.trim()}>
+    <Card className={`report-metric-card ${tone} ${className}`.trim()} title={title || `${label}: ${value}, ${detail}`}>
       <CardContent className="report-metric-card-content">
         <div className="report-metric-icon">
           <Icon className="h-4 w-4" />
@@ -3348,7 +3373,7 @@ function ReportChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className={`report-chart-card${wide ? " report-chart-wide" : ""}`} aria-label={label}>
+    <Card className={`report-chart-card${wide ? " report-chart-wide" : ""}`} aria-label={label} title={`${title}: ${meta}`}>
       <CardContent className="report-chart-card-content">
         <div className="report-chart-heading">
           <Icon className="h-4 w-4" />
@@ -3361,6 +3386,24 @@ function ReportChartCard({
       </CardContent>
     </Card>
   );
+}
+
+function ReportInlineStats({ stats }: { stats: ReportInlineStat[] }) {
+  return (
+    <div className="report-inline-stats">
+      {stats.map((stat) => (
+        <div key={stat.label} className="report-inline-stat" title={stat.title || `${stat.label}: ${stat.value}`}>
+          <span>{stat.label}</span>
+          <strong>{stat.value}</strong>
+          {stat.detail ? <em>{stat.detail}</em> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ReportFallback({ children }: { children: React.ReactNode }) {
+  return <div className="report-fallback">{children}</div>;
 }
 
 function ReportBarBreakdown({ data }: { data: ReportDatum[] }) {
@@ -3389,6 +3432,38 @@ function ReportBarBreakdown({ data }: { data: ReportDatum[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ReportSplitBar({ data }: { data: ReportDatum[] }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  return (
+    <div className="report-split-layout">
+      <div className="report-split-track" aria-hidden="true">
+        {data.map((item) => {
+          const width = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <span
+              key={item.label}
+              style={{
+                width: `${width}%`,
+                background: item.color
+              }}
+            />
+          );
+        })}
+      </div>
+      <div className="report-split-legend">
+        {data.map((item) => (
+          <div key={item.label} className="report-split-legend-item">
+            <span style={{ background: item.color }} aria-hidden="true" />
+            <strong>{item.label}</strong>
+            <em>{item.displayValue || formatCount(item.value)}</em>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -3550,6 +3625,17 @@ function ReportingDashboard({
   const runnerStopped = statusNumber(metrics, "runner_stopped_count");
   const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
   const snapshots = reportingHistory(board, ticketTotal, lastUpdated);
+  const runnerNeedsUser = (board?.runners || []).filter((runner) => {
+    const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
+    const activeStage = (runner.activeStage || "").toLowerCase();
+    return recoveryStatus === "needs_user" || activeStage === "blocked";
+  }).length;
+  const mergeBlockedCount = board?.tickets["merge-blocked"]?.length || 0;
+  const blockedSignalCount = rejectCount + runnerBlocked + runnerNeedsUser + mergeBlockedCount;
+  const hasVerificationData = verifierTotal > 0;
+  const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
+  const hasCodeImpactData = codeVolumeCount > 0 || codeFilesChangedCount > 0;
+  const trendMeta = snapshots.length > 1 ? "이번 7일" : snapshots.length === 1 ? "최근 스냅샷" : "전체 누적";
   const ticketStateData: ReportDatum[] = [
     { label: "대기", value: todoCount, color: reportColors.blue },
     { label: "실행", value: inprogressCount + planningCount, color: reportColors.teal },
@@ -3567,76 +3653,84 @@ function ReportingDashboard({
     { label: "중지", value: runnerStopped, color: reportColors.slate },
     { label: "막힘", value: runnerBlocked, color: reportColors.red }
   ];
-  const codeImpactData: ReportDatum[] = [
-    { label: "변경 파일", value: codeFilesChangedCount, color: reportColors.blue },
-    { label: "추가 라인", value: codeInsertionsCount, color: reportColors.green },
-    { label: "삭제 라인", value: codeDeletionsCount, color: reportColors.red }
+  const codeLineData: ReportDatum[] = [
+    { label: "추가 라인", value: codeInsertionsCount, displayValue: `${formatCount(codeInsertionsCount)}줄`, color: reportColors.green },
+    { label: "삭제 라인", value: codeDeletionsCount, displayValue: `${formatCount(codeDeletionsCount)}줄`, color: reportColors.red }
   ];
-  const aiUsageData: ReportDatum[] = [
+  const secondaryStats: ReportInlineStat[] = [
     {
-      label: "사용 토큰",
-      value: tokenUsageCount,
-      displayValue: formatCount(tokenUsageCount),
-      color: reportColors.violet,
-      detail: `${formatCount(tokenReportCount)}개 실행 로그`
+      label: "전달된 요청",
+      value: `${formatCompactCount(handoffCount)}개`,
+      detail: `${formatCount(specTotal)}개 PRD 처리`,
+      title: `전달된 요청 ${formatCount(handoffCount)}개, PRD ${formatCount(specTotal)}개`
     },
-    { label: "AI 산출물", value: artifactTotal, color: reportColors.amber }
+    {
+      label: "완료 커밋",
+      value: `${formatCompactCount(commitCount)}커밋`,
+      detail: "전체 누적",
+      title: `완료 커밋 ${formatCount(commitCount)}커밋`
+    },
+    {
+      label: "변경 파일",
+      value: `${formatCompactCount(codeFilesChangedCount)}개`,
+      detail: `${formatCount(codeVolumeCount)}줄 변경`,
+      title: `변경 파일 ${formatCount(codeFilesChangedCount)}개, 변경 코드량 ${formatCount(codeVolumeCount)}줄`
+    },
+    {
+      label: "러너 산출물",
+      value: `${formatCompactCount(artifactTotal)}개`,
+      detail: `${formatCount(artifactOk)} 정상 / ${formatCount(artifactWarning)} 주의`,
+      title: `러너 산출물 ${formatCount(artifactTotal)}개, 정상 ${formatCount(artifactOk)}개, 주의 ${formatCount(artifactWarning)}개`
+    }
   ];
 
   return (
     <div className="report-dashboard">
-      <div className="report-metric-grid" aria-label="처리 지표 요약">
+      <div className="report-metric-grid report-metric-grid-primary" aria-label="핵심 보드 상태 요약">
         <ReportMetricCard
           label="완료 티켓"
-          value={formatCount(doneCount)}
-          detail={`${formatPercentValue(completionRate)} 완료`}
+          value={`${formatCompactCount(doneCount)}개`}
+          detail={`${formatPercentValue(completionRate)} 완료 · 전체 누적`}
           icon={CheckCircle2}
           tone="report-tone-green"
+          title={`완료 티켓 ${formatCount(doneCount)}개, 완료율 ${formatPercentValue(completionRate)}, 전체 누적`}
         />
         <ReportMetricCard
-          label="검증 실행"
-          value={formatCount(verifierTotal)}
-          detail={`${formatCount(passCount)} 통과 / ${formatCount(failCount)} 실패`}
+          label="검증 통과율"
+          value={hasVerificationData ? formatPercentValue(passRate) : "0.0%"}
+          detail={
+            hasVerificationData
+              ? `${formatCount(passCount)}개 통과 / ${formatCount(failCount)}개 실패`
+              : "검증이 완료되면 채워집니다"
+          }
           icon={ShieldCheck}
           tone="report-tone-violet"
+          title={`검증 통과율 ${formatPercentValue(passRate)}, 통과 ${formatCount(passCount)}개, 실패 ${formatCount(failCount)}개`}
         />
         <ReportMetricCard
-          label="완료 커밋"
-          value={formatCount(commitCount)}
-          detail={`${formatCount(codeFilesChangedCount)}개 코드 파일`}
-          icon={Archive}
-          tone="report-tone-blue"
-        />
-        <ReportMetricCard
-          label="인수인계"
-          value={formatCount(handoffCount)}
-          detail={`${formatCount(specTotal)}개 PRD`}
-          icon={Archive}
-          tone="report-tone-blue"
-        />
-        <ReportMetricCard
-          label="AI 산출물"
-          value={formatCount(artifactTotal)}
-          detail={`${formatCount(artifactOk)} 정상 / ${formatCount(artifactWarning)} 주의`}
-          icon={Terminal}
-          tone="report-tone-amber"
-        />
-        <ReportMetricCard
-          label="변경 코드량"
-          value={`${formatCount(codeVolumeCount)}줄`}
-          detail={`${formatSignedCount(codeInsertionsCount)} / -${formatCount(codeDeletionsCount)} · ${formatCount(codeFilesChangedCount)}개 파일`}
-          icon={ClipboardList}
-          tone="report-tone-green"
-          className="report-metric-card-secondary"
+          label="막힌 항목"
+          value={`${formatCompactCount(blockedSignalCount)}개`}
+          detail={
+            blockedSignalCount > 0
+              ? `${formatCount(rejectCount)}개 반려 / ${formatCount(runnerBlocked + runnerNeedsUser + mergeBlockedCount)}개 러너·티켓 신호`
+              : "막힘 신호가 없습니다"
+          }
+          icon={TriangleAlert}
+          tone={blockedSignalCount > 0 ? "report-tone-red" : "report-tone-blue"}
+          title={`막힌 항목 ${formatCount(blockedSignalCount)}개, 반려 ${formatCount(rejectCount)}개, runnerBlocked ${formatCount(runnerBlocked)}개, needs_user/blocked 티켓 신호 ${formatCount(runnerNeedsUser + mergeBlockedCount)}개`}
         />
         <ReportMetricCard
           label="토큰 사용량"
-          value={formatCount(tokenUsageCount)}
-          detail={`${formatCount(tokenReportCount)}개 실행 로그 기준`}
+          value={`${formatCompactCount(tokenUsageCount)}토큰`}
+          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 실행 로그 · 전체 누적` : "러너 실행 후 채워집니다"}
           icon={Terminal}
           tone="report-tone-violet"
-          className="report-metric-card-secondary"
+          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, 실행 로그 ${formatCount(tokenReportCount)}개, 전체 누적`}
         />
+      </div>
+
+      <div className="report-secondary-panel" aria-label="보조 통계">
+        <ReportInlineStats stats={secondaryStats} />
       </div>
 
       <div className="report-chart-grid">
@@ -3644,7 +3738,7 @@ function ReportingDashboard({
           label="티켓 처리량"
           wide
           icon={BarChart3}
-          title="티켓 처리량"
+          title="보드 흐름"
           meta={`${formatCount(activeCount)}개 활성 / ${formatCount(ticketTotal)}개 전체`}
         >
           <ReportBarBreakdown data={ticketStateData} />
@@ -3654,9 +3748,13 @@ function ReportingDashboard({
           label="검증 결과"
           icon={PieChart}
           title="검증 결과"
-          meta={`${formatPercentValue(passRate)} 통과율`}
+          meta={hasVerificationData ? `${formatPercentValue(passRate)} 통과율` : "검증이 완료되면 채워집니다"}
         >
-          <ReportDonutChart data={verifierData} centerValue={formatCount(verifierTotal)} centerLabel="검증" />
+          {hasVerificationData ? (
+            <ReportDonutChart data={verifierData} centerValue={`${formatCompactCount(verifierTotal)}개`} centerLabel="검증" />
+          ) : (
+            <ReportFallback>검증이 완료되면 채워집니다</ReportFallback>
+          )}
         </ReportChartCard>
 
         <ReportChartCard
@@ -3664,7 +3762,7 @@ function ReportingDashboard({
           wide
           icon={TrendingUp}
           title="완료 추세"
-          meta={snapshots.length ? formatDate(snapshots[snapshots.length - 1].timestamp) : "이력 없음"}
+          meta={snapshots.length ? trendMeta : "전체 누적"}
         >
           <CompletionTrend snapshots={snapshots} />
         </ReportChartCard>
@@ -3674,24 +3772,63 @@ function ReportingDashboard({
           wide
           icon={ClipboardList}
           title="코드 영향"
-          meta={`${formatCount(commitCount)}개 완료 커밋 기준`}
+          meta={
+            hasCodeImpactData
+              ? `${formatCount(codeFilesChangedCount)}개 파일 / ${formatCount(codeVolumeCount)}줄`
+              : "완료 커밋 후 채워집니다"
+          }
         >
-          <ReportBarBreakdown data={codeImpactData} />
+          {hasCodeImpactData ? (
+            <>
+              <ReportInlineStats
+                stats={[
+                  {
+                    label: "변경 파일",
+                    value: `${formatCompactCount(codeFilesChangedCount)}개`,
+                    detail: `${formatCount(commitCount)}커밋 기준`,
+                    title: `변경 파일 ${formatCount(codeFilesChangedCount)}개, 완료 커밋 ${formatCount(commitCount)}커밋`
+                  }
+                ]}
+              />
+              <ReportSplitBar data={codeLineData} />
+            </>
+          ) : (
+            <ReportFallback>완료 커밋 후 채워집니다</ReportFallback>
+          )}
         </ReportChartCard>
 
         <ReportChartCard
-          label="AI 사용량"
+          label="토큰 사용량"
           icon={Terminal}
-          title="AI 사용량"
-          meta={`${formatCompactCount(tokenUsageCount)} 토큰`}
+          title="토큰 사용량"
+          meta={hasTokenData ? `${formatCompactCount(tokenUsageCount)}토큰 · 전체 누적` : "러너 실행 후 채워집니다"}
         >
-          <ReportBarBreakdown data={aiUsageData} />
+          {hasTokenData ? (
+            <ReportInlineStats
+              stats={[
+                {
+                  label: "사용 토큰",
+                  value: `${formatCompactCount(tokenUsageCount)}토큰`,
+                  detail: `${formatCount(tokenUsageCount)}토큰 정확값`,
+                  title: `사용 토큰 ${formatCount(tokenUsageCount)}토큰`
+                },
+                {
+                  label: "실행 로그",
+                  value: `${formatCompactCount(tokenReportCount)}개`,
+                  detail: "토큰 집계 기준",
+                  title: `토큰 실행 로그 ${formatCount(tokenReportCount)}개`
+                }
+              ]}
+            />
+          ) : (
+            <ReportFallback>러너 실행 후 채워집니다</ReportFallback>
+          )}
         </ReportChartCard>
 
         <ReportChartCard
           label="AI 가동 상태"
           icon={Activity}
-          title="AI 가동"
+          title="러너 상태"
           meta={`${formatCount(statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0))}개 사용`}
         >
           <ReportBarBreakdown data={runnerData} />
@@ -3822,7 +3959,7 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
     {
       label: "PRD",
       value: statusValue(metrics, "spec_total", statusValue(status, "spec_count", String(board?.tickets.backlog?.length || 0))),
-      detail: `${handoffCount}개 인수인계`,
+      detail: `${handoffCount}개 전달 요청`,
       icon: ClipboardCheck,
       tone: "metric-blue"
     },
