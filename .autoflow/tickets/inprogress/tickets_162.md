@@ -59,14 +59,14 @@
 - Status: blocked
 - Started At: 2026-05-03T14:16:43Z
 - Started Epoch: 1777817803
-- Updated At: 2026-05-03T14:29:58Z
+- Updated At: 2026-05-03T14:32:01Z
 - Tick Count: 0
-- Time Used Seconds: 795
+- Time Used Seconds: 918
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
 - Last Event: ticket_stage_blocked
-- Last Progress Fingerprint: 1885341434
+- Last Progress Fingerprint: 333822350
 
 ## Recovery State
 
@@ -76,7 +76,7 @@
 - Evidence: dirty Allowed Paths in PROJECT_ROOT: .autoflow/wiki/skills-local/ (resolved by earlier orchestration commits c9fe35f, bb4fa18, eb2beb7, f0a53b2). Residual dirty paths surfaced this tick: .autoflow/telemetry/runs.jsonl, .autoflow/tickets/inprogress/tickets_162.md, .autoflow/tickets/check/check_005.md — integrated via blocked-dirty orchestration cleanup commits this tick.
 - Planner Decision: Integrate residual dirty paths into local housekeeping commits (orchestration cleanup) so next planner tick can emit source=blocked-auto-recover and return ticket to todo.
 - Owner Resume Instruction: Wait for next planner tick to emit blocked-auto-recover and re-claim from todo; ticket-owner will rebuild a worktree from current main.
-- Last Recovery At: 2026-05-03T14:30:00Z
+- Last Recovery At: 2026-05-03T14:32:01Z
 
 ## Done When
 
@@ -117,6 +117,7 @@
 - Blocked-dirty orchestration at 2026-05-03T14:22:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/tickets_162.md + .autoflow/tickets/check/check_005.md integrated as PRD_163/tickets_162 cleanup commit and misc telemetry cleanup commit (see check_006.md). Next planner tick should emit source=blocked-auto-recover.
 - Blocked-dirty orchestration at 2026-05-03T14:27:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/tickets_162.md + .autoflow/tickets/check/check_009.md + .autoflow/tickets/inbox/order_148.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit (board housekeeping; order_148 is a follow-up intake from PRD_150 that wasn't yet processed). Runtime check records check_009.md and check_010.md captured the events. Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
 - Blocked-dirty orchestration at 2026-05-03T14:30:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/tickets_162.md + .autoflow/wiki/operations/runner-health.md + .autoflow/wiki/operations/runner-timing.md + .autoflow/tickets/check/check_010.md + .autoflow/tickets/check/check_011.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit 4336258 (board housekeeping; wiki ops drift from Wiki AI ticks, telemetry append, runtime fingerprint bump). Runtime check record check_012.md captured this tick. Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
+- Blocked-dirty orchestration at 2026-05-03T14:32:01Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/tickets_162.md + .autoflow/tickets/check/check_013.md + .autoflow/tickets/check/check_014.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit (board housekeeping; telemetry append, runtime fingerprint bump, planner check records). Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
 ## Verification
 
 - Command: `bash -lc 'bash -n packages/cli/skill-project.sh packages/cli/run-role.sh runtime/board-scripts/run-role.sh .autoflow/scripts/common.sh runtime/board-scripts/common.sh .autoflow/scripts/finish-ticket-owner.sh runtime/board-scripts/finish-ticket-owner.sh && tests/smoke/skill-injection-usage-stats-smoke.sh && npm run desktop:check'`
