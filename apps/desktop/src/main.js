@@ -216,6 +216,8 @@ function scaffoldManifestValue(section, name, fallback) {
 const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticCache = new Map();
+const readBoardRunnerListCacheTtlMs = 15 * 1000;
+const readBoardRunnerListCache = new Map();
 const knownProjectScopes = new Map();
 const activeChildProcesses = new Set();
 // invocationId → child process. Lets the renderer cancel a long-running
@@ -568,6 +570,22 @@ function cloneRunResult(result) {
   return result ? { ...result } : result;
 }
 
+function markReadBoardFallback(result, fallback) {
+  const metadata = {
+    partial: Boolean(fallback?.partial),
+    fallback: Boolean(fallback?.fallback),
+    stale: Boolean(fallback?.stale),
+    refreshInFlight: Boolean(fallback?.refreshInFlight),
+    cacheStatus: fallback?.cacheStatus || "fresh"
+  };
+
+  return {
+    ...result,
+    ...metadata,
+    readBoardFallback: metadata.fallback || metadata.partial || metadata.stale
+  };
+}
+
 function startCachedAutoflowRefresh(command, options, key, entry) {
   const targetEntry =
     entry || {
@@ -596,25 +614,38 @@ function runAutoflowCached(command, options = {}, ttlMs = readBoardDiagnosticCac
   const now = Date.now();
 
   if (entry?.result && now - entry.updatedAt < ttlMs) {
-    return Promise.resolve(cloneRunResult(entry.result));
+    return Promise.resolve(markReadBoardFallback(cloneRunResult(entry.result), { cacheStatus: "fresh" }));
   }
 
   if (entry?.result) {
     if (!entry.promise) {
       void startCachedAutoflowRefresh(command, options, key, entry);
     }
-    return Promise.resolve(cloneRunResult(entry.result));
+    return Promise.resolve(markReadBoardFallback(cloneRunResult(entry.result), {
+      partial: true,
+      fallback: true,
+      stale: true,
+      refreshInFlight: true,
+      cacheStatus: "stale"
+    }));
   }
 
   if (entry?.promise) {
-    return entry.promise.then(cloneRunResult);
+    return Promise.resolve(emptyCachedAutoflowResult(command, options, {
+      refreshInFlight: true,
+      cacheStatus: "pending"
+    }));
   }
 
-  return startCachedAutoflowRefresh(command, options, key).then(cloneRunResult);
+  void startCachedAutoflowRefresh(command, options, key);
+  return Promise.resolve(emptyCachedAutoflowResult(command, options, {
+    refreshInFlight: true,
+    cacheStatus: "miss"
+  }));
 }
 
-function emptyCachedAutoflowResult(command, options = {}) {
-  return {
+function emptyCachedAutoflowResult(command, options = {}, fallback = {}) {
+  return markReadBoardFallback({
     ok: true,
     command: commandLabel(scopedArgs(command, options)),
     code: 0,
@@ -622,7 +653,12 @@ function emptyCachedAutoflowResult(command, options = {}) {
     cancelled: false,
     stdout: "",
     stderr: ""
-  };
+  }, {
+    partial: true,
+    fallback: true,
+    stale: false,
+    ...fallback
+  });
 }
 
 function runAutoflowCachedOrRefresh(command, options = {}, ttlMs = readBoardDiagnosticCacheTtlMs) {
@@ -631,21 +667,30 @@ function runAutoflowCachedOrRefresh(command, options = {}, ttlMs = readBoardDiag
   const now = Date.now();
 
   if (entry?.result && now - entry.updatedAt < ttlMs) {
-    return Promise.resolve(cloneRunResult(entry.result));
+    return Promise.resolve(markReadBoardFallback(cloneRunResult(entry.result), { cacheStatus: "fresh" }));
   }
 
   if (entry?.result) {
     if (!entry.promise) {
       void startCachedAutoflowRefresh(command, options, key, entry);
     }
-    return Promise.resolve(cloneRunResult(entry.result));
+    return Promise.resolve(markReadBoardFallback(cloneRunResult(entry.result), {
+      partial: true,
+      fallback: true,
+      stale: true,
+      refreshInFlight: true,
+      cacheStatus: "stale"
+    }));
   }
 
   if (!entry?.promise) {
     void startCachedAutoflowRefresh(command, options, key, entry);
   }
 
-  return Promise.resolve(emptyCachedAutoflowResult(command, options));
+  return Promise.resolve(emptyCachedAutoflowResult(command, options, {
+    refreshInFlight: true,
+    cacheStatus: entry?.promise ? "pending" : "miss"
+  }));
 }
 
 function clearReadBoardDiagnosticCache(command, options = {}) {
@@ -2252,14 +2297,35 @@ async function readBoard({ projectRoot, boardDirName }) {
     watcherResult
   ] = exists
     ? await Promise.all([
-        runAutoflow("status", { projectRoot, boardDirName: normalizedBoardDirName }),
-        listRunners({ projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCached("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCachedOrRefresh("status", { projectRoot, boardDirName: normalizedBoardDirName }),
+        listRunnersCachedOrRefresh({ projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCachedOrRefresh("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
         runAutoflowCachedOrRefresh("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflow("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflow("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
+        runAutoflowCachedOrRefresh("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
+        runAutoflowCachedOrRefresh("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
       ])
     : [null, null, null, null, null, null];
+  const fallbackSources = [
+    ["status", statusResult],
+    ["runners", runnersResult],
+    ["doctor", doctorResult],
+    ["metrics", metricsResult],
+    ["stopHook", stopHookResult],
+    ["watcher", watcherResult]
+  ].filter(([, result]) => result?.readBoardFallback);
+  const readBoardMeta = {
+    partial: fallbackSources.length > 0,
+    fallback: fallbackSources.some(([, result]) => result?.fallback),
+    stale: fallbackSources.some(([, result]) => result?.stale),
+    refreshInFlight: fallbackSources.some(([, result]) => result?.refreshInFlight),
+    fallbackSources: fallbackSources.map(([source, result]) => ({
+      source,
+      stale: Boolean(result.stale),
+      fallback: Boolean(result.fallback),
+      refreshInFlight: Boolean(result.refreshInFlight),
+      cacheStatus: result.cacheStatus || ""
+    }))
+  };
 
   const ticketGroups = {};
   for (const folder of await listTicketFolders(ticketsRoot)) {
@@ -2305,6 +2371,10 @@ async function readBoard({ projectRoot, boardDirName }) {
     repoRoot,
     boardRoot,
     exists,
+    partial: readBoardMeta.partial,
+    fallback: readBoardMeta.fallback,
+    stale: readBoardMeta.stale,
+    readBoardMeta,
     status: statusResult ? parseKeyValueOutput(statusResult.stdout) : {},
     statusResult,
     doctor: doctorResult ? parseKeyValueOutput(doctorResult.stdout) : {},
@@ -2363,6 +2433,116 @@ async function listRunners(options = {}) {
     values: parsed.values,
     runners
   };
+}
+
+function readBoardRunnerListCacheKey(options = {}) {
+  return [
+    "runners",
+    options.projectRoot || "",
+    options.boardDirName || defaultBoardDirName
+  ].join("\0");
+}
+
+function cloneRunnersResult(result) {
+  if (!result) {
+    return result;
+  }
+  return {
+    ...result,
+    values: result.values ? { ...result.values } : result.values,
+    runners: Array.isArray(result.runners)
+      ? result.runners.map((runner) => ({ ...runner }))
+      : []
+  };
+}
+
+function emptyRunnerListResult(options = {}, fallback = {}) {
+  return {
+    ok: true,
+    command: commandLabel(["runners", "list", options.projectRoot || "", options.boardDirName || defaultBoardDirName]),
+    code: 0,
+    signal: "",
+    cancelled: false,
+    stdout: "",
+    stderr: "",
+    values: {},
+    runners: [],
+    partial: true,
+    fallback: true,
+    stale: false,
+    refreshInFlight: Boolean(fallback.refreshInFlight),
+    cacheStatus: fallback.cacheStatus || "miss",
+    readBoardFallback: true
+  };
+}
+
+function markRunnerListFallback(result, fallback = {}) {
+  const metadata = {
+    partial: Boolean(fallback.partial),
+    fallback: Boolean(fallback.fallback),
+    stale: Boolean(fallback.stale),
+    refreshInFlight: Boolean(fallback.refreshInFlight),
+    cacheStatus: fallback.cacheStatus || "fresh"
+  };
+  return {
+    ...result,
+    ...metadata,
+    readBoardFallback: metadata.fallback || metadata.partial || metadata.stale
+  };
+}
+
+function startRunnerListRefresh(options, key, entry) {
+  const targetEntry =
+    entry || {
+      result: null,
+      updatedAt: 0,
+      promise: null
+    };
+
+  targetEntry.promise = listRunners(options)
+    .then((result) => {
+      targetEntry.result = result;
+      targetEntry.updatedAt = Date.now();
+      return result;
+    })
+    .finally(() => {
+      targetEntry.promise = null;
+    });
+
+  readBoardRunnerListCache.set(key, targetEntry);
+  return targetEntry.promise;
+}
+
+function listRunnersCachedOrRefresh(options = {}, ttlMs = readBoardRunnerListCacheTtlMs) {
+  const key = readBoardRunnerListCacheKey(options);
+  const entry = readBoardRunnerListCache.get(key);
+  const now = Date.now();
+
+  if (entry?.result && now - entry.updatedAt < ttlMs) {
+    return Promise.resolve(markRunnerListFallback(cloneRunnersResult(entry.result), { cacheStatus: "fresh" }));
+  }
+
+  if (entry?.result) {
+    if (!entry.promise) {
+      void startRunnerListRefresh(options, key, entry);
+    }
+    return Promise.resolve(markRunnerListFallback(cloneRunnersResult(entry.result), {
+      partial: true,
+      fallback: true,
+      stale: true,
+      refreshInFlight: true,
+      cacheStatus: "stale"
+    }));
+  }
+
+  if (!entry?.promise) {
+    void startRunnerListRefresh(options, key, entry);
+  }
+
+  return Promise.resolve(emptyRunnerListResult(options, {
+    refreshInFlight: true,
+    cacheStatus: entry?.promise ? "pending" : "miss"
+  }));
 }
 
 // Per-(projectRoot, runnerId) inflight tracker. Renderer-side parallel
