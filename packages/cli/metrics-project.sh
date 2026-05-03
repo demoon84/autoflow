@@ -368,6 +368,55 @@ count_autoflow_token_metrics() {
   esac
 }
 
+count_latest_verifier_outcomes() {
+  local logs_root="$1"
+
+  if [ ! -d "$logs_root" ]; then
+    printf '0 0\n'
+    return 0
+  fi
+
+  find "$logs_root" -maxdepth 1 -type f \( -name 'verifier_*_pass.md' -o -name 'verifier_*_fail.md' \) -print | awk '
+    {
+      filename = $0
+      sub(/^.*\//, "", filename)
+      part_count = split(filename, parts, "_")
+      if (part_count < 4) {
+        next
+      }
+
+      ticket_id = parts[2]
+      outcome = parts[part_count]
+      sub(/\.md$/, "", outcome)
+      if (outcome != "pass" && outcome != "fail") {
+        next
+      }
+
+      outcome_timestamp = parts[3]
+      for (part_index = 4; part_index < part_count; part_index += 1) {
+        outcome_timestamp = outcome_timestamp "_" parts[part_index]
+      }
+
+      if (!(ticket_id in latest_timestamp) || outcome_timestamp > latest_timestamp[ticket_id]) {
+        latest_timestamp[ticket_id] = outcome_timestamp
+        latest_outcome[ticket_id] = outcome
+      }
+    }
+    END {
+      pass_count = 0
+      fail_count = 0
+      for (ticket_id in latest_outcome) {
+        if (latest_outcome[ticket_id] == "pass") {
+          pass_count += 1
+        } else if (latest_outcome[ticket_id] == "fail") {
+          fail_count += 1
+        }
+      }
+      printf "%d %d\n", pass_count, fail_count
+    }
+  '
+}
+
 write="false"
 positionals=()
 while [ "$#" -gt 0 ]; do
@@ -421,8 +470,9 @@ ticket_total="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_m
 active_ticket_count="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_merge_count + ticket_merge_blocked_count + ticket_verifier_count))"
 ticket_owner_active_count="$ticket_inprogress_count"
 
-verifier_pass_count="$(count_matching_files "${board_root}/logs" 'verifier_*_pass.md')"
-verifier_fail_count="$(count_matching_files "${board_root}/logs" 'verifier_*_fail.md')"
+verifier_outcome_counts="$(count_latest_verifier_outcomes "${board_root}/logs")"
+verifier_pass_count="${verifier_outcome_counts%% *}"
+verifier_fail_count="${verifier_outcome_counts##* }"
 verifier_total="$((verifier_pass_count + verifier_fail_count))"
 handoff_count="$(count_matching_files "${board_root}/conversations" 'spec-handoff.md')"
 verification_pass_rate_percent="$(percent_value "$verifier_pass_count" "$verifier_total")"
