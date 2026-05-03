@@ -5175,7 +5175,9 @@ function TicketBoard({
     );
   }
 
-  const runners = (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve");
+  const runners = sortProgressBoardRunners(
+    (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve")
+  );
   const rejectFiles = (board?.tickets.reject || [])
     .filter((file) => (file?.name || "").startsWith("reject_"))
     .map((file) => ({ ...file, stateLabel: "반려", stateTone: "destructive" } as WorkflowFileEntry));
@@ -5605,6 +5607,23 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
   const metaLabel = displayWorkflowRunnerId(runner.id);
   const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
   return metaLabel ? `${agentName}(${metaLabel})` : agentName;
+}
+
+function progressBoardRunnerOrder(runner: AutoflowRunner) {
+  const role = (runner.role || "").toLowerCase();
+  const idRole = canonicalWorkflowRunnerRole(runner.id);
+  if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
+  if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 1;
+  if (["verifier", "verification", "veri"].includes(role)) return 2;
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 3;
+  return 4;
+}
+
+function sortProgressBoardRunners(runners: AutoflowRunner[]) {
+  return runners
+    .map((runner, index) => ({ runner, index }))
+    .sort((a, b) => progressBoardRunnerOrder(a.runner) - progressBoardRunnerOrder(b.runner) || a.index - b.index)
+    .map(({ runner }) => runner);
 }
 
 function AgentAppIcon({ agent }: { agent: string }) {
