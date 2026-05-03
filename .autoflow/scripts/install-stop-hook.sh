@@ -8,8 +8,42 @@ usage() {
   echo "Usage: install-stop-hook.sh [install|remove|status]" >&2
 }
 
+strip_surrounding_shell_quotes() {
+  local value="$1"
+
+  while :; do
+    case "$value" in
+      \"*\")
+        value="${value#\"}"
+        value="${value%\"}"
+        ;;
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  while :; do
+    case "$value" in
+      \"*|\'*)
+        value="${value#?}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  printf '%s' "$value"
+}
+
 resolve_manifest_path() {
-  local raw="${1:-$HOME/.codex/hooks.json}"
+  local raw
+  raw="$(strip_surrounding_shell_quotes "${1:-$HOME/.codex/hooks.json}")"
 
   case "$raw" in
     "~")

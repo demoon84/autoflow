@@ -13,9 +13,42 @@ if [ $# -lt 1 ] || [ $# -gt 3 ]; then
   exit 1
 fi
 
+strip_surrounding_shell_quotes() {
+  local value="$1"
+
+  while :; do
+    case "$value" in
+      \"*\")
+        value="${value#\"}"
+        value="${value%\"}"
+        ;;
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  while :; do
+    case "$value" in
+      \"*|\'*)
+        value="${value#?}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  printf '%s' "$value"
+}
+
 action="$1"
-project_root_input="${2:-.}"
-board_dir_name="${3:-$(default_board_dir_name)}"
+project_root_input="$(strip_surrounding_shell_quotes "${2:-.}")"
+board_dir_name="$(strip_surrounding_shell_quotes "${3:-$(default_board_dir_name)}")"
 
 case "$action" in
   install|remove|status)

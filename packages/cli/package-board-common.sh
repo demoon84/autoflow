@@ -95,8 +95,41 @@ default_board_dir_name() {
   scaffold_manifest_value install default_board_dir ".autoflow"
 }
 
+strip_surrounding_shell_quotes() {
+  local value="$1"
+
+  while :; do
+    case "$value" in
+      \"*\")
+        value="${value#\"}"
+        value="${value%\"}"
+        ;;
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  while :; do
+    case "$value" in
+      \"*|\'*)
+        value="${value#?}"
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  printf '%s' "$value"
+}
+
 normalize_input_path() {
-  printf '%s' "$1"
+  strip_surrounding_shell_quotes "$1"
 }
 
 ensure_package_templates_present() {
