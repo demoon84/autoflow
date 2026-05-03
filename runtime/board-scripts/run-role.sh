@@ -139,6 +139,31 @@ adapter_active_recovery_failure_class=""
 adapter_active_recovery_worktree_path=""
 adapter_active_recovery_worktree_status=""
 adapter_active_recovery_board_state=""
+planner_diff_context_enabled="false"
+planner_diff_mode=""
+planner_diff_reason=""
+planner_diff_summary_line=""
+planner_diff_previous_summary=""
+planner_diff_current_manifest_path=""
+planner_diff_current_fingerprint=""
+planner_diff_previous_fingerprint=""
+planner_diff_state_path_value=""
+planner_diff_manifest_path_value=""
+planner_diff_summary_path_value=""
+planner_diff_changed_count="0"
+planner_diff_added_count="0"
+planner_diff_modified_count="0"
+planner_diff_removed_count="0"
+planner_diff_unchanged_count="0"
+planner_diff_current_count="0"
+planner_diff_previous_count="0"
+planner_diff_threshold_percent="30"
+planner_diff_changed_ratio_percent="0"
+planner_diff_force_full_next="false"
+planner_diff_added_list=""
+planner_diff_modified_list=""
+planner_diff_removed_list=""
+planner_diff_unchanged_list=""
 
 config_path="$(runner_config_path)"
 
@@ -1425,6 +1450,426 @@ maybe_skip_unchanged_idle_preflight() {
   exit 0
 }
 
+planner_differential_enabled() {
+  [ "$public_role" = "planner" ] || return 1
+  case "${AUTOFLOW_PLANNER_DIFFERENTIAL_ENABLED:-0}" in
+    1|true|TRUE|on|ON|yes|YES)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+planner_differential_threshold_percent() {
+  local value="${AUTOFLOW_PLANNER_DIFFERENTIAL_FULL_THRESHOLD_PERCENT:-30}"
+  case "$value" in
+    ''|*[!0-9]*)
+      printf '30'
+      ;;
+    *)
+      if [ "$value" -gt 100 ]; then
+        printf '100'
+      else
+        printf '%s' "$value"
+      fi
+      ;;
+  esac
+}
+
+planner_differential_state_path() {
+  runner_ensure_dirs
+  printf '%s/%s.differential.state' "$(runner_state_dir)" "$runner_id"
+}
+
+planner_differential_manifest_path() {
+  runner_ensure_dirs
+  printf '%s/%s.differential.manifest' "$(runner_state_dir)" "$runner_id"
+}
+
+planner_differential_summary_path() {
+  runner_ensure_dirs
+  printf '%s/%s.differential.summary.md' "$(runner_state_dir)" "$runner_id"
+}
+
+planner_differential_state_field() {
+  local state_file="$1"
+  local field="$2"
+
+  [ -f "$state_file" ] || return 0
+  sed -n "s/^${field}=//p" "$state_file" | tail -n 1
+}
+
+planner_differential_manifest_fingerprint() {
+  local manifest_file="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$manifest_file" | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$manifest_file" | awk '{ print $1 }'
+  else
+    cksum "$manifest_file" | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+planner_differential_file_title() {
+  local rel="$1"
+  local file="${board_root}/${rel}"
+  local title=""
+
+  if [ ! -f "$file" ]; then
+    printf '%s' "$(basename "$rel")"
+    return 0
+  fi
+
+  title="$(awk '
+    /^# / {
+      sub(/^# /, "", $0)
+      print
+      exit
+    }
+    /^[[:space:]]*-[[:space:]]*Title:[[:space:]]*/ {
+      sub(/^[[:space:]]*-[[:space:]]*Title:[[:space:]]*/, "", $0)
+      print
+      exit
+    }
+  ' "$file")"
+  if [ -n "$title" ]; then
+    printf '%s' "$title"
+  else
+    printf '%s' "$(basename "$rel")"
+  fi
+}
+
+planner_differential_emit_file_body() {
+  local rel="$1"
+  local file="${board_root}/${rel}"
+  local title
+
+  title="$(planner_differential_file_title "$rel")"
+  printf '### `%s`\n' "$rel"
+  printf -- '- Title: %s\n' "$title"
+  if [ -f "$file" ]; then
+    printf '```text\n'
+    cat "$file"
+    printf '\n```\n'
+  else
+    printf -- '- Status: removed\n'
+  fi
+}
+
+planner_differential_emit_catalog() {
+  local list_file="$1"
+  local rel title
+
+  if [ ! -f "$list_file" ] || [ ! -s "$list_file" ]; then
+    printf -- '- (none)\n'
+    return 0
+  fi
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    title="$(planner_differential_file_title "$rel")"
+    printf -- '- `%s` — %s\n' "$rel" "$title"
+  done < "$list_file"
+}
+
+planner_differential_emit_file_bodies_from_list() {
+  local list_file="$1"
+  local rel
+
+  if [ ! -f "$list_file" ] || [ ! -s "$list_file" ]; then
+    printf -- '- (none)\n'
+    return 0
+  fi
+
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    planner_differential_emit_file_body "$rel"
+  done < "$list_file"
+}
+
+planner_differential_prepare_context() {
+  local current_manifest previous_manifest state_file manifest_file summary_file
+  local previous_force_full total_count
+
+  planner_diff_context_enabled="false"
+  planner_diff_mode=""
+  planner_diff_reason=""
+  planner_diff_summary_line=""
+  planner_diff_previous_summary=""
+  planner_diff_current_manifest_path=""
+  planner_diff_current_fingerprint=""
+  planner_diff_previous_fingerprint=""
+  planner_diff_state_path_value=""
+  planner_diff_manifest_path_value=""
+  planner_diff_summary_path_value=""
+  planner_diff_changed_count="0"
+  planner_diff_added_count="0"
+  planner_diff_modified_count="0"
+  planner_diff_removed_count="0"
+  planner_diff_unchanged_count="0"
+  planner_diff_current_count="0"
+  planner_diff_previous_count="0"
+  planner_diff_threshold_percent="$(planner_differential_threshold_percent)"
+  planner_diff_changed_ratio_percent="0"
+  planner_diff_force_full_next="false"
+  planner_diff_added_list=""
+  planner_diff_modified_list=""
+  planner_diff_removed_list=""
+  planner_diff_unchanged_list=""
+
+  planner_differential_enabled || return 1
+
+  planner_diff_context_enabled="true"
+  current_manifest="$(autoflow_mktemp)"
+  idle_preflight_inputs_hash_stream | LC_ALL=C sort > "$current_manifest"
+  planner_diff_current_manifest_path="$current_manifest"
+  planner_diff_current_fingerprint="$(planner_differential_manifest_fingerprint "$current_manifest")"
+  planner_diff_current_count="$(wc -l < "$current_manifest" | tr -d '[:space:]')"
+
+  state_file="$(planner_differential_state_path)"
+  manifest_file="$(planner_differential_manifest_path)"
+  summary_file="$(planner_differential_summary_path)"
+  planner_diff_state_path_value="$state_file"
+  planner_diff_manifest_path_value="$manifest_file"
+  planner_diff_summary_path_value="$summary_file"
+  planner_diff_previous_summary="$(planner_differential_state_field "$state_file" "summary")"
+  planner_diff_previous_fingerprint="$(planner_differential_state_field "$state_file" "fingerprint")"
+  previous_force_full="$(planner_differential_state_field "$state_file" "force_full_next")"
+  case "$previous_force_full" in
+    true|1|yes|on)
+      planner_diff_force_full_next="true"
+      ;;
+    *)
+      planner_diff_force_full_next="false"
+      ;;
+  esac
+
+  if [ -f "$manifest_file" ]; then
+    previous_manifest="$manifest_file"
+    planner_diff_previous_count="$(wc -l < "$previous_manifest" | tr -d '[:space:]')"
+  else
+    previous_manifest=""
+  fi
+
+  planner_diff_added_list="$(autoflow_mktemp)"
+  planner_diff_modified_list="$(autoflow_mktemp)"
+  planner_diff_removed_list="$(autoflow_mktemp)"
+  planner_diff_unchanged_list="$(autoflow_mktemp)"
+
+  if [ -n "$previous_manifest" ]; then
+    awk -v added="$planner_diff_added_list" \
+      -v modified="$planner_diff_modified_list" \
+      -v removed="$planner_diff_removed_list" \
+      -v unchanged="$planner_diff_unchanged_list" '
+      NR==FNR {
+        prev_rel=$2
+        prev_sum[prev_rel]=$1
+        next
+      }
+      {
+        curr_rel=$2
+        curr_sum[curr_rel]=$1
+      }
+      END {
+        for (rel in curr_sum) {
+          if (!(rel in prev_sum)) {
+            print rel >> added
+          } else if (curr_sum[rel] != prev_sum[rel]) {
+            print rel >> modified
+          } else {
+            print rel >> unchanged
+          }
+        }
+        for (rel in prev_sum) {
+          if (!(rel in curr_sum)) {
+            print rel >> removed
+          }
+        }
+      }
+    ' "$previous_manifest" "$current_manifest"
+    LC_ALL=C sort -o "$planner_diff_added_list" "$planner_diff_added_list"
+    LC_ALL=C sort -o "$planner_diff_modified_list" "$planner_diff_modified_list"
+    LC_ALL=C sort -o "$planner_diff_removed_list" "$planner_diff_removed_list"
+    LC_ALL=C sort -o "$planner_diff_unchanged_list" "$planner_diff_unchanged_list"
+  fi
+
+  planner_diff_added_count="$(wc -l < "$planner_diff_added_list" | tr -d '[:space:]')"
+  planner_diff_modified_count="$(wc -l < "$planner_diff_modified_list" | tr -d '[:space:]')"
+  planner_diff_removed_count="$(wc -l < "$planner_diff_removed_list" | tr -d '[:space:]')"
+  planner_diff_unchanged_count="$(wc -l < "$planner_diff_unchanged_list" | tr -d '[:space:]')"
+  planner_diff_changed_count="$((planner_diff_added_count + planner_diff_modified_count + planner_diff_removed_count))"
+  total_count="$planner_diff_current_count"
+  if [ "$planner_diff_previous_count" -gt "$total_count" ]; then
+    total_count="$planner_diff_previous_count"
+  fi
+  if [ "$total_count" -le 0 ]; then
+    total_count=1
+  fi
+  planner_diff_changed_ratio_percent="$((planner_diff_changed_count * 100 / total_count))"
+
+  if [ -z "$previous_manifest" ] || [ -z "$planner_diff_previous_fingerprint" ]; then
+    planner_diff_mode="full"
+    planner_diff_reason="first_tick"
+  elif [ "$planner_diff_force_full_next" = "true" ]; then
+    planner_diff_mode="full"
+    planner_diff_reason="adapter_requested_full_context"
+  elif [ "$planner_diff_changed_ratio_percent" -ge "$planner_diff_threshold_percent" ]; then
+    planner_diff_mode="full"
+    planner_diff_reason="change_ratio_exceeded"
+  else
+    planner_diff_mode="diff"
+    planner_diff_reason="differential"
+  fi
+
+  case "$planner_diff_mode:$planner_diff_reason" in
+    full:first_tick)
+      planner_diff_summary_line="full:first_tick files=${planner_diff_current_count} fingerprint=${planner_diff_current_fingerprint}"
+      ;;
+    full:adapter_requested_full_context)
+      planner_diff_summary_line="full:adapter_requested_full_context files=${planner_diff_current_count} changed=${planner_diff_changed_count} previous=${planner_diff_previous_fingerprint}"
+      ;;
+    full:change_ratio_exceeded)
+      planner_diff_summary_line="full:change_ratio_exceeded changed=${planner_diff_changed_count}/${total_count} ratio=${planner_diff_changed_ratio_percent}% threshold=${planner_diff_threshold_percent}%"
+      ;;
+    *)
+      planner_diff_summary_line="diff changed=${planner_diff_changed_count} added=${planner_diff_added_count} modified=${planner_diff_modified_count} removed=${planner_diff_removed_count} unchanged=${planner_diff_unchanged_count}"
+      ;;
+  esac
+
+  return 0
+}
+
+planner_differential_prompt_block() {
+  local rel
+  [ "$planner_diff_context_enabled" = "true" ] || return 0
+
+  cat <<EOF
+- Differential Enabled: true
+- Runner: ${runner_id}
+- Mode: ${planner_diff_mode}
+- Reason: ${planner_diff_reason}
+- Current Manifest Fingerprint: ${planner_diff_current_fingerprint}
+- Previous Manifest Fingerprint: ${planner_diff_previous_fingerprint:-none}
+- Current File Count: ${planner_diff_current_count}
+- Previous File Count: ${planner_diff_previous_count}
+- Changed File Count: ${planner_diff_changed_count}
+- Changed Ratio Percent: ${planner_diff_changed_ratio_percent}
+- Full Threshold Percent: ${planner_diff_threshold_percent}
+- Summary State Path: ${planner_diff_state_path_value}
+- Summary File Path: ${planner_diff_summary_path_value}
+EOF
+
+  if [ "$planner_diff_mode" = "full" ]; then
+    printf '\nCurrent board context (full snapshot):\n'
+    if [ ! -s "$planner_diff_current_manifest_path" ]; then
+      printf -- '- (no board files)\n'
+      return 0
+    fi
+    while read -r _ rel; do
+      [ -n "${rel:-}" ] || continue
+      planner_differential_emit_file_body "$rel"
+    done < "$planner_diff_current_manifest_path"
+    return 0
+  fi
+
+  printf '\nPrevious tick summary:\n'
+  printf -- '- %s\n' "${planner_diff_previous_summary:-none}"
+  printf '\nChanged files:\n'
+  printf 'Added:\n'
+  planner_differential_emit_catalog "$planner_diff_added_list"
+  printf 'Modified:\n'
+  planner_differential_emit_catalog "$planner_diff_modified_list"
+  printf 'Removed:\n'
+  planner_differential_emit_catalog "$planner_diff_removed_list"
+  printf '\nChanged file bodies:\n'
+  planner_differential_emit_file_bodies_from_list "$planner_diff_added_list"
+  planner_differential_emit_file_bodies_from_list "$planner_diff_modified_list"
+  printf '\nUnchanged files (path/title only):\n'
+  planner_differential_emit_catalog "$planner_diff_unchanged_list"
+}
+
+planner_differential_write_state() {
+  local force_full_next="$1"
+  local tmp_file
+
+  [ "$planner_diff_context_enabled" = "true" ] || return 0
+  tmp_file="$(autoflow_mktemp)"
+  cat > "$tmp_file" <<EOF
+enabled=true
+runner_id=${runner_id}
+mode=${planner_diff_mode}
+reason=${planner_diff_reason}
+fingerprint=${planner_diff_current_fingerprint}
+previous_fingerprint=${planner_diff_previous_fingerprint}
+summary=${planner_diff_summary_line}
+summary_path=${planner_diff_summary_path_value}
+manifest_path=${planner_diff_manifest_path_value}
+current_file_count=${planner_diff_current_count}
+previous_file_count=${planner_diff_previous_count}
+changed_file_count=${planner_diff_changed_count}
+added_file_count=${planner_diff_added_count}
+modified_file_count=${planner_diff_modified_count}
+removed_file_count=${planner_diff_removed_count}
+unchanged_file_count=${planner_diff_unchanged_count}
+changed_ratio_percent=${planner_diff_changed_ratio_percent}
+full_threshold_percent=${planner_diff_threshold_percent}
+force_full_next=${force_full_next}
+updated_at=$(runner_now_iso)
+EOF
+  mv "$tmp_file" "$planner_diff_state_path_value"
+}
+
+planner_differential_persist_after_prompt() {
+  [ "$planner_diff_context_enabled" = "true" ] || return 0
+  [ "$dry_run" = "false" ] || return 0
+
+  cp "$planner_diff_current_manifest_path" "$planner_diff_manifest_path_value"
+  printf '%s\n' "$planner_diff_summary_line" > "$planner_diff_summary_path_value"
+  planner_differential_write_state "false"
+  runner_append_log "$runner_id" "planner_prompt_context" \
+    "mode=${planner_diff_mode}" \
+    "reason=${planner_diff_reason}" \
+    "fingerprint=${planner_diff_current_fingerprint}" \
+    "previous_fingerprint=${planner_diff_previous_fingerprint}" \
+    "changed_file_count=${planner_diff_changed_count}" \
+    "changed_ratio_percent=${planner_diff_changed_ratio_percent}" \
+    "full_threshold_percent=${planner_diff_threshold_percent}"
+}
+
+planner_differential_output_requests_full_context() {
+  local file
+
+  for file in "$@"; do
+    [ -n "${file:-}" ] || continue
+    [ -f "$file" ] || continue
+    if grep -Fq "전체 컨텍스트 필요" "$file"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+planner_differential_finalize_after_run() {
+  local force_full_next="false"
+
+  [ "$planner_diff_context_enabled" = "true" ] || return 0
+  [ "$dry_run" = "false" ] || return 0
+
+  if planner_differential_output_requests_full_context "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"; then
+    force_full_next="true"
+    runner_append_log "$runner_id" "planner_prompt_context" \
+      "mode=${planner_diff_mode}" \
+      "reason=adapter_requested_full_context_marker_detected" \
+      "next_mode=full" \
+      "fingerprint=${planner_diff_current_fingerprint}"
+  fi
+
+  planner_differential_write_state "$force_full_next"
+}
+
 wiki_record_inputs_fingerprint() {
   local fingerprint_path manifest_path now_epoch
 
@@ -1710,11 +2155,13 @@ EOF
 
 write_agent_prompt() {
   local instruction_file="$1"
-  local required_flow_block role_boundary_line goal_prompt_block planner_recovery_contract_block active_item_display
+  local required_flow_block role_boundary_line goal_prompt_block planner_recovery_contract_block active_item_display planner_context_block
   required_flow_block="$(emit_required_flow)"
   role_boundary_line="$(role_boundary_for_current_role)"
   goal_prompt_block="$(ticket_goal_prompt_block_for_current_ticket || true)"
   planner_recovery_contract_block="$(emit_planner_recovery_action_contract || true)"
+  planner_differential_prepare_context || true
+  planner_context_block="$(planner_differential_prompt_block || true)"
   active_item_display="${adapter_active_ticket_file:-${adapter_active_ticket_id:-}}"
   if [ -n "$active_item_display" ]; then
     active_item_display="$(runner_board_relative_path "$active_item_display")"
@@ -1768,6 +2215,10 @@ Language policy:
 Required flow:
 ${required_flow_block}
 EOF
+
+  if [ -n "$planner_context_block" ]; then
+    printf '\nPlanner board context:\n%s\n' "$planner_context_block"
+  fi
 
   if [ -n "$goal_prompt_block" ]; then
     printf '\nGoal guardrail:\n%s\n' "$goal_prompt_block"
@@ -2374,6 +2825,7 @@ case "$agent" in
     prepare_adapter_live_logs
     role_autocommit_capture_status "$autocommit_before_status"
     write_agent_prompt "$instruction_file" > "$prompt_file"
+    planner_differential_persist_after_prompt || true
     resolve_effective_reasoning_for_current_tick
     reasoning="$effective_reasoning"
 
@@ -2504,6 +2956,11 @@ case "$agent" in
       printf 'adapter_command=%s\n' "$command_summary"
       printf 'prompt_file=%s\n' "$prompt_file"
       printf 'prompt_log_path=%s\n' "$prompt_log_path"
+      if [ "$planner_diff_context_enabled" = "true" ]; then
+        printf 'planner_prompt_context_mode=%s\n' "$planner_diff_mode"
+        printf 'planner_prompt_context_reason=%s\n' "$planner_diff_reason"
+        printf 'planner_prompt_context_fingerprint=%s\n' "$planner_diff_current_fingerprint"
+      fi
       printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
       printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
       emit_file_block "adapter_prompt" "$prompt_file"
@@ -2521,6 +2978,7 @@ case "$agent" in
     set -e
 
     finished_at="$(runner_now_iso)"
+    planner_differential_finalize_after_run || true
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"
