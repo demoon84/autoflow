@@ -2108,10 +2108,53 @@ persist_run_artifact() {
   local suffix="$2"
   local destination
 
+  case "$suffix" in
+    prompt|runtime|dry-run)
+      return 0
+      ;;
+    stderr)
+      if [ ! -s "$source_file" ]; then
+        return 0
+      fi
+      ;;
+  esac
+
   runner_ensure_dirs
   destination="$(runner_log_dir)/${runner_id}_$(artifact_stamp)_${suffix}.log"
   cp "$source_file" "$destination"
   printf '%s' "$destination"
+}
+
+runner_stale_live_log_age_seconds() {
+  local value
+  local default_seconds="3600"
+
+  value="$(runner_resolve_int_env "AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS" "$default_seconds")"
+  case "$value" in
+    ''|*[!0-9]*) printf '%s' "$default_seconds" ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+cleanup_stale_runner_live_artifacts() {
+  local target_runner_id="$1"
+  local stale_seconds stale_minutes loop_pid log_dir
+
+  loop_pid="$(runner_state_field "$target_runner_id" "pid" 2>/dev/null || true)"
+  if [ -n "$loop_pid" ] && runner_pid_is_running "$loop_pid"; then
+    return 0
+  fi
+
+  stale_seconds="$(runner_stale_live_log_age_seconds)"
+  stale_minutes=$((stale_seconds / 60))
+  [ "$stale_minutes" -lt 1 ] && stale_minutes=1
+
+  runner_ensure_dirs
+  log_dir="$(runner_log_dir)"
+  find "$log_dir" -type f \
+    \( -name "${target_runner_id}_*_live_stdout.log" -o -name "${target_runner_id}_*_live_stderr.log" -o -name "${target_runner_id}_*_last_message.txt" \) \
+    -mmin "+$stale_minutes" \
+    -delete
 }
 
 prepare_adapter_live_logs() {
@@ -2326,6 +2369,8 @@ if [ ! -f "$config_path" ]; then
   printf 'reason=runner_config_missing\n'
   exit 0
 fi
+
+cleanup_stale_runner_live_artifacts "$runner_id"
 
 if ! runner_validate_id "$runner_id"; then
   print_run_header "blocked"
@@ -2745,7 +2790,9 @@ if [ "$dry_run" = "true" ]; then
   } > "$dry_run_output"
 
   runtime_output_log_path="$(persist_run_artifact "$dry_run_output" "dry-run")"
-  printf 'runtime_output_log_path=%s\n' "$runtime_output_log_path" >> "$runtime_output_log_path"
+  if [ -n "$runtime_output_log_path" ]; then
+    printf 'runtime_output_log_path=%s\n' "$runtime_output_log_path" >> "$runtime_output_log_path"
+  fi
 
   runner_write_state "$runner_id" \
     "status=idle" \
@@ -2771,7 +2818,7 @@ if [ "$dry_run" = "true" ]; then
     "runtime_script=${runtime_path}" \
     "runtime_output_log_path=${runtime_output_log_path}"
 
-  cat "$runtime_output_log_path"
+  cat "$dry_run_output"
   rm -f "$dry_run_output"
   exit 0
 fi

@@ -53,6 +53,7 @@ Usage:
   autoflow status [project-root] [board-dir-name]
   autoflow guard [project-root] [board-dir-name] [--strict]
   autoflow doctor [--fix] [project-root] [board-dir-name]
+  autoflow cleanup-runner-logs [project-root] [board-dir-name]
   autoflow upgrade [project-root] [board-dir-name]
   autoflow help
 
@@ -80,6 +81,7 @@ Examples:
   autoflow status .
   autoflow guard .
   autoflow doctor /path/to/project
+  autoflow cleanup-runner-logs /path/to/project
   autoflow upgrade /path/to/project
 EOF
 }
@@ -283,6 +285,12 @@ case "$cmd" in
     target_root="${doctor_args[0]:-.}"
     board_dir_name="${doctor_args[1]:-$DEFAULT_BOARD_DIR_NAME}"
     AUTOFLOW_DOCTOR_FIX="$fix_mode" exec "${REPO_ROOT}/packages/cli/doctor-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  cleanup-runner-logs)
+    shift || true
+    target_root="${1:-.}"
+    board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
+    exec "${REPO_ROOT}/packages/cli/cleanup-runner-logs.sh" "$target_root" "$board_dir_name"
     ;;
   upgrade)
     shift || true

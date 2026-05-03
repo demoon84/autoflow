@@ -322,6 +322,33 @@ runner_loop_stderr_path() {
   printf '%s/%s.loop.stderr.log' "$(runner_log_dir)" "$target_runner_id"
 }
 
+runner_loop_log_max_size_bytes() {
+  local value="${AUTOFLOW_LOOP_LOG_MAX_SIZE_BYTES:-1048576}"
+  case "$value" in
+    ''|*[!0-9]*) printf '1048576' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+runner_rotate_loop_log_if_needed() {
+  local target_log_path="$1"
+  local max_size_bytes size log_path_1 log_path_2
+
+  [ -f "$target_log_path" ] || return 0
+  max_size_bytes="$(runner_loop_log_max_size_bytes)"
+  size="$(wc -c < "$target_log_path")"
+  if [ "$size" -le "$max_size_bytes" ]; then
+    return 0
+  fi
+
+  log_path_1="${target_log_path}.1"
+  log_path_2="${target_log_path}.2"
+
+  [ -f "$log_path_2" ] && rm -f "$log_path_2"
+  [ -f "$log_path_1" ] && mv "$log_path_1" "$log_path_2"
+  mv "$target_log_path" "$log_path_1"
+}
+
 start_loop_worker_process() {
   local target_runner_id="$1"
   local stdout_file="$2"
@@ -765,10 +792,10 @@ start_runner() {
     if runner_pid_is_running "$previous_pid"; then
       timestamp="$(runner_now_iso)"
       print_runner_action_result "ok" "already_running" "$target_runner_id" "running" "$timestamp" "$previous_pid"
-      printf 'stdout=%s\n' "$(runner_loop_stdout_path "$target_runner_id")"
-      printf 'stderr=%s\n' "$(runner_loop_stderr_path "$target_runner_id")"
-      return 0
-    fi
+    printf 'stdout=%s\n' "$(runner_loop_stdout_path "$target_runner_id")"
+    printf 'stderr=%s\n' "$(runner_loop_stderr_path "$target_runner_id")"
+    return 0
+  fi
 
     run_role="$(runner_role_to_run_role "$role" || true)"
     if [ -z "$run_role" ]; then
@@ -779,9 +806,11 @@ start_runner() {
       return 0
     fi
 
-    stdout_file="$(runner_loop_stdout_path "$target_runner_id")"
-    stderr_file="$(runner_loop_stderr_path "$target_runner_id")"
-    start_loop_worker_process "$target_runner_id" "$stdout_file" "$stderr_file" "$previous_pid"
+  stdout_file="$(runner_loop_stdout_path "$target_runner_id")"
+  stderr_file="$(runner_loop_stderr_path "$target_runner_id")"
+  runner_rotate_loop_log_if_needed "$stdout_file"
+  runner_rotate_loop_log_if_needed "$stderr_file"
+  start_loop_worker_process "$target_runner_id" "$stdout_file" "$stderr_file" "$previous_pid"
     if ! runner_pid_is_running "$loop_pid"; then
       print_runner_common_header "blocked"
       printf 'runner_id=%s\n' "$target_runner_id"
@@ -960,6 +989,7 @@ restart_runner() {
 loop_runner_worker() {
   local target_runner_id="$1"
   local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result
+  local loop_stdout_file loop_stderr_file
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -1092,7 +1122,11 @@ loop_runner_worker() {
       break
     fi
 
-    AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" &
+    loop_stdout_file="$(runner_loop_stdout_path "$target_runner_id")"
+    loop_stderr_file="$(runner_loop_stderr_path "$target_runner_id")"
+    runner_rotate_loop_log_if_needed "$loop_stdout_file"
+    runner_rotate_loop_log_if_needed "$loop_stderr_file"
+    AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" > "$loop_stdout_file" 2>"$loop_stderr_file" &
     child_pid="$!"
     set +e
     wait "$child_pid"
