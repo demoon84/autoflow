@@ -217,6 +217,8 @@ const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir"
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticCache = new Map();
 const readBoardRunnerListCacheTtlMs = 15 * 1000;
+const standaloneRunnerListCacheTtlMs = 2 * 1000;
+const autoflowChildKillGraceMs = 1500;
 const readBoardRunnerListCache = new Map();
 const knownProjectScopes = new Map();
 const activeChildProcesses = new Set();
@@ -360,7 +362,7 @@ function cancelInvocation(invocationId) {
     return { ok: true, cancelled: false, reason: "not_found" };
   }
   try {
-    child.kill("SIGTERM");
+    terminateAutoflowChild(child, "cancelled by renderer");
   } catch (error) {
     return { ok: false, cancelled: false, reason: error.message || "kill_failed" };
   }
@@ -498,9 +500,33 @@ function runAutoflowArgs(args, options = {}) {
     activeChildProcesses.add(child);
     const invocationId = typeof options.invocationId === "string" ? options.invocationId : "";
     registerCancellableInvocation(invocationId, child);
+    if (typeof options.onChild === "function") {
+      options.onChild(child);
+    }
 
     let stdout = "";
     let stderr = "";
+    let cancellationReason = "";
+    const timeoutSignal = options.timeoutSignal || options.signal;
+    const abortHandler = () => {
+      cancellationReason = timeoutSignal.reason?.message || "cancelled by timeout signal";
+      terminateAutoflowChild(child, cancellationReason, options.killGraceMs);
+    };
+    if (timeoutSignal) {
+      if (timeoutSignal.aborted) {
+        abortHandler();
+      } else {
+        timeoutSignal.addEventListener("abort", abortHandler, { once: true });
+      }
+    }
+
+    const cleanup = () => {
+      activeChildProcesses.delete(child);
+      clearCancellableInvocation(invocationId);
+      if (timeoutSignal) {
+        timeoutSignal.removeEventListener("abort", abortHandler);
+      }
+    };
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -517,8 +543,7 @@ function runAutoflowArgs(args, options = {}) {
     }
 
     child.on("error", (error) => {
-      activeChildProcesses.delete(child);
-      clearCancellableInvocation(invocationId);
+      cleanup();
       resolve({
         ok: false,
         command: label,
@@ -529,9 +554,9 @@ function runAutoflowArgs(args, options = {}) {
     });
 
     child.on("close", (code, signal) => {
-      activeChildProcesses.delete(child);
-      clearCancellableInvocation(invocationId);
-      const cancelled = signal === "SIGTERM" || signal === "SIGKILL";
+      cleanup();
+      const cancelled = Boolean(cancellationReason) || signal === "SIGTERM" || signal === "SIGKILL";
+      const cancellationMessage = cancellationReason || "cancelled by renderer";
       resolve({
         ok: !cancelled && isSuccessfulAutoflowResult(code, stdout),
         command: label,
@@ -539,7 +564,7 @@ function runAutoflowArgs(args, options = {}) {
         signal: signal || "",
         cancelled,
         stdout,
-        stderr: cancelled ? `${stderr}\n[cancelled by renderer]` : stderr
+        stderr: cancelled ? `${stderr}\n[${cancellationMessage}]` : stderr
       });
     });
   });
@@ -2548,6 +2573,27 @@ function listRunnersCachedOrRefresh(options = {}, ttlMs = readBoardRunnerListCac
   }));
 }
 
+async function listRunnersStandalone(options = {}) {
+  const key = readBoardRunnerListCacheKey(options);
+  const entry = readBoardRunnerListCache.get(key);
+  const now = Date.now();
+
+  if (entry?.result && now - entry.updatedAt < standaloneRunnerListCacheTtlMs) {
+    return markRunnerListFallback(cloneRunnersResult(entry.result), { cacheStatus: "fresh" });
+  }
+
+  if (entry?.promise) {
+    const result = await entry.promise;
+    return markRunnerListFallback(cloneRunnersResult(result), {
+      refreshInFlight: true,
+      cacheStatus: "pending"
+    });
+  }
+
+  const result = await startRunnerListRefresh(options, key, entry);
+  return markRunnerListFallback(cloneRunnersResult(result), { cacheStatus: "fresh" });
+}
+
 // Per-(projectRoot, runnerId) inflight tracker. Renderer-side parallel
 // start/stop fires multiple `autoflow:controlRunner` IPC calls in flight;
 // without this guard a fast double-click on the same runner could spawn
@@ -2997,19 +3043,91 @@ function withTimeout(handler, ms) {
   }
   return (...args) => {
     let timer;
+    const controller = new AbortController();
     const timeoutPromise = new Promise((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`autoflow IPC handler timed out after ${ms}ms`)),
+        () => {
+          const error = new Error(`autoflow IPC handler timed out after ${ms}ms`);
+          controller.abort(error);
+          reject(error);
+        },
         ms
       );
     });
+    const handlerArgs = attachTimeoutSignal(args, controller.signal);
     return Promise.race([
-      Promise.resolve().then(() => handler(...args)),
+      Promise.resolve().then(() => handler(...handlerArgs)),
       timeoutPromise
     ]).finally(() => {
       clearTimeout(timer);
     });
   };
+}
+
+function attachTimeoutSignal(args, signal) {
+  if (
+    args.length >= 2 &&
+    args[1] &&
+    typeof args[1] === "object" &&
+    !Array.isArray(args[1])
+  ) {
+    return [
+      args[0],
+      {
+        ...args[1],
+        timeoutSignal: signal,
+        killGraceMs: autoflowChildKillGraceMs
+      },
+      ...args.slice(2)
+    ];
+  }
+
+  return args;
+}
+
+function terminateAutoflowChild(child, reason = "cancelled", graceMs = autoflowChildKillGraceMs) {
+  if (!child || !Number.isInteger(child.pid) || child.pid <= 0) {
+    return false;
+  }
+
+  const targets = collectProcessTree(child.pid);
+  if (targets.length === 0) {
+    try {
+      child.kill("SIGTERM");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  for (const target of targets) {
+    try {
+      process.kill(-target, "SIGTERM");
+    } catch {}
+    try {
+      process.kill(target, "SIGTERM");
+    } catch {}
+  }
+  try {
+    child.kill("SIGTERM");
+  } catch {}
+
+  const delay = Number.isFinite(graceMs) && graceMs > 0 ? graceMs : autoflowChildKillGraceMs;
+  setTimeout(() => {
+    for (const target of collectProcessTree(child.pid)) {
+      try {
+        process.kill(-target, "SIGKILL");
+      } catch {}
+      try {
+        process.kill(target, "SIGKILL");
+      } catch {}
+    }
+  }, delay).unref();
+
+  if (reason) {
+    console.warn(`[Autoflow Desktop] terminated child pid=${child.pid} reason=${reason}`);
+  }
+  return true;
 }
 
 function isSafeBoardDirName(value) {
@@ -3273,7 +3391,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("autoflow:readBoard", withTimeout(withScopeMemory(readBoard), 30000));
   ipcMain.handle("autoflow:installBoard", withScopeMemory(installBoard));
-  ipcMain.handle("autoflow:listRunners", withTimeout(withScopeMemory(listRunners), 30000));
+  ipcMain.handle("autoflow:listRunners", withTimeout(withScopeMemory(listRunnersStandalone), 30000));
   ipcMain.handle("autoflow:controlRunner", withScopeMemory(controlRunner));
   ipcMain.handle(
     "autoflow:listRunnerArtifacts",
