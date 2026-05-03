@@ -2110,10 +2110,12 @@ persist_run_artifact() {
 
   case "$suffix" in
     prompt|runtime|dry-run)
+      printf ''
       return 0
       ;;
     stderr)
       if [ ! -s "$source_file" ]; then
+        printf ''
         return 0
       fi
       ;;
@@ -2125,40 +2127,43 @@ persist_run_artifact() {
   printf '%s' "$destination"
 }
 
-runner_stale_live_log_age_seconds() {
-  local value
-  local default_seconds="3600"
+cleanup_stale_adapter_live_logs() {
+  local stale_age_seconds stale_age_minutes loop_pid
+  local file
 
-  value="$(runner_resolve_int_env "AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS" "$default_seconds")"
-  case "$value" in
-    ''|*[!0-9]*) printf '%s' "$default_seconds" ;;
-    *) printf '%s' "$value" ;;
+  stale_age_seconds="${AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS:-3600}"
+  case "$stale_age_seconds" in
+    ''|*[!0-9]*|0)
+      stale_age_seconds=3600
+      ;;
   esac
-}
 
-cleanup_stale_runner_live_artifacts() {
-  local target_runner_id="$1"
-  local stale_seconds stale_minutes loop_pid log_dir
-
-  loop_pid="$(runner_state_field "$target_runner_id" "pid" 2>/dev/null || true)"
+  loop_pid="$(runner_state_value "pid")"
   if [ -n "$loop_pid" ] && runner_pid_is_running "$loop_pid"; then
     return 0
   fi
 
-  stale_seconds="$(runner_stale_live_log_age_seconds)"
-  stale_minutes=$((stale_seconds / 60))
-  [ "$stale_minutes" -lt 1 ] && stale_minutes=1
+  stale_age_minutes=$(( (stale_age_seconds + 59) / 60 ))
+  [ "$stale_age_minutes" -lt 1 ] && stale_age_minutes=1
 
-  runner_ensure_dirs
-  log_dir="$(runner_log_dir)"
-  find "$log_dir" -type f \
-    \( -name "${target_runner_id}_*_live_stdout.log" -o -name "${target_runner_id}_*_live_stderr.log" -o -name "${target_runner_id}_*_last_message.txt" \) \
-    -mmin "+$stale_minutes" \
-    -delete
+  if [ ! -d "$(runner_log_dir)" ]; then
+    return 0
+  fi
+
+  while IFS= read -r -d '' file; do
+    [ -n "$file" ] || continue
+    rm -f "$file"
+  done < <(find "$(runner_log_dir)" -maxdepth 1 -type f \
+    \( -name "${runner_id}_*_live_stdout.log" -o \
+      -name "${runner_id}_*_live_stderr.log" -o \
+      -name "${runner_id}_*_last_message.txt" \) \
+    -mmin +"$stale_age_minutes" -print0 2>/dev/null)
 }
 
 prepare_adapter_live_logs() {
   local live_stamp
+
+  cleanup_stale_adapter_live_logs
 
   runner_ensure_dirs
   live_stamp="$(artifact_stamp)"
@@ -2369,8 +2374,6 @@ if [ ! -f "$config_path" ]; then
   printf 'reason=runner_config_missing\n'
   exit 0
 fi
-
-cleanup_stale_runner_live_artifacts "$runner_id"
 
 if ! runner_validate_id "$runner_id"; then
   print_run_header "blocked"
@@ -2818,7 +2821,9 @@ if [ "$dry_run" = "true" ]; then
     "runtime_script=${runtime_path}" \
     "runtime_output_log_path=${runtime_output_log_path}"
 
-  cat "$dry_run_output"
+  if [ -n "$runtime_output_log_path" ]; then
+    cat "$runtime_output_log_path"
+  fi
   rm -f "$dry_run_output"
   exit 0
 fi
