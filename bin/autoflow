@@ -37,9 +37,13 @@ Usage:
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy role-pipeline
   autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
   autoflow run self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # trial (disabled by default)
-  autoflow skill create [project-root] [board-dir-name] --from-ticket <ticket-id-or-path>
+  autoflow skill create [project-root] [board-dir-name] --from-ticket <ticket-id-or-path> [--name <slug>] [--category <name>] [--pattern-type <type>]
+  autoflow skill list [project-root] [board-dir-name] [--no-archived]
+  autoflow skill view [project-root] [board-dir-name] <name|category/name|skill_NNN>
+  autoflow skill validate [project-root] [board-dir-name] <name|category/name|skill_NNN>
+  autoflow skill archive [project-root] [board-dir-name] <name|category/name>
   autoflow skill match [project-root] [board-dir-name] --keywords "<text>" [--limit N]
-  autoflow skill update-stats [project-root] [board-dir-name] <skill_NNN.md|skill_NNN> --result pass|fail
+  autoflow skill update-stats [project-root] [board-dir-name] <name|category/name|skill_NNN> --result pass|fail
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
