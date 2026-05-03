@@ -218,9 +218,12 @@ const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticCache = new Map();
 const readBoardRunnerListCacheTtlMs = 15 * 1000;
 const standaloneRunnerListCacheTtlMs = 2 * 1000;
+const selfHealStoppedRunnersCooldownMs = 15 * 1000;
 const autoflowChildKillGraceMs = 1500;
 const readBoardRunnerListCache = new Map();
 const knownProjectScopes = new Map();
+const lastSelfHealByScope = new Map();
+const selfHealInFlightScopes = new Set();
 const activeChildProcesses = new Set();
 // invocationId → child process. Lets the renderer cancel a long-running
 // CLI call (runRole / controlWiki --synth / installBoard / etc.) by id.
@@ -376,18 +379,34 @@ function appConfig() {
   };
 }
 
+function projectScopeKey(projectRoot, boardDirName) {
+  return `${projectRoot}\0${boardDirName}`;
+}
+
 function rememberProjectScope(options) {
   if (!options || typeof options.projectRoot !== "string" || !options.projectRoot) {
     return;
   }
   const boardDirName = options.boardDirName || defaultBoardDirName;
-  const key = `${options.projectRoot}\0${boardDirName}`;
+  const key = projectScopeKey(options.projectRoot, boardDirName);
   const scope = { projectRoot: options.projectRoot, boardDirName };
-  if (!knownProjectScopes.has(key)) {
+  const isNewScope = !knownProjectScopes.has(key);
+  if (isNewScope) {
     knownProjectScopes.set(key, scope);
   }
-  if (!runnerShutdownInProgress) {
-    void selfHealStoppedRunnersForScope(scope);
+  const now = Date.now();
+  const lastSelfHealAt = lastSelfHealByScope.get(key) || 0;
+  const selfHealCooldownElapsed = now - lastSelfHealAt >= selfHealStoppedRunnersCooldownMs;
+  if (
+    !runnerShutdownInProgress &&
+    !selfHealInFlightScopes.has(key) &&
+    (isNewScope || selfHealCooldownElapsed)
+  ) {
+    lastSelfHealByScope.set(key, now);
+    selfHealInFlightScopes.add(key);
+    void selfHealStoppedRunnersForScope(scope).finally(() => {
+      selfHealInFlightScopes.delete(key);
+    });
   }
 }
 
@@ -3232,7 +3251,9 @@ function shouldSelfHealStoppedRunner(runner, stateValues) {
 }
 
 async function selfHealStoppedRunnersForScope(scope) {
-  const result = await listRunners(scope);
+  if (runnerShutdownInProgress) return;
+  const result = await listRunnersCachedOrRefresh(scope);
+  if (runnerShutdownInProgress) return;
   if (!result.ok) return;
 
   await Promise.all(
