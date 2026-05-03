@@ -1952,6 +1952,75 @@ with a concise explanation.
 EOF
 }
 
+role_prompt_byte_cap_value() {
+  local value=""
+
+  case "$public_role" in
+    planner)
+      value="${AUTOFLOW_PLANNER_PROMPT_BYTES:-65536}"
+      ;;
+    ticket)
+      value="${AUTOFLOW_WORKER_PROMPT_BYTES:-98304}"
+      ;;
+    verifier)
+      value="${AUTOFLOW_VERIFIER_PROMPT_BYTES:-32768}"
+      ;;
+    *)
+      value=""
+      ;;
+  esac
+
+  case "$value" in
+    ''|*[!0-9]*)
+      printf ''
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+role_prompt_byte_cap_env_name() {
+  case "$public_role" in
+    planner)
+      printf 'AUTOFLOW_PLANNER_PROMPT_BYTES'
+      ;;
+    ticket)
+      printf 'AUTOFLOW_WORKER_PROMPT_BYTES'
+      ;;
+    verifier)
+      printf 'AUTOFLOW_VERIFIER_PROMPT_BYTES'
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+apply_role_prompt_byte_cap() {
+  local prompt_file="$1"
+  local prompt_cap cap_output applied original_bytes final_bytes capped_bytes byte_cap
+
+  prompt_cap="$(role_prompt_byte_cap_value)"
+  if [ -z "$prompt_cap" ]; then
+    printf 'applied=false\n'
+    return 0
+  fi
+
+  cap_output="$(autoflow_apply_head_tail_byte_cap "$prompt_file" "$prompt_cap")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
 run_custom_adapter_command() {
   local prompt_file="$1"
   local adapter_timeout_seconds adapter_kill_after_seconds
@@ -3294,6 +3363,17 @@ case "$agent" in
       fi
     fi
     write_agent_prompt "$instruction_file" > "$prompt_file"
+    prompt_cap_applied="false"
+    prompt_cap_original_bytes="0"
+    prompt_cap_final_bytes="0"
+    prompt_cap_capped_bytes="0"
+    prompt_cap_byte_cap="0"
+    prompt_cap_output="$(apply_role_prompt_byte_cap "$prompt_file")"
+    prompt_cap_applied="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+    prompt_cap_original_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+    prompt_cap_final_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+    prompt_cap_capped_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+    prompt_cap_byte_cap="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
     runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
 
     # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
@@ -3333,6 +3413,15 @@ case "$agent" in
       "runtime_role=${runtime_role}" \
       "agent=${agent}" \
       "mode=${mode}"
+    if [ "$prompt_cap_applied" = "true" ]; then
+      runner_append_log "$runner_id" "prompt_cap_applied" \
+        "role=${public_role}" \
+        "prompt_cap_env=$(role_prompt_byte_cap_env_name)" \
+        "prompt_bytes_original=${prompt_cap_original_bytes}" \
+        "prompt_bytes_final=${prompt_cap_final_bytes}" \
+        "prompt_bytes_capped=${prompt_cap_capped_bytes}" \
+        "prompt_byte_cap=${prompt_cap_byte_cap}"
+    fi
 
     adapter_exit=0
     command_summary=""

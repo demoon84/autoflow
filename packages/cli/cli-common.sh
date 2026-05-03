@@ -37,6 +37,109 @@ autoflow_cleanup_tmp() {
 
 trap autoflow_cleanup_tmp EXIT
 
+autoflow_file_size_bytes() {
+  local file="$1"
+  wc -c < "$file" | tr -d '[:space:]'
+}
+
+autoflow_positive_integer_or_zero() {
+  local value="${1:-}"
+  case "$value" in
+    ''|*[!0-9]*)
+      printf '0'
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+autoflow_prompt_cap_marker() {
+  local elided_bytes="$1"
+  printf '[... %s bytes elided to save tokens ...]' "$elided_bytes"
+}
+
+autoflow_apply_head_tail_byte_cap() {
+  local source_file="$1"
+  local byte_cap="$2"
+  local output_file="${3:-$source_file}"
+  local original_bytes marker marker_bytes available_bytes head_bytes tail_bytes
+  local preserved_bytes elided_bytes previous_elided tmp_file
+
+  byte_cap="$(autoflow_positive_integer_or_zero "$byte_cap")"
+  original_bytes="$(autoflow_positive_integer_or_zero "$(autoflow_file_size_bytes "$source_file")")"
+
+  if [ "$byte_cap" -le 0 ] || [ "$original_bytes" -le "$byte_cap" ]; then
+    if [ "$output_file" != "$source_file" ]; then
+      cp "$source_file" "$output_file"
+    fi
+    printf 'applied=false\n'
+    printf 'original_bytes=%s\n' "$original_bytes"
+    printf 'final_bytes=%s\n' "$original_bytes"
+    printf 'capped_bytes=0\n'
+    printf 'byte_cap=%s\n' "$byte_cap"
+    return 0
+  fi
+
+  marker="$(autoflow_prompt_cap_marker 0)"
+  marker_bytes="$(autoflow_file_size_bytes <(printf '%s' "$marker"))"
+  available_bytes=$((byte_cap - marker_bytes - 2))
+  if [ "$available_bytes" -lt 2 ]; then
+    available_bytes=2
+  fi
+  head_bytes=$((available_bytes * 60 / 100))
+  tail_bytes=$((available_bytes - head_bytes))
+  [ "$head_bytes" -gt 0 ] || head_bytes=1
+  [ "$tail_bytes" -gt 0 ] || tail_bytes=1
+
+  previous_elided=-1
+  while :; do
+    preserved_bytes=$((head_bytes + tail_bytes))
+    if [ "$preserved_bytes" -ge "$original_bytes" ]; then
+      preserved_bytes=$((original_bytes - 1))
+      [ "$preserved_bytes" -gt 0 ] || preserved_bytes=1
+      head_bytes=$((preserved_bytes * 60 / 100))
+      tail_bytes=$((preserved_bytes - head_bytes))
+      [ "$head_bytes" -gt 0 ] || head_bytes=1
+      [ "$tail_bytes" -gt 0 ] || tail_bytes=1
+      preserved_bytes=$((head_bytes + tail_bytes))
+    fi
+    elided_bytes=$((original_bytes - preserved_bytes))
+    [ "$elided_bytes" -gt 0 ] || elided_bytes=1
+    [ "$elided_bytes" -eq "$previous_elided" ] && break
+    previous_elided="$elided_bytes"
+    marker="$(autoflow_prompt_cap_marker "$elided_bytes")"
+    marker_bytes="$(autoflow_file_size_bytes <(printf '%s' "$marker"))"
+    available_bytes=$((byte_cap - marker_bytes - 2))
+    if [ "$available_bytes" -lt 2 ]; then
+      available_bytes=2
+    fi
+    head_bytes=$((available_bytes * 60 / 100))
+    tail_bytes=$((available_bytes - head_bytes))
+    [ "$head_bytes" -gt 0 ] || head_bytes=1
+    [ "$tail_bytes" -gt 0 ] || tail_bytes=1
+  done
+
+  tmp_file="$(autoflow_mktemp)"
+  {
+    head -c "$head_bytes" "$source_file"
+    printf '\n%s\n' "$marker"
+    tail -c "$tail_bytes" "$source_file"
+  } > "$tmp_file"
+
+  if [ "$output_file" = "$source_file" ]; then
+    mv "$tmp_file" "$source_file"
+  else
+    mv "$tmp_file" "$output_file"
+  fi
+
+  printf 'applied=true\n'
+  printf 'original_bytes=%s\n' "$original_bytes"
+  printf 'final_bytes=%s\n' "$(autoflow_file_size_bytes "$output_file")"
+  printf 'capped_bytes=%s\n' "$elided_bytes"
+  printf 'byte_cap=%s\n' "$byte_cap"
+}
+
 normalize_input_path() {
   printf '%s' "$1"
 }
