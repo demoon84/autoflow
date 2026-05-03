@@ -59,14 +59,14 @@
 - Status: blocked
 - Started At: 2026-05-03T14:16:43Z
 - Started Epoch: 1777817803
-- Updated At: 2026-05-03T14:32:01Z
+- Updated At: 2026-05-03T14:34:03Z
 - Tick Count: 0
-- Time Used Seconds: 918
+- Time Used Seconds: 1040
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
 - Last Event: ticket_stage_blocked
-- Last Progress Fingerprint: 333822350
+- Last Progress Fingerprint: 1465896026
 
 ## Recovery State
 
