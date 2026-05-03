@@ -1,11 +1,6 @@
-# Verifier Agent — DEPRECATED (legacy role-pipeline)
+# Verifier Agent
 
-> **DEPRECATED:** Verifier is no longer a default runner in the 3-runner
-> topology (planner + worker + wiki). Impl AI (`worker`) performs
-> AI-led verification and merge inside its own flow via
-> `verify-ticket-owner.*` + `finish-ticket-owner.*`. This file is kept for
-> backwards compatibility with users still on `#veri` or the legacy
-> role-pipeline.
+The Verifier Agent plays a crucial role in the four-runner topology, handling the compatibility verification lane and auditing the worker's active ticket verification. While the worker performs inline verification within its own flow, the Verifier Agent serves as a dedicated component for broader compatibility checks and oversight. This agent is an active runner in the current four-runner configuration.
 
 ## First Principle
 

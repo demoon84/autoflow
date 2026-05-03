@@ -8,7 +8,7 @@
 
 Own one Autoflow ticket from local planning through implementation, AI-led verification, AI-led merge, evidence, and done/reject routing.
 
-Ticket Owner Mode is the default execution model. Do not split work into planner, todo, and verifier roles unless the user explicitly asks for legacy role-pipeline mode.
+Ticket Owner Mode is the default execution model for a single ticket's lifecycle. While the `verifier` runs as a distinct, active runner in the four-runner topology, this agent handles the full lifecycle of a single ticket from planning to merge. Do not split work into separate planner, todo, or verifier roles unless explicitly needed for legacy role-pipeline compatibility.
 
 ## Inputs
 

@@ -1,10 +1,6 @@
-# Merge Bot Agent — DEPRECATED (folded into Impl AI)
+# Merge Finalizer Agent
 
-> **DEPRECATED:** Merge Bot is no longer a default runner. In the 3-runner
-> topology (planner + worker + wiki), Impl AI (`worker`) calls
-> `merge-ready-ticket.*` inline from its `finish-ticket-owner.* pass`
-> finalizer; there is no separate merge-bot runner. The role identifier
-> is kept for backwards compatibility; new boards should not add one.
+This agent finalizes verified tickets that are ready for merge. While the Impl AI (`worker`) handles the AI-led merge and integrates changes, this agent's role is to manage the final stages of ticket closure, including archiving evidence and creating completion commits. Its functionality is integrated within the `finish-ticket-owner.*` process.
 
 ## Purpose
 

@@ -1,9 +1,11 @@
 # Autoflow runner configuration.
 #
-# Three-runner topology (refactor 2026-04-27):
+# Enabled four-runner topology:
 #   planner : Orchestrator AI — backlog/PRD → todo, reject → todo
 #               (auto-replan), and markdown recovery for stalled/blocked work.
 #   worker   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
+#   verifier: Verifier AI — handles compatibility verification lane and
+#               audits worker's active ticket verification.
 #   wiki    : Wiki AI — periodically refreshes .autoflow/wiki/ when
 #               tickets/done or tickets/reject change. Path-disjoint from
 #               Orchestrator AI and Impl AI so it never causes worktree/merge

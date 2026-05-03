@@ -1,16 +1,10 @@
-# Todo Queue Agent — DEPRECATED (legacy role-pipeline)
+# Todo Queue Agent
 
-> **DEPRECATED:** Todo Queue is no longer a default runner in the 3-runner
-> topology (planner + worker + wiki). Impl AI (`worker`) claims
-> directly from `tickets/todo/`, implements, verifies, and merges in one
-> flow. This file is kept for backwards compatibility with users still on
-> `#todo` or the legacy role-pipeline.
+The Todo Queue Agent manages the flow of tickets from `tickets/todo/` to implementation and verification stages. It plays a vital role in organizing and distributing work within the Autoflow system.
 
 ## Mission
 
-Legacy compatibility agent. Claim a todo ticket and implement it, then hand it to the verifier queue.
-
-Use Ticket Owner Mode by default unless the user explicitly asks for legacy role-pipeline behavior.
+Claim tickets from `tickets/todo/`, manage their progression through implementation, and prepare them for verification or further processing. This agent acts as a key component in the ticket lifecycle, ensuring work is picked up and moved forward efficiently.
 
 ## Inputs
 

@@ -25,16 +25,15 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
    - todo claim + 구현이면 `.autoflow/agents/todo-queue-agent.md`
    - verifier 검사면 `.autoflow/agents/verifier-agent.md`
 
-## Topology (refactor 2026-04-27)
+## Topology
 
-기본 토폴로지는 **Orchestrator AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. 멀티 owner 로 인한 worktree base drift / Allowed Paths 충돌 때문에 단일 Impl AI 로 직렬화했고, 세 역할은 디스조인트한 경로만 쓰기 때문에 동시에 ticking 해도 충돌이 발생하지 않는다.
+The default topology consists of four runners: Orchestrator AI (`planner`), Impl AI (`worker`), Verifier AI (`verifier`), and Wiki AI (`wiki`). These roles utilize disjoint paths to prevent worktree/merge conflicts, allowing them to tick concurrently.
 
-- `planner` (role=`planner`): Orchestrator AI. 입력은 `tickets/inbox/` order, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드는 작성하지 않으며 worktree 도 직접 만들지 않는다. 단, **blocked-dirty orchestration** 시에는 PROJECT_ROOT 의 이미 dirty 한 변경을 읽고 적절한 grouping 으로 local commit (또는 push 없이 stash) 까지 직접 처리한다 — 1원칙(멈추지 않는다)을 위해 default 는 integrate 다.
-- `worker` (role=`ticket-owner`): Impl AI. `tickets/todo/` claim → `tickets/inprogress/` worktree → mini-plan + 구현 + 검증 + 머지 + `tickets/done/` 까지 한 턴에 끝낸다. 완료 finalizer 는 evidence/log/commit 만 처리하고 wiki 는 직접 갱신하지 않는다.
-- `wiki` (role=`wiki-maintainer`): Wiki AI. 1분 tick + debounce. `.autoflow/tickets/done/`, `.autoflow/tickets/reject/`, 그리고 `.autoflow/wiki/` 의 변동을 먼저 판단한다. 실제 baseline drift 가 있을 때만 `autoflow wiki update` / `update-wiki.sh` 를 도구로 호출하고, 확인-only 이력은 `.autoflow/runners/state/wiki-baseline.history` 에 남긴다. 변동이 없으면 idle. 변동이 있어도 매 분 합성하지 않고, 누적 변동 파일이 `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (기본 3) 이상이거나 첫 변동 감지 후 `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (기본 1800s = 30분) 이상 경과한 tick 에만 `autoflow wiki query --synth` / `autoflow wiki lint --semantic` 를 실행한다. `AUTOFLOW_WIKI_DEBOUNCE=0` 으로 debounce 를 끌 수 있다 (변동 즉시 합성).
-- `coordinator`, `merge-bot`, 추가 owner 는 신규 보드에서 더 이상 기본 runner 가 아니다. role 식별자 자체는 호환성을 위해 살아 있지만, `.autoflow/runners/config.toml` 의 디폴트는 `planner` + `worker` + `wiki` 세 개만이다.
+- `planner` (role=`planner`): Orchestrator AI. Manages the workflow from input orders, PRDs, and reject tickets to generating new PRDs, todo tickets, and recovery instructions. It does not write product code or directly create worktrees.
+- `worker` (role=`ticket-owner`): Impl AI. Claims tickets from `tickets/todo/`, creates worktrees in `tickets/inprogress/`, and completes the cycle through mini-planning, implementation, verification, and merging into `tickets/done/`.
+- `verifier` (role=`verifier`): Verifier AI. Handles the compatibility verification lane and audits the worker's active ticket verification.
+- `wiki` (role=`wiki-maintainer`): Wiki AI. Periodically checks for changes in `tickets/done/`, `tickets/reject/`, and `.autoflow/wiki/`. It updates wiki content only when significant drift is detected, using debouncing to batch synthesis.
 
-경로 분할이 충돌 방지의 핵심이다. Orchestrator AI ⊂ `.autoflow/tickets/{inbox,backlog,todo,inprogress,reject,done}/` 의 markdown 기반 계획/복구 상태 (예외: blocked-dirty orchestration tick 에서는 runtime 이 명시한 `dirty_paths` 만 read + stage + local commit), Impl AI ⊂ product 코드 + 해당 ticket worktree + `tickets/{todo,inprogress,done,reject}/` 의 자기 티켓 파일, Wiki AI ⊂ `.autoflow/wiki/` 의 실제 wiki content update + `.autoflow/runners/state/wiki-baseline.history` 의 확인 이력. Impl AI 는 wiki 파일을 ticket completion commit 에 섞지 않는다.
 
 ## Root Rules
 

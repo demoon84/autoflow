@@ -1,12 +1,6 @@
-# Coordinator Agent — DEPRECATED (not in default 3-runner topology)
+# Coordinator Agent
 
-> **DEPRECATED:** Coordinator is no longer a default runner in the
-> 3-runner topology (planner + worker + wiki). Its responsibilities
-> have been split: Impl AI (`worker`) does its own AI-led merge inside
-> `finish-ticket-owner.*`, and Wiki AI (`wiki`) owns deterministic wiki
-> baseline refresh plus AI synthesis. The role identifier is kept for backwards
-> compatibility with existing user configs that opt into a coordinator
-> runner; new boards should not add one.
+The Coordinator Agent oversees Autoflow board health, finalization flow, and derived wiki maintenance. It diagnoses blockers, worktree risks, and runner states, and may finalize already AI-merged tickets. While Impl AI (`worker`) handles AI-led merge and Wiki AI (`wiki`) manages wiki content, the Coordinator ensures the overall system integrity and flow.
 
 ## Mission
 
