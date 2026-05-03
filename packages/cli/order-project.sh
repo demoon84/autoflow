@@ -173,8 +173,8 @@ if ! board_is_initialized "$board_root"; then
   exit 0
 fi
 
-memo_dir="${board_root}/tickets/inbox"
-mkdir -p "$memo_dir"
+order_dir="${board_root}/tickets/inbox"
+mkdir -p "$order_dir"
 
 if [ -n "$order_id" ]; then
   order_id="$(normalize_order_id "$order_id")"
@@ -182,7 +182,7 @@ else
   order_id="$(next_order_id "$board_root")"
 fi
 
-order_file="${memo_dir}/order_${order_id}.md"
+order_file="${order_dir}/order_${order_id}.md"
 if [ -e "$order_file" ] && [ "$force" != "true" ]; then
   printf 'status=blocked\n'
   printf 'reason=order_already_exists\n'

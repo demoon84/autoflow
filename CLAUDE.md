@@ -6,7 +6,7 @@
 
 ## Claude Code
 
-Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow` and `.claude/skills/order` (renamed from `memo`; the inbox file naming `order_*.md` and the CLI subcommand `autoflow order create` are intentionally unchanged).
+Claude Code reads this file, not `AGENTS.md`, so this file imports the shared Autoflow host guidance above. Autoflow install also provides project-local Claude skills at `.claude/skills/autoflow` and `.claude/skills/order`. The inbox file naming is `order_*.md`, and the CLI subcommand is `autoflow order create`.
 
 When the user invokes `/autoflow` or `#autoflow`, treat it as an Autoflow PRD handoff trigger:
 

@@ -3863,7 +3863,7 @@ append_iteration_fingerprint() {
       /^- Iteration Fingerprints:/ { print "- Iteration Fingerprints: [" list "]"; next }
       { print }
     ' "$ticket_path" > "$tmp"
-  else
+  elif grep -q '^## Goal Runtime' "$ticket_path"; then
     awk -v list="$joined" '
       /^## Goal Runtime/ { in_section=1; print; next }
       /^## / && in_section {
@@ -3877,6 +3877,12 @@ append_iteration_fingerprint() {
         }
       }
     ' "$ticket_path" > "$tmp"
+  else
+    cat "$ticket_path" > "$tmp"
+    {
+      printf '\n## Goal Runtime\n\n'
+      printf -- '- Iteration Fingerprints: [%s]\n' "$joined"
+    } >> "$tmp"
   fi
 
   mv "$tmp" "$ticket_path"
@@ -3897,6 +3903,11 @@ iteration_fingerprint_matches_latest() {
 # Look up the most recent archived reject for a given PRD key and return its
 # fingerprint, computed from the archived reject markdown. Used by the planner
 # to detect whether a freshly-arrived reject is a no-progress repeat.
+#
+# Picks the file whose name carries the largest `<id>.YYYYMMDDTHHMMSSZ.md`
+# timestamp suffix. Falls back to the bare `reject_NNN.md` (the very first
+# archive) only when no timestamped sibling exists, since `replan_reject_to_todo`
+# adds the timestamp suffix only on the second-and-later archive.
 latest_archived_reject_fingerprint() {
   local prd_key="$1"
   local exclude_path="${2:-}"
@@ -3908,12 +3919,20 @@ latest_archived_reject_fingerprint() {
 
   candidate="$(
     find "$archive_dir" -maxdepth 1 -type f -name 'reject_*.md' 2>/dev/null \
-      | sort -r \
-      | while IFS= read -r path; do
-          [ "$path" = "$exclude_path" ] && continue
-          printf '%s\n' "$path"
-          break
-        done
+      | awk -v ex="$exclude_path" '
+          $0 != ex {
+            base = $0
+            sub(/.*\//, "", base)
+            if (base ~ /^reject_[0-9]+\.[0-9]{8}T[0-9]{6}Z\.md$/) {
+              print "1\t" base "\t" $0
+            } else if (base ~ /^reject_[0-9]+\.md$/) {
+              print "0\t" base "\t" $0
+            }
+          }
+        ' \
+      | sort -k1,1r -k2,2r \
+      | head -1 \
+      | awk -F'\t' '{ print $3 }'
   )"
 
   [ -n "$candidate" ] || return 0

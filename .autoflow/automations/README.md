@@ -29,7 +29,7 @@ Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#aut
 - Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Split PRDs are separate backlog files saved one active slot at a time.
 - Do not create plans, tickets, code, verification records, commits, or pushes.
 
-Memo skill handoff (`/order`, `$order`, `#order`) and `autoflow order create`:
+Order skill handoff (`/order`, `$order`, `#order`) and `autoflow order create`:
 
 - Save only a quick order under `tickets/inbox/orderNNN.md`.
 - Preserve the original request and optional hints.

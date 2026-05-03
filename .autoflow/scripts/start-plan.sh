@@ -362,6 +362,9 @@ ${allowed_paths}
 - Continuation Suppressed: false
 - Last Event:
 - Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
 
 ## Recovery State
 
@@ -655,6 +658,10 @@ if [ -n "$spec_file" ]; then
   fi
 
   created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
+  if [ -n "$lint_status_value" ] && [ -f "$created_ticket" ]; then
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Status" "$lint_status_value"
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Vagueness Score" "${lint_score_value:-0}"
+  fi
   printf 'status=ok\n'
   printf 'source=backlog-to-todo\n'
   printf 'spec=%s\n' "$spec_file"
