@@ -10,3 +10,9 @@ apps/desktop/build/
 
 # token-cache 등 metrics 도구가 만드는 임시 백업 (.bak.* timestamps)
 .autoflow/metrics/token-cache.tsv.bak.*
+
+# Autoflow watch-board hook process artifacts
+.autoflow/logs/hooks/
+
+# Wiki AI scratch output at repo root (replace via .autoflow/wiki/answers/)
+/semantic_findings.txt
