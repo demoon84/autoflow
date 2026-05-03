@@ -21,7 +21,7 @@ Act as the lightweight Autoflow intake hook for small, clear changes.
 8. Add `--priority high` for urgent user-visible breakage, blocked active work, or explicit high-priority language such as "high priority", "important", or "blocking".
 9. Omit `--priority` for normal planned work so the CLI records `Priority: normal`; use `--priority low` only for cleanup or non-urgent improvements.
 10. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
-11. Fallback: write the same order-format note directly under `.autoflow/tickets/inbox/`.
+11. Fallback: write the same order-format note directly under `.autoflow/tickets/inbox/`; the first non-empty line must be `# Autoflow Order`, include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
 12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
 13. After saving, tell the user the inbox path and that `planner` or `autoflow run planner` will promote it into a generated PRD and todo ticket when safe.
 

@@ -56,6 +56,10 @@ first_nonempty_line() {
   awk 'NF { print; exit }'
 }
 
+strip_request_heading_lines() {
+  awk '{ sub(/\r$/, ""); if ($0 == "## Request") next; print }'
+}
+
 normalize_priority() {
   case "$1" in
     critical|high|normal|low)
@@ -233,6 +237,7 @@ if [ -z "$request_text" ]; then
   exit 1
 fi
 
+request_text="$(printf '%s\n' "$request_text" | strip_request_heading_lines)"
 request_first_line="$(printf '%s\n' "$request_text" | first_nonempty_line || true)"
 [ -n "$title" ] || title="${request_first_line:-order_${order_id}}"
 timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
