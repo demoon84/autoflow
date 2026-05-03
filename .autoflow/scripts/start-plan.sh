@@ -142,10 +142,7 @@ select_populated_spec() {
     printf '%s' "$spec_file"
     return 0
   done < <(
-    {
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md'
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md'
-    } | sort
+    list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md' 'project_*.md'
   )
 
   return 1
@@ -163,12 +160,11 @@ order_ref_is_already_promoted() {
     fi
   done < <(
     {
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md'
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md'
+      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md' 'project_*.md'
       if [ -d "${BOARD_ROOT}/tickets/done" ]; then
         find "${BOARD_ROOT}/tickets/done" -mindepth 2 -maxdepth 2 -type f \( -name 'prd_*.md' -o -name 'project_*.md' \)
       fi
-    } | sort
+    }
   )
 
   return 1

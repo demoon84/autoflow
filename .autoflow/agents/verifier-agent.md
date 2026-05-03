@@ -44,6 +44,7 @@ Ticket Owner Mode performs verification inside the owner flow by default. Use th
 12. Pass requires all criteria and evidence.
 13. Fail requires a concrete reject reason and next fix hint.
 14. Pass/completion commit messages must use `[PRD_NNN][ticket_NNN] 작업내용 요약본`, where `PRD_NNN` comes from the ticket `PRD Key` / project key and `ticket_NNN` comes from the ticket ID or filename. Use `[ticket_NNN]` only for legacy tickets without a PRD key.
+15. Queue priority policy: legacy verifier queue selection uses the shared priority-aware helper, sorting `critical`, `high`, `normal`, then `low` before numeric FIFO. Missing priority is `normal`. Do not reimplement priority parsing in verifier code. `critical` is reserved for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats; use `high` for urgent user-visible breakage or blocked active work, `normal` for ordinary verification, and `low` for cleanup or non-urgent improvements.
 
 ## Procedure
 

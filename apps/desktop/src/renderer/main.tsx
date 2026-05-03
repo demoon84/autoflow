@@ -4057,6 +4057,7 @@ type TicketWorkspaceTabKey = "prd" | "inbox" | "issued";
 type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "verifier" | "done" | "reject";
 type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
 type TicketKanbanFolderKey = string;
+type TicketPriority = "critical" | "high" | "normal" | "low";
 
 type TicketWorkspaceItemMeta = {
   id: string;
@@ -4069,6 +4070,8 @@ type TicketWorkspaceItemMeta = {
   statusKey: TicketWorkspaceStatusKey;
   statusLabel: string;
   statusVariant: "default" | "secondary" | "destructive";
+  priority: TicketPriority;
+  priorityRank: number;
 };
 
 type TicketWorkspaceItem = AutoflowFilePreview &
@@ -4121,6 +4124,86 @@ function workflowFileDisplayName(name: string) {
 
 function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
   return [...files].sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
+}
+
+function numericIdFromBoardFile(file: AutoflowFilePreview) {
+  const match = file.name.match(/_(\d+)\.md$/);
+  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeTicketPriority(value: string): TicketPriority | null {
+  const normalized = value
+    .replace(/[#`"'\[\]:]/g, " ")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "critical" || normalized === "crit" || normalized === "p0") {
+    return "critical";
+  }
+  if (normalized === "high" || normalized === "p1") {
+    return "high";
+  }
+  if (normalized === "normal" || normalized === "medium" || normalized === "default" || normalized === "p2") {
+    return "normal";
+  }
+  if (normalized === "low" || normalized === "p3") {
+    return "low";
+  }
+  return null;
+}
+
+function ticketPriorityRank(priority: TicketPriority) {
+  const ranks: Record<TicketPriority, number> = {
+    critical: 0,
+    high: 1,
+    normal: 2,
+    low: 3
+  };
+  return ranks[priority];
+}
+
+function extractMarkdownPriority(content: string): TicketPriority {
+  const frontmatterMatch = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
+  const frontmatterPriority = frontmatterMatch?.[1]?.match(/^priority:\s*(.*?)\s*$/im)?.[1];
+  const fromFrontmatter = frontmatterPriority ? normalizeTicketPriority(frontmatterPriority) : null;
+  if (fromFrontmatter) {
+    return fromFrontmatter;
+  }
+
+  const bodyPriority = content.match(/^-?\s*Priority:\s*(.*?)\s*$/im)?.[1];
+  const fromBody = bodyPriority ? normalizeTicketPriority(bodyPriority) : null;
+  if (fromBody) {
+    return fromBody;
+  }
+
+  const titleLine = content.match(/^(?:-\s*)?Title:\s*(.*?)\s*$/im)?.[1] || content.match(/^#\s+(.*?)\s*$/m)?.[1] || "";
+  if (/\[critical\]|🚨/i.test(titleLine)) {
+    return "critical";
+  }
+  if (/\[high\]|⚠️|⚠/i.test(titleLine)) {
+    return "high";
+  }
+
+  return "normal";
+}
+
+function compareTicketWorkspaceItems(left: TicketWorkspaceItem, right: TicketWorkspaceItem) {
+  if (left.priorityRank !== right.priorityRank) {
+    return left.priorityRank - right.priorityRank;
+  }
+
+  const modified = right.modifiedAt.localeCompare(left.modifiedAt);
+  if (modified !== 0) {
+    return modified;
+  }
+
+  const leftId = numericIdFromBoardFile(left);
+  const rightId = numericIdFromBoardFile(right);
+  if (leftId !== rightId) {
+    return leftId - rightId;
+  }
+
+  return left.filePath.localeCompare(right.filePath);
 }
 
 function boardPath(value: string) {
@@ -4273,6 +4356,7 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
   const stage = markdownScalar(content, ["Stage"]);
   const fileStatusKey = ticketWorkspaceStatusForFile(file) || "todo";
   const statusKey = fileStatusKey === "inprogress" && stage.toLowerCase() === "blocked" ? "blocked" : fileStatusKey;
+  const priority = extractMarkdownPriority(content);
   return {
     id,
     title,
@@ -4283,7 +4367,9 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
     lastUpdated: markdownScalar(content, ["Last Updated"]),
     statusKey,
     statusLabel: ticketWorkspaceStatusLabel(statusKey, file, content),
-    statusVariant: ticketWorkspaceStatusVariant(statusKey)
+    statusVariant: ticketWorkspaceStatusVariant(statusKey),
+    priority,
+    priorityRank: ticketPriorityRank(priority)
   };
 }
 
@@ -4540,7 +4626,9 @@ function TicketWorkspaceKanbanView({
               lastUpdated: "",
               statusKey: fallbackKey,
               statusLabel: ticketWorkspaceStatusLabel(fallbackKey, file, ""),
-              statusVariant: ticketWorkspaceStatusVariant(fallbackKey)
+              statusVariant: ticketWorkspaceStatusVariant(fallbackKey),
+              priority: "normal",
+              priorityRank: ticketPriorityRank("normal")
             };
       }
 
@@ -4578,9 +4666,11 @@ function TicketWorkspaceKanbanView({
           lastUpdated: meta?.lastUpdated || "",
           statusKey,
           statusLabel: meta?.statusLabel || ticketWorkspaceStatusLabel(statusKey, file, ""),
-          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
+          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey),
+          priority: meta?.priority || "normal",
+          priorityRank: meta?.priorityRank ?? ticketPriorityRank("normal")
         };
-      }),
+      }).sort(compareTicketWorkspaceItems),
     [files, metaByPath]
   );
 
@@ -4770,6 +4860,7 @@ function TicketWorkspaceKanbanView({
                         const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
                         const canDelete = item.kind === "order";
                         const isDeletingThis = deleteTarget?.filePath === item.filePath;
+                        const showPriorityBadge = item.priority === "critical" || item.priority === "high";
                         return (
                           <div
                             key={item.filePath}
@@ -4792,6 +4883,14 @@ function TicketWorkspaceKanbanView({
                             <span className="ticket-kanban-card-topline">
                               <span className="ticket-kanban-card-id">{item.displayId}</span>
                               <span className="ticket-kanban-card-controls">
+                                {showPriorityBadge ? (
+                                  <Badge
+                                    className={`ticket-priority-badge ticket-priority-badge-${item.priority}`}
+                                    variant={item.priority === "critical" ? "destructive" : "secondary"}
+                                  >
+                                    {item.priority}
+                                  </Badge>
+                                ) : null}
                                 <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
                                 {canDelete ? (
                                   <Button
@@ -5129,6 +5228,14 @@ function TicketWorkspaceDetailPane({
               <strong>{selectedKindLabel}</strong>
             </div>
             <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
+            {selectedItem.priority === "critical" || selectedItem.priority === "high" ? (
+              <Badge
+                className={`ticket-priority-badge ticket-priority-badge-${selectedItem.priority}`}
+                variant={selectedItem.priority === "critical" ? "destructive" : "secondary"}
+              >
+                {selectedItem.priority}
+              </Badge>
+            ) : null}
             <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
               {selectedItem.statusLabel}
             </Badge>

@@ -108,6 +108,7 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 18. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
 19. Idle is valid. Record it as a resumable state and do not stop the heartbeat unless the user asks.
 20. Write generated PRD, plan, ticket, recovery notes, and user-friendly order prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
+21. Queue priority policy: when creating or annotating inbox orders, backlog PRDs, todo tickets, or verifier-lane tickets, use `Priority:` only when the urgency is meaningful. Supported values are `critical`, `high`, `normal`, and `low`; missing priority is `normal`. Reserve `critical` for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats. Use `high` for urgent user-visible breakage or blocked active work, `normal` for default implementation work, and `low` for cleanup or non-urgent improvements. The runtime queue helpers sort priority before numeric FIFO; do not reimplement priority parsing in planner code.
 
 ## Procedure
 

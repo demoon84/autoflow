@@ -1094,18 +1094,160 @@ extract_numeric_id() {
   normalize_id "$base"
 }
 
+priority_value_to_rank() {
+  local value
+
+  value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  value="${value%%#*}"
+  value="${value//\`/}"
+  value="${value//\"/}"
+  value="${value//\'/}"
+  value="${value//[/}"
+  value="${value//]/}"
+  value="${value//:/}"
+  value="$(trim_spaces "$value")"
+
+  case "$value" in
+    critical|crit|p0)
+      printf '0'
+      ;;
+    high|p1)
+      printf '1'
+      ;;
+    normal|medium|default|p2)
+      printf '2'
+      ;;
+    low|p3)
+      printf '3'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+extract_priority_rank_from_title_marker() {
+  local file="$1"
+  local marker_line
+
+  marker_line="$(
+    awk '
+      /^[[:space:]]*(-[[:space:]]*)?Title:[[:space:]]*/ { print; exit }
+      /^#[[:space:]]+/ { print; exit }
+    ' "$file" 2>/dev/null || true
+  )"
+
+  [ -n "$marker_line" ] || return 1
+  case "$marker_line" in
+    *"[CRITICAL]"*|*"[critical]"*|*"🚨"*)
+      printf '0'
+      ;;
+    *"[HIGH]"*|*"[high]"*|*"⚠️"*|*"⚠"*)
+      printf '1'
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+extract_priority_rank() {
+  local file="$1"
+  local value rank
+
+  [ -f "$file" ] || {
+    printf '2'
+    return 0
+  }
+
+  value="$(
+    awk '
+      NR == 1 && $0 == "---" { in_fm=1; next }
+      in_fm && $0 == "---" { exit }
+      in_fm && /^[[:space:]]*priority[[:space:]]*:/ {
+        sub(/^[[:space:]]*priority[[:space:]]*:[[:space:]]*/, "")
+        print
+        exit
+      }
+    ' "$file" 2>/dev/null || true
+  )"
+  if [ -n "$value" ]; then
+    rank="$(priority_value_to_rank "$value" 2>/dev/null || true)"
+    if [ -n "$rank" ]; then
+      printf '%s' "$rank"
+      return 0
+    fi
+  fi
+
+  value="$(
+    awk '
+      NR == 1 && $0 == "---" { in_fm=1; next }
+      in_fm && $0 == "---" { in_fm=0; next }
+      in_fm { next }
+      /^[[:space:]]*(-[[:space:]]*)?Priority[[:space:]]*:/ {
+        sub(/^[[:space:]]*(-[[:space:]]*)?Priority[[:space:]]*:[[:space:]]*/, "")
+        print
+        exit
+      }
+      /^[[:space:]]*(-[[:space:]]*)?priority[[:space:]]*:/ {
+        sub(/^[[:space:]]*(-[[:space:]]*)?priority[[:space:]]*:[[:space:]]*/, "")
+        print
+        exit
+      }
+    ' "$file" 2>/dev/null || true
+  )"
+  if [ -n "$value" ]; then
+    rank="$(priority_value_to_rank "$value" 2>/dev/null || true)"
+    if [ -n "$rank" ]; then
+      printf '%s' "$rank"
+      return 0
+    fi
+  fi
+
+  rank="$(extract_priority_rank_from_title_marker "$file" 2>/dev/null || true)"
+  if [ -n "$rank" ]; then
+    printf '%s' "$rank"
+    return 0
+  fi
+
+  printf '2'
+}
+
 list_matching_files() {
   local dir="$1"
-  local pattern="$2"
+  shift
+  local patterns=("$@")
+  local find_args=()
+  local pattern file id rank
 
   [ -d "$dir" ] || return 0
-  find "$dir" -maxdepth 1 -type f -name "$pattern" | sort
+  [ "${#patterns[@]}" -gt 0 ] || return 0
+
+  if [ "${#patterns[@]}" -eq 1 ]; then
+    find_args=(-name "${patterns[0]}")
+  else
+    find_args=('(')
+    for pattern in "${patterns[@]}"; do
+      if [ "${#find_args[@]}" -gt 1 ]; then
+        find_args+=(-o)
+      fi
+      find_args+=(-name "$pattern")
+    done
+    find_args+=(')')
+  fi
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    rank="$(extract_priority_rank "$file" 2>/dev/null || printf '2')"
+    id="$(extract_numeric_id "$file" 2>/dev/null || printf '999999')"
+    printf '%s\t%s\t%s\n' "$rank" "$id" "$file"
+  done < <(find "$dir" -maxdepth 1 -type f "${find_args[@]}") | sort -t "$(printf '\t')" -k1,1n -k2,2n -k3,3 | cut -f3-
 }
 
 lowest_matching_file() {
   local dir="$1"
-  local pattern="$2"
-  list_matching_files "$dir" "$pattern" | head -n 1
+  shift
+  list_matching_files "$dir" "$@" | head -n 1
 }
 
 list_ticket_record_files_under() {

@@ -2734,6 +2734,27 @@ pre {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ticket-priority-badge {
+  max-width: 86px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.ticket-priority-badge-critical {
+  border-color: color-mix(in srgb, var(--destructive) 48%, var(--border)) !important;
+  background: color-mix(in srgb, var(--destructive) 15%, var(--card)) !important;
+}
+
+.ticket-priority-badge-high {
+  border-color: color-mix(in srgb, var(--chart-4) 42%, var(--border)) !important;
+  background: color-mix(in srgb, var(--chart-4) 12%, var(--card)) !important;
+  color: var(--foreground) !important;
 }
 
 .ticket-kanban-card-id {

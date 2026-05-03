@@ -73,6 +73,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 18. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
 19. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
 20. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat history.
+21. Queue priority policy: todo and legacy verifier claims are selected by the common queue helper using `critical`, `high`, `normal`, and `low` before numeric FIFO. Missing priority is `normal`. Do not reimplement priority parsing in owner scripts or notes. Treat `critical` as reserved for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats; use `high` for urgent user-visible breakage or blocked active work, `normal` for ordinary work, and `low` for cleanup or non-urgent improvements.
 
 ## Procedure
 
