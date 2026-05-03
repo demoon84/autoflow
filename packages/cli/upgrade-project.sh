@@ -1231,6 +1231,8 @@ record_sync_action "$SYNC_ACTION_RESULT"
 write_board_version_marker "$TARGET_BOARD_ROOT" "$backup_root"
 record_sync_action "$SYNC_ACTION_RESULT"
 
+ensure_telemetry_directory "$TARGET_PROJECT_ROOT"
+
 status="already_current"
 if [ "$managed_created_count" -gt 0 ] || [ "$managed_updated_count" -gt 0 ]; then
   status="upgraded"

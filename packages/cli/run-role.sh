@@ -496,6 +496,73 @@ ticket_goal_record_adapter_result_for_current_ticket() {
   ticket_goal_common_call ticket_goal_record_adapter_result "$ticket_file" "$adapter_exit" "$before_fingerprint" "$runner_id"
 }
 
+run_role_record_worker_tick_telemetry() {
+  local started_at="$1"
+  local ended_at="$2"
+  local adapter_exit="$3"
+  local adapter_stderr_path="$4"
+  local telemetry_script telemetry_result telemetry_failure_class
+  local start_epoch end_epoch duration_ms
+
+  [ "$public_role" = "ticket" ] || return 0
+
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || return 0
+
+  start_epoch="$(telemetry_timestamp_to_epoch "$started_at" || true)"
+  end_epoch="$(telemetry_timestamp_to_epoch "$ended_at" || true)"
+  if [ -n "$start_epoch" ] && [ -n "$end_epoch" ] && [ "$end_epoch" -ge "$start_epoch" ]; then
+    duration_ms=$((end_epoch - start_epoch))
+  else
+    duration_ms=0
+  fi
+
+  case "$adapter_exit" in
+    0)
+      telemetry_result="success"
+      telemetry_failure_class=""
+      ;;
+    124)
+      telemetry_result="killed"
+      telemetry_failure_class="adapter_timeout"
+      ;;
+    *)
+      telemetry_result="failed"
+      telemetry_failure_class="adapter_exit_${adapter_exit}"
+      ;;
+  esac
+
+  if [ "$telemetry_result" != "success" ] && [ -f "$adapter_stderr_path" ] && [ -s "$adapter_stderr_path" ] && [ -z "$telemetry_failure_class" ]; then
+    telemetry_failure_class="adapter_stderr_nonempty"
+  fi
+
+  if [ "$telemetry_result" != "success" ] && [ -z "$telemetry_failure_class" ]; then
+    telemetry_failure_class="unknown_failure"
+  fi
+
+  if [ "$telemetry_result" != "success" ]; then
+    "$telemetry_script" record \
+      --project-root "$project_root" \
+      --runner "$runner_id" \
+      --result "$telemetry_result" \
+      --started-at "$started_at" \
+      --ended-at "$ended_at" \
+      --duration-ms "$duration_ms" \
+      --failure-class "$telemetry_failure_class" \
+      >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  "$telemetry_script" record \
+    --project-root "$project_root" \
+    --runner "$runner_id" \
+    --result "$telemetry_result" \
+    --started-at "$started_at" \
+    --ended-at "$ended_at" \
+    --duration-ms "$duration_ms" \
+    >/dev/null 2>&1 || true
+}
+
 planner_ticket_field() {
   local file="$1"
   local section="$2"
@@ -2613,6 +2680,7 @@ case "$agent" in
     set -e
 
     finished_at="$(runner_now_iso)"
+    run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stderr" || true
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"

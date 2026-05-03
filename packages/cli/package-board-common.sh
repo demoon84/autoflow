@@ -556,3 +556,16 @@ replace_literal_in_file() {
   mv "$tmp" "$file"
   return 0
 }
+
+ensure_telemetry_directory() {
+  local project_root="$1"
+  local telemetry_root
+
+  telemetry_root="${project_root}/.autoflow/telemetry"
+  mkdir -p "$telemetry_root"
+
+  if [ ! -f "${telemetry_root}/.gitignore" ]; then
+    mkdir -p "${telemetry_root}"
+    printf '*\n!.gitignore\n' > "${telemetry_root}/.gitignore"
+  fi
+}

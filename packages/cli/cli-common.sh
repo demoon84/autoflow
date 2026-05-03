@@ -156,6 +156,53 @@ board_root_path() {
   printf '%s/%s' "$project_root" "$board_dir_name"
 }
 
+telemetry_root_path() {
+  local project_root="$1"
+
+  printf '%s/.autoflow/telemetry' "$project_root"
+}
+
+telemetry_runs_jsonl_path() {
+  local project_root="$1"
+  printf '%s/runs.jsonl' "$(telemetry_root_path "$project_root")"
+}
+
+telemetry_failures_jsonl_path() {
+  local project_root="$1"
+  printf '%s/failures.jsonl' "$(telemetry_root_path "$project_root")"
+}
+
+telemetry_archive_path() {
+  local project_root="$1"
+  local month="$2"
+
+  [ -n "$month" ] || return 0
+  printf '%s/runs.%s.jsonl.gz' "$(telemetry_root_path "$project_root")" "$month"
+}
+
+telemetry_timestamp_to_epoch() {
+  local value="$1"
+  local normalized
+
+  normalized="${value%.*}"
+  if date -u -d "$normalized" +%s >/dev/null 2>&1; then
+    date -u -d "$normalized" +%s
+    return 0
+  fi
+
+  if date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$normalized" +%s >/dev/null 2>&1; then
+    date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$normalized" +%s
+    return 0
+  fi
+
+  if date -u -j -f "%Y-%m-%d" "$normalized" +%s >/dev/null 2>&1; then
+    date -u -j -f "%Y-%m-%d" "$normalized" +%s
+    return 0
+  fi
+
+  return 1
+}
+
 board_has_any_spec_root() {
   local board_root="$1"
   [ -d "${board_root}/tickets/backlog" ] || [ -d "${board_root}/rules/spec" ]

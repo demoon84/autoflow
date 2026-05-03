@@ -85,6 +85,8 @@ while IFS='|' read -r asset_kind source_rel target_rel; do
   record_host_skill_action "$SYNC_ACTION_RESULT"
 done < <(managed_host_skill_asset_entries)
 
+ensure_telemetry_directory "$TARGET_PROJECT_ROOT"
+
 adapter_probe_count_ok=0
 adapter_probe_count_missing=0
 adapter_probe() {

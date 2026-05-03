@@ -55,6 +55,7 @@ Usage:
   autoflow doctor [--fix] [project-root] [board-dir-name]
   autoflow cleanup-runner-logs [project-root] [board-dir-name]
   autoflow upgrade [project-root] [board-dir-name]
+  autoflow telemetry [project-root] [board-dir-name]
   autoflow help
 
 Examples:
@@ -83,6 +84,7 @@ Examples:
   autoflow doctor /path/to/project
   autoflow cleanup-runner-logs /path/to/project
   autoflow upgrade /path/to/project
+  autoflow telemetry /path/to/project
 EOF
 }
 
@@ -99,7 +101,7 @@ status=ok
 catalog_version=1
 project_root=${project_root}
 board_root=${board_root}
-tool_count=10
+tool_count=11
 tool.1.id=autoflow-tool-list
 tool.1.roles=planner,worker,wiki
 tool.1.kind=cli
@@ -169,6 +171,13 @@ tool.10.entrypoint=.autoflow/scripts/common.sh
 tool.10.decision_boundary=result_only
 tool.10.outputs=worktree_status,dirty_scope_conflict,recovery_evidence
 tool.10.contract=Report worktree and dirty-root evidence, prepare snapshots, and move board files without deciding workflow meaning.
+tool.11.id=telemetry
+tool.11.roles=planner,worker,wiki
+tool.11.kind=cli
+tool.11.entrypoint=packages/cli/telemetry-project.sh
+tool.11.decision_boundary=result_only
+tool.11.outputs=telemetry_event_count|telemetry_record_status|archived_count|archive_path
+tool.11.contract=Record and query worker tick telemetry, and compact archived run rows for local diagnostics.
 EOF
 }
 
@@ -297,6 +306,10 @@ case "$cmd" in
     target_root="${1:-.}"
     board_dir_name="${2:-$DEFAULT_BOARD_DIR_NAME}"
     exec "${REPO_ROOT}/packages/cli/upgrade-project.sh" "$target_root" "$board_dir_name"
+    ;;
+  telemetry)
+    shift || true
+    exec "${REPO_ROOT}/packages/cli/telemetry-project.sh" "$@"
     ;;
   help|-h|--help)
     usage
