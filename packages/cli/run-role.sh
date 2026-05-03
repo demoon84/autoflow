@@ -1593,7 +1593,7 @@ emit_required_flow() {
       printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the order/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
       ;;
   esac
-  printf '%s\n' "4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
+  printf '%s\n' "4. Treat wiki results as context and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
   printf '%s\n' "5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work."
   printf '%s\n' "6. Use runtime scripts as tools when claiming or preparing board state if a runtime script is defined; inspect their key=value output before choosing the next action."
   case "$public_role" in
@@ -1608,7 +1608,7 @@ emit_required_flow() {
       ;;
   esac
   printf '%s\n' "9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context."
-  printf '%s\n' "10. Do not rely on this prompt as future memory."
+  printf '%s\n' "10. Do not rely on this prompt as future context."
   printf '%s\n' "11. Never git push."
 }
 
