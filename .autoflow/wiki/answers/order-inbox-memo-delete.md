@@ -10,7 +10,7 @@ terms:
   - "tickets/inbox memo_*.md 삭제"
 citations:
   - "tickets/done/prd_089/prd_089.md"
-  - "tickets/done/prd_089/memo_056.md"
+  - "tickets/done/prd_089/order_056.md"
 ---
 
 # order-inbox-memo-delete
@@ -22,7 +22,7 @@ citations:
 ## Citations
 
 - `tickets/done/prd_089/prd_089.md`
-- `tickets/done/prd_089/memo_056.md`
+- `tickets/done/prd_089/order_056.md`
 
 ## Source
 

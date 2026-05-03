@@ -25,7 +25,7 @@ The board was replaced by a tabbed layout in `prd_011`, moving from columns to a
 
 ### 3. Unified Ticket Workspace (Current)
 The design was further refined in `prd_019`, `prd_024`, and `prd_030` into the current **[[features/ticket-workspace-tabs]]**:
-- **Simplified Tabs**: The workspace now supports 3 tabs: `Inbox` (added in `prd_030`), `PRD`, and `발급 티켓` (Issued Tickets).
+- **Simplified Tabs**: The workspace now supports 3 tabs: `주문` (Order, added as Inbox in `prd_030`), `PRD`, and `발급 티켓` (Issued Tickets).
 - **Detail Layer**: Static preview panes were replaced with a click-to-open Dialog overlay, allowing the list to utilize 100% of the screen width.
 - **Visual Cleanup**: Left-border color accents were removed in `prd_023` to reduce visual noise, relying on status badges for state indication.
 

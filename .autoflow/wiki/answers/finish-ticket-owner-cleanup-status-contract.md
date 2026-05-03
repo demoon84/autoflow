@@ -3,7 +3,7 @@ kind: synth_answer
 slug: finish-ticket-owner-cleanup-status-contract
 runner: wiki-1
 created: 2026-04-29T22:43:11Z
-updated: 2026-04-29T22:54:39Z
+updated: 2026-05-02T13:36:09Z
 terms:
   - "cleanup_status=ok"
   - "finish-ticket-owner output contract"

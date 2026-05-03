@@ -14,7 +14,7 @@ terms:
 citations:
   - "tickets/done/prd_056/tickets_058.md"
   - "tickets/done/prd_056/prd_056.md"
-  - "tickets/done/prd_056/memo_025.md"
+  - "tickets/done/prd_056/order_025.md"
 ---
 
 # wiki-query-filter-group
@@ -27,7 +27,7 @@ tickets_058에서 위키 검색 필터의 `wikiQueryIncludeTickets`와 `wikiQuer
 
 - `tickets/done/prd_056/tickets_058.md`
 - `tickets/done/prd_056/prd_056.md`
-- `tickets/done/prd_056/memo_025.md`
+- `tickets/done/prd_056/order_025.md`
 
 ## Source
 

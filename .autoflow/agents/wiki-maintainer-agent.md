@@ -35,6 +35,7 @@ You are the Wiki AI synthesis owner, not the board orchestrator. The commands be
 First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 
 - `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Run it only when you detect material baseline drift or new source files that are not reflected in the managed sections. If the tool emits `status=unchanged`, treat `history_file` as the check ledger and do not create a wiki commit from timestamp-only output.
+- `"$AUTOFLOW_CLI" wiki summarize-telemetry --slug-set telemetry-default --window 7d` — refreshes generated telemetry summary pages (`wiki/operations/runner-health.md`, `wiki/operations/runner-timing.md`, `wiki/agents/prompt-evolution.md`) after the deterministic baseline update and before synthesis/lint. This step is covered by the existing wiki debounce policy; do not add a separate debounce key.
 - `"$AUTOFLOW_CLI" wiki query --term <text> --rag` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
 - `"$AUTOFLOW_CLI" wiki query --rag --synth` — AI synthesis pass. **This is your primary value-add.** Layer focused entity/concept pages over the deterministic baseline.
 - `"$AUTOFLOW_CLI" wiki query --rag --synth --save-as <slug>` — same as above but persists the answer to `wiki/answers/<slug>.md` with YAML frontmatter (`kind: synth_answer`, `created`, `updated`, `terms`, `citations`). Re-running with the same slug preserves `created:` and refreshes `updated:`. Use this when an answer is reusable so the next query can find it via plain `wiki query --rag` instead of re-synthesizing.
@@ -97,10 +98,11 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 ## Procedure
 
 1. Identify the input set for this run: latest done ticket, related verification log, conversation handoff, and any existing wiki page under `wiki/decisions/`, `wiki/features/`, `wiki/architecture/`, or `wiki/learnings/` that already covers the same topic.
-2. Inspect the input diff and existing managed baseline. Run `autoflow wiki update` only when there is material drift or new source content to reflect; `status=unchanged` is a successful check, not a wiki content change.
-3. Keep the run idempotent: same sources should converge to the same managed content, duplicate headings should be merged, and repeated runs should not append near-identical bullets.
-4. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
-5. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
-6. Treat conversation handoffs as raw ingest material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
-7. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text> --rag` instead of grepping by hand. Cite the returned `result.N.path` and chunk line metadata in any new entity or concept page.
-8. Leave a concise summary of updated pages.
+2. Inspect the input diff and existing managed baseline. Run `autoflow wiki update <project-root> <board-dir-name>` only when there is material drift or new source content to reflect; `status=unchanged` is a successful check, not a wiki content change.
+3. After the baseline update check, run `autoflow wiki summarize-telemetry <project-root> <board-dir-name> --slug-set telemetry-default --window 7d` once when the debounce gate has admitted this Wiki AI tick. This is the required telemetry-summary step before any synth/lint work; do not call `wiki-project.sh` without an action. Inspect each slug's `summary_status`; `skipped_unchanged` is a successful idempotent result.
+4. Keep the run idempotent: same sources should converge to the same managed content, duplicate headings should be merged, and repeated runs should not append near-identical bullets.
+5. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
+6. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
+7. Treat conversation handoffs as raw ingest material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
+8. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text> --rag` instead of grepping by hand. Cite the returned `result.N.path` and chunk line metadata in any new entity or concept page.
+9. Leave a concise summary of updated pages.

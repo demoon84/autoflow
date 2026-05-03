@@ -9,16 +9,19 @@ Generated summaries may be written here by `autoflow wiki update`.
 ## Recent Synthesis
 - **[[answers/recent-core-and-ui-refinements-20260502]]** (`wiki/answers/recent-core-and-ui-refinements-20260502.md`): Captured the recent core and UI refinements spanning `prd_091` through `prd_097`, including Desktop TODO layer layout fixes, Planner orchestrator recovery for max retries, Worker lifecycle isolation (worktree/branch), flex-alignment for UI progress rows, Codex fast reasoning (low), and Planner/Orchestrator role label normalization.
 - **[[answers/planner-worker-lifecycle-boundaries-20260502]]** (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`): Captured the core architectural boundaries between Planner and Worker roles defined in `prd_092` and `prd_093`, focusing on retry-limit recovery signals and task-level isolation.
-- **[[answers/desktop-workflow-board-refinements-20260502]]** (`wiki/answers/desktop-workflow-board-refinements-20260502.md`): Captured the recent workflow-board polish across `prd_082` through `prd_084`, including unified `prd-NNN`/`order-NNN`/`ticket-NNN` display IDs, role labels normalized to `Planner AI`/`Worker AI`/`Wiki AI`, and the always-visible kanban column baseline.
+- **[[answers/desktop-workflow-board-refinements-20260502]]** (`wiki/answers/desktop-workflow-board-refinements-20260502.md`): Captured the recent workflow-board polish across `prd_082` through `prd_084`, including unified `prd-NNN`/`order-NNN`/`ticket-NNN` display IDs, role labels normalized to `Planner AI`/`Worker AI`/`위키봇`, and the always-visible kanban column baseline.
 - **[[answers/desktop-xs-density-and-workflow-pin-width-20260502]]** (`wiki/answers/desktop-xs-density-and-workflow-pin-width-20260502.md`): Captured the recent Desktop density/layout pass that keeps general Button/Input controls on an `xs` rhythm and preserves a 3-column core workflow pin strip (ORDER, PRD, TODO) around the 1040px minimum desktop width.
 - **[[answers/dirty-root-finalization-blockers-20260502]]** (`wiki/answers/dirty-root-finalization-blockers-20260502.md`): Captured the shared finalization blocker across `reject_071` and `reject_074`: when accepted state already lives inside a broad dirty Desktop rewrite with out-of-scope typing/preload dependencies, replay must restart from a clean current-HEAD baseline instead of force-finishing the old ticket.
+- **[[answers/ticket-overlap-no-op-summary]]** (`wiki/answers/ticket-overlap-no-op-summary.md`): Summary of learning regarding ticket overlap and no-op worktrees.
+- **[[answers/merge-blocked-already-applied-patch-summary]]** (`wiki/answers/merge-blocked-already-applied-patch-summary.md`): Summary of learning regarding merge blocked by an already-applied patch.
+- **[[answers/prd-120-rejection-learning]]** (`wiki/answers/prd-120-rejection-learning.md`): Summary of learning regarding persistent rejection of prd_120 due to dirty project root and missing GUI environment.
 - **[[answers/ticket-detail-layer-meta-layout-20260501]]** (`wiki/answers/ticket-detail-layer-meta-layout-20260501.md`): Captured `prd_077`, which keeps `TicketDetailLayer` metadata on a one-line-first flex-wrap layout instead of a fixed 3-column grid while preserving the existing narrow-screen fallback.
 - **[[answers/desktop-renderer-dirty-root-finalization-blocker-20260501]]** (`wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md`): Captured `reject_071` as a replay blocker: when visible criteria are already embedded in a broad dirty `renderer` rewrite, finalization must wait for either that rewrite to land or a fresh isolated current-HEAD diff.
 - **[[answers/open-layer-flicker-finalization-blocker-20260501]]** (`wiki/answers/open-layer-flicker-finalization-blocker-20260501.md`): Captured the layer-flicker reject path that requires stable ticket-detail/workflow-pin layer identity during board snapshot refresh without widening scope beyond the affected layer flows.
 - **[[answers/done-when-checklist-state]]** (`wiki/answers/done-when-checklist-state.md`): Captured `prd_088`, which makes completed `## Done When` items persist as checked `[x]` state in the ticket document instead of staying as a static acceptance list.
 - **[[answers/order-inbox-memo-delete]]** (`wiki/answers/order-inbox-memo-delete.md`): Captured `prd_089`, the Order-tab workflow that limits deletion to pending `tickets/inbox/memo_*.md` cards with confirmation and defensive IPC path checks.
 - **[[answers/desktop-sidebar-korean-labels]]** (`wiki/answers/desktop-sidebar-korean-labels.md`): Captured `prd_090`, which keeps the existing sidebar order and route keys while renaming labels to `AI 대쉬보드`, `티켓`, and `LLM 위키`.
-- **[[answers/desktop-full-page-loading-overlay-20260430]]** (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`): Summarized `prd_065` as the desktop-wide loading overlay restoration that should reuse existing loading flags and restore a full-page MUI `Backdrop` + `CircularProgress` flow when prior implementation evidence exists.
+- **[[answers/desktop-full-page-loading-overlay-20260430]]** (`wiki/answers/desktop-full-page-loading-overlay-20260430.md`): Summarized `prd_065` as the desktop-wide loading overlay restoration that should reuse existing loading flags and restore a full-page loading overlay flow consistent with the current `shadcn` standard.
 - **[[answers/finish-ticket-owner-cleanup-status-regression-20260430]]** (`wiki/answers/finish-ticket-owner-cleanup-status-regression-20260430.md`): Captured the current `finish-ticket-owner` output contract around `cleanup_status=ok` and linked the related reject history from `verify_003` and `prd_049`.
 - **[[answers/desktop-navigation-refinements-20260430]]** (`wiki/answers/desktop-navigation-refinements-20260430.md`): Summarized the Desktop navigation refinements that put the inbox pin before PRD in the workflow strip and moved the Logs sidebar item after 통계.
 - **[[answers/recent-desktop-ui-refinements-20260429]]** (`wiki/answers/recent-desktop-ui-refinements-20260429.md`): Captured the 2026-04-29 Desktop UI snapshot that renamed user-facing memo labels to order and confirmed the placement of the Logs sidebar item at the end of the navigation list.
@@ -36,7 +39,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
 - **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
 - **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
-- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`, [[answers/singleton-runner-display-labels]]).
+- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`, [[answers/singleton-runner-display-labels]] (`wiki/answers/singleton-runner-display-labels.md`)).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
 - **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
 - **[[features/desktop-runner-controls]]** (`wiki/features/desktop-runner-controls.md`): Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
@@ -77,11 +80,10 @@ Generated summaries may be written here by `autoflow wiki update`.
 - `architecture/`
   - [[architecture/runner-role-slugs]] (`wiki/architecture/runner-role-slugs.md`) - current retained runner-id scheme (`planner-1`, `owner-1`, `wiki-1`); slug rename proposal was superseded.
 - `learnings/`
-  - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
+  - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
-  - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
-- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
+  - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
   - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
   - [[answers/recent-core-and-ui-refinements-20260502]] (`wiki/answers/recent-core-and-ui-refinements-20260502.md`)
@@ -131,11 +133,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 105
-- Reject records: 4
-- Verifier logs: 329
-- Conversation handoffs: 4
-- Last updated: 2026-05-02T23:22:31Z
+- Done tickets: 109
+- Reject records: 5
+- Verifier logs: 339
+- Conversation handoffs: 8
+- Last updated: 2026-05-03T07:34:58Z
 
 ## Completed Tickets
 

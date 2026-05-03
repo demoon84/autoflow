@@ -7,24 +7,24 @@ updated: 2026-04-30T05:57:08Z
 terms:
   - "prd_065"
   - "로딩 오버레이"
-  - "Backdrop CircularProgress"
+  - "shadcn"
   - "isBoardLoading"
   - "tickets_065"
 citations:
   - "tickets/done/prd_065/prd_065.md"
-  - "tickets/done/prd_065/memo_034.md"
+  - "tickets/done/prd_065/order_034.md"
 ---
 
 # desktop-full-page-loading-overlay-20260430
 
 ## Answer
 
-prd_065는 데스크톱 앱의 초기 부트·보드/프로젝트 전환·페이지 갱신 등 전체 대기 상황에서 `isBoardLoading`과 연동되는 화면 전체 로딩 오버레이를 복원하는 작업이며, 과거 구현을 우선 확인해 현재 MUI 정책에 맞는 `Backdrop` + `CircularProgress` 형태로 되살리는 목표다.
+prd_065는 데스크톱 앱의 초기 부트·보드/프로젝트 전환·페이지 갱신 등 전체 대기 상황에서 `isBoardLoading`과 연동되는 화면 전체 로딩 오버레이를 복원하는 작업이며, 과거 구현을 우선 확인해 현재 `shadcn` 표준에 맞는 로딩 오버레이 형태로 되살리는 목표다.
 
 ## Citations
 
 - `tickets/done/prd_065/prd_065.md`
-- `tickets/done/prd_065/memo_034.md`
+- `tickets/done/prd_065/order_034.md`
 
 ## Source
 

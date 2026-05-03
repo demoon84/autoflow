@@ -12,7 +12,7 @@ terms:
   - "prd_077"
 citations:
   - "tickets/done/prd_077/prd_077.md"
-  - "tickets/done/prd_077/memo_043.md"
+  - "tickets/done/prd_077/order_043.md"
 ---
 
 # ticket-detail-layer-meta-layout-20260501
@@ -24,7 +24,7 @@ citations:
 ## Citations
 
 - `tickets/done/prd_077/prd_077.md`
-- `tickets/done/prd_077/memo_043.md`
+- `tickets/done/prd_077/order_043.md`
 
 ## Source
 

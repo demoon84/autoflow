@@ -143,7 +143,7 @@ type AutoflowFileContentResult = {
   stderr: string;
 };
 
-type AutoflowInboxMemoDeleteResult = {
+type AutoflowInboxOrderDeleteResult = {
   ok: boolean;
   filePath: string;
   name: string;
@@ -251,11 +251,11 @@ interface Window {
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
-    deleteInboxMemoFile: (options: {
+    deleteInboxOrderFile: (options: {
       projectRoot: string;
       boardDirName: string;
       filePath: string;
-    }) => Promise<AutoflowInboxMemoDeleteResult>;
+    }) => Promise<AutoflowInboxOrderDeleteResult>;
     projectExists: (projectRoot: string) => Promise<{ exists: boolean }>;
     cancelInvocation: (
       invocationId: string

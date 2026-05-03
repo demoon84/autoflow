@@ -69,10 +69,10 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 14. Never push.
 15. Do not hide state in chat. Durable state belongs in board files.
 16. Pass/completion commit messages must use `[PRD_NNN][ticket_NNN] 작업내용 요약본`, where `PRD_NNN` comes from the ticket `PRD Key` / project key and `ticket_NNN` comes from the ticket ID or filename. Use `[ticket_NNN]` only for legacy tickets without a PRD key.
-17. When creating or updating PRD, plan, ticket, or user-friendly memo prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
+17. When creating or updating PRD, plan, ticket, or user-friendly order prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
 18. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
 19. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
-20. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat memory.
+20. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat history.
 
 ## Procedure
 

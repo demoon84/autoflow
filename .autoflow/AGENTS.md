@@ -34,7 +34,7 @@ PROJECT_ROOT
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
-- `tickets/inbox/`: quick memo queue before Orchestrator AI promotion.
+- `tickets/inbox/`: quick order queue before Orchestrator AI promotion.
 - `tickets/backlog/`: approved spec queue before execution.
 - `tickets/plan/`: legacy planning queue.
 - `tickets/todo/`: legacy implementation queue.
@@ -57,7 +57,7 @@ At the start of work, read in this order:
 1. `README.md`
 2. `rules/README.md`
 3. `reference/backlog.md`
-4. `reference/memo.md`
+4. `reference/order.md`
 5. `reference/plan.md`
 6. `automations/README.md`
 7. `reference/tickets-board.md`
@@ -78,10 +78,10 @@ At the start of work, read in this order:
 
 ## Core Rules
 
-1. Do not create plans or tickets without an approved spec or a clear quick memo promoted by Orchestrator AI.
+1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Orchestrator AI.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (renamed from the previous `memo` triggers). They write `tickets/inbox/memo_NNN.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes. The inbox filename prefix `memo_` and the CLI subcommand `autoflow memo create` are intentionally unchanged so existing scanning / tooling keeps working.
-4. The default execution path is Orchestrator AI plus Ticket Owner Mode: `planner` promotes memo/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+4. The default execution path is Orchestrator AI plus Ticket Owner Mode: `planner` promotes order/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
@@ -102,7 +102,7 @@ At the start of work, read in this order:
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
-25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly memo prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
+25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly order prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
@@ -139,13 +139,13 @@ Do not:
 
 ### 2. Quick Order Intake Mode
 
-Trigger: Claude `/order`, Codex `$order`, or compatibility alias `#order` (renamed from the previous `memo` triggers; the inbox filename prefix `memo_` and the CLI subcommand `autoflow memo create` are intentionally unchanged).
+Trigger: Claude `/order`, Codex `$order`, or compatibility alias `#order`.
 
 Purpose: capture a small request without a full PRD handoff.
 
 Do:
 
-- Preserve the original user request in `tickets/inbox/memo_NNN.md`.
+- Preserve the original user request in `tickets/inbox/order_*.md`.
 - Add scope, Allowed Paths, and verification hints only when obvious.
 - Let Plan AI promote the inbox note into a generated PRD and todo ticket when safe.
 
@@ -184,13 +184,13 @@ Do not:
 
 Trigger: `#plan`.
 
-Purpose: convert quick memos, populated specs, and reject reasons into todo tickets.
+Purpose: convert quick orders, populated specs, and reject reasons into todo tickets.
 
 Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
 - Use `scripts/start-plan.*`.
-- Treat memos as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous memos into repeated human-question loops.
+- Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or rejects.
 - Generate todo ticket bodies from `Execution Candidates`.
 - Archive consumed specs/plans/rejects under `done/<project-key>/`.
@@ -295,10 +295,10 @@ A ticket may move to done only when:
 
 Use this language split:
 
-- Newly generated PRD, plan, ticket, and user-friendly memo prose should be Korean by default.
+- Newly generated PRD, plan, ticket, and user-friendly order prose should be Korean by default.
 - Human-facing documents (product README content, desktop UI copy, user guides, release notes for the user) should be Korean by default unless the user requests another language.
 - User-visible terminal or chat prose from runners should be Korean by default while preserving machine-readable formats.
-- AI-facing Markdown files (`agents/`, `rules/`, `reference/`, runtime contracts, and board operating docs) should keep concise, parser-compatible structure. Human-readable placeholder and guidance prose may be Korean when it shapes generated PRD/plan/ticket/memo output.
+- AI-facing Markdown files (`agents/`, `rules/`, `reference/`, runtime contracts, and board operating docs) should keep concise, parser-compatible structure. Human-readable placeholder and guidance prose may be Korean when it shapes generated PRD/plan/ticket/order output.
 - Mixed-audience documents should preserve machine-readable English contracts and use Korean for human-facing explanation where appropriate.
 - Prefer observable statements over vague quality words.
 - Use checklists only when each item can be judged.

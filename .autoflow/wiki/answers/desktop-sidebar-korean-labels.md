@@ -13,7 +13,7 @@ terms:
   - "settingsNavigation progress kanban knowledge"
 citations:
   - "tickets/done/prd_090/prd_090.md"
-  - "tickets/done/prd_090/memo_057.md"
+  - "tickets/done/prd_090/order_057.md"
 ---
 
 # desktop-sidebar-korean-labels
@@ -25,7 +25,7 @@ citations:
 ## Citations
 
 - `tickets/done/prd_090/prd_090.md`
-- `tickets/done/prd_090/memo_057.md`
+- `tickets/done/prd_090/order_057.md`
 
 ## Source
 

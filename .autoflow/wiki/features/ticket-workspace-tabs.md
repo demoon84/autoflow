@@ -13,16 +13,16 @@ tags:
 # Ticket Workspace Tabs
 
 ## Overview
-The Ticket Workspace in the Desktop application simplifies the view of available and completed work by grouping items into three main tabs: **PRD**, **인박스** (Inbox), and **발급 티켓** (Issued Tickets).
+The Ticket Workspace in the Desktop application simplifies the view of available and completed work by grouping items into three main tabs: **주문** (Order), **PRD**, and **발급 티켓** (Issued Tickets).
 
 ## Behavior
+- **주문 (Order) Tab**: Displays actionable quick memo intake items (e.g., `memo_*.md` files under the `tickets/inbox/` directory). These items render the same detail layer pattern as PRDs (`tickets/done/prd_030/prd_030.md`). Since `prd_089`, pending order cards can be deleted with confirmation (see **[[answers/order-inbox-memo-delete]]**).
 - **PRD Tab**: Displays all Product Requirement Documents.
-- **인박스 (Inbox) Tab**: Displays actionable quick memo intake items (e.g., `memo_*.md` files under the `tickets/inbox/` directory). These items are view-only and render the same detail layer pattern as PRDs (`tickets/done/prd_030/prd_030.md`).
 - **발급 티켓 (Issued Tickets) Tab**: Displays all active and completed tickets in a single, unified list regardless of their workflow stage (todo, inprogress, done, reject). The ticket cards themselves retain their visual stage badges (e.g., `구현`, `완료`) to help users distinguish their current status.
-- **Detail View (Layer)**: Clicking any PRD or Ticket card opens a full-width dialog layer (overlay) containing the full markdown body and metadata. This replaced the previous static right-hand preview column, allowing the card list to utilize 100% of the workspace width for better readability (`tickets/done/prd_024/prd_024.md`).
+- **Detail View (Layer)**: Clicking any PRD or Ticket card opens a full-width dialog layer (overlay) containing the full markdown body and metadata. This replaced the previous static right-hand preview column, allowing the card list to utilize 100% of the workspace width for better readability (`tickets/done/prd_024/prd_024.md`). See **[[features/desktop-layer-width]]** for width constraints. The metadata layout within this layer was further refined in `prd_077` (see **[[answers/ticket-detail-layer-meta-layout-20260501]]**).
 
 ## Layout Constraints
-- List and card content in the `PRD`, `인박스`, and `발급 티켓` tabs should read from the left edge. `prd_042` fixed a then-current MUI `ButtonBase` centering issue by keeping the change CSS-only in `.ticket-workspace-item.MuiButtonBase-root` and related list text containers, while preserving tabs, click behavior, the detail layer, status badges, and board loading (`tickets/done/prd_042/tickets_042.md`, `tickets/done/prd_042/verify_042.md`).
+- List and card content in the `주문`, `PRD`, and `발급 티켓` tabs should read from the left edge. `prd_042` fixed a then-current MUI `ButtonBase` centering issue by keeping the change CSS-only in `.ticket-workspace-item.MuiButtonBase-root` and related list text containers, while preserving tabs, click behavior, the detail layer, status badges, and board loading (`tickets/done/prd_042/tickets_042.md`, `tickets/done/prd_042/verify_042.md`).
 
 ### State Management
 The active tab is persisted in `localStorage` under the `autoflow.activeTicketWorkspaceTab` key.

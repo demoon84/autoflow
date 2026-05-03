@@ -110,7 +110,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - After work begins, move the consumed PRD to `done/<project-key>/`.
 - `inbox/`
   - Contains `orderNNN.md` files for small requests that do not need a full PRD handoff.
-  - Memo skills and `autoflow order create` may write here directly after an explicit order request.
+  - Order skills and `autoflow order create` may write here directly after an explicit order request.
   - Plan AI treats orders as implementation directives and promotes them into generated backlog PRDs and todo tickets using the safest narrow interpretation.
   - Unsafe orders stay here with a concrete blocker note; ambiguity alone should not create a repeated human-question loop.
   - Impl AI never claims directly from this folder.

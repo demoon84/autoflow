@@ -781,9 +781,23 @@ function runnerIsEnabled(value: string) {
   return value ? value === "true" : true;
 }
 
+// AI 주도 sh 실행 원칙: Codex/Claude 같은 어댑터의 raw transcript 가
+// 그대로 들어 있는 파일 (`*_live_stdout.log`, `*_live_stderr.log`,
+// `*_stdout.log`, `*_stderr.log`) 은 사용자 view 에서 숨긴다. envelope
+// wrapping 없이 raw tool 호출 / diff / shell 명령이 그대로 들어 있어 필터로
+// 정리할 수 없다. AI 의 narrative 는 같은 tick 의 runner 메인 로그에
+// `narrative_text` envelope 으로 surface 되므로 그쪽으로만 노출한다. 필요하면
+// `.autoflow/runners/logs/` 의 원본 파일을 파일 시스템에서 직접 확인한다.
+const RAW_ADAPTER_TRANSCRIPT_FILE = /_(?:live_)?(?:stdout|stderr)\.log$/;
+function isRawAdapterTranscriptFile(filePath: string) {
+  return RAW_ADAPTER_TRANSCRIPT_FILE.test(filePath);
+}
+
 function recentLogs(board: AutoflowBoardSnapshot | null, limit: number | null = 16): DisplayLog[] {
   const boardLogs = (board?.logs || []).map((log) => ({ ...log, source: "Board" as const }));
-  const runnerLogs = (board?.runnerLogs || []).map((log) => ({ ...log, source: "Runner" as const }));
+  const runnerLogs = (board?.runnerLogs || [])
+    .filter((log) => !isRawAdapterTranscriptFile(log.filePath))
+    .map((log) => ({ ...log, source: "Runner" as const }));
 
   const sorted = [...boardLogs, ...runnerLogs].sort((a, b) =>
     String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))
@@ -797,11 +811,12 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
   }
 
   const ticketFiles = ticketFolders.flatMap((key) => board.tickets[key] || []);
+  const visibleRunnerLogs = (board.runnerLogs || []).filter((log) => !isRawAdapterTranscriptFile(log.filePath));
 
   return [
     ...ticketFiles,
     ...(board.logs || []),
-    ...(board.runnerLogs || []),
+    ...visibleRunnerLogs,
     ...(board.wikiFiles || []),
     ...(board.metricsFiles || []),
     ...(board.conversationFiles || [])
@@ -2016,7 +2031,10 @@ function App() {
               )}
 
               {!setupRequired && visibleSettingsSection === "logs" && (() => {
-                const totalLogs = (board?.logs?.length || 0) + (board?.runnerLogs?.length || 0);
+                const visibleRunnerLogCount = (board?.runnerLogs || []).filter(
+                  (log) => !isRawAdapterTranscriptFile(log.filePath)
+                ).length;
+                const totalLogs = (board?.logs?.length || 0) + visibleRunnerLogCount;
                 const showingAll = logsLimit === null;
                 const showingCount = showingAll ? totalLogs : Math.min(logsLimit, totalLogs);
                 return (
@@ -3920,8 +3938,8 @@ type WorkflowFileEntry = AutoflowFilePreview & {
 };
 
 type TicketWorkspaceTabKey = "prd" | "inbox" | "issued";
-type TicketWorkspaceStatusKey = "prd" | "memo" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "verifier" | "done" | "reject";
-type TicketWorkspaceItemKind = "prd" | "memo" | "ticket";
+type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "verifier" | "done" | "reject";
+type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
 type TicketKanbanFolderKey = string;
 
 type TicketWorkspaceItemMeta = {
@@ -3976,8 +3994,8 @@ function workflowFileDisplayName(name: string) {
   if (stem.startsWith("reject_")) {
     return stem.replace(/^reject_/, "Reject-");
   }
-  if (stem.startsWith("memo_")) {
-    return stem.replace(/^memo_/, "Order-");
+  if (stem.startsWith("order_")) {
+    return stem.replace(/^order_/, "Order-");
   }
   if (stem.startsWith("tickets_")) {
     return stem.replace(/^tickets_/, "Ticket-");
@@ -4010,12 +4028,12 @@ function isTicketBoardFile(file: AutoflowFilePreview) {
   return /^tickets_\d+\.md$/i.test(file.name);
 }
 
-function isMemoBoardFile(file: AutoflowFilePreview) {
-  return /^memo_\d+\.md$/i.test(file.name);
+function isOrderBoardFile(file: AutoflowFilePreview) {
+  return /^order_\d+\.md$/i.test(file.name);
 }
 
-function isInboxMemoBoardFile(file: AutoflowFilePreview) {
-  return isMemoBoardFile(file) && boardPath(file.filePath).includes("/tickets/inbox/");
+function isInboxOrderBoardFile(file: AutoflowFilePreview) {
+  return isOrderBoardFile(file) && boardPath(file.filePath).includes("/tickets/inbox/");
 }
 
 function isRejectBoardFile(file: AutoflowFilePreview) {
@@ -4054,8 +4072,8 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   if (isPrdBoardFile(file)) {
     return "prd";
   }
-  if (isInboxMemoBoardFile(file)) {
-    return "memo";
+  if (isInboxOrderBoardFile(file)) {
+    return "order";
   }
   if (isRejectBoardFile(file)) {
     return "reject";
@@ -4089,7 +4107,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return boardPath(file.filePath).includes("/tickets/backlog/") ? "PRD" : "보관 PRD";
   }
 
-  if (statusKey === "memo") {
+  if (statusKey === "order") {
     return markdownScalar(content, ["Status"]) || "Order";
   }
 
@@ -4110,7 +4128,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "memo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "order" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
     todo: "발급됨",
     verifier: "검증",
     done: "완료",
@@ -4171,7 +4189,7 @@ function prdWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
 
 function inboxWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
   const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
-    folderFiles.filter(isMemoBoardFile)
+    folderFiles.filter(isOrderBoardFile)
   );
 
   return sortFilesByModifiedAt(files);
@@ -4225,7 +4243,7 @@ function TicketDetailLayer({
   onOpenChange: (open: boolean) => void;
   onClose: () => void;
 }) {
-  const ItemIcon = item?.kind === "prd" ? ClipboardCheck : item?.kind === "memo" ? Inbox : ClipboardList;
+  const ItemIcon = item?.kind === "prd" ? ClipboardCheck : item?.kind === "order" ? Inbox : ClipboardList;
   const metaRows = item
     ? [
         ["ID", item.id || item.displayId],
@@ -4333,8 +4351,8 @@ function ticketWorkspaceItemKindForFile(file: AutoflowFilePreview): TicketWorksp
   if (isPrdBoardFile(file)) {
     return "prd";
   }
-  if (isMemoBoardFile(file)) {
-    return "memo";
+  if (isOrderBoardFile(file)) {
+    return "order";
   }
   return "ticket";
 }
@@ -4393,7 +4411,7 @@ function TicketWorkspaceKanbanView({
       for (const { file, result } of results) {
         const fallbackKey: TicketWorkspaceStatusKey =
           ticketWorkspaceStatusForFile(file) ||
-          (isMemoBoardFile(file) ? "memo" : isPrdBoardFile(file) ? "prd" : "todo");
+          (isOrderBoardFile(file) ? "order" : isPrdBoardFile(file) ? "prd" : "todo");
         nextMeta[file.filePath] = result.ok
           ? extractTicketWorkspaceMeta(file, result.content || "", runners)
           : {
@@ -4429,7 +4447,7 @@ function TicketWorkspaceKanbanView({
         const itemKind = ticketWorkspaceItemKindForFile(file);
         const fallbackKey: TicketWorkspaceStatusKey =
           ticketWorkspaceStatusForFile(file) ||
-          (itemKind === "memo" ? "memo" : itemKind === "prd" ? "prd" : "todo");
+          (itemKind === "order" ? "order" : itemKind === "prd" ? "prd" : "todo");
         const statusKey = meta?.statusKey || fallbackKey;
         return {
           ...file,
@@ -4516,7 +4534,7 @@ function TicketWorkspaceKanbanView({
       return;
     }
 
-    if (!isInboxMemoBoardFile(deleteTarget)) {
+    if (!isInboxOrderBoardFile(deleteTarget)) {
       const message = "대기 Order 항목만 삭제할 수 있습니다.";
       setDeleteError(message);
       onActionToast?.("warning", message);
@@ -4526,7 +4544,7 @@ function TicketWorkspaceKanbanView({
     setDeleteInProgress(true);
     setDeleteError("");
     try {
-      const result = await window.autoflow.deleteInboxMemoFile({
+      const result = await window.autoflow.deleteInboxOrderFile({
         ...options,
         filePath: deleteTarget.filePath
       });
@@ -4634,7 +4652,7 @@ function TicketWorkspaceKanbanView({
                     <div className="ticket-kanban-card-list">
                       {columnItems.map((item) => {
                         const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
-                        const canDelete = item.kind === "memo";
+                        const canDelete = item.kind === "order";
                         const isDeletingThis = deleteTarget?.filePath === item.filePath;
                         return (
                           <div
@@ -4977,8 +4995,8 @@ function TicketWorkspaceDetailPane({
   detailError: string;
   detailContent: AutoflowFileContentResult | null;
 }) {
-  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "memo" ? Inbox : ClipboardList;
-  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "memo" ? "Order" : "Ticket";
+  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "order" ? Inbox : ClipboardList;
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "order" ? "Order" : "Ticket";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -5167,11 +5185,11 @@ function TicketBoard({
       return name.startsWith("prd_") || name.startsWith("project_");
     })
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const inboxMemos = (board?.tickets.inbox || [])
-    .filter(isMemoBoardFile)
+  const inboxOrders = (board?.tickets.inbox || [])
+    .filter(isOrderBoardFile)
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const doneMemos = (board?.tickets.done || [])
-    .filter((file) => (file?.name || "").startsWith("memo_"))
+  const doneOrders = (board?.tickets.done || [])
+    .filter((file) => (file?.name || "").startsWith("order_"))
     .map((file) => ({ ...file } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => {
@@ -5199,21 +5217,21 @@ function TicketBoard({
     const match = name.match(/tickets_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
-  const memoNumericId = (name: string) => {
-    const match = name.match(/memo_(\d+)/);
+  const orderNumericId = (name: string) => {
+    const match = name.match(/order_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
-  const memoFilesById = new Map<string, WorkflowFileEntry>();
-  for (const memo of [...inboxMemos, ...doneMemos]) {
-    if (!memoFilesById.has(memo.name)) {
-      memoFilesById.set(memo.name, memo);
+  const orderFilesById = new Map<string, WorkflowFileEntry>();
+  for (const order of [...inboxOrders, ...doneOrders]) {
+    if (!orderFilesById.has(order.name)) {
+      orderFilesById.set(order.name, order);
     }
   }
-  const memoFiles: WorkflowFileEntry[] = Array.from(memoFilesById.values()).sort(
-    (a, b) => memoNumericId(b.name) - memoNumericId(a.name)
+  const orderFiles: WorkflowFileEntry[] = Array.from(orderFilesById.values()).sort(
+    (a, b) => orderNumericId(b.name) - orderNumericId(a.name)
   );
   const todoFilesById = new Map<string, WorkflowFileEntry>();
   for (const ticket of [...todoTickets, ...inprogressTickets, ...doneTickets, ...rejectTickets]) {
@@ -5225,9 +5243,9 @@ function TicketBoard({
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
-  const memoPinTitle = `ORDER (${inboxMemos.length}/${memoFiles.length})`;
+  const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length}/${todoFiles.length})`;
-  const hasWorkflowPins = Boolean(specFiles.length || memoFiles.length || todoFiles.length);
+  const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
 
@@ -5240,12 +5258,12 @@ function TicketBoard({
           <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
             {hasWorkflowPins ? (
               <WorkflowPinLayer
-                files={memoFiles}
+                files={orderFiles}
                 options={options}
-                pinTitle={memoPinTitle}
+                pinTitle={orderPinTitle}
                 pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
                 variant="default"
-                layerHeading={memoPinTitle}
+                layerHeading={orderPinTitle}
                 layerHelpText="들어온 빠른 오더 목록입니다. 항목을 클릭하면 오더 본문이 이 화면에서 열립니다."
                 emptyText="아직 들어온 오더가 없습니다."
                 showWhenEmpty
@@ -6127,28 +6145,65 @@ function WikiList({
   );
 }
 
-// AI 주도 sh 실행 원칙: runner 가 emit 한 protocol envelope (`*_begin`/`*_end`)
-// 과 raw `key=value` 라인은 사용자 view 에서 숨기고, AI 가 emit 한 prose 와
-// `narrative=...` 로 넘겨준 한국어 요약만 보이게 한다. 디버그가 필요하면
-// 원본은 .autoflow/runners/logs/ 의 raw 파일에서 확인한다.
+// AI 주도 sh 실행 원칙: 사용자 view 에는 AI 가 한 일(narrative)만 보이고,
+// sh tool 의 raw protocol — envelope 마커, key=value 프로토콜 라인,
+// 그리고 어댑터(Codex/Claude) transcript 안의 tool 호출/diff/shell 명령
+// 같은 raw transcript 본문 — 은 모두 숨긴다. 디버그가 필요하면 원본은
+// .autoflow/runners/logs/ 의 raw 파일에서 확인할 수 있고, UI 에서는
+// 헤더의 "raw +N" 토글로 펼칠 수 있다.
+//
+// 룰:
+//  - `*_begin` / `*_end` envelope 마커 자체는 항상 strip.
+//  - `narrative_text` envelope 안의 content 는 AI 의 최종 메시지이므로 KEEP.
+//  - 그 외 envelope (adapter_stdout, adapter_stderr, recovery_signal,
+//    runtime_output, finish.output, adapter_prompt 등) 안의 content 는
+//    DROP — AI 가 도구로 한 일이지 AI 가 사용자에게 한 말이 아님.
+//  - envelope 밖에서 `narrative=<text>` 한 줄은 prose 로 surface.
+//  - envelope 밖에서 snake_case `key=value` 는 protocol 이므로 DROP.
+//  - 그 외 prose 라인은 KEEP.
+const NARRATIVE_KEEP_ENVELOPES = new Set<string>(["narrative_text"]);
+
 function summarizeRunnerLogForUserView(rawContent: string): { content: string; hidLines: number } {
   if (!rawContent) {
     return { content: rawContent, hidLines: 0 };
   }
-  const ENVELOPE_MARKER = /^[a-z_][a-z0-9_.]*_(begin|end)$/;
+  const ENVELOPE_BEGIN = /^([a-z_][a-z0-9_.]*)_begin$/;
+  const ENVELOPE_END = /^([a-z_][a-z0-9_.]*)_end$/;
   const PROTOCOL_KV = /^[a-z_][a-z0-9_.]*=/;
   const lines = rawContent.split(/\r?\n/);
   const out: string[] = [];
+  const envelopeStack: string[] = [];
   let hid = 0;
   let lastBlank = true;
   for (const raw of lines) {
     const line = raw.replace(/\s+$/u, "");
     const trimmed = line.trim();
-    if (ENVELOPE_MARKER.test(trimmed)) {
+    const beginMatch = ENVELOPE_BEGIN.exec(trimmed);
+    if (beginMatch) {
+      envelopeStack.push(beginMatch[1]);
       hid++;
       continue;
     }
-    if (PROTOCOL_KV.test(line)) {
+    const endMatch = ENVELOPE_END.exec(trimmed);
+    if (endMatch) {
+      const idx = envelopeStack.lastIndexOf(endMatch[1]);
+      if (idx >= 0) {
+        envelopeStack.splice(idx, 1);
+      }
+      hid++;
+      continue;
+    }
+    const insideEnvelope = envelopeStack.length > 0;
+    // Innermost envelope wins: nested transcript (e.g. recovery_signal) inside
+    // a narrative_text wrapper still gets dropped.
+    const innermost = envelopeStack[envelopeStack.length - 1];
+    const insideKeepEnvelope = !!innermost && NARRATIVE_KEEP_ENVELOPES.has(innermost);
+    if (insideEnvelope && !insideKeepEnvelope) {
+      // Drop everything inside transcript / protocol envelopes.
+      hid++;
+      continue;
+    }
+    if (!insideEnvelope && PROTOCOL_KV.test(line)) {
       if (line.startsWith("narrative=")) {
         const text = line.slice("narrative=".length);
         if (text) {

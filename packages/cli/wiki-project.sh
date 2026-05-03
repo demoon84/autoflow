@@ -13,6 +13,8 @@ Usage:
   wiki-project.sh query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-snippets] [--no-handoffs] [--rag] [--synth] [--save-as SLUG] [--runner RUNNER_ID]
   wiki-project.sh ingest [project-root] [board-dir-name] <source-file> [--slug SLUG] [--no-summary] [--runner RUNNER_ID]
   wiki-project.sh retrofit-frontmatter [project-root] [board-dir-name] [--dry-run] [--page BOARD_RELATIVE_PATH] [--allow-adapter] [--runner RUNNER_ID]
+  wiki-project.sh summarize-telemetry [project-root] [board-dir-name] --slug SLUG --window 7d|30d|all
+  wiki-project.sh summarize-telemetry [project-root] [board-dir-name] --slug-set telemetry-default --window 7d|30d|all
 
 Examples:
   wiki-project.sh update /path/to/project
@@ -21,6 +23,7 @@ Examples:
   wiki-project.sh query /path/to/project --term wiki --term lint --synth --save-as wiki-lint-summary
   wiki-project.sh ingest /path/to/project .autoflow docs/source.md --slug source-doc
   wiki-project.sh retrofit-frontmatter /path/to/project .autoflow --dry-run
+  wiki-project.sh summarize-telemetry /path/to/project .autoflow --slug-set telemetry-default --window 7d
 
 Environment:
   AUTOFLOW_WIKI_LINT_PROMPT_BYTES    Byte cap for the semantic-lint adapter prompt (default 32768).
@@ -189,6 +192,15 @@ count_lines() {
   fi
 
   wc -l < "$file" | tr -d '[:space:]'
+}
+
+require_cmd() {
+  local cmd="$1"
+
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    printf 'error=missing_%s\n' "$cmd"
+    return 1
+  fi
 }
 
 write_ticket_list() {
@@ -2540,6 +2552,376 @@ run_lint() {
   fi
 }
 
+telemetry_summary_hash_file() {
+  local slug="$1"
+  local window="$2"
+  local filtered_file="$3"
+
+  {
+    printf 'slug=%s\n' "$slug"
+    printf 'window=%s\n' "$window"
+    [ -f "$filtered_file" ] && cat "$filtered_file"
+  } | hash_stream
+}
+
+telemetry_summary_window_since_epoch() {
+  local window="$1"
+  local days now_epoch
+
+  case "$window" in
+    all)
+      printf ''
+      return 0
+      ;;
+    *d)
+      days="${window%d}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  if ! [[ "$days" =~ ^[0-9]+$ ]] || [ "$days" -lt 1 ]; then
+    return 1
+  fi
+
+  now_epoch="$(date -u '+%s')"
+  printf '%s' "$((now_epoch - (days * 86400)))"
+}
+
+telemetry_summary_filter_jsonl() {
+  local input_file="$1"
+  local output_file="$2"
+  local since_epoch="$3"
+  local line timestamp epoch
+
+  : > "$output_file"
+  [ -f "$input_file" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if ! printf '%s\n' "$line" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      continue
+    fi
+    if [ -z "$since_epoch" ]; then
+      printf '%s\n' "$line" >> "$output_file"
+      continue
+    fi
+    timestamp="$(printf '%s\n' "$line" | jq -r '.ended_at // .started_at // empty' 2>/dev/null || true)"
+    [ -n "$timestamp" ] || continue
+    epoch="$(telemetry_timestamp_to_epoch "$timestamp" 2>/dev/null || true)"
+    [ -n "$epoch" ] || continue
+    [ "$epoch" -ge "$since_epoch" ] || continue
+    printf '%s\n' "$line" >> "$output_file"
+  done < "$input_file"
+}
+
+telemetry_summary_page_path() {
+  local board_root="$1"
+  local slug="$2"
+
+  case "$slug" in
+    operations/runner-health|operations/runner-timing|agents/prompt-evolution)
+      printf '%s/wiki/%s.md' "$board_root" "$slug"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+telemetry_summary_existing_fingerprint() {
+  local page="$1"
+
+  [ -f "$page" ] || return 0
+  awk -F': ' '
+    /^---$/ && NR == 1 { in_fm=1; next }
+    in_fm && /^---$/ { exit }
+    in_fm && $1 == "input_fingerprint" { print $2; exit }
+  ' "$page" 2>/dev/null || true
+}
+
+telemetry_summary_write_frontmatter() {
+  local target="$1"
+  local slug="$2"
+  local window="$3"
+  local source_event_count="$4"
+  local fingerprint="$5"
+  local now="$6"
+
+  {
+    printf -- '---\n'
+    printf 'auto_generated: telemetry-summary\n'
+    printf 'slug: %s\n' "$slug"
+    printf 'window: %s\n' "$window"
+    printf 'source_event_count: %s\n' "$source_event_count"
+    printf 'last_synced_at: %s\n' "$now"
+    printf 'input_fingerprint: %s\n' "$fingerprint"
+    printf -- '---\n\n'
+    printf '> This page is auto-generated from `.autoflow/telemetry/*.jsonl`; manual edits may be overwritten on the next sync. Keep durable human notes in `wiki/answers/`, `wiki/decisions/`, or another human-owned wiki page.\n\n'
+  } > "$target"
+}
+
+telemetry_summary_write_failure_patterns() {
+  local failures_file="$1"
+  local target="$2"
+  local count="$3"
+  local runs_file="${4:-}"
+  local recovered=0 total=0 rate="0%"
+  local failure_line failure_runner failure_ts failure_epoch run_match
+
+  printf '## Failure Patterns\n\n' >> "$target"
+  if [ "$count" -eq 0 ]; then
+    printf 'no telemetry data yet\n\n' >> "$target"
+    return 0
+  fi
+
+  printf '| failure_class | count |\n' >> "$target"
+  printf '| --- | ---: |\n' >> "$target"
+  jq -r '.failure_class // "unknown_failure_class"' "$failures_file" \
+    | awk 'NF { counts[$0]++ } END { for (key in counts) print counts[key] "\t" key }' \
+    | sort -rn \
+    | awk -F'\t' '{ printf "| %s | %s |\n", $2, $1 }' >> "$target"
+
+  printf '\n## Frequent Patterns\n\n' >> "$target"
+  jq -r '[.runner_id // "unknown_runner", .failure_class // "unknown_failure_class", .result // "unknown_result"] | join(" / ")' "$failures_file" \
+    | awk 'NF { counts[$0]++ } END { for (key in counts) print counts[key] "\t" key }' \
+    | sort -rn \
+    | head -5 \
+    | awk -F'\t' 'BEGIN { print "| pattern | count |"; print "| --- | ---: |" } { printf "| %s | %s |\n", $2, $1 }' >> "$target"
+
+  total="$(count_lines "$failures_file")"
+  if [ -n "$runs_file" ] && [ -s "$runs_file" ]; then
+    while IFS= read -r failure_line; do
+      [ -n "$failure_line" ] || continue
+      failure_runner="$(printf '%s\n' "$failure_line" | jq -r '.runner_id // empty' 2>/dev/null || true)"
+      failure_ts="$(printf '%s\n' "$failure_line" | jq -r '.ended_at // .started_at // empty' 2>/dev/null || true)"
+      failure_epoch="$(telemetry_timestamp_to_epoch "$failure_ts" 2>/dev/null || true)"
+      [ -n "$failure_runner" ] || continue
+      [ -n "$failure_epoch" ] || continue
+      run_match="$(jq -r --arg runner "$failure_runner" --argjson failure_epoch "$failure_epoch" '
+        select((.runner_id // "") == $runner)
+        | select((.result // "") == "success")
+        | (.ended_at // .started_at // empty)
+      ' "$runs_file" 2>/dev/null | while IFS= read -r run_ts; do
+        [ -n "$run_ts" ] || continue
+        local run_epoch
+        run_epoch="$(telemetry_timestamp_to_epoch "$run_ts" 2>/dev/null || true)"
+        if [ -n "$run_epoch" ] && [ "$run_epoch" -ge "$failure_epoch" ]; then
+          printf 'yes\n'
+          break
+        fi
+      done)"
+      if [ -n "$run_match" ]; then
+        recovered="$((recovered + 1))"
+      fi
+    done < "$failures_file"
+  fi
+  if [ "$total" -gt 0 ]; then
+    rate="$(awk -v recovered="$recovered" -v total="$total" 'BEGIN { printf "%.0f%%", (recovered / total) * 100 }')"
+  fi
+
+  printf '\n## Recovery Rate\n\n' >> "$target"
+  printf -- '- Auto recovery rate: %s\n' "$rate" >> "$target"
+  printf -- '- Recovery denominator: %s failure events in the selected window.\n\n' "$total" >> "$target"
+}
+
+telemetry_summary_write_runner_timing() {
+  local runs_file="$1"
+  local target="$2"
+  local count="$3"
+
+  printf '## Runner Timing\n\n' >> "$target"
+  if [ "$count" -eq 0 ]; then
+    printf 'no telemetry data yet\n\n' >> "$target"
+    return 0
+  fi
+
+  printf '| runner_id | tick_count | p50_duration_ms | p95_duration_ms | p99_duration_ms |\n' >> "$target"
+  printf '| --- | ---: | ---: | ---: | ---: |\n' >> "$target"
+  jq -r 'select((.duration_ms // null) != null) | [.runner_id // "unknown_runner", (.duration_ms | tonumber)] | @tsv' "$runs_file" \
+    | sort -k1,1 -k2,2n \
+    | awk -F'\t' '
+      function emit(runner, n, idx50, idx95, idx99) {
+        if (runner == "" || n == 0) return
+        idx50 = int((50 * n + 99) / 100); if (idx50 < 1) idx50 = 1
+        idx95 = int((95 * n + 99) / 100); if (idx95 < 1) idx95 = 1
+        idx99 = int((99 * n + 99) / 100); if (idx99 < 1) idx99 = 1
+        printf "| %s | %d | %s | %s | %s |\n", runner, n, values[idx50], values[idx95], values[idx99]
+      }
+      $1 != current {
+        emit(current, n)
+        delete values
+        current = $1
+        n = 0
+      }
+      {
+        n++
+        values[n] = $2
+      }
+      END { emit(current, n) }
+    ' >> "$target"
+  printf '\n' >> "$target"
+}
+
+telemetry_summary_write_prompt_evolution() {
+  local runs_file="$1"
+  local target="$2"
+  local count="$3"
+
+  printf '## Prompt Evolution\n\n' >> "$target"
+  if [ "$count" -eq 0 ]; then
+    printf 'no telemetry data yet\n\n' >> "$target"
+    return 0
+  fi
+
+  printf '| prompt_template_hash | usage_count | success_count | success_rate |\n' >> "$target"
+  printf '| --- | ---: | ---: | ---: |\n' >> "$target"
+  jq -r '[.prompt_template_hash // "unknown_prompt_template", .result // "unknown_result"] | @tsv' "$runs_file" \
+    | awk -F'\t' '
+      {
+        total[$1]++
+        if ($2 == "success") success[$1]++
+      }
+      END {
+        for (key in total) {
+          rate = total[key] ? (success[key] / total[key]) * 100 : 0
+          printf "%d\t%s\t%d\t%.0f%%\n", total[key], key, success[key], rate
+        }
+      }
+    ' \
+    | sort -rn \
+    | awk -F'\t' '{ printf "| %s | %s | %s | %s |\n", $2, $1, $3, $4 }' >> "$target"
+  printf '\n' >> "$target"
+}
+
+run_summarize_telemetry_slug() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local slug="$3"
+  local window="$4"
+  local board_root page source_file filtered_file fingerprint existing_fingerprint
+  local source_event_count now runs_file failures_file filtered_runs_file fingerprint_input_file
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  if ! board_is_initialized "$board_root"; then
+    printf 'summary_status=blocked\n'
+    printf 'reason=board_not_initialized\n'
+    printf 'slug=%s\n' "$slug"
+    printf 'source_event_count=0\n'
+    return 0
+  fi
+
+  page="$(telemetry_summary_page_path "$board_root" "$slug" || true)"
+  if [ -z "$page" ]; then
+    printf 'summary_status=blocked\n'
+    printf 'reason=unknown_slug\n'
+    printf 'slug=%s\n' "$slug"
+    printf 'source_event_count=0\n'
+    return 0
+  fi
+
+  runs_file="$(telemetry_runs_jsonl_path "$project_root")"
+  failures_file="$(telemetry_failures_jsonl_path "$project_root")"
+  case "$slug" in
+    operations/runner-health) source_file="$failures_file" ;;
+    operations/runner-timing|agents/prompt-evolution) source_file="$runs_file" ;;
+  esac
+
+  local since_epoch
+  since_epoch="$(telemetry_summary_window_since_epoch "$window" || true)"
+  if [ "$window" != "all" ] && [ -z "$since_epoch" ]; then
+    printf 'summary_status=blocked\n'
+    printf 'reason=invalid_window\n'
+    printf 'slug=%s\n' "$slug"
+    printf 'source_event_count=0\n'
+    return 0
+  fi
+
+  filtered_file="$(autoflow_mktemp)"
+  telemetry_summary_filter_jsonl "$source_file" "$filtered_file" "$since_epoch"
+  fingerprint_input_file="$filtered_file"
+  filtered_runs_file=""
+  if [ "$slug" = "operations/runner-health" ]; then
+    filtered_runs_file="$(autoflow_mktemp)"
+    telemetry_summary_filter_jsonl "$runs_file" "$filtered_runs_file" "$since_epoch"
+    fingerprint_input_file="$(autoflow_mktemp)"
+    {
+      printf 'failures\n'
+      cat "$filtered_file"
+      printf 'runs\n'
+      cat "$filtered_runs_file"
+    } > "$fingerprint_input_file"
+  fi
+  source_event_count="$(count_lines "$filtered_file")"
+  fingerprint="$(telemetry_summary_hash_file "$slug" "$window" "$fingerprint_input_file")"
+  existing_fingerprint="$(telemetry_summary_existing_fingerprint "$page")"
+
+  if [ -f "$page" ] && [ -n "$existing_fingerprint" ] && [ "$existing_fingerprint" = "$fingerprint" ]; then
+    printf 'summary_status=skipped_unchanged\n'
+    printf 'slug=%s\n' "$slug"
+    printf 'source_event_count=%s\n' "$source_event_count"
+    printf 'page=%s\n' "$(relative_to_board "$board_root" "$page")"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$page")"
+  now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  telemetry_summary_write_frontmatter "$page" "$slug" "$window" "$source_event_count" "$fingerprint" "$now"
+  case "$slug" in
+    operations/runner-health)
+      telemetry_summary_write_failure_patterns "$filtered_file" "$page" "$source_event_count" "$filtered_runs_file"
+      ;;
+    operations/runner-timing)
+      telemetry_summary_write_runner_timing "$filtered_file" "$page" "$source_event_count"
+      ;;
+    agents/prompt-evolution)
+      telemetry_summary_write_prompt_evolution "$filtered_file" "$page" "$source_event_count"
+      ;;
+  esac
+
+  printf 'summary_status=updated\n'
+  printf 'slug=%s\n' "$slug"
+  printf 'source_event_count=%s\n' "$source_event_count"
+  printf 'page=%s\n' "$(relative_to_board "$board_root" "$page")"
+}
+
+run_summarize_telemetry() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local slug="$3"
+  local slug_set="$4"
+  local window="$5"
+  local current_slug
+
+  require_cmd jq || return 1
+
+  if [ -n "$slug_set" ]; then
+    case "$slug_set" in
+      telemetry-default)
+        for current_slug in operations/runner-health operations/runner-timing agents/prompt-evolution; do
+          run_summarize_telemetry_slug "$project_root" "$board_dir_name" "$current_slug" "$window"
+        done
+        ;;
+      *)
+        printf 'summary_status=blocked\n'
+        printf 'reason=unknown_slug_set\n'
+        printf 'slug_set=%s\n' "$slug_set"
+        ;;
+    esac
+    return 0
+  fi
+
+  if [ -z "$slug" ]; then
+    printf 'summary_status=blocked\n'
+    printf 'reason=missing_slug\n'
+    printf 'source_event_count=0\n'
+    return 0
+  fi
+
+  run_summarize_telemetry_slug "$project_root" "$board_dir_name" "$slug" "$window"
+}
+
 action="${1:-}"
 if [ -z "$action" ]; then
   usage
@@ -2562,6 +2944,9 @@ ingest_slug=""
 ingest_no_summary="false"
 retrofit_page=""
 retrofit_allow_adapter="false"
+telemetry_summary_slug=""
+telemetry_summary_slug_set=""
+telemetry_summary_window="7d"
 positionals=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -2637,9 +3022,38 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       ingest_slug="$1"
+      telemetry_summary_slug="$1"
       ;;
     --slug=*)
       ingest_slug="${1#--slug=}"
+      telemetry_summary_slug="${1#--slug=}"
+      ;;
+    --slug-set)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --slug-set" >&2
+        usage
+        exit 1
+      fi
+      telemetry_summary_slug_set="$1"
+      ;;
+    --slug-set=*)
+      telemetry_summary_slug_set="${1#--slug-set=}"
+      ;;
+    --all-standard-slugs)
+      telemetry_summary_slug_set="telemetry-default"
+      ;;
+    --window)
+      shift || true
+      if [ -z "${1:-}" ]; then
+        echo "Missing value for --window" >&2
+        usage
+        exit 1
+      fi
+      telemetry_summary_window="$1"
+      ;;
+    --window=*)
+      telemetry_summary_window="${1#--window=}"
       ;;
     --no-summary)
       ingest_no_summary="true"
@@ -2707,6 +3121,9 @@ case "$action" in
     ;;
   retrofit-frontmatter)
     run_retrofit_frontmatter "$project_root" "$board_dir_name" "$dry_run" "$retrofit_page" "$retrofit_allow_adapter" "$wiki_runner_id"
+    ;;
+  summarize-telemetry)
+    run_summarize_telemetry "$project_root" "$board_dir_name" "$telemetry_summary_slug" "$telemetry_summary_slug_set" "$telemetry_summary_window"
     ;;
   help|-h|--help)
     usage
