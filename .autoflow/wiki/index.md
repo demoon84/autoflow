@@ -79,11 +79,17 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[decisions/worker-display-policy]] (`wiki/decisions/worker-display-policy.md`)
 - `architecture/`
   - [[architecture/runner-role-slugs]] (`wiki/architecture/runner-role-slugs.md`) - current retained runner-id scheme (`planner-1`, `owner-1`, `wiki-1`); slug rename proposal was superseded.
+  - [[architecture/runner-id-roles]] (`wiki/architecture/runner-id-roles.md`)
 - `learnings/`
   - [[learnings/merge-blocked-already-applied-patch]] (`wiki/learnings/merge-blocked-already-applied-patch.md`)
   - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
-  - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)- `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
+  - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
+- `operations/`
+  - [[Operations Wiki Index]] (`wiki/operations/index.md`)
+- `agents/`
+  - [[Agents Wiki Index]] (`wiki/agents/index.md`)
+  - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
   - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
   - [[answers/recent-core-and-ui-refinements-20260502]] (`wiki/answers/recent-core-and-ui-refinements-20260502.md`)
@@ -106,6 +112,10 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[answers/finish-ticket-owner-cleanup-status-contract]] (`wiki/answers/finish-ticket-owner-cleanup-status-contract.md`)
   - [[answers/korean-board-writing-policy]] (`wiki/answers/korean-board-writing-policy.md`)
   - [[answers/obsidian-free-board-outputs]] (`wiki/answers/obsidian-free-board-outputs.md`)
+  - [[answers/prompt-evolution]] (`wiki/answers/prompt-evolution.md`)
+  - [[answers/runner-health]] (`wiki/answers/runner-health.md`)
+  - [[answers/runner-timing]] (`wiki/answers/runner-timing.md`)
+  - [[answers/telemetry-data-handling]] (`wiki/answers/telemetry-data-handling.md`)
   - [[answers/singleton-runner-display-labels]] (`wiki/answers/singleton-runner-display-labels.md`)
   - [[answers/wiki-query-filter-group]] (`wiki/answers/wiki-query-filter-group.md`)
   - [[answers/desktop-runner-terminal-streaming]] (`wiki/answers/desktop-runner-terminal-streaming.md`)
@@ -133,11 +143,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 109
+- Done tickets: 149
 - Reject records: 5
-- Verifier logs: 339
+- Verifier logs: 379
 - Conversation handoffs: 8
-- Last updated: 2026-05-03T07:34:58Z
+- Last updated: 2026-05-03T14:15:56Z
 
 ## Completed Tickets
 
@@ -173,3 +183,5 @@ Tickets, verification records, and logs remain authoritative.
 
 - [[sources/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
+
+- [[sources/agent-definitions]] (Autoflow 에이전트 정의)

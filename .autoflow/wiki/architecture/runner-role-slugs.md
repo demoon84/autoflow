@@ -1,41 +1,22 @@
 ---
 kind: architecture
 slug: runner-role-slugs
-title: "Runner Role Identifiers"
+title: "Runner Role Slugs"
 created: 2026-04-27T15:19:53Z
-updated: 2026-04-28T21:20:26Z
+updated: 2026-05-02T01:15:50Z
 tags:
   - architecture
   - runner-role-slugs
 ---
 
-# Runner Role Identifiers
+# Runner Role Slugs
 
-## Overview
-Autoflow uses standardized identifiers for the runners in its 3-runner topology. While a move to role-aligned slugs (e.g., `worker` instead of `owner-1`) was planned, the project has maintained its existing numerical suffix identifiers to preserve compatibility with established AGENTS and active configuration contracts.
+This page describes the naming conventions for runners in the Autoflow project.
 
-## Current Identifiers
-- **Planner AI**: `planner-1`
-- **Worker (Implementation) AI**: `owner-1`
-- **Wiki Maintainer AI**: `wiki-1`
+As of the latest deterministic wiki refresh, the project utilizes role-based identifiers for its stable 3-runner topology, namely `planner-1`, `owner-1`, and `wiki-1`. For further context, see [[project-overview]].
 
-## Design Rationale
-- **Stability**: Maintaining existing IDs prevents configuration drift and avoids breaking state persistence or UI mapping logic that expects the `-1` suffix.
-- **Scaling Readiness**: Numerical suffixes allow for future horizontal scaling (e.g., adding `owner-2`) without changing the base naming convention.
-- **UI Mapping**: The desktop application maps these internal IDs to user-friendly titles:
-  - `planner-1` → **Planner AI** (formerly Plan AI)
-  - `owner-1` → **Worker AI** (formerly Impl AI)
-  - `wiki-1` → **Wiki AI** (formerly 위키봇 / Wiki AI)
+For a detailed explanation of the distinction between these internal identifiers and conceptual role labels, refer to [[architecture/runner-id-roles]].
 
-## Status of Slug Rename
-- **Decision**: A proposal to rename IDs to `planner`, `worker`, and `wiki-maintainer` (`prd_012`) was **superseded**.
-- **Reasoning**: The rename conflicted with the current AGENTS topology contract and live runner state. It was determined that the current ID scheme provides sufficient clarity and better compatibility (`tickets/done/prd_012/tickets_012.md`).
+Ticket `tickets_012` confirmed the consistency of the existing role-aligned runner ID scheme with [[sources/agent-definitions]] and active configuration. It's important to note that while `owner` is used internally, user-facing labels have been normalized to `worker`, as detailed in [[decisions/worker-display-policy]].
 
-## Impact
-- **Configuration**: Always use `planner-1`, `owner-1`, and `wiki-1` in `.autoflow/runners/config.toml` and heartbeat automations.
-- **Persistence**: State files under `.autoflow/runners/state/` continue to use these IDs.
-
-## See Also
-- **[[decisions/worker-display-policy]]**: How internal IDs are normalized for user-facing display.
-- **[[answers/desktop-workflow-board-refinements-20260502]]**: Recent normalization of role labels to 'Planner AI', 'Worker AI', and 'Wiki AI'.
-- **[[answers/planner-worker-lifecycle-boundaries-20260502]]**: Core architectural boundaries and recovery signals between Planner and Worker roles.
+This ensures clarity and consistency across the project regarding runner responsibilities.

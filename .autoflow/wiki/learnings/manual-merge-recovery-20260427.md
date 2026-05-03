@@ -25,7 +25,7 @@ Multiple runners were attempting to merge changes into the same set of files (`a
 The automated `finish-ticket-owner` script safely aborted merges when it detected dirty files in the project root to prevent accidental inclusion of untracked or unrelated edits.
 
 ## Resolution: Manual Worktree Consolidation
-A manual consolidation pass was performed (logged in `logs/manual_worktree_merge_20260427_160756Z.md`) to resolve the gridlock:
+
 
 1. **Strategic Selection**: Identified which worktrees contained the most complete and up-to-date versions of the code.
 2. **Cherry-picking & Patching**: Manually applied the verified patches from the worktrees to the project root.
@@ -45,7 +45,7 @@ The `dirty_scope_conflict` is a critical safety feature. It prevents the AI from
 UI features like "Progress Wrap" (`prd_021`) and "Dot Alignment" (`prd_025`) are interdependent. When modifying shared layout components, it is more efficient to merge them sequentially or combine them into a single recovery pass than to let multiple runners fight over the same file.
 
 ## Citations
-- `logs/manual_worktree_merge_20260427_160756Z.md`
+
 - `tickets/done/prd_021/tickets_021.md`
 - `tickets/done/prd_025/tickets_025.md`
 - `tickets/done/prd_012/tickets_012.md`

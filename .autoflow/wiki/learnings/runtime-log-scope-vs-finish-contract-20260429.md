@@ -31,5 +31,5 @@ tags:
 ## Sources
 
 - Verification evidence: `tickets/done/prd_049/verify_049.md`
-- Failure log: `logs/verifier_049_20260429_070409Z_fail.md`
+
 - Related completed constraint: `wiki/features/finish-pass-inline-merge-summary.md`

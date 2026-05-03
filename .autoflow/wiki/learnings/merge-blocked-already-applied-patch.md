@@ -96,5 +96,5 @@ test -f .autoflow/tickets/done/prd_023/tickets_023.md
 ## Source
 - `tickets/done/prd_023/tickets_023.md`
 - `tickets/done/prd_023/verify_023.md`
-- `logs/verifier_023_20260427_150558Z_pass.md`
+
 - Completion commit: `7f23bc9`
