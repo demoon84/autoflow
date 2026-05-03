@@ -1440,6 +1440,117 @@ unblock_dirty_root_resolved_ticket() {
   printf '%s' "$target_file"
 }
 
+orchestration_check_dir() {
+  printf '%s/tickets/check' "$BOARD_ROOT"
+}
+
+next_orchestration_check_id() {
+  local dir file base raw max=0
+  dir="$(orchestration_check_dir)"
+
+  if [ -d "$dir" ]; then
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      base="$(basename "$file")"
+      raw="${base#check_}"
+      raw="${raw%.md}"
+      raw="${raw//[^0-9]/}"
+      [ -n "$raw" ] || continue
+      if [ "$((10#$raw))" -gt "$max" ]; then
+        max="$((10#$raw))"
+      fi
+    done < <(find "$dir" -maxdepth 1 -type f -name 'check_[0-9][0-9][0-9].md' | sort)
+  fi
+
+  printf '%03d' "$((max + 1))"
+}
+
+single_line_value() {
+  printf '%s' "${1:-}" | tr '\r\n' '  ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//'
+}
+
+record_orchestration_check() {
+  local event_type="$1"
+  local title="$2"
+  local prd_key="$3"
+  local ticket_id="$4"
+  local source="$5"
+  local what_happened="$6"
+  local evidence="$7"
+  local recommended_action="$8"
+  local dir id file created_at
+
+  event_type="$(single_line_value "$event_type")"
+  title="$(single_line_value "$title")"
+  prd_key="$(single_line_value "$prd_key")"
+  ticket_id="$(single_line_value "$ticket_id")"
+  source="$(single_line_value "$source")"
+  what_happened="$(single_line_value "$what_happened")"
+  evidence="$(single_line_value "$evidence")"
+  recommended_action="$(single_line_value "$recommended_action")"
+
+  [ -n "$event_type" ] || return 1
+  [ -n "$title" ] || title="Autoflow orchestration intervention"
+  [ -n "$source" ] || source="planner"
+  [ -n "$what_happened" ] || what_happened="Planner runtime completed an automatic orchestration intervention."
+  [ -n "$recommended_action" ] || recommended_action="자동 개입 내용과 관련 티켓 상태를 확인한 뒤 필요하면 사람 확인 완료 체크박스를 표시한다."
+
+  dir="$(orchestration_check_dir)"
+  mkdir -p "$dir" || return 1
+  id="$(next_orchestration_check_id)" || return 1
+  file="${dir}/check_${id}.md"
+  created_at="$(now_iso)"
+
+  if [ -e "$file" ]; then
+    return 1
+  fi
+
+  cat > "$file" <<CHECK
+---
+title: ${title}
+created_at: ${created_at}
+event_type: ${event_type}
+prd_key: ${prd_key}
+ticket_id: ${ticket_id}
+source: ${source}
+---
+
+# ${title}
+
+## What Happened
+
+${what_happened}
+
+## Evidence
+
+${evidence}
+
+## Recommended Human Action
+
+${recommended_action}
+
+## Status
+
+- [ ] 사람 확인 완료
+CHECK
+
+  printf '%s' "$file"
+}
+
+record_orchestration_check_best_effort() {
+  local check_file
+
+  if check_file="$(record_orchestration_check "$@" 2>/dev/null)"; then
+    if [ -n "$check_file" ]; then
+      printf 'check_file=%s\n' "$(board_relative_path "$check_file")"
+    fi
+    return 0
+  fi
+
+  printf 'warning=orchestration_check_record_failed\n'
+  return 0
+}
+
 archive_reject_with_manual_resolution() {
   local reject_file="$1"
   local prd_key="$2"

@@ -1836,12 +1836,15 @@ async function readMarkdownPreview(filePath) {
     const name = path.basename(filePath);
     const stat = await fs.stat(filePath);
     const birthMs = stat.birthtimeMs && stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.ctimeMs || stat.mtimeMs;
+    const eventTypeMatch = content.match(/^event_type:\s*(.+)$/im);
     return {
       filePath,
       name,
       title: markdownPreviewTitle(content, name),
       modifiedAt: stat.mtime.toISOString(),
-      createdAt: new Date(birthMs).toISOString()
+      createdAt: new Date(birthMs).toISOString(),
+      eventType: eventTypeMatch?.[1]?.trim() || "",
+      acknowledged: /^-\s*\[[xX]\]\s*사람 확인 완료\s*$/m.test(content)
     };
   } catch {
     return {
@@ -1954,7 +1957,7 @@ async function listTicketFolders(ticketsRoot) {
   }
 
   const entries = await fs.readdir(ticketsRoot, { withFileTypes: true });
-  const canonicalOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject"];
+  const canonicalOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject", "check"];
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)

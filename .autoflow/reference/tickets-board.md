@@ -9,6 +9,7 @@ This directory is the state board inside `BOARD_ROOT`.
 - `verifier/`: legacy tickets that finished implementation and wait for verification. Ticket Owner Mode may also resume compatible tickets from this state.
 - `done/`: tickets that passed verification and were committed locally (`done/<project-key>/tickets_NNN.md`).
 - `reject/`: tickets that failed verification and include `## Reject Reason`.
+- `check/`: human-review ledger for automatic planner interventions. Files use `check_NNN.md`, start at `check_001.md`, and are separate from ticket / PRD / reject sequences.
 - `verify_NNN.md`: a verification evidence file created under `inprogress/` and moved beside the final ticket.
 - `inbox/`: quick order intake files that Plan AI may promote into generated PRDs and todo tickets.
 - `backlog/`: project specs that have not yet been converted into ticket work.
@@ -99,6 +100,12 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Legacy planner heartbeat may turn the failure reason into a new `Execution Candidates` entry and set the plan back to ready.
   - File names use `reject_NNN.md`.
   - After retry ticket creation, move the consumed reject file to `done/<project-key>/reject_NNN.md` as history.
+- `check/`
+  - Contains best-effort records for automatic planner interventions such as reject auto-replan, reject auto-close, blocked-auto-recover, blocked-dirty-orchestration, and planner-authored orchestration cleanup commits.
+  - File names use `check_NNN.md`; this sequence is independent from `tickets_NNN`, `prd_NNN`, `order_NNN`, and `reject_NNN`.
+  - Each check file must include `title`, `created_at`, `event_type`, `prd_key`, `ticket_id`, and `source` metadata plus `## What Happened`, `## Evidence`, `## Recommended Human Action`, and `## Status`.
+  - `## Status` must include `- [ ] 사람 확인 완료`. A human may mark it as `- [x] 사람 확인 완료` after review; desktop refresh treats checked files as confirmed.
+  - Archiving or moving a check file out of `tickets/check/` removes it from the active desktop count on the next board refresh. Check files are review evidence only; they do not determine ticket pass/fail or runner stage.
 - `inprogress/verify_NNN.md`
   - Active verification evidence for Ticket Owner Mode or verifier mode.
   - Run verification commands from `working_root` and write evidence here first.

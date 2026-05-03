@@ -40,6 +40,7 @@ You are also responsible for **blocked-dirty orchestration**: when `tickets/inpr
 - Todo ticket files under `tickets/todo/`.
 - Ticket recovery annotations under `tickets/todo/` or `tickets/inprogress/`.
 - Archived PRDs, plans, consumed orders, and consumed rejects under `tickets/done/<project-key>/`.
+- Automatic intervention check records under `tickets/check/check_NNN.md` when runtime helpers or planner cleanup commits make an intervention that a human should review.
 
 ## Tool Inventory
 
@@ -54,6 +55,7 @@ You are the orchestrator. The runtime scripts below are tools you call; they do 
 - File reads/writes under `tickets/{inbox,backlog,plan,todo,reject,done}/` — direct edits within your path scope.
 - Markdown-only reads/writes under `tickets/inprogress/` only when updating `Recovery State`, `Next Action`, `Resume Context`, `Notes`, `Allowed Paths`, `Done When`, or `Verification` for recovery orchestration. Do not edit product code or worktree files.
 - Read-only PROJECT_ROOT git inspection (`git status --short`, `git diff -- <path>`, `git log -- <path>`, `git show`) when diagnosing or executing **blocked-dirty orchestration**. You may also run `git add -- <path>`, `git commit -m "[PRD_NNN][ticket_NNN] orchestration cleanup ..."`, or `git stash push -m "<ticket_id>: ..." -- <path>` against PROJECT_ROOT in this mode only, and only for paths the runtime listed under `dirty_paths`. Always re-run `git status` after the commit/stash to confirm the dirty set cleared. Never `git push`, never amend non-orchestration commits, never `git reset --hard` or `git clean` user work.
+- `record_orchestration_check` / `record_orchestration_check_best_effort` from `scripts/common.sh` — create `tickets/check/check_NNN.md` records for automatic interventions. Runtime success paths call the best-effort wrapper themselves; when you make `[PRD_NNN][ticket_NNN] orchestration cleanup: ...` commits manually, create a matching check record in the same tick and stage it with the cleanup evidence when possible. Failure to create the check record is warning-only and must not block the orchestration flow.
 
 You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-owner.*`, `merge-ready-ticket.*`, or `update-wiki.*` — those belong to Impl AI / Wiki AI. Use scripts as tools; never wait for a script to drive the loop.
 
@@ -94,10 +96,11 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
        - Misc housekeeping bundle: `[ticket_NNN] orchestration cleanup: misc housekeeping (<count> paths)` using the `blocked_origin` ticket id.
        Multiple commits across groups are fine; one tick may emit several housekeeping commits.
     5. After all groups are committed, run `git status --short` again and confirm the dirty paths from `blocked_origin` are clear. Update the blocked ticket's `Recovery State` to `Status: repairing` with `Last Recovery At` set to now, and append a `Notes` entry naming each commit hash. The next planner tick will see clean paths and emit `source=blocked-auto-recover`, which returns the ticket to todo.
-    6. Do not stop the flow on ambiguity. Bundle ambiguous paths into the misc-housekeeping group and commit. The Autoflow 1원칙 (do not stop) outranks classification perfectionism.
-    7. Escalate to `Recovery State.Status: needs_user` only when integration is mechanically impossible: git binary missing, repository locked, merge conflict against the index that cannot be resolved from already-dirty content. In that narrow case, leave evidence (commands tried, failure output) and a concrete Owner Resume Instruction so the user can clear the mechanical blocker.
-    8. Log the decision in `.autoflow/runners/logs/planner.log` with `event=blocked_dirty_orchestrated` and the integration outcome (commits emitted, residual dirty paths if any).
-    9. Hard guardrails: never `git push`, never `git reset --hard`, never `git clean -fd`, never amend an unrelated commit, never `git rm` or delete files, never edit a path not in the runtime-listed `dirty_paths`, never invent file content. Only stage already-modified working-tree content.
+    6. For each cleanup commit or stash, create a `tickets/check/check_NNN.md` record with `event_type=blocked-dirty-orchestration`, the PRD/ticket identifiers, commit hash or stash ref, dirty path evidence, and the recommended human review action. Use `record_orchestration_check_best_effort`; if it fails, log only `warning=orchestration_check_record_failed` and continue.
+    7. Do not stop the flow on ambiguity. Bundle ambiguous paths into the misc-housekeeping group and commit. The Autoflow 1원칙 (do not stop) outranks classification perfectionism.
+    8. Escalate to `Recovery State.Status: needs_user` only when integration is mechanically impossible: git binary missing, repository locked, merge conflict against the index that cannot be resolved from already-dirty content. In that narrow case, leave evidence (commands tried, failure output) and a concrete Owner Resume Instruction so the user can clear the mechanical blocker.
+    9. Log the decision in `.autoflow/runners/logs/planner.log` with `event=blocked_dirty_orchestrated` and the integration outcome (commits emitted, residual dirty paths if any).
+    10. Hard guardrails: never `git push`, never `git reset --hard`, never `git clean -fd`, never amend an unrelated commit, never `git rm` or delete files, never edit a path not in the runtime-listed `dirty_paths`, never invent file content. Only stage already-modified working-tree content.
 14. Use `Recovery State` for recovery decisions. Do not delete failure evidence; preserve it in `Recovery State`, `Reject History`, or `Notes`.
 15. Recovery edits are idempotent: if evidence and planner decision are unchanged from the ticket's current `Recovery State`, `Next Action`, and `Resume Context`, do not append duplicate `Notes` or rewrite `Last Recovery At`.
 16. After AI-authored recovery edits, run `autoflow guard` when available; otherwise run `scripts/board-guard.sh`. If guard reports errors, repair board markdown before creating new work. Treat guard warnings as orchestration evidence: summarize cleanup candidates such as leftover ticket worktrees in `Recovery State`, `Next Action`, or `Resume Context`, but do not delete or reset worktrees yourself.

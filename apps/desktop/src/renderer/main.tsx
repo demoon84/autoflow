@@ -211,7 +211,8 @@ const settingsNavigation = [
   { key: "progress", label: "AI 진행 현황", icon: Workflow },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
   { key: "knowledge", label: "LLM 위키", icon: BookOpenText },
-  { key: "snapshot", label: "통계", icon: BarChart3 }
+  { key: "snapshot", label: "통계", icon: BarChart3 },
+  { key: "checks", label: "자동 개입 이력", icon: ShieldCheck }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
@@ -810,7 +811,10 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
     return [];
   }
 
-  const ticketFiles = ticketFolders.flatMap((key) => board.tickets[key] || []);
+  const ticketFiles = [
+    ...ticketFolders.flatMap((key) => board.tickets[key] || []),
+    ...(board.tickets.check || [])
+  ];
   const visibleRunnerLogs = (board.runnerLogs || []).filter((log) => !isRawAdapterTranscriptFile(log.filePath));
 
   return [
@@ -1446,6 +1450,18 @@ function App() {
     previousSettingsSectionRef.current = activeSettingsSection;
   }, [activeSettingsSection]);
 
+  React.useEffect(() => {
+    if (
+      activeSettingsSection === "checks" &&
+      selectedLogPath &&
+      !boardPath(selectedLogPath).includes("/tickets/check/")
+    ) {
+      setSelectedLogPath("");
+      setLogPreview(null);
+      setLogError("");
+    }
+  }, [activeSettingsSection, selectedLogPath]);
+
   const refreshRecentProjects = React.useCallback(async () => {
     setIsRefreshingRecentProjects(true);
     try {
@@ -2067,6 +2083,21 @@ function App() {
                       <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
                     </div>
                   </PageLayout>
+                </section>
+              </section>
+            )}
+
+            {!setupRequired && visibleSettingsSection === "checks" && (
+              <section className="dashboard-area" aria-label="자동 개입 이력">
+                <section className="board-section board-section-flush" aria-label="자동 개입 이력 본문">
+                  <CheckLedgerPage
+                    board={board}
+                    selectedPath={selectedLogPath}
+                    preview={logPreview}
+                    isLoading={isReadingLog}
+                    error={logError}
+                    onSelect={readLog}
+                  />
                 </section>
               </section>
             )}
@@ -6117,6 +6148,173 @@ function LogList({
           </div>
         </Button>
       ))}
+    </div>
+  );
+}
+
+type CheckLedgerPreview = AutoflowFilePreview & {
+  eventType?: string;
+  acknowledged?: boolean;
+};
+
+type CheckLedgerStatusFilter = "all" | "unconfirmed" | "confirmed";
+
+function checkLedgerFiles(board: AutoflowBoardSnapshot | null): CheckLedgerPreview[] {
+  return [...((board?.tickets.check || []) as CheckLedgerPreview[])].sort((left, right) =>
+    String(right.modifiedAt || right.createdAt || "").localeCompare(String(left.modifiedAt || left.createdAt || ""))
+  );
+}
+
+function checkLedgerStatusLabel(file: CheckLedgerPreview) {
+  return file.acknowledged ? "확인 완료" : "미확인";
+}
+
+function CheckLedgerPage({
+  board,
+  selectedPath,
+  preview,
+  isLoading,
+  error,
+  onSelect
+}: {
+  board: AutoflowBoardSnapshot | null;
+  selectedPath: string;
+  preview: AutoflowFileContentResult | null;
+  isLoading: boolean;
+  error: string;
+  onSelect: (filePath: string) => void;
+}) {
+  const [eventTypeFilter, setEventTypeFilter] = React.useState("all");
+  const [statusFilter, setStatusFilter] = React.useState<CheckLedgerStatusFilter>("unconfirmed");
+  const files = React.useMemo(() => checkLedgerFiles(board), [board]);
+  const eventTypes = React.useMemo(
+    () => Array.from(new Set(files.map((file) => file.eventType || "unknown"))).sort(),
+    [files]
+  );
+  const unconfirmedCount = files.filter((file) => !file.acknowledged).length;
+  const filtered = files.filter((file) => {
+    const eventType = file.eventType || "unknown";
+    const eventMatches = eventTypeFilter === "all" || eventType === eventTypeFilter;
+    const statusMatches =
+      statusFilter === "all" ||
+      (statusFilter === "unconfirmed" && !file.acknowledged) ||
+      (statusFilter === "confirmed" && file.acknowledged);
+    return eventMatches && statusMatches;
+  });
+
+  React.useEffect(() => {
+    if (eventTypeFilter !== "all" && !eventTypes.includes(eventTypeFilter)) {
+      setEventTypeFilter("all");
+    }
+  }, [eventTypeFilter, eventTypes]);
+
+  return (
+    <PageLayout
+      className="check-ledger-page"
+      header={
+        <div className="check-ledger-toolbar">
+          <div className="workflow-pin-layer-heading">
+            <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+            <strong>Check</strong>
+          </div>
+          <div className="check-ledger-counts">
+            <Badge variant="secondary">전체 {files.length}건</Badge>
+            <Badge variant={unconfirmedCount > 0 ? "destructive" : "default"}>미확인 {unconfirmedCount}건</Badge>
+          </div>
+        </div>
+      }
+    >
+      {files.length === 0 ? (
+        <div className="empty-panel check-ledger-empty">자동 개입 이력이 아직 없습니다.</div>
+      ) : (
+        <div className="check-ledger-split">
+          <div className="tool-panel check-ledger-list-pane">
+            <div className="check-ledger-filters" aria-label="자동 개입 이력 필터">
+              <Select value={eventTypeFilter} onValueChange={setEventTypeFilter}>
+                <SelectTrigger className="check-ledger-filter-trigger" aria-label="event_type 필터">
+                  <SelectValue placeholder="event_type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">event_type 전체</SelectItem>
+                  {eventTypes.map((eventType) => (
+                    <SelectItem key={eventType} value={eventType}>
+                      {eventType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as CheckLedgerStatusFilter)}>
+                <SelectTrigger className="check-ledger-filter-trigger" aria-label="확인 상태 필터">
+                  <SelectValue placeholder="확인 상태" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unconfirmed">미확인</SelectItem>
+                  <SelectItem value="confirmed">확인 완료</SelectItem>
+                  <SelectItem value="all">전체</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {filtered.length === 0 ? (
+              <div className="empty-panel">필터에 맞는 자동 개입 이력이 없습니다</div>
+            ) : (
+              <div className="log-list check-ledger-list">
+                {filtered.map((file) => (
+                  <Button
+                    key={file.filePath}
+                    variant="ghost"
+                    type="button"
+                    className={`log-row${selectedPath === file.filePath ? " log-row-selected" : ""}`}
+                    onClick={() => onSelect(file.filePath)}
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    <div className="min-w-0">
+                      <strong>{file.title || file.name}</strong>
+                      <span>
+                        {file.eventType || "unknown"} · {checkLedgerStatusLabel(file)} · {formatDate(file.modifiedAt)}
+                      </span>
+                      <p>{file.name}</p>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="tool-panel check-ledger-preview-pane">
+            <CheckLedgerPreviewPane preview={preview} isLoading={isLoading} error={error} />
+          </div>
+        </div>
+      )}
+    </PageLayout>
+  );
+}
+
+function CheckLedgerPreviewPane({
+  preview,
+  isLoading,
+  error
+}: {
+  preview: AutoflowFileContentResult | null;
+  isLoading: boolean;
+  error: string;
+}) {
+  return (
+    <div className="check-ledger-preview">
+      <div className="log-preview-header">
+        <strong>{preview?.name || "check 미리보기"}</strong>
+        {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        {!isLoading && preview?.truncated ? (
+          <Badge variant="outline" className="log-preview-badge">
+            일부만 표시
+          </Badge>
+        ) : null}
+      </div>
+      {error ? <div className="log-preview-error">{error}</div> : null}
+      {!error && preview ? (
+        <div className="check-ledger-markdown">
+          <MarkdownViewer content={preview.content || "(비어 있음)"} />
+        </div>
+      ) : null}
+      {!error && !preview ? <div className="empty-panel log-preview-empty">check 파일을 선택하세요</div> : null}
     </div>
   );
 }

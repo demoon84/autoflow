@@ -457,6 +457,15 @@ if [ -n "$replanned_reject" ]; then
   printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
   printf 'todo_ticket=%s\n' "$replanned_ticket"
   printf 'retry_count=%s\n' "$(ticket_retry_count "$replanned_ticket")"
+  record_orchestration_check_best_effort \
+    "reject-auto-replan" \
+    "Reject auto-replan created $(basename "$replanned_ticket")" \
+    "$(extract_ticket_prd_key "$replanned_ticket" 2>/dev/null || true)" \
+    "$(extract_numeric_id "$replanned_ticket" 2>/dev/null || true)" \
+    "start-plan.sh" \
+    "Reject ticket $(board_relative_path "$replanned_reject") was automatically returned to todo as $(board_relative_path "$replanned_ticket")." \
+    "retry_count=$(ticket_retry_count "$replanned_ticket"); reject_origin=$(board_relative_path "$replanned_reject"); todo_ticket=$(board_relative_path "$replanned_ticket")" \
+    "새 todo 티켓의 retry context와 Reject History를 확인하고 필요한 경우 미확인 상태를 해제한다."
   if [ -n "${candidate_fp:-}" ]; then
     printf 'iteration_fingerprint=%s\n' "$candidate_fp"
   fi
@@ -519,6 +528,15 @@ if reject_auto_close_enabled; then
       printf 'prd_file=%s\n' "$(board_relative_path "$candidate_prd_file")"
       printf 'verification_command=%s\n' "$candidate_command"
       printf 'archived_to=%s\n' "$(board_relative_path "$auto_close_target")"
+      record_orchestration_check_best_effort \
+        "reject-auto-close" \
+        "Reject auto-close archived $(basename "$auto_close_target")" \
+        "$candidate_prd_key" \
+        "$(extract_numeric_id "$candidate" 2>/dev/null || true)" \
+        "start-plan.sh" \
+        "Retry cap reject $(board_relative_path "$candidate") was automatically archived after the PRD verification command passed at PROJECT_ROOT." \
+        "verification_command=${candidate_command}; archived_to=$(board_relative_path "$auto_close_target"); prd_file=$(board_relative_path "$candidate_prd_file")" \
+        "자동 close가 의도한 수동 해결인지 확인하고 필요한 경우 관련 reject archive를 검토한다."
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -573,6 +591,15 @@ if blocked_auto_recover_enabled; then
       printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
       printf 'failure_class=%s\n' "$blocked_failure_class"
       printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+      record_orchestration_check_best_effort \
+        "blocked-dirty-orchestration" \
+        "Blocked dirty orchestration requested for $(basename "$blocked_ticket")" \
+        "$(extract_ticket_prd_key "$blocked_ticket" 2>/dev/null || true)" \
+        "$(extract_numeric_id "$blocked_ticket" 2>/dev/null || true)" \
+        "start-plan.sh" \
+        "Planner runtime detected a blocked ticket whose Allowed Paths still overlap dirty PROJECT_ROOT paths and emitted source=blocked-dirty-orchestration." \
+        "blocked_origin=$(board_relative_path "$blocked_ticket"); failure_class=${blocked_failure_class}; dirty_paths=${blocked_dirty_summary}" \
+        "Orchestrator AI가 dirty path를 Allowed Paths 소유권별로 commit 또는 stash 처리했는지 확인한다."
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -594,6 +621,15 @@ if blocked_auto_recover_enabled; then
     printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
     printf 'failure_class=%s\n' "$blocked_failure_class"
     printf 'returned_to=%s\n' "$(board_relative_path "$blocked_target")"
+    record_orchestration_check_best_effort \
+      "blocked-auto-recover" \
+      "Blocked ticket auto-recovered to todo $(basename "$blocked_target")" \
+      "$(extract_ticket_prd_key "$blocked_target" 2>/dev/null || true)" \
+      "$(extract_numeric_id "$blocked_target" 2>/dev/null || true)" \
+      "start-plan.sh" \
+      "A blocked dirty-root ticket was automatically returned to todo after PROJECT_ROOT no longer reported overlapping dirty Allowed Paths." \
+      "blocked_origin=$(board_relative_path "$blocked_ticket"); returned_to=$(board_relative_path "$blocked_target"); failure_class=${blocked_failure_class}" \
+      "새 worktree claim 후 Recovery State가 resolved 상태로 이어지는지 확인한다."
     emit_replan_skipped_metadata "$replan_skipped_file"
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
