@@ -5,16 +5,11 @@
 # Plan AI now owns three responsibilities — all purely board-side, no product
 # code edits — and emits a ticket in tickets/todo/ as the only output:
 #   1. Auto-replan rejected tickets back to todo (reject/ -> todo/).
-#   2. Promote lightweight memos in tickets/inbox/ into PRD/todo work.
+#   2. Promote lightweight orders in tickets/inbox/ into PRD/todo work.
 #   3. Convert populated PRDs in backlog/ into a fresh tickets_NNN.md in todo/.
 # Legacy plan/ files (rules/plan or tickets/plan) are still consumed as a
 # transitional fallback when neither (1), (2), nor (3) yields work, so older
 # sample boards keep functioning.
-#
-# Thin runtime contract:
-# - this script atomically selects/promotes the next board-side input;
-# - it emits parseable state such as status/source/replan_skipped/board_root/project_root;
-# - it does not decide whether the planner should split, retry, park, or ask the user.
 
 set -euo pipefail
 
@@ -66,6 +61,38 @@ extract_section_checklist() {
   ' "$file"
 }
 
+# --- Ralph loop guards (lint + iteration fingerprint) -------------------------
+
+lint_ticket_enabled() {
+  case "${AUTOFLOW_LINT_TICKET:-on}" in
+    off|false|0|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+iteration_fingerprint_enabled() {
+  case "${AUTOFLOW_ITERATION_FINGERPRINT:-on}" in
+    off|false|0|no) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Wraps lint-ticket.sh invocation. Captures exit code without tripping set -e
+# and prints lint output keys to stdout via the caller's printf chain. Returns
+# the lint exit code (0=ok|warn, 1=block).
+run_lint_ticket() {
+  local target="$1"
+  local lint_script="${SCRIPT_DIR}/lint-ticket.sh"
+
+  [ -x "$lint_script" ] || return 0
+
+  set +e
+  "$lint_script" "$target"
+  local rc=$?
+  set -e
+  return "$rc"
+}
+
 extract_spec_allowed_paths() {
   local file="$1"
 
@@ -115,49 +142,45 @@ select_populated_spec() {
     printf '%s' "$spec_file"
     return 0
   done < <(
-    {
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md'
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md'
-    } | sort
+    list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md' 'project_*.md'
   )
 
   return 1
 }
 
-memo_ref_is_already_promoted() {
-  local memo_ref="$1"
+order_ref_is_already_promoted() {
+  local order_ref="$1"
   local spec_file
 
   while IFS= read -r spec_file; do
     [ -n "$spec_file" ] || continue
     [ -f "$spec_file" ] || continue
-    if grep -Fq -- "Source: \`${memo_ref}\`" "$spec_file" || grep -Fq -- "Source: ${memo_ref}" "$spec_file"; then
+    if grep -Fq -- "Source: \`${order_ref}\`" "$spec_file" || grep -Fq -- "Source: ${order_ref}" "$spec_file"; then
       return 0
     fi
   done < <(
     {
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md'
-      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'project_*.md'
+      list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md' 'project_*.md'
       if [ -d "${BOARD_ROOT}/tickets/done" ]; then
         find "${BOARD_ROOT}/tickets/done" -mindepth 2 -maxdepth 2 -type f \( -name 'prd_*.md' -o -name 'project_*.md' \)
       fi
-    } | sort
+    }
   )
 
   return 1
 }
 
-memo_file_is_actionable() {
-  local memo_file="$1"
-  local memo_ref status
+order_file_is_actionable() {
+  local order_file="$1"
+  local order_ref status
 
-  [ -f "$memo_file" ] || return 1
-  memo_ref="$(board_relative_path "$memo_file")"
-  if memo_ref_is_already_promoted "$memo_ref"; then
+  [ -f "$order_file" ] || return 1
+  order_ref="$(board_relative_path "$order_file")"
+  if order_ref_is_already_promoted "$order_ref"; then
     return 1
   fi
 
-  status="$(extract_scalar_field_in_section "$memo_file" "Memo" "Status")"
+  status="$(extract_scalar_field_in_section "$order_file" "Order" "Status")"
   status="$(trim_spaces "$status")"
 
   case "$status" in
@@ -170,31 +193,31 @@ memo_file_is_actionable() {
   esac
 }
 
-select_inbox_memo() {
-  local memo_file id
+select_inbox_order() {
+  local order_file id
 
   if [ -n "$requested_normalized" ]; then
-    memo_file="${BOARD_ROOT}/tickets/inbox/memo_${requested_normalized}.md"
-    if memo_file_is_actionable "$memo_file"; then
-      printf '%s' "$memo_file"
+    order_file="${BOARD_ROOT}/tickets/inbox/order_${requested_normalized}.md"
+    if order_file_is_actionable "$order_file"; then
+      printf '%s' "$order_file"
       return 0
     fi
     return 1
   fi
 
-  while IFS= read -r memo_file; do
-    [ -n "$memo_file" ] || continue
-    memo_file_is_actionable "$memo_file" || continue
-    id="$(extract_numeric_id "$memo_file" 2>/dev/null || true)"
+  while IFS= read -r order_file; do
+    [ -n "$order_file" ] || continue
+    order_file_is_actionable "$order_file" || continue
+    id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
     [ -n "$id" ] || continue
-    printf '%s' "$memo_file"
+    printf '%s' "$order_file"
     return 0
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'memo_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'order_*.md')
 
   return 1
 }
 
-extract_spec_source_memo_ref() {
+extract_spec_source_order_ref() {
   local file="$1"
 
   awk '
@@ -209,33 +232,33 @@ extract_spec_source_memo_ref() {
   ' "$file"
 }
 
-archive_source_memo_for_spec() {
+archive_source_order_for_spec() {
   local project_key="$1"
   local spec_file="$2"
-  local memo_ref memo_file target_file
+  local order_ref order_file target_file
 
-  memo_ref="$(extract_spec_source_memo_ref "$spec_file")"
-  case "$memo_ref" in
-    tickets/inbox/memo_*.md)
+  order_ref="$(extract_spec_source_order_ref "$spec_file")"
+  case "$order_ref" in
+    tickets/inbox/order_*.md)
       ;;
     *)
       return 0
       ;;
   esac
 
-  memo_file="${BOARD_ROOT}/${memo_ref}"
-  [ -f "$memo_file" ] || return 0
+  order_file="${BOARD_ROOT}/${order_ref}"
+  [ -f "$order_file" ] || return 0
 
-  target_file="${BOARD_ROOT}/tickets/done/${project_key}/$(basename "$memo_file")"
+  target_file="${BOARD_ROOT}/tickets/done/${project_key}/$(basename "$order_file")"
   if [ -f "$target_file" ]; then
-    if cmp -s "$memo_file" "$target_file"; then
-      rm -f "$memo_file"
+    if cmp -s "$order_file" "$target_file"; then
+      rm -f "$order_file"
     fi
     return 0
   fi
 
   mkdir -p "$(dirname "$target_file")"
-  mv "$memo_file" "$target_file"
+  mv "$order_file" "$target_file"
 }
 
 create_todo_ticket_from_spec() {
@@ -258,7 +281,7 @@ create_todo_ticket_from_spec() {
 
   archived_spec_ref="$(archive_spec_to_done_if_needed "$spec_ref")"
   archived_spec_file="${BOARD_ROOT}/${archived_spec_ref}"
-  archive_source_memo_for_spec "$project_key" "$archived_spec_file"
+  archive_source_order_for_spec "$project_key" "$archived_spec_file"
   ticket_id="$(next_ticket_id)"
   ticket_file="$(ticket_path "todo" "$ticket_id")"
   ticket_note="[[tickets_${ticket_id}]]"
@@ -335,6 +358,9 @@ ${allowed_paths}
 - Continuation Suppressed: false
 - Last Event:
 - Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
 
 ## Recovery State
 
@@ -383,9 +409,43 @@ EOF
 replan_skipped_file="$(autoflow_mktemp)"
 replanned_reject="$(find_replannable_reject "$replan_skipped_file" || true)"
 if [ -n "$replanned_reject" ]; then
+  # Iteration fingerprint check (Ralph loop pattern (b)): if the same fail
+  # reason has been seen in a previously archived reject for this PRD, do not
+  # consume another retry slot. Park as needs_user via source=iteration-no-progress.
+  if iteration_fingerprint_enabled; then
+    candidate_fp="$(compute_iteration_fingerprint "$replanned_reject" 2>/dev/null || true)"
+    candidate_prd_key="$(extract_ticket_prd_key "$replanned_reject" 2>/dev/null || true)"
+    if [ -n "$candidate_fp" ] && [ -n "$candidate_prd_key" ]; then
+      prior_fp="$(latest_archived_reject_fingerprint "$candidate_prd_key" "$replanned_reject" 2>/dev/null || true)"
+      if [ -n "$prior_fp" ] && [ "$prior_fp" = "$candidate_fp" ]; then
+        printf 'status=ok\n'
+        printf 'source=iteration-no-progress\n'
+        printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
+        printf 'prd_key=%s\n' "$candidate_prd_key"
+        printf 'fingerprint=%s\n' "$candidate_fp"
+        printf 'prior_fingerprint=%s\n' "$prior_fp"
+        printf 'failure_class=iteration_no_progress\n'
+        printf 'recovery_state=needs_user\n'
+        emit_replan_skipped_metadata "$replan_skipped_file"
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        printf 'next_action=Reject %s repeats the same Failure Class/Reject Reason as the previous archived attempt for %s. Park as needs_user; planner orchestrator AI must address the root cause (Allowed Paths, verification command, dependent PRD split) before another retry.\n' \
+          "$(basename "$replanned_reject")" \
+          "$candidate_prd_key"
+        exit 0
+      fi
+    fi
+  fi
+
   replanned_ticket="$(replan_reject_to_todo "$replanned_reject" || true)"
   if [ -z "$replanned_ticket" ]; then
     fail_or_idle "Reject ticket could not be replanned: $(board_relative_path "$replanned_reject")" "reject_replan_failed"
+  fi
+
+  # Record the fingerprint on the new todo so the planner orchestrator AI can
+  # see iteration history without re-deriving it from archived rejects.
+  if iteration_fingerprint_enabled && [ -n "${candidate_fp:-}" ]; then
+    append_iteration_fingerprint "$replanned_ticket" "$candidate_fp" 2>/dev/null || true
   fi
 
   printf 'status=ok\n'
@@ -393,6 +453,18 @@ if [ -n "$replanned_reject" ]; then
   printf 'reject_origin=%s\n' "$(board_relative_path "$replanned_reject")"
   printf 'todo_ticket=%s\n' "$replanned_ticket"
   printf 'retry_count=%s\n' "$(ticket_retry_count "$replanned_ticket")"
+  record_orchestration_check_best_effort \
+    "reject-auto-replan" \
+    "Reject auto-replan created $(basename "$replanned_ticket")" \
+    "$(extract_ticket_prd_key "$replanned_ticket" 2>/dev/null || true)" \
+    "$(extract_numeric_id "$replanned_ticket" 2>/dev/null || true)" \
+    "start-plan.sh" \
+    "Reject ticket $(board_relative_path "$replanned_reject") was automatically returned to todo as $(board_relative_path "$replanned_ticket")." \
+    "retry_count=$(ticket_retry_count "$replanned_ticket"); reject_origin=$(board_relative_path "$replanned_reject"); todo_ticket=$(board_relative_path "$replanned_ticket")" \
+    "새 todo 티켓의 retry context와 Reject History를 확인하고 필요한 경우 미확인 상태를 해제한다."
+  if [ -n "${candidate_fp:-}" ]; then
+    printf 'iteration_fingerprint=%s\n' "$candidate_fp"
+  fi
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -400,28 +472,236 @@ if [ -n "$replanned_reject" ]; then
   exit 0
 fi
 
-# --- Branch 2: quick memo inbox -> AI-generated PRD/todo ----------------------
-memo_file="$(select_inbox_memo || true)"
-if [ -n "$memo_file" ]; then
+# --- Branch 1.5: reject auto-close after retry cap ----------------------------
+# When a reject is parked at retry cap (max_retries_reached), the planner tries
+# the PRD's Verification Command at PROJECT_ROOT. The first reject whose command
+# returns exit 0 is archived to tickets/done/<prd_key>/ with a
+# `## Manual Resolution (auto-close)` note. Verification failures for other
+# candidates are recorded as metadata so the next tick can retry them. At most
+# one reject is archived per tick to bound cost.
+if reject_auto_close_enabled; then
+  auto_close_attempt_index=0
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    [ -f "$candidate" ] || continue
+
+    candidate_prd_key="$(extract_ticket_prd_key "$candidate")"
+    if [ -z "$candidate_prd_key" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.result=missing_prd_key\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    candidate_prd_file="$(prd_file_for_reject "$candidate_prd_key" || true)"
+    if [ -z "$candidate_prd_file" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+      printf 'auto_close_attempt.%s.result=prd_file_not_found\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    candidate_command="$(extract_prd_verification_command "$candidate_prd_file")"
+    if [ -z "$candidate_command" ]; then
+      auto_close_attempt_index=$((auto_close_attempt_index + 1))
+      printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+      printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+      printf 'auto_close_attempt.%s.result=verification_command_empty\n' "$auto_close_attempt_index"
+      continue
+    fi
+
+    if run_verification_command_for_auto_close "$candidate_command"; then
+      auto_close_target="$(archive_reject_with_manual_resolution \
+        "$candidate" \
+        "$candidate_prd_key" \
+        "$candidate_command")"
+
+      printf 'status=ok\n'
+      printf 'source=reject-auto-close\n'
+      printf 'reject_origin=%s\n' "$(board_relative_path "$candidate")"
+      printf 'prd_key=%s\n' "$candidate_prd_key"
+      printf 'prd_file=%s\n' "$(board_relative_path "$candidate_prd_file")"
+      printf 'verification_command=%s\n' "$candidate_command"
+      printf 'archived_to=%s\n' "$(board_relative_path "$auto_close_target")"
+      record_orchestration_check_best_effort \
+        "reject-auto-close" \
+        "Reject auto-close archived $(basename "$auto_close_target")" \
+        "$candidate_prd_key" \
+        "$(extract_numeric_id "$candidate" 2>/dev/null || true)" \
+        "start-plan.sh" \
+        "Retry cap reject $(board_relative_path "$candidate") was automatically archived after the PRD verification command passed at PROJECT_ROOT." \
+        "verification_command=${candidate_command}; archived_to=$(board_relative_path "$auto_close_target"); prd_file=$(board_relative_path "$candidate_prd_file")" \
+        "자동 close가 의도한 수동 해결인지 확인하고 필요한 경우 관련 reject archive를 검토한다."
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=Reject %s auto-closed to %s after PRD verification command passed at PROJECT_ROOT.\n' \
+        "$(basename "$candidate")" \
+        "$(board_relative_path "$auto_close_target")"
+      exit 0
+    fi
+
+    auto_close_attempt_index=$((auto_close_attempt_index + 1))
+    printf 'auto_close_attempt.%s=%s\n' "$auto_close_attempt_index" "$(board_relative_path "$candidate")"
+    printf 'auto_close_attempt.%s.prd_key=%s\n' "$auto_close_attempt_index" "$candidate_prd_key"
+    printf 'auto_close_attempt.%s.verification_command=%s\n' "$auto_close_attempt_index" "$candidate_command"
+    printf 'auto_close_attempt.%s.result=verification_failed\n' "$auto_close_attempt_index"
+  done < <(list_max_retried_rejects)
+fi
+
+# --- Branch 1.6: blocked inprogress dirty_root recovery -----------------------
+# When an inprogress ticket is parked at Stage=blocked because PROJECT_ROOT had
+# dirty changes overlapping its Allowed Paths, two outcomes are possible:
+#   (a) the dirty paths are now clean -> return the ticket to tickets/todo/ with
+#       a fresh Recovery State so ticket-owner can rebuild a worktree from main.
+#   (b) the dirty paths are still present -> emit a `blocked-dirty-orchestration`
+#       signal so the planner orchestrator AI can analyze, classify, and either
+#       integrate (local commit), stash, or escalate to needs_user. The shell
+#       runtime no longer rubber-stamps `needs_user`; it surfaces evidence and
+#       lets the orchestrator AI decide. `git push` is still forbidden (rule 8).
+if blocked_auto_recover_enabled; then
+  blocked_attempt_index=0
+  while IFS= read -r blocked_ticket; do
+    [ -n "$blocked_ticket" ] || continue
+    [ -f "$blocked_ticket" ] || continue
+
+    blocked_failure_class="$(ticket_failure_class "$blocked_ticket")"
+    case "$blocked_failure_class" in
+      dirty_root|dirty_project_root_conflict)
+        ;;
+      *)
+        blocked_attempt_index=$((blocked_attempt_index + 1))
+        printf 'blocked_recover_skip.%s=%s\n' "$blocked_attempt_index" "$(board_relative_path "$blocked_ticket")"
+        printf 'blocked_recover_skip.%s.failure_class=%s\n' "$blocked_attempt_index" "$blocked_failure_class"
+        printf 'blocked_recover_skip.%s.reason=failure_class_out_of_scope\n' "$blocked_attempt_index"
+        continue
+        ;;
+    esac
+
+    blocked_dirty_paths="$(project_root_dirty_paths "$(git_root_path || printf '%s' "$PROJECT_ROOT")" 2>/dev/null || true)"
+    if [ -n "$blocked_dirty_paths" ]; then
+      blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
+      printf 'status=ok\n'
+      printf 'source=blocked-dirty-orchestration\n'
+      printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+      printf 'failure_class=%s\n' "$blocked_failure_class"
+      printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+      record_orchestration_check_best_effort \
+        "blocked-dirty-orchestration" \
+        "Blocked dirty orchestration requested for $(basename "$blocked_ticket")" \
+        "$(extract_ticket_prd_key "$blocked_ticket" 2>/dev/null || true)" \
+        "$(extract_numeric_id "$blocked_ticket" 2>/dev/null || true)" \
+        "start-plan.sh" \
+        "Planner runtime detected a blocked ticket whose Allowed Paths still overlap dirty PROJECT_ROOT paths and emitted source=blocked-dirty-orchestration." \
+        "blocked_origin=$(board_relative_path "$blocked_ticket"); failure_class=${blocked_failure_class}; dirty_paths=${blocked_dirty_summary}" \
+        "Orchestrator AI가 dirty path를 Allowed Paths 소유권별로 commit 또는 stash 처리했는지 확인한다."
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=Orchestrator AI must group dirty PROJECT_ROOT paths by Allowed Paths ownership and integrate each group into a local commit ([PRD_NNN][ticket_NNN] orchestration cleanup: ... or [ticket_NNN] orchestration cleanup: misc housekeeping for ambiguous paths). Default is integrate; the Autoflow 1원칙 (do not stop) outranks classification perfectionism. Re-check git status after the commits; the next planner tick will surface source=blocked-auto-recover when paths are clean. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
+      exit 0
+    fi
+
+    blocked_target="$(unblock_dirty_root_resolved_ticket "$blocked_ticket" || true)"
+    if [ -z "$blocked_target" ]; then
+      blocked_attempt_index=$((blocked_attempt_index + 1))
+      printf 'blocked_recover_attempt.%s=%s\n' "$blocked_attempt_index" "$(board_relative_path "$blocked_ticket")"
+      printf 'blocked_recover_attempt.%s.failure_class=%s\n' "$blocked_attempt_index" "$blocked_failure_class"
+      printf 'blocked_recover_attempt.%s.result=unblock_helper_failed\n' "$blocked_attempt_index"
+      continue
+    fi
+
+    printf 'status=ok\n'
+    printf 'source=blocked-auto-recover\n'
+    printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+    printf 'failure_class=%s\n' "$blocked_failure_class"
+    printf 'returned_to=%s\n' "$(board_relative_path "$blocked_target")"
+    record_orchestration_check_best_effort \
+      "blocked-auto-recover" \
+      "Blocked ticket auto-recovered to todo $(basename "$blocked_target")" \
+      "$(extract_ticket_prd_key "$blocked_target" 2>/dev/null || true)" \
+      "$(extract_numeric_id "$blocked_target" 2>/dev/null || true)" \
+      "start-plan.sh" \
+      "A blocked dirty-root ticket was automatically returned to todo after PROJECT_ROOT no longer reported overlapping dirty Allowed Paths." \
+      "blocked_origin=$(board_relative_path "$blocked_ticket"); returned_to=$(board_relative_path "$blocked_target"); failure_class=${blocked_failure_class}" \
+      "새 worktree claim 후 Recovery State가 resolved 상태로 이어지는지 확인한다."
+    emit_replan_skipped_metadata "$replan_skipped_file"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'next_action=Blocked ticket %s returned to todo at %s after PROJECT_ROOT cleared dirty Allowed Paths; ticket-owner will rebuild a fresh worktree on the next claim.\n' \
+      "$(basename "$blocked_ticket")" \
+      "$(board_relative_path "$blocked_target")"
+    exit 0
+  done < <(list_blocked_inprogress_tickets)
+fi
+
+# --- Branch 2: quick order inbox -> AI-generated PRD/todo ---------------------
+order_file="$(select_inbox_order || true)"
+if [ -n "$order_file" ]; then
   printf 'status=ok\n'
-  printf 'source=memo-inbox\n'
-  printf 'memo=%s\n' "$memo_file"
-  printf 'memo_id=%s\n' "$(extract_numeric_id "$memo_file")"
+  printf 'source=order-inbox\n'
+  printf 'order=%s\n' "$order_file"
+  printf 'order_id=%s\n' "$(extract_numeric_id "$order_file")"
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Promote memo %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$memo_file")"
+  printf 'next_action=Promote order %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$order_file")"
   exit 0
 fi
 
 # --- Branch 3: backlog PRD -> todo ticket -------------------------------------
 spec_file="$(select_populated_spec || true)"
 if [ -n "$spec_file" ]; then
+  # Done When / Global Acceptance Criteria vagueness lint (Ralph loop pattern
+  # (a)): if the PRD's Completion Promise is too vague to verify, do not promote
+  # to todo. The planner orchestrator AI is expected to either rework the PRD
+  # via spec-author-agent or override AUTOFLOW_LINT_TICKET=off after review.
+  lint_status_value=""
+  lint_score_value=""
+  lint_terms_value=""
+  if lint_ticket_enabled; then
+    lint_output_file="$(autoflow_mktemp)"
+    set +e
+    "${SCRIPT_DIR}/lint-ticket.sh" "$spec_file" > "$lint_output_file" 2>&1
+    lint_rc=$?
+    set -e
+    lint_status_value="$(awk -F= '/^lint_status=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_score_value="$(awk -F= '/^vagueness_score=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_terms_value="$(awk -F= '/^vague_terms=/ { sub(/^vague_terms=/, ""); print; exit }' "$lint_output_file" 2>/dev/null || true)"
+    if [ "$lint_rc" -ne 0 ] || [ "$lint_status_value" = "block" ]; then
+      printf 'status=ok\n'
+      printf 'source=vague-done-when\n'
+      printf 'spec=%s\n' "$spec_file"
+      printf 'lint_status=%s\n' "${lint_status_value:-block}"
+      printf 'lint_vagueness_score=%s\n' "${lint_score_value:-unknown}"
+      printf 'lint_vague_terms=%s\n' "${lint_terms_value:-}"
+      printf 'failure_class=vague_completion_promise\n'
+      printf 'recovery_state=needs_user\n'
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=PRD %s has a vague Completion Promise (lint_status=%s, vagueness_score=%s). spec-author-agent must rework Done When / Global Acceptance Criteria with concrete signals (commands, file paths, exit codes, numeric metrics) before promoting to todo. Override only after review with AUTOFLOW_LINT_TICKET=off.\n' \
+        "$(board_relative_path "$spec_file")" \
+        "${lint_status_value:-block}" \
+        "${lint_score_value:-unknown}"
+      exit 0
+    fi
+  fi
+
   created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
+  if [ -n "$lint_status_value" ] && [ -f "$created_ticket" ]; then
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Status" "$lint_status_value"
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Vagueness Score" "${lint_score_value:-0}"
+  fi
   printf 'status=ok\n'
   printf 'source=backlog-to-todo\n'
   printf 'spec=%s\n' "$spec_file"
   printf 'todo_ticket=%s\n' "$created_ticket"
+  if [ -n "$lint_status_value" ]; then
+    printf 'lint_status=%s\n' "$lint_status_value"
+    printf 'lint_vagueness_score=%s\n' "${lint_score_value:-0}"
+  fi
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"

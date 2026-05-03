@@ -369,6 +369,27 @@ ticket_dirty_project_root_conflict_paths() {
   [ "$found" = "true" ]
 }
 
+project_root_dirty_paths() {
+  local git_root="${1:-$PROJECT_ROOT}"
+  local line path found=false
+
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path="${line#?? }"
+    case "$path" in
+      *" -> "*) path="${path##* -> }" ;;
+    esac
+    [ -n "$path" ] || continue
+    printf '%s\n' "$path"
+    found=true
+  done < <(git -C "$git_root" status --porcelain --untracked-files=all 2>/dev/null)
+
+  [ "$found" = "true" ]
+}
+
 dirty_project_root_paths_summary() {
   awk '
     NF > 0 {
@@ -2556,7 +2577,7 @@ backup_diff_and_discard_worktree() {
     mkdir -p "$(dirname "$log_file")"
     printf '%s event=auto_recovery_resolved reason=auto_discard_agent_only_leftover ticket=%s worktree=%s backup=%s\n' \
       "$(now_iso)" "$ticket_id" "$worktree_path" "${backup_file:-none}" >> "$log_file"
-    
+
     append_note_once "$ticket_file" "Auto-recovery: agent-only leftover worktree discarded at $(now_iso); backup=${backup_file:-none}"
     replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "healthy"
     replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"

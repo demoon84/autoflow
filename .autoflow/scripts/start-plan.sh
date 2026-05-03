@@ -579,7 +579,7 @@ if blocked_auto_recover_enabled; then
         ;;
     esac
 
-    blocked_dirty_paths="$(ticket_dirty_project_root_conflict_paths "$blocked_ticket" 2>/dev/null || true)"
+    blocked_dirty_paths="$(project_root_dirty_paths "$(git_root_path || printf '%s' "$PROJECT_ROOT")" 2>/dev/null || true)"
     if [ -n "$blocked_dirty_paths" ]; then
       blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
       printf 'status=ok\n'
