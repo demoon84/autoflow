@@ -1063,7 +1063,7 @@ pre {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 4px;
   min-width: 0;
   min-height: 0;
@@ -1073,6 +1073,37 @@ pre {
   color: var(--sidebar-foreground);
   padding: 50px 8px 8px;
   font-size: 14px;
+}
+
+.settings-brand {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--sidebar-foreground);
+}
+
+.settings-brand-mark {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.settings-brand-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sidebar-foreground);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-nav-list {
@@ -5952,11 +5983,21 @@ pre {
   }
 
   .settings-nav {
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
     overflow: visible;
     border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, white);
     background: var(--sidebar);
     padding: 14px 12px 10px;
+  }
+
+  .settings-brand {
+    height: 32px;
+    padding: 0 2px;
+  }
+
+  .settings-brand-mark {
+    width: 24px;
+    height: 24px;
   }
 
   .settings-nav-list {

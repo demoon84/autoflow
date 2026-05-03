@@ -441,6 +441,20 @@ function createWindow() {
   }
 }
 
+function setupMacOsDockIcon() {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  const appIcon = nativeImage.createFromPath(appIconPath);
+  if (appIcon.isEmpty()) {
+    console.warn(`[Autoflow Desktop] macOS dock icon image is empty: ${appIconPath}`);
+    return;
+  }
+
+  app.dock.setIcon(appIcon);
+}
+
 function cliInvocation(args) {
   return {
     command: path.join(repoRoot, "bin", "autoflow"),
@@ -3051,10 +3065,7 @@ async function forceKillSurvivingRunners() {
 }
 
 app.whenReady().then(() => {
-  const appIcon = nativeImage.createFromPath(appIconPath);
-  if (!appIcon.isEmpty() && process.platform === "darwin") {
-    app.dock.setIcon(appIcon);
-  }
+  setupMacOsDockIcon();
 
   ipcMain.handle("dialog:selectProject", async () => {
     const result = await dialog.showOpenDialog({
