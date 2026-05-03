@@ -4,8 +4,9 @@
 #   planner : Orchestrator AI — backlog/PRD → todo, reject → todo
 #               (auto-replan), and markdown recovery for stalled/blocked work.
 #   worker   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
-#   verifier: Verifier AI — handles compatibility verification lane and
-#               audits worker's active ticket verification.
+#   verifier: Verifier AI — handles the compatibility verification lane and
+#               may audit worker verification evidence without claiming the
+#               worker's active inline ticket verification.
 #   wiki    : Wiki AI — periodically refreshes .autoflow/wiki/ when
 #               tickets/done or tickets/reject change. Path-disjoint from
 #               Orchestrator AI and Impl AI so it never causes worktree/merge

@@ -27,11 +27,11 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 
 ## Topology
 
-The default topology consists of four runners: Orchestrator AI (`planner`), Impl AI (`worker`), Verifier AI (`verifier`), and Wiki AI (`wiki`). These roles utilize disjoint paths to prevent worktree/merge conflicts, allowing them to tick concurrently.
+The default topology in `.autoflow/runners/config.toml` consists of four enabled loop runners: Orchestrator AI (`planner`), Impl AI (`worker`), Verifier AI (`verifier`), and Wiki AI (`wiki`). These roles utilize disjoint paths to prevent worktree/merge conflicts, allowing them to tick concurrently.
 
 - `planner` (role=`planner`): Orchestrator AI. Manages the workflow from input orders, PRDs, and reject tickets to generating new PRDs, todo tickets, and recovery instructions. It does not write product code or directly create worktrees.
 - `worker` (role=`ticket-owner`): Impl AI. Claims tickets from `tickets/todo/`, creates worktrees in `tickets/inprogress/`, and completes the cycle through mini-planning, implementation, verification, and merging into `tickets/done/`.
-- `verifier` (role=`verifier`): Verifier AI. Handles the compatibility verification lane and audits the worker's active ticket verification.
+- `verifier` (role=`verifier`): Verifier AI. Handles the compatibility verification lane and may audit worker verification evidence, but it does not claim or duplicate the worker's active inline ticket verification.
 - `wiki` (role=`wiki-maintainer`): Wiki AI. Periodically checks for changes in `tickets/done/`, `tickets/reject/`, and `.autoflow/wiki/`. It updates wiki content only when significant drift is detected, using debouncing to batch synthesis.
 
 

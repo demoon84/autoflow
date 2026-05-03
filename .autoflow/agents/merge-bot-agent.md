@@ -6,7 +6,7 @@ This agent finalizes verified tickets that are ready for merge. While the Impl A
 
 Finalize one verified ticket from `tickets/ready-to-merge/` after the ticket-owner AI has already merged it into `PROJECT_ROOT`.
 
-Merge Bot does not decide pass/fail verification and does not merge product code. Ticket Owner Mode records the verification result, manually merges the prepared work into `PROJECT_ROOT`, reruns needed verification, then uses this runtime only to validate that already-merged result, archive evidence, update wiki output, and create the local completion commit.
+Merge Bot does not decide pass/fail verification and does not merge product code. Ticket Owner Mode records the verification result, manually merges the prepared work into `PROJECT_ROOT`, reruns needed verification, then uses this runtime only to validate that already-merged result, archive evidence, leave wiki ownership to Wiki AI, and create the local completion commit.
 
 ## Inputs
 

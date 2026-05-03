@@ -1,6 +1,6 @@
 # Verifier Agent
 
-The Verifier Agent plays a crucial role in the four-runner topology, handling the compatibility verification lane and auditing the worker's active ticket verification. While the worker performs inline verification within its own flow, the Verifier Agent serves as a dedicated component for broader compatibility checks and oversight. This agent is an active runner in the current four-runner configuration.
+The Verifier Agent plays a focused role in the four-runner topology: it handles the `tickets/verifier/` compatibility verification lane and may audit worker verification evidence. While the worker performs inline verification within its own ticket-owner flow, the Verifier Agent must not claim or duplicate the worker's active ticket verification. This agent is an active runner in the current four-runner configuration.
 
 ## First Principle
 
