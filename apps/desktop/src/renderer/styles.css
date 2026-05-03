@@ -1078,7 +1078,7 @@ pre {
 .settings-nav-list {
   display: grid;
   align-content: start;
-  gap: 2px;
+  gap: 6px;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1128,13 +1128,13 @@ pre {
   gap: 8px;
   width: 100%;
   min-width: 0;
-  height: 32px;
+  height: 36px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--sidebar-foreground);
   cursor: pointer;
-  padding: 0 8px;
+  padding: 2px 10px;
   text-align: left;
   font-size: 14px;
   font-weight: 500;
