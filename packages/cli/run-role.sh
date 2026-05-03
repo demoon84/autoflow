@@ -2043,9 +2043,52 @@ run_with_timeout() {
     sleep "$timeout_s"
     if kill -0 "$child_pid" 2>/dev/null; then
       printf 'timeout' > "$marker"
+      tree_pids="$child_pid"
+      scan_pids="$child_pid"
+      while [ -n "$scan_pids" ]; do
+        next_pids=""
+        for scan_pid in $scan_pids; do
+          while IFS= read -r descendant_pid; do
+            [ -n "$descendant_pid" ] || continue
+            case " $tree_pids " in
+              *" $descendant_pid "*) ;;
+              *)
+                tree_pids="${tree_pids} ${descendant_pid}"
+                next_pids="${next_pids} ${descendant_pid}"
+                ;;
+            esac
+          done < <(pgrep -P "$scan_pid" 2>/dev/null || ps -axo ppid=,pid= 2>/dev/null | while read -r ppid pid; do [ "$ppid" = "$scan_pid" ] && printf '%s\n' "$pid"; done)
+        done
+        scan_pids="$next_pids"
+      done
+      for tree_pid in $tree_pids; do
+        [ "$tree_pid" = "$child_pid" ] && continue
+        kill -TERM "$tree_pid" 2>/dev/null || true
+      done
       kill -TERM "$child_pid" 2>/dev/null || true
       sleep "$kill_after_s"
       if kill -0 "$child_pid" 2>/dev/null; then
+        scan_pids="$child_pid"
+        while [ -n "$scan_pids" ]; do
+          next_pids=""
+          for scan_pid in $scan_pids; do
+            while IFS= read -r descendant_pid; do
+              [ -n "$descendant_pid" ] || continue
+              case " $tree_pids " in
+                *" $descendant_pid "*) ;;
+                *)
+                  tree_pids="${tree_pids} ${descendant_pid}"
+                  next_pids="${next_pids} ${descendant_pid}"
+                  ;;
+              esac
+            done < <(pgrep -P "$scan_pid" 2>/dev/null || ps -axo ppid=,pid= 2>/dev/null | while read -r ppid pid; do [ "$ppid" = "$scan_pid" ] && printf '%s\n' "$pid"; done)
+          done
+          scan_pids="$next_pids"
+        done
+        for tree_pid in $tree_pids; do
+          [ "$tree_pid" = "$child_pid" ] && continue
+          kill -KILL "$tree_pid" 2>/dev/null || true
+        done
         kill -KILL "$child_pid" 2>/dev/null || true
       fi
     fi
@@ -2432,6 +2475,200 @@ persist_run_artifact() {
   destination="$(runner_log_dir)/${runner_id}_$(artifact_stamp)_${suffix}.log"
   cp "$source_file" "$destination"
   printf '%s' "$destination"
+}
+
+run_role_pid_is_running() {
+  local pid="${1:-}"
+  local kill_output kill_status
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+run_role_process_children() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$pid" 2>/dev/null || true
+  else
+    ps -axo ppid=,pid= 2>/dev/null | awk -v ppid="$pid" '$1 == ppid { print $2 }' || true
+  fi
+}
+
+run_role_count_process_tree() {
+  local pid="${1:-}"
+  local child total child_total
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      printf '0'
+      return 0
+      ;;
+  esac
+
+  total=0
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    child_total="$(run_role_count_process_tree "$child")"
+    total=$((total + 1 + child_total))
+  done < <(run_role_process_children "$pid")
+  printf '%s' "$total"
+}
+
+run_role_kill_process_tree_signal() {
+  local pid="${1:-}"
+  local signal="${2:-TERM}"
+  local child
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    run_role_kill_process_tree_signal "$child" "$signal"
+  done < <(run_role_process_children "$pid")
+
+  kill "-${signal}" "$pid" 2>/dev/null || true
+}
+
+run_role_user_process_count() {
+  local user_name count
+
+  user_name="$(id -un 2>/dev/null || printf '')"
+  if [ -n "$user_name" ]; then
+    count="$(ps -u "$user_name" -o pid= 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    case "$count" in
+      ''|*[!0-9]*) ;;
+      *) printf '%s' "$count"; return 0 ;;
+    esac
+  fi
+
+  ps -axo pid= 2>/dev/null | wc -l | tr -d '[:space:]' || printf '0'
+}
+
+run_role_process_pressure_snapshot() {
+  local user_limit runner_child_limit user_count runner_child_count result
+
+  user_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_USER_LIMIT" 1000)"
+  runner_child_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_RUNNER_CHILD_LIMIT" 200)"
+  user_count="$(run_role_user_process_count)"
+  runner_child_count="$(run_role_count_process_tree "$$")"
+  result="ok"
+
+  if [ "$user_limit" -gt 0 ] && [ "$user_count" -ge "$user_limit" ]; then
+    result="user_limit"
+  elif [ "$runner_child_limit" -gt 0 ] && [ "$runner_child_count" -ge "$runner_child_limit" ]; then
+    result="runner_child_limit"
+  fi
+
+  printf 'result=%s\n' "$result"
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+}
+
+run_role_process_pressure_reason() {
+  awk -F= '$1 == "result" { print $2; exit }'
+}
+
+maybe_skip_adapter_for_process_pressure() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local snapshot reason timestamp prompt_log_path
+  local user_count user_limit runner_child_count runner_child_limit
+
+  snapshot="$(run_role_process_pressure_snapshot)"
+  reason="$(printf '%s\n' "$snapshot" | run_role_process_pressure_reason)"
+  [ "$reason" != "ok" ] || return 1
+
+  user_count="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "user_process_count" { print $2; exit }')"
+  user_limit="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "user_process_limit" { print $2; exit }')"
+  runner_child_count="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "runner_child_count" { print $2; exit }')"
+  runner_child_limit="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "runner_child_limit" { print $2; exit }')"
+
+  runner_append_log "$runner_id" "process_pressure_guard" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${reason}" \
+    "user_process_count=${user_count}" \
+    "user_process_limit=${user_limit}" \
+    "runner_child_count=${runner_child_count}" \
+    "runner_child_limit=${runner_child_limit}" \
+    "action=skip_adapter"
+
+  timestamp="$(runner_now_iso)"
+  prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=$(runner_adapter_state_value "active_stage")" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=process_pressure_guard" \
+    "last_prompt_log=${prompt_log_path}" \
+    "process_pressure_reason=${reason}" \
+    "process_pressure_user_count=${user_count}" \
+    "process_pressure_user_limit=${user_limit}" \
+    "process_pressure_runner_child_count=${runner_child_count}" \
+    "process_pressure_runner_child_limit=${runner_child_limit}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'reason=process_pressure_guard\n'
+  printf 'process_pressure_reason=%s\n' "$reason"
+  printf 'process_pressure_action=skip_adapter\n'
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+  printf 'prompt_log_path=%s\n' "$prompt_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+  exit 0
 }
 
 cleanup_stale_adapter_live_logs() {
@@ -2921,6 +3158,8 @@ case "$agent" in
       rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
       exit 0
     fi
+
+    maybe_skip_adapter_for_process_pressure "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
 
     set +e
     if [ "${wiki_pre_adapter_summary_exit:-0}" -ne 0 ]; then

@@ -276,6 +276,84 @@ runner_pid_is_running() {
   return 1
 }
 
+runner_process_children() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$pid" 2>/dev/null || true
+  else
+    ps -axo ppid=,pid= 2>/dev/null | awk -v ppid="$pid" '$1 == ppid { print $2 }' || true
+  fi
+}
+
+runner_count_process_tree() {
+  local pid="${1:-}"
+  local child total child_total
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      printf '0'
+      return 0
+      ;;
+  esac
+
+  total=0
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    child_total="$(runner_count_process_tree "$child")"
+    total=$((total + 1 + child_total))
+  done < <(runner_process_children "$pid")
+  printf '%s' "$total"
+}
+
+runner_user_process_count() {
+  local user_name count
+
+  user_name="$(id -un 2>/dev/null || printf '')"
+  if [ -n "$user_name" ]; then
+    count="$(ps -u "$user_name" -o pid= 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    case "$count" in
+      ''|*[!0-9]*) ;;
+      *) printf '%s' "$count"; return 0 ;;
+    esac
+  fi
+
+  ps -axo pid= 2>/dev/null | wc -l | tr -d '[:space:]' || printf '0'
+}
+
+runner_process_pressure_snapshot() {
+  local loop_pid="${1:-}"
+  local user_limit runner_child_limit user_count runner_child_count result
+
+  user_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_USER_LIMIT" 1000)"
+  runner_child_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_RUNNER_CHILD_LIMIT" 200)"
+  user_count="$(runner_user_process_count)"
+  runner_child_count="$(runner_count_process_tree "$loop_pid")"
+  result="ok"
+
+  if [ "$user_limit" -gt 0 ] && [ "$user_count" -ge "$user_limit" ]; then
+    result="user_limit"
+  elif [ "$runner_child_limit" -gt 0 ] && [ "$runner_child_count" -ge "$runner_child_limit" ]; then
+    result="runner_child_limit"
+  fi
+
+  printf 'result=%s\n' "$result"
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+}
+
+runner_process_pressure_reason() {
+  awk -F= '$1 == "result" { print $2; exit }'
+}
+
 runner_kill_process_tree() {
   local pid="${1:-}"
   local child wait_index
@@ -286,12 +364,10 @@ runner_kill_process_tree() {
       ;;
   esac
 
-  if command -v pgrep >/dev/null 2>&1; then
-    while IFS= read -r child; do
-      [ -n "$child" ] || continue
-      runner_kill_process_tree "$child"
-    done < <(pgrep -P "$pid" 2>/dev/null || true)
-  fi
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    runner_kill_process_tree "$child"
+  done < <(runner_process_children "$pid")
 
   kill "$pid" 2>/dev/null || true
   for wait_index in 1 2 3 4 5; do
@@ -299,12 +375,10 @@ runner_kill_process_tree() {
     sleep 0.2
   done
 
-  if command -v pgrep >/dev/null 2>&1; then
-    while IFS= read -r child; do
-      [ -n "$child" ] || continue
-      runner_kill_process_tree "$child"
-    done < <(pgrep -P "$pid" 2>/dev/null || true)
-  fi
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    runner_kill_process_tree "$child"
+  done < <(runner_process_children "$pid")
   kill -9 "$pid" 2>/dev/null || true
 }
 
@@ -1001,6 +1075,7 @@ restart_runner() {
 loop_runner_worker() {
   local target_runner_id="$1"
   local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result existing_stopped_by stop_reason
+  local pressure_snapshot pressure_reason pressure_user_count pressure_user_limit pressure_runner_child_count pressure_runner_child_limit
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -1024,7 +1099,7 @@ loop_runner_worker() {
   stop_loop() {
     stopping_loop="true"
     if [ -n "${child_pid:-}" ] && runner_pid_is_running "$child_pid"; then
-      kill "$child_pid" 2>/dev/null || true
+      runner_kill_process_tree "$child_pid"
     fi
     timestamp="$(runner_now_iso)"
     existing_stopped_by="$(runner_state_value_or_empty "$target_runner_id" "stopped_by")"
@@ -1058,7 +1133,8 @@ loop_runner_worker() {
       "role=${role}" \
       "mode=${mode}" \
       "interval_seconds=${interval}" \
-      "pid=${loop_pid}"
+      "pid=${loop_pid}" \
+      "child_cleanup=process_tree"
     exit 0
   }
 
@@ -1150,6 +1226,61 @@ loop_runner_worker() {
     loop_stderr_file="$(runner_loop_stderr_path "$target_runner_id")"
     rotate_loop_log_if_needed "$loop_stdout_file"
     rotate_loop_log_if_needed "$loop_stderr_file"
+
+    pressure_snapshot="$(runner_process_pressure_snapshot "$loop_pid")"
+    pressure_reason="$(printf '%s\n' "$pressure_snapshot" | runner_process_pressure_reason)"
+    if [ "$pressure_reason" != "ok" ]; then
+      pressure_user_count="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "user_process_count" { print $2; exit }')"
+      pressure_user_limit="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "user_process_limit" { print $2; exit }')"
+      pressure_runner_child_count="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "runner_child_count" { print $2; exit }')"
+      pressure_runner_child_limit="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "runner_child_limit" { print $2; exit }')"
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=running" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval}" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
+        "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
+        "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
+        "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
+        "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+        "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+        "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+        "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+        "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+        "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+        "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
+        "pid=${loop_pid}" \
+        "started_at=${started_at}" \
+        "last_event_at=${timestamp}" \
+        "stopped_by=" \
+        "last_stop_reason=" \
+        "last_result=process_pressure_guard" \
+        "process_pressure_reason=${pressure_reason}" \
+        "process_pressure_user_count=${pressure_user_count}" \
+        "process_pressure_user_limit=${pressure_user_limit}" \
+        "process_pressure_runner_child_count=${pressure_runner_child_count}" \
+        "process_pressure_runner_child_limit=${pressure_runner_child_limit}"
+      runner_append_log "$target_runner_id" "process_pressure_guard" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=${pressure_reason}" \
+        "user_process_count=${pressure_user_count}" \
+        "user_process_limit=${pressure_user_limit}" \
+        "runner_child_count=${pressure_runner_child_count}" \
+        "runner_child_limit=${pressure_runner_child_limit}" \
+        "action=skip_tick"
+      sleep "$interval" &
+      child_pid="$!"
+      wait "$child_pid" || true
+      child_pid=""
+      continue
+    fi
+
     AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &
     child_pid="$!"
     set +e
