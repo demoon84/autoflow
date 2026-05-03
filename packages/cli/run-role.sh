@@ -504,8 +504,6 @@ run_role_record_worker_tick_telemetry() {
   local telemetry_script telemetry_result telemetry_failure_class
   local start_epoch end_epoch duration_ms
 
-  [ "$public_role" = "ticket" ] || return 0
-
   telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
   [ -x "$telemetry_script" ] || return 0
 
