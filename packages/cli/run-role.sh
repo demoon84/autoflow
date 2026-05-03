@@ -1856,7 +1856,7 @@ run_with_timeout() {
   # 백그라운드 child 가 SIGTERM 으로 죽을 때 bash 가 stderr 에 "Terminated: 15" 노이즈 찍는 것 방지.
   set +m
 
-  "$@" &
+  "$@" <&0 &
   local child_pid=$!
 
   (
