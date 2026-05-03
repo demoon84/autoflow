@@ -5881,13 +5881,8 @@ function projectKeyFromSpecRef(value: string) {
   return value.match(/(prd_\d+|project_\d+)/)?.[1] || "";
 }
 
-function displayActiveTicketNumber(value: string) {
-  const match = value.match(/^tickets_(\d+)$/i);
-  return match ? match[1] : value.replace(/\.md$/i, "");
-}
-
 function displayActiveTicketBadge(value: string) {
-  return `#${displayActiveTicketNumber(value)}`;
+  return workflowFileDisplayName(value.endsWith(".md") ? value : `${value}.md`);
 }
 
 function activeTicketSummary(runner: AutoflowRunner) {
