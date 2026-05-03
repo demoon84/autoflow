@@ -37,9 +37,13 @@ project_root="$(resolve_project_root_or_die "$project_root_input")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
 log_root="${board_root}/runners/logs"
 state_root="${board_root}/runners/state"
+outcome_log_root="${board_root}/logs"
+outcome_archive_root="${outcome_log_root}/archive"
 
 deleted_count=0
 freed_bytes=0
+outcome_archived_count=0
+outcome_deleted_count=0
 
 cleanup_patterns=(
   "${log_root}/*_stdout.log"
@@ -109,6 +113,83 @@ size_of_tree() {
   printf '%s' "$bytes"
 }
 
+positive_int_or_default() {
+  local value="$1"
+  local fallback="$2"
+
+  case "$value" in
+    ''|*[!0-9]*) printf '%s' "$fallback" ;;
+    0) printf '%s' "$fallback" ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+outcome_root_markdown_limit() {
+  positive_int_or_default "${AUTOFLOW_OUTCOME_ROOT_MD_LIMIT:-99}" "99"
+}
+
+outcome_verifier_root_limit() {
+  positive_int_or_default "${AUTOFLOW_OUTCOME_VERIFIER_ROOT_LIMIT:-60}" "60"
+}
+
+outcome_verifier_max_age_days() {
+  positive_int_or_default "${AUTOFLOW_OUTCOME_VERIFIER_MAX_AGE_DAYS:-7}" "7"
+}
+
+outcome_manual_max_age_days() {
+  positive_int_or_default "${AUTOFLOW_OUTCOME_MANUAL_MAX_AGE_DAYS:-30}" "30"
+}
+
+outcome_archive_max_age_days() {
+  positive_int_or_default "${AUTOFLOW_OUTCOME_ARCHIVE_MAX_AGE_DAYS:-90}" "90"
+}
+
+filename_timestamp_stamp() {
+  local path="$1"
+  local base
+
+  base="${path##*/}"
+  if [[ "$base" =~ ([0-9]{8})[T_]([0-9]{6})Z ]]; then
+    printf '%s%s' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
+  fi
+
+  return 1
+}
+
+filename_timestamp_epoch() {
+  local path="$1"
+  local stamp date_part time_part
+
+  stamp="$(filename_timestamp_stamp "$path")" || return 1
+  date_part="${stamp:0:8}"
+  time_part="${stamp:8:6}"
+
+  if date -u -j -f '%Y%m%d%H%M%S' "$stamp" '+%s' >/dev/null 2>&1; then
+    date -u -j -f '%Y%m%d%H%M%S' "$stamp" '+%s'
+    return 0
+  fi
+
+  date -u -d "${date_part:0:4}-${date_part:4:2}-${date_part:6:2} ${time_part:0:2}:${time_part:2:2}:${time_part:4:2}" '+%s' 2>/dev/null
+}
+
+filename_timestamp_month() {
+  local path="$1"
+  local stamp
+
+  stamp="$(filename_timestamp_stamp "$path")" || return 1
+  printf '%s-%s' "${stamp:0:4}" "${stamp:4:2}"
+}
+
+path_age_days() {
+  local path="$1"
+  local epoch now
+
+  epoch="$(filename_timestamp_epoch "$path")" || return 1
+  now="$(date -u '+%s')"
+  printf '%s' $(( (now - epoch) / 86400 ))
+}
+
 cleanup_path() {
   local path="$1"
   local size
@@ -120,6 +201,31 @@ cleanup_path() {
   rm -rf "$path"
   freed_bytes=$((freed_bytes + size))
   deleted_count=$((deleted_count + 1))
+}
+
+archive_outcome_file() {
+  local path="$1"
+  local month archive_dir target stem ext suffix
+
+  [ -f "$path" ] || return 0
+  month="$(filename_timestamp_month "$path" 2>/dev/null || true)"
+  [ -n "$month" ] || month="unknown"
+  archive_dir="${outcome_archive_root}/${month}"
+  mkdir -p "$archive_dir"
+
+  target="${archive_dir}/${path##*/}"
+  if [ -e "$target" ]; then
+    stem="${target%.*}"
+    ext="${target##*.}"
+    suffix=1
+    while [ -e "${stem}.${suffix}.${ext}" ]; do
+      suffix=$((suffix + 1))
+    done
+    target="${stem}.${suffix}.${ext}"
+  fi
+
+  mv "$path" "$target"
+  outcome_archived_count=$((outcome_archived_count + 1))
 }
 
 cleanup_loop_log() {
@@ -266,8 +372,136 @@ cleanup_state_files() {
   done
 }
 
+cleanup_outcome_archives() {
+  local max_days path age before_deleted
+
+  [ -d "$outcome_archive_root" ] || return 0
+  max_days="$(outcome_archive_max_age_days)"
+  while IFS= read -r -d '' path; do
+    age="$(path_age_days "$path" 2>/dev/null || true)"
+    [ -n "$age" ] || continue
+    [ "$age" -ge "$max_days" ] || continue
+    before_deleted="$deleted_count"
+    cleanup_path "$path"
+    if [ "$deleted_count" -gt "$before_deleted" ]; then
+      outcome_deleted_count=$((outcome_deleted_count + 1))
+    fi
+  done < <(find "$outcome_archive_root" -type f -name '*.md' -print0 2>/dev/null)
+
+  find "$outcome_archive_root" -type d -empty -delete 2>/dev/null || true
+}
+
+cleanup_deprecated_outcome_roots() {
+  local path
+
+  [ -d "$outcome_log_root" ] || return 0
+
+  while IFS= read -r -d '' path; do
+    archive_outcome_file "$path"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type f \( -name 'coordinator_*_blocked.md' -o -name 'owner_*_blocked.md' \) -print0 2>/dev/null)
+
+  while IFS= read -r -d '' path; do
+    cleanup_path "$path"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type d -name 'branch-cleanup_*' -print0 2>/dev/null)
+}
+
+cleanup_manual_outcome_logs() {
+  local max_days path age
+
+  [ -d "$outcome_log_root" ] || return 0
+  max_days="$(outcome_manual_max_age_days)"
+  while IFS= read -r -d '' path; do
+    age="$(path_age_days "$path" 2>/dev/null || true)"
+    [ -n "$age" ] || continue
+    [ "$age" -ge "$max_days" ] || continue
+    archive_outcome_file "$path"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type f -name 'manual_worktree_merge_*.md' -print0 2>/dev/null)
+}
+
+archive_outcome_logs_older_than() {
+  local pattern="$1"
+  local max_days="$2"
+  local path age
+
+  while IFS= read -r -d '' path; do
+    age="$(path_age_days "$path" 2>/dev/null || true)"
+    [ -n "$age" ] || continue
+    [ "$age" -ge "$max_days" ] || continue
+    archive_outcome_file "$path"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type f -name "$pattern" -print0 2>/dev/null)
+}
+
+limit_root_outcome_pattern() {
+  local pattern="$1"
+  local limit="$2"
+  local tmp count archive_count path epoch archived=0
+
+  tmp="$(mktemp)"
+  while IFS= read -r -d '' path; do
+    epoch="$(filename_timestamp_epoch "$path" 2>/dev/null || true)"
+    [ -n "$epoch" ] || continue
+    printf '%s\t%s\n' "$epoch" "$path" >> "$tmp"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type f -name "$pattern" -print0 2>/dev/null)
+
+  count="$(wc -l < "$tmp" | tr -dc '0-9')"
+  [ -n "$count" ] || count=0
+  if [ "$count" -le "$limit" ]; then
+    rm -f "$tmp"
+    return 0
+  fi
+
+  archive_count=$((count - limit))
+  while IFS="$(printf '\t')" read -r _ path; do
+    [ "$archived" -lt "$archive_count" ] || break
+    archive_outcome_file "$path"
+    archived=$((archived + 1))
+  done < <(sort -n "$tmp")
+  rm -f "$tmp"
+}
+
+limit_root_outcome_markdown() {
+  local limit count archive_count tmp path epoch archived=0
+
+  [ -d "$outcome_log_root" ] || return 0
+  limit="$(outcome_root_markdown_limit)"
+  count="$(find "$outcome_log_root" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null | wc -l | tr -dc '0-9')"
+  [ -n "$count" ] || count=0
+  [ "$count" -le "$limit" ] && return 0
+
+  archive_count=$((count - limit))
+  tmp="$(mktemp)"
+  while IFS= read -r -d '' path; do
+    epoch="$(filename_timestamp_epoch "$path" 2>/dev/null || true)"
+    [ -n "$epoch" ] || continue
+    printf '%s\t%s\n' "$epoch" "$path" >> "$tmp"
+  done < <(find "$outcome_log_root" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+
+  while IFS="$(printf '\t')" read -r _ path; do
+    [ "$archived" -lt "$archive_count" ] || break
+    archive_outcome_file "$path"
+    archived=$((archived + 1))
+  done < <(sort -n "$tmp")
+  rm -f "$tmp"
+}
+
+cleanup_outcome_logs() {
+  [ -d "$outcome_log_root" ] || return 0
+
+  cleanup_outcome_archives
+  cleanup_deprecated_outcome_roots
+  cleanup_manual_outcome_logs
+  archive_outcome_logs_older_than 'verifier_*_pass.md' "$(outcome_verifier_max_age_days)"
+  archive_outcome_logs_older_than 'verifier_*_fail.md' "$(outcome_verifier_max_age_days)"
+  limit_root_outcome_pattern 'verifier_*_pass.md' "$(outcome_verifier_root_limit)"
+  limit_root_outcome_pattern 'verifier_*_fail.md' "$(outcome_verifier_root_limit)"
+  limit_root_outcome_markdown
+}
+
 cleanup_logs
 cleanup_state_files
+cleanup_outcome_logs
 
 printf 'deleted_count=%s\n' "$deleted_count"
 printf 'freed_bytes=%s\n' "$freed_bytes"
+printf 'outcome_archived_count=%s\n' "$outcome_archived_count"
+printf 'outcome_deleted_count=%s\n' "$outcome_deleted_count"
