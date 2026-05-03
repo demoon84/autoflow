@@ -3,7 +3,7 @@ auto_generated: telemetry-summary
 slug: operations/runner-timing
 window: 7d
 source_event_count: 5
-last_synced_at: 2026-05-03T07:54:47Z
+last_synced_at: 2026-05-03T08:08:05Z
 input_fingerprint: 7d034991d2fe96be333525eb8c68fdfa728c8b43cee15c07e3c18c41e1718357
 ---
 

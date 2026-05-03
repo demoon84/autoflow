@@ -2550,6 +2550,18 @@ case "$agent" in
     ticket_goal_before_fingerprint="$(ticket_goal_progress_fingerprint_for_current_ticket || true)"
     prepare_adapter_live_logs
     role_autocommit_capture_status "$autocommit_before_status"
+    wiki_pre_adapter_summary_output=""
+    wiki_pre_adapter_summary_exit=0
+    if [ "$public_role" = "wiki" ]; then
+      set +e
+      wiki_pre_adapter_summary_output="$("$runtime_path" summarize-telemetry "$project_root" "$board_dir_name" --slug-set telemetry-default --window 7d 2>&1)"
+      wiki_pre_adapter_summary_exit=$?
+      set -e
+      if [ "$wiki_pre_adapter_summary_exit" -ne 0 ]; then
+        printf '%s\n' "$wiki_pre_adapter_summary_output" > "$adapter_stderr"
+        adapter_exit="$wiki_pre_adapter_summary_exit"
+      fi
+    fi
     write_agent_prompt "$instruction_file" > "$prompt_file"
 
     # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
@@ -2671,12 +2683,16 @@ case "$agent" in
     fi
 
     set +e
-    if [ -n "$command_value" ]; then
+    if [ "${wiki_pre_adapter_summary_exit:-0}" -ne 0 ]; then
+      :
+    elif [ -n "$command_value" ]; then
       run_custom_adapter_command "$prompt_file"
     else
       run_default_adapter_command "$prompt_file"
     fi
-    adapter_exit=$?
+    if [ "${wiki_pre_adapter_summary_exit:-0}" -eq 0 ]; then
+      adapter_exit=$?
+    fi
     set -e
 
     finished_at="$(runner_now_iso)"
@@ -2755,6 +2771,7 @@ case "$agent" in
       "last_event_at=${finished_at}" \
       "last_result=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 0 ] && [ "$public_role" = "wiki" ]; then printf 'success';
         elif [ "$adapter_exit" -eq 124 ]; then
           if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
             printf 'adapter_timeout_fallback';
@@ -2802,6 +2819,11 @@ case "$agent" in
     printf 'adapter=%s\n' "$agent"
     printf 'adapter_exit_code=%s\n' "$adapter_exit"
     printf 'adapter_command=%s\n' "$command_summary"
+    if [ -n "${wiki_pre_adapter_summary_output:-}" ]; then
+      printf 'wiki_pre_adapter_summary_begin\n'
+      printf '%s\n' "$wiki_pre_adapter_summary_output"
+      printf 'wiki_pre_adapter_summary_end\n'
+    fi
     printf 'prompt_log_path=%s\n' "$prompt_log_path"
     printf 'stdout_log_path=%s\n' "$stdout_log_path"
     printf 'stderr_log_path=%s\n' "$stderr_log_path"

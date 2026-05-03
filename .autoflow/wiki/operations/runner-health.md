@@ -3,7 +3,7 @@ auto_generated: telemetry-summary
 slug: operations/runner-health
 window: 7d
 source_event_count: 0
-last_synced_at: 2026-05-03T07:54:47Z
+last_synced_at: 2026-05-03T08:08:05Z
 input_fingerprint: 1e350e05b4fd546c06bc51ef2301c8219558d58ba7aefe50fdaa66fe6f74d1a5
 ---
 
