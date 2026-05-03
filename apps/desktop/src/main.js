@@ -1405,6 +1405,79 @@ function numberAfterTokenMarker(lower, marker) {
   return match ? Number.parseInt(match[2].replace(/,/g, ""), 10) : -1;
 }
 
+function positiveIntegerValue(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function firstPositiveTokenKeyValue(source, keys) {
+  if (!source || typeof source !== "object") return 0;
+  for (const key of keys) {
+    const value = positiveIntegerValue(source[key]);
+    if (value > 0) return value;
+  }
+  return 0;
+}
+
+function geminiUsageTotalFromObject(source) {
+  if (!source || typeof source !== "object") return 0;
+
+  const usageSource = source.usageMetadata || source.usage_metadata || source;
+  const total = firstPositiveTokenKeyValue(usageSource, ["totalTokenCount", "total_token_count"]);
+  if (total > 0) return total;
+
+  const prompt = firstPositiveTokenKeyValue(usageSource, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
+  const candidates = firstPositiveTokenKeyValue(usageSource, [
+    "candidatesTokenCount",
+    "candidates_token_count",
+    "outputTokenCount",
+    "output_token_count"
+  ]);
+  if (prompt + candidates > 0) return prompt + candidates;
+
+  if (Array.isArray(source)) {
+    return source.reduce((sum, item) => sum + geminiUsageTotalFromObject(item), 0);
+  }
+
+  return Object.values(source).reduce((sum, item) => sum + geminiUsageTotalFromObject(item), 0);
+}
+
+function numberAfterJsonTokenKey(line, keys) {
+  for (const key of keys) {
+    const keyPattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*([0-9][0-9,]*)`, "i");
+    const match = line.match(keyPattern);
+    if (match) return Number.parseInt(match[1].replace(/,/g, ""), 10);
+  }
+  return 0;
+}
+
+function geminiUsageTotalFromLine(line) {
+  const trimmed = line.trim();
+  if (!/(usageMetadata|usage_metadata|TokenCount|token_count)/i.test(trimmed)) return 0;
+
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const total = geminiUsageTotalFromObject(parsed);
+      if (total > 0) return total;
+    } catch {
+      // Fall through to regex parsing for stream fragments or non-JSON logs.
+    }
+  }
+
+  const total = numberAfterJsonTokenKey(trimmed, ["totalTokenCount", "total_token_count"]);
+  if (total > 0) return total;
+
+  const prompt = numberAfterJsonTokenKey(trimmed, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
+  const candidates = numberAfterJsonTokenKey(trimmed, [
+    "candidatesTokenCount",
+    "candidates_token_count",
+    "outputTokenCount",
+    "output_token_count"
+  ]);
+  return prompt + candidates;
+}
+
 function tokenUsageFromLine(lower) {
   for (const marker of tokenTotalMarkers) {
     const value = numberAfterTokenMarker(lower, marker);
@@ -1429,6 +1502,11 @@ function parseTokenUsageChunk(chunk, prior) {
   for (const rawLine of lines) {
     const clean = rawLine.replace(/\r$/, "").replace(ansiEscapePattern, "");
     const lower = clean.toLowerCase();
+    const geminiUsageTotal = geminiUsageTotalFromLine(clean);
+    if (geminiUsageTotal > 0) {
+      total += geminiUsageTotal;
+      continue;
+    }
 
     if (waiting) {
       const numberMatch = clean.replace(/,/g, "").match(/[0-9]+/);

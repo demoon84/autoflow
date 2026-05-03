@@ -2035,6 +2035,63 @@ runner_claude_supports_effort() {
   return 1
 }
 
+gemini_usage_value_from_files() {
+  local key_pattern="$1"
+  shift
+
+  awk -v key_pattern="$key_pattern" '
+    {
+      line = $0
+      while (match(line, "\"(" key_pattern ")\"[[:space:]]*:[[:space:]]*[0-9]+")) {
+        value = substr(line, RSTART, RLENGTH)
+        sub(/^.*:[[:space:]]*/, "", value)
+        if (value + 0 > max) {
+          max = value + 0
+        }
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END {
+      if (max > 0) {
+        print max
+      }
+    }
+  ' "$@" 2>/dev/null | tail -n 1
+}
+
+append_gemini_token_marker() {
+  local prompt_file="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  local total_tokens input_tokens output_tokens prompt_chars output_chars
+
+  total_tokens="$(gemini_usage_value_from_files 'totalTokenCount|total_token_count' "$stdout_file" "$stderr_file")"
+  input_tokens="$(gemini_usage_value_from_files 'promptTokenCount|prompt_token_count|inputTokenCount|input_token_count' "$stdout_file" "$stderr_file")"
+  output_tokens="$(gemini_usage_value_from_files 'candidatesTokenCount|candidates_token_count|outputTokenCount|output_token_count' "$stdout_file" "$stderr_file")"
+
+  if [ -n "$total_tokens" ] && [ "$total_tokens" -gt 0 ] 2>/dev/null; then
+    printf '\ntotal_tokens=%s\n' "$total_tokens" >> "$stdout_file"
+    return 0
+  fi
+
+  if [ -n "$input_tokens" ] && [ "$input_tokens" -gt 0 ] 2>/dev/null &&
+     [ -n "$output_tokens" ] && [ "$output_tokens" -gt 0 ] 2>/dev/null; then
+    printf '\ninput_tokens=%s\noutput_tokens=%s\n' "$input_tokens" "$output_tokens" >> "$stdout_file"
+    return 0
+  fi
+
+  prompt_chars="$(wc -c < "$prompt_file" 2>/dev/null | tr -d '[:space:]' || true)"
+  output_chars="$(wc -c < "$stdout_file" 2>/dev/null | tr -d '[:space:]' || true)"
+  case "$prompt_chars" in ''|*[!0-9]*) prompt_chars=0 ;; esac
+  case "$output_chars" in ''|*[!0-9]*) output_chars=0 ;; esac
+
+  input_tokens=$(( (prompt_chars + 3) / 4 ))
+  output_tokens=$(( (output_chars + 3) / 4 ))
+  [ "$input_tokens" -gt 0 ] || input_tokens=1
+  [ "$output_tokens" -gt 0 ] || output_tokens=1
+  printf '\ninput_tokens=%s\noutput_tokens=%s\n' "$input_tokens" "$output_tokens" >> "$stdout_file"
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text
@@ -2144,6 +2201,9 @@ run_default_adapter_command() {
         adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
         > "$adapter_stdout" 2> "$adapter_stderr"
       command_exit=$?
+      if [ "$command_exit" -eq 0 ]; then
+        append_gemini_token_marker "$prompt_file" "$adapter_stdout" "$adapter_stderr"
+      fi
       if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
         cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
       fi
