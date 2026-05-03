@@ -1939,11 +1939,11 @@ function App() {
               <div className="settings-title-group">
                 <h1>{selectedSettingsItem.label}</h1>
               </div>
-              <div className="settings-title-status" aria-live="polite">
-                <span className="content-updated-at">
-                  {lastUpdated ? `마지막 업데이트 ${formatDate(lastUpdated)}` : "미표기"}
-                </span>
-              </div>
+              {lastUpdated ? (
+                <div className="settings-title-status" aria-live="polite">
+                  <span className="content-updated-at">마지막 업데이트 {formatDate(lastUpdated)}</span>
+                </div>
+              ) : null}
             </div>
             <div className="settings-content-body">
               {setupRequired && visibleSettingsSection === "progress" ? (
@@ -2500,7 +2500,7 @@ function EssentialApp() {
               </div>
               <div className="essential-status">
                 <Badge variant={boardStatusVariant}>{boardStatusLabel}</Badge>
-                <span>{lastUpdated ? `마지막 업데이트 ${formatDate(lastUpdated)}` : "미표기"}</span>
+                {lastUpdated ? <span>마지막 업데이트 {formatDate(lastUpdated)}</span> : null}
               </div>
             </div>
 
