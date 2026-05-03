@@ -11,6 +11,7 @@ Usage:
   telemetry-project.sh [--project-root PATH] self-test
   telemetry-project.sh [--project-root PATH] record [JSON on stdin] [--runner RUNNER_ID] [--result success|failed|killed] [--started-at TIMESTAMP] [--ended-at TIMESTAMP] [--duration-ms MILLISECONDS]
   telemetry-project.sh [--project-root PATH] query [--target runs|failures] [--runner RUNNER_ID] [--result success|failed|killed] [--since TIMESTAMP] [--until TIMESTAMP] [--limit N] [--prd-key KEY] [--ticket-id ID]
+  telemetry-project.sh [--project-root PATH] token-usage --runner RUNNER_ID [--since TIMESTAMP] [--until TIMESTAMP]
   telemetry-project.sh [--project-root PATH] compact --before YYYY-MM-DD
 EOF
 }
@@ -311,6 +312,80 @@ telemetry_query() {
   rm -f "$sort_tmp"
 }
 
+telemetry_token_usage() {
+  local project_root="."
+  local runner_filter=""
+  local since=""
+  local until=""
+  local since_epoch=""
+  local until_epoch=""
+  local target_file line runner_id ended_at ended_epoch valid
+  local input output total
+  local key
+
+  while [ "$#" -gt 0 ]; do
+    key="$1"
+    shift || true
+    case "$key" in
+      --project-root) project_root="$1"; shift || true ;;
+      --project-root=*) project_root="${key#*=}" ;;
+      --runner) runner_filter="$1"; shift || true ;;
+      --runner=*) runner_filter="${key#*=}" ;;
+      --since) since="$1"; shift || true ;;
+      --since=*) since="${key#*=}" ;;
+      --until) until="$1"; shift || true ;;
+      --until=*) until="${key#*=}" ;;
+      *) printf 'error=unknown_option\noption=%s\n' "$key"; return 1 ;;
+    esac
+  done
+
+  if [ -z "$runner_filter" ]; then
+    printf 'error=missing_runner\n'
+    return 1
+  fi
+
+  require_cmd jq || return 1
+  [ -z "$since" ] || since_epoch="$(telemetry_timestamp_to_epoch "$since" || true)"
+  [ -z "$until" ] || until_epoch="$(telemetry_timestamp_to_epoch "$until" || true)"
+  if { [ -n "$since" ] && [ -z "$since_epoch" ]; } || { [ -n "$until" ] && [ -z "$until_epoch" ]; }; then
+    printf 'error=invalid_time_filter\n'
+    return 1
+  fi
+
+  target_file="$(telemetry_runs_jsonl_path "$project_root")"
+  total=0
+  if [ -f "$target_file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      if ! printf '%s\n' "$line" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        printf 'warning=skip_corrupt_jsonl_line target=runs\n' >&2
+        continue
+      fi
+      valid="$(printf '%s\n' "$line" | jq -r 'has("runner_id") and has("ended_at")')"
+      [ "$valid" = "true" ] || continue
+
+      runner_id="$(printf '%s\n' "$line" | jq -r '.runner_id')"
+      [ "$runner_id" = "$runner_filter" ] || continue
+      ended_at="$(printf '%s\n' "$line" | jq -r '.ended_at // empty')"
+      ended_epoch="$(telemetry_timestamp_to_epoch "$ended_at" || true)"
+      [ -n "$ended_epoch" ] || continue
+      [ -z "$since_epoch" ] || [ "$ended_epoch" -ge "$since_epoch" ] || continue
+      [ -z "$until_epoch" ] || [ "$ended_epoch" -le "$until_epoch" ] || continue
+
+      input="$(printf '%s\n' "$line" | jq -r '.token_input // 0')"
+      output="$(printf '%s\n' "$line" | jq -r '.token_output // 0')"
+      input="$(json_number_or_zero "$input")"
+      output="$(json_number_or_zero "$output")"
+      total=$((total + input + output))
+    done < "$target_file"
+  fi
+
+  printf 'runner_id=%s\n' "$runner_filter"
+  printf 'since=%s\n' "$since"
+  printf 'until=%s\n' "$until"
+  printf 'token_usage=%s\n' "$total"
+}
+
 compact_one_file() {
   local project_root="$1"
   local source_path="$2"
@@ -488,6 +563,7 @@ main() {
     self-test) telemetry_self_test ;;
     record) shift || true; telemetry_record --project-root "$project_root" "$@" ;;
     query) shift || true; telemetry_query --project-root "$project_root" "$@" ;;
+    token-usage) shift || true; telemetry_token_usage --project-root "$project_root" "$@" ;;
     compact) shift || true; telemetry_compact --project-root "$project_root" "$@" ;;
     *) usage; exit 1 ;;
   esac

@@ -2671,6 +2671,260 @@ maybe_skip_adapter_for_process_pressure() {
   exit 0
 }
 
+runner_budget_policy_path() {
+  printf '%s' "${AUTOFLOW_BUDGET_POLICY_PATH:-${board_root}/policies/budget.toml}"
+}
+
+runner_policy_positive_integer_or_empty() {
+  local value="$1"
+
+  value="$(printf '%s' "$value" | tr -d '[:space:]')"
+  case "$value" in
+    ''|*[!0-9]*) printf '' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+runner_budget_policy_value() {
+  local key="$1"
+  local policy_path
+
+  policy_path="$(runner_budget_policy_path)"
+  [ -f "$policy_path" ] || return 0
+
+  awk -v key="$key" -v role="$public_role" -v runner="$runner_id" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    BEGIN { section = ""; value = "" }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+      section = $0
+      sub(/^[[:space:]]*\[/, "", section)
+      sub(/\][[:space:]]*$/, "", section)
+      section = trim(section)
+      next
+    }
+    index($0, "=") > 0 {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      name = trim(substr(line, 1, index(line, "=") - 1))
+      raw = trim(substr(line, index(line, "=") + 1))
+      gsub(/^"|"$/, "", raw)
+      if (name != key) {
+        next
+      }
+      if (section == "default" || section == role || section == runner) {
+        value = raw
+      }
+    }
+    END { print value }
+  ' "$policy_path"
+}
+
+runner_epoch_to_iso() {
+  local epoch="$1"
+
+  if date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ" >/dev/null 2>&1; then
+    date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ"
+    return 0
+  fi
+  date -u -d "@$epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true
+}
+
+runner_budget_telemetry_token_usage_since() {
+  local since="$1"
+  local telemetry_script output
+
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || { printf '0'; return 0; }
+  output="$("$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || true)"
+  printf '%s\n' "$output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }'
+}
+
+runner_budget_latest_adapter_ended_at() {
+  local telemetry_script
+
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || return 0
+  "$telemetry_script" query --project-root "$project_root" --runner "$runner_id" --limit 1 2>/dev/null |
+    jq -r '.ended_at // empty' 2>/dev/null |
+    head -n 1
+}
+
+runner_budget_append_skip_log_and_state() {
+  local reason="$1"
+  local prompt_file="$2"
+  local autocommit_before_status="$3"
+  local adapter_stdout_path="$4"
+  local adapter_stderr_path="$5"
+  local adapter_last_message_path="${6:-}"
+  shift 6 || true
+  local timestamp prompt_log_path preserved_consecutive_timeouts
+
+  timestamp="$(runner_now_iso)"
+  prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+  preserved_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+  case "${preserved_consecutive_timeouts:-0}" in
+    ''|*[!0-9]*) preserved_consecutive_timeouts=0 ;;
+  esac
+
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=$(runner_adapter_state_value "active_stage")" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=${reason}" \
+    "last_prompt_log=${prompt_log_path}" \
+    "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
+    "$@"
+
+  runner_append_log "$runner_id" "budget_preflight_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${reason}" \
+    "action=skip_adapter" \
+    "$@"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'reason=%s\n' "$reason"
+  printf 'budget_preflight_action=skip_adapter\n'
+  printf 'prompt_log_path=%s\n' "$prompt_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  while [ "$#" -gt 0 ]; do
+    printf '%s\n' "$1"
+    shift || true
+  done
+  rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+  exit 0
+}
+
+runner_budget_preflight_or_exit() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local now_iso now_epoch policy_path
+  local daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage
+  local minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds
+  local prompt_byte_cap prompt_bytes
+  local threshold cooldown_seconds consecutive_count last_result last_event_at last_event_epoch until_epoch until_iso
+
+  policy_path="$(runner_budget_policy_path)"
+  [ -f "$policy_path" ] || return 0
+
+  now_iso="$(runner_now_iso)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+
+  daily_token_quota="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value daily_token_quota)")"
+  if [ -n "$daily_token_quota" ]; then
+    quota_window_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value token_quota_window_seconds)")"
+    [ -n "$quota_window_seconds" ] || quota_window_seconds=86400
+    quota_since_epoch=$((now_epoch - quota_window_seconds))
+    quota_since_iso="$(runner_epoch_to_iso "$quota_since_epoch")"
+    token_usage="$(runner_budget_telemetry_token_usage_since "$quota_since_iso")"
+    token_usage="$(telemetry_positive_integer_or_zero "$token_usage")"
+    if [ "$token_usage" -ge "$daily_token_quota" ]; then
+      runner_budget_append_skip_log_and_state \
+        "token_budget_exceeded" \
+        "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+        "budget_policy_path=${policy_path}" \
+        "token_usage=${token_usage}" \
+        "token_quota=${daily_token_quota}" \
+        "token_quota_window_seconds=${quota_window_seconds}" \
+        "token_quota_since=${quota_since_iso}"
+    fi
+  fi
+
+  minimum_interval_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value minimum_interval_seconds)")"
+  if [ -n "$minimum_interval_seconds" ] && [ "$minimum_interval_seconds" -gt 0 ]; then
+    latest_ended_at="$(runner_budget_latest_adapter_ended_at)"
+    latest_epoch=""
+    [ -z "$latest_ended_at" ] || latest_epoch="$(telemetry_timestamp_to_epoch "$latest_ended_at" || true)"
+    if [ -n "$latest_epoch" ]; then
+      next_allowed_epoch=$((latest_epoch + minimum_interval_seconds))
+      if [ "$now_epoch" -lt "$next_allowed_epoch" ]; then
+        remaining_seconds=$((next_allowed_epoch - now_epoch))
+        next_allowed_at="$(runner_epoch_to_iso "$next_allowed_epoch")"
+        runner_budget_append_skip_log_and_state \
+          "rate_limited" \
+          "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+          "budget_policy_path=${policy_path}" \
+          "minimum_interval_seconds=${minimum_interval_seconds}" \
+          "last_adapter_ended_at=${latest_ended_at}" \
+          "next_allowed_at=${next_allowed_at}" \
+          "remaining_seconds=${remaining_seconds}"
+      fi
+    fi
+  fi
+
+  prompt_byte_cap="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value prompt_byte_cap)")"
+  if [ -n "$prompt_byte_cap" ] && [ "$prompt_byte_cap" -gt 0 ]; then
+    prompt_bytes="$(telemetry_file_size_bytes "$prompt_file")"
+    prompt_bytes="$(telemetry_positive_integer_or_zero "$prompt_bytes")"
+    if [ "$prompt_bytes" -gt "$prompt_byte_cap" ]; then
+      runner_budget_append_skip_log_and_state \
+        "prompt_size_exceeded" \
+        "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+        "budget_policy_path=${policy_path}" \
+        "prompt_bytes=${prompt_bytes}" \
+        "prompt_byte_cap=${prompt_byte_cap}"
+    fi
+  fi
+
+  threshold="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value timeout_circuit_breaker_threshold)")"
+  cooldown_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value timeout_circuit_breaker_cooldown_seconds)")"
+  if [ -n "$threshold" ] && [ "$threshold" -gt 0 ] && [ -n "$cooldown_seconds" ] && [ "$cooldown_seconds" -gt 0 ]; then
+    consecutive_count="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    consecutive_count="$(telemetry_positive_integer_or_zero "$consecutive_count")"
+    if [ "$consecutive_count" -ge "$threshold" ]; then
+      last_result="$(runner_state_field "$runner_id" "last_result" 2>/dev/null || true)"
+      case "$last_result" in
+        adapter_timeout|adapter_timeout_fallback|circuit_breaker_tripped)
+          last_event_at="$(runner_state_field "$runner_id" "last_event_at" 2>/dev/null || true)"
+          last_event_epoch=""
+          [ -z "$last_event_at" ] || last_event_epoch="$(telemetry_timestamp_to_epoch "$last_event_at" || true)"
+          [ -n "$last_event_epoch" ] || last_event_epoch="$now_epoch"
+          until_epoch=$((last_event_epoch + cooldown_seconds))
+          if [ "$now_epoch" -lt "$until_epoch" ]; then
+            until_iso="$(runner_epoch_to_iso "$until_epoch")"
+            runner_budget_append_skip_log_and_state \
+              "circuit_breaker_tripped" \
+              "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+              "budget_policy_path=${policy_path}" \
+              "consecutive_timeout_count=${consecutive_count}" \
+              "timeout_circuit_breaker_threshold=${threshold}" \
+              "timeout_circuit_breaker_cooldown_seconds=${cooldown_seconds}" \
+              "circuit_breaker_until=${until_iso}"
+          fi
+          ;;
+      esac
+    fi
+  fi
+}
+
 cleanup_stale_adapter_live_logs() {
   local stale_age_seconds stale_age_minutes loop_pid
   local file
@@ -3040,6 +3294,7 @@ case "$agent" in
       fi
     fi
     write_agent_prompt "$instruction_file" > "$prompt_file"
+    runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
 
     # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
     # consecutive_timeout_count 같은 누적 필드는 보존해야 하므로 미리 읽어서 다시 함께 써준다.

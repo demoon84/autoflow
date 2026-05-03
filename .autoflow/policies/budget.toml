@@ -1,0 +1,35 @@
+[default]
+daily_token_quota = 100000000
+token_quota_window_seconds = 86400
+minimum_interval_seconds = 0
+prompt_byte_cap = 1048576
+timeout_circuit_breaker_threshold = 3
+timeout_circuit_breaker_cooldown_seconds = 300
+
+[planner]
+daily_token_quota = 100000000
+minimum_interval_seconds = 0
+prompt_byte_cap = 1048576
+timeout_circuit_breaker_threshold = 3
+timeout_circuit_breaker_cooldown_seconds = 300
+
+[worker]
+daily_token_quota = 100000000
+minimum_interval_seconds = 0
+prompt_byte_cap = 1048576
+timeout_circuit_breaker_threshold = 3
+timeout_circuit_breaker_cooldown_seconds = 300
+
+[verifier]
+daily_token_quota = 100000000
+minimum_interval_seconds = 0
+prompt_byte_cap = 1048576
+timeout_circuit_breaker_threshold = 3
+timeout_circuit_breaker_cooldown_seconds = 300
+
+[wiki]
+daily_token_quota = 100000000
+minimum_interval_seconds = 0
+prompt_byte_cap = 1048576
+timeout_circuit_breaker_threshold = 3
+timeout_circuit_breaker_cooldown_seconds = 300
