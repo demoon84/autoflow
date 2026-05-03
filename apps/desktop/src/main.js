@@ -1594,24 +1594,70 @@ function byMostRecent(a, b) {
   return String(b?.modifiedAt ?? "").localeCompare(String(a?.modifiedAt ?? ""));
 }
 
-async function listMarkdownFiles(directory, recursive = false) {
+// Walk a directory tree gathering absolute file paths matching `predicate`.
+// Pure path discovery — never opens or reads file contents — so very large
+// log directories (10k+ files, hundreds of MB) stay cheap. Callers that only
+// need a top-N preview should use this helper plus `selectTopFilePaths` and
+// then preview only the selected slice, instead of readFile-ing every file
+// up front.
+async function walkFilePaths(directory, recursive, predicate) {
   if (!(await pathExists(directory))) {
     return [];
   }
 
   const entries = await fs.readdir(directory, { withFileTypes: true });
-  const files = [];
-
+  const out = [];
   for (const entry of entries) {
     const absolute = path.join(directory, entry.name);
     if (entry.isDirectory() && recursive) {
-      files.push(...(await listMarkdownFiles(absolute, true)));
-    } else if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(await readMarkdownPreview(absolute));
+      out.push(...(await walkFilePaths(absolute, true, predicate)));
+    } else if (entry.isFile() && predicate(entry.name, absolute)) {
+      out.push(absolute);
     }
   }
+  return out;
+}
 
-  return files.sort(byName);
+// Pick the top `limit` paths by mtime (descending) or basename (ascending).
+// Stat all paths in parallel — much cheaper than readFile-ing them — and
+// sort/slice in memory. Used to bound the readFile workload to N files even
+// when the directory contains many thousands.
+async function selectTopFilePaths(filePaths, { limit, orderBy = "mtime" } = {}) {
+  if (!Number.isFinite(limit) || filePaths.length <= limit) {
+    return filePaths;
+  }
+
+  if (orderBy === "name") {
+    return [...filePaths]
+      .sort((left, right) =>
+        String(path.basename(left)).localeCompare(String(path.basename(right)))
+      )
+      .slice(0, limit);
+  }
+
+  const stats = await Promise.all(
+    filePaths.map(async (filePath) => {
+      try {
+        const stat = await fs.stat(filePath);
+        return { filePath, mtimeMs: stat.mtimeMs || 0 };
+      } catch {
+        return { filePath, mtimeMs: 0 };
+      }
+    })
+  );
+  stats.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return stats.slice(0, limit).map((entry) => entry.filePath);
+}
+
+async function listMarkdownFiles(directory, recursive = false, options = {}) {
+  if (!(await pathExists(directory))) {
+    return [];
+  }
+
+  const paths = await walkFilePaths(directory, recursive, (name) => name.endsWith(".md"));
+  const selected = await selectTopFilePaths(paths, options);
+  const previews = await Promise.all(selected.map((filePath) => readMarkdownPreview(filePath)));
+  return previews.sort(byName);
 }
 
 async function listTicketFolders(ticketsRoot) {
@@ -1635,25 +1681,20 @@ async function listTicketFolders(ticketsRoot) {
     });
 }
 
-async function listTextFiles(directory, extensions, recursive = false) {
+async function listTextFiles(directory, extensions, recursive = false, options = {}) {
   if (!(await pathExists(directory))) {
     return [];
   }
 
-  const entries = await fs.readdir(directory, { withFileTypes: true });
   const extensionSet = new Set(extensions);
-  const files = [];
-
-  for (const entry of entries) {
-    const absolute = path.join(directory, entry.name);
-    if (entry.isDirectory() && recursive) {
-      files.push(...(await listTextFiles(absolute, extensions, true)));
-    } else if (entry.isFile() && extensionSet.has(path.extname(entry.name))) {
-      files.push(await readTextPreview(absolute));
-    }
-  }
-
-  return files.sort(byName);
+  const paths = await walkFilePaths(
+    directory,
+    recursive,
+    (name) => extensionSet.has(path.extname(name))
+  );
+  const selected = await selectTopFilePaths(paths, options);
+  const previews = await Promise.all(selected.map((filePath) => readTextPreview(filePath)));
+  return previews.sort(byName);
 }
 
 function normalizeMetricSnapshot(rawSnapshot) {
@@ -1982,12 +2023,40 @@ async function readBoard({ projectRoot, boardDirName }) {
     ticketGroups[folder] = await listMarkdownFiles(path.join(ticketsRoot, folder), folder === "done");
   }
 
-  const logs = await listMarkdownFiles(path.join(boardRoot, "logs"), true);
-  const runnerLogs = await listTextFiles(path.join(boardRoot, "runners", "logs"), [".log"], true);
-  const wikiFiles = await listMarkdownFiles(path.join(boardRoot, "wiki"), true);
-  const metricsFiles = await listTextFiles(path.join(boardRoot, "metrics"), [".jsonl", ".json"], true);
+  // Each list call below caps the number of files we actually readFile() to
+  // avoid a 30s IPC timeout when these directories grow large. The renderer
+  // only consumes the slice limits below (e.g. 12 logs, 16 runner logs, etc.),
+  // but without an internal cap the listing helper used to readFile every
+  // single file just to mtime-sort them — that read 600+ MB of runner logs
+  // on every readBoard call.
+  const logs = await listMarkdownFiles(path.join(boardRoot, "logs"), true, {
+    limit: 12,
+    orderBy: "mtime"
+  });
+  const runnerLogs = await listTextFiles(
+    path.join(boardRoot, "runners", "logs"),
+    [".log"],
+    true,
+    { limit: 16, orderBy: "mtime" }
+  );
+  const wikiFiles = await listMarkdownFiles(path.join(boardRoot, "wiki"), true, {
+    limit: 24,
+    orderBy: "name"
+  });
+  const metricsFiles = await listTextFiles(
+    path.join(boardRoot, "metrics"),
+    [".jsonl", ".json"],
+    true,
+    { limit: 8, orderBy: "mtime" }
+  );
   const metricsHistory = exists ? await readMetricsHistory(boardRoot) : [];
-  const conversationFiles = await listMarkdownFiles(path.join(boardRoot, "conversations"), true);
+  // README.md is filtered out at the consumer slice below; bump the internal
+  // cap by 1 so we still surface 24 conversations even when README is the
+  // freshest file in the directory.
+  const conversationFiles = await listMarkdownFiles(path.join(boardRoot, "conversations"), true, {
+    limit: 25,
+    orderBy: "mtime"
+  });
 
   return {
     repoRoot,
