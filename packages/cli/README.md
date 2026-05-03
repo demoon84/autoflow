@@ -19,6 +19,7 @@
 - `runners-project.sh`
 - `spec-project.sh`
 - `order-project.sh`
+- `skill-project.sh`
 - `wiki-project.sh`
 - `metrics-project.sh`
 - `status-project.sh`
@@ -223,6 +224,11 @@
   - `query` 는 기본적으로 파일 단위 retrieval 을 유지하고, `--rag` 를 주면 line chunk 단위 retrieval 로 전환해 `chunk_start_line` / `chunk_end_line` 메타데이터와 chunk 스니펫을 출력한다.
   - `query --synth` 와 `lint --semantic` 은 enabled `wiki-maintainer` runner (3-runner topology 의 `wiki`) 를 wiki adapter 로 우선 사용한다. wiki-maintainer 가 없고 enabled coordinator/coord/doctor/diagnose runner 가 있으면 그 runner 를 fallback adapter 로 재사용한다(`find_wiki_runner` in wiki-project.sh). 적합한 runner 가 전혀 없으면 graceful skip 한다. round 1 (commit db8cc57) 에서 제거된 것은 `auto_run_wiki_maintainer` (Impl AI inline pass 안에서 coordinator 를 자동 호출하던 분기) 이며, `wiki query --synth` / `lint --semantic` 의 explicit adapter resolution 은 여전히 coordinator fallback 을 지원한다.
   - `lint` 는 wiki orphan page 와 completed-work citation gap 을 key=value 로 보고한다.
+
+- `skill-project.sh`
+  - `autoflow skill create`, `autoflow skill match`, `autoflow skill update-stats` 구현체다.
+  - `.autoflow/wiki/skills/` learned-skill registry에서 완료 ticket 기반 skill markdown 생성, keyword 매칭, success/failure 통계 갱신을 수행한다.
+  - `finish-ticket-owner.sh`의 pass finalization은 이 명령을 best-effort로 호출할 수 있지만, skill 추출 실패가 ticket finalization 실패로 승격되면 안 된다.
 
 - `metrics-project.sh`
   - `autoflow metrics` 구현체다.

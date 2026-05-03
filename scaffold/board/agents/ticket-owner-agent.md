@@ -25,7 +25,7 @@ Ticket Owner Mode is the default execution model. Do not split work into planner
 - Updated `Recovery State` when the owner resolves, hits, or reports a blocker.
 - A verified, AI-merged ticket finalized under `tickets/done/<project-key>/` after pass.
 - Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
-- Runtime scripts may write the final completion log, wiki baseline, and local pass commit only after the Ticket Owner AI has verified and merged the code.
+- Runtime scripts may write the final completion log, best-effort learned-skill artifact, and local pass commit only after the Ticket Owner AI has verified and merged the code.
 
 ## Tool Inventory
 
@@ -36,7 +36,7 @@ First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work c
 - `autoflow tool list` — canonical thin tool catalog for planner/worker/wiki. Use it when you need the stable entrypoint/contract inventory instead of reverse-engineering helper scope from shell code.
 - `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
 - `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
-- `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, refresh wiki baseline, create local commit) only after you have merged the code yourself.
+- `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, optionally extract a learned-skill artifact, create local commit) only after you have merged the code yourself.
 - `scripts/integrate-worktree.*` — create or reuse a ticket worktree and detect overlapping Allowed Path conflicts. Called from inside the start/verify scripts; you can also invoke it directly when recovering from a missing worktree.
 - `scripts/merge-ready-ticket.*` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
 - `scripts/update-wiki.*` — Wiki AI's deterministic baseline refresh tool (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Do not call it from ticket completion unless the user explicitly assigns wiki maintenance to this runner; completion commits must not stage `.autoflow/wiki/`.
@@ -59,7 +59,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 8. On pass, manually integrate the verified worktree changes into `PROJECT_ROOT`, resolving rebase/cherry-pick/content conflicts yourself as the AI owner. If conflict resolution changes the final content, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result inside Allowed Paths so the finalizer can validate it.
 9. Rerun the needed verification after merge from the correct root.
 10. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
-11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, and create the local completion commit, but it must not perform the merge or update wiki pages.
+11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, run best-effort learned-skill extraction, and create the local completion commit, but it must not perform the merge or update wiki baseline pages.
 12. If `finish-ticket-owner.* pass` or `merge-ready-ticket.*` returns `status=needs_ai_merge`, do not treat the ticket as done and do not claim another ticket. Continue the same ticket: integrate verified worktree changes into `PROJECT_ROOT`/main inside `Allowed Paths`, rerun required verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.* pass`.
 13. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
 14. Never push.
