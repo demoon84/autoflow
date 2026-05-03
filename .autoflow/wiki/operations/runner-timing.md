@@ -2,9 +2,9 @@
 auto_generated: telemetry-summary
 slug: operations/runner-timing
 window: 7d
-source_event_count: 2
-last_synced_at: 2026-05-03T07:29:11Z
-input_fingerprint: 3a65c49005bceb6b78cc8c3bcf465f85b0f7bde6c26994b4a01980a683607153
+source_event_count: 5
+last_synced_at: 2026-05-03T07:54:47Z
+input_fingerprint: 7d034991d2fe96be333525eb8c68fdfa728c8b43cee15c07e3c18c41e1718357
 ---
 
 > This page is auto-generated from `.autoflow/telemetry/*.jsonl`; manual edits may be overwritten on the next sync. Keep durable human notes in `wiki/answers/`, `wiki/decisions/`, or another human-owned wiki page.
@@ -13,5 +13,5 @@ input_fingerprint: 3a65c49005bceb6b78cc8c3bcf465f85b0f7bde6c26994b4a01980a683607
 
 | runner_id | tick_count | p50_duration_ms | p95_duration_ms | p99_duration_ms |
 | --- | ---: | ---: | ---: | ---: |
-| worker | 2 | 431 | 744 | 744 |
+| worker | 5 | 485 | 744 | 744 |
 
