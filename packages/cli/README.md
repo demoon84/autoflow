@@ -210,6 +210,9 @@
   - `codex`, `claude`, `opencode`, `gemini` runner 는 role prompt 를 생성해 local CLI adapter 를 호출한다. `--dry-run` 은 prompt 와 command 만 출력한다.
   - planner/worker/verifier adapter prompt 는 role별 byte cap 을 먼저 적용한다: `AUTOFLOW_PLANNER_PROMPT_BYTES` 기본 `65536`, `AUTOFLOW_WORKER_PROMPT_BYTES` 기본 `98304`, `AUTOFLOW_VERIFIER_PROMPT_BYTES` 기본 `32768`. cap 초과 시 prompt head 60% + tail 40% 를 남기고 `[... N bytes elided to save tokens ...]` marker 를 삽입한 뒤 호출을 계속 진행한다.
   - cap 이 실제로 발동하면 `.autoflow/runners/logs/*.log` 에 `event=prompt_cap_applied ... prompt_bytes_capped=NNN` 한 줄이 남는다. 기존 telemetry/token 기록 경로는 그대로 유지한다.
+  - adapter final message/stdout 에는 role별 output cap 도 적용된다: `AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS` 기본 `8000`, `AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS` 기본 `16000`, `AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS` 기본 `4000`, `AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS` 기본 `2000`.
+  - 현재 로컬 CLI 가 provider-native max output flag 를 노출하지 않는 경우에도 후처리 fallback 으로 응답 끝에 `output_truncated=true` marker 를 추가하고, `.autoflow/runners/logs/*.log` 에 `event=output_cap_applied ... output_truncated=true` 및 `adapter_finish ... output_truncated=true|false` 를 남긴다.
+  - 운영 중 최근 24h `adapter_finish` 대비 `output_truncated=true` 비율이 5%를 넘으면 해당 role 의 `AUTOFLOW_*_MAX_OUTPUT_TOKENS` 상향을 권장한다.
   - 예외: `autoflow run coordinator` 는 runner 의 adapter 설정이 Codex/Claude 여도 `coordinator-project.sh` 를 직접 실행한다. 같은 coordinator runner 를 `autoflow run wiki` 나 `wiki query --synth` 로 재사용할 때만 adapter 를 쓴다.
   - adapter prompt, stdout, stderr 와 shell runtime output 은 `runners/logs/` 에 파일로 보관하고 출력에 `*_log_path` 를 남긴다. `shell` / `manual` dry-run 도 preview log 를 남긴다.
 

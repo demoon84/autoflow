@@ -59,6 +59,22 @@ autoflow_prompt_cap_marker() {
   printf '[... %s bytes elided to save tokens ...]' "$elided_bytes"
 }
 
+autoflow_output_truncation_marker() {
+  printf 'output_truncated=true'
+}
+
+autoflow_token_cap_to_byte_cap() {
+  local token_cap
+
+  token_cap="$(autoflow_positive_integer_or_zero "${1:-}")"
+  if [ "$token_cap" -le 0 ]; then
+    printf '0'
+    return 0
+  fi
+
+  printf '%s' $((token_cap * 4))
+}
+
 autoflow_apply_head_tail_byte_cap() {
   local source_file="$1"
   local byte_cap="$2"
@@ -137,6 +153,57 @@ autoflow_apply_head_tail_byte_cap() {
   printf 'original_bytes=%s\n' "$original_bytes"
   printf 'final_bytes=%s\n' "$(autoflow_file_size_bytes "$output_file")"
   printf 'capped_bytes=%s\n' "$elided_bytes"
+  printf 'byte_cap=%s\n' "$byte_cap"
+}
+
+autoflow_apply_output_token_cap() {
+  local source_file="$1"
+  local token_cap="$2"
+  local output_file="${3:-$source_file}"
+  local original_bytes byte_cap marker marker_bytes preserved_bytes tmp_file final_bytes
+
+  token_cap="$(autoflow_positive_integer_or_zero "$token_cap")"
+  original_bytes="$(autoflow_positive_integer_or_zero "$(autoflow_file_size_bytes "$source_file")")"
+  byte_cap="$(autoflow_token_cap_to_byte_cap "$token_cap")"
+
+  if [ "$token_cap" -le 0 ] || [ "$byte_cap" -le 0 ] || [ "$original_bytes" -le "$byte_cap" ]; then
+    if [ "$output_file" != "$source_file" ]; then
+      cp "$source_file" "$output_file"
+    fi
+    printf 'applied=false\n'
+    printf 'original_bytes=%s\n' "$original_bytes"
+    printf 'final_bytes=%s\n' "$original_bytes"
+    printf 'capped_bytes=0\n'
+    printf 'token_cap=%s\n' "$token_cap"
+    printf 'byte_cap=%s\n' "$byte_cap"
+    return 0
+  fi
+
+  marker="$(autoflow_output_truncation_marker)"
+  marker_bytes="$(autoflow_file_size_bytes <(printf '\n%s\n' "$marker"))"
+  preserved_bytes=$((byte_cap - marker_bytes))
+  if [ "$preserved_bytes" -lt 1 ]; then
+    preserved_bytes=1
+  fi
+
+  tmp_file="$(autoflow_mktemp)"
+  {
+    head -c "$preserved_bytes" "$source_file"
+    printf '\n%s\n' "$marker"
+  } > "$tmp_file"
+
+  if [ "$output_file" = "$source_file" ]; then
+    mv "$tmp_file" "$source_file"
+  else
+    mv "$tmp_file" "$output_file"
+  fi
+
+  final_bytes="$(autoflow_positive_integer_or_zero "$(autoflow_file_size_bytes "$output_file")")"
+  printf 'applied=true\n'
+  printf 'original_bytes=%s\n' "$original_bytes"
+  printf 'final_bytes=%s\n' "$final_bytes"
+  printf 'capped_bytes=%s\n' "$((original_bytes - preserved_bytes))"
+  printf 'token_cap=%s\n' "$token_cap"
   printf 'byte_cap=%s\n' "$byte_cap"
 }
 

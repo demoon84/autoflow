@@ -1997,6 +1997,61 @@ role_prompt_byte_cap_env_name() {
   esac
 }
 
+role_output_token_cap_value() {
+  local env_name default_value raw_value
+
+  case "$public_role" in
+    planner)
+      env_name="AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS"
+      default_value=8000
+      ;;
+    ticket)
+      env_name="AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS"
+      default_value=16000
+      ;;
+    verifier)
+      env_name="AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS"
+      default_value=4000
+      ;;
+    wiki)
+      env_name="AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS"
+      default_value=2000
+      ;;
+    *)
+      printf ''
+      return 0
+      ;;
+  esac
+
+  raw_value="${!env_name:-}"
+  if [ -z "$raw_value" ]; then
+    printf '%s' "$default_value"
+    return 0
+  fi
+
+  autoflow_positive_integer_or_zero "$raw_value"
+}
+
+role_output_token_cap_env_name() {
+  case "$public_role" in
+    planner)
+      printf 'AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS'
+      ;;
+    ticket)
+      printf 'AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS'
+      ;;
+    verifier)
+      printf 'AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS'
+      ;;
+    wiki)
+      printf 'AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS'
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
 apply_role_prompt_byte_cap() {
   local prompt_file="$1"
   local prompt_cap cap_output applied original_bytes final_bytes capped_bytes byte_cap
@@ -2018,6 +2073,79 @@ apply_role_prompt_byte_cap() {
   printf 'original_bytes=%s\n' "${original_bytes:-0}"
   printf 'final_bytes=%s\n' "${final_bytes:-0}"
   printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
+apply_role_output_token_cap_to_file() {
+  local target_file="$1"
+  local output_cap cap_output applied original_bytes final_bytes capped_bytes token_cap byte_cap
+
+  output_cap="$(role_output_token_cap_value)"
+  if [ -z "$output_cap" ] || [ ! -f "$target_file" ]; then
+    printf 'applied=false\n'
+    printf 'original_bytes=0\n'
+    printf 'final_bytes=0\n'
+    printf 'capped_bytes=0\n'
+    printf 'token_cap=0\n'
+    printf 'byte_cap=0\n'
+    return 0
+  fi
+
+  cap_output="$(autoflow_apply_output_token_cap "$target_file" "$output_cap")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  token_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'token_cap=%s\n' "${token_cap:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
+apply_role_output_token_cap() {
+  local output_target output_target_label cap_output applied
+  local original_bytes final_bytes capped_bytes token_cap byte_cap
+
+  output_target=""
+  output_target_label="none"
+  if [ -n "${adapter_last_message:-}" ] && [ -s "${adapter_last_message:-}" ]; then
+    output_target="$adapter_last_message"
+    output_target_label="last_message"
+  elif [ -n "${adapter_stdout:-}" ] && [ -s "${adapter_stdout:-}" ]; then
+    output_target="$adapter_stdout"
+    output_target_label="stdout"
+  fi
+
+  if [ -z "$output_target" ]; then
+    printf 'applied=false\n'
+    printf 'target=none\n'
+    printf 'original_bytes=0\n'
+    printf 'final_bytes=0\n'
+    printf 'capped_bytes=0\n'
+    printf 'token_cap=0\n'
+    printf 'byte_cap=0\n'
+    return 0
+  fi
+
+  cap_output="$(apply_role_output_token_cap_to_file "$output_target")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  token_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'target=%s\n' "$output_target_label"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'token_cap=%s\n' "${token_cap:-0}"
   printf 'byte_cap=%s\n' "${byte_cap:-0}"
 }
 
@@ -3425,6 +3553,13 @@ case "$agent" in
 
     adapter_exit=0
     command_summary=""
+    output_cap_applied="false"
+    output_cap_target="none"
+    output_cap_original_bytes="0"
+    output_cap_final_bytes="0"
+    output_cap_capped_bytes="0"
+    output_cap_token_cap="0"
+    output_cap_byte_cap="0"
 
     if [ "$dry_run" = "true" ]; then
       if [ -n "$command_value" ]; then
@@ -3517,6 +3652,27 @@ case "$agent" in
       adapter_exit=$?
     fi
     set -e
+
+    output_cap_output="$(apply_role_output_token_cap)"
+    output_cap_applied="$(printf '%s\n' "$output_cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+    output_cap_target="$(printf '%s\n' "$output_cap_output" | sed -n 's/^target=//p' | tail -n 1)"
+    output_cap_original_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+    output_cap_final_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+    output_cap_capped_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+    output_cap_token_cap="$(printf '%s\n' "$output_cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+    output_cap_byte_cap="$(printf '%s\n' "$output_cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+    if [ "$output_cap_applied" = "true" ]; then
+      runner_append_log "$runner_id" "output_cap_applied" \
+        "role=${public_role}" \
+        "output_cap_env=$(role_output_token_cap_env_name)" \
+        "output_cap_target=${output_cap_target}" \
+        "output_bytes_original=${output_cap_original_bytes}" \
+        "output_bytes_final=${output_cap_final_bytes}" \
+        "output_bytes_capped=${output_cap_capped_bytes}" \
+        "output_token_cap=${output_cap_token_cap}" \
+        "output_byte_cap=${output_cap_byte_cap}" \
+        "output_truncated=true"
+    fi
 
     finished_at="$(runner_now_iso)"
     run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stdout" "$adapter_stderr" "$prompt_file" || true
@@ -3611,6 +3767,10 @@ case "$agent" in
       "agent=${agent}" \
       "exit_code=${adapter_exit}" \
       "runner_status=${runner_status}" \
+      "output_truncated=${output_cap_applied}" \
+      "output_cap_env=$(role_output_token_cap_env_name)" \
+      "output_cap_target=${output_cap_target}" \
+      "output_token_cap=${output_cap_token_cap}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
