@@ -1,0 +1,139 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_129
+- PRD Key: prd_131
+- Plan Candidate: Plan AI handoff from tickets/done/prd_131/prd_131.md
+- Title: runners/state stale 파일 cleanup
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-03T08:53:12Z
+
+## Goal
+
+- 이번 작업의 목표: `.autoflow/runners/state/` 에 남은 legacy suffix runner state 파일과 atomic write 임시파일 잔재를 안전하게 정리하고, 기존 cleanup 경로가 같은 stale 패턴을 반복적으로 제거하도록 보강한다.
+
+## References
+
+- PRD: tickets/done/prd_131/prd_131.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_131]]
+- Plan Note:
+- Ticket Note: [[tickets_129]]
+
+## Allowed Paths
+
+- packages/cli/cleanup-runner-logs.sh
+- packages/cli/wiki-project.sh
+- .autoflow/scripts/runner-common.sh
+- .autoflow/runners/state/owner-1.state
+- .autoflow/runners/state/planner-1.state
+- .autoflow/runners/state/wiki-1.state
+- .autoflow/runners/state/wiki-1.semantic-lint.fingerprint
+- .autoflow/runners/state/wiki-1.semantic-lint.pages.d
+- .autoflow/runners/state/wiki-1.wiki-debounce.state
+- .autoflow/runners/state/wiki-1.wiki-inputs.fingerprint
+- .autoflow/runners/state/wiki-1.wiki-inputs.manifest
+- .autoflow/runners/state/wiki.state.CWxbDK
+- .autoflow/runners/state/wiki.state.wLVnDN
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_129`
+- Branch: autoflow/tickets_129
+- Base Commit: dfd8820d0de7fca6a22c8148327b0cacfb654ffb
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-03T08:48:24Z
+- Started Epoch: 1777798104
+- Updated At: 2026-05-03T08:53:13Z
+- Tick Count: 3
+- Time Used Seconds: 289
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 599917945
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] `.autoflow/runners/state/owner-1.state`, `.autoflow/runners/state/planner-1.state`, `.autoflow/runners/state/wiki-1.state`, `.autoflow/runners/state/wiki-1.semantic-lint.fingerprint`, `.autoflow/runners/state/wiki-1.semantic-lint.pages.d/`, `.autoflow/runners/state/wiki-1.wiki-debounce.state`, `.autoflow/runners/state/wiki-1.wiki-inputs.fingerprint`, `.autoflow/runners/state/wiki-1.wiki-inputs.manifest` 가 삭제된다.
+- [x] `.autoflow/runners/state/wiki.state.CWxbDK` 와 `.autoflow/runners/state/wiki.state.wLVnDN` 가 삭제된다.
+- [x] `packages/cli/cleanup-runner-logs.sh` 또는 그 helper가 inactive legacy suffix state(`*-1.*`)와 `*.state.<random>` atomic temp 잔재를 cleanup 대상으로 다루며, 현재 config 의 active runner id(`planner`, `worker`, `wiki`, `verifier`) state 본체는 삭제하지 않는다.
+- [x] `.autoflow/scripts/runner-common.sh` 의 `runner_write_state()` 또는 확인된 원인 위치가 temp 파일을 남기는 실패 경로를 줄이도록 보강되거나, 보강하지 않는 판단의 근거가 ticket Result 에 기록된다.
+- [x] `packages/cli/wiki-project.sh` 는 `wiki.state.<random>` 생성 원인이 아닌 경우 변경하지 않고, 변경하지 않은 이유를 ticket Result 에 기록한다.
+- [x] `bash -n packages/cli/cleanup-runner-logs.sh packages/cli/wiki-project.sh .autoflow/scripts/runner-common.sh` 가 exit 0 으로 통과한다.
+- [x] `find .autoflow/runners/state \( -name 'owner-1.state' -o -name 'planner-1.state' -o -name 'wiki-1*' -o -name '*.state.CWxbDK' -o -name '*.state.wLVnDN' \) -print` 가 비어 있다.
+- [x] `find .autoflow/runners/state -maxdepth 1 -type f -name '*.state' -print | sort` 에는 current runner state 본체(`planner.state`, `worker.state`, `wiki.state`, `verifier.state`)만 남고 legacy `*-1.state` 는 없다.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: worker가 `packages/cli/cleanup-runner-logs.sh`와 `.autoflow/scripts/runner-common.sh`를 수정하고 PROJECT_ROOT에 통합했다. 지정 stale state 파일은 삭제됐고 검증 명령은 exit 0으로 통과했다.
+- 직전 작업: `bash -n ... && bin/autoflow cleanup-runner-logs "$PWD" .autoflow && test -z "$(find ...)"` 를 PROJECT_ROOT에서 실행했다.
+- 재개 시 먼저 볼 것: `tickets/inprogress/verify_129.md`, `packages/cli/cleanup-runner-logs.sh`, `.autoflow/scripts/runner-common.sh`, `.autoflow/runners/state/`.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_131/prd_131.md at 2026-05-03T08:38:51Z.
+- Planner wiki context at 2026-05-03T08:36:00Z: `bin/autoflow wiki query --term "token usage telemetry-runs token_input token_output run_role_record_worker_tick_telemetry aggregateLiveTokenUsage" --term "runner state stale owner-1 wiki-1 wiki.state cleanup-runner-logs wiki-project mktemp" --rag` returned `result_count=0`; no prior wiki constraint was found for this cleanup order.
+- Planner inspection at 2026-05-03T08:38:05Z: `.autoflow/runners/config.toml` defines enabled suffixless `planner`, `worker`, `wiki`, `verifier`; the stale files named in Done When still existed under `.autoflow/runners/state/`.
+- Planner inspection at 2026-05-03T08:38:05Z: `.autoflow/scripts/runner-common.sh` uses `mktemp "${state_path}.XXXXXX"` before `mv`, which matches `wiki.state.<random>` remnants. `packages/cli/wiki-project.sh` uses `autoflow_mktemp`, but the common helper default is `${TMPDIR:-/tmp}/autoflow.XXXXXX`, so modify `wiki-project.sh` only if implementation confirms it is actually involved.
+- Related queue finding: active/todo tickets at planner time touched `packages/cli/run-role.sh` or `apps/desktop/src/renderer/main.tsx`, so this ticket has no current Allowed Paths overlap with the implementation queue.
+- Guard warning context: `bin/autoflow guard` at 2026-05-03T08:39:00Z reported leftover worktree candidate `autoflow/tickets_119` with no board ticket; planner left the worktree untouched because cleanup of ticket worktrees is outside this order promotion.
+
+- Runtime hydrated worktree dependency at 2026-05-03T08:48:23Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-03T08:48:22Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_129; run=tickets/inprogress/verify_129.md
+- AI worker prepared resume at 2026-05-03T08:48:37Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_129; run=tickets/inprogress/verify_129.md
+- Worker mini-plan at 2026-05-03T08:52:00Z:
+  1. Use `packages/cli/cleanup-runner-logs.sh` as the recurring cleanup path and add state cleanup that deletes inactive legacy suffix entries (`*-1.*`) plus atomic temp remnants (`*.state.<random>`) while preserving enabled runner state bodies.
+  2. Harden `.autoflow/scripts/runner-common.sh` `runner_write_state()` so temp files are removed on validation/write/move failure and cannot be left by ordinary error paths.
+  3. Do not change `packages/cli/wiki-project.sh` unless grep confirms it creates `.autoflow/runners/state/wiki.state.<random>`; current evidence points to `runner_write_state()` because `wiki-project.sh` uses `autoflow_mktemp` under `${TMPDIR:-/tmp}`.
+  4. Delete the named stale files in PROJECT_ROOT, run syntax and acceptance checks, record before/after evidence, then merge the verified worktree code into PROJECT_ROOT before finalization.
+- Worker wiki context at 2026-05-03T08:52:00Z: `bin/autoflow wiki query --term "runner state stale owner-1 wiki-1 wiki.state cleanup-runner-logs runner_write_state mktemp" --term "cleanup-runner-logs legacy suffix state atomic temp" --rag` returned `result_count=0`; no prior wiki constraints apply.
+- Worker inspection at 2026-05-03T08:52:00Z: PROJECT_ROOT still contained the named stale state files; the ticket worktree state directory only had `.gitignore` and `README.md`, so stale-file deletion must be applied directly during PROJECT_ROOT integration.
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/owner-1.state
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/planner-1.state
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.state
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.semantic-lint.fingerprint
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.semantic-lint.pages.d
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.wiki-debounce.state
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.wiki-inputs.fingerprint
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki-1.wiki-inputs.manifest
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki.state.CWxbDK
+- Allowed path was not present in worktree during merge preparation at 2026-05-03T08:53:12Z, so it was skipped: .autoflow/runners/state/wiki.state.wLVnDN
+- Queued without worktree commit at 2026-05-03T08:53:12Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-03T08:53:12Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-03T08:53:12Z: removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_129 deleted_branch=autoflow/tickets_129.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-03T08:53:12Z.
+## Verification
+- Run file: `tickets/done/prd_131/verify_129.md`
+- Log file: `logs/verifier_129_20260503_085313Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: runner state stale cleanup 보강
+- Remaining risk: `find .autoflow/runners/state -maxdepth 1 -type f -name '*.state' -print | sort` still lists `wiki.wiki-debounce.state` in addition to `planner.state`, `worker.state`, `wiki.state`, and `verifier.state`; this suffixless wiki debounce file was preserved because PRD Out of Scope explicitly says not to delete current `wiki.*` baseline/debounce/input manifest files.
