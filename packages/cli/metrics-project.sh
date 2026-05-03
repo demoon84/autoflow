@@ -417,6 +417,93 @@ count_latest_verifier_outcomes() {
   '
 }
 
+load_heavy_metrics_cache() {
+  local cache_file="$1"
+  local key value
+
+  [ -f "$cache_file" ] || return 1
+  while IFS='=' read -r key value; do
+    case "$key" in
+      verifier_pass_count|verifier_fail_count|autoflow_commit_count|autoflow_code_files_changed_count|autoflow_code_insertions_count|autoflow_code_deletions_count|autoflow_code_volume_count|autoflow_token_usage_count|autoflow_token_report_count)
+        case "$value" in
+          ''|*[!0-9]*) value=0 ;;
+        esac
+        printf -v "$key" '%s' "$value"
+        ;;
+    esac
+  done < "$cache_file"
+}
+
+write_heavy_metrics_cache() {
+  local cache_file="$1"
+  local tmp_file
+
+  mkdir -p "$(dirname "$cache_file")"
+  tmp_file="${cache_file}.$$"
+  {
+    printf 'verifier_pass_count=%s\n' "$verifier_pass_count"
+    printf 'verifier_fail_count=%s\n' "$verifier_fail_count"
+    printf 'autoflow_commit_count=%s\n' "$autoflow_commit_count"
+    printf 'autoflow_code_files_changed_count=%s\n' "$autoflow_code_files_changed_count"
+    printf 'autoflow_code_insertions_count=%s\n' "$autoflow_code_insertions_count"
+    printf 'autoflow_code_deletions_count=%s\n' "$autoflow_code_deletions_count"
+    printf 'autoflow_code_volume_count=%s\n' "$autoflow_code_volume_count"
+    printf 'autoflow_token_usage_count=%s\n' "$autoflow_token_usage_count"
+    printf 'autoflow_token_report_count=%s\n' "$autoflow_token_report_count"
+  } > "$tmp_file"
+  mv "$tmp_file" "$cache_file"
+}
+
+count_heavy_metrics_with_cache() {
+  local cache_file lock_dir ttl_seconds lock_acquired=false
+  local verifier_outcome_counts
+
+  cache_file="$(autoflow_cache_file "$board_root" "metrics-heavy")"
+  lock_dir="$(autoflow_lock_dir "$board_root" "metrics-heavy")"
+  ttl_seconds="${AUTOFLOW_METRICS_HEAVY_CACHE_TTL_SECONDS:-10}"
+  metrics_heavy_cache_file="$cache_file"
+  metrics_heavy_cache_age_seconds="$(autoflow_cache_age_seconds "$cache_file")"
+
+  if autoflow_cache_is_fresh "$cache_file" "$ttl_seconds" && load_heavy_metrics_cache "$cache_file"; then
+    metrics_heavy_cache_status="hit"
+    metrics_heavy_cache_age_seconds="$(autoflow_cache_age_seconds "$cache_file")"
+    return 0
+  fi
+
+  if autoflow_try_acquire_lock "$lock_dir"; then
+    lock_acquired=true
+    verifier_outcome_counts="$(count_latest_verifier_outcomes "${board_root}/logs")"
+    verifier_pass_count="${verifier_outcome_counts%% *}"
+    verifier_fail_count="${verifier_outcome_counts##* }"
+    count_autoflow_commit_metrics
+    count_autoflow_token_metrics
+    write_heavy_metrics_cache "$cache_file"
+    metrics_heavy_cache_status="refreshed"
+    metrics_heavy_cache_age_seconds=0
+    autoflow_release_lock "$lock_dir"
+    return 0
+  fi
+
+  if [ -f "$cache_file" ] && load_heavy_metrics_cache "$cache_file"; then
+    metrics_heavy_cache_status="stale_lock_busy"
+    metrics_heavy_cache_age_seconds="$(autoflow_cache_age_seconds "$cache_file")"
+    return 0
+  fi
+
+  metrics_heavy_cache_status="partial_lock_busy_no_cache"
+  metrics_heavy_cache_age_seconds=999999
+  verifier_pass_count=0
+  verifier_fail_count=0
+  autoflow_commit_count=0
+  autoflow_code_files_changed_count=0
+  autoflow_code_insertions_count=0
+  autoflow_code_deletions_count=0
+  autoflow_code_volume_count=0
+  autoflow_token_usage_count=0
+  autoflow_token_report_count=0
+  [ "$lock_acquired" = "true" ] && autoflow_release_lock "$lock_dir"
+}
+
 write="false"
 positionals=()
 while [ "$#" -gt 0 ]; do
@@ -470,16 +557,25 @@ ticket_total="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_m
 active_ticket_count="$((ticket_todo_count + ticket_inprogress_count + ticket_ready_to_merge_count + ticket_merge_blocked_count + ticket_verifier_count))"
 ticket_owner_active_count="$ticket_inprogress_count"
 
-verifier_outcome_counts="$(count_latest_verifier_outcomes "${board_root}/logs")"
-verifier_pass_count="${verifier_outcome_counts%% *}"
-verifier_fail_count="${verifier_outcome_counts##* }"
-verifier_total="$((verifier_pass_count + verifier_fail_count))"
 handoff_count="$(count_matching_files "${board_root}/conversations" 'spec-handoff.md')"
-verification_pass_rate_percent="$(percent_value "$verifier_pass_count" "$verifier_total")"
 completion_rate_percent="$(percent_value "$ticket_done_count" "$ticket_total")"
 count_runner_states
-count_autoflow_commit_metrics
-count_autoflow_token_metrics
+
+verifier_pass_count=0
+verifier_fail_count=0
+autoflow_commit_count=0
+autoflow_code_files_changed_count=0
+autoflow_code_insertions_count=0
+autoflow_code_deletions_count=0
+autoflow_code_volume_count=0
+autoflow_token_usage_count=0
+autoflow_token_report_count=0
+metrics_heavy_cache_status="unknown"
+metrics_heavy_cache_age_seconds=999999
+metrics_heavy_cache_file=""
+count_heavy_metrics_with_cache
+verifier_total="$((verifier_pass_count + verifier_fail_count))"
+verification_pass_rate_percent="$(percent_value "$verifier_pass_count" "$verifier_total")"
 
 if [ "$write" = "true" ]; then
   write_snapshot \
@@ -526,6 +622,9 @@ printf 'metrics_root=%s\n' "$metrics_root"
 printf 'written=%s\n' "$write"
 printf 'snapshot_file=%s\n' "$snapshot_file"
 printf 'timestamp=%s\n' "$timestamp"
+printf 'metrics_heavy_cache_status=%s\n' "$metrics_heavy_cache_status"
+printf 'metrics_heavy_cache_age_seconds=%s\n' "$metrics_heavy_cache_age_seconds"
+printf 'metrics_heavy_cache_file=%s\n' "$metrics_heavy_cache_file"
 printf 'spec_backlog_count=%s\n' "$spec_backlog_count"
 printf 'spec_done_count=%s\n' "$spec_done_count"
 printf 'spec_total=%s\n' "$spec_total"

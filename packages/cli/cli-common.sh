@@ -522,6 +522,86 @@ print_status_summary() {
   printf 'verify_run_count=%s\n' "$verify_run_count"
 }
 
+autoflow_epoch_seconds() {
+  date +%s
+}
+
+autoflow_file_mtime_epoch() {
+  local file="$1"
+
+  stat -f '%m' "$file" 2>/dev/null || stat -c '%Y' "$file" 2>/dev/null || printf '0'
+}
+
+autoflow_cache_root() {
+  local board_root="$1"
+
+  printf '%s/runners/state/cli-cache' "$board_root"
+}
+
+autoflow_cache_file() {
+  local board_root="$1"
+  local cache_name="$2"
+
+  printf '%s/%s.kv' "$(autoflow_cache_root "$board_root")" "$cache_name"
+}
+
+autoflow_lock_dir() {
+  local board_root="$1"
+  local lock_name="$2"
+
+  printf '%s/%s.lock' "$(autoflow_cache_root "$board_root")" "$lock_name"
+}
+
+autoflow_cache_age_seconds() {
+  local cache_file="$1"
+  local now mtime
+
+  [ -f "$cache_file" ] || {
+    printf '999999'
+    return 0
+  }
+  now="$(autoflow_epoch_seconds)"
+  mtime="$(autoflow_file_mtime_epoch "$cache_file")"
+  case "$now:$mtime" in
+    *[!0-9:]*|:*) printf '999999' ;;
+    *) printf '%s' "$((now - mtime))" ;;
+  esac
+}
+
+autoflow_cache_is_fresh() {
+  local cache_file="$1"
+  local ttl_seconds="$2"
+  local age
+
+  [ -f "$cache_file" ] || return 1
+  case "$ttl_seconds" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  age="$(autoflow_cache_age_seconds "$cache_file")"
+  [ "$age" -le "$ttl_seconds" ]
+}
+
+autoflow_try_acquire_lock() {
+  local lock_dir="$1"
+
+  mkdir -p "$(dirname "$lock_dir")"
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s\n' "$$" > "${lock_dir}/pid" 2>/dev/null || true
+    return 0
+  fi
+  return 1
+}
+
+autoflow_release_lock() {
+  local lock_dir="$1"
+
+  case "$lock_dir" in
+    */runners/state/cli-cache/*.lock)
+      rm -rf "$lock_dir" 2>/dev/null || true
+      ;;
+  esac
+}
+
 # Wiki baseline write lock — serializes explicit Wiki AI/tool update calls.
 # Portable mkdir-based mutex (works on macOS without flock).
 acquire_wiki_baseline_lock() {

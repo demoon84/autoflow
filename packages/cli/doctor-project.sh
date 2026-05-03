@@ -271,6 +271,21 @@ shared_allowed_path_blockers() {
   [ "$found" = "true" ]
 }
 
+record_active_ticket_diagnostics_partial() {
+  local active_count
+
+  active_count="$(active_ticket_files | wc -l | tr -d ' ')"
+  printf 'doctor.active_ticket_diagnostics_status=partial_lock_busy\n' >> "$check_output"
+  printf 'doctor.active_ticket_count=%s\n' "$active_count" >> "$check_output"
+  printf 'doctor.shared_path_blocked_ticket_count=0\n' >> "$check_output"
+  printf 'doctor.worktree_issue_count=0\n' >> "$check_output"
+  printf 'doctor.project_root_dirty_overlap_count=0\n' >> "$check_output"
+  printf 'doctor.risk_hint_ticket_count=0\n' >> "$check_output"
+  printf 'doctor.shared_nonbase_head_group_count=0\n' >> "$check_output"
+  record_check "operational_blockers" "partial_lock_busy"
+  record_warning "active ticket/worktree diagnostics skipped detailed board-wide traversal because the CLI metrics/doctor traversal lock is busy"
+}
+
 append_csv_value() {
   local current="$1"
   local value="$2"
@@ -331,8 +346,15 @@ record_active_ticket_diagnostics() {
   local blockers blockers_summary dirty_paths allowed_path git_status
   local worktree_path worktree_branch_expected worktree_branch_actual worktree_head base_commit integration_status
   local worktree_status head duplicate_ids duplicate_count head_ticket_ids head_ticket_paths
+  local diagnostics_lock_dir
 
   : > "$worktree_heads_output"
+  diagnostics_lock_dir="$(autoflow_lock_dir "$board_root" "metrics-heavy")"
+  if ! autoflow_try_acquire_lock "$diagnostics_lock_dir"; then
+    record_active_ticket_diagnostics_partial
+    return 0
+  fi
+  printf 'doctor.active_ticket_diagnostics_status=full\n' >> "$check_output"
 
   if git -C "$project_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     project_is_git=true
@@ -503,6 +525,7 @@ record_active_ticket_diagnostics() {
   else
     record_check "operational_blockers" "ok"
   fi
+  autoflow_release_lock "$diagnostics_lock_dir"
 }
 
 record_runner_adapter_check() {
