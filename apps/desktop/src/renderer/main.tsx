@@ -210,8 +210,7 @@ const settingsNavigation = [
   { key: "progress", label: "AI 진행 현황", icon: Workflow },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
   { key: "knowledge", label: "LLM 위키", icon: BookOpenText },
-  { key: "snapshot", label: "통계", icon: BarChart3 },
-  { key: "logs", label: "로그", icon: Terminal }
+  { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
@@ -1076,7 +1075,6 @@ function App() {
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
   const [wikiQueryRunning, setWikiQueryRunning] = React.useState(false);
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
-  const [logsLimit, setLogsLimit] = React.useState<number | null>(200);
   const [globalToast, setGlobalToast] = React.useState<{
     severity: "error" | "warning" | "info" | "success";
     message: string;
@@ -1090,9 +1088,6 @@ function App() {
   const [isRefreshingRecentProjects, setIsRefreshingRecentProjects] = React.useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = React.useState<SettingsSection>(() => {
     const stored = initialSetting("autoflow.activeSettingsSection", "progress");
-    if (stored === "logs") {
-      return "snapshot";
-    }
     if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor" || stored === "chat") {
       return "progress";
     }
@@ -2029,58 +2024,6 @@ function App() {
                   </section>
                 </section>
               )}
-
-              {!setupRequired && visibleSettingsSection === "logs" && (() => {
-                const visibleRunnerLogCount = (board?.runnerLogs || []).filter(
-                  (log) => !isRawAdapterTranscriptFile(log.filePath)
-                ).length;
-                const totalLogs = (board?.logs?.length || 0) + visibleRunnerLogCount;
-                const showingAll = logsLimit === null;
-                const showingCount = showingAll ? totalLogs : Math.min(logsLimit, totalLogs);
-                return (
-                  <section className="dashboard-area" aria-label="로그">
-                    <section className="board-section board-section-flush" aria-label="로그 본문">
-                      <PageLayout className="knowledge-page">
-                        <div className="knowledge-split">
-                          <div className="tool-panel knowledge-list-pane">
-                            <div className="section-heading compact log-list-heading">
-                              <div className="log-heading-copy">
-                                <h3>로그</h3>
-                                <div className="section-kicker log-count-text">
-                                  {showingAll ? `전체 ${totalLogs}건` : `최근 ${showingCount} / 전체 ${totalLogs}건`}
-                                </div>
-                              </div>
-                              <Terminal className="h-4 w-4 text-muted-foreground" />
-                            </div>
-                            <LogList
-                              board={board}
-                              selectedPath={selectedLogPath}
-                              onSelect={readLog}
-                              limit={logsLimit}
-                              className="log-list-fill"
-                            />
-                            {totalLogs > 200 ? (
-                              <div className="log-list-footer">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  type="button"
-                                  onClick={() => setLogsLimit((prev) => (prev === null ? 200 : null))}
-                                >
-                                  {showingAll ? "최근 200개만 보기" : `전체 ${totalLogs}건 모두 보기`}
-                                </Button>
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="knowledge-preview-pane">
-                            <LogPreview preview={logPreview} isLoading={isReadingLog} error={logError} />
-                          </div>
-                        </div>
-                      </PageLayout>
-                    </section>
-                  </section>
-                );
-              })()}
 
             {!setupRequired && visibleSettingsSection === "snapshot" && (
               <section className="dashboard-area" aria-label="통계">
