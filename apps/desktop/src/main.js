@@ -223,6 +223,121 @@ const activeChildProcesses = new Set();
 const cancellableInvocations = new Map();
 const agentAuthStatusCache = new Map();
 let runnerShutdownInProgress = false;
+const DEFAULT_MEMORY_CEILING_MB = 1500;
+const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
+const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
+const BYTES_PER_MEGABYTE = 1024 * 1024;
+let memoryCeilingIntervalId = null;
+let lastMemoryCeilingRestartAt = 0;
+let memoryCeilingRestartInProgress = false;
+
+function parsePositiveIntegerOrDefault(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function readMemoryCeilingConfig() {
+  const ceilingMb = parsePositiveIntegerOrDefault(process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_MB, DEFAULT_MEMORY_CEILING_MB);
+  const checkIntervalSeconds = parsePositiveIntegerOrDefault(
+    process.env.AUTOFLOW_DESKTOP_MEMORY_CHECK_INTERVAL_SECONDS,
+    DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS
+  );
+  const restartCooldownSeconds = parsePositiveIntegerOrDefault(
+    process.env.AUTOFLOW_DESKTOP_MEMORY_RESTART_COOLDOWN_SECONDS,
+    DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS
+  );
+
+  return {
+    ceilingMb,
+    checkIntervalSeconds,
+    restartCooldownSeconds,
+    disabled: process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_DISABLED === "1"
+  };
+}
+
+function bytesToMegabytes(value) {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return value / BYTES_PER_MEGABYTE;
+}
+
+function logMemoryCeilingRestart(rssMb, heapUsedMb, ceilingMb) {
+  console.warn(
+    `[autoflow][memory-ceiling] reason=threshold_exceeded rss_mb=${rssMb.toFixed(2)} heapUsed_mb=${heapUsedMb.toFixed(2)} ceiling_mb=${ceilingMb}`
+  );
+}
+
+async function performMemoryCeilingRestart() {
+  if (memoryCeilingRestartInProgress || runnerShutdownInProgress) {
+    return;
+  }
+  memoryCeilingRestartInProgress = true;
+  runnerShutdownInProgress = true;
+
+  try {
+    const shutdownTimeoutMs = 5000;
+    const cleanup = shutdownAllRunners().catch(() => 0);
+    const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
+    await Promise.race([cleanup, timeout]);
+    try {
+      await forceKillSurvivingRunners();
+    } catch {}
+  } finally {
+    try {
+      app.relaunch();
+    } catch {}
+    app.exit(0);
+  }
+}
+
+function startMemoryCeilingMonitor() {
+  if (memoryCeilingIntervalId) {
+    return;
+  }
+
+  const config = readMemoryCeilingConfig();
+  if (config.disabled) {
+    return;
+  }
+
+  const intervalMs = config.checkIntervalSeconds * 1000;
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return;
+  }
+
+  const monitor = async () => {
+    if (memoryCeilingRestartInProgress) {
+      return;
+    }
+
+    const now = Date.now();
+    const elapsedSinceLastRestart = now - lastMemoryCeilingRestartAt;
+    if (
+      lastMemoryCeilingRestartAt > 0 &&
+      elapsedSinceLastRestart < config.restartCooldownSeconds * 1000
+    ) {
+      return;
+    }
+
+    const usage = process.memoryUsage();
+    const rssMb = bytesToMegabytes(usage.rss);
+    const heapUsedMb = bytesToMegabytes(usage.heapUsed);
+    if (rssMb >= config.ceilingMb || heapUsedMb >= config.ceilingMb) {
+      logMemoryCeilingRestart(rssMb, heapUsedMb, config.ceilingMb);
+      lastMemoryCeilingRestartAt = now;
+      await performMemoryCeilingRestart();
+    }
+  };
+
+  memoryCeilingIntervalId = setInterval(() => {
+    void monitor();
+  }, intervalMs);
+  memoryCeilingIntervalId.unref?.();
+}
 
 function registerCancellableInvocation(invocationId, child) {
   if (typeof invocationId !== "string" || !invocationId) return;
@@ -2837,6 +2952,7 @@ app.whenReady().then(() => {
   );
 
   createWindow();
+  startMemoryCeilingMonitor();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -2858,6 +2974,10 @@ app.on("before-quit", (event) => {
 
   const shutdownTimeoutMs = 5000;
   const cleanup = shutdownAllRunners().catch(() => 0);
+  if (memoryCeilingIntervalId) {
+    clearInterval(memoryCeilingIntervalId);
+    memoryCeilingIntervalId = null;
+  }
   const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
   Promise.race([cleanup, timeout]).finally(async () => {
     try {
