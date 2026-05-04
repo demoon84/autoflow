@@ -881,6 +881,102 @@ runner_idle_preflight_inputs_fingerprint() {
   fi
 }
 
+runner_planner_realtime_enabled() {
+  local public_role="$1"
+  local mode="$2"
+
+  [ "$public_role" = "planner" ] || return 1
+  [ "$mode" = "loop" ] || return 1
+  [ "${AUTOFLOW_PLANNER_REALTIME_ENABLED:-0}" = "1" ] || return 1
+}
+
+runner_planner_realtime_fingerprint_path() {
+  local runner_id="$1"
+
+  runner_ensure_dirs
+  printf '%s/%s.planner-realtime-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
+}
+
+runner_planner_realtime_marker_path() {
+  local runner_id="$1"
+
+  runner_ensure_dirs
+  printf '%s/%s.planner-realtime-wakeup.pending' "$(runner_state_dir)" "$runner_id"
+}
+
+runner_planner_realtime_inputs_hash_stream() {
+  local spec dir file rel checksum
+
+  for spec in \
+    "tickets/inbox:order_*.md" \
+    "tickets/backlog:prd_*.md" \
+    "tickets/reject:reject_*.md"; do
+    dir="${board_root}/${spec%%:*}"
+    [ -d "$dir" ] || continue
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      rel="${file#"$board_root"/}"
+      if command -v shasum >/dev/null 2>&1; then
+        checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        checksum="$(sha256sum "$file" | awk '{ print $1 }')"
+      else
+        checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
+      fi
+      printf '%s  %s\n' "$checksum" "$rel"
+    done < <(find "$dir" -maxdepth 1 -type f -name "${spec#*:}" | LC_ALL=C sort)
+  done
+}
+
+runner_planner_realtime_inputs_fingerprint() {
+  if command -v shasum >/dev/null 2>&1; then
+    runner_planner_realtime_inputs_hash_stream | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    runner_planner_realtime_inputs_hash_stream | sha256sum | awk '{ print $1 }'
+  else
+    runner_planner_realtime_inputs_hash_stream | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_planner_realtime_mark_pending() {
+  local runner_id="$1"
+  local marker_path="$2"
+  local fingerprint="$3"
+
+  if [ -f "$marker_path" ]; then
+    runner_append_log "$runner_id" "planner_realtime_wakeup" \
+      "role=planner" \
+      "reason=inputs_changed" \
+      "pending=merged" \
+      "fingerprint=${fingerprint}"
+    return 0
+  fi
+
+  {
+    printf 'created_at=%s\n' "$(runner_now_iso)"
+    printf 'reason=inputs_changed\n'
+    printf 'fingerprint=%s\n' "$fingerprint"
+  } > "$marker_path"
+  runner_append_log "$runner_id" "planner_realtime_wakeup" \
+    "role=planner" \
+    "reason=inputs_changed" \
+    "pending=created" \
+    "fingerprint=${fingerprint}"
+}
+
+runner_planner_realtime_consume_pending() {
+  local runner_id="$1"
+  local marker_path
+
+  marker_path="$(runner_planner_realtime_marker_path "$runner_id")"
+  [ -f "$marker_path" ] || return 0
+  rm -f "$marker_path"
+  runner_append_log "$runner_id" "planner_realtime_wakeup" \
+    "role=planner" \
+    "reason=consumed" \
+    "pending=cleared"
+}
+
 runner_tick_backoff_skip_reason() {
   local public_role="$1"
 
@@ -994,16 +1090,30 @@ runner_tick_backoff_sleep() {
   local base_interval="$4"
   local sleep_interval="$5"
   local fingerprint_path previous_fingerprint current_fingerprint remaining chunk
+  local realtime_enabled realtime_fingerprint_path realtime_marker_path previous_realtime_fingerprint current_realtime_fingerprint
 
   if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
-    sleep "$sleep_interval" &
-    child_pid="$!"
-    wait "$child_pid" || true
-    child_pid=""
-    return 0
+    if ! runner_planner_realtime_enabled "$public_role" "$mode"; then
+      sleep "$sleep_interval" &
+      child_pid="$!"
+      wait "$child_pid" || true
+      child_pid=""
+      return 0
+    fi
   fi
 
-  if [ "$sleep_interval" -le "$base_interval" ]; then
+  realtime_enabled="false"
+  previous_realtime_fingerprint=""
+  if runner_planner_realtime_enabled "$public_role" "$mode"; then
+    realtime_enabled="true"
+    realtime_fingerprint_path="$(runner_planner_realtime_fingerprint_path "$runner_id")"
+    realtime_marker_path="$(runner_planner_realtime_marker_path "$runner_id")"
+    current_realtime_fingerprint="$(runner_planner_realtime_inputs_fingerprint)"
+    previous_realtime_fingerprint="$current_realtime_fingerprint"
+    printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
+  fi
+
+  if [ "$sleep_interval" -le "$base_interval" ] && [ "$realtime_enabled" != "true" ]; then
     sleep "$sleep_interval" &
     child_pid="$!"
     wait "$child_pid" || true
@@ -1012,7 +1122,7 @@ runner_tick_backoff_sleep() {
   fi
 
   fingerprint_path="$(runner_idle_preflight_fingerprint_path "$runner_id" "$public_role")"
-  if [ ! -f "$fingerprint_path" ]; then
+  if [ ! -f "$fingerprint_path" ] && [ "$realtime_enabled" != "true" ]; then
     sleep "$sleep_interval" &
     child_pid="$!"
     wait "$child_pid" || true
@@ -1020,7 +1130,7 @@ runner_tick_backoff_sleep() {
     return 0
   fi
   previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
-  if [ -z "$previous_fingerprint" ]; then
+  if [ -z "$previous_fingerprint" ] && [ "$realtime_enabled" != "true" ]; then
     sleep "$sleep_interval" &
     child_pid="$!"
     wait "$child_pid" || true
@@ -1030,7 +1140,25 @@ runner_tick_backoff_sleep() {
 
   remaining="$sleep_interval"
   while [ "$remaining" -gt 0 ]; do
-    current_fingerprint="$(runner_idle_preflight_inputs_fingerprint "$public_role")"
+    if [ "$realtime_enabled" = "true" ]; then
+      current_realtime_fingerprint="$(runner_planner_realtime_inputs_fingerprint)"
+      if [ -n "$current_realtime_fingerprint" ] && [ "$current_realtime_fingerprint" != "$previous_realtime_fingerprint" ]; then
+        printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
+        runner_planner_realtime_mark_pending "$runner_id" "$realtime_marker_path" "$current_realtime_fingerprint"
+        runner_append_log "$runner_id" "backoff_wake" \
+          "role=${public_role}" \
+          "reason=planner_realtime_inputs_changed" \
+          "interval_seconds=${sleep_interval}" \
+          "remaining_seconds=${remaining}"
+        return 0
+      fi
+    fi
+
+    if [ "$sleep_interval" -gt "$base_interval" ] && [ -n "$previous_fingerprint" ]; then
+      current_fingerprint="$(runner_idle_preflight_inputs_fingerprint "$public_role")"
+    else
+      current_fingerprint=""
+    fi
     if [ -n "$current_fingerprint" ] && [ "$current_fingerprint" != "$previous_fingerprint" ]; then
       runner_append_log "$runner_id" "backoff_wake" \
         "role=${public_role}" \
@@ -1581,6 +1709,10 @@ loop_runner_worker() {
         "action=skip_tick"
       runner_tick_backoff_sleep "$target_runner_id" "$public_role" "$mode" "$interval" "$backoff_interval"
       continue
+    fi
+
+    if runner_planner_realtime_enabled "$public_role" "$mode"; then
+      runner_planner_realtime_consume_pending "$target_runner_id"
     fi
 
     AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &
