@@ -36,7 +36,3 @@ These measures work in tandem to ensure the `worker.state.last_result` is always
 - `ticket_stage_blocked`
 - Race-safe operations
 - Explicit reset mechanisms
-
-## Source Document
-
-- [[sources/prd-169-handoff]] (`wiki-raw/prd_169.md`)

@@ -17,6 +17,6 @@ As of the latest deterministic wiki refresh, the project utilizes role-based ide
 
 For a detailed explanation of the distinction between these internal identifiers and conceptual role labels, refer to [[runner-id-roles]].
 
-Ticket `tickets_012` was a historical runner-id rename proposal that was not applied, thus preserving the existing role-aligned runner ID scheme consistent with [[references/AGENTS|agent definitions]] and active configuration. It's important to note that while `owner` is used internally, user-facing labels have been normalized to `worker`, as detailed in [[decisions/worker-display-policy]].
+Ticket `tickets_012` was a historical runner-id rename proposal that was not applied, thus preserving the existing role-aligned runner ID scheme consistent with agent definitions and active configuration. It's important to note that while `owner` is used internally, user-facing labels have been normalized to `worker`, as detailed in [[decisions/worker-display-policy]].
 
 This ensures clarity and consistency across the project regarding runner responsibilities.

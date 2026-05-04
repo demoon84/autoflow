@@ -1,13 +1,23 @@
+---
+kind: architecture
+slug: project-overview
+title: Project Overview
+created: 2026-05-03T10:54:04Z
+updated: 2026-05-03T10:54:04Z
+tags:
+  - architecture
+  - project-overview
+---
+
 # Project Overview
 
 ## Summary
 
 Autoflow is an AI-native project orchestration system.
-As of the latest deterministic wiki refresh, the project utilizes role-based identifiers for its stable 3-runner topology, namely `planner-1`, `owner-1`, and `wiki-1`. While `owner-1` is an internal role slug, its user-facing label is normalized to `worker`. Similarly, `wiki-1` is internally used, but its user-facing label is `WikiBot`. Ticket `tickets_012` involved a proposal to rename runner IDs; however, this proposal was not applied. Instead, the original role-aligned naming scheme, consistent with [[references/AGENTS|AGENTS]] and active configuration, was preserved. See [[architecture/runner-role-slugs]] for further details on the runner naming baseline.
+As of the latest deterministic wiki refresh, the project utilizes role-based identifiers for its stable 3-runner topology, namely `planner-1`, `owner-1`, and `wiki-1`. While `owner-1` is an internal role slug, its user-facing label is normalized to `worker`. Similarly, `wiki-1` is internally used, but its user-facing label is `WikiBot`. Ticket `tickets_012` involved a proposal to rename runner IDs; however, this proposal was not applied. Instead, the original role-aligned naming scheme, consistent with AGENTS and active configuration, was preserved. See [[architecture/runner-role-slugs]] for further details on the runner naming baseline.
 The managed summary below reports the current completed-ticket and log counts, updated via automated ticket-owner flow and direct PRD-to-done transitions.
 Ticket ids are not contiguous: higher ids such as `tickets_114` or `tickets_115` can appear in focused synthesis even when the completed-ticket count is lower because retries, rejects, and PRD-only archives also consume sequence numbers.
 Historical ticket snapshots below are examples from the deterministic baseline, not a claim that older UI states remain current; for the current ticket workspace layout, see [[features/ticket-workspace-tabs]]. Recent May 1-2 work such as `prd_091` (`[[answers/recent-core-and-ui-refinements-20260502]]`), `prd_088` (`[[answers/done-when-checklist-state]]`), and `prd_089` (`[[answers/order-inbox-memo-delete]]`) is tracked in [[index]] under `Recent Synthesis`.
-The managed `Current Autoflow Summary` block is a deterministic baseline excerpt, and its `Latest Completed Work` subsection is not a recency-sorted feed. For newer work snapshots, use [[index]] under `Recent Synthesis`.
 
 
 ## Key Decisions
@@ -33,11 +43,11 @@ List unresolved questions with owner or source when known.
 
 - Project root: `/Users/demoon2016/Documents/project/autoflow`
 - Board root: `/Users/demoon2016/Documents/project/autoflow/.autoflow`
-- Done tickets: 155
+- Done tickets: 156
 - Reject records: 5
-- Verifier logs: 382
+- Verifier logs: 383
 - Conversation handoffs: 8
-- Last updated: 2026-05-04T22:24:26Z
+- Last updated: 2026-05-04T22:32:23Z
 
 ## Latest Completed Work
 
