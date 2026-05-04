@@ -980,6 +980,16 @@ wiki_inputs_hash_stream() {
           continue
           ;;
       esac
+      if [ "$rel_dir" = "wiki" ]; then
+        case "${file#"$board_root"/}" in
+          wiki/index.md|wiki/log.md|wiki/project-overview.md)
+            continue
+            ;;
+        esac
+        if head -n 6 "$file" 2>/dev/null | grep -qE '^auto_generated:'; then
+          continue
+        fi
+      fi
       rel="${file#"$board_root"/}"
       if command -v shasum >/dev/null 2>&1; then
         checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
