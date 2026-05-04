@@ -3,8 +3,8 @@ auto_generated: telemetry-summary
 slug: operations/runner-health
 window: 7d
 source_event_count: 0
-last_synced_at: 2026-05-04T22:08:11Z
-input_fingerprint: 8779662e2d9f3eada7add78d9d38466aeae2ce93dcb4a20122d3c9079bfadeb8
+last_synced_at: 2026-05-04T22:11:31Z
+input_fingerprint: 918f42a5746511a8f43aea6bdeb8507159e0028282feb45fddddf1a4ebd4e026
 ---
 
 > This page is auto-generated from `.autoflow/telemetry/*.jsonl`; manual edits may be overwritten on the next sync. Keep durable human notes in `wiki/answers/`, `wiki/decisions/`, or another human-owned wiki page.
