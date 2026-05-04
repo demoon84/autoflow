@@ -1,0 +1,127 @@
+# Ticket
+
+## Ticket
+
+- ID: tickets_176
+- PRD Key: prd_177
+- Plan Candidate: Plan AI handoff from tickets/done/prd_177/prd_177.md
+- Title: token telemetry regression recovery
+- Priority: critical
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-04T22:32:18Z
+
+## Goal
+
+- 이번 작업의 목표: PRD_129 완료 후에도 토큰 사용량 집계가 24시간 이상 갱신되지 않는 회귀를 진단하고, 현재 shipped source인 `.autoflow/telemetry/runs.jsonl` 기준으로 CLI telemetry 기록, metrics snapshot, desktop token aggregation 이 다시 최신 runner 호출을 반영하게 만든다.
+
+## References
+
+- PRD: tickets/done/prd_177/prd_177.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_177]]
+- Plan Note:
+- Ticket Note: [[tickets_176]]
+
+## Allowed Paths
+
+- `packages/cli/run-role.sh`
+- `runtime/board-scripts/run-role.sh`
+- `packages/cli/telemetry-project.sh`
+- `packages/cli/metrics-project.sh`
+- `apps/desktop/src/main.js`
+- `tests/smoke/metrics-token-usage-smoke.sh`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_176`
+- Branch: autoflow/tickets_176
+- Base Commit: 18ed6f1b84296cd66ea9d294fbf7ed33010f42d0
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-04T22:25:35Z
+- Started Epoch: 1777933535
+- Updated At: 2026-05-04T22:32:19Z
+- Tick Count: 4
+- Time Used Seconds: 404
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 429151093
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] A fixture adapter completion through `run_role_record_worker_tick_telemetry` records a JSONL row under `.autoflow/telemetry/runs.jsonl` with `runner_id`, `result`, `token_input`, and `token_output`, and `token_input + token_output > 0` for a prompt/stdout fixture with no explicit token marker. Evidence: `tests/smoke/metrics-token-usage-smoke.sh` runs `packages/cli/run-role.sh ticket <tmp> .autoflow --runner worker` with a fixture command and asserts the fresh worker success row has positive `token_input` and `token_output`.
+- [x] `packages/cli/telemetry-project.sh --project-root <tmp> token-usage --runner worker` returns a positive token total after the fixture row is recorded. Evidence: smoke test asserts `^token_usage=[1-9][0-9]*$`.
+- [x] `packages/cli/metrics-project.sh <tmp> .autoflow` prints `autoflow_token_usage_count=<positive integer>` and `autoflow_token_report_count=<positive integer>` from `.autoflow/telemetry/runs.jsonl`. Evidence: smoke test clears metrics cache after the fixture row and asserts both metrics are positive.
+- [x] Desktop aggregation in `apps/desktop/src/main.js` prefers fresh `.autoflow/telemetry/runs.jsonl` totals over stale `metrics/token-cache.tsv`, while still adding current `_live_stdout.log` token values for active adapters. Evidence: inspected `readRunnerTokenUsage` keeps telemetry totals primary, only fills missing runners from `metrics/token-cache.tsv`, and adds `aggregateLiveTokenUsage` totals afterward; `node --check apps/desktop/src/main.js` and `npm run desktop:check` passed.
+- [x] `tests/smoke/metrics-token-usage-smoke.sh` covers the regression with a temporary board: stale/empty token-cache plus fresh telemetry rows must produce positive metrics output and not depend on `.autoflow/metrics/telemetry-runs.jsonl`. Evidence: smoke test writes stale `metrics/token-cache.tsv` and stale `.autoflow/metrics/telemetry-runs.jsonl`, then rejects output containing the legacy total while requiring positive fresh telemetry metrics.
+- [x] `bash -n packages/cli/run-role.sh runtime/board-scripts/run-role.sh packages/cli/telemetry-project.sh packages/cli/metrics-project.sh` exits 0. Evidence: worktree and PROJECT_ROOT verification command passed.
+- [x] `node --check apps/desktop/src/main.js`, `bash tests/smoke/metrics-token-usage-smoke.sh`, and `npm run desktop:check` exit 0. Evidence: worktree and PROJECT_ROOT verification command passed.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: 구현, worktree 검증, PROJECT_ROOT 수동 통합, PROJECT_ROOT 재검증이 완료됐다.
+- 직전 작업: `tests/smoke/metrics-token-usage-smoke.sh` 에 실제 `run-role.sh ticket` fixture를 추가해 fresh `.autoflow/telemetry/runs.jsonl` row, telemetry token-usage, metrics positive output, stale token-cache/legacy metrics path 무시를 검증했다.
+- 재개 시 먼저 볼 것: `tickets/inprogress/verify_176.md`, PROJECT_ROOT `git status`, finalizer output.
+- Wiki/ticket constraints: `.autoflow/metrics/telemetry-runs.jsonl` 는 PRD_129 본문에 남은 stale wording 일 수 있다. 현재 코드/완료 티켓이 가리키는 `.autoflow/telemetry/runs.jsonl` 를 기준 source 로 유지하고, stale token-cache fallback 이 fresh telemetry totals 를 덮어쓰지 않게 한다.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_177/prd_177.md at 2026-05-04T22:23:22Z.
+- Planner wiki pass: `bin/autoflow wiki query --term "token-cache telemetry-runs PRD-129 regression" --term "metrics token usage aggregateLiveTokenUsage telemetry-project run_role_record_worker_tick_telemetry" --term "packages/cli/run-role.sh packages/cli/metrics-project.sh packages/cli/telemetry-project.sh apps/desktop/src/main.js" --term "order_162 stale token usage desktop token aggregation" --limit 8 --rag` returned `result_count=0`.
+- Related ticket finding: `tickets/done/prd_129/tickets_130.md` says the shipped source is `.autoflow/telemetry/runs.jsonl`, metrics snapshot previously reported `autoflow_token_usage_count=18458`, and desktop aggregation prefers telemetry rows with token-cache fallback and live-log additions.
+- Related ticket finding: `tickets/done/prd_126/tickets_125.md` covers Gemini token marker parsing, and `tickets/done/prd_128/tickets_127.md` covers non-worker telemetry role coverage. Preserve both while fixing this regression.
+- Planner runtime: `start-plan.sh 177` returned `source=backlog-to-todo`, `todo_ticket=tickets_176.md`, `lint_status=ok`, `lint_vagueness_score=0`.
+- Guard after planner creation: `bin/autoflow guard /Users/demoon2016/Documents/project/autoflow .autoflow` returned `error_count=0`, `warning_count=2`; cleanup candidates are leftover worktree `autoflow/tickets_119` without a board ticket and dirty done-ticket worktree `autoflow/tickets_163`. Planner left both untouched per recovery protocol.
+
+- Runtime hydrated worktree dependency at 2026-05-04T22:25:34Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-04T22:25:33Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_176; run=tickets/inprogress/verify_176.md
+- Worker mini-plan at 2026-05-05T00:00:00Z:
+  - Runtime `start-ticket-owner.sh` returned `status=resume`, `source=resume`, `worktree_status=ready`, and working root `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_176`.
+  - Wiki/ticket context: planner wiki query for token telemetry terms previously returned `result_count=0`; direct completed-ticket evidence in `tickets/done/prd_129/tickets_130.md` and `tickets/done/prd_129/verify_130.md` says the shipped source is `.autoflow/telemetry/runs.jsonl`, with stale `.autoflow/metrics/telemetry-runs.jsonl` wording not to be reintroduced.
+  - Inspection finding: current code already has `.autoflow/telemetry/runs.jsonl` aggregation paths in `packages/cli/metrics-project.sh` and `apps/desktop/src/main.js`, and `packages/cli/run-role.sh` has byte-estimation fallback in `run_role_record_worker_tick_telemetry`; however `tests/smoke/metrics-token-usage-smoke.sh` only covers old runner-log metrics and does not exercise the fresh telemetry-row regression.
+  - Plan: extend `tests/smoke/metrics-token-usage-smoke.sh` to create a temporary board ticket, run a fixture worker adapter command through `packages/cli/run-role.sh`, assert `.autoflow/telemetry/runs.jsonl` receives positive estimated `token_input`/`token_output`, assert `telemetry-project.sh token-usage` and `metrics-project.sh` report positive totals from that file, and preserve stale token-cache / legacy metrics path coverage without broadening source paths.
+- Worker verification at 2026-05-04T22:31:03Z:
+  - Wiki RAG command `bin/autoflow wiki query --term "token telemetry regression runs.jsonl token-cache" --term "run_role_record_worker_tick_telemetry metrics token usage desktop aggregation" --term "packages/cli/run-role.sh telemetry-project.sh metrics-project.sh apps/desktop/src/main.js" --limit 8 --rag` returned `result_count=0`.
+  - Worktree verification passed: `bash -lc 'bash -n packages/cli/run-role.sh runtime/board-scripts/run-role.sh packages/cli/telemetry-project.sh packages/cli/metrics-project.sh && node --check apps/desktop/src/main.js && bash tests/smoke/metrics-token-usage-smoke.sh && npm run desktop:check && packages/cli/metrics-project.sh "$PWD" .autoflow | rg "autoflow_token_usage_count|autoflow_token_report_count"'`; metrics tail showed `autoflow_token_usage_count=17327263`, `autoflow_token_report_count=824`.
+  - Manually integrated verified `tests/smoke/metrics-token-usage-smoke.sh` into PROJECT_ROOT with `git apply --index --3way`.
+  - PROJECT_ROOT verification passed with the same command; metrics tail showed `autoflow_token_usage_count=22815137`, `autoflow_token_report_count=864`.
+- AI worker prepared resume at 2026-05-04T22:26:02Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_176; run=tickets/inprogress/verify_176.md
+- Finish paused at 2026-05-04T22:31:47Z: worktree HEAD 18ed6f1b84296cd66ea9d294fbf7ed33010f42d0 does not contain PROJECT_ROOT HEAD c3ce8b662f64df7f6113c96df5cdd9ba6dd18cf1. AI must perform the rebase/merge; script did not run git rebase.
+- Queued without worktree commit at 2026-05-04T22:32:17Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-04T22:32:17Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-04T22:32:18Z: removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_176 deleted_branch=autoflow/tickets_176.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-04T22:32:18Z.
+## Verification
+- Run file: `tickets/done/prd_177/verify_176.md`
+- Log file: `logs/verifier_176_20260504_223219Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: telemetry token regression smoke coverage added
+- Remaining risk: Desktop aggregation behavior was verified by code inspection and `desktop:check`; no browser UI run was required for this non-visual regression.
