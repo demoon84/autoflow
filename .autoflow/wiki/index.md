@@ -39,7 +39,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
 - **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
 - **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
-- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`, [[answers/singleton-runner-display-labels]] (`wiki/answers/singleton-runner-display-labels.md`)).
+- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`).
 - **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
 - **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
 - **[[features/desktop-runner-controls]]** (`wiki/features/desktop-runner-controls.md`): Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
@@ -87,8 +87,12 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
 - `operations/`
   - [[Operations Wiki Index]] (`wiki/operations/index.md`)
+  - [[operations/runner-health]]
+  - [[operations/runner-timing]]
 - `agents/`
   - [[Agents Wiki Index]] (`wiki/agents/index.md`)
+  - [[agents/prompt-evolution]]
+
   - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
   - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
@@ -116,6 +120,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[answers/runner-health]] (`wiki/answers/runner-health.md`)
   - [[answers/runner-timing]] (`wiki/answers/runner-timing.md`)
   - [[answers/telemetry-data-handling]] (`wiki/answers/telemetry-data-handling.md`)
+  - [[answers/autoflow-wiki-telemetry-overview]] (`wiki/answers/autoflow-wiki-telemetry-overview.md`)
   - [[answers/singleton-runner-display-labels]] (`wiki/answers/singleton-runner-display-labels.md`)
   - [[answers/wiki-query-filter-group]] (`wiki/answers/wiki-query-filter-group.md`)
   - [[answers/desktop-runner-terminal-streaming]] (`wiki/answers/desktop-runner-terminal-streaming.md`)
@@ -143,11 +148,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 149
+- Done tickets: 152
 - Reject records: 5
 - Verifier logs: 379
 - Conversation handoffs: 8
-- Last updated: 2026-05-03T14:15:56Z
+- Last updated: 2026-05-04T00:20:56Z
 
 ## Completed Tickets
 
@@ -185,3 +190,21 @@ Tickets, verification records, and logs remain authoritative.
 urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 
 - [[sources/agent-definitions]] (Autoflow 에이전트 정의)
+
+- [[sources/prd_169]] (worker.state.last_result 잔류 자가 리셋)
+
+- [[sources/prd-022-spec-handoff]] (로그 기반 자체 개선 시험 러너 PRD 핸드오프)
+
+- [[sources/prd-120-spec-handoff]] (PRD Handoff: runner 로그 retention 정책 및 정리)
+
+- [[sources/prd-123-spec-handoff]] (metrics-project.sh 및 _stdout.log 처리 개선)
+
+- [[sources/prd-091-spec-handoff]] (반려 최대 재시도 오케스트레이터 처리)
+
+- [[sources/prd-121-spec-handoff]] (텔레메트리 레이어 도입 - 틱별 구조화 이벤트 jsonl 추출)
+
+- [[sources/prd-093-spec-handoff]] (PRD Handoff)
+
+- [[sources/prd-038-spec-handoff]] (PRD Handoff)
+
+- [[sources/prd-122-spec-handoff]] (Wiki AI 합성 입력으로 telemetry jsonl 사용)

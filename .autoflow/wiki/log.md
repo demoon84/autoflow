@@ -36,8 +36,8 @@ Each entry should cite its source ticket or log.
 - `prd_047` - Compressed successful `verify-ticket-owner` output into short pass excerpts while keeping larger failure tails. Source: `tickets/done/prd_047/tickets_047.md`.
 - `prd_048` - Compressed successful `finish-ticket-owner` inline merge output into a one-line summary while keeping diagnostic paths verbose. Source: `tickets/done/prd_048/tickets_048.md`.
 - `prd_050` - Added semantic wiki lint fingerprint gating and prompt-budget smoke coverage. Source: `tickets/done/prd_050/tickets_050.md`.
-- `prd_052` - Retrofitted deterministic YAML frontmatter onto existing focused wiki pages. Source: `tickets/done/prd_052/tickets_052.md`.
-- `prd_053` - Restored desktop runner terminal streaming so live cards show multi-line typed output instead of path-only/runtime-envelope fragments. Source: `tickets/done/prd_053/tickets_053.md`.
+
+
 
 
 <!-- AUTOFLOW:BEGIN derived-timeline -->

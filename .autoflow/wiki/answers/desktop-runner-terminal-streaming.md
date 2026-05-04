@@ -9,9 +9,6 @@ terms:
   - "typing effect"
   - "runtime log fallback"
 citations:
-  - "tickets/done/prd_053/verify_055.md"
-  - "tickets/done/prd_053/prd_053.md"
-  - "tickets/done/prd_053/tickets_055.md"
 ---
 
 # desktop-runner-terminal-streaming
@@ -21,10 +18,6 @@ citations:
 데스크톱 runner terminal은 multi-line tick history를 타이핑 효과로 스트리밍하도록 개선됐고, runtime log를 바로 못 읽을 때는 단순 로그 파일 경로 문자열만 보여주지 않도록 fallback 처리됐다.
 
 ## Citations
-
-- `tickets/done/prd_053/verify_055.md`
-- `tickets/done/prd_053/prd_053.md`
-- `tickets/done/prd_053/tickets_055.md`
 
 ## Source
 
