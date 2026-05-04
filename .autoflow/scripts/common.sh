@@ -197,6 +197,45 @@ canonical_worker_id() {
   esac
 }
 
+record_skill_extraction() {
+  local ticket_ref="$1"
+  local pattern_type="${2:-ticket_completion}"
+  local category="${3:-}"
+  local cli_path board_dir_name output status
+
+  if [ "${AUTOFLOW_SKILL_AUTO_EXTRACT:-on}" = "off" ]; then
+    printf 'skill_auto_extract.status=skipped_by_env\n'
+    printf 'skill_auto_extract.reason=AUTOFLOW_SKILL_AUTO_EXTRACT=off\n'
+    return 0
+  fi
+
+  board_dir_name="$(basename "$BOARD_ROOT")"
+  cli_path="${PROJECT_ROOT}/bin/autoflow"
+  if [ ! -x "$cli_path" ]; then
+    cli_path="autoflow"
+  fi
+
+  set +e
+  if [ -n "$category" ]; then
+    output="$("$cli_path" skill auto-extract "$PROJECT_ROOT" "$board_dir_name" --from-ticket "$ticket_ref" --pattern-type "$pattern_type" --category "$category" 2>&1)"
+  else
+    output="$("$cli_path" skill auto-extract "$PROJECT_ROOT" "$board_dir_name" --from-ticket "$ticket_ref" --pattern-type "$pattern_type" 2>&1)"
+  fi
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ]; then
+    printf 'skill_auto_extract.status=warning\n'
+    printf 'skill_auto_extract.exit_code=%s\n' "$status"
+    printf 'skill_auto_extract.pattern_type=%s\n' "$pattern_type"
+    printf 'skill_auto_extract.output_begin\n%s\nskill_auto_extract.output_end\n' "$output"
+    return 0
+  fi
+
+  printf '%s\n' "$output" | awk '/^status=/ || /^skill_file=/ || /^skill_path=/ || /^skill_id=/ || /^created_from=/' | sed 's/^/skill_auto_extract./'
+  printf 'skill_auto_extract.pattern_type=%s\n' "$pattern_type"
+}
+
 worker_id_matches_field() {
   local field_value="${1:-}"
   local worker_value="${2:-}"

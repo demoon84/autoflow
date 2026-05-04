@@ -109,6 +109,7 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 19. Idle is valid. Record it as a resumable state and do not stop the heartbeat unless the user asks.
 20. Write generated PRD, plan, ticket, recovery notes, and user-friendly order prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 21. Queue priority policy: when creating or annotating inbox orders, backlog PRDs, todo tickets, or verifier-lane tickets, use `Priority:` only when the urgency is meaningful. Supported values are `critical`, `high`, `normal`, and `low`; missing priority is `normal`. Reserve `critical` for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats. Use `high` for urgent user-visible breakage or blocked active work, `normal` for default implementation work, and `low` for cleanup or non-urgent improvements. The runtime queue helpers sort priority before numeric FIFO; do not reimplement priority parsing in planner code.
+22. Planner-owned recovery triggers may best-effort call `record_skill_extraction` after meaningful recovery events. Use pattern types `reject_turnaround`, `blocked_recovery`, and `orchestration_cleanup`; extraction failure is warning evidence only and must not block replan, auto-close, blocked-auto-recover, or blocked-dirty orchestration.
 
 ## Procedure
 

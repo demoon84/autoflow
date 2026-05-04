@@ -481,31 +481,7 @@ wiki_ai_owned_notice() {
 
 run_skill_auto_extract_best_effort() {
   local ticket_file="$1"
-  local cli_path board_dir_name skill_output skill_status
-
-  if [ "${AUTOFLOW_SKILL_AUTO_EXTRACT:-on}" = "off" ]; then
-    printf 'skill_auto_extract.status=skipped_by_env\n'
-    printf 'skill_auto_extract.reason=AUTOFLOW_SKILL_AUTO_EXTRACT=off\n'
-    return 0
-  fi
-
-  board_dir_name="$(basename "$BOARD_ROOT")"
-  cli_path="${PROJECT_ROOT}/bin/autoflow"
-  if [ ! -x "$cli_path" ]; then
-    cli_path="autoflow"
-  fi
-
-  skill_output="$("$cli_path" skill create "$PROJECT_ROOT" "$board_dir_name" --from-ticket "$ticket_file" 2>&1)" || skill_status=$?
-  skill_status="${skill_status:-0}"
-  if [ "$skill_status" -ne 0 ]; then
-    append_note "$ticket_file" "Skill auto-extraction warning at $(now_iso): ${skill_output}"
-    printf 'skill_auto_extract.status=warning\n'
-    printf 'skill_auto_extract.exit_code=%s\n' "$skill_status"
-    printf 'skill_auto_extract.output_begin\n%s\nskill_auto_extract.output_end\n' "$skill_output"
-    return 0
-  fi
-
-  printf '%s\n' "$skill_output" | awk '/^status=/ || /^skill_file=/ || /^skill_id=/ || /^created_from=/' | sed 's/^/skill_auto_extract./'
+  record_skill_extraction "$ticket_file" "ticket_completion" "ticket-completion"
 }
 
 move_run_file_to_ready_to_merge() {

@@ -227,8 +227,12 @@
   - `lint` 는 wiki orphan page 와 completed-work citation gap 을 key=value 로 보고한다.
 
 - `skill-project.sh`
-  - `autoflow skill create`, `autoflow skill match`, `autoflow skill update-stats` 구현체다.
-  - `.autoflow/wiki/skills/` learned-skill registry에서 완료 ticket 기반 skill markdown 생성, keyword 매칭, success/failure 통계 갱신을 수행한다.
+  - `autoflow skill create`, `autoflow skill match`, `autoflow skill update-stats`, `autoflow skill auto-extract`, `autoflow skill curator-run`, `autoflow skill curator-status` 구현체다.
+  - `.autoflow/wiki/skills/` curated registry와 `.autoflow/wiki/skills-local/` agent-created registry에서 완료 ticket 기반 skill markdown 생성, keyword 매칭, success/failure 통계 갱신을 수행한다.
+  - `auto-extract` 는 trigger wrapper이며 `ticket_completion`, `reject_turnaround`, `blocked_recovery`, `orchestration_cleanup`, `skill_nudge` 같은 `pattern_type` 을 보존한다.
+  - `curator-run` 은 7일 기본 주기(`AUTOFLOW_CURATOR_INTERVAL_HOURS=168`)와 `--once`/`--idle` 실행을 지원한다. `AUTOFLOW_CURATOR_ENABLED=0` 이면 `status=skipped reason=disabled_by_env` 로 기존 동작을 유지한다.
+  - Curator lifecycle 은 agent-created `skills-local/` 에만 적용한다. `pinned: true` 는 모든 transition 을 우회하고, unused 30일은 `state: stale`, unused 90일은 `.archive/` 이동이며 삭제하지 않는다.
+  - Curator/auto-extraction 은 auxiliary-client bookkeeping 으로 실행하며 main planner/worker prompt cache 를 만지지 않는다(`auxiliary_client=true`, `main_prompt_cache_touched=false`).
   - `finish-ticket-owner.sh`의 pass finalization은 이 명령을 best-effort로 호출할 수 있지만, skill 추출 실패가 ticket finalization 실패로 승격되면 안 된다.
 
 - `metrics-project.sh`

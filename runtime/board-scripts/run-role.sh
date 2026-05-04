@@ -454,6 +454,87 @@ role_autocommit_after_adapter() {
   printf 'autocommit_message=%s\n' "$commit_message"
 }
 
+run_wiki_curator_idle_best_effort() {
+  local cli_path output status
+
+  [ "$public_role" = "wiki" ] || return 0
+  cli_path="${project_root}/bin/autoflow"
+  [ -x "$cli_path" ] || return 0
+
+  set +e
+  output="$("$cli_path" skill curator-run "$project_root" "$board_dir_name" --idle 2>&1)"
+  status=$?
+  set -e
+  printf 'curator_idle.status=%s\n' "$status"
+  printf '%s\n' "$output" | awk -F= '/^(status|reason|last_run_at|run_count|reviewed_count|stale_marked_count|archived_count|pinned_skipped_count|auxiliary_client|main_prompt_cache_touched)=/ { print "curator_idle." $0 }'
+}
+
+run_skill_nudge_best_effort() {
+  local ticket_file tick_count interval state_file in_progress cli_path output status
+
+  case "$public_role" in
+    planner|ticket) ;;
+    *) return 0 ;;
+  esac
+  case "${AUTOFLOW_SKILL_NUDGE_ENABLED:-1}" in
+    0|false|off|no|FALSE|OFF|NO) return 0 ;;
+  esac
+
+  ticket_file="$(ticket_goal_active_ticket_file 2>/dev/null || true)"
+  if [ -z "$ticket_file" ] && [ "$public_role" = "planner" ]; then
+    ticket_file="$(runner_active_ticket_file_from_item "$(runner_adapter_state_value "active_item")" 2>/dev/null || true)"
+  fi
+  [ -n "$ticket_file" ] || return 0
+  interval="${AUTOFLOW_SKILL_NUDGE_INTERVAL_TICKS:-10}"
+  case "$interval" in ''|*[!0-9]*) interval=10 ;; esac
+  [ "$interval" -gt 0 ] || return 0
+
+  tick_count="$(planner_ticket_field "$ticket_file" "Goal Runtime" "Tick Count")"
+  case "$tick_count" in ''|*[!0-9]*) tick_count=0 ;; esac
+  [ "$tick_count" -gt 0 ] || return 0
+  [ $((tick_count % interval)) -eq 0 ] || return 0
+
+  state_file="${board_root}/runners/state/skill-nudge.${runner_id}.state"
+  in_progress="$(awk -F= '$1 == "skill_extraction_in_progress" { print $2; found=1; exit } END { exit(found ? 0 : 1) }' "$state_file" 2>/dev/null || true)"
+  if [ "$in_progress" = "true" ]; then
+    printf 'skill_nudge.status=skipped_recursion_guard\n'
+    printf 'skill_nudge.state_file=%s\n' "$state_file"
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$state_file")"
+  {
+    printf 'skill_extraction_in_progress=true\n'
+    printf 'runner_id=%s\n' "$runner_id"
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'tick_count=%s\n' "$tick_count"
+  } > "$state_file"
+
+  cli_path="${project_root}/bin/autoflow"
+  if [ -x "$cli_path" ]; then
+    set +e
+    output="$("$cli_path" skill auto-extract "$project_root" "$board_dir_name" --from-ticket "$ticket_file" --pattern-type skill_nudge --category nudge 2>&1)"
+    status=$?
+    set -e
+  else
+    output="autoflow cli missing"
+    status=127
+  fi
+
+  {
+    printf 'skill_extraction_in_progress=false\n'
+    printf 'runner_id=%s\n' "$runner_id"
+    printf 'ticket=%s\n' "$ticket_file"
+    printf 'tick_count=%s\n' "$tick_count"
+    printf 'last_exit=%s\n' "$status"
+    printf 'last_run_at=%s\n' "$(runner_now_iso)"
+  } > "$state_file"
+
+  printf 'skill_nudge.status=%s\n' "$status"
+  printf 'skill_nudge.state_file=%s\n' "$state_file"
+  printf '%s\n' "$output" | awk -F= '/^(status|skill_file|skill_path|skill_id|created_from)=/ { print "skill_nudge." $0 }'
+}
+
 runner_ticket_id_from_active_item() {
   local item="$1"
   local name
@@ -980,16 +1061,6 @@ wiki_inputs_hash_stream() {
           continue
           ;;
       esac
-      if [ "$rel_dir" = "wiki" ]; then
-        case "${file#"$board_root"/}" in
-          wiki/index.md|wiki/log.md|wiki/project-overview.md)
-            continue
-            ;;
-        esac
-        if head -n 6 "$file" 2>/dev/null | grep -qE '^auto_generated:'; then
-          continue
-        fi
-      fi
       rel="${file#"$board_root"/}"
       if command -v shasum >/dev/null 2>&1; then
         checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
@@ -1945,6 +2016,7 @@ maybe_skip_unchanged_wiki_turn() {
   printf 'runner_status=idle\n'
   printf 'adapter=%s\n' "$agent"
   printf 'reason=wiki_inputs_unchanged\n'
+  run_wiki_curator_idle_best_effort
   printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
   printf 'fingerprint_path=%s\n' "$fingerprint_path"
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
@@ -2029,6 +2101,7 @@ maybe_skip_debounced_wiki_turn() {
   printf 'runner_status=idle\n'
   printf 'adapter=%s\n' "$agent"
   printf 'reason=wiki_debounced\n'
+  run_wiki_curator_idle_best_effort
   printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
   printf 'fingerprint_path=%s\n' "$fingerprint_path"
   printf 'changed_count=%s\n' "$changed_count"
@@ -2825,6 +2898,7 @@ case "$agent" in
     agent_runtime_preflight_or_exit
     maybe_skip_unchanged_wiki_turn || true
     maybe_skip_debounced_wiki_turn || true
+    run_skill_nudge_best_effort >/dev/null 2>&1 || true
 
     started_at="$(runner_now_iso)"
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"

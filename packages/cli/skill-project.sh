@@ -30,6 +30,10 @@ Usage:
   skill-project.sh archive [project-root] [board-dir-name] <name|category/name>
   skill-project.sh match [project-root] [board-dir-name] --keywords "<text>" [--limit N]
   skill-project.sh update-stats [project-root] [board-dir-name] <skill_id-or-path> --result pass|fail
+  skill-project.sh curator-run [project-root] [board-dir-name] [--once] [--idle] [--now <iso8601>]
+  skill-project.sh curator-status [project-root] [board-dir-name]
+  skill-project.sh auto-extract [project-root] [board-dir-name] --from-ticket <ticket-id-or-path>
+                                --pattern-type <type> [--name <slug>] [--category <name>]
 EOF
 }
 
@@ -1020,6 +1024,231 @@ run_update_stats() {
   printf 'last_used_at=%s\n' "$(usage_get_field "$usage_file" "$key" last_used_at)"
 }
 
+# ---------- curator + auto-extraction (prd_166) ----------
+
+curator_state_path() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  printf '%s/runners/state/wiki.curator.state' "$(board_root_path "$project_root" "$board_dir_name")"
+}
+
+curator_state_field() {
+  local state_file="$1"
+  local field="$2"
+  [ -f "$state_file" ] || return 0
+  awk -F= -v field="$field" '$1 == field { sub(/^[^=]*=/, "", $0); print; found=1; exit } END { exit(found ? 0 : 1) }' "$state_file" 2>/dev/null || true
+}
+
+curator_write_state() {
+  local state_file="$1"
+  shift
+  local tmp
+  tmp="$(autoflow_mktemp)"
+  mkdir -p "$(dirname "$state_file")"
+  printf '%s\n' "$@" > "$tmp"
+  mv "$tmp" "$state_file"
+}
+
+iso_to_epoch() {
+  local value="$1"
+  [ -n "$value" ] || return 1
+  date -u -d "$value" +%s 2>/dev/null || date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$value" +%s 2>/dev/null
+}
+
+days_since_iso() {
+  local now_epoch="$1"
+  local value="$2"
+  local then_epoch
+  then_epoch="$(iso_to_epoch "$value" || true)"
+  case "$then_epoch" in
+    ''|*[!0-9]*) printf '0' ;;
+    *) printf '%s' $(((now_epoch - then_epoch) / 86400)) ;;
+  esac
+}
+
+skill_last_activity_at() {
+  local usage_file="$1"
+  local key="$2"
+  local path="$3"
+  local value
+  value="$(usage_get_field "$usage_file" "$key" "last_used_at")"
+  [ -n "$value" ] || value="$(usage_get_field "$usage_file" "$key" "last_viewed_at")"
+  [ -n "$value" ] || value="$(extract_frontmatter_value "$path" "created_at" | sed -E 's/^"|"$//g')"
+  printf '%s' "$value"
+}
+
+set_frontmatter_scalar() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp
+  tmp="$(autoflow_mktemp)"
+  awk -v key="$key" -v value="$value" '
+    NR == 1 && $0 == "---" { in_fm=1; print; next }
+    in_fm && $0 == "---" {
+      if (!updated) print key ": " value
+      in_fm=0
+      print
+      next
+    }
+    in_fm && index($0, key ":") == 1 {
+      print key ": " value
+      updated=1
+      next
+    }
+    { print }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+}
+
+run_curator_status() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local state_file usage_file entries
+  local agent_count archived_count stale_count pinned_count
+
+  state_file="$(curator_state_path "$project_root" "$board_dir_name")"
+  usage_file="$(usage_json_path "$project_root" "$board_dir_name")"
+  entries="$(enumerate_skill_entries "$project_root" "$board_dir_name" true)"
+  agent_count=0
+  archived_count=0
+  stale_count=0
+  pinned_count=0
+  if [ -n "$entries" ]; then
+    while IFS=$'\t' read -r scope category name path key; do
+      case "$scope" in
+        agent-created) agent_count=$((agent_count + 1)) ;;
+        archived) archived_count=$((archived_count + 1)) ;;
+      esac
+      [ "$(extract_frontmatter_value "$path" "state")" = "stale" ] && stale_count=$((stale_count + 1))
+      [ "$(extract_frontmatter_value "$path" "pinned")" = "true" ] && pinned_count=$((pinned_count + 1))
+    done <<<"$entries"
+  fi
+
+  printf 'status=ok\n'
+  printf 'state_file=%s\n' "$state_file"
+  printf 'last_run_at=%s\n' "$(curator_state_field "$state_file" last_run_at)"
+  printf 'run_count=%s\n' "$(curator_state_field "$state_file" run_count)"
+  printf 'paused=%s\n' "$(curator_state_field "$state_file" paused)"
+  printf 'last_summary=%s\n' "$(curator_state_field "$state_file" last_summary)"
+  printf 'agent_created_count=%s\n' "$agent_count"
+  printf 'archived_count=%s\n' "$archived_count"
+  printf 'stale_count=%s\n' "$stale_count"
+  printf 'pinned_count=%s\n' "$pinned_count"
+  printf 'usage_file=%s\n' "$usage_file"
+}
+
+run_curator_run() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local once="$3"
+  local idle="$4"
+  local now_iso_value="$5"
+  local state_file last_run_at last_run_epoch now_epoch interval_hours stale_days archive_days
+  local entries usage_file run_count paused summary
+  local reviewed=0 stale_marked=0 archived=0 pinned_skipped=0 active_kept=0
+
+  state_file="$(curator_state_path "$project_root" "$board_dir_name")"
+  usage_file="$(usage_json_path "$project_root" "$board_dir_name")"
+  now_iso_value="${now_iso_value:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
+
+  case "${AUTOFLOW_CURATOR_ENABLED:-1}" in
+    0|false|off|no|FALSE|OFF|NO)
+      printf 'status=skipped\n'
+      printf 'reason=disabled_by_env\n'
+      printf 'state_file=%s\n' "$state_file"
+      return 0
+      ;;
+  esac
+
+  interval_hours="${AUTOFLOW_CURATOR_INTERVAL_HOURS:-168}"
+  stale_days="${AUTOFLOW_CURATOR_STALE_AFTER_DAYS:-30}"
+  archive_days="${AUTOFLOW_CURATOR_ARCHIVE_AFTER_DAYS:-90}"
+  now_epoch="$(iso_to_epoch "$now_iso_value")"
+  last_run_at="$(curator_state_field "$state_file" last_run_at)"
+  last_run_epoch="$(iso_to_epoch "$last_run_at" 2>/dev/null || true)"
+
+  if [ "$once" != "true" ] && [ -n "$last_run_epoch" ]; then
+    if [ $((now_epoch - last_run_epoch)) -lt $((interval_hours * 3600)) ]; then
+      printf 'status=skipped\n'
+      printf 'reason=interval_not_elapsed\n'
+      printf 'last_run_at=%s\n' "$last_run_at"
+      printf 'interval_hours=%s\n' "$interval_hours"
+      return 0
+    fi
+  fi
+
+  entries="$(enumerate_skill_entries "$project_root" "$board_dir_name" false)"
+  if [ -n "$entries" ]; then
+    while IFS=$'\t' read -r scope category name path key; do
+      [ "$scope" = "agent-created" ] || continue
+      reviewed=$((reviewed + 1))
+      if [ "$(extract_frontmatter_value "$path" "pinned")" = "true" ]; then
+        pinned_skipped=$((pinned_skipped + 1))
+        continue
+      fi
+
+      local last_activity age_days ref archive_output
+      last_activity="$(skill_last_activity_at "$usage_file" "$key" "$path")"
+      age_days="$(days_since_iso "$now_epoch" "$last_activity")"
+      case "$age_days" in ''|*[!0-9]* ) age_days=0 ;; esac
+
+      if [ "$age_days" -ge "$archive_days" ]; then
+        ref="${category}/${name}"
+        archive_output="$(run_archive "$project_root" "$board_dir_name" "$ref" 2>&1)" || true
+        printf '%s\n' "$archive_output" | grep -q '^status=ok$' && archived=$((archived + 1))
+      elif [ "$age_days" -ge "$stale_days" ]; then
+        set_frontmatter_scalar "$path" "state" "stale"
+        stale_marked=$((stale_marked + 1))
+      else
+        active_kept=$((active_kept + 1))
+      fi
+    done <<<"$entries"
+  fi
+
+  run_count="$(curator_state_field "$state_file" run_count)"
+  case "$run_count" in ''|*[!0-9]*) run_count=0 ;; esac
+  run_count=$((run_count + 1))
+  paused="$(curator_state_field "$state_file" paused)"
+  [ -n "$paused" ] || paused="false"
+  summary="reviewed=${reviewed},stale=${stale_marked},archived=${archived},pinned_skipped=${pinned_skipped},active=${active_kept},idle=${idle}"
+  curator_write_state "$state_file" \
+    "last_run_at=${now_iso_value}" \
+    "run_count=${run_count}" \
+    "paused=${paused}" \
+    "last_summary=${summary}" \
+    "auxiliary_client=true" \
+    "main_prompt_cache_touched=false"
+
+  printf 'status=ok\n'
+  printf 'state_file=%s\n' "$state_file"
+  printf 'last_run_at=%s\n' "$now_iso_value"
+  printf 'run_count=%s\n' "$run_count"
+  printf 'reviewed_count=%s\n' "$reviewed"
+  printf 'stale_marked_count=%s\n' "$stale_marked"
+  printf 'archived_count=%s\n' "$archived"
+  printf 'pinned_skipped_count=%s\n' "$pinned_skipped"
+  printf 'active_kept_count=%s\n' "$active_kept"
+  printf 'auxiliary_client=true\n'
+  printf 'main_prompt_cache_touched=false\n'
+}
+
+run_auto_extract() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local ticket_ref="$3"
+  local pattern_type="$4"
+  local override_name="$5"
+  local override_category="$6"
+  local category
+
+  [ -n "$ticket_ref" ] || { echo "--from-ticket is required" >&2; exit 1; }
+  [ -n "$pattern_type" ] || { echo "--pattern-type is required" >&2; exit 1; }
+  category="${override_category:-$pattern_type}"
+  category="$(printf '%s' "$category" | tr '_' '-')"
+  run_create "$project_root" "$board_dir_name" "$ticket_ref" "$override_name" "$category" "$pattern_type"
+}
+
 # ---------- dispatch ----------
 
 subcmd="${1:-}"
@@ -1111,6 +1340,39 @@ case "$subcmd" in
     esac
     [ -n "$skill_ref" ] || { usage; exit 1; }
     run_update_stats "$project_root" "$board_dir_name" "$skill_ref" "$result"
+    ;;
+  curator-run)
+    once="false"
+    idle="false"
+    now_arg=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --once) once="true"; shift ;;
+        --idle) idle="true"; shift ;;
+        --now) now_arg="${2:-}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    run_curator_run "$project_root" "$board_dir_name" "$once" "$idle" "$now_arg"
+    ;;
+  curator-status)
+    run_curator_status "$project_root" "$board_dir_name"
+    ;;
+  auto-extract)
+    ticket_ref=""
+    pattern_type=""
+    override_name=""
+    override_category=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --from-ticket) ticket_ref="${2:-}"; shift 2 ;;
+        --pattern-type) pattern_type="${2:-}"; shift 2 ;;
+        --name) override_name="${2:-}"; shift 2 ;;
+        --category) override_category="${2:-}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    run_auto_extract "$project_root" "$board_dir_name" "$ticket_ref" "$pattern_type" "$override_name" "$override_category"
     ;;
   *)
     echo "Unknown skill command: $subcmd" >&2

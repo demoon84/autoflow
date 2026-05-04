@@ -462,6 +462,7 @@ if [ -n "$replanned_reject" ]; then
     "Reject ticket $(board_relative_path "$replanned_reject") was automatically returned to todo as $(board_relative_path "$replanned_ticket")." \
     "retry_count=$(ticket_retry_count "$replanned_ticket"); reject_origin=$(board_relative_path "$replanned_reject"); todo_ticket=$(board_relative_path "$replanned_ticket")" \
     "새 todo 티켓의 retry context와 Reject History를 확인하고 필요한 경우 미확인 상태를 해제한다."
+  record_skill_extraction "$replanned_ticket" "reject_turnaround" "reject-turnaround"
   if [ -n "${candidate_fp:-}" ]; then
     printf 'iteration_fingerprint=%s\n' "$candidate_fp"
   fi
@@ -533,6 +534,7 @@ if reject_auto_close_enabled; then
         "Retry cap reject $(board_relative_path "$candidate") was automatically archived after the PRD verification command passed at PROJECT_ROOT." \
         "verification_command=${candidate_command}; archived_to=$(board_relative_path "$auto_close_target"); prd_file=$(board_relative_path "$candidate_prd_file")" \
         "자동 close가 의도한 수동 해결인지 확인하고 필요한 경우 관련 reject archive를 검토한다."
+      record_skill_extraction "$auto_close_target" "reject_turnaround" "reject-turnaround"
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -582,40 +584,6 @@ if blocked_auto_recover_enabled; then
     blocked_dirty_paths="$(project_root_dirty_paths "$(git_root_path || printf '%s' "$PROJECT_ROOT")" 2>/dev/null || true)"
     if [ -n "$blocked_dirty_paths" ]; then
       blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
-
-      blocked_dirty_state_path="${BOARD_ROOT}/runners/state/planner.blocked-dirty.fingerprint"
-      blocked_dirty_fingerprint_input="$(board_relative_path "$blocked_ticket")|${blocked_failure_class}|${blocked_dirty_summary}"
-      if command -v shasum >/dev/null 2>&1; then
-        blocked_dirty_fingerprint="$(printf '%s' "$blocked_dirty_fingerprint_input" | shasum -a 256 | awk '{ print $1 }')"
-      elif command -v sha256sum >/dev/null 2>&1; then
-        blocked_dirty_fingerprint="$(printf '%s' "$blocked_dirty_fingerprint_input" | sha256sum | awk '{ print $1 }')"
-      else
-        blocked_dirty_fingerprint="$(printf '%s' "$blocked_dirty_fingerprint_input" | cksum | awk '{ print $1 ":" $2 }')"
-      fi
-      blocked_dirty_now_epoch="$(date +%s)"
-      blocked_dirty_suppress_window="${AUTOFLOW_BLOCKED_DIRTY_SUPPRESS_SECONDS:-600}"
-      blocked_dirty_record="$(cat "$blocked_dirty_state_path" 2>/dev/null || true)"
-      blocked_dirty_last_fp="${blocked_dirty_record%% *}"
-      blocked_dirty_last_epoch="${blocked_dirty_record##* }"
-      case "$blocked_dirty_last_epoch" in
-        ''|*[!0-9]*) blocked_dirty_last_epoch=0 ;;
-      esac
-      blocked_dirty_elapsed=$((blocked_dirty_now_epoch - blocked_dirty_last_epoch))
-      if [ "$blocked_dirty_fingerprint" = "$blocked_dirty_last_fp" ] && [ "$blocked_dirty_elapsed" -lt "$blocked_dirty_suppress_window" ]; then
-        printf 'status=ok\n'
-        printf 'source=blocked-dirty-orchestration-suppressed\n'
-        printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
-        printf 'failure_class=%s\n' "$blocked_failure_class"
-        printf 'reason=duplicate_signal_within_%ss\n' "$blocked_dirty_suppress_window"
-        printf 'last_emitted_seconds_ago=%s\n' "$blocked_dirty_elapsed"
-        emit_replan_skipped_metadata "$replan_skipped_file"
-        printf 'board_root=%s\n' "$BOARD_ROOT"
-        printf 'project_root=%s\n' "$PROJECT_ROOT"
-        exit 0
-      fi
-      mkdir -p "$(dirname "$blocked_dirty_state_path")"
-      printf '%s %s\n' "$blocked_dirty_fingerprint" "$blocked_dirty_now_epoch" > "$blocked_dirty_state_path"
-
       printf 'status=ok\n'
       printf 'source=blocked-dirty-orchestration\n'
       printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
@@ -630,6 +598,7 @@ if blocked_auto_recover_enabled; then
         "Planner runtime detected a blocked ticket whose Allowed Paths still overlap dirty PROJECT_ROOT paths and emitted source=blocked-dirty-orchestration." \
         "blocked_origin=$(board_relative_path "$blocked_ticket"); failure_class=${blocked_failure_class}; dirty_paths=${blocked_dirty_summary}" \
         "Orchestrator AI가 dirty path를 Allowed Paths 소유권별로 commit 또는 stash 처리했는지 확인한다."
+      record_skill_extraction "$blocked_ticket" "orchestration_cleanup" "orchestration-cleanup"
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
@@ -660,6 +629,7 @@ if blocked_auto_recover_enabled; then
       "A blocked dirty-root ticket was automatically returned to todo after PROJECT_ROOT no longer reported overlapping dirty Allowed Paths." \
       "blocked_origin=$(board_relative_path "$blocked_ticket"); returned_to=$(board_relative_path "$blocked_target"); failure_class=${blocked_failure_class}" \
       "새 worktree claim 후 Recovery State가 resolved 상태로 이어지는지 확인한다."
+    record_skill_extraction "$blocked_target" "blocked_recovery" "blocked-recovery"
     emit_replan_skipped_metadata "$replan_skipped_file"
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"

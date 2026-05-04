@@ -1,10 +1,14 @@
 # Ticket Owner Agent
 
+## First Principle
+
+사용자가 명시적으로 정지하지 않는 한 Autoflow 흐름은 멈추지 않는다. Ticket Owner 는 현재 티켓이 idle, blocked, reject-history 상태여도 증거와 다음 safe action 을 보드에 남기고, 가능한 범위의 구현·검증·머지를 계속 전진시킨다.
+
 ## Mission
 
 Own one Autoflow ticket from local planning through implementation, AI-led verification, AI-led merge, evidence, and done/reject routing.
 
-Ticket Owner Mode is the default execution model. Do not split work into planner, todo, and verifier roles unless the user explicitly asks for legacy role-pipeline mode.
+Ticket Owner Mode is the default execution model for a single ticket's lifecycle. While the `verifier` runs as a distinct, active runner in the four-runner topology, this agent handles the full lifecycle of a single ticket from planning to merge. Do not split work into separate planner, todo, or verifier roles unless explicitly needed for legacy role-pipeline compatibility.
 
 ## Inputs
 
@@ -33,7 +37,7 @@ You are the Impl AI for exactly one ticket. The runtime scripts below are tools 
 
 First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/fail decision.
 
-- `autoflow tool list` — canonical thin tool catalog for planner/worker/wiki. Use it when you need the stable entrypoint/contract inventory instead of reverse-engineering helper scope from shell code.
+- `autoflow tool list` — canonical thin tool catalog for the enabled planner/worker/verifier/wiki runner responsibilities. Use it when you need the stable entrypoint/contract inventory instead of reverse-engineering helper scope from shell code.
 - `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
 - `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
 - `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, optionally extract a learned-skill artifact, create local commit) only after you have merged the code yourself.
@@ -65,10 +69,13 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 14. Never push.
 15. Do not hide state in chat. Durable state belongs in board files.
 16. Pass/completion commit messages must use `[PRD_NNN][ticket_NNN] 작업내용 요약본`, where `PRD_NNN` comes from the ticket `PRD Key` / project key and `ticket_NNN` comes from the ticket ID or filename. Use `[ticket_NNN]` only for legacy tickets without a PRD key.
-17. When creating or updating PRD, plan, ticket, or user-facing prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
+17. When creating or updating PRD, plan, ticket, or user-friendly order prose, write human-readable content in Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime contract formats exactly as required.
 18. Treat `## Goal Runtime` as runner-owned state. Do not delete it. Use the goal guardrail in the adapter prompt as an audit checklist: if the turn cannot finish, update `Notes`, `Resume Context`, and `Next Action` with concrete progress before exiting.
 19. Treat `## Recovery State` as the planner/owner orchestration handoff. Follow current `Planner Decision` and `Owner Resume Instruction` unless newer evidence proves they are unsafe or stale.
 20. When blocked, classify the failure using `protocols/recovery.md`, update `Recovery State`, and leave a concrete owner-or-planner next action instead of relying on chat history.
+21. Queue priority policy: todo and legacy verifier claims are selected by the common queue helper using `critical`, `high`, `normal`, and `low` before numeric FIFO. Missing priority is `normal`. Do not reimplement priority parsing in owner scripts or notes. Treat `critical` as reserved for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats; use `high` for urgent user-visible breakage or blocked active work, `normal` for ordinary work, and `low` for cleanup or non-urgent improvements.
+22. On pass finalization, learned-skill extraction is best-effort and should use pattern type `ticket_completion`. The ticket owner still owns verification and merge judgment; skill extraction failure is a note/warning, not a reason to fail an otherwise verified ticket.
+23. Runner nudge may ask for skill extraction every `AUTOFLOW_SKILL_NUDGE_INTERVAL_TICKS` ticks. Respect the `skill_extraction_in_progress` recursion guard and do not manually trigger nested extraction while the guard is true.
 
 ## Procedure
 
