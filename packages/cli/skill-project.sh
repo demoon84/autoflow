@@ -30,6 +30,13 @@ Usage:
   skill-project.sh archive [project-root] [board-dir-name] <name|category/name>
   skill-project.sh match [project-root] [board-dir-name] --keywords "<text>" [--limit N]
   skill-project.sh update-stats [project-root] [board-dir-name] <skill_id-or-path> --result pass|fail
+  skill-project.sh scan [project-root] [board-dir-name] <skill-file> [--source <text>]
+  skill-project.sh import [project-root] [board-dir-name] <agentskills-url-or-file> [--name <slug>] [--category <name>]
+  skill-project.sh export [project-root] [board-dir-name] <name|category/name|path|skill_NNN>
+  skill-project.sh cluster-detect [project-root] [board-dir-name] [--threshold-percent N]
+  skill-project.sh meta-extract [project-root] [board-dir-name] --cluster <skill,skill,...> [--name <slug>] [--category <name>]
+  skill-project.sh apply [project-root] [board-dir-name] --keywords "<text>" [--deterministic]
+  skill-project.sh metrics [project-root] [board-dir-name] [--window-days N]
   skill-project.sh curator-run [project-root] [board-dir-name] [--once] [--idle] [--now <iso8601>]
   skill-project.sh curator-status [project-root] [board-dir-name]
   skill-project.sh auto-extract [project-root] [board-dir-name] --from-ticket <ticket-id-or-path>
@@ -159,6 +166,96 @@ atomic_write_file() {
   cat > "$tmp"
   mkdir -p "$(dirname "$target")"
   mv "$tmp" "$target"
+}
+
+next_check_file_path() {
+  local board_root="$1"
+  local check_dir="${board_root}/tickets/check"
+  local max_id id file
+
+  mkdir -p "$check_dir"
+  max_id=0
+  for file in "$check_dir"/check_*.md; do
+    [ -e "$file" ] || continue
+    id="$(basename "$file" .md | sed -nE 's/^check_([0-9]+)$/\1/p')"
+    case "$id" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    id=$((10#$id))
+    [ "$id" -gt "$max_id" ] && max_id="$id"
+  done
+  printf '%s/check_%03d.md' "$check_dir" "$((max_id + 1))"
+}
+
+write_security_check_file() {
+  local board_root="$1"
+  local source_ref="$2"
+  local issues="$3"
+  local scan_file="$4"
+  local check_file now
+
+  check_file="$(next_check_file_path "$board_root")"
+  now="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  {
+    printf -- '---\n'
+    printf 'title: "Skill security scan blocked"\n'
+    printf 'created_at: "%s"\n' "$now"
+    printf 'event_type: "skill_security_scan_blocked"\n'
+    printf 'prd_key: ""\n'
+    printf 'ticket_id: ""\n'
+    printf 'source: "skill-project.sh"\n'
+    printf -- '---\n\n'
+    printf '## What Happened\n\n'
+    printf -- '- Skill creation/import was refused because the security scan detected unsafe content.\n'
+    printf -- '- Source: `%s`\n\n' "$source_ref"
+    printf '## Evidence\n\n'
+    printf -- '- Scan file: `%s`\n' "$scan_file"
+    printf -- '- Issues: `%s`\n\n' "$issues"
+    printf '## Recommended Human Action\n\n'
+    printf -- '- Review the blocked skill content and only retry with sanitized instructions or secrets removed.\n\n'
+    printf '## Status\n\n'
+    printf -- '- [ ] 사람 확인 완료\n'
+  } > "$check_file"
+  printf '%s' "$check_file"
+}
+
+skill_security_scan_file() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local scan_file="$3"
+  local source_ref="${4:-$scan_file}"
+  local board_root issues check_file
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  case "${AUTOFLOW_SKILL_SECURITY_SCAN_ENABLED:-1}" in
+    0|false|off|no|FALSE|OFF|NO)
+      printf 'status=ok\n'
+      printf 'security_scan=disabled\n'
+      return 0
+      ;;
+  esac
+
+  [ -f "$scan_file" ] || { echo "Skill file not found: $scan_file" >&2; exit 1; }
+  issues=""
+  if grep -Eiq 'rm[[:space:]]+-rf[[:space:]]+/([[:space:]]|$)|:\(\)[[:space:]]*\{[[:space:]]*:\|:&[[:space:]]*\};:|curl[^|]{0,160}\|[[:space:]]*(sh|bash)|wget[^|]{0,160}\|[[:space:]]*(sh|bash)' "$scan_file"; then
+    issues="${issues}malicious_command_pattern;"
+  fi
+  if grep -Eiq 'AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|(api[_-]?key|password|token|secret)[^A-Za-z0-9]{0,8}[:=][^[:space:]]{8,}' "$scan_file"; then
+    issues="${issues}secret_like_value;"
+  fi
+
+  if [ -n "$issues" ]; then
+    check_file="$(write_security_check_file "$board_root" "$source_ref" "$issues" "$scan_file")"
+    printf 'status=fail\n'
+    printf 'reason=security_scan_blocked\n'
+    printf 'security_scan=blocked\n'
+    printf 'issues=%s\n' "$issues"
+    printf 'check_file=%s\n' "$check_file"
+    return 6
+  fi
+
+  printf 'status=ok\n'
+  printf 'security_scan=passed\n'
 }
 
 # ---------- skill root paths ----------
@@ -543,12 +640,18 @@ run_create() {
   skill_md="${skill_dir}/SKILL.md"
 
   render_folder_skill_file "$skill_md" "$board_root" "$ticket_file" "$verify_file" "$prd_file" "$skill_name" "$pattern_type"
+  if ! scan_output="$(skill_security_scan_file "$project_root" "$board_dir_name" "$skill_md" "create:${ticket_ref}" 2>&1)"; then
+    rm -rf "$skill_dir"
+    printf '%s\n' "$scan_output"
+    exit 6
+  fi
 
   usage_file="$(usage_json_path "$project_root" "$board_dir_name")"
   usage_record_event "$usage_file" "${category}/${skill_name}" "register" || true
 
   rel_path="$(board_rel_path "$board_root" "$skill_md")"
   printf 'status=ok\n'
+  printf '%s\n' "$scan_output" | awk -F= '/^(security_scan)=/ { print }'
   printf 'skill_path=%s\n' "$skill_md"
   printf 'skill_rel=%s\n' "$rel_path"
   printf 'skill_name=%s\n' "$skill_name"
@@ -1145,7 +1248,7 @@ run_curator_run() {
   local idle="$4"
   local now_iso_value="$5"
   local state_file last_run_at last_run_epoch now_epoch interval_hours stale_days archive_days
-  local entries usage_file run_count paused summary
+  local entries usage_file run_count paused summary cluster_output cluster_count
   local reviewed=0 stale_marked=0 archived=0 pinned_skipped=0 active_kept=0
 
   state_file="$(curator_state_path "$project_root" "$board_dir_name")"
@@ -1211,7 +1314,11 @@ run_curator_run() {
   run_count=$((run_count + 1))
   paused="$(curator_state_field "$state_file" paused)"
   [ -n "$paused" ] || paused="false"
-  summary="reviewed=${reviewed},stale=${stale_marked},archived=${archived},pinned_skipped=${pinned_skipped},active=${active_kept},idle=${idle}"
+  cluster_output="$(run_cluster_detect "$project_root" "$board_dir_name" "${AUTOFLOW_SKILL_CLUSTER_THRESHOLD_PERCENT:-70}" 2>/dev/null || true)"
+  cluster_count="$(printf '%s\n' "$cluster_output" | awk -F= '$1 == "cluster_count" { print $2; found=1; exit } END { exit(found ? 0 : 1) }' 2>/dev/null || true)"
+  case "$cluster_count" in ''|*[!0-9]*) cluster_count=0 ;; esac
+
+  summary="reviewed=${reviewed},stale=${stale_marked},archived=${archived},pinned_skipped=${pinned_skipped},active=${active_kept},clusters=${cluster_count},idle=${idle}"
   curator_write_state "$state_file" \
     "last_run_at=${now_iso_value}" \
     "run_count=${run_count}" \
@@ -1229,8 +1336,10 @@ run_curator_run() {
   printf 'archived_count=%s\n' "$archived"
   printf 'pinned_skipped_count=%s\n' "$pinned_skipped"
   printf 'active_kept_count=%s\n' "$active_kept"
+  printf 'cluster_candidate_count=%s\n' "$cluster_count"
   printf 'auxiliary_client=true\n'
   printf 'main_prompt_cache_touched=false\n'
+  printf '%s\n' "$cluster_output" | awk -F= '/^cluster\.[0-9]+\./ { print "cluster_candidate." $0 }'
 }
 
 run_auto_extract() {
@@ -1247,6 +1356,534 @@ run_auto_extract() {
   category="${override_category:-$pattern_type}"
   category="$(printf '%s' "$category" | tr '_' '-')"
   run_create "$project_root" "$board_dir_name" "$ticket_ref" "$override_name" "$category" "$pattern_type"
+}
+
+run_scan() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local scan_file="$3"
+  local source_ref="$4"
+
+  skill_security_scan_file "$project_root" "$board_dir_name" "$scan_file" "$source_ref"
+}
+
+run_agentskills_import() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local source_ref="$3"
+  local override_name="$4"
+  local override_category="$5"
+  local board_root target_root category output_path scan_output
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  category="$(slugify_name "${override_category:-imported}")"
+  target_root="$(inrepo_skills_root_path "$project_root" "$board_dir_name")/${category}"
+  ensure_dir "$target_root"
+
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for skill import" >&2; exit 1; }
+  output_path="$(python3 - "$source_ref" "$target_root" "$override_name" <<'PY'
+import datetime as dt
+import os
+import re
+import sys
+import urllib.request
+
+source, target_root, override_name = sys.argv[1:4]
+
+def slugify(value):
+    value = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return (value or "imported-skill")[:64].strip("-") or "imported-skill"
+
+if re.match(r"^https?://", source):
+    with urllib.request.urlopen(source, timeout=30) as resp:
+        text = resp.read().decode("utf-8")
+else:
+    path = source[7:] if source.startswith("file://") else source
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+
+frontmatter = {}
+body = text
+if text.startswith("---\n"):
+    end = text.find("\n---", 4)
+    if end != -1:
+        fm_text = text[4:end].strip("\n")
+        body = text[end + 4 :].lstrip("\n")
+        stack = []
+        for raw in fm_text.splitlines():
+            if not raw.strip() or raw.lstrip().startswith("#"):
+                continue
+            indent = len(raw) - len(raw.lstrip(" "))
+            line = raw.strip()
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            value = value.strip().strip('"')
+            while stack and stack[-1][0] >= indent:
+                stack.pop()
+            dotted = ".".join([item[1] for item in stack] + [key])
+            if value:
+                frontmatter[dotted] = value
+            else:
+                stack.append((indent, key))
+
+name = override_name or frontmatter.get("name") or frontmatter.get("title") or "imported-skill"
+slug = slugify(name)
+description = (frontmatter.get("description") or "").replace('"', '\\"')[:1024]
+pattern_type = frontmatter.get("metadata.autoflow.pattern_type") or frontmatter.get("pattern_type") or "imported"
+module = frontmatter.get("metadata.autoflow.applies_to.module") or frontmatter.get("applies_to.module") or "general"
+ticket = frontmatter.get("metadata.autoflow.created_from.ticket") or frontmatter.get("created_from.ticket") or ""
+prd = frontmatter.get("metadata.autoflow.created_from.prd") or frontmatter.get("created_from.prd") or ""
+
+target_dir = os.path.join(target_root, slug)
+base = target_dir
+i = 2
+while os.path.exists(target_dir):
+    target_dir = f"{base}-{i}"
+    i += 1
+os.makedirs(target_dir, exist_ok=True)
+path = os.path.join(target_dir, "SKILL.md")
+now = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("---\n")
+    fh.write(f'name: "{slug}"\n')
+    fh.write(f'description: "{description}"\n')
+    fh.write(f"pattern_type: {pattern_type}\n")
+    fh.write("applies_to:\n")
+    fh.write(f'  module: "{module}"\n')
+    fh.write("  keywords:\n")
+    for token in sorted(set(re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}", f"{name} {description} {module}"))):
+        fh.write(f'    - "{token.lower()}"\n')
+    fh.write("pinned: false\n")
+    fh.write("created_from:\n")
+    fh.write(f'  prd: "{prd}"\n' if prd else "  prd: null\n")
+    fh.write(f'  ticket: "{ticket}"\n' if ticket else "  ticket: null\n")
+    fh.write(f'created_at: "{now}"\n')
+    fh.write("source_format: agentskills.io\n")
+    fh.write("---\n\n")
+    fh.write(body.rstrip() + "\n")
+print(path)
+PY
+)"
+
+  if ! scan_output="$(skill_security_scan_file "$project_root" "$board_dir_name" "$output_path" "import:${source_ref}" 2>&1)"; then
+    rm -rf "$(dirname "$output_path")"
+    printf '%s\n' "$scan_output"
+    exit 6
+  fi
+
+  printf 'status=ok\n'
+  printf 'format=agentskills.io\n'
+  printf 'skill_path=%s\n' "$output_path"
+  printf 'skill_rel=%s\n' "$(board_rel_path "$board_root" "$output_path")"
+  printf '%s\n' "$scan_output" | awk -F= '/^(security_scan)=/ { print }'
+}
+
+run_agentskills_export() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local ref="$3"
+  local entry scope category name path key
+
+  entry="$(resolve_skill_entry "$project_root" "$board_dir_name" "$ref" || true)"
+  [ -n "$entry" ] || { echo "Skill not found: $ref" >&2; exit 1; }
+  IFS=$'\t' read -r scope category name path key <<<"$entry"
+
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for skill export" >&2; exit 1; }
+  python3 - "$path" "$key" <<'PY'
+import sys
+
+path, key = sys.argv[1:3]
+text = open(path, "r", encoding="utf-8").read()
+fm = {}
+body = text
+if text.startswith("---\n"):
+    end = text.find("\n---", 4)
+    if end != -1:
+        for raw in text[4:end].strip("\n").splitlines():
+            if ":" not in raw:
+                continue
+            k, v = raw.strip().split(":", 1)
+            fm[k.strip()] = v.strip().strip('"')
+        body = text[end + 4 :].lstrip("\n")
+print("---")
+print(f'name: "{fm.get("name") or key.split("/")[-1]}"')
+print(f'description: "{fm.get("description", "")}"')
+print("metadata:")
+print("  autoflow:")
+print(f'    skill_id: "{key}"')
+print(f'    pattern_type: "{fm.get("pattern_type", "")}"')
+print("    applies_to:")
+print(f'      module: "{fm.get("module", "")}"')
+print("      keywords: []")
+print("---")
+print()
+print(body.rstrip())
+PY
+}
+
+run_cluster_detect() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local threshold_percent="$3"
+  local entries tmp
+
+  entries="$(enumerate_skill_entries "$project_root" "$board_dir_name" false)"
+  tmp="$(autoflow_mktemp)"
+  printf '%s\n' "$entries" > "$tmp"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for cluster-detect" >&2; exit 1; }
+  python3 - "$tmp" "$threshold_percent" <<'PY'
+import re
+import sys
+
+entries_path, threshold_s = sys.argv[1:3]
+threshold = max(0, min(100, int(threshold_s or "70"))) / 100.0
+
+def fm(path, key):
+    try:
+        text = open(path, encoding="utf-8").read()
+    except OSError:
+        return ""
+    if not text.startswith("---\n"):
+        return ""
+    end = text.find("\n---", 4)
+    if end == -1:
+        return ""
+    lines = text[4:end].splitlines()
+    out = []
+    in_keywords = False
+    for raw in lines:
+        if key == "keywords":
+            if raw.strip() == "keywords:":
+                in_keywords = True
+                continue
+            if in_keywords:
+                if raw.startswith("    - "):
+                    out.append(raw.split("-", 1)[1].strip().strip('"'))
+                    continue
+                if raw and not raw.startswith(" "):
+                    in_keywords = False
+        if raw.strip().startswith(key + ":"):
+            return raw.strip().split(":", 1)[1].strip().strip('"')
+    return " ".join(out) if key == "keywords" else ""
+
+skills = []
+for line in open(entries_path, encoding="utf-8"):
+    if not line.strip():
+        continue
+    scope, category, name, path, key = line.rstrip("\n").split("\t")
+    words = set(re.findall(r"[a-z0-9]{3,}", f"{name} {fm(path, 'keywords')}".lower()))
+    skills.append({"key": key, "path": path, "pattern": fm(path, "pattern_type"), "module": fm(path, "module"), "words": words})
+
+clusters = []
+used = set()
+for i, a in enumerate(skills):
+    if a["key"] in used or not a["words"]:
+        continue
+    group = [a]
+    for b in skills[i + 1:]:
+        if a["pattern"] != b["pattern"] or a["module"] != b["module"] or not b["words"]:
+            continue
+        overlap = len(a["words"] & b["words"]) / max(1, min(len(a["words"]), len(b["words"])))
+        if overlap >= threshold:
+            group.append(b)
+    if len(group) >= 2:
+        clusters.append(group)
+        used.update(item["key"] for item in group)
+
+print("status=ok")
+print(f"threshold_percent={int(threshold * 100)}")
+print(f"cluster_count={len(clusters)}")
+for idx, group in enumerate(clusters, 1):
+    print(f"cluster.{idx}.skill_ids={','.join(item['key'] for item in group)}")
+    print(f"cluster.{idx}.size={len(group)}")
+PY
+}
+
+run_meta_extract() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local cluster_refs="$3"
+  local override_name="$4"
+  local override_category="$5"
+  local board_root agent_root category name skill_dir skill_md entries_file ref entry paths_file scan_output
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  agent_root="$(agent_skills_root_path "$project_root" "$board_dir_name")"
+  category="$(slugify_name "${override_category:-meta}")"
+  name="$(slugify_name "${override_name:-meta-skill}")"
+  ensure_dir "${agent_root}/${category}"
+  skill_dir="$(derive_unique_skill_dir "${agent_root}/${category}" "$name")"
+  skill_md="${skill_dir}/SKILL.md"
+  paths_file="$(autoflow_mktemp)"
+
+  IFS=',' read -ra refs <<<"$cluster_refs"
+  for ref in "${refs[@]}"; do
+    ref="$(printf '%s' "$ref" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+    [ -n "$ref" ] || continue
+    entry="$(resolve_skill_entry "$project_root" "$board_dir_name" "$ref" || true)"
+    [ -n "$entry" ] || { echo "Skill not found: $ref" >&2; exit 1; }
+    printf '%s\n' "$entry" | awk -F '\t' '{ print $4 }' >> "$paths_file"
+  done
+  [ "$(wc -l < "$paths_file" | tr -d '[:space:]')" -ge 2 ] || { echo "meta-extract requires at least two skills" >&2; exit 1; }
+
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for meta-extract" >&2; exit 1; }
+  python3 - "$paths_file" "$skill_md" "$(basename "$skill_dir")" <<'PY'
+import datetime as dt
+import os
+import re
+import sys
+
+paths_file, out_path, name = sys.argv[1:4]
+paths = [line.strip() for line in open(paths_file, encoding="utf-8") if line.strip()]
+
+def text(path):
+    return open(path, encoding="utf-8").read()
+
+def val(content, key):
+    if not content.startswith("---\n"):
+        return ""
+    end = content.find("\n---", 4)
+    fm = content[4:end] if end != -1 else ""
+    for raw in fm.splitlines():
+        if raw.strip().startswith(key + ":"):
+            return raw.strip().split(":", 1)[1].strip().strip('"')
+    return ""
+
+contents = [text(p) for p in paths]
+word_sets = [set(re.findall(r"[a-z0-9]{3,}", c.lower())) for c in contents]
+common = sorted(set.intersection(*word_sets))[:12] if word_sets else []
+pattern = val(contents[0], "pattern_type") or "meta"
+module = val(contents[0], "module") or "general"
+now = dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+with open(out_path, "w", encoding="utf-8") as fh:
+    fh.write("---\n")
+    fh.write(f'name: "{name}"\n')
+    fh.write(f'description: "Meta-skill extracted from {len(paths)} related Autoflow skills."\n')
+    fh.write(f"pattern_type: meta_{pattern}\n")
+    fh.write("applies_to:\n")
+    fh.write(f'  module: "{module}"\n')
+    fh.write("  keywords:\n")
+    for word in common or ["autoflow", "skill", "meta"]:
+        fh.write(f'    - "{word}"\n')
+    fh.write("pinned: false\n")
+    fh.write("state: review\n")
+    fh.write("created_from:\n")
+    fh.write("  prd: null\n")
+    fh.write("  ticket: null\n")
+    fh.write(f'created_at: "{now}"\n')
+    fh.write("---\n\n")
+    fh.write(f"# {name}\n\n")
+    fh.write("## Trigger\n\n")
+    fh.write("- Reuse when several related skills share the same module, pattern type, and keyword overlap.\n\n")
+    fh.write("## Recommended Procedure\n\n")
+    for word in common[:5] or ["shared workflow"]:
+        fh.write(f"- Apply the shared `{word}` pattern from the source cluster.\n")
+    fh.write("\n## Source Cluster\n\n")
+    for path in paths:
+        fh.write(f"- `{path}`\n")
+PY
+
+  if ! scan_output="$(skill_security_scan_file "$project_root" "$board_dir_name" "$skill_md" "meta-extract:${cluster_refs}" 2>&1)"; then
+    rm -rf "$skill_dir"
+    printf '%s\n' "$scan_output"
+    exit 6
+  fi
+  printf 'status=ok\n'
+  printf 'skill_path=%s\n' "$skill_md"
+  printf 'skill_rel=%s\n' "$(board_rel_path "$board_root" "$skill_md")"
+  printf 'review_required=true\n'
+  printf '%s\n' "$scan_output" | awk -F= '/^(security_scan)=/ { print }'
+}
+
+run_apply() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local keywords_input="$3"
+  local deterministic_requested="$4"
+  local entries tmp usage_file min_rate min_count
+
+  if [ "$deterministic_requested" != "true" ]; then
+    case "${AUTOFLOW_SKILL_DETERMINISTIC_MODE_ENABLED:-0}" in
+      1|true|on|yes|TRUE|ON|YES) deterministic_requested="true" ;;
+    esac
+  fi
+  if [ "$deterministic_requested" != "true" ]; then
+    printf 'status=skipped\n'
+    printf 'reason=deterministic_mode_disabled\n'
+    printf 'llm_fallback=true\n'
+    return 0
+  fi
+
+  entries="$(enumerate_skill_entries "$project_root" "$board_dir_name" false)"
+  tmp="$(autoflow_mktemp)"
+  printf '%s\n' "$entries" > "$tmp"
+  usage_file="$(usage_json_path "$project_root" "$board_dir_name")"
+  min_rate="${AUTOFLOW_SKILL_DETERMINISTIC_MIN_SUCCESS_RATE_PERCENT:-95}"
+  min_count="${AUTOFLOW_SKILL_DETERMINISTIC_MIN_SUCCESS_COUNT:-10}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for skill apply" >&2; exit 1; }
+  python3 - "$tmp" "$usage_file" "$keywords_input" "$min_rate" "$min_count" "${AUTOFLOW_SKILL_DETERMINISTIC_FORCE_FAIL:-0}" <<'PY'
+import json
+import os
+import re
+import sys
+
+entries_path, usage_path, query, min_rate_s, min_count_s, force_fail = sys.argv[1:7]
+min_rate = float(min_rate_s or 95)
+min_count = int(min_count_s or 10)
+usage = {}
+if os.path.exists(usage_path):
+    try:
+        usage = json.load(open(usage_path, encoding="utf-8"))
+    except Exception:
+        usage = {}
+q = set(re.findall(r"[a-z0-9]{3,}", query.lower()))
+best = None
+for line in open(entries_path, encoding="utf-8"):
+    if not line.strip():
+        continue
+    scope, category, name, path, key = line.rstrip("\n").split("\t")
+    content = open(path, encoding="utf-8").read()
+    if re.search(r"^deterministic_disabled:\s*true", content, re.M):
+        continue
+    words = set(re.findall(r"[a-z0-9]{3,}", content.lower()))
+    score = len(q & words)
+    stats = usage.get(key, {}) if isinstance(usage, dict) else {}
+    success = int(stats.get("success_count", 0) or 0)
+    failure = int(stats.get("failure_count", 0) or 0)
+    rate = 100.0 * success / max(1, success + failure)
+    if score > 0 and success >= min_count and rate >= min_rate:
+        item = (score, key, path, success, failure, rate, content)
+        if best is None or item > best:
+            best = item
+if best is None:
+    print("status=skipped")
+    print("reason=no_skill_meets_deterministic_threshold")
+    print("llm_fallback=true")
+    sys.exit(0)
+score, key, path, success, failure, rate, content = best
+if force_fail in ("1", "true", "on", "yes"):
+    content = re.sub(r"(?m)^---\n", "---\ndeterministic_disabled: true\n", content, count=1) if content.startswith("---\n") else "deterministic_disabled: true\n" + content
+    open(path, "w", encoding="utf-8").write(content)
+    stats = usage.setdefault(key, {})
+    stats["failure_count"] = int(stats.get("failure_count", 0) or 0) + 1
+    os.makedirs(os.path.dirname(usage_path), exist_ok=True)
+    json.dump(usage, open(usage_path, "w", encoding="utf-8"), indent=2, sort_keys=True)
+    print("status=fail")
+    print("reason=deterministic_execution_failed")
+    print(f"skill_id={key}")
+    print("deterministic_disabled=true")
+    print("llm_fallback=true")
+    sys.exit(7)
+print("status=ok")
+print("mode=deterministic")
+print("llm_called=false")
+print(f"skill_id={key}")
+print(f"success_rate_percent={rate:.2f}")
+print(f"success_count={success}")
+print("---PROCEDURE---")
+capture = False
+for raw in content.splitlines():
+    if raw.strip() == "## Recommended Procedure":
+        capture = True
+        continue
+    if capture and raw.startswith("## "):
+        break
+    if capture and raw.strip():
+        print(raw)
+PY
+}
+
+run_metrics() {
+  local project_root="$1"
+  local board_dir_name="$2"
+  local window_days="$3"
+  local board_root entries_file usage_file cluster_output
+
+  board_root="$(board_root_path "$project_root" "$board_dir_name")"
+  entries_file="$(autoflow_mktemp)"
+  enumerate_skill_entries "$project_root" "$board_dir_name" false > "$entries_file"
+  usage_file="$(usage_json_path "$project_root" "$board_dir_name")"
+  cluster_output="$(run_cluster_detect "$project_root" "$board_dir_name" "${AUTOFLOW_SKILL_CLUSTER_THRESHOLD_PERCENT:-70}" 2>/dev/null || true)"
+
+  command -v python3 >/dev/null 2>&1 || { echo "python3 is required for skill metrics" >&2; exit 1; }
+  python3 - "$board_root" "$entries_file" "$usage_file" "$window_days" "${AUTOFLOW_SKILL_DETERMINISTIC_MIN_SUCCESS_RATE_PERCENT:-95}" "${AUTOFLOW_SKILL_DETERMINISTIC_MIN_SUCCESS_COUNT:-10}" "$cluster_output" <<'PY'
+import datetime as dt
+import json
+import os
+import re
+import sys
+
+board_root, entries_path, usage_path, window_days_s, min_rate_s, min_count_s, cluster_output = sys.argv[1:8]
+window_days = int(window_days_s or 7)
+min_rate = float(min_rate_s or 95)
+min_count = int(min_count_s or 10)
+now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc)
+start = now - dt.timedelta(days=window_days)
+
+def parse_iso(value):
+    value = (value or "").strip().strip('"')
+    if not value:
+        return None
+    try:
+        return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+security_blocks = 0
+check_dir = os.path.join(board_root, "tickets", "check")
+if os.path.isdir(check_dir):
+    for name in os.listdir(check_dir):
+        if not re.match(r"check_[0-9]+\.md$", name):
+            continue
+        path = os.path.join(check_dir, name)
+        text = open(path, encoding="utf-8").read()
+        if "event_type: \"skill_security_scan_blocked\"" not in text and "event_type: skill_security_scan_blocked" not in text:
+            continue
+        m = re.search(r"created_at:\s*\"?([^\"\n]+)", text)
+        created = parse_iso(m.group(1) if m else "")
+        if created is None or created >= start:
+            security_blocks += 1
+
+usage = {}
+if os.path.exists(usage_path):
+    try:
+        usage = json.load(open(usage_path, encoding="utf-8"))
+    except Exception:
+        usage = {}
+
+total_skills = 0
+eligible = 0
+for line in open(entries_path, encoding="utf-8"):
+    if not line.strip():
+        continue
+    total_skills += 1
+    *_, key = line.rstrip("\n").split("\t")
+    stats = usage.get(key, {}) if isinstance(usage, dict) else {}
+    success = int(stats.get("success_count", 0) or 0)
+    failure = int(stats.get("failure_count", 0) or 0)
+    rate = 100.0 * success / max(1, success + failure)
+    if success >= min_count and rate >= min_rate:
+        eligible += 1
+
+cluster_count = 0
+for raw in cluster_output.splitlines():
+    if raw.startswith("cluster_count="):
+        try:
+            cluster_count = int(raw.split("=", 1)[1])
+        except ValueError:
+            cluster_count = 0
+
+ratio = 100.0 * eligible / max(1, total_skills)
+print("status=ok")
+print(f"window_days={window_days}")
+print(f"security_scan_blocked_count={security_blocks}")
+print(f"cluster_candidate_count={cluster_count}")
+print(f"deterministic_eligible_count={eligible}")
+print(f"skill_count={total_skills}")
+print(f"deterministic_execution_ratio_percent={ratio:.2f}")
+PY
 }
 
 # ---------- dispatch ----------
@@ -1340,6 +1977,87 @@ case "$subcmd" in
     esac
     [ -n "$skill_ref" ] || { usage; exit 1; }
     run_update_stats "$project_root" "$board_dir_name" "$skill_ref" "$result"
+    ;;
+  scan)
+    scan_file="${1:-}"
+    shift || true
+    source_ref="$scan_file"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --source) source_ref="${2:-}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    [ -n "$scan_file" ] || { usage; exit 1; }
+    run_scan "$project_root" "$board_dir_name" "$scan_file" "$source_ref"
+    ;;
+  import)
+    source_ref="${1:-}"
+    shift || true
+    override_name=""
+    override_category=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --name) override_name="${2:-}"; shift 2 ;;
+        --category) override_category="${2:-}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    [ -n "$source_ref" ] || { usage; exit 1; }
+    run_agentskills_import "$project_root" "$board_dir_name" "$source_ref" "$override_name" "$override_category"
+    ;;
+  export)
+    ref="${1:-}"
+    [ -n "$ref" ] || { usage; exit 1; }
+    run_agentskills_export "$project_root" "$board_dir_name" "$ref"
+    ;;
+  cluster-detect)
+    threshold_percent=70
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --threshold-percent) threshold_percent="${2:-70}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    run_cluster_detect "$project_root" "$board_dir_name" "$threshold_percent"
+    ;;
+  meta-extract)
+    cluster_refs=""
+    override_name=""
+    override_category=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --cluster) cluster_refs="${2:-}"; shift 2 ;;
+        --name) override_name="${2:-}"; shift 2 ;;
+        --category) override_category="${2:-}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    [ -n "$cluster_refs" ] || { usage; exit 1; }
+    run_meta_extract "$project_root" "$board_dir_name" "$cluster_refs" "$override_name" "$override_category"
+    ;;
+  apply)
+    keywords_input=""
+    deterministic_requested="false"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --keywords) keywords_input="${2:-}"; shift 2 ;;
+        --deterministic) deterministic_requested="true"; shift ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    [ -n "$keywords_input" ] || { usage; exit 1; }
+    run_apply "$project_root" "$board_dir_name" "$keywords_input" "$deterministic_requested"
+    ;;
+  metrics)
+    window_days=7
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --window-days) window_days="${2:-7}"; shift 2 ;;
+        *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+      esac
+    done
+    run_metrics "$project_root" "$board_dir_name" "$window_days"
     ;;
   curator-run)
     once="false"
