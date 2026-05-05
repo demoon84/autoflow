@@ -3,23 +3,26 @@ kind: synth_answer
 slug: prd-063-ticket-064
 runner: wiki
 created: 2026-05-05T01:16:49Z
-updated: 2026-05-05T01:16:49Z
+updated: 2026-05-05T01:18:34Z
 terms:
   - "prd_063"
   - "ticket 064"
   - "dashboard inbox PRD pin order"
 citations:
+  - "tickets/done/prd_063/prd_063.md"
+  - "tickets/done/prd_063/tickets_064.md"
 ---
 
 # prd-063-ticket-064
 
 ## Answer
 
-근거 있는 답변을 생성하지 못했습니다.
+PRD(prd_063) 및 티켓(tickets_064)은 데스크톱 대시보드의 워크플로우 핀 스트립에서 받은 편지함 카드와 PRD 카드의 순서를 교체하는 작업을 설명합니다.
 
 ## Citations
 
-- (no citations were returned by the adapter)
+- `tickets/done/prd_063/prd_063.md`
+- `tickets/done/prd_063/tickets_064.md`
 
 ## Source
 
