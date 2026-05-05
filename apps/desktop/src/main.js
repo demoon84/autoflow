@@ -1584,6 +1584,7 @@ const tokenComponentMarkers = [
   "output tokens",
   "outputtokens"
 ];
+const telemetryMaxRowTokens = 100000000;
 const liveTokenLogCache = new Map();
 
 function escapeRegExp(value) {
@@ -1599,6 +1600,11 @@ function numberAfterTokenMarker(lower, marker) {
 function positiveIntegerValue(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function isSaneTelemetryTokenCount(input, output) {
+  const total = input + output;
+  return input < telemetryMaxRowTokens && output < telemetryMaxRowTokens && total < telemetryMaxRowTokens;
 }
 
 function firstPositiveTokenKeyValue(source, keys) {
@@ -1912,8 +1918,11 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
     if (!row || typeof row !== "object") continue;
     const runnerId = typeof row.runner_id === "string" ? row.runner_id : "";
     if (!runnerId) continue;
-    const tokenCount = positiveIntegerValue(row.token_input) + positiveIntegerValue(row.token_output);
+    const tokenInput = positiveIntegerValue(row.token_input);
+    const tokenOutput = positiveIntegerValue(row.token_output);
+    const tokenCount = tokenInput + tokenOutput;
     if (tokenCount <= 0) continue;
+    if (!isSaneTelemetryTokenCount(tokenInput, tokenOutput)) continue;
     telemetryTotals.set(runnerId, (telemetryTotals.get(runnerId) || 0) + tokenCount);
   }
 

@@ -131,13 +131,14 @@ require_line "$until_out" "skipped_suspicious_token_rows=0"
 require_line "$since_out" "token_usage=15"
 require_line "$since_out" "token_usage_trusted=true"
 
-SMOKE_WORKER_COMMAND='printf "%s\n" "result.7.snippet.1.text=- Tokens Used: - Continuation Suppressed: true - Last Progress Fingerprint: 335739843" "{\"usage\":{\"total_tokens\":1200}}"' set_worker_command "$project_dir"
+SMOKE_WORKER_COMMAND='printf "%s\n" "result.7.snippet.1.text=- Tokens Used: - Continuation Suppressed: true - Last Progress Fingerprint: 335739843" "{\"event_version\":1,\"runner_id\":\"worker\",\"token_input\":43000004027,\"token_output\":43000000020}" "{\"usage\":{\"total_tokens\":1200}}"' set_worker_command "$project_dir"
 
 write_fixture_ticket "${project_dir}/.autoflow/tickets/todo/tickets_001.md" "parser sanity fixture"
 git -C "$project_dir" add .autoflow .claude .codex
 git -C "$project_dir" commit -m "baseline" >/dev/null
 
-"${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner worker >"$run_out"
+AUTOFLOW_WORKTREE_ROOT="${project_dir}/.autoflow/worktrees" \
+  "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner worker >"$run_out"
 require_line "$run_out" "adapter_exit_code=0"
 
 parser_total="$(
@@ -180,7 +181,8 @@ JSONL
 git -C "$preflight_project_dir" add .autoflow .claude .codex
 git -C "$preflight_project_dir" commit -m "preflight fixture" >/dev/null
 
-"${REPO_ROOT}/bin/autoflow" run ticket "$preflight_project_dir" .autoflow --runner worker >"$preflight_out"
+AUTOFLOW_WORKTREE_ROOT="${preflight_project_dir}/.autoflow/worktrees" \
+  "${REPO_ROOT}/bin/autoflow" run ticket "$preflight_project_dir" .autoflow --runner worker >"$preflight_out"
 require_line "$preflight_out" "adapter_exit_code=0"
 if [ -f "${preflight_project_dir}/.autoflow/runners/state/worker.state" ]; then
   reject_pattern "${preflight_project_dir}/.autoflow/runners/state/worker.state" '^last_result=token_budget_exceeded$'

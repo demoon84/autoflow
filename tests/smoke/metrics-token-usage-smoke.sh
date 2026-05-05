@@ -216,8 +216,14 @@ if [ "$telemetry_assertion" != "ok" ]; then
   exit 1
 fi
 
+cat >>"${project_dir}/.autoflow/telemetry/runs.jsonl" <<'JSONL'
+{"event_version":1,"runner_id":"worker","started_at":"2026-05-04T00:00:00Z","ended_at":"2026-05-04T00:00:01Z","duration_ms":1,"result":"success","token_input":43000004027,"token_output":43000000020}
+JSONL
+
 "${REPO_ROOT}/packages/cli/telemetry-project.sh" --project-root "$project_dir" token-usage --runner worker >"$telemetry_usage_output"
 require_pattern "$telemetry_usage_output" '^token_usage=[1-9][0-9]*$'
+require_line "$telemetry_usage_output" "token_usage_trusted=false"
+require_line "$telemetry_usage_output" "skipped_suspicious_token_rows=1"
 
 rm -rf "${project_dir}/.autoflow/runners/state/cli-cache"
 "${REPO_ROOT}/packages/cli/metrics-project.sh" "$project_dir" .autoflow >"$telemetry_metrics_output"
@@ -225,6 +231,11 @@ require_pattern "$telemetry_metrics_output" '^autoflow_token_usage_count=[1-9][0
 require_pattern "$telemetry_metrics_output" '^autoflow_token_report_count=[1-9][0-9]*$'
 if grep -Fq '1999999998' "$telemetry_metrics_output"; then
   echo "Metrics must not read stale .autoflow/metrics/telemetry-runs.jsonl" >&2
+  cat "$telemetry_metrics_output" >&2
+  exit 1
+fi
+if grep -Eq '86000004047|[1-9][0-9]{8,}' "$telemetry_metrics_output"; then
+  echo "Metrics must not sum suspicious telemetry token rows" >&2
   cat "$telemetry_metrics_output" >&2
   exit 1
 fi

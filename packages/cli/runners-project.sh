@@ -1455,13 +1455,22 @@ runner_should_drain_queue_now() {
   local public_role="$1"
   local last_result="$2"
   local run_exit="$3"
+  local queue_fingerprint_before="${4:-}"
+  local queue_fingerprint_after
 
   [ "$run_exit" = "0" ] || return 1
   case "$last_result" in
     adapter_exit_0|success) ;;
     *) return 1 ;;
   esac
-  runner_role_queue_has_entries "$public_role"
+  runner_role_queue_has_entries "$public_role" || return 1
+
+  # Immediate drain is only safe when the queue actually moved. Otherwise a
+  # successful no-progress adapter turn can bypass the interval forever.
+  [ -n "$queue_fingerprint_before" ] || return 1
+  queue_fingerprint_after="$(runner_realtime_inputs_fingerprint "$public_role" 2>/dev/null || true)"
+  [ -n "$queue_fingerprint_after" ] || return 1
+  [ "$queue_fingerprint_after" != "$queue_fingerprint_before" ]
 }
 
 runner_tick_backoff_sleep() {
@@ -2106,6 +2115,11 @@ loop_runner_worker() {
       runner_realtime_consume_pending "$target_runner_id" "$public_role"
     fi
 
+    queue_fingerprint_before=""
+    if runner_role_queue_has_entries "$public_role"; then
+      queue_fingerprint_before="$(runner_realtime_inputs_fingerprint "$public_role" 2>/dev/null || true)"
+    fi
+
     AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &
     child_pid="$!"
     set +e
@@ -2167,7 +2181,7 @@ loop_runner_worker() {
       "interval_effective_seconds=${backoff_interval}" \
       "idle_streak_count=${backoff_idle_streak}"
 
-    if runner_should_drain_queue_now "$public_role" "$last_result" "$run_exit"; then
+    if runner_should_drain_queue_now "$public_role" "$last_result" "$run_exit" "$queue_fingerprint_before"; then
       runner_append_log "$target_runner_id" "queue_drain_continue" \
         "role=${role}" \
         "mode=${mode}" \

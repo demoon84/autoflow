@@ -2137,6 +2137,7 @@ append_note() {
   local file="$1"
   local note="$2"
   local tmp
+  note="$(printf '%s' "$note" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]*//; s/[[:space:]]*$//')"
   tmp="$(autoflow_mktemp)"
   awk -v note="$note" '
     BEGIN { in_notes=0; inserted=0 }
@@ -2284,6 +2285,7 @@ append_note_replacing() {
   local note="$2"
   local key_prefix="$3"
   local tmp
+  note="$(printf '%s' "$note" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]*//; s/[[:space:]]*$//')"
   tmp="$(autoflow_mktemp)"
   awk -v note="$note" -v key="$key_prefix" '
     BEGIN { in_notes=0; inserted=0 }

@@ -335,7 +335,7 @@ EOF
 }
 
 count_autoflow_token_metrics() {
-  local telemetry_runs_file token_result
+  local telemetry_runs_file token_result max_row_tokens
 
   autoflow_token_usage_count=0
   autoflow_token_report_count=0
@@ -343,14 +343,28 @@ count_autoflow_token_metrics() {
   command -v jq >/dev/null 2>&1 || return 0
   telemetry_runs_file="$(telemetry_runs_jsonl_path "$project_root")"
   [ -f "$telemetry_runs_file" ] || return 0
+  max_row_tokens="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+  case "$max_row_tokens" in
+    ''|*[!0-9]*|0) max_row_tokens=100000000 ;;
+  esac
 
   token_result="$(
-    jq -rs '
+    jq -rs --argjson max_row_tokens "$max_row_tokens" '
       reduce .[] as $row (
         {usage: 0, reports: 0};
         if ($row | type) == "object" then
-          .usage += (($row.token_input // 0) + ($row.token_output // 0) | tonumber? // 0)
-          | .reports += (if ($row | has("token_input") or has("token_output")) then 1 else 0 end)
+          ($row.token_input // 0 | tonumber? // 0) as $input
+          | ($row.token_output // 0 | tonumber? // 0) as $output
+          | ($input + $output) as $total
+          | if (($row | has("token_input") or has("token_output"))
+              and ($input < $max_row_tokens)
+              and ($output < $max_row_tokens)
+              and ($total < $max_row_tokens)) then
+              .usage += $total
+              | .reports += 1
+            else
+              .
+            end
         else
           .
         end

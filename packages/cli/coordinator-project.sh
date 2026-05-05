@@ -459,6 +459,7 @@ append_note() {
   local note="$2"
   local tmp
 
+  note="$(printf '%s' "$note" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]*//; s/[[:space:]]*$//')"
   tmp="$(autoflow_mktemp)"
   awk -v note="$note" '
     BEGIN { in_notes=0; inserted=0 }

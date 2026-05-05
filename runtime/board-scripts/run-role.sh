@@ -2672,6 +2672,8 @@ adapter_finish_class() {
 
   if [ "$runner_status_value" = "stopped" ]; then
     printf 'quota_limited'
+  elif [ "$adapter_exit" -eq 126 ]; then
+    printf 'adapter_start_failed'
   elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
     printf 'normal_output_truncated'
   elif [ "$adapter_exit" -eq 0 ]; then
@@ -2683,6 +2685,19 @@ adapter_finish_class() {
   else
     printf 'adapter_exit_%s' "$adapter_exit"
   fi
+}
+
+runner_file_has_adapter_start_failure() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'Error: thread/start|thread/start failed|error creating thread|Fatal error: Codex cannot access session files|Failed to create session' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 telemetry_positive_integer_or_zero() {
@@ -3747,6 +3762,10 @@ case "$agent" in
     stop_adapter_heartbeat_monitor
     set -e
 
+    if [ "$adapter_exit" -eq 0 ] && runner_file_has_adapter_start_failure "$adapter_stdout" "$adapter_stderr"; then
+      adapter_exit=126
+    fi
+
     finished_at="$(runner_now_iso)"
     planner_differential_finalize_after_run || true
     if [ "$adapter_exit" -eq 0 ]; then
@@ -3756,6 +3775,9 @@ case "$agent" in
       command_status="timeout"
       runner_status="idle"
     elif [ "$adapter_exit" -eq 127 ]; then
+      command_status="blocked"
+      runner_status="blocked"
+    elif [ "$adapter_exit" -eq 126 ]; then
       command_status="blocked"
       runner_status="blocked"
     elif runner_file_has_quota_limit "$adapter_stdout" "$adapter_stderr"; then
@@ -3801,7 +3823,11 @@ case "$agent" in
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \
       "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
-      "last_result=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || printf 'adapter_exit_%s' "$adapter_exit")" \
+      "last_result=$(
+        if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
+        else printf 'adapter_exit_%s' "$adapter_exit"; fi
+      )" \
       "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
@@ -3826,6 +3852,7 @@ case "$agent" in
       "reasoning_reject_count=${reasoning_reject_count}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
         else true; fi
       )" \
@@ -3855,6 +3882,8 @@ case "$agent" in
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$adapter_exit" -eq 126 ]; then
+      printf 'reason=adapter_start_failed\n'
     elif [ "$runner_status" = "stopped" ]; then
       printf 'reason=quota_limited\n'
     fi

@@ -776,6 +776,15 @@ telemetry_positive_integer_or_zero() {
   esac
 }
 
+telemetry_max_row_tokens() {
+  local value="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+
+  case "$value" in
+    ''|*[!0-9]*|0) value=100000000 ;;
+  esac
+  printf '%s' "$value"
+}
+
 telemetry_extract_token_components_from_logs() {
   awk '
     function first_number(value) {
@@ -814,15 +823,33 @@ telemetry_extract_token_components_from_logs() {
       }
     }
 
+    function is_trusted_usage_json(value, lower_value) {
+      lower_value = tolower(value)
+      return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"usage(metadata)?"[[:space:]]*:/
+    }
+
     {
       line = $0
       gsub(/\r$/, "", line)
       gsub(/\033\[[0-9;?]*[A-Za-z]/, "", line)
       lower = tolower(line)
-      if (line ~ /^[[:space:]]*[\{\[]/) {
+      if (pending_total) {
+        if (lower ~ /^[[:space:]]*[0-9][0-9,]*[[:space:]]*$/) {
+          total += first_number(lower)
+          pending_total = 0
+          next
+        }
+        pending_total = 0
+      }
+
+      if (is_trusted_usage_json(line)) {
         scan_json_token_keys(line)
       }
 
+      if (lower ~ /^[[:space:]]*tokens[[:space:]]+used[[:space:]]*$/) {
+        pending_total = 1
+        next
+      }
       if (lower ~ /^[[:space:]]*tokens[[:space:]]+used[^0-9]*[0-9]/) {
         value = first_number(lower)
         total += value
@@ -869,12 +896,13 @@ telemetry_adapter_token_usage() {
   local stdout_file="$2"
   local stderr_file="$3"
   local adapter_exit="$4"
-  local parsed token_input token_output token_total estimated_input estimated_output
+  local parsed token_input token_output token_total estimated_input estimated_output row_total max_row_tokens
 
   parsed="$(telemetry_extract_token_components_from_logs "$stdout_file" "$stderr_file")"
   token_input="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $1}')")"
   token_output="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $2}')")"
   token_total="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $3}')")"
+  max_row_tokens="$(telemetry_max_row_tokens)"
 
   if [ "$token_total" -gt 0 ] && [ $((token_input + token_output)) -le 0 ]; then
     estimated_output="$(telemetry_estimated_tokens_for_file "$stdout_file")"
@@ -889,6 +917,12 @@ telemetry_adapter_token_usage() {
       token_input="$token_total"
       token_output=0
     fi
+  fi
+
+  row_total=$((token_input + token_output))
+  if [ "$token_input" -ge "$max_row_tokens" ] || [ "$token_output" -ge "$max_row_tokens" ] || [ "$row_total" -ge "$max_row_tokens" ]; then
+    token_input=0
+    token_output=0
   fi
 
   if [ "$adapter_exit" -ne 127 ] && [ $((token_input + token_output)) -le 0 ]; then
@@ -3338,6 +3372,8 @@ adapter_finish_class() {
 
   if [ "$runner_status_value" = "stopped" ]; then
     printf 'quota_limited'
+  elif [ "$adapter_exit" -eq 126 ]; then
+    printf 'adapter_start_failed'
   elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
     printf 'normal_output_truncated'
   elif [ "$adapter_exit" -eq 0 ]; then
@@ -3349,6 +3385,19 @@ adapter_finish_class() {
   else
     printf 'adapter_exit_%s' "$adapter_exit"
   fi
+}
+
+runner_file_has_adapter_start_failure() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'Error: thread/start|thread/start failed|error creating thread|Fatal error: Codex cannot access session files|Failed to create session' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 runner_adapter_preserved_state_value() {
@@ -5113,6 +5162,10 @@ case "$agent" in
         "output_truncated=true"
     fi
 
+    if [ "$adapter_exit" -eq 0 ] && runner_file_has_adapter_start_failure "$adapter_stdout" "$adapter_stderr"; then
+      adapter_exit=126
+    fi
+
     finished_at="$(runner_now_iso)"
     run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stdout" "$adapter_stderr" "$prompt_file" || true
     planner_differential_finalize_after_run || true
@@ -5125,6 +5178,9 @@ case "$agent" in
       command_status="timeout"
       runner_status="idle"
     elif [ "$adapter_exit" -eq 127 ]; then
+      command_status="blocked"
+      runner_status="blocked"
+    elif [ "$adapter_exit" -eq 126 ]; then
       command_status="blocked"
       runner_status="blocked"
     elif runner_file_has_quota_limit "$adapter_stdout" "$adapter_stderr"; then
@@ -5195,6 +5251,7 @@ case "$agent" in
       "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
       "last_result=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 0 ] && [ "$public_role" = "wiki" ]; then printf 'success';
         elif [ "$adapter_exit" -eq 124 ]; then
           if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
@@ -5232,6 +5289,7 @@ case "$agent" in
       "reasoning_reject_count=${reasoning_reject_count}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
         else true; fi
       )" \
@@ -5279,6 +5337,8 @@ case "$agent" in
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$adapter_exit" -eq 126 ]; then
+      printf 'reason=adapter_start_failed\n'
     elif [ "$adapter_exit" -eq 124 ]; then
       printf 'reason=adapter_timeout\n'
       printf 'consecutive_timeout_count=%s\n' "${consecutive_timeout_count:-0}"
