@@ -678,6 +678,10 @@ if blocked_auto_recover_enabled; then
       printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
       printf 'failure_class=%s\n' "$blocked_failure_class"
       printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+      printf 'dirty_path_count=%s\n' "$(printf '%s\n' "$blocked_dirty_paths" | awk 'NF{c++} END{print c+0}')"
+      printf 'cleanup_commit_policy=single_housekeeping_commit_per_tick\n'
+      printf 'cleanup_commit_max_per_tick=1\n'
+      printf 'cleanup_commit_split_exception=mechanical_git_conflict_only\n'
       record_orchestration_check_best_effort \
         "blocked-dirty-orchestration" \
         "Blocked dirty orchestration requested for $(basename "$blocked_ticket")" \
@@ -691,7 +695,7 @@ if blocked_auto_recover_enabled; then
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
-      printf 'next_action=Orchestrator AI must group dirty PROJECT_ROOT paths by Allowed Paths ownership and integrate each group into a local commit ([PRD_NNN][ticket_NNN] orchestration cleanup: ... or [ticket_NNN] orchestration cleanup: misc housekeeping for ambiguous paths). Default is integrate; the Autoflow 1원칙 (do not stop) outranks classification perfectionism. Re-check git status after the commits; the next planner tick will surface source=blocked-auto-recover when paths are clean. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
+      printf 'next_action=Orchestrator AI must integrate the dirty PROJECT_ROOT inventory for this blocked-dirty tick as one housekeeping cleanup commit, even when paths span telemetry, runtime ticket refresh, check ledger, or wiki summaries. Use [PRD_NNN][ticket_NNN] orchestration cleanup: misc housekeeping (N paths) when ownership is mixed or ambiguous. Split into more than one commit only for a mechanical git conflict, and log cleanup_commit_split_reason before continuing. Re-check git status after the single commit; the next planner tick will surface source=blocked-auto-recover when paths are clean. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
       exit 0
     fi
 

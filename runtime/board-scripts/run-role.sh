@@ -1275,6 +1275,43 @@ wiki_compute_inputs_state() {
   fi
 }
 
+wiki_manifest_change_stats() {
+  local current_manifest="$1"
+  local previous_manifest="$2"
+  local changed_paths_file total_count meaningful_count telemetry_count path
+
+  changed_paths_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-wiki-changed-paths.XXXXXX")"
+  if [ -f "$previous_manifest" ]; then
+    LC_ALL=C comm -3 "$current_manifest" <(LC_ALL=C sort "$previous_manifest") 2>/dev/null |
+      awk 'NF { $1=""; sub(/^  */, ""); print }' |
+      LC_ALL=C sort -u > "$changed_paths_file"
+  else
+    awk 'NF { $1=""; sub(/^  */, ""); print }' "$current_manifest" |
+      LC_ALL=C sort -u > "$changed_paths_file"
+  fi
+
+  total_count=0
+  meaningful_count=0
+  telemetry_count=0
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    total_count=$((total_count + 1))
+    case "$path" in
+      wiki/operations/runner-health.md|wiki/operations/runner-timing.md|wiki/agents/prompt-evolution.md)
+        telemetry_count=$((telemetry_count + 1))
+        ;;
+      *)
+        meaningful_count=$((meaningful_count + 1))
+        ;;
+    esac
+  done < "$changed_paths_file"
+  rm -f "$changed_paths_file"
+
+  printf 'total_changed_count=%s\n' "$total_count"
+  printf 'meaningful_changed_count=%s\n' "$meaningful_count"
+  printf 'telemetry_summary_changed_count=%s\n' "$telemetry_count"
+}
+
 idle_preflight_inputs_hash_stream() {
   local rel_dir dir file rel checksum
 
@@ -2151,9 +2188,9 @@ maybe_skip_unchanged_wiki_turn() {
 }
 
 maybe_skip_debounced_wiki_turn() {
-  local manifest_path changed_count now_epoch
+  local manifest_path changed_count total_changed_count telemetry_summary_changed_count now_epoch
   local pending_since_epoch pending_age min_changes max_age_seconds
-  local last_synth_at_epoch synth_age timestamp fingerprint_path
+  local last_synth_at_epoch synth_age timestamp fingerprint_path change_stats
 
   [ "$public_role" = "wiki" ] || return 1
   [ "${mode:-}" = "loop" ] || return 1
@@ -2167,11 +2204,13 @@ maybe_skip_debounced_wiki_turn() {
   max_age_seconds="${AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS:-1800}"
 
   manifest_path="$(wiki_inputs_manifest_path)"
-  if [ -f "$manifest_path" ]; then
-    changed_count="$(LC_ALL=C comm -3 "$WIKI_CURRENT_MANIFEST_PATH" <(LC_ALL=C sort "$manifest_path") 2>/dev/null | awk 'NF{c++} END{print c+0}')"
-  else
-    changed_count="$(awk 'END{print NR+0}' "$WIKI_CURRENT_MANIFEST_PATH")"
-  fi
+  change_stats="$(wiki_manifest_change_stats "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path")"
+  total_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^total_changed_count=//p' | tail -n 1)"
+  changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_count=//p' | tail -n 1)"
+  telemetry_summary_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^telemetry_summary_changed_count=//p' | tail -n 1)"
+  total_changed_count="${total_changed_count:-0}"
+  changed_count="${changed_count:-0}"
+  telemetry_summary_changed_count="${telemetry_summary_changed_count:-0}"
 
   now_epoch="$(date +%s)"
   pending_since_epoch="$(wiki_debounce_read_field "pending_since_epoch")"
@@ -2189,7 +2228,7 @@ maybe_skip_debounced_wiki_turn() {
     *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
   esac
 
-  if [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; then
+  if [ "$changed_count" -gt 0 ] && { [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
     return 1
   fi
 
@@ -2217,6 +2256,8 @@ maybe_skip_debounced_wiki_turn() {
     "agent=${agent}" \
     "reason=wiki_debounced" \
     "changed_count=${changed_count}" \
+    "total_changed_count=${total_changed_count}" \
+    "telemetry_summary_changed_count=${telemetry_summary_changed_count}" \
     "pending_since_epoch=${pending_since_epoch}" \
     "pending_age_seconds=${pending_age}" \
     "min_changes=${min_changes}" \
@@ -2231,6 +2272,8 @@ maybe_skip_debounced_wiki_turn() {
   printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
   printf 'fingerprint_path=%s\n' "$fingerprint_path"
   printf 'changed_count=%s\n' "$changed_count"
+  printf 'total_changed_count=%s\n' "$total_changed_count"
+  printf 'telemetry_summary_changed_count=%s\n' "$telemetry_summary_changed_count"
   printf 'pending_since_epoch=%s\n' "$pending_since_epoch"
   printf 'pending_age_seconds=%s\n' "$pending_age"
   printf 'min_changes=%s\n' "$min_changes"
@@ -2615,6 +2658,26 @@ runner_file_size_bytes() {
   fi
 
   wc -c < "$file" 2>/dev/null | tr -d '[:space:]'
+}
+
+adapter_finish_class() {
+  local adapter_exit="$1"
+  local runner_status_value="$2"
+  local output_truncated_value="${3:-false}"
+
+  if [ "$runner_status_value" = "stopped" ]; then
+    printf 'quota_limited'
+  elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
+    printf 'normal_output_truncated'
+  elif [ "$adapter_exit" -eq 0 ]; then
+    printf 'normal'
+  elif [ "$adapter_exit" -eq 124 ]; then
+    printf 'adapter_timeout_sigterm'
+  elif [ "$adapter_exit" -eq 127 ]; then
+    printf 'adapter_executable_missing'
+  else
+    printf 'adapter_exit_%s' "$adapter_exit"
+  fi
 }
 
 telemetry_positive_integer_or_zero() {
@@ -3648,6 +3711,9 @@ case "$agent" in
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"
+    elif [ "$adapter_exit" -eq 124 ]; then
+      command_status="timeout"
+      runner_status="idle"
     elif [ "$adapter_exit" -eq 127 ]; then
       command_status="blocked"
       runner_status="blocked"
@@ -3658,6 +3724,7 @@ case "$agent" in
       command_status="failed"
       runner_status="failed"
     fi
+    adapter_finish_classification="$(adapter_finish_class "$adapter_exit" "$runner_status" "false")"
 
     prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
     stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
@@ -3706,14 +3773,30 @@ case "$agent" in
       "agent=${agent}" \
       "exit_code=${adapter_exit}" \
       "runner_status=${runner_status}" \
+      "output_truncated=false" \
+      "finish_class=${adapter_finish_classification}" \
+      "watchdog_signal=$([ "$adapter_exit" -eq 124 ] && printf 'SIGTERM' || printf 'none')" \
+      "timeout_cleanup=$([ "$adapter_exit" -eq 124 ] && printf 'true' || printf 'false')" \
       "configured_reasoning=${configured_reasoning}" \
       "effective_reasoning=${reasoning}" \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
       "reasoning_actionable_count=${reasoning_actionable_count}" \
       "reasoning_reject_count=${reasoning_reject_count}" \
-      "reason=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || true)" \
+      "reason=$(
+        if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
+        else true; fi
+      )" \
       "command=${command_summary}"
+    if [ "$adapter_exit" -eq 124 ]; then
+      runner_append_log "$runner_id" "adapter_timeout" \
+        "role=${public_role}" \
+        "agent=${agent}" \
+        "finish_class=${adapter_finish_classification}" \
+        "watchdog_signal=SIGTERM" \
+        "command=${command_summary}"
+    fi
 
     print_run_header "$command_status"
     printf 'runner_status=%s\n' "$runner_status"
