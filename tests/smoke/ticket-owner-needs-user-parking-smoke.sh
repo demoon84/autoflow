@@ -130,7 +130,7 @@ cat >"${project_dir}/.autoflow/tickets/todo/tickets_002.md" <<'TICKET'
 
 ## Goal
 
-- This ticket should be claimed even though tickets_001 is parked.
+- This ticket should be claimed even though tickets_001 is parked and shares the same Allowed Path.
 
 ## References
 
@@ -138,7 +138,7 @@ cat >"${project_dir}/.autoflow/tickets/todo/tickets_002.md" <<'TICKET'
 
 ## Allowed Paths
 
-- target.txt
+- blocked.txt
 
 ## Worktree
 

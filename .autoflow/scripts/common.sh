@@ -688,6 +688,7 @@ ticket_shared_allowed_path_blockers() {
   while IFS= read -r other_file; do
     [ -n "$other_file" ] || continue
     [ "$other_file" != "$ticket_file" ] || continue
+    ticket_owner_queue_parked_blocker "$other_file" && continue
 
     other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
     [ -n "$other_id" ] || continue
@@ -737,6 +738,7 @@ ticket_shared_nonbase_head_blockers() {
   while IFS= read -r other_file; do
     [ -n "$other_file" ] || continue
     [ "$other_file" != "$ticket_file" ] || continue
+    ticket_owner_queue_parked_blocker "$other_file" && continue
 
     other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
     [ -n "$other_id" ] || continue
