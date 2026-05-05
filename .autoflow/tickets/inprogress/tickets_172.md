@@ -58,10 +58,10 @@
 - Status: repairing
 - Detected By: runtime; planner
 - Failure Class: dirty_root
-- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` with mixed board/runtime/wiki/check-ledger dirty paths after earlier cleanup commit `d3c498a`. Planner ran `git status --short`, staged the current blocked-dirty inventory plus runtime-created check/skill evidence, and created local cleanup commit `89b3a62` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (9 paths)`). Follow-up `git status --short` still shows residual untracked `tests/smoke/runner-realtime-event-driven-smoke.sh`, which was not in the runtime dirty inventory for this single-commit tick.
-- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in one local orchestration cleanup commit. Preserve the residual untracked smoke test as next-tick orchestration evidence instead of making a second cleanup commit in the same tick.
-- Owner Resume Instruction: Wait for the next planner tick. If runtime surfaces another blocked-dirty orchestration for the residual smoke test, planner should group that path before blocked-auto-recover can return this ticket to `tickets/todo/`; after requeue, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
-- Last Recovery At: 2026-05-05T07:20:45Z
+- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` at 2026-05-05T07:24:18Z with dirty board/runtime/wiki/check-ledger paths plus `tests/smoke/runner-realtime-event-driven-smoke.sh`. Required wiki RAG query for `tickets_172 prd_173 dirty_root blocked-dirty-orchestration desktop readBoard timeout isolation check ledger runner-realtime-event-driven-smoke` returned `result_count=0`; existing ticket notes still cite prior `prd_140`, `prd_104`, and `prd_144` readBoard/listRunners constraints. Planner staged the runtime-listed inventory plus runtime-created check/skill evidence and created local cleanup commit `a693f20` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (10 paths)`). Follow-up `git status --short` shows only new runtime follow-up evidence `.autoflow/tickets/check/check_216.md` and `.autoflow/wiki/skills-local/orchestration-cleanup/desktop-readboard-subcall-timeout-isolation-9/`.
+- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in the one cleanup commit allowed for this tick. Preserve the new check/skill follow-up evidence for the next planner tick rather than creating a second cleanup commit in this tick.
+- Owner Resume Instruction: Wait for the next planner tick. If runtime surfaces only the residual check/skill follow-up evidence, planner should either let blocked-auto-recover requeue this ticket when the dirty overlap is considered clear or group that follow-up evidence in the next single cleanup turn; after requeue, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
+- Last Recovery At: 2026-05-05T16:26:00+09:00
 
 ## Done When
 
@@ -74,7 +74,7 @@
 - [ ] `npm run desktop:check` exits 0.
 
 ## Next Action
-- Planner wait: cleanup commit `d3c498a` cleared the PROJECT_ROOT dirty overlap. Next planner tick should let runtime run blocked-auto-recover and requeue this ticket; owner should not bypass that board transition.
+- Planner wait: cleanup commit `a693f20` integrated the runtime-listed PROJECT_ROOT dirty inventory for this tick. Next planner tick should handle the residual runtime-created check/skill evidence or let blocked-auto-recover requeue this ticket; owner should not bypass that board transition.
 
 ## Resume Context
 
@@ -99,6 +99,7 @@
 - Planner recovery 2026-05-05T02:16:33Z: normalized guard-warning failure class `dirty_project_root_conflict` to `dirty_root` while preserving the original dirty path evidence. Guard cleanup candidates remain evidence-only: `autoflow/tickets_119` leftover worktree and dirty done-ticket worktree `autoflow/tickets_163`; planner did not delete or reset worktrees.
 - Planner blocked-dirty orchestration 2026-05-05T07:12:23Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, and `dirty_path_count=146` with `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Planner created cleanup commit `d3c498a`; `git status --short` was clean afterward. Check evidence: `tickets/check/check_207.md`.
 - Planner blocked-dirty orchestration 2026-05-05T07:20:45Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, `dirty_path_count=7`, and `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Wiki query `bin/autoflow wiki query --term "desktop readboard subcall timeout isolation tickets_172 dirty_root orchestration cleanup" --rag` returned `result_count=0`. Planner created cleanup commit `89b3a62`; follow-up `git status --short` shows residual untracked `tests/smoke/runner-realtime-event-driven-smoke.sh` for next-tick orchestration. Check evidence: `tickets/check/check_211.md`, `tickets/check/check_212.md`.
+- Planner blocked-dirty orchestration 2026-05-05T16:26:00+09:00: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, `dirty_path_count=8`, and `cleanup_commit_policy=single_housekeeping_commit_per_tick`; runtime also produced `tickets/check/check_215.md` and skill extraction `desktop-readboard-subcall-timeout-isolation-8`. Wiki RAG returned `result_count=0`. Planner created cleanup commit `a693f20`; follow-up `git status --short` shows residual runtime follow-up evidence `tickets/check/check_216.md` and `desktop-readboard-subcall-timeout-isolation-9/` for the next tick.
 ## Verification
 - Run file: `tickets/inprogress/verify_172.md`
 - Log file: pending
