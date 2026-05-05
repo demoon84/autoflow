@@ -552,6 +552,61 @@ if reject_auto_close_enabled; then
   done < <(list_max_retried_rejects)
 fi
 
+# --- Branch 1.55: parked/stale inprogress recovery ---------------------------
+# Human-bound needs_user and timeout-stale repairing tickets must not keep the
+# worker focused on a blocked inprogress item. Planner records a durable parking
+# decision while preserving the ticket in inprogress for explicit repair.
+if blocked_auto_recover_enabled; then
+  parked_attempt_index=0
+  while IFS= read -r parked_ticket; do
+    [ -n "$parked_ticket" ] || continue
+    [ -f "$parked_ticket" ] || continue
+
+    parked_status="$(ticket_recovery_status "$parked_ticket")"
+    case "$parked_status" in
+      needs_user)
+        mark_ticket_needs_user_parked "$parked_ticket"
+        reset_worker_ticket_stage_blocked_last_result
+        printf 'status=ok\n'
+        printf 'source=inprogress-needs-user-parked\n'
+        printf 'blocked_origin=%s\n' "$(board_relative_path "$parked_ticket")"
+        printf 'recovery_state=needs_user\n'
+        printf 'failure_class=%s\n' "$(ticket_failure_class "$parked_ticket")"
+        emit_replan_skipped_metadata "$replan_skipped_file"
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        printf 'next_action=Parked %s as human-bound needs_user; worker should clear stale active state and claim the next eligible todo unless this ticket is explicitly requested.\n' \
+          "$(basename "$parked_ticket")"
+        exit 0
+        ;;
+      repairing)
+        if ticket_repairing_timeout_stale "$parked_ticket"; then
+          parked_age_seconds="$(ticket_repairing_age_seconds "$parked_ticket" || printf 'unknown')"
+          mark_ticket_repairing_timeout_needs_user "$parked_ticket"
+          reset_worker_ticket_stage_blocked_last_result
+          printf 'status=ok\n'
+          printf 'source=inprogress-repairing-timeout\n'
+          printf 'blocked_origin=%s\n' "$(board_relative_path "$parked_ticket")"
+          printf 'recovery_state=needs_user\n'
+          printf 'failure_class=repairing_timeout\n'
+          printf 'timeout_seconds=%s\n' "$(recovery_repairing_timeout_seconds)"
+          printf 'age_seconds=%s\n' "$parked_age_seconds"
+          emit_replan_skipped_metadata "$replan_skipped_file"
+          printf 'board_root=%s\n' "$BOARD_ROOT"
+          printf 'project_root=%s\n' "$PROJECT_ROOT"
+          printf 'next_action=Escalated stale repairing %s to needs_user after timeout; worker should clear stale active state and claim the next eligible todo.\n' \
+            "$(basename "$parked_ticket")"
+          exit 0
+        fi
+        parked_attempt_index=$((parked_attempt_index + 1))
+        printf 'blocked_recover_skip.%s=%s\n' "$parked_attempt_index" "$(board_relative_path "$parked_ticket")"
+        printf 'blocked_recover_skip.%s.recovery_state=repairing\n' "$parked_attempt_index"
+        printf 'blocked_recover_skip.%s.reason=repairing_within_timeout\n' "$parked_attempt_index"
+        ;;
+    esac
+  done < <(list_blocked_inprogress_tickets)
+fi
+
 # --- Branch 1.6: blocked inprogress dirty_root recovery -----------------------
 # When an inprogress ticket is parked at Stage=blocked because PROJECT_ROOT had
 # dirty changes overlapping its Allowed Paths, two outcomes are possible:

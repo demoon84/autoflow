@@ -1167,6 +1167,115 @@ reset_stale_ticket_stage_blocked_last_result_if_scope_clean() {
     "ticket=$(runner_board_relative_path "$ticket_file")"
 }
 
+runner_repairing_timeout_seconds() {
+  local value="${AUTOFLOW_REPAIRING_TIMEOUT_SECONDS:-1800}"
+
+  case "$value" in
+    ''|*[!0-9]*) value=1800 ;;
+  esac
+  [ "$value" -gt 0 ] || value=1800
+  printf '%s' "$value"
+}
+
+runner_iso_to_epoch() {
+  local value="${1:-}"
+
+  [ -n "$value" ] || return 1
+  if date -u -d "$value" +%s >/dev/null 2>&1; then
+    date -u -d "$value" +%s
+    return 0
+  fi
+  if date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s >/dev/null 2>&1; then
+    date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s
+    return 0
+  fi
+  return 1
+}
+
+runner_ticket_repairing_age_seconds() {
+  local ticket_file="$1"
+  local timestamp then_epoch now_epoch
+
+  for timestamp in \
+    "$(planner_ticket_field "$ticket_file" "Recovery State" "Last Recovery At")" \
+    "$(planner_ticket_field "$ticket_file" "Goal Runtime" "Updated At")" \
+    "$(planner_ticket_field "$ticket_file" "Ticket" "Last Updated")"; do
+    timestamp="$(printf '%s' "$timestamp" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$timestamp" ] || continue
+    then_epoch="$(runner_iso_to_epoch "$timestamp" || true)"
+    [ -n "$then_epoch" ] || continue
+    now_epoch="$(date -u +%s)"
+    printf '%s' "$((now_epoch - then_epoch))"
+    return 0
+  done
+
+  return 1
+}
+
+runner_ticket_repairing_timeout_stale() {
+  local ticket_file="$1"
+  local age_seconds timeout_seconds
+
+  [ "$(planner_ticket_field "$ticket_file" "Recovery State" "Status")" = "repairing" ] || return 1
+  age_seconds="$(runner_ticket_repairing_age_seconds "$ticket_file" || true)"
+  [ -n "$age_seconds" ] || return 1
+  timeout_seconds="$(runner_repairing_timeout_seconds)"
+  [ "$age_seconds" -ge "$timeout_seconds" ]
+}
+
+runner_clear_stale_active_ticket_state() {
+  local reason="$1"
+  local ticket_file="$2"
+  local field
+
+  for field in \
+    active_item \
+    active_ticket_id \
+    active_ticket_title \
+    active_ticket_path \
+    active_stage \
+    active_spec_ref \
+    active_recovery_reason \
+    active_recovery_status \
+    active_recovery_failure_class \
+    active_recovery_worktree_path \
+    active_recovery_worktree_status \
+    active_recovery_board_state; do
+    runner_replace_state_field_preserving "$runner_id" "$field" "" || true
+  done
+  runner_replace_state_field_preserving "$runner_id" "last_result" "" || true
+  AUTOFLOW_ROLE="ticket-owner" AUTOFLOW_WORKER_ID="$runner_id" \
+    ticket_goal_common_call clear_active_ticket_context_record >/dev/null 2>&1 || true
+  runner_append_log "$runner_id" "stale_active_ticket_cleared" \
+    "role=${public_role}" \
+    "reason=${reason}" \
+    "ticket=$(runner_board_relative_path "$ticket_file")"
+}
+
+clear_parked_or_stale_repairing_active_ticket_before_dispatch() {
+  local active_item active_ticket_id ticket_file stage recovery_status
+
+  [ "$public_role" = "ticket" ] || return 0
+
+  active_item="$(runner_state_field "$runner_id" "active_item" 2>/dev/null || true)"
+  active_ticket_id="$(runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true)"
+  ticket_file="$(runner_active_ticket_file_from_item "$active_item" 2>/dev/null || true)"
+  if [ -z "$ticket_file" ] && [ -n "$active_ticket_id" ]; then
+    ticket_file="$(runner_active_ticket_file_from_item "$active_ticket_id" 2>/dev/null || true)"
+  fi
+  [ -n "$ticket_file" ] && [ -f "$ticket_file" ] || return 0
+
+  stage="$(planner_ticket_field "$ticket_file" "Ticket" "Stage")"
+  recovery_status="$(planner_ticket_field "$ticket_file" "Recovery State" "Status")"
+  if [ "$stage" = "blocked" ] && [ "$recovery_status" = "needs_user" ]; then
+    runner_clear_stale_active_ticket_state "parked_needs_user_active_item" "$ticket_file"
+    return 0
+  fi
+  if runner_ticket_repairing_timeout_stale "$ticket_file"; then
+    runner_clear_stale_active_ticket_state "stale_repairing_active_item" "$ticket_file"
+  fi
+}
+
 runner_board_relative_path() {
   local path="$1"
 
@@ -4281,6 +4390,7 @@ agent_runtime_preflight_or_exit() {
       ;;
   esac
   reset_stale_ticket_stage_blocked_last_result_if_scope_clean
+  clear_parked_or_stale_repairing_active_ticket_before_dispatch
   [ -n "${runtime_path:-}" ] || return 0
   [ "$dry_run" = "true" ] && return 0
 

@@ -3428,9 +3428,130 @@ ticket_owner_queue_parked_blocker() {
   [ "$stage" = "blocked" ] || return 1
 
   recovery_status="$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Status")"
-  [ "$recovery_status" = "needs_user" ] || return 1
+  if [ "$recovery_status" = "needs_user" ]; then
+    return 0
+  fi
+  if [ "$recovery_status" = "repairing" ] && ticket_repairing_timeout_stale "$ticket_file"; then
+    return 0
+  fi
 
-  return 0
+  return 1
+}
+
+recovery_repairing_timeout_seconds() {
+  local value="${AUTOFLOW_REPAIRING_TIMEOUT_SECONDS:-1800}"
+
+  case "$value" in
+    ''|*[!0-9]*) value=1800 ;;
+  esac
+  [ "$value" -gt 0 ] || value=1800
+  printf '%s' "$value"
+}
+
+autoflow_iso_to_epoch() {
+  local value="${1:-}"
+
+  [ -n "$value" ] || return 1
+  if date -u -d "$value" +%s >/dev/null 2>&1; then
+    date -u -d "$value" +%s
+    return 0
+  fi
+  if date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s >/dev/null 2>&1; then
+    date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s
+    return 0
+  fi
+  return 1
+}
+
+ticket_recovery_status() {
+  local ticket_file="$1"
+
+  extract_scalar_field_in_section "$ticket_file" "Recovery State" "Status" \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | head -n 1
+}
+
+ticket_recovery_reference_time() {
+  local ticket_file="$1"
+  local value
+
+  for value in \
+    "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Last Recovery At")" \
+    "$(extract_scalar_field_in_section "$ticket_file" "Goal Runtime" "Updated At")" \
+    "$(extract_scalar_field_in_section "$ticket_file" "Ticket" "Last Updated")"; do
+    value="$(trim_spaces "$value")"
+    [ -n "$value" ] || continue
+    printf '%s' "$value"
+    return 0
+  done
+
+  return 1
+}
+
+ticket_repairing_age_seconds() {
+  local ticket_file="$1"
+  local timestamp now_epoch then_epoch
+
+  timestamp="$(ticket_recovery_reference_time "$ticket_file" || true)"
+  [ -n "$timestamp" ] || return 1
+  then_epoch="$(autoflow_iso_to_epoch "$timestamp" || true)"
+  [ -n "$then_epoch" ] || return 1
+  now_epoch="$(date -u +%s)"
+  printf '%s' "$((now_epoch - then_epoch))"
+}
+
+ticket_repairing_timeout_stale() {
+  local ticket_file="$1"
+  local timeout_seconds age_seconds
+
+  [ "$(ticket_recovery_status "$ticket_file")" = "repairing" ] || return 1
+  timeout_seconds="$(recovery_repairing_timeout_seconds)"
+  age_seconds="$(ticket_repairing_age_seconds "$ticket_file" || true)"
+  [ -n "$age_seconds" ] || return 1
+  [ "$age_seconds" -ge "$timeout_seconds" ]
+}
+
+mark_ticket_needs_user_parked() {
+  local ticket_file="$1"
+  local timestamp
+
+  [ -f "$ticket_file" ] || return 1
+  timestamp="$(now_iso)"
+
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Parked needs_user: human/planner decision is required before this ticket should be claimed again; worker may continue with the next eligible todo."
+  append_note_once "$ticket_file" "Planner parking: source=inprogress-needs-user-parked; ticket is outside the normal worker claim queue until Recovery State changes."
+}
+
+mark_ticket_repairing_timeout_needs_user() {
+  local ticket_file="$1"
+  local timeout_seconds age_seconds timestamp evidence
+
+  [ -f "$ticket_file" ] || return 1
+  timeout_seconds="$(recovery_repairing_timeout_seconds)"
+  age_seconds="$(ticket_repairing_age_seconds "$ticket_file" || printf 'unknown')"
+  timestamp="$(now_iso)"
+  evidence="Recovery State repairing exceeded timeout_seconds=${timeout_seconds}; age_seconds=${age_seconds}; escalated_at=${timestamp}."
+
+  if [ "$(ticket_recovery_status "$ticket_file")" = "needs_user" ] &&
+     [ "$(ticket_failure_class "$ticket_file")" = "repairing_timeout" ]; then
+    return 0
+  fi
+
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "needs_user"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "repairing_timeout"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "$evidence"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "Escalate stale repairing ticket to needs_user and park it outside the worker claim queue."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Do not continue this stale repairing ticket automatically; claim the next eligible todo unless this ticket is explicitly repaired."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Parked stale repairing: repair timed out after ${age_seconds}s (timeout ${timeout_seconds}s); human/planner decision is required before retry."
+  append_note_once "$ticket_file" "Planner parking: source=inprogress-repairing-timeout; stale repairing ticket escalated to needs_user."
 }
 
 stage_is_verification_candidate() {
