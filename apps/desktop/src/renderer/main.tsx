@@ -1798,7 +1798,15 @@ function App() {
           return;
         }
 
-        pushToast("info", `${displayWorkflowRunnerId(runner.id, board?.runners)} 인증 창을 열었습니다. 인증이 끝나면 러너를 다시 시작하세요.`);
+        const output = result.stdout || "";
+        const runnerLabel = displayWorkflowRunnerId(runner.id, board?.runners);
+        if (output.includes("auth_flow_already_running")) {
+          pushToast("info", `${runnerLabel} 인증 처리가 이미 진행 중입니다.`);
+        } else if (output.includes("auth_check_completed")) {
+          pushToast("success", `${runnerLabel} 인증 확인이 끝났습니다. 러너를 다시 시작하세요.`);
+        } else {
+          pushToast("info", `${runnerLabel} 인증 브라우저를 열었습니다. 인증이 끝나면 러너를 다시 시작하세요.`);
+        }
         void loadBoard();
       } catch (error) {
         setRunnerError(error instanceof Error ? error.message : "인증 플로우를 시작하지 못했습니다.");

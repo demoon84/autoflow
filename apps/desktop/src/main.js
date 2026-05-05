@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -233,6 +233,7 @@ const activeChildProcesses = new Set();
 // CLI call (runRole / controlWiki --synth / installBoard / etc.) by id.
 const cancellableInvocations = new Map();
 const agentAuthStatusCache = new Map();
+const runnerAuthProcesses = new Map();
 let runnerShutdownInProgress = false;
 const DEFAULT_MEMORY_CEILING_MB = 1500;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
@@ -987,6 +988,19 @@ function sanitizedProcessEnv() {
   return env;
 }
 
+function browserAuthProcessEnv() {
+  const env = sanitizedProcessEnv();
+  delete env.CI;
+  delete env.GITHUB_ACTIONS;
+  delete env.DEBIAN_FRONTEND;
+  delete env.NO_BROWSER;
+  delete env.SSH_CONNECTION;
+  if (env.BROWSER === "www-browser") {
+    delete env.BROWSER;
+  }
+  return env;
+}
+
 function normalizeAgentKey(agent) {
   return String(agent || "").trim().toLowerCase();
 }
@@ -1478,39 +1492,164 @@ async function continueRunnerAuth(options = {}) {
     };
   }
 
-  const child = spawn(
-    "gemini",
-    [
-      "--skip-trust",
-      "--approval-mode",
-      "yolo",
-      "--prompt",
-      "Autoflow authentication check. Reply with OK only."
-    ],
-    {
-      cwd: options.projectRoot,
-      env: sanitizedProcessEnv(),
-      detached: true,
-      stdio: ["pipe", "ignore", "ignore"]
-    }
-  );
+  const runnerId = String(options.runnerId || "gemini").trim() || "gemini";
+  const existing = runnerAuthProcesses.get(runnerId);
+  if (existing && !existing.killed) {
+    return {
+      ok: true,
+      command: "gemini --prompt <auth-check>",
+      code: 0,
+      stdout: "status=ok\nresult=auth_flow_already_running\n",
+      stderr: ""
+    };
+  }
 
-  child.on("error", () => {});
-  child.stdin.on("error", () => {});
-  try {
-    child.stdin.write("Y\n");
-    child.stdin.end();
-  } catch {}
-  child.unref();
-  agentAuthStatusCache.delete(agent);
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let consentSent = false;
+    let browserOpenStarted = false;
 
-  return {
-    ok: true,
-    command: "gemini --prompt <auth-check>",
-    code: 0,
-    stdout: "status=ok\nresult=auth_flow_started\n",
-    stderr: ""
-  };
+    const child = spawn(
+      "gemini",
+      [
+        "--skip-trust",
+        "--approval-mode",
+        "yolo",
+        "--prompt",
+        "Autoflow authentication check. Reply with OK only."
+      ],
+      {
+        cwd: options.projectRoot,
+        env: browserAuthProcessEnv(),
+        stdio: ["pipe", "pipe", "pipe"]
+      }
+    );
+
+    runnerAuthProcesses.set(runnerId, child);
+
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(initialTimeout);
+      resolve(payload);
+    };
+
+    const cleanup = () => {
+      if (runnerAuthProcesses.get(runnerId) === child) {
+        runnerAuthProcesses.delete(runnerId);
+      }
+      clearTimeout(authTimeout);
+      agentAuthStatusCache.delete(agent);
+    };
+
+    const maybeContinuePrompt = () => {
+      if (consentSent) return;
+      const combined = `${stdout}\n${stderr}`;
+      if (!/Opening authentication page in your browser/i.test(combined)) {
+        return;
+      }
+
+      consentSent = true;
+      try {
+        child.stdin.write("Y\n");
+        child.stdin.end();
+      } catch {}
+    };
+
+    const maybeOpenAuthUrl = () => {
+      if (browserOpenStarted) return;
+      const authUrl = extractAuthUrl(`${stdout}\n${stderr}`);
+      if (!authUrl) return;
+
+      browserOpenStarted = true;
+      shell.openExternal(authUrl)
+        .then(() => {
+          finish({
+            ok: true,
+            command: "gemini --prompt <auth-check>",
+            code: 0,
+            stdout: `status=ok\nresult=auth_browser_opened\nauth_url=${authUrl}\n`,
+            stderr
+          });
+        })
+        .catch((error) => {
+          finish({
+            ok: false,
+            command: "gemini --prompt <auth-check>",
+            code: -1,
+            stdout,
+            stderr: `${stderr}\nFailed to open auth URL: ${error.message || String(error)}`
+          });
+        });
+    };
+
+    const handleOutput = (chunk, target) => {
+      if (target === "stdout") {
+        stdout += chunk.toString();
+      } else {
+        stderr += chunk.toString();
+      }
+      maybeContinuePrompt();
+      maybeOpenAuthUrl();
+    };
+
+    const initialTimeout = setTimeout(() => {
+      if (browserOpenStarted) return;
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+      finish({
+        ok: false,
+        command: "gemini --prompt <auth-check>",
+        code: -1,
+        stdout,
+        stderr: `${stderr}\nGemini authentication URL was not produced within 30 seconds.`
+      });
+    }, 30 * 1000);
+
+    const authTimeout = setTimeout(() => {
+      try {
+        child.kill("SIGTERM");
+      } catch {}
+    }, 6 * 60 * 1000);
+    authTimeout.unref?.();
+
+    child.stdout.on("data", (chunk) => handleOutput(chunk, "stdout"));
+    child.stderr.on("data", (chunk) => handleOutput(chunk, "stderr"));
+    child.stdin.on("error", () => {});
+    child.on("error", (error) => {
+      cleanup();
+      finish({
+        ok: false,
+        command: "gemini --prompt <auth-check>",
+        code: -1,
+        stdout,
+        stderr: `${stderr}${error.message || String(error)}`
+      });
+    });
+    child.on("close", (code) => {
+      cleanup();
+      if (code === 0 && !settled) {
+        finish({
+          ok: true,
+          command: "gemini --prompt <auth-check>",
+          code,
+          stdout: `${stdout}\nstatus=ok\nresult=auth_check_completed\n`,
+          stderr
+        });
+      } else if (!settled) {
+        finish({
+          ok: false,
+          command: "gemini --prompt <auth-check>",
+          code,
+          stdout,
+          stderr: stderr || "Gemini authentication helper exited before opening a browser."
+        });
+      }
+    });
+  });
 }
 
 async function recentRunnerArtifactLogPaths(runner, boardRoot, maxFiles = 10) {
