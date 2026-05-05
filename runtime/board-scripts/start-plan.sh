@@ -285,7 +285,7 @@ archive_source_order_for_spec() {
 create_todo_ticket_from_spec() {
   local spec_file="$1"
   local spec_ref project_key ticket_id ticket_file ticket_note project_note
-  local archived_spec_ref archived_spec_file title goal allowed_paths done_when verification_command timestamp
+  local archived_spec_ref archived_spec_file title goal priority priority_lc allowed_paths done_when verification_command timestamp
 
   spec_ref="$(board_relative_path "$spec_file")"
   project_key="$(project_key_from_spec_ref "$spec_ref")"
@@ -311,6 +311,14 @@ create_todo_ticket_from_spec() {
 
   title="$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Name")"
   goal="$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Goal")"
+  priority="$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Priority")"
+  priority_lc="$(printf '%s' "$priority" | tr '[:upper:]' '[:lower:]')"
+  case "$(trim_spaces "$priority_lc")" in
+    critical|crit|p0) priority="critical" ;;
+    high|p1) priority="high" ;;
+    low|p3) priority="low" ;;
+    *) priority="normal" ;;
+  esac
   verification_command="$(extract_scalar_field_in_section "$archived_spec_file" "Verification" "Command")"
   allowed_paths="$(extract_spec_allowed_paths "$archived_spec_file")"
   done_when="$(extract_section_checklist "$archived_spec_file" "Global Acceptance Criteria")"
@@ -331,6 +339,7 @@ create_todo_ticket_from_spec() {
 - PRD Key: ${project_key}
 - Plan Candidate: Plan AI handoff from ${archived_spec_ref}
 - Title: ${title}
+- Priority: ${priority}
 - Stage: todo
 - AI:
 - Claimed By:
