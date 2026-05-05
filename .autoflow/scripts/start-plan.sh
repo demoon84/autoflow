@@ -640,6 +640,7 @@ if blocked_auto_recover_enabled; then
       exit 0
     fi
 
+    reset_worker_ticket_stage_blocked_last_result
     blocked_target="$(unblock_dirty_root_resolved_ticket "$blocked_ticket" || true)"
     if [ -z "$blocked_target" ]; then
       blocked_attempt_index=$((blocked_attempt_index + 1))

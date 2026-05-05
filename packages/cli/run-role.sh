@@ -1063,6 +1063,110 @@ runner_hydrate_active_ticket_metadata() {
   [ -n "${active_recovery_failure_class:-}" ] || active_recovery_failure_class="$recovery_failure_class"
 }
 
+runner_replace_state_field_preserving() {
+  local target_runner_id="$1"
+  local field="$2"
+  local value="$3"
+  local state_path temp_file
+
+  runner_validate_id "$target_runner_id" || return 1
+  runner_validate_key "$field" || return 1
+
+  state_path="$(runner_state_path "$target_runner_id")"
+  [ -f "$state_path" ] || return 1
+  temp_file="$(mktemp "${state_path}.XXXXXX")"
+
+  awk -F= -v field="$field" -v value="$value" '
+    $1 == field {
+      print field "=" value
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit(replaced ? 0 : 1) }
+  ' "$state_path" > "$temp_file" || {
+    rm -f "$temp_file"
+    return 1
+  }
+
+  mv "$temp_file" "$state_path"
+}
+
+runner_ticket_allowed_paths_dirty() {
+  local ticket_file="$1"
+  local git_root="$2"
+  local status_file allowed_path dirty_path found=false
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  status_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-dirty-paths.XXXXXX")"
+  git -C "$git_root" status --porcelain --untracked-files=all 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    dirty_path="${line#?? }"
+    case "$dirty_path" in
+      *" -> "*) dirty_path="${dirty_path##* -> }" ;;
+    esac
+    [ -n "$dirty_path" ] || continue
+    printf '%s\n' "$dirty_path"
+  done > "$status_file"
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    while IFS= read -r dirty_path; do
+      [ -n "$dirty_path" ] || continue
+      if [ "$dirty_path" = "$allowed_path" ] || [ "${dirty_path#"$allowed_path"/}" != "$dirty_path" ]; then
+        found=true
+        break
+      fi
+    done < "$status_file"
+    [ "$found" = "true" ] && break
+  done < <(
+    awk '
+      /^## Allowed Paths/ { in_section = 1; next }
+      /^## / && in_section { exit }
+      in_section && /^[[:space:]]*-[[:space:]]*`/ {
+        line = $0
+        sub(/^[[:space:]]*-[[:space:]]*`/, "", line)
+        sub(/`[[:space:]]*$/, "", line)
+        print line
+      }
+    ' "$ticket_file"
+  )
+
+  rm -f "$status_file"
+  [ "$found" = "true" ]
+}
+
+reset_stale_ticket_stage_blocked_last_result_if_scope_clean() {
+  local last_result active_item active_ticket_id ticket_file git_root
+
+  [ "$public_role" = "ticket" ] || return 0
+
+  last_result="$(runner_state_field "$runner_id" "last_result" 2>/dev/null || true)"
+  [ "$last_result" = "ticket_stage_blocked" ] || return 0
+
+  active_item="$(runner_state_field "$runner_id" "active_item" 2>/dev/null || true)"
+  active_ticket_id="$(runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true)"
+  ticket_file="$(runner_active_ticket_file_from_item "$active_item" 2>/dev/null || true)"
+  if [ -z "$ticket_file" ] && [ -n "$active_ticket_id" ]; then
+    ticket_file="$(runner_active_ticket_file_from_item "$active_ticket_id" 2>/dev/null || true)"
+  fi
+  [ -n "$ticket_file" ] && [ -f "$ticket_file" ] || return 0
+
+  git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$project_root")"
+  if runner_ticket_allowed_paths_dirty "$ticket_file" "$git_root"; then
+    return 0
+  fi
+
+  runner_replace_state_field_preserving "$runner_id" "last_result" "" || return 0
+  runner_append_log "$runner_id" "stale_last_result_reset" \
+    "role=${public_role}" \
+    "reason=ticket_stage_blocked_scope_clean" \
+    "ticket=$(runner_board_relative_path "$ticket_file")"
+}
+
 runner_board_relative_path() {
   local path="$1"
 
@@ -4176,6 +4280,7 @@ agent_runtime_preflight_or_exit() {
       return 0
       ;;
   esac
+  reset_stale_ticket_stage_blocked_last_result_if_scope_clean
   [ -n "${runtime_path:-}" ] || return 0
   [ "$dry_run" = "true" ] && return 0
 

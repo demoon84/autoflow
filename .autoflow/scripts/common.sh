@@ -429,6 +429,29 @@ project_root_dirty_paths() {
   [ "$found" = "true" ]
 }
 
+reset_worker_ticket_stage_blocked_last_result() {
+  local state_file temp_file
+
+  state_file="${BOARD_ROOT}/runners/state/worker.state"
+  [ -f "$state_file" ] || return 0
+  [ "$(awk -F= '$1 == "last_result" { sub(/^[^=]*=/, "", $0); print; found=1; exit } END { exit(found ? 0 : 1) }' "$state_file" 2>/dev/null || true)" = "ticket_stage_blocked" ] || return 0
+
+  temp_file="$(mktemp "${state_file}.XXXXXX")"
+  awk -F= '
+    $1 == "last_result" {
+      print "last_result="
+      replaced = 1
+      next
+    }
+    { print }
+    END { exit(replaced ? 0 : 1) }
+  ' "$state_file" > "$temp_file" || {
+    rm -f "$temp_file"
+    return 0
+  }
+  mv "$temp_file" "$state_file"
+}
+
 dirty_project_root_paths_summary() {
   awk '
     NF > 0 {
