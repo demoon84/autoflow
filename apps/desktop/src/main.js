@@ -3213,12 +3213,17 @@ async function controlRunner(options = {}) {
 
   const boardDirName = options.boardDirName || defaultBoardDirName;
   const lockKey = `${options.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const isForceStop = action === "stop" && options.force === true;
   const existing = runnerControlInflight.get(lockKey);
-  if (existing) {
+  if (existing && !isForceStop) {
     return existing;
   }
+  const args = ["runners", action, runnerId, options.projectRoot, boardDirName];
+  if (isForceStop) {
+    args.push("--force");
+  }
   const promise = runAutoflowArgs(
-    ["runners", action, runnerId, options.projectRoot, boardDirName],
+    args,
     options
   ).then((result) => {
     if (result.ok) {

@@ -2029,6 +2029,20 @@ pre {
   font-size: var(--font-size-meta);
 }
 
+.runner-transition-inline {
+  display: inline-flex !important;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  gap: 6px;
+  color: var(--foreground) !important;
+  font-weight: 520;
+}
+
+.runner-transition-inline svg {
+  flex: 0 0 auto;
+}
+
 .runner-state-muted {
   color: var(--muted-foreground) !important;
   font-size: var(--font-size-meta) !important;

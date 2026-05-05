@@ -236,6 +236,19 @@ type RunnerConfigApplyPending = {
 };
 
 type RunnerAuthChoice = "continue" | "cancel";
+type RunnerControlAction = "start" | "stop" | "restart";
+type RunnerControlOptions = {
+  force?: boolean;
+};
+
+type RunnerTransitionPending = {
+  action: RunnerControlAction;
+  startedAtMs: number;
+  timeoutAtMs: number;
+  initialStatus: string;
+  initialPid: string;
+  initialStartedAt: string;
+};
 
 type RunnerWithConfigEvidence = AutoflowRunner & {
   configFingerprint?: string;
@@ -249,6 +262,51 @@ type InstalledAgentProfiles = AutoflowInstalledAgentProfiles;
 type DisplayLog = AutoflowFilePreview & {
   source: "Board" | "Runner";
 };
+
+const runnerTransitionTimeoutMs = 60_000;
+const runnerTransitionActionKeys = new Set(["starting", "stopping_pending", "stopping_force", "restarting"]);
+
+function runnerActionKeyForControl(action: RunnerControlAction, force = false) {
+  if (action === "start") return "starting";
+  if (action === "restart") return "restarting";
+  return force ? "stopping_force" : "stopping_pending";
+}
+
+function runnerActionIsTransition(actionKey: string) {
+  return runnerTransitionActionKeys.has(actionKey);
+}
+
+function runnerTransitionLabel(actionKey: string) {
+  switch (actionKey) {
+    case "starting":
+      return "시작 중...";
+    case "stopping_pending":
+      return "중지 예약 중...";
+    case "stopping_force":
+      return "강제 종료 중...";
+    case "restarting":
+      return "재시작 중...";
+    default:
+      return "";
+  }
+}
+
+function runnerTransitionTargetObserved(runner: AutoflowRunner, pending: RunnerTransitionPending) {
+  const status = (runner.stateStatus || "").toLowerCase();
+  if (pending.action === "start") {
+    return status === "running";
+  }
+  if (pending.action === "stop") {
+    return status === "stopped";
+  }
+  if (pending.action === "restart") {
+    return (
+      status === "running" &&
+      (runner.startedAt !== pending.initialStartedAt || runner.pid !== pending.initialPid || pending.initialStatus !== "running")
+    );
+  }
+  return false;
+}
 
 function initialSetting(key: string, fallback: string) {
   return window.localStorage.getItem(key) || fallback;
@@ -1085,12 +1143,13 @@ function App() {
   const [isInstalling, setIsInstalling] = React.useState(false);
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => readThemeMode());
   const [installedAgentProfiles, setInstalledAgentProfiles] = React.useState<InstalledAgentProfiles>({});
-  // Per-runner inflight tracker. Key = runner.id, value = action label
-  // ("start" / "stop" / "restart" / "run" / "dry-run" / "config"). A globally
+  // Per-runner action tracker. Key = runner.id, value = action label
+  // ("starting" / "stopping_pending" / "run" / "dry-run" / "config"). A globally
   // shared string used to gate every button at once; the new map lets each
   // runner's button disable independently so users can fire start/stop on
   // multiple runners in parallel.
   const [runnerActionKeys, setRunnerActionKeys] = React.useState<Record<string, string>>({});
+  const runnerTransitionPendingRef = React.useRef<Record<string, RunnerTransitionPending>>({});
   const [runnerConfigApplyPending, setRunnerConfigApplyPending] = React.useState<Record<string, RunnerConfigApplyPending>>({});
   const setRunnerAction = React.useCallback((runnerId: string, action: string) => {
     setRunnerActionKeys((prev) => {
@@ -1098,11 +1157,27 @@ function App() {
         if (prev[runnerId] === action) return prev;
         return { ...prev, [runnerId]: action };
       }
+      delete runnerTransitionPendingRef.current[runnerId];
       if (!(runnerId in prev)) return prev;
       const { [runnerId]: _omit, ...rest } = prev;
       return rest;
     });
   }, []);
+  const beginRunnerTransition = React.useCallback(
+    (runner: AutoflowRunner, action: RunnerControlAction, force = false) => {
+      const now = Date.now();
+      runnerTransitionPendingRef.current[runner.id] = {
+        action,
+        startedAtMs: now,
+        timeoutAtMs: now + runnerTransitionTimeoutMs,
+        initialStatus: (runner.stateStatus || "").toLowerCase(),
+        initialPid: runner.pid || "",
+        initialStartedAt: runner.startedAt || ""
+      };
+      setRunnerAction(runner.id, runnerActionKeyForControl(action, force));
+    },
+    [setRunnerAction]
+  );
   const [runnerError, setRunnerError] = React.useState("");
   const [runnerDrafts, setRunnerDrafts] = React.useState<Record<string, RunnerDraft>>({});
   const [runnerSavedDrafts, setRunnerSavedDrafts] = React.useState<Record<string, RunnerDraft>>({});
@@ -1231,11 +1306,12 @@ function App() {
     Promise.all([window.autoflow.getConfig(), window.autoflow.listInstalledAgentProfiles()])
       .then(([config, profiles]) => {
         const configuredBoardDirName = config.defaultBoardDirName || fallbackFlowFolder;
+        const configuredProjectRoot = (config as AutoflowAppConfig & { defaultProjectRoot?: string }).defaultProjectRoot;
         if (isMounted && !window.localStorage.getItem("autoflow.boardDirName")) {
           setDefaultFlowFolder(configuredBoardDirName);
         }
-        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && config.defaultProjectRoot) {
-          setProjectRoot(config.defaultProjectRoot);
+        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && configuredProjectRoot) {
+          setProjectRoot(configuredProjectRoot);
         }
         if (isMounted) {
           setInstalledAgentProfiles(profiles || {});
@@ -1408,6 +1484,66 @@ function App() {
       // failure surface will come through runWikiQuery's own catch.
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!board?.runners?.length) return;
+    const now = Date.now();
+    const runnersById = new Map(board.runners.map((runner) => [runner.id, runner]));
+    const completedTransitions: string[] = [];
+    const timedOutTransitions: string[] = [];
+
+    for (const [runnerId, pending] of Object.entries(runnerTransitionPendingRef.current)) {
+      const runner = runnersById.get(runnerId);
+      if (!runner) {
+        if (now >= pending.timeoutAtMs) timedOutTransitions.push(runnerId);
+        continue;
+      }
+      if (runnerTransitionTargetObserved(runner, pending)) {
+        completedTransitions.push(runnerId);
+      } else if (now >= pending.timeoutAtMs) {
+        timedOutTransitions.push(runnerId);
+      }
+    }
+
+    for (const runnerId of [...completedTransitions, ...timedOutTransitions]) {
+      setRunnerAction(runnerId, "");
+    }
+    if (timedOutTransitions.length) {
+      setGlobalToast({
+        severity: "warning",
+        message: `${timedOutTransitions.join(", ")} runner state 확인이 실패했습니다. 새로고침 또는 재시도를 권장합니다.`
+      });
+    }
+  }, [board?.runners, setRunnerAction]);
+
+  React.useEffect(() => {
+    const hasPendingTransition = Object.entries(runnerActionKeys).some(([, actionKey]) =>
+      runnerActionIsTransition(actionKey)
+    );
+    if (!hasPendingTransition) return undefined;
+
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      const timedOut = Object.entries(runnerTransitionPendingRef.current)
+        .filter(([, pending]) => now >= pending.timeoutAtMs)
+        .map(([runnerId]) => runnerId);
+      if (timedOut.length) {
+        for (const runnerId of timedOut) {
+          setRunnerAction(runnerId, "");
+        }
+        setGlobalToast({
+          severity: "warning",
+          message: `${timedOut.join(", ")} runner state 확인이 실패했습니다. 새로고침 또는 재시도를 권장합니다.`
+        });
+        return;
+      }
+      void loadBoard();
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [loadBoard, runnerActionKeys, setRunnerAction]);
 
   React.useEffect(() => {
     if (!board?.runners?.length) return;
@@ -1671,15 +1807,20 @@ function App() {
   );
 
   const controlRunner = React.useCallback(
-    async (action: "start" | "stop" | "restart", runnerId: string) => {
-      if (!options.projectRoot || runnerActionKeys[runnerId]) {
+    async (action: RunnerControlAction, runnerId: string, controlOptions: RunnerControlOptions = {}) => {
+      const existingAction = runnerActionKeys[runnerId] || "";
+      const forceStop = action === "stop" && Boolean(controlOptions.force);
+      if (!options.projectRoot || (existingAction && !forceStop)) {
         return;
       }
 
-      setRunnerAction(runnerId, action);
+      const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
+      if (!runner) {
+        return;
+      }
+      beginRunnerTransition(runner, action, forceStop);
       setRunnerError("");
       try {
-        const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
         if (runner && action === "stop" && (runner.enabled || "true") !== "false") {
           const disableResult = await window.autoflow.configureRunner({
             runnerId,
@@ -1691,6 +1832,7 @@ function App() {
           if (!disableResult.ok) {
             setRunnerError(disableResult.stderr || disableResult.stdout || "AI 중지 설정 저장에 실패했습니다.");
             await loadBoard();
+            setRunnerAction(runnerId, "");
             return;
           }
         }
@@ -1729,6 +1871,7 @@ function App() {
 
             if (!configResult.ok) {
               setRunnerError(configResult.stderr || configResult.stdout || "AI 설정 저장에 실패했습니다.");
+              setRunnerAction(runnerId, "");
               return;
             }
           }
@@ -1737,43 +1880,32 @@ function App() {
         const result = await window.autoflow.controlRunner({
           action,
           runnerId,
+          ...(forceStop ? { force: true } : {}),
           ...options
         });
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 작업에 실패했습니다.");
           await loadBoard();
+          setRunnerAction(runnerId, "");
           return;
         }
 
-        setBoard((current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            runners: current.runners.map((candidate) => {
-              if (candidate.id !== runnerId) return candidate;
-              if (action === "stop") {
-                return {
-                  ...candidate,
-                  stateStatus: "stopped",
-                  pid: "",
-                  lastResult: "user_stopped"
-                };
-              }
-              return {
-                ...candidate,
-                stateStatus: "running",
-                lastResult: action === "restart" ? "restarted" : "started"
-              };
-            })
-          };
-        });
-        setRunnerAction(runnerId, "");
         void loadBoard();
-      } finally {
+      } catch (error) {
+        setRunnerError(error instanceof Error ? error.message : "AI 작업에 실패했습니다.");
         setRunnerAction(runnerId, "");
       }
     },
-    [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
+    [
+      beginRunnerTransition,
+      board?.runners,
+      installedAgentProfiles,
+      loadBoard,
+      options,
+      runnerActionKeys,
+      runnerDrafts,
+      setRunnerAction
+    ]
   );
 
   const answerRunnerAuthPrompt = React.useCallback(
@@ -1790,7 +1922,16 @@ function App() {
       setRunnerAction(runner.id, "auth_continue");
       setRunnerError("");
       try {
-        const result = await window.autoflow.continueRunnerAuth({
+        const result = await (
+          window.autoflow as typeof window.autoflow & {
+            continueRunnerAuth: (options: {
+              runnerId: string;
+              agent: string;
+              projectRoot: string;
+              boardDirName: string;
+            }) => Promise<AutoflowRunResult>;
+          }
+        ).continueRunnerAuth({
           runnerId: runner.id,
           agent: runner.agent,
           ...options
@@ -2463,11 +2604,12 @@ function EssentialApp() {
     Promise.all([window.autoflow.getConfig(), window.autoflow.listInstalledAgentProfiles()])
       .then(([config, profiles]) => {
         const configuredBoardDirName = config.defaultBoardDirName || fallbackFlowFolder;
+        const configuredProjectRoot = (config as AutoflowAppConfig & { defaultProjectRoot?: string }).defaultProjectRoot;
         if (isMounted && !window.localStorage.getItem("autoflow.boardDirName")) {
           setDefaultFlowFolder(configuredBoardDirName);
         }
-        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && config.defaultProjectRoot) {
-          setProjectRoot(config.defaultProjectRoot);
+        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && configuredProjectRoot) {
+          setProjectRoot(configuredProjectRoot);
         }
         if (isMounted) {
           setInstalledAgentProfiles(profiles || {});
@@ -3052,7 +3194,7 @@ function RunnerConsole({
   drafts: Record<string, RunnerDraft>;
   selectedRunnerId: string;
   onSelectRunner: (runnerId: string) => void;
-  onControl: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onControl: (action: RunnerControlAction, runnerId: string, options?: RunnerControlOptions) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
@@ -3101,6 +3243,8 @@ function RunnerConsole({
             const intervalLabel = runner.intervalSeconds || runner.intervalEffectiveSeconds || "60";
             // actionKey holds the action label for THIS runner only ("" when idle).
             const isWorking = Boolean(actionKey);
+            const transitionLabel = runnerTransitionLabel(actionKey);
+            const canForceStop = actionKey === "stopping_pending";
             const canStart = mode === "loop";
             const canStop = status === "running" || Boolean(runner.pid);
             const canEditConfig = status !== "running";
@@ -3183,22 +3327,39 @@ function RunnerConsole({
                   </div>
                   <div className="runner-actions">
                     {canStop ? (
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="runner-icon-button runner-plain-icon-button"
-                        aria-label={`${runner.id} 중지`}
-                        disabled={Boolean(actionKey)}
-                        onClick={() => {
-                          onControl("stop", runner.id);
-                        }}
-                      >
-                        {isWorking && actionKey === "stop" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="runner-icon-button runner-plain-icon-button"
+                          aria-label={`${runner.id} 중지`}
+                          disabled={Boolean(actionKey)}
+                          onClick={() => {
+                            onControl("stop", runner.id);
+                          }}
+                        >
+                          {isWorking && (actionKey === "stopping_pending" || actionKey === "stopping_force") ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Square className="h-4 w-4" />
+                          )}
+                        </Button>
+                        {canForceStop ? (
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="runner-icon-button runner-plain-icon-button"
+                            aria-label={`${runner.id} 강제 종료`}
+                            onClick={() => {
+                              if (window.confirm(`${displayWorkflowRunnerId(runner.id, runners)} runner 를 강제 종료할까요?`)) {
+                                onControl("stop", runner.id, { force: true });
+                              }
+                            }}
+                          >
+                            <TriangleAlert className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </>
                     ) : (
                       <Button
                         variant="outline"
@@ -3210,7 +3371,7 @@ function RunnerConsole({
                           onControl("start", runner.id);
                         }}
                       >
-                        {isWorking && actionKey === "start" ? (
+                        {isWorking && actionKey === "starting" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <Play className="h-4 w-4" />
@@ -3223,6 +3384,12 @@ function RunnerConsole({
                   <div className="runner-state">
                     <strong>{displayStatus(status)}</strong>
                     <span>{runnerEvent}</span>
+                    {transitionLabel ? (
+                      <span className="runner-transition-inline" role="status" aria-live="polite">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        <span>{transitionLabel}</span>
+                      </span>
+                    ) : null}
                     {runner.lastLogLine ? (
                       <span className="runner-log-tail" title={runner.lastLogLine}>
                         {runner.lastLogLine}
@@ -5675,14 +5842,14 @@ function TicketBoard({
   selectedPath: string;
   onSelect: (filePath: string) => void;
   options?: { projectRoot: string; boardDirName: string };
-  // Per-runner inflight tracker (key=runner.id, value=action label such as
-  // "start"/"stop"/"restart"/"run"/"dry-run"/"config"). Empty/missing means
+  // Per-runner action tracker (key=runner.id, value=action label such as
+  // "starting"/"stopping_pending"/"run"/"dry-run"/"config"). Empty/missing means
   // that runner's row is idle and its buttons are interactable.
   actionKeys?: Record<string, string>;
   drafts?: Record<string, RunnerDraft>;
   savedDrafts?: Record<string, RunnerDraft>;
   onSelectRunner?: (runnerId: string) => void;
-  onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onControl?: (action: RunnerControlAction, runnerId: string, options?: RunnerControlOptions) => void;
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
@@ -6228,7 +6395,7 @@ function AiProgressRow({
   draft?: RunnerDraft;
   savedDraft?: RunnerDraft;
   onSelectRunner?: (runnerId: string) => void;
-  onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onControl?: (action: RunnerControlAction, runnerId: string, options?: RunnerControlOptions) => void;
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
@@ -6261,6 +6428,8 @@ function AiProgressRow({
   const mode = "loop";
   // actionKey holds the action label for THIS runner only ("" when idle).
   const isWorking = Boolean(actionKey);
+  const transitionLabel = runnerTransitionLabel(actionKey);
+  const canForceStop = actionKey === "stopping_pending";
   const canStart = mode === "loop";
   const canStop = statusLower === "running" || Boolean(runner.pid);
   const canEditConfig = statusLower !== "running";
@@ -6358,23 +6527,41 @@ function AiProgressRow({
         {canControl ? (
           <div className="ai-progress-actions" aria-label={`${agentTitle} 제어`}>
             {canStop ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="runner-icon-button runner-plain-icon-button"
-                aria-label={`${runner.id} 중지`}
-                disabled={Boolean(actionKey)}
-                onClick={() => {
-                  setConfigOpen(false);
-                  onControl?.("stop", runner.id);
-                }}
-              >
-                {isWorking && actionKey === "stop" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Square className="h-4 w-4" />
-                )}
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="runner-icon-button runner-plain-icon-button"
+                  aria-label={`${runner.id} 중지`}
+                  disabled={Boolean(actionKey)}
+                  onClick={() => {
+                    setConfigOpen(false);
+                    onControl?.("stop", runner.id);
+                  }}
+                >
+                  {isWorking && (actionKey === "stopping_pending" || actionKey === "stopping_force") ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                </Button>
+                {canForceStop ? (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="runner-icon-button runner-plain-icon-button"
+                    aria-label={`${runner.id} 강제 종료`}
+                    onClick={() => {
+                      if (window.confirm(`${displayWorkflowRunnerId(runner.id)} runner 를 강제 종료할까요?`)) {
+                        setConfigOpen(false);
+                        onControl?.("stop", runner.id, { force: true });
+                      }
+                    }}
+                  >
+                    <TriangleAlert className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </>
             ) : (
               <Button
                 variant="outline"
@@ -6387,7 +6574,7 @@ function AiProgressRow({
                   onControl?.("start", runner.id);
                 }}
               >
-                {isWorking && actionKey === "start" ? (
+                {isWorking && actionKey === "starting" ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Play className="h-4 w-4" />
@@ -6449,6 +6636,12 @@ function AiProgressRow({
         {isApplyingConfig ? (
           <Badge variant="outline" className="ai-progress-config-pending-badge">
             적용 대기
+          </Badge>
+        ) : null}
+        {transitionLabel ? (
+          <Badge variant="outline" className="runner-transition-inline" role="status" aria-live="polite">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <span>{transitionLabel}</span>
           </Badge>
         ) : null}
         {detailText ? <p title={detailText}>{detailText}</p> : null}
