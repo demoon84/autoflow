@@ -1,10 +1,17 @@
 ---
 title: "Token spike 재발 (worker 5.2T tokens / 단일 row, 00:42:21Z) — order_169 root cause 확정 + intermittent 재현 패턴"
-priority: critical
+priority: normal
 created_at: 2026-05-05T00:46Z
 source: claude-code-monitoring
 detected_during: realtime monitoring tick #21
-related: [order_169, order_170, order_171]
+related: [order_169, order_170, order_171, prd_181, tickets_180]
+status_update_2026-05-05T00:55Z: |
+  Tick #24 검증 결과, 본 spike 와 동일 root cause 의 fix 가 이미 배포됨:
+  - commit 25c2e45 (09:42:02Z) "[PRD_181][ticket_180] telemetry token usage sanity correction"
+  - telemetry-project.sh 에 skipped_suspicious_rows / token_usage_trusted 가드 추가
+  - 본 spike row 도 향후 aggregation 에서 skip 됨
+  → 본 order 의 sanity guard / Phase A 제안은 이미 구현됨. priority 를 critical → normal 로 강등.
+  → 남은 가치: Phase B (root cause prefix `5247000` 출처 추적) 만 향후 조사 가치.
 ---
 
 ## Request
