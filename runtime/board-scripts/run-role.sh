@@ -697,6 +697,21 @@ planner_ticket_field() {
   ticket_goal_common_call extract_scalar_field_in_section "$file" "$section" "$field" 2>/dev/null || true
 }
 
+runner_ticket_is_parked_needs_user() {
+  local ticket_file="$1"
+  local recovery_status failure_class
+
+  [ -f "$ticket_file" ] || return 1
+  recovery_status="$(planner_ticket_field "$ticket_file" "Recovery State" "Status")"
+  [ "$recovery_status" = "needs_user" ] || return 1
+  failure_class="$(planner_ticket_field "$ticket_file" "Recovery State" "Failure Class")"
+  [ "$failure_class" != "needs_user_decision" ] || return 1
+
+  grep -Eiq \
+    'outside the worker claim queue|Do not loop|do not loop|Parked needs_user|Planner parking: source=inprogress-needs-user-parked|no physical worktree remains' \
+    "$ticket_file"
+}
+
 runner_active_ticket_file_from_item() {
   local item="$1"
   local ticket_name ticket_number file candidate
@@ -1054,6 +1069,7 @@ planner_orchestration_signal() {
     "${board_root}"/tickets/ready-to-merge/tickets_*.md \
     "${board_root}"/tickets/todo/tickets_*.md; do
     [ -f "$file" ] || continue
+    runner_ticket_is_parked_needs_user "$file" && continue
 
     recovery_status="$(planner_ticket_field "$file" "Recovery State" "Status")"
     failure_class="$(planner_ticket_field "$file" "Recovery State" "Failure Class")"
@@ -1616,6 +1632,145 @@ maybe_skip_planner_needs_user_decision_signal() {
   cat "$orchestration_output"
   printf 'recovery_signal_end\n'
   rm -f "$preflight_output" "$orchestration_output"
+  exit 0
+}
+
+maybe_skip_planner_parked_needs_user_preflight() {
+  local preflight_status="$1"
+  local preflight_reason="$2"
+  local preflight_output="$3"
+  local preflight_log_path="$4"
+  local source blocked_origin recovery_state failure_class timestamp
+  local parked_ticket_file parked_ticket_id parked_ticket_title parked_ticket_stage parked_spec_ref
+  local state_active_item state_active_ticket_id state_active_ticket_title state_active_stage state_active_spec_ref
+  local state_recovery_reason state_recovery_status state_recovery_failure_class
+  local result_reason runtime_reason
+
+  [ "$public_role" = "planner" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "$preflight_status" = "ok" ] || return 1
+
+  source="$(awk -F= '$1 == "source" { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  blocked_origin="$(awk -F= '$1 == "blocked_origin" { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  recovery_state="$(awk -F= '$1 == "recovery_state" { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  failure_class="$(awk -F= '$1 == "failure_class" { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  if [ -z "$blocked_origin" ]; then
+    blocked_origin="$(awk -F= '$1 ~ /^blocked_recover_skip\.[0-9]+$/ { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  fi
+  if [ -z "$recovery_state" ]; then
+    recovery_state="$(awk -F= '$1 ~ /^blocked_recover_skip\.[0-9]+\.recovery_state$/ { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  fi
+  if [ -z "$failure_class" ]; then
+    failure_class="$(awk -F= '$1 ~ /^blocked_recover_skip\.[0-9]+\.failure_class$/ { sub(/^[^=]*=/, "", $0); print; exit }' "$preflight_output" 2>/dev/null || true)"
+  fi
+  if [ "$source" != "inprogress-needs-user-parked" ]; then
+    [ -z "$source" ] || return 1
+    [ "$recovery_state" = "needs_user" ] || return 1
+  fi
+  [ -n "$blocked_origin" ] || return 1
+  [ -n "$recovery_state" ] || recovery_state="needs_user"
+  state_recovery_reason="recovery_state_${recovery_state}"
+  runtime_reason="${preflight_reason:-no_actionable_plan_input}"
+
+  if [ "$failure_class" != "needs_user_decision" ]; then
+    local other_recovery_output other_recovery_ticket
+    other_recovery_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-other-recovery.XXXXXX")"
+    if planner_orchestration_signal > "$other_recovery_output"; then
+      other_recovery_ticket="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); print; exit }' "$other_recovery_output" 2>/dev/null || true)"
+      rm -f "$other_recovery_output"
+      if [ -n "$other_recovery_ticket" ] && [ "$other_recovery_ticket" != "$blocked_origin" ]; then
+        return 1
+      fi
+    else
+      rm -f "$other_recovery_output"
+    fi
+  fi
+
+  parked_ticket_file="$(runner_active_ticket_file_from_item "$blocked_origin" 2>/dev/null || true)"
+  parked_ticket_id=""
+  parked_ticket_title=""
+  parked_ticket_stage=""
+  parked_spec_ref=""
+  if [ -n "$parked_ticket_file" ] && [ -f "$parked_ticket_file" ]; then
+    parked_ticket_id="$(runner_ticket_id_from_active_item "$parked_ticket_file")"
+    parked_ticket_title="$(planner_ticket_field "$parked_ticket_file" "Ticket" "Title")"
+    parked_ticket_stage="$(planner_ticket_field "$parked_ticket_file" "Ticket" "Stage")"
+    parked_spec_ref="$(planner_ticket_field "$parked_ticket_file" "Ticket" "PRD Key")"
+    [ -n "$parked_spec_ref" ] || parked_spec_ref="$(planner_ticket_field "$parked_ticket_file" "References" "PRD")"
+  fi
+
+  state_active_item=""
+  state_active_ticket_id=""
+  state_active_ticket_title=""
+  state_active_stage=""
+  state_active_spec_ref=""
+  state_recovery_status=""
+  state_recovery_failure_class=""
+  result_reason="planner_parked_needs_user_skipped"
+  if [ "$failure_class" = "needs_user_decision" ]; then
+    state_active_item="$blocked_origin"
+    state_active_ticket_id="$parked_ticket_id"
+    state_active_ticket_title="$parked_ticket_title"
+    state_active_stage="$parked_ticket_stage"
+    state_active_spec_ref="$parked_spec_ref"
+    state_recovery_status="$recovery_state"
+    state_recovery_failure_class="$failure_class"
+    result_reason="planner_needs_user_decision_waiting"
+  fi
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=${state_active_item}" \
+    "active_ticket_id=${state_active_ticket_id}" \
+    "active_ticket_title=${state_active_ticket_title}" \
+    "active_stage=${state_active_stage}" \
+    "active_spec_ref=${state_active_spec_ref}" \
+    "active_recovery_reason=$([ -n "$state_recovery_status" ] && printf '%s' "$state_recovery_reason")" \
+    "active_recovery_status=${state_recovery_status}" \
+    "active_recovery_failure_class=${state_recovery_failure_class}" \
+    "active_recovery_worktree_path=" \
+    "active_recovery_worktree_status=" \
+    "active_recovery_board_state=" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=${result_reason}" \
+    "last_runtime_log=${preflight_log_path}"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${result_reason}" \
+    "source=${source:-blocked_recover_skip}" \
+    "parked_ticket=${blocked_origin}" \
+    "failure_class=${failure_class}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'runtime_script=%s\n' "$runtime_path"
+  printf 'runtime_status=%s\n' "$preflight_status"
+  printf 'runtime_exit_code=0\n'
+  printf 'reason=%s\n' "$result_reason"
+  printf 'runtime_reason=%s\n' "$runtime_reason"
+  printf 'recovery_reason=%s\n' "$state_recovery_reason"
+  printf 'active_item=%s\n' "$state_active_item"
+  printf 'active_ticket_id=%s\n' "$state_active_ticket_id"
+  printf 'active_recovery_status=%s\n' "$state_recovery_status"
+  printf 'active_recovery_failure_class=%s\n' "$state_recovery_failure_class"
+  printf 'parked_ticket=%s\n' "$blocked_origin"
+  printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  printf 'runtime_output_begin\n'
+  cat "$preflight_output"
+  printf 'runtime_output_end\n'
+  rm -f "$preflight_output"
   exit 0
 }
 
@@ -3348,6 +3503,11 @@ agent_runtime_preflight_or_exit() {
   active_recovery_board_state=""
   runner_hydrate_active_ticket_metadata
   preflight_log_path="$(persist_run_artifact "$preflight_output" "runtime")"
+  maybe_skip_planner_parked_needs_user_preflight \
+    "$preflight_status" \
+    "$preflight_reason" \
+    "$preflight_output" \
+    "$preflight_log_path" || true
 
   if [ "$preflight_exit" -eq 0 ] && { [ "$preflight_status" = "ok" ] || [ "$preflight_status" = "resume" ]; }; then
     if [ -n "$implementation_root" ] && [ -d "$implementation_root" ]; then

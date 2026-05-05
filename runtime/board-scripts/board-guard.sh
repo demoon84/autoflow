@@ -295,6 +295,7 @@ check_recovery_state_values() {
     stale_todo_worktree
     missing_worktree
     dirty_root
+    dirty_project_root_conflict
     allowed_path_conflict
     shared_head_conflict
     verification_failed
