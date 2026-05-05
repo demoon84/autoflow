@@ -439,6 +439,84 @@ dirty_project_root_paths_summary() {
   '
 }
 
+path_is_orchestration_check_file() {
+  case "${1:-}" in
+    .autoflow/tickets/check/check_[0-9][0-9][0-9].md)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+project_root_dirty_status_is_only_new_orchestration_checks() {
+  local git_root="${1:-$PROJECT_ROOT}"
+  local line status path found=false
+
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    status="${line:0:2}"
+    path="${line#?? }"
+    case "$path" in
+      *" -> "*) path="${path##* -> }" ;;
+    esac
+
+    case "$status" in
+      "??"|"A ")
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+
+    path_is_orchestration_check_file "$path" || return 1
+    found=true
+  done < <(git -C "$git_root" status --porcelain --untracked-files=all 2>/dev/null)
+
+  [ "$found" = "true" ]
+}
+
+orchestration_cleanup_commit_count_for_ticket() {
+  local ticket_file="$1"
+  local git_root="${2:-$PROJECT_ROOT}"
+  local ticket_id
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
+  [ -n "$ticket_id" ] || return 1
+
+  git -C "$git_root" log --fixed-strings --grep="[ticket_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null | wc -l | tr -d '[:space:]'
+}
+
+mark_ticket_blocked_cleanup_fixpoint_exceeded() {
+  local ticket_file="$1"
+  local cleanup_count="$2"
+  local dirty_summary="$3"
+  local timestamp
+
+  [ -f "$ticket_file" ] || return 1
+  timestamp="$(now_iso)"
+
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "needs_user"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "blocked_cleanup_fixpoint_exceeded"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "Same-ticket orchestration cleanup commits reached ${cleanup_count}; dirty_paths=${dirty_summary}; fixpoint guard triggered at ${timestamp}."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "Park this blocked ticket because repeated orchestration cleanup did not converge; do not emit blocked-dirty-orchestration for the same evidence."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Needs user or planner intervention before another cleanup attempt; inspect the dirty inventory and prior cleanup commits."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_section_block "$ticket_file" "Next Action" "- Needs user/planner decision: fixpoint guard stopped repeated blocked-dirty orchestration after ${cleanup_count} cleanup commits; inspect dirty paths (${dirty_summary}) before retrying."
+  append_note "$ticket_file" "Fixpoint guard at ${timestamp}: source=blocked-cleanup-fixpoint-exceeded; cleanup_count=${cleanup_count}; dirty_paths=${dirty_summary}"
+}
+
 mark_ticket_dirty_project_root_blocked() {
   local ticket_file="$1"
   local worker="$2"

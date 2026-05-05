@@ -581,9 +581,43 @@ if blocked_auto_recover_enabled; then
         ;;
     esac
 
-    blocked_dirty_paths="$(project_root_dirty_paths "$(git_root_path || printf '%s' "$PROJECT_ROOT")" 2>/dev/null || true)"
+    blocked_git_root="$(git_root_path || printf '%s' "$PROJECT_ROOT")"
+    blocked_dirty_paths="$(project_root_dirty_paths "$blocked_git_root" 2>/dev/null || true)"
     if [ -n "$blocked_dirty_paths" ]; then
       blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
+      blocked_cleanup_count="$(orchestration_cleanup_commit_count_for_ticket "$blocked_ticket" "$blocked_git_root" 2>/dev/null || printf '0')"
+      blocked_cleanup_count="${blocked_cleanup_count:-0}"
+      if [ "$blocked_cleanup_count" -ge 5 ]; then
+        mark_ticket_blocked_cleanup_fixpoint_exceeded "$blocked_ticket" "$blocked_cleanup_count" "$blocked_dirty_summary"
+        printf 'status=ok\n'
+        printf 'source=blocked-cleanup-fixpoint-exceeded\n'
+        printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+        printf 'failure_class=blocked_cleanup_fixpoint_exceeded\n'
+        printf 'cleanup_commit_count=%s\n' "$blocked_cleanup_count"
+        printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+        emit_replan_skipped_metadata "$replan_skipped_file"
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        printf 'next_action=Fixpoint guard parked %s as Recovery State needs_user after %s same-ticket orchestration cleanup commits; inspect dirty paths before retrying. No blocked-dirty-orchestration signal was emitted.\n' \
+          "$(basename "$blocked_ticket")" \
+          "$blocked_cleanup_count"
+        exit 0
+      fi
+
+      if project_root_dirty_status_is_only_new_orchestration_checks "$blocked_git_root"; then
+        printf 'status=ok\n'
+        printf 'source=blocked-cleanup-no-op\n'
+        printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
+        printf 'failure_class=%s\n' "$blocked_failure_class"
+        printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
+        printf 'cleanup_commit_count=%s\n' "$blocked_cleanup_count"
+        emit_replan_skipped_metadata "$replan_skipped_file"
+        printf 'board_root=%s\n' "$BOARD_ROOT"
+        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        printf 'next_action=PROJECT_ROOT dirty inventory only contains new .autoflow/tickets/check/check_NNN.md ledger files; blocked-dirty-orchestration was suppressed to avoid self-referential cleanup churn.\n'
+        exit 0
+      fi
+
       printf 'status=ok\n'
       printf 'source=blocked-dirty-orchestration\n'
       printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
