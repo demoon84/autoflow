@@ -3455,6 +3455,46 @@ pre {
   min-width: 0;
 }
 
+.runner-auth-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--destructive) 34%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
+  padding: 8px 10px;
+}
+
+.runner-auth-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--destructive) 82%, var(--foreground));
+  font-size: var(--font-size-control-sm);
+  font-weight: 650;
+}
+
+.runner-auth-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runner-auth-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.runner-auth-actions .h-4 {
+  margin-right: 4px;
+}
+
 .ai-progress-agent {
   display: block;
   min-width: 0;

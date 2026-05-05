@@ -235,6 +235,8 @@ type RunnerConfigApplyPending = {
   restartAfterSave: boolean;
 };
 
+type RunnerAuthChoice = "continue" | "cancel";
+
 type RunnerWithConfigEvidence = AutoflowRunner & {
   configFingerprint?: string;
   appliedConfigFingerprint?: string;
@@ -548,6 +550,7 @@ const statusLabels: Record<string, string> = {
   already_running: "이미 실행 중",
   stale_pid: "오래된 PID",
   stale_pid_removed: "오래된 PID 제거됨",
+  adapter_auth_required: "인증 필요",
   dry_run: "미리 실행",
   true: "사용",
   false: "중지"
@@ -1192,7 +1195,7 @@ function App() {
     }
 
     authToastKeyRef.current = toastKey;
-    pushToast("warning", `${runnerLoginMessage(authRunner)} 외부 터미널에서 로그인하고 돌아오세요.`);
+    pushToast("warning", `${runnerLoginMessage(authRunner)} 러너 카드에서 Y 계속을 선택하세요.`);
   }, [board?.runners, pushToast]);
 
   React.useEffect(() => {
@@ -1770,6 +1773,42 @@ function App() {
     [board?.runners, installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
   );
 
+  const answerRunnerAuthPrompt = React.useCallback(
+    async (choice: RunnerAuthChoice, runner: AutoflowRunner) => {
+      if (!options.projectRoot || runnerActionKeys[runner.id]) {
+        return;
+      }
+
+      if (choice === "cancel") {
+        await controlRunner("stop", runner.id);
+        return;
+      }
+
+      setRunnerAction(runner.id, "auth_continue");
+      setRunnerError("");
+      try {
+        const result = await window.autoflow.continueRunnerAuth({
+          runnerId: runner.id,
+          agent: runner.agent,
+          ...options
+        });
+
+        if (!result.ok) {
+          setRunnerError(result.stderr || result.stdout || "인증 플로우를 시작하지 못했습니다.");
+          return;
+        }
+
+        pushToast("info", `${displayWorkflowRunnerId(runner.id, board?.runners)} 인증 창을 열었습니다. 인증이 끝나면 러너를 다시 시작하세요.`);
+        void loadBoard();
+      } catch (error) {
+        setRunnerError(error instanceof Error ? error.message : "인증 플로우를 시작하지 못했습니다.");
+      } finally {
+        setRunnerAction(runner.id, "");
+      }
+    },
+    [board?.runners, controlRunner, loadBoard, options, pushToast, runnerActionKeys, setRunnerAction]
+  );
+
   const readLog = React.useCallback(
     async (filePath: string) => {
       if (!options.projectRoot || !filePath) {
@@ -2194,6 +2233,7 @@ function App() {
                       savedDrafts={runnerSavedDrafts}
                       onSelectRunner={selectRunner}
                       onControl={controlRunner}
+                      onRunnerAuthChoice={answerRunnerAuthPrompt}
                       onDraftChange={updateRunnerDraft}
                       onConfigure={saveRunnerConfig}
                     />
@@ -5612,6 +5652,7 @@ function TicketBoard({
   savedDrafts = {},
   onSelectRunner,
   onControl,
+  onRunnerAuthChoice,
   onDraftChange,
   onConfigure
 }: {
@@ -5628,6 +5669,7 @@ function TicketBoard({
   savedDrafts?: Record<string, RunnerDraft>;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
@@ -5796,6 +5838,7 @@ function TicketBoard({
               savedDraft={savedDrafts[runner.id]}
               onSelectRunner={onSelectRunner}
               onControl={onControl}
+              onRunnerAuthChoice={onRunnerAuthChoice}
               onDraftChange={onDraftChange}
               onConfigure={onConfigure}
             />
@@ -5987,6 +6030,10 @@ function runnerProgressDetail(runner: AutoflowRunner) {
     return runner.activeItem;
   }
 
+  if ((runner.lastResult || "").toLowerCase() === "adapter_auth_required") {
+    return runnerLoginMessage(runner);
+  }
+
   if (runner.lastResult) {
     return displayStatus(runner.lastResult);
   }
@@ -6155,6 +6202,7 @@ function AiProgressRow({
   savedDraft,
   onSelectRunner,
   onControl,
+  onRunnerAuthChoice,
   onDraftChange,
   onConfigure
 }: {
@@ -6167,6 +6215,7 @@ function AiProgressRow({
   savedDraft?: RunnerDraft;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
+  onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
@@ -6214,6 +6263,7 @@ function AiProgressRow({
   const canControl = Boolean(onSelectRunner && onControl);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
   const showConversation = shouldShowConversation(runner);
+  const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
     runner.role === "wiki" ||
@@ -6425,6 +6475,36 @@ function AiProgressRow({
           showAgent={showAgentConfig}
           className={`ai-progress-config runner-config${showAgentConfig ? " ai-progress-config-with-agent" : ""}`}
         />
+      ) : null}
+      {showAuthPrompt ? (
+        <div className="runner-auth-prompt" role="group" aria-label={`${agentTitle} 인증 선택`}>
+          <div className="runner-auth-copy">
+            <TriangleAlert className="h-4 w-4" aria-hidden="true" />
+            <span>{runnerLoginMessage(runner)}</span>
+          </div>
+          <div className="runner-auth-actions">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={Boolean(actionKey)}
+              onClick={() => onRunnerAuthChoice?.("continue", runner)}
+            >
+              {actionKey === "auth_continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              <span>Y 계속</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={Boolean(actionKey)}
+              onClick={() => onRunnerAuthChoice?.("cancel", runner)}
+            >
+              <X className="h-4 w-4" />
+              <span>n 취소</span>
+            </Button>
+          </div>
+        </div>
       ) : null}
       {showConversation ? (
         <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
