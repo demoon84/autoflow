@@ -62,6 +62,37 @@ ticket_claim_owner() {
   return 1
 }
 
+ticket_owner_self_refresh_dirty_path() {
+  local ticket_file="$1"
+  local dirty_path="$2"
+  local ticket_id board_dir
+
+  [ -n "$dirty_path" ] || return 1
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  [ -n "$ticket_id" ] || return 1
+  board_dir="$(basename "$BOARD_ROOT")"
+
+  case "$dirty_path" in
+    "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md"|\
+    "${board_dir}/tickets/inprogress/verify_${ticket_id}.md")
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+filter_ticket_owner_non_self_refresh_dirty_paths() {
+  local ticket_file="$1"
+  local dirty_path
+
+  while IFS= read -r dirty_path; do
+    [ -n "$dirty_path" ] || continue
+    ticket_owner_self_refresh_dirty_path "$ticket_file" "$dirty_path" && continue
+    printf '%s\n' "$dirty_path"
+  done
+}
+
 find_active_context_ticket() {
   local context_role active_path active_id file
 
@@ -467,6 +498,7 @@ prepare_ticket_owner_context() {
   esac
   if [ "$merge_continuation" != "true" ]; then
     dirty_project_root_paths="$(ticket_dirty_project_root_conflict_paths "$ticket_file" "$(git_root_path || true)" || true)"
+    dirty_project_root_paths="$(printf '%s\n' "$dirty_project_root_paths" | filter_ticket_owner_non_self_refresh_dirty_paths "$ticket_file")"
     if [ -n "$dirty_project_root_paths" ]; then
       dirty_project_root_summary="$(printf '%s\n' "$dirty_project_root_paths" | dirty_project_root_paths_summary)"
       mark_ticket_dirty_project_root_blocked "$ticket_file" "$worker_id" "$timestamp" "$dirty_project_root_paths"

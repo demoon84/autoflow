@@ -382,6 +382,79 @@ runner_kill_process_tree() {
   kill -9 "$pid" 2>/dev/null || true
 }
 
+runner_orphan_loop_worker_pids() {
+  local target_runner_id="$1"
+  local skip_pid="${2:-}"
+  local canonical_script pid command word script_path
+
+  canonical_script="${SCRIPT_DIR}/runners-project.sh"
+
+  ps -axo pid=,command= 2>/dev/null | while read -r pid command; do
+    [ -n "${pid:-}" ] || continue
+    [ -n "${command:-}" ] || continue
+    case "$pid" in
+      ""|*[!0-9]*) continue ;;
+    esac
+    [ "$pid" != "$$" ] || continue
+    [ -z "$skip_pid" ] || [ "$pid" != "$skip_pid" ] || continue
+    case "$command" in
+      *"runners-project.sh loop-worker ${target_runner_id} "*|*"runners-project.sh loop-worker ${target_runner_id}")
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    script_path=""
+    for word in $command; do
+      case "$word" in
+        */runners-project.sh)
+          script_path="$word"
+          break
+          ;;
+      esac
+    done
+    [ -n "$script_path" ] || continue
+    [ "$script_path" != "$canonical_script" ] || continue
+    case "$script_path" in
+      *"/worktrees/"*/runners-project.sh)
+        ;;
+      *)
+        continue
+        ;;
+    esac
+    if [ ! -e "$script_path" ]; then
+      printf '%s\n' "$pid"
+      continue
+    fi
+    case "$script_path" in
+      "${project_root}/"*)
+        ;;
+      *)
+        printf '%s\n' "$pid"
+        ;;
+    esac
+  done
+}
+
+runner_stop_orphan_loop_workers() {
+  local target_runner_id="$1"
+  local skip_pid="${2:-}"
+  local pid stopped_count=0
+
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    runner_pid_is_running "$pid" || continue
+    runner_kill_process_tree "$pid"
+    stopped_count=$((stopped_count + 1))
+    runner_append_log "$target_runner_id" "orphan_loop_worker_stop" \
+      "pid=${pid}" \
+      "reason=worktree_local_loop_worker"
+  done < <(runner_orphan_loop_worker_pids "$target_runner_id" "$skip_pid")
+
+  printf '%s' "$stopped_count"
+}
+
 runner_loop_stdout_path() {
   local target_runner_id="$1"
 
@@ -1395,7 +1468,7 @@ start_runner() {
 
 stop_runner() {
   local target_runner_id="$1"
-  local timestamp previous_status previous_pid started_at result
+  local timestamp previous_status previous_pid started_at result orphan_stopped_count
 
   load_runner_config_or_block "$target_runner_id" || return 0
 
@@ -1410,6 +1483,10 @@ stop_runner() {
     runner_kill_process_tree "$previous_pid"
   elif [ -n "$previous_pid" ]; then
     result="stopped_stale_pid"
+  fi
+  orphan_stopped_count="$(runner_stop_orphan_loop_workers "$target_runner_id" "$previous_pid")"
+  if [ "$orphan_stopped_count" != "0" ]; then
+    result="${result}_orphan_loop_workers_${orphan_stopped_count}"
   fi
 
   runner_write_state "$target_runner_id" \
@@ -1434,6 +1511,7 @@ stop_runner() {
   runner_append_log "$target_runner_id" "stop" \
     "status=stopped" \
     "previous_status=${previous_status:-unknown}" \
+    "orphan_loop_workers_stopped=${orphan_stopped_count}" \
     "role=${role}" \
     "agent=${agent}" \
     "mode=${mode}" \

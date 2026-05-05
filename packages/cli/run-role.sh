@@ -1139,6 +1139,75 @@ runner_ticket_allowed_paths_dirty() {
   [ "$found" = "true" ]
 }
 
+runner_ticket_self_refresh_dirty_path() {
+  local ticket_file="$1"
+  local dirty_path="$2"
+  local ticket_id board_dir
+
+  [ -n "$dirty_path" ] || return 1
+  ticket_id="$(runner_ticket_id_from_active_item "$ticket_file")"
+  ticket_id="${ticket_id#tickets_}"
+  [ -n "$ticket_id" ] || return 1
+  board_dir="$(basename "$board_root")"
+
+  case "$dirty_path" in
+    "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md"|\
+    "${board_dir}/tickets/inprogress/verify_${ticket_id}.md")
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+runner_ticket_allowed_paths_dirty_excluding_self_refresh() {
+  local ticket_file="$1"
+  local git_root="$2"
+  local status_file allowed_path dirty_path found=false
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  status_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-dirty-paths.XXXXXX")"
+  git -C "$git_root" status --porcelain --untracked-files=all 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    dirty_path="${line#?? }"
+    case "$dirty_path" in
+      *" -> "*) dirty_path="${dirty_path##* -> }" ;;
+    esac
+    [ -n "$dirty_path" ] || continue
+    runner_ticket_self_refresh_dirty_path "$ticket_file" "$dirty_path" && continue
+    printf '%s\n' "$dirty_path"
+  done > "$status_file"
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    while IFS= read -r dirty_path; do
+      [ -n "$dirty_path" ] || continue
+      if [ "$dirty_path" = "$allowed_path" ] || [ "${dirty_path#"$allowed_path"/}" != "$dirty_path" ]; then
+        found=true
+        break
+      fi
+    done < "$status_file"
+    [ "$found" = "true" ] && break
+  done < <(
+    awk '
+      /^## Allowed Paths/ { in_section = 1; next }
+      /^## / && in_section { exit }
+      in_section && /^[[:space:]]*-[[:space:]]*`/ {
+        line = $0
+        sub(/^[[:space:]]*-[[:space:]]*`/, "", line)
+        sub(/`[[:space:]]*$/, "", line)
+        print line
+      }
+    ' "$ticket_file"
+  )
+
+  rm -f "$status_file"
+  [ "$found" = "true" ]
+}
+
 reset_stale_ticket_stage_blocked_last_result_if_scope_clean() {
   local last_result active_item active_ticket_id ticket_file git_root
 
@@ -1156,7 +1225,7 @@ reset_stale_ticket_stage_blocked_last_result_if_scope_clean() {
   [ -n "$ticket_file" ] && [ -f "$ticket_file" ] || return 0
 
   git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$project_root")"
-  if runner_ticket_allowed_paths_dirty "$ticket_file" "$git_root"; then
+  if runner_ticket_allowed_paths_dirty_excluding_self_refresh "$ticket_file" "$git_root"; then
     return 0
   fi
 
