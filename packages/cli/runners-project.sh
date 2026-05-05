@@ -750,6 +750,11 @@ runner_config_fingerprint_from_values() {
   local realtime_value="$8"
   local command_value="${9:-}"
 
+  [ -n "$agent_value" ] || agent_value="manual"
+  [ -n "$mode_value" ] || mode_value="one-shot"
+  [ -n "$enabled_value" ] || enabled_value="true"
+  [ -n "$realtime_value" ] || realtime_value="false"
+
   {
     printf 'role=%s\n' "$role_value"
     printf 'agent=%s\n' "$agent_value"

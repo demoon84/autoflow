@@ -135,6 +135,8 @@ adapter_active_recovery_failure_class=""
 adapter_active_recovery_worktree_path=""
 adapter_active_recovery_worktree_status=""
 adapter_active_recovery_board_state=""
+runner_config_fingerprint=""
+runner_config_applied_at=""
 planner_diff_context_enabled="false"
 planner_diff_mode=""
 planner_diff_reason=""
@@ -192,6 +194,54 @@ command_summary_from_array() {
 runner_field() {
   local field="$1"
   runner_config_field "$runner_id" "$field" "$config_path" 2>/dev/null || true
+}
+
+runner_normalize_interval_seconds() {
+  local value="${1:-}"
+
+  case "$value" in
+    ""|*[!0-9]*)
+      printf '60'
+      return 0
+      ;;
+  esac
+
+  if [ "$value" -lt 1 ] || [ "$value" -gt 86400 ]; then
+    printf '60'
+    return 0
+  fi
+
+  printf '%s' "$value"
+}
+
+runner_hash_stream() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{ print $1 }'
+  else
+    cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_current_config_fingerprint() {
+  {
+    printf 'role=%s\n' "$configured_role"
+    printf 'agent=%s\n' "$agent"
+    printf 'model=%s\n' "$model"
+    printf 'reasoning=%s\n' "$configured_reasoning"
+    printf 'mode=%s\n' "$mode"
+    printf 'interval_seconds=%s\n' "$(runner_normalize_interval_seconds "${interval_seconds:-}")"
+    printf 'enabled=%s\n' "$enabled"
+    printf 'realtime_enabled=%s\n' "${realtime_enabled:-false}"
+    printf 'command=%s\n' "$command_value"
+  } | runner_hash_stream
+}
+
+runner_config_state_fields() {
+  printf 'config_fingerprint=%s\n' "${runner_config_fingerprint:-}"
+  printf 'applied_config_fingerprint=%s\n' "${runner_config_fingerprint:-}"
+  printf 'config_applied_at=%s\n' "${runner_config_applied_at:-}"
 }
 
 runner_state_value() {
@@ -2400,6 +2450,7 @@ maybe_skip_unchanged_wiki_turn() {
     "mode=${mode}" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_config_state_fields) \
     "active_item=$(runner_active_state_value "active_item")" \
     "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
     "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
@@ -2483,6 +2534,7 @@ maybe_skip_debounced_wiki_turn() {
     "mode=${mode}" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_config_state_fields) \
     "active_item=$(runner_active_state_value "active_item")" \
     "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
     "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
@@ -2959,6 +3011,7 @@ write_blocked_state() {
     "model=${model:-}" \
     "reasoning=${reasoning:-}" \
     "active_item=" \
+    $(runner_config_state_fields) \
     "pid=" \
     "started_at=" \
     "last_event_at=${timestamp}" \
@@ -4995,11 +5048,21 @@ reasoning_actionable_count="0"
 reasoning_reject_count="0"
 mode="$(runner_field "mode")"
 enabled="$(runner_field "enabled")"
+interval_seconds="$(runner_field "interval_seconds")"
+realtime_enabled="$(runner_field "realtime_enabled")"
 command_value="$(runner_field "command")"
 
 [ -n "$agent" ] || agent="manual"
 [ -n "$mode" ] || mode="one-shot"
 [ -n "$enabled" ] || enabled="true"
+[ -n "$realtime_enabled" ] || realtime_enabled="false"
+interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
+runner_config_fingerprint="$(runner_current_config_fingerprint)"
+previous_applied_config_fingerprint="$(runner_state_field "$runner_id" "applied_config_fingerprint" 2>/dev/null || true)"
+runner_config_applied_at="$(runner_state_field "$runner_id" "config_applied_at" 2>/dev/null || true)"
+if [ -z "$runner_config_applied_at" ] || [ "$previous_applied_config_fingerprint" != "$runner_config_fingerprint" ]; then
+  runner_config_applied_at="$(runner_now_iso)"
+fi
 
 if [ "$enabled" != "true" ]; then
   write_blocked_state "runner_disabled"
@@ -5130,6 +5193,7 @@ case "$agent" in
       "model=${model}" \
       "reasoning=${reasoning}" \
       "configured_reasoning=${configured_reasoning}" \
+      $(runner_config_state_fields) \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
       "active_item=$(runner_adapter_state_value "active_item")" \
@@ -5231,6 +5295,7 @@ case "$agent" in
         "model=${model}" \
         "reasoning=${reasoning}" \
         "configured_reasoning=${configured_reasoning}" \
+        $(runner_config_state_fields) \
         "reasoning_source=${reasoning_source}" \
         "reasoning_complexity=${reasoning_complexity}" \
         "active_item=$(runner_adapter_state_value "active_item")" \
@@ -5393,6 +5458,7 @@ case "$agent" in
       "model=${model}" \
       "reasoning=${reasoning}" \
       "configured_reasoning=${configured_reasoning}" \
+      $(runner_config_state_fields) \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
       "active_item=$(runner_adapter_state_value "active_item")" \
@@ -5596,6 +5662,7 @@ runner_write_state "$runner_id" \
   "mode=${mode}" \
   "model=${model}" \
   "reasoning=${reasoning}" \
+  $(runner_config_state_fields) \
   "active_item=$(runner_active_state_value "active_item")" \
   "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
   "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
@@ -5655,6 +5722,7 @@ runner_write_state "$runner_id" \
   "mode=${mode}" \
   "model=${model}" \
   "reasoning=${reasoning}" \
+  $(runner_config_state_fields) \
   "active_item=${active_item}" \
   "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
   "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
