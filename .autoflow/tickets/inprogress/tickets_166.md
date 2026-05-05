@@ -11,7 +11,7 @@
 - Claimed By: worker
 - Execution AI: worker
 - Verifier AI: worker
-- Last Updated: 2026-05-05T00:43:23Z
+- Last Updated: 2026-05-05T00:49:55Z
 
 ## Goal
 
@@ -43,15 +43,15 @@
 - Branch: autoflow/tickets_166
 - Base Commit: 25c2e4527b5aabc96e44fe80f33ed64ae099edfd
 - Worktree Commit: 
-- Integration Status: blocked_dirty_project_root
+- Integration Status: repairing
 
 ## Goal Runtime
 - Status: blocked
 - Started At: 2026-05-05T00:43:24Z
 - Started Epoch: 1777941804
-- Updated At: 2026-05-05T00:48:30Z
+- Updated At: 2026-05-05T00:49:30Z
 - Tick Count: 0
-- Time Used Seconds: 306
+- Time Used Seconds: 366
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
@@ -60,13 +60,13 @@
 
 ## Recovery State
 
-- Status: blocked
+- Status: repairing
 - Detected By: runtime
 - Failure Class: dirty_project_root_conflict
-- Evidence: dirty Allowed Paths in PROJECT_ROOT: apps/desktop/src/renderer/styles.css
-- Planner Decision:
-- Owner Resume Instruction: Commit, stash, or explicitly integrate the PROJECT_ROOT changes before this ticket continues.
-- Last Recovery At: 2026-05-05T00:43:23Z
+- Evidence: PROJECT_ROOT dirty snapshot was integrated by planner cleanup commits `415725a` and `6040e2a`; the overlapping Allowed Path `apps/desktop/src/renderer/styles.css` is no longer uncommitted.
+- Planner Decision: `source=blocked-dirty-orchestration`; grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `tickets_166`, then bundled board/wiki/telemetry/order/todo and nested `Users/**` paths as misc housekeeping. `autoflow wiki query --rag` returned `result_count=0` for the direct dirty-root terms; prior wiki answer `dirty-root-finalization-blockers-20260502` still supports clearing dirty PROJECT_ROOT before owner resume.
+- Owner Resume Instruction: Wait for the next planner tick to emit `source=blocked-auto-recover` and return this ticket to `tickets/todo/`; ticket-owner should then claim a fresh worktree and continue PRD_167 implementation.
+- Last Recovery At: 2026-05-05T00:49:55Z
 
 ## Done When
 
@@ -80,13 +80,13 @@
 - [ ] `npm run desktop:check` 통과.
 
 ## Next Action
-- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (apps/desktop/src/renderer/styles.css). Commit/stash those changes or intentionally integrate them before ticket-owner continues.
+- Planner wait: dirty PROJECT_ROOT blocker was integrated in cleanup commits `415725a` and `6040e2a`; next planner tick should auto-return this ticket to todo via `source=blocked-auto-recover`.
 
 ## Resume Context
 
-- 현재 상태 요약: Plan AI 가 backlog PRD 에서 todo 티켓을 생성한 직후.
-- 직전 작업: scripts/start-plan.sh 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
-- 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When.
+- 현재 상태 요약: blocked-dirty-orchestration 턴에서 PROJECT_ROOT dirty blocker를 local cleanup commits `415725a`, `6040e2a`로 통합했고, 티켓은 다음 planner tick의 blocked-auto-recover를 기다린다.
+- 직전 작업: planner가 `README.md`, `apps/desktop/src/renderer/styles.css` 및 board/wiki/telemetry/Users housekeeping dirty set을 삭제 없이 commit했다.
+- 재개 시 먼저 볼 것: `git status --short`, `tickets/check/check_192.md`, `tickets/check/check_193.md`, PRD, Goal, Allowed Paths, Done When.
 
 ## Notes
 
@@ -94,6 +94,9 @@
 
 - Runtime hydrated worktree dependency at 2026-05-05T00:43:23Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
 - Runtime auto-blocked: dirty_project_root_conflict at 2026-05-05T00:43:23Z; dirty_paths=apps/desktop/src/renderer/styles.css
+- Planner blocked-dirty orchestration at 2026-05-05T00:49:55Z: wiki RAG context pass returned `result_count=0` for direct dirty-root terms; historical wiki answer `dirty-root-finalization-blockers-20260502` and ticket history show dirty PROJECT_ROOT finalization blockers, so planner integrated rather than parking as `needs_user`.
+- Cleanup commit `415725a`: grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `PRD_167` / `tickets_166`.
+- Cleanup commit `6040e2a`: bundled board/wiki/telemetry/order/todo artifacts and nested `Users/**` paths as misc housekeeping for `tickets_166`; review ledger entries are `tickets/check/check_192.md` and `tickets/check/check_193.md`.
 ## Verification
 
 - Run file:
