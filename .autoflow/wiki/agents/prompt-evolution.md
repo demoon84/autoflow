@@ -2,9 +2,9 @@
 auto_generated: telemetry-summary
 slug: agents/prompt-evolution
 window: 7d
-source_event_count: 62
-last_synced_at: 2026-05-05T01:05:03Z
-input_fingerprint: 5ee1c07417f44dea0fadfc29011d69881654aef43a849f73a931e4ca9195a357
+source_event_count: 64
+last_synced_at: 2026-05-05T01:06:41Z
+input_fingerprint: 57cc4207813582a04b177b2b8b5ccce90de837efd10c9f885ff6ca674d2c4018
 ---
 
 > This page is auto-generated from `.autoflow/telemetry/*.jsonl`; manual edits may be overwritten on the next sync. Keep durable human notes in `wiki/answers/`, `wiki/decisions/`, or another human-owned wiki page.
@@ -13,5 +13,5 @@ input_fingerprint: 5ee1c07417f44dea0fadfc29011d69881654aef43a849f73a931e4ca9195a
 
 | prompt_template_hash | usage_count | success_count | success_rate |
 | --- | ---: | ---: | ---: |
-| unknown_prompt_template | 62 | 62 | 100% |
+| unknown_prompt_template | 64 | 64 | 100% |
 
