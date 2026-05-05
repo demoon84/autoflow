@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, screen, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -9,6 +9,7 @@ const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../.
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 const desktopRoot = path.resolve(__dirname, "..");
 const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
+const windowStateFileName = "window-state.json";
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
@@ -217,6 +218,21 @@ function scaffoldManifestValue(section, name, fallback) {
 }
 
 const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
+const macOsDesktopSpaceKeyCodes = new Map([
+  [1, 18],
+  [2, 19],
+  [3, 20],
+  [4, 21],
+  [5, 23],
+  [6, 22],
+  [7, 26],
+  [8, 28],
+  [9, 25]
+]);
+const defaultMacOsDesktopSpaceNumber = (() => {
+  const parsed = Number.parseInt(process.env.AUTOFLOW_DESKTOP_SPACE_NUMBER || "6", 10);
+  return macOsDesktopSpaceKeyCodes.has(parsed) ? parsed : 6;
+})();
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticTimeoutMs = 15 * 1000;
 const readBoardDiagnosticCache = new Map();
@@ -416,10 +432,118 @@ function rememberProjectScope(options) {
   }
 }
 
+function windowStatePath() {
+  return path.join(app.getPath("userData"), windowStateFileName);
+}
+
+function normalizeWindowBounds(value) {
+  if (!value || typeof value !== "object") return null;
+  const bounds = {
+    x: Number.parseInt(value.x, 10),
+    y: Number.parseInt(value.y, 10),
+    width: Number.parseInt(value.width, 10),
+    height: Number.parseInt(value.height, 10)
+  };
+  if (
+    !Number.isFinite(bounds.width) ||
+    !Number.isFinite(bounds.height) ||
+    bounds.width < 1200 ||
+    bounds.height < 720
+  ) {
+    return null;
+  }
+  if (!Number.isFinite(bounds.x) || !Number.isFinite(bounds.y)) {
+    delete bounds.x;
+    delete bounds.y;
+  }
+  return bounds;
+}
+
+function readWindowState() {
+  try {
+    const parsed = JSON.parse(fsSync.readFileSync(windowStatePath(), "utf8"));
+    const bounds = normalizeWindowBounds(parsed.bounds);
+    const desktopSpaceNumber = Number.parseInt(parsed.desktopSpaceNumber, 10);
+    if (!bounds) {
+      return {
+        desktopSpaceNumber: macOsDesktopSpaceKeyCodes.has(desktopSpaceNumber)
+          ? desktopSpaceNumber
+          : defaultMacOsDesktopSpaceNumber
+      };
+    }
+
+    const display = screen.getDisplayMatching(bounds);
+    const area = display.workArea;
+    const visible =
+      Number.isFinite(bounds.x) &&
+      Number.isFinite(bounds.y) &&
+      bounds.x + Math.min(bounds.width, 120) >= area.x &&
+      bounds.y + Math.min(bounds.height, 80) >= area.y &&
+      bounds.x <= area.x + area.width - 80 &&
+      bounds.y <= area.y + area.height - 60;
+
+    return {
+      bounds: visible ? bounds : { width: bounds.width, height: bounds.height },
+      maximized: Boolean(parsed.maximized),
+      desktopSpaceNumber: macOsDesktopSpaceKeyCodes.has(desktopSpaceNumber)
+        ? desktopSpaceNumber
+        : defaultMacOsDesktopSpaceNumber
+    };
+  } catch {
+    return { desktopSpaceNumber: defaultMacOsDesktopSpaceNumber };
+  }
+}
+
+function writeWindowState(win) {
+  if (!win || win.isDestroyed() || win.isMinimized()) return;
+  const state = {
+    bounds: win.getBounds(),
+    maximized: win.isMaximized(),
+    desktopSpaceNumber: defaultMacOsDesktopSpaceNumber
+  };
+  try {
+    fsSync.mkdirSync(path.dirname(windowStatePath()), { recursive: true });
+    fsSync.writeFileSync(windowStatePath(), JSON.stringify(state, null, 2), "utf8");
+  } catch {}
+}
+
+function trackWindowState(win) {
+  let saveTimer = null;
+  const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      writeWindowState(win);
+    }, 300);
+  };
+  win.on("move", scheduleSave);
+  win.on("resize", scheduleSave);
+  win.on("close", () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    writeWindowState(win);
+  });
+}
+
+function switchToMacOsDesktopSpace(spaceNumber, callback) {
+  const keyCode = macOsDesktopSpaceKeyCodes.get(spaceNumber);
+  if (process.platform !== "darwin" || !keyCode) {
+    callback();
+    return;
+  }
+
+  execFile(
+    "osascript",
+    ["-e", `tell application "System Events" to key code ${keyCode} using control down`],
+    () => setTimeout(callback, 350)
+  );
+}
+
 function createWindow() {
+  const savedWindowState = readWindowState();
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
+    ...(savedWindowState.bounds || {}),
     minWidth: 1200,
     minHeight: 720,
     title: "코덱스 작업 흐름",
@@ -431,40 +555,36 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      devTools: process.env.AUTOFLOW_DESKTOP_DEVTOOLS === "1"
     }
   });
 
-  // macOS: 데스크탑 4(=Mission Control space 4) 에서 시작되도록 Ctrl+4 를 먼저 보낸 뒤,
-  // 잠시 모든 space 에 보이게 했다가 현재(=Desktop 4) space 에 고정한다.
-  // 사전 설정 필요: System Settings -> Keyboard -> Keyboard Shortcuts -> Mission Control
-  // 에서 "Switch to Desktop 4" 단축키 활성화, 그리고 Electron(또는 터미널)의 Accessibility 권한.
   win.once("ready-to-show", () => {
-    if (process.platform === "darwin") {
-      // key code 21 = "4", control down -> macOS "Switch to Desktop 4" 단축키.
-      execFile(
-        "osascript",
-        ["-e", 'tell application "System Events" to key code 21 using control down'],
-        () => {
-          // 단축키가 비활성화돼 있어도 창은 어쨌든 띄워야 하므로 결과는 무시.
-          setTimeout(() => {
-            win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-            win.show();
-            win.focus();
+    switchToMacOsDesktopSpace(savedWindowState.desktopSpaceNumber || defaultMacOsDesktopSpaceNumber, () => {
+      if (savedWindowState.maximized) {
+        win.maximize();
+      }
+      if (process.platform === "darwin") {
+        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        win.show();
+        win.focus();
+        setTimeout(() => {
+          if (!win.isDestroyed()) {
             win.setVisibleOnAllWorkspaces(false);
-          }, 350);
-        }
-      );
-    } else {
-      win.show();
-    }
+          }
+        }, 250);
+      } else {
+        win.show();
+        win.focus();
+      }
+    });
   });
+
+  trackWindowState(win);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
-    win.webContents.once("did-finish-load", () => {
-      win.webContents.openDevTools({ mode: "detach" });
-    });
   } else {
     win.loadFile(path.join(__dirname, "..", "dist", "renderer", "index.html"));
   }
