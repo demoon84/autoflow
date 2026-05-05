@@ -57,7 +57,7 @@ git -C "$project_dir" config user.name "Autoflow Smoke"
 "${REPO_ROOT}/bin/autoflow" runners set wiki "$project_dir" agent=codex model=gpt-5.4 reasoning=medium mode=one-shot >/dev/null
 
 mkdir -p "${project_dir}/.autoflow/tickets/inbox"
-cat >"${project_dir}/.autoflow/tickets/inbox/memo_777.md" <<'MEMO'
+cat >"${project_dir}/.autoflow/tickets/inbox/order_777.md" <<'MEMO'
 # Order
 
 ## Request
@@ -93,17 +93,12 @@ case "${AUTOFLOW_SMOKE_ROLE:-}" in
 PRD
     ;;
   wiki)
-    mkdir -p "${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki/sources" "${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki-raw"
-    cat >"${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki/sources/prd-777-handoff.md" <<'WIKI'
-# PRD 777 Handoff
+    mkdir -p "${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki/answers"
+    cat >"${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki/answers/prd-777-handoff.md" <<'WIKI'
+# PRD 777 Handoff Answer
 
 Scoped autocommit wiki source smoke.
 WIKI
-    cat >"${AUTOFLOW_PROJECT_ROOT}/.autoflow/wiki-raw/prd-777-handoff.md" <<'RAW'
-# PRD 777 Raw
-
-Scoped autocommit wiki raw smoke.
-RAW
     ;;
   *)
     echo "AUTOFLOW_SMOKE_ROLE is required" >&2
@@ -141,17 +136,21 @@ require_line "$wiki_output" "adapter=codex"
 require_line "$wiki_output" "adapter_exit_code=0"
 require_line "$wiki_output" "autocommit_role=wiki"
 require_line "$wiki_output" "autocommit_status=committed"
-require_line "$wiki_output" "autocommit_message=[wiki] wiki knowledge update"
+require_contains "$wiki_output" "wiki_commit_weight="
+require_line "$wiki_output" "wiki_commit_primary_category=answers"
+require_line "$wiki_output" "wiki_commit_gate_reason=meaningful_add"
+require_contains "$wiki_output" "autocommit_message=[wiki] update: answers / "
 require_clean_scope ".autoflow/wiki"
-require_clean_scope ".autoflow/wiki-raw"
 wiki_subject="$(git -C "$project_dir" log -1 --pretty=%s)"
-if [ "$wiki_subject" != "[wiki] wiki knowledge update" ]; then
+case "$wiki_subject" in
+  "[wiki] update: answers / "*" total, +"*"/-0") ;;
+  *)
   echo "Unexpected wiki commit subject: $wiki_subject" >&2
   exit 1
-fi
+  ;;
+esac
 git -C "$project_dir" show --name-only --pretty=oneline HEAD >"${project_dir}/wiki-commit.txt"
-require_contains "${project_dir}/wiki-commit.txt" ".autoflow/wiki/sources/prd-777-handoff.md"
-require_contains "${project_dir}/wiki-commit.txt" ".autoflow/wiki-raw/prd-777-handoff.md"
+require_contains "${project_dir}/wiki-commit.txt" ".autoflow/wiki/answers/prd-777-handoff.md"
 
 echo "status=ok"
 echo "project_root=$project_dir"

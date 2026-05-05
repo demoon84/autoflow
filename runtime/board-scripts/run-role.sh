@@ -363,11 +363,187 @@ role_autocommit_capture_status() {
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
+    [ -e "$path" ] || [ -n "$(git -C "$git_root" ls-files -- "$path" 2>/dev/null)" ] || continue
     scope_paths+=("$path")
   done < <(role_autocommit_scope_paths)
   [ "${#scope_paths[@]}" -gt 0 ] || return 0
 
   git -C "$git_root" status --porcelain -- "${scope_paths[@]}" > "$output_file" 2>/dev/null || true
+}
+
+role_wiki_normalize_path() {
+  local path="$1"
+  path="${path#"$board_root"/}"
+  path="${path#${board_dir_name}/}"
+  path="${path#.autoflow/}"
+  printf '%s\n' "$path"
+}
+
+role_wiki_path_category() {
+  local rel
+  rel="$(role_wiki_normalize_path "$1")"
+  case "$rel" in
+    wiki/answers/*) printf 'answers' ;;
+    wiki/learnings/*) printf 'learnings' ;;
+    wiki/skills/*) printf 'skills' ;;
+    wiki/skills-local/*) printf 'skills-local' ;;
+    wiki/features/*) printf 'features' ;;
+    wiki/decisions/*) printf 'decisions' ;;
+    wiki/sources/*) printf 'sources' ;;
+    wiki/operations/*) printf 'operations' ;;
+    wiki/architecture/*) printf 'architecture' ;;
+    wiki/agents/*) printf 'agents' ;;
+    wiki-raw/*) printf 'raw' ;;
+    wiki/*) printf 'wiki' ;;
+    *) printf 'other' ;;
+  esac
+}
+
+role_wiki_path_weight() {
+  local rel base
+  rel="$(role_wiki_normalize_path "$1")"
+  base="$(basename "$rel")"
+  case "$rel" in
+    wiki/index.md|wiki/log.md|*.manifest|*.history|*.fingerprint)
+      printf '0'
+      return 0
+      ;;
+  esac
+  case "$rel" in
+    wiki/answers/*|wiki/learnings/*|wiki/skills/*|wiki/skills-local/*)
+      printf '5'
+      ;;
+    wiki/features/*|wiki/decisions/*)
+      printf '3'
+      ;;
+    wiki/sources/*|wiki/operations/*|wiki/architecture/*|wiki/agents/*|wiki-raw/*|wiki/*)
+      printf '1'
+      ;;
+    *)
+      case "$base" in
+        *.md|*.txt|*.json|*.jsonl|*.log) printf '1' ;;
+        *) printf '0' ;;
+      esac
+      ;;
+  esac
+}
+
+role_wiki_commit_threshold() {
+  local value="${AUTOFLOW_WIKI_COMMIT_WEIGHT_THRESHOLD:-5}"
+  case "$value" in
+    ''|*[!0-9]*) printf '5' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+role_wiki_commit_min_lines() {
+  local value="${AUTOFLOW_WIKI_COMMIT_MIN_LINES:-30}"
+  case "$value" in
+    ''|*[!0-9]*) printf '30' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+role_wiki_staged_diff_stats() {
+  local git_root="$1"
+  shift
+  local status path rest weight category add del line_delta
+  local threshold min_lines total_files total_weight added_files deleted_files content_delta
+  local line_additions line_deletions
+  local primary_category primary_weight gate_reason
+
+  threshold="$(role_wiki_commit_threshold)"
+  min_lines="$(role_wiki_commit_min_lines)"
+  total_files=0
+  total_weight=0
+  added_files=0
+  deleted_files=0
+  line_delta=0
+  line_additions=0
+  line_deletions=0
+  primary_category="none"
+  primary_weight=0
+
+  if git -C "$git_root" diff --cached -w --quiet -- "$@"; then
+    content_delta=0
+  else
+    content_delta=1
+  fi
+
+  while IFS=$'\t' read -r add del path rest; do
+    [ -n "${path:-}" ] || continue
+    case "$add" in ''|-) add=0 ;; *[!0-9]*) add=0 ;; esac
+    case "$del" in ''|-) del=0 ;; *[!0-9]*) del=0 ;; esac
+    line_additions=$((line_additions + add))
+    line_deletions=$((line_deletions + del))
+    line_delta=$((line_delta + add + del))
+  done < <(git -C "$git_root" diff --cached --numstat -- "$@")
+
+  while IFS=$'\t' read -r status path rest; do
+    [ -n "${status:-}" ] || continue
+    case "$status" in
+      R*|C*) path="$rest" ;;
+    esac
+    [ -n "${path:-}" ] || continue
+    weight="$(role_wiki_path_weight "$path")"
+    category="$(role_wiki_path_category "$path")"
+    total_files=$((total_files + 1))
+    total_weight=$((total_weight + weight))
+    case "$status" in
+      A*) added_files=$((added_files + 1)) ;;
+      D*) deleted_files=$((deleted_files + 1)) ;;
+    esac
+    if [ "$weight" -gt "$primary_weight" ]; then
+      primary_weight="$weight"
+      primary_category="$category"
+    fi
+  done < <(git -C "$git_root" diff --cached --name-status -- "$@")
+
+  if [ "$content_delta" -eq 0 ]; then
+    gate_reason="cosmetic_only"
+  elif [ "$deleted_files" -gt 0 ]; then
+    gate_reason="meaningful_delete"
+  elif [ "$total_weight" -eq 0 ]; then
+    gate_reason="zero_weight"
+  elif [ "$total_weight" -lt "$threshold" ]; then
+    gate_reason="below_weight_threshold"
+  elif [ "$added_files" -gt 0 ]; then
+    gate_reason="meaningful_add"
+  elif [ "$line_delta" -lt "$min_lines" ]; then
+    gate_reason="below_line_threshold"
+  else
+    gate_reason="meaningful_update"
+  fi
+
+  printf 'wiki_commit_weight=%s\n' "$total_weight"
+  printf 'wiki_commit_line_delta=%s\n' "$line_delta"
+  printf 'wiki_commit_primary_category=%s\n' "$primary_category"
+  printf 'wiki_commit_gate_reason=%s\n' "$gate_reason"
+  printf 'wiki_commit_total_files=%s\n' "$total_files"
+  printf 'wiki_commit_added_files=%s\n' "$added_files"
+  printf 'wiki_commit_deleted_files=%s\n' "$deleted_files"
+  printf 'wiki_commit_additions=%s\n' "$line_additions"
+  printf 'wiki_commit_deletions=%s\n' "$line_deletions"
+  printf 'wiki_commit_weight_threshold=%s\n' "$threshold"
+  printf 'wiki_commit_min_lines=%s\n' "$min_lines"
+}
+
+role_wiki_staged_commit_allowed() {
+  local stats="$1" reason
+  reason="$(printf '%s\n' "$stats" | sed -n 's/^wiki_commit_gate_reason=//p' | tail -n 1)"
+  case "$reason" in
+    meaningful_*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+role_wiki_autocommit_message_from_stats() {
+  local stats="$1" category total added deleted
+  category="$(printf '%s\n' "$stats" | sed -n 's/^wiki_commit_primary_category=//p' | tail -n 1)"
+  total="$(printf '%s\n' "$stats" | sed -n 's/^wiki_commit_total_files=//p' | tail -n 1)"
+  added="$(printf '%s\n' "$stats" | sed -n 's/^wiki_commit_additions=//p' | tail -n 1)"
+  deleted="$(printf '%s\n' "$stats" | sed -n 's/^wiki_commit_deletions=//p' | tail -n 1)"
+  printf '[wiki] update: %s / %s total, +%s/-%s\n' "${category:-wiki}" "${total:-0}" "${added:-0}" "${deleted:-0}"
 }
 
 role_autocommit_message() {
@@ -414,8 +590,9 @@ role_autocommit_wiki_source_context() {
 role_autocommit_after_adapter() {
   local adapter_exit="$1"
   local before_status_file="$2"
-  local git_root path commit_message
+  local git_root path commit_message wiki_commit_stats
   local -a scope_paths=()
+  local -a commit_scope_paths=()
 
   case "$public_role" in
     planner|wiki) ;;
@@ -446,6 +623,7 @@ role_autocommit_after_adapter() {
 
   while IFS= read -r path; do
     [ -n "$path" ] || continue
+    [ -e "$path" ] || [ -n "$(git -C "$git_root" ls-files -- "$path" 2>/dev/null)" ] || continue
     scope_paths+=("$path")
   done < <(role_autocommit_scope_paths)
   if [ "${#scope_paths[@]}" -eq 0 ]; then
@@ -464,8 +642,30 @@ role_autocommit_after_adapter() {
     return 0
   fi
 
-  commit_message="$(role_autocommit_message "$git_root" "${scope_paths[@]}")"
-  git -C "$git_root" commit -m "$commit_message" -- "${scope_paths[@]}" >/dev/null
+  if [ "$public_role" = "wiki" ]; then
+    wiki_commit_stats="$(role_wiki_staged_diff_stats "$git_root" "${scope_paths[@]}")"
+    printf '%s\n' "$wiki_commit_stats"
+    runner_append_log "$runner_id" "wiki_commit_admission" \
+      "role=${public_role}" \
+      $(printf '%s\n' "$wiki_commit_stats")
+    if ! role_wiki_staged_commit_allowed "$wiki_commit_stats"; then
+      git -C "$git_root" restore --staged -- "${scope_paths[@]}" >/dev/null 2>&1 || true
+      printf 'autocommit_status=skipped_wiki_commit_gate\n'
+      return 0
+    fi
+    commit_message="$(role_wiki_autocommit_message_from_stats "$wiki_commit_stats")"
+  else
+    commit_message="$(role_autocommit_message "$git_root" "${scope_paths[@]}")"
+  fi
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    commit_scope_paths+=("$path")
+  done < <(git -C "$git_root" diff --cached --name-only -- "${scope_paths[@]}" 2>/dev/null)
+  if [ "${#commit_scope_paths[@]}" -eq 0 ]; then
+    printf 'autocommit_status=no_changes\n'
+    return 0
+  fi
+  git -C "$git_root" commit -m "$commit_message" -- "${commit_scope_paths[@]}" >/dev/null
   printf 'autocommit_status=committed\n'
   printf 'autocommit_hash=%s\n' "$(git -C "$git_root" rev-parse --verify HEAD)"
   printf 'autocommit_message=%s\n' "$commit_message"
@@ -1313,7 +1513,8 @@ wiki_compute_inputs_state() {
 wiki_manifest_change_stats() {
   local current_manifest="$1"
   local previous_manifest="$2"
-  local changed_paths_file total_count meaningful_count telemetry_count path
+  local changed_paths_file total_count meaningful_count telemetry_count path weight
+  local meaningful_weight primary_category primary_weight category
 
   changed_paths_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-wiki-changed-paths.XXXXXX")"
   if [ -f "$previous_manifest" ]; then
@@ -1327,10 +1528,20 @@ wiki_manifest_change_stats() {
 
   total_count=0
   meaningful_count=0
+  meaningful_weight=0
+  primary_category="none"
+  primary_weight=0
   telemetry_count=0
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     total_count=$((total_count + 1))
+    weight="$(role_wiki_path_weight "$path")"
+    category="$(role_wiki_path_category "$path")"
+    meaningful_weight=$((meaningful_weight + weight))
+    if [ "$weight" -gt "$primary_weight" ]; then
+      primary_weight="$weight"
+      primary_category="$category"
+    fi
     case "$path" in
       wiki/operations/runner-health.md|wiki/operations/runner-timing.md|wiki/agents/prompt-evolution.md)
         telemetry_count=$((telemetry_count + 1))
@@ -1344,6 +1555,8 @@ wiki_manifest_change_stats() {
 
   printf 'total_changed_count=%s\n' "$total_count"
   printf 'meaningful_changed_count=%s\n' "$meaningful_count"
+  printf 'meaningful_changed_weight=%s\n' "$meaningful_weight"
+  printf 'primary_changed_category=%s\n' "$primary_category"
   printf 'telemetry_summary_changed_count=%s\n' "$telemetry_count"
 }
 
@@ -2365,7 +2578,7 @@ maybe_skip_unchanged_wiki_turn() {
 }
 
 maybe_skip_debounced_wiki_turn() {
-  local manifest_path changed_count total_changed_count telemetry_summary_changed_count now_epoch
+  local manifest_path changed_count changed_weight primary_category total_changed_count telemetry_summary_changed_count now_epoch
   local pending_since_epoch pending_age min_changes max_age_seconds
   local last_synth_at_epoch synth_age timestamp fingerprint_path change_stats
 
@@ -2384,9 +2597,13 @@ maybe_skip_debounced_wiki_turn() {
   change_stats="$(wiki_manifest_change_stats "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path")"
   total_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^total_changed_count=//p' | tail -n 1)"
   changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_count=//p' | tail -n 1)"
+  changed_weight="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_weight=//p' | tail -n 1)"
+  primary_category="$(printf '%s\n' "$change_stats" | sed -n 's/^primary_changed_category=//p' | tail -n 1)"
   telemetry_summary_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^telemetry_summary_changed_count=//p' | tail -n 1)"
   total_changed_count="${total_changed_count:-0}"
   changed_count="${changed_count:-0}"
+  changed_weight="${changed_weight:-0}"
+  primary_category="${primary_category:-none}"
   telemetry_summary_changed_count="${telemetry_summary_changed_count:-0}"
 
   now_epoch="$(date +%s)"
@@ -2405,7 +2622,7 @@ maybe_skip_debounced_wiki_turn() {
     *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
   esac
 
-  if [ "$changed_count" -gt 0 ] && { [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
+  if [ "$changed_weight" -gt 0 ] && { [ "$changed_weight" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
     return 1
   fi
 
@@ -2433,6 +2650,10 @@ maybe_skip_debounced_wiki_turn() {
     "agent=${agent}" \
     "reason=wiki_debounced" \
     "changed_count=${changed_count}" \
+    "wiki_commit_weight=${changed_weight}" \
+    "wiki_commit_line_delta=0" \
+    "wiki_commit_primary_category=${primary_category}" \
+    "wiki_commit_gate_reason=debounced" \
     "total_changed_count=${total_changed_count}" \
     "telemetry_summary_changed_count=${telemetry_summary_changed_count}" \
     "pending_since_epoch=${pending_since_epoch}" \
@@ -2449,6 +2670,10 @@ maybe_skip_debounced_wiki_turn() {
   printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
   printf 'fingerprint_path=%s\n' "$fingerprint_path"
   printf 'changed_count=%s\n' "$changed_count"
+  printf 'wiki_commit_weight=%s\n' "$changed_weight"
+  printf 'wiki_commit_line_delta=0\n'
+  printf 'wiki_commit_primary_category=%s\n' "$primary_category"
+  printf 'wiki_commit_gate_reason=debounced\n'
   printf 'total_changed_count=%s\n' "$total_changed_count"
   printf 'telemetry_summary_changed_count=%s\n' "$telemetry_summary_changed_count"
   printf 'pending_since_epoch=%s\n' "$pending_since_epoch"
