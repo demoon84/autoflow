@@ -1,3 +1,20 @@
+---
+kind: synth_answer
+created: 2026-05-04T00:00:00Z
+updated: 2026-05-05T00:00:00Z
+terms:
+  - Skill Curator Lifecycle
+  - Auto-Extraction
+  - Nudge Guard
+  - CLI Commands
+  - Policies
+  - Verification
+  - Smoke Test
+citations:
+  - tickets_164
+  - PRD 166
+  - logs/verifier_164_20260504_215445Z_pass.md
+---
 # PRD 166: Skill Curator Lifecycle and Auto-Extraction
 
 ## Summary

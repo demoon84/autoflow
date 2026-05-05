@@ -215,6 +215,7 @@ function scaffoldManifestValue(section, name, fallback) {
 
 const defaultBoardDirName = scaffoldManifestValue("install", "default_board_dir", ".autoflow");
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
+const readBoardDiagnosticTimeoutMs = 15 * 1000;
 const readBoardDiagnosticCache = new Map();
 const readBoardRunnerListCacheTtlMs = 15 * 1000;
 const standaloneRunnerListCacheTtlMs = 2 * 1000;
@@ -616,8 +617,8 @@ function cloneRunResult(result) {
 
 function markReadBoardFallback(result, fallback) {
   const metadata = {
-    partial: Boolean(fallback?.partial),
-    fallback: Boolean(fallback?.fallback),
+    partial: Boolean(fallback?.partial || result?.ok === false || result?.cancelled),
+    fallback: Boolean(fallback?.fallback || result?.ok === false || result?.cancelled),
     stale: Boolean(fallback?.stale),
     refreshInFlight: Boolean(fallback?.refreshInFlight),
     cacheStatus: fallback?.cacheStatus || "fresh"
@@ -630,6 +631,82 @@ function markReadBoardFallback(result, fallback) {
   };
 }
 
+function diagnosticErrorMessage(error, fallbackMessage) {
+  if (!error) {
+    return fallbackMessage;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return error.message || String(error) || fallbackMessage;
+}
+
+function readBoardDiagnosticErrorResult(command, options = {}, error, fallback = {}) {
+  return markReadBoardFallback({
+    ok: false,
+    command: commandLabel(scopedArgs(command, options)),
+    code: -1,
+    signal: fallback.signal || "",
+    cancelled: Boolean(fallback.cancelled),
+    stdout: "",
+    stderr: diagnosticErrorMessage(error, `readBoard diagnostic ${command} failed.`)
+  }, {
+    partial: true,
+    fallback: true,
+    stale: false,
+    refreshInFlight: false,
+    cacheStatus: fallback.cacheStatus || "error"
+  });
+}
+
+function withReadBoardDiagnosticTimeout(source, task, fallbackResult, timeoutMs = readBoardDiagnosticTimeoutMs) {
+  const controller = new AbortController();
+  let timer = null;
+  let settled = false;
+
+  return new Promise((resolve) => {
+    const settle = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolve(result);
+    };
+
+    timer = setTimeout(() => {
+      const error = new Error(`readBoard diagnostic ${source} timed out after ${timeoutMs}ms`);
+      controller.abort(error);
+      settle(fallbackResult(error, {
+        cancelled: true,
+        signal: "SIGTERM",
+        cacheStatus: "timeout"
+      }));
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(() => task(controller.signal))
+      .then(settle)
+      .catch((error) => {
+        settle(fallbackResult(error, { cacheStatus: "error" }));
+      });
+  });
+}
+
+function runReadBoardDiagnostic(command, options = {}) {
+  return withReadBoardDiagnosticTimeout(
+    command,
+    (timeoutSignal) => runAutoflow(command, {
+      ...options,
+      timeoutSignal,
+      killGraceMs: autoflowChildKillGraceMs
+    }),
+    (error, fallback) => readBoardDiagnosticErrorResult(command, options, error, fallback)
+  );
+}
+
 function startCachedAutoflowRefresh(command, options, key, entry) {
   const targetEntry =
     entry || {
@@ -638,7 +715,7 @@ function startCachedAutoflowRefresh(command, options, key, entry) {
       promise: null
     };
 
-  targetEntry.promise = runAutoflow(command, options)
+  targetEntry.promise = runReadBoardDiagnostic(command, options)
     .then((result) => {
       targetEntry.result = result;
       targetEntry.updatedAt = Date.now();

@@ -7,6 +7,7 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/prd-063-ticket-064]]** (`wiki/answers/prd-063-ticket-064.md`) : Summary of PRD 063 and ticket 064, describing changes to the desktop dashboard's workflow pin strip for inbox card and PRD card order. Logged on 2026-05-05.
 - **[[answers/prd-178-adapter-running-state-heartbeat]]** (`wiki/answers/prd-178-adapter-running-state-heartbeat.md`) : Summary of PRD 178, addressing runner state staleness during long adapter calls by introducing periodic heartbeats and chunk timestamps. Logged on 2026-05-05.
 - **[[answers/prd-166-skill-curator-lifecycle-and-auto-extraction]]** (`wiki/answers/prd-166-skill-curator-lifecycle-and-auto-extraction.md`) : Summary of PRD 166, detailing the implementation of skill curator lifecycle management, auto-extraction triggers, and CLI commands. Logged on 2026-05-04.
 - **[[answers/recent-core-and-ui-refinements-20260502]]** (`wiki/answers/recent-core-and-ui-refinements-20260502.md`): Captured the recent core and UI refinements spanning `prd_091` through `prd_097`, including Desktop TODO layer layout fixes, Planner orchestrator recovery for max retries, Worker lifecycle isolation (worktree/branch), flex-alignment for UI progress rows, Codex fast reasoning (low), and Planner/Orchestrator role label normalization.
@@ -41,6 +42,7 @@ Generated summaries may be written here by `autoflow wiki update`.
 - [[project-overview]]
 - [[log]]
 - `features/`
+  - [[features/llm-wiki-features]] (`wiki/features/llm-wiki-features.md`)
   - [[features/ai-workflow-board]] (`wiki/features/ai-workflow-board.md`)
   - [[features/reject-auto-replan]] (`wiki/features/reject-auto-replan.md`)
   - [[features/worker-lifecycle-isolation]] (`wiki/features/worker-lifecycle-isolation.md`)
@@ -74,13 +76,21 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/ticket-overlap-no-op]] (`wiki/learnings/ticket-overlap-no-op.md`)
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
+  - [[learnings/retrofit-frontmatter-scope-limitation]] (`wiki/learnings/retrofit-frontmatter-scope-limitation.md`)
 - `operations/`
   - [[Operations Wiki Index]] (`wiki/operations/index.md`)
   - [[operations/runner-health]]
   - [[operations/runner-timing]]
+  - [[operations/wiki-panel-layout]] (`wiki/operations/wiki-panel-layout.md`)
 - `agents/`
   - [[Agents Wiki Index]] (`wiki/agents/index.md`)
   - [[agents/prompt-evolution]]
+
+- `skills/`
+  - [[skills-local/nudge/adapter-running-state-heartbeat-2]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-2/SKILL.md`)
+  - [[skills-local/nudge/adapter-running-state-heartbeat-3]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-3/SKILL.md`)
+  - [[skills-local/nudge/adapter-running-state-heartbeat-4]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-4/SKILL.md`)
+  - [[skills-local/nudge/adapter-running-state-heartbeat-5]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-5/SKILL.md`)
 
   - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
@@ -139,11 +149,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 159
+- Done tickets: 164
 - Reject records: 5
-- Verifier logs: 398
+- Verifier logs: 498
 - Conversation handoffs: 8
-- Last updated: 2026-05-05T01:20:33Z
+- Last updated: 2026-05-05T06:38:46Z
 
 ## Completed Tickets
 
@@ -199,3 +209,7 @@ urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 - [[sources/prd-038-spec-handoff]] (PRD Handoff)
 
 - [[sources/prd-122-spec-handoff]] (Wiki AI 합성 입력으로 telemetry jsonl 사용)
+
+- [[sources/prd-003]] (Wiki 패널 - 좌우 분할 + 접이식 미리보기)
+
+- [[sources/prd_172]] (플래너 커밋 폭증 완화)

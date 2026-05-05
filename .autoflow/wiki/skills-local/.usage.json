@@ -48,6 +48,13 @@
     "success_count": 0,
     "view_count": 0
   },
+  "orchestration-cleanup/ai-work-for-prd-167-10": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
   "orchestration-cleanup/ai-work-for-prd-167-2": {
     "failure_count": 0,
     "last_used_at": "",
@@ -104,6 +111,13 @@
     "success_count": 0,
     "view_count": 0
   },
+  "orchestration-cleanup/desktop-readboard-subcall-timeout-isolation": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
   "ticket-completion/adapter-running-state-heartbeat": {
     "failure_count": 0,
     "last_used_at": "",
@@ -125,6 +139,20 @@
     "success_count": 0,
     "view_count": 0
   },
+  "ticket-completion/inprogress-recovery-parking-and-repairing-timeout": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/planner-check-ledger-live-lock-fix": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
   "ticket-completion/planner-realtime-wakeup-trigger": {
     "failure_count": 0,
     "last_used_at": "",
@@ -133,6 +161,13 @@
     "view_count": 0
   },
   "ticket-completion/repeated-preflight-failure-recovery-circuit": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/runner-commit-volume-throttle": {
     "failure_count": 0,
     "last_used_at": "",
     "last_viewed_at": "",
@@ -154,6 +189,20 @@
     "view_count": 0
   },
   "ticket-completion/token-telemetry-regression-recovery": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/worker-last-result-self-reset-after-cleanup": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/worker-self-refresh-dirty-deadlock": {
     "failure_count": 0,
     "last_used_at": "",
     "last_viewed_at": "",

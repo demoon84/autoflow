@@ -1,3 +1,21 @@
+---
+kind: synth_answer
+created: 2026-05-05T00:00:00Z
+updated: 2026-05-05T00:00:00Z
+terms:
+  - Adapter Heartbeat
+  - Stale Detection
+  - Chunk Timestamping
+  - Runner State
+  - CLI Commands
+  - Policies
+  - Verification
+  - Smoke Test
+citations:
+  - tickets_177
+  - PRD 178
+  - logs/verifier_177_20260505_001334Z_pass.md
+---
 # PRD 178: Adapter-Running State Heartbeat
 
 ## Summary

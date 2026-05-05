@@ -6,12 +6,12 @@
 - PRD Key: prd_173
 - Plan Candidate: Plan AI handoff from tickets/done/prd_173/prd_173.md
 - Title: desktop readBoard subcall timeout isolation
-- Stage: todo
-- AI:
-- Claimed By:
-- Execution AI:
-- Verifier AI:
-- Last Updated: 2026-05-04T21:50:44Z
+- Stage: blocked
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-05T02:13:50Z
 
 ## Goal
 
@@ -34,39 +34,34 @@
 - `apps/desktop/src/main.js`
 
 ## Worktree
-
-- Path:
-- Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_172`
+- Branch: autoflow/tickets_172
+- Base Commit: dc9151ba1566b32c7a04ebbe026599898c939058
+- Worktree Commit: 
+- Integration Status: blocked_dirty_project_root
 
 ## Goal Runtime
-
-- Status:
-- Started At:
-- Started Epoch:
-- Updated At:
-- Tick Count: 0
-- Time Used Seconds: 0
-- Token Budget:
-- Tokens Used:
-- Continuation Suppressed: false
-- Last Event:
-- Last Progress Fingerprint:
-- Iteration Fingerprints: []
-- Last Lint Status: ok
-- Last Lint Vagueness Score: 0
+- Status: blocked
+- Started At: 2026-05-05T02:10:05Z
+- Started Epoch: 1777947005
+- Updated At: 2026-05-05T06:44:49Z
+- Tick Count: 2
+- Time Used Seconds: 16484
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: true
+- Last Event: ticket_stage_blocked
+- Last Progress Fingerprint: 2164060142
 
 ## Recovery State
 
-- Status: healthy
-- Detected By:
-- Failure Class:
-- Evidence:
-- Planner Decision:
-- Owner Resume Instruction:
-- Last Recovery At:
+- Status: blocked
+- Detected By: runtime; planner
+- Failure Class: dirty_root
+- Evidence: runtime originally reported `dirty_project_root_conflict` because PROJECT_ROOT has dirty Allowed Paths: `apps/desktop/src/main.js`; `autoflow guard` at 2026-05-05T02:16:33Z warned that `dirty_project_root_conflict` is not an accepted Recovery State failure class.
+- Planner Decision: Normalize the failure class to `dirty_root` without changing the blocker; the next planner tick may handle this as blocked-dirty orchestration if the dirty path remains.
+- Owner Resume Instruction: Do not continue this ticket until PROJECT_ROOT changes in `apps/desktop/src/main.js` are committed, stashed, or intentionally integrated by the responsible orchestration flow.
+- Last Recovery At: 2026-05-05T02:16:33Z
 
 ## Done When
 
@@ -79,14 +74,13 @@
 - [ ] `npm run desktop:check` exits 0.
 
 ## Next Action
-
-- 다음에 바로 이어서 할 일: Impl AI 는 이 티켓을 todo 에서 claim 한 뒤 `apps/desktop/src/main.js`의 `readBoard`, `runAutoflowCachedOrRefresh`, `listRunnersCachedOrRefresh`, `withTimeout`/`timeoutSignal` 경로를 먼저 읽고, `Promise.all` 단일 reject 의존 제거와 개별 diagnostic refresh timeout을 Allowed Paths 안에서 구현한다.
+- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (`apps/desktop/src/main.js`). Planner normalized the recovery class to `dirty_root`; next recovery tick should orchestrate or clear that dirty overlap before ticket-owner continues.
 
 ## Resume Context
 
 - 현재 상태 요약: Plan AI 가 `tickets/inbox/order_153.md`를 `tickets/done/prd_173/prd_173.md`로 승격하고 이 todo 티켓을 생성했다.
 - 직전 작업: `.autoflow/scripts/start-plan.sh` first returned `source=order-inbox`, `order_id=153`; after PRD creation, `.autoflow/scripts/start-plan.sh 173` returned `source=backlog-to-todo`, `lint_status=ok`, `lint_vagueness_score=0`, and created `tickets_172.md`.
-- 재개 시 먼저 볼 것: `tickets/done/prd_173/prd_173.md`, `tickets/done/prd_173/order_153.md`, `apps/desktop/src/main.js`의 `readBoard`, `runAutoflowCachedOrRefresh`, `listRunnersCachedOrRefresh`, `runAutoflowArgs`, `withTimeout`, `attachTimeoutSignal`.
+- 재개 시 먼저 볼 것: `git status --short`, `apps/desktop/src/main.js` dirty overlap, `tickets/done/prd_173/prd_173.md`, `tickets/done/prd_173/order_153.md`, `apps/desktop/src/main.js`의 `readBoard`, `runAutoflowCachedOrRefresh`, `listRunnersCachedOrRefresh`, `runAutoflowArgs`, `withTimeout`, `attachTimeoutSignal`.
 
 ## Notes
 
@@ -97,11 +91,16 @@
 - Scope constraint: preserve `prd_140` fallback metadata fields (`partial`, `fallback`, `stale`, `refreshInFlight`, `readBoardFallback`, top-level `readBoardMeta`) and do not broaden into `packages/cli/runners-project.sh` or renderer/preload changes.
 - Guard after ticket creation returned `status=warning`, `error_count=0`, `warning_count=2`; unresolved cleanup candidates are the existing `tickets_119` leftover worktree with no board ticket and dirty done-ticket worktree for `tickets/done/prd_164/tickets_163.md`. Planner did not delete, reset, or manage those worktrees.
 
+- Runtime hydrated worktree dependency at 2026-05-05T02:10:04Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-05T02:10:03Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_172; run=tickets/inprogress/verify_172.md
+- AI worker prepared resume at 2026-05-05T02:10:36Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_172; run=tickets/inprogress/verify_172.md
+- Mini-plan 2026-05-05T02:18Z: wiki query `autoflow wiki query --term "readBoard diagnostics timeout" --term "autoflow:readBoard" --term "prd_140 prd_144 listRunners" --rag` returned related done records `tickets/done/prd_140/prd_140.md`, `tickets/done/prd_104/tickets_100.md`, and `tickets/done/prd_144` context. Preserve `prd_140` top-level `readBoardMeta`/stale fields, keep `prd_144` standalone `autoflow:listRunners` TTL/inflight path, and apply the `prd_104` bounded fallback pattern to readBoard diagnostics only. Implementation steps: add a shared readBoard diagnostic timeout helper around cached background refreshes, convert readBoard diagnostic fan-out to all-settled safe result collection, and enrich `readBoardMeta.fallbackSources` with ok/cancelled/signal/stderr evidence.
+- Runtime auto-blocked: dirty_project_root_conflict at 2026-05-05T02:13:50Z; dirty_paths=apps/desktop/src/main.js
+- Planner recovery 2026-05-05T02:16:33Z: normalized guard-warning failure class `dirty_project_root_conflict` to `dirty_root` while preserving the original dirty path evidence. Guard cleanup candidates remain evidence-only: `autoflow/tickets_119` leftover worktree and dirty done-ticket worktree `autoflow/tickets_163`; planner did not delete or reset worktrees.
 ## Verification
-
-- Run file:
-- Log file:
-- Result: pending
+- Run file: `tickets/inprogress/verify_172.md`
+- Log file: pending
+- Result: pending ticket-owner by worker
 
 ## Result
 

@@ -217,6 +217,27 @@ select_inbox_order() {
   return 1
 }
 
+select_order_generated_spec() {
+  local spec_file order_ref
+
+  while IFS= read -r spec_file; do
+    [ -n "$spec_file" ] || continue
+    [ -f "$spec_file" ] || continue
+    spec_file_is_placeholder "$spec_file" && continue
+    order_ref="$(extract_spec_source_order_ref "$spec_file")"
+    case "$order_ref" in
+      tickets/inbox/order_*.md)
+        printf '%s' "$spec_file"
+        return 0
+        ;;
+    esac
+  done < <(
+    list_matching_files "${BOARD_ROOT}/tickets/backlog" 'prd_*.md' 'project_*.md'
+  )
+
+  return 1
+}
+
 extract_spec_source_order_ref() {
   local file="$1"
 
@@ -405,6 +426,66 @@ EOF
   printf '%s' "$ticket_file"
 }
 
+promote_spec_to_todo_or_exit() {
+  local spec_file="$1"
+  local lint_status_value=""
+  local lint_score_value=""
+  local lint_terms_value=""
+  local lint_output_file lint_rc created_ticket
+
+  # Done When / Global Acceptance Criteria vagueness lint (Ralph loop pattern
+  # (a)): if the PRD's Completion Promise is too vague to verify, do not promote
+  # to todo. The planner orchestrator AI is expected to either rework the PRD
+  # via spec-author-agent or override AUTOFLOW_LINT_TICKET=off after review.
+  if lint_ticket_enabled; then
+    lint_output_file="$(autoflow_mktemp)"
+    set +e
+    run_lint_ticket "$spec_file" > "$lint_output_file" 2>&1
+    lint_rc=$?
+    set -e
+    lint_status_value="$(awk -F= '/^lint_status=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_score_value="$(awk -F= '/^vagueness_score=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
+    lint_terms_value="$(awk -F= '/^vague_terms=/ { sub(/^vague_terms=/, ""); print; exit }' "$lint_output_file" 2>/dev/null || true)"
+    if [ "$lint_rc" -ne 0 ] || [ "$lint_status_value" = "block" ]; then
+      printf 'status=ok\n'
+      printf 'source=vague-done-when\n'
+      printf 'spec=%s\n' "$spec_file"
+      printf 'lint_status=%s\n' "${lint_status_value:-block}"
+      printf 'lint_vagueness_score=%s\n' "${lint_score_value:-unknown}"
+      printf 'lint_vague_terms=%s\n' "${lint_terms_value:-}"
+      printf 'failure_class=vague_completion_promise\n'
+      printf 'recovery_state=needs_user\n'
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=PRD %s has a vague Completion Promise (lint_status=%s, vagueness_score=%s). spec-author-agent must rework Done When / Global Acceptance Criteria with concrete signals (commands, file paths, exit codes, numeric metrics) before promoting to todo. Override only after review with AUTOFLOW_LINT_TICKET=off.\n' \
+        "$(board_relative_path "$spec_file")" \
+        "${lint_status_value:-block}" \
+        "${lint_score_value:-unknown}"
+      exit 0
+    fi
+  fi
+
+  created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
+  if [ -n "$lint_status_value" ] && [ -f "$created_ticket" ]; then
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Status" "$lint_status_value"
+    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Vagueness Score" "${lint_score_value:-0}"
+  fi
+  printf 'status=ok\n'
+  printf 'source=backlog-to-todo\n'
+  printf 'spec=%s\n' "$spec_file"
+  printf 'todo_ticket=%s\n' "$created_ticket"
+  if [ -n "$lint_status_value" ]; then
+    printf 'lint_status=%s\n' "$lint_status_value"
+    printf 'lint_vagueness_score=%s\n' "${lint_score_value:-0}"
+  fi
+  emit_replan_skipped_metadata "$replan_skipped_file"
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  printf 'next_action=Todo %s created from %s; hand off to ticket owner.\n' "$(basename "$created_ticket")" "$(board_relative_path "$spec_file")"
+  exit 0
+}
+
 # --- Branch 1: reject auto-replan ---------------------------------------------
 replan_skipped_file="$(autoflow_mktemp)"
 replanned_reject="$(find_replannable_reject "$replan_skipped_file" || true)"
@@ -565,6 +646,14 @@ if blocked_auto_recover_enabled; then
     parked_status="$(ticket_recovery_status "$parked_ticket")"
     case "$parked_status" in
       needs_user)
+        if ticket_needs_user_already_parked "$parked_ticket"; then
+          mark_ticket_needs_user_parked "$parked_ticket"
+          parked_attempt_index=$((parked_attempt_index + 1))
+          printf 'blocked_recover_skip.%s=%s\n' "$parked_attempt_index" "$(board_relative_path "$parked_ticket")"
+          printf 'blocked_recover_skip.%s.recovery_state=needs_user\n' "$parked_attempt_index"
+          printf 'blocked_recover_skip.%s.reason=already_parked_needs_user\n' "$parked_attempt_index"
+          continue
+        fi
         mark_ticket_needs_user_parked "$parked_ticket"
         reset_worker_ticket_stage_blocked_last_result
         printf 'status=ok\n'
@@ -734,6 +823,15 @@ if blocked_auto_recover_enabled; then
   done < <(list_blocked_inprogress_tickets)
 fi
 
+# --- Branch 1.9: order-generated backlog PRD -> todo ticket ------------------
+# If an earlier planner turn already promoted an order into backlog, finish that
+# order pipeline before selecting another inbox order. This prevents generated
+# order PRDs from starving behind a growing inbox queue.
+spec_file="$(select_order_generated_spec || true)"
+if [ -n "$spec_file" ]; then
+  promote_spec_to_todo_or_exit "$spec_file"
+fi
+
 # --- Branch 2: quick order inbox -> AI-generated PRD/todo ---------------------
 order_file="$(select_inbox_order || true)"
 if [ -n "$order_file" ]; then
@@ -751,60 +849,7 @@ fi
 # --- Branch 3: backlog PRD -> todo ticket -------------------------------------
 spec_file="$(select_populated_spec || true)"
 if [ -n "$spec_file" ]; then
-  # Done When / Global Acceptance Criteria vagueness lint (Ralph loop pattern
-  # (a)): if the PRD's Completion Promise is too vague to verify, do not promote
-  # to todo. The planner orchestrator AI is expected to either rework the PRD
-  # via spec-author-agent or override AUTOFLOW_LINT_TICKET=off after review.
-  lint_status_value=""
-  lint_score_value=""
-  lint_terms_value=""
-  if lint_ticket_enabled; then
-    lint_output_file="$(autoflow_mktemp)"
-    set +e
-    "${SCRIPT_DIR}/lint-ticket.sh" "$spec_file" > "$lint_output_file" 2>&1
-    lint_rc=$?
-    set -e
-    lint_status_value="$(awk -F= '/^lint_status=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
-    lint_score_value="$(awk -F= '/^vagueness_score=/ { print $2; exit }' "$lint_output_file" 2>/dev/null || true)"
-    lint_terms_value="$(awk -F= '/^vague_terms=/ { sub(/^vague_terms=/, ""); print; exit }' "$lint_output_file" 2>/dev/null || true)"
-    if [ "$lint_rc" -ne 0 ] || [ "$lint_status_value" = "block" ]; then
-      printf 'status=ok\n'
-      printf 'source=vague-done-when\n'
-      printf 'spec=%s\n' "$spec_file"
-      printf 'lint_status=%s\n' "${lint_status_value:-block}"
-      printf 'lint_vagueness_score=%s\n' "${lint_score_value:-unknown}"
-      printf 'lint_vague_terms=%s\n' "${lint_terms_value:-}"
-      printf 'failure_class=vague_completion_promise\n'
-      printf 'recovery_state=needs_user\n'
-      emit_replan_skipped_metadata "$replan_skipped_file"
-      printf 'board_root=%s\n' "$BOARD_ROOT"
-      printf 'project_root=%s\n' "$PROJECT_ROOT"
-      printf 'next_action=PRD %s has a vague Completion Promise (lint_status=%s, vagueness_score=%s). spec-author-agent must rework Done When / Global Acceptance Criteria with concrete signals (commands, file paths, exit codes, numeric metrics) before promoting to todo. Override only after review with AUTOFLOW_LINT_TICKET=off.\n' \
-        "$(board_relative_path "$spec_file")" \
-        "${lint_status_value:-block}" \
-        "${lint_score_value:-unknown}"
-      exit 0
-    fi
-  fi
-
-  created_ticket="$(create_todo_ticket_from_spec "$spec_file")"
-  if [ -n "$lint_status_value" ] && [ -f "$created_ticket" ]; then
-    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Status" "$lint_status_value"
-    replace_scalar_field_in_section "$created_ticket" "## Goal Runtime" "Last Lint Vagueness Score" "${lint_score_value:-0}"
-  fi
-  printf 'status=ok\n'
-  printf 'source=backlog-to-todo\n'
-  printf 'spec=%s\n' "$spec_file"
-  printf 'todo_ticket=%s\n' "$created_ticket"
-  if [ -n "$lint_status_value" ]; then
-    printf 'lint_status=%s\n' "$lint_status_value"
-    printf 'lint_vagueness_score=%s\n' "${lint_score_value:-0}"
-  fi
-  emit_replan_skipped_metadata "$replan_skipped_file"
-  printf 'board_root=%s\n' "$BOARD_ROOT"
-  printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Todo %s created from %s; hand off to ticket owner.\n' "$(basename "$created_ticket")" "$(board_relative_path "$spec_file")"
-  exit 0
+  promote_spec_to_todo_or_exit "$spec_file"
 fi
 
 # --- Branch 4: legacy plan/ fallback -----------------------------------------

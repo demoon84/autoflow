@@ -87,14 +87,14 @@
 - [ ] `rg -n "ticket_stage_blocked|verify_.*md|self-refresh|dirty" .autoflow/scripts/start-ticket-owner.sh runtime/board-scripts/start-ticket-owner.sh packages/cli/run-role.sh` returns evidence that active ticket markdown self-refresh does not remain the only blocker signal.
 - [ ] `rg -n "loop-worker|worktree|orphan|runner-common|process group|kill" packages/cli/runners-project.sh runtime/board-scripts/runners-project.sh` returns evidence for worktree-bound runner cleanup or self-exit handling. If the implementation uses a non-`kill` guard, the ticket explains the exact function and state key.
 - [ ] `rg -n "DEBOUNCE|runner-timing|runner-health|prompt-evolution|output_truncated|adapter_finish|adapter_timeout|SIGTERM" packages/cli/run-role.sh runtime/board-scripts/run-role.sh packages/cli/wiki-project.sh runtime/board-scripts/wiki-project.sh` returns evidence for commit-throttle, wiki debounce, and adapter timeout classification.
-- [ ] `rg -n "\\[wiki\\].*(PRD|ticket|source)|wiki knowledge update|source.*ticket" packages/cli/wiki-project.sh packages/cli/run-role.sh` returns evidence that wiki commit/log attribution includes source context or the ticket adds that source context.
+- [ ] `rg -n "\\[wiki\\].*(PRD|ticket|source)|wiki knowledge update|source.*ticket|autocommit_message" packages/cli/wiki-project.sh packages/cli/run-role.sh runtime/board-scripts/run-role.sh runtime/board-scripts/wiki-project.sh` returns evidence that wiki commit/log attribution includes source PRD/ticket context, or the ticket records the exact fallback behavior when no source ticket can be inferred.
 - [ ] `node --check apps/desktop/src/main.js` exits 0 and `rg -n "selfHealStoppedRunnersForScope|listRunnersCachedOrRefresh|knownProjectScopes|cooldown" apps/desktop/src/main.js` returns the self-heal cache/cooldown guard evidence.
 - [ ] `bash -n` passes for every modified shell file in Allowed Paths.
 - [ ] `bin/autoflow guard` exits 0 after implementation.
 
 ## Next Action
 
-- 다음에 바로 이어서 할 일: Impl AI 는 이 티켓을 todo 에서 claim 한 뒤 `tickets/done/prd_176/prd_176.md` 와 관련 PRD/ticket evidence 를 먼저 대조한다. 이미 개별 티켓으로 처리된 A1~A5, B1~B3 범위는 재구현하지 말고, Allowed Paths 안에서 남은 residual connector gap 만 mini-plan / 구현 / 검증 / 머지까지 한 턴에 끝낸다.
+- 다음에 바로 이어서 할 일: Impl AI 는 이 티켓을 todo 에서 claim 한 뒤 `tickets/done/prd_176/prd_176.md`, `tickets/done/prd_176/order_157.md`, 관련 PRD/ticket evidence 를 먼저 대조한다. 이미 개별 티켓으로 처리된 A1~A5, B1~B3 범위는 재구현하지 말고, Allowed Paths 안에서 남은 residual connector gap, 특히 wiki commit source attribution gap 만 mini-plan / 구현 / 검증 / 머지까지 한 턴에 끝낸다.
 
 ## Resume Context
 
@@ -108,6 +108,7 @@
 - Planner guard evidence after creation: `bin/autoflow guard` returned `error_count=0`, `warning_count=2`.
 - Guard warning cleanup candidates: `autoflow/tickets_119` has a ticket worktree but no board ticket; `autoflow/tickets_163` has a dirty worktree for done ticket `tickets/done/prd_164/tickets_163.md`.
 - Planner decision: leave those worktrees untouched in this turn. They are cleanup candidates for recovery orchestration/user review, not implementation scope for `tickets_175` unless a later planner recovery turn explicitly assigns them.
+- Planner dedupe 2026-05-05T01:33:49Z: `tickets/inbox/order_157.md` requested wiki commit source ticket attribution for `[wiki] wiki knowledge update` subjects. Wiki RAG returned `tickets/done/prd_183/prd_183.md`, which covers meaningful wiki commit gates but not explicit source ticket attribution. Because this ticket already owns the residual attribution acceptance item and overlaps the same runner/wiki paths, Plan AI archived `order_157` beside `prd_176` instead of creating a duplicate todo.
 
 ## Verification
 

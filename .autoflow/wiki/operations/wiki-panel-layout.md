@@ -1,8 +1,23 @@
+---
+kind: documentation
+slug: wiki-panel-layout
+title: Wiki Panel Layout Changes
+created: 2026-05-05T00:00:00Z
+updated: 2026-05-05T00:00:00Z
+terms:
+  - Wiki Panel
+  - Horizontal Split
+  - Collapsible Preview Pane
+  - UI/UX
+  - Layout Changes
+citations:
+  - [[wiki/sources/prd-003]]
+---
 # Wiki Panel Layout Changes
 
 ## Overview
 
-This document outlines the recent changes to the wiki panel's layout, introducing a horizontal split with a collapsible preview pane for improved user experience and efficient information display. These changes were implemented as part of `prd_003`.
+This document outlines the recent changes to the wiki panel's layout, introducing a horizontal split with a collapsible preview pane for improved user experience and efficient information display. These changes were implemented as part of [[wiki/sources/prd-003]].
 
 ## Key Changes
 
@@ -29,3 +44,7 @@ The preview pane is now collapsible by default, enhancing usability:
 ## Impact
 
 These changes aim to provide a more organized and efficient way to browse and view wiki content, reducing screen clutter and improving focus on the active content.
+
+## Related Artifacts
+
+- Ticket: `tickets/done/prd_003/prd_003.md`

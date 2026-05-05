@@ -1,10 +1,21 @@
 ---
 title: blocked-dirty orchestration 무한 루프 — 항상 변하는 파일 (telemetry/wiki/check) 가 dirty_root 자동 회복 종료를 막음
-priority: high
+priority: low
 created_at: 2026-05-05T01:01Z
 source: claude-code-monitoring
 detected_during: realtime monitoring tick #26
-related: [tickets_166, prd_167]
+related: [tickets_166, prd_167, order_149, prd_168, tickets_167]
+status_update_2026-05-05T01:27Z: |
+  Tick #38 검증 결과, 본 issue 의 fix 가 이미 in-progress:
+  - **prd_168 "planner check ledger live-lock fix"** (priority high) 가 backlog 에 있음
+  - **tickets_167** 이 worker 에 의해 방금 claim 됨 (Stage: executing, 01:27:09Z)
+  - prd_168 의 fix 가 본 order 의 Phase D (retry cap) + Phase A (whitelist 부분) 와 정합:
+    - "no-op cleanup detection" — check_NNN.md 단독 dirty 면 새 cleanup 안 함
+    - "fixpoint guard" — 누적 cleanup 임계 (예: 5건) 초과 시 needs_user 자동 escalate
+    - "source separation" — `source=blocked-cleanup-no-op` emit
+  - **tickets_166 도 자동으로 Recovery State: needs_user 로 전환됨** (fixpoint guard 또는 유사 로직 동작 증거)
+  - **원본 detect: order_149** (이미 in inbox/done) — 본 order 는 사실상 그 issue 의 재발견
+  → priority high → low 강등. 별도 조치 불필요. tickets_167 완료 후 본 order 자동 close 가능.
 ---
 
 ## Request

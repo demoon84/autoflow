@@ -3514,16 +3514,38 @@ ticket_repairing_timeout_stale() {
 mark_ticket_needs_user_parked() {
   local ticket_file="$1"
   local timestamp
+  local decision instruction current_decision current_instruction
 
   [ -f "$ticket_file" ] || return 1
   timestamp="$(now_iso)"
+  decision="Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State."
+  instruction="Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes."
+  current_decision="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Planner Decision")")"
+  current_instruction="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Owner Resume Instruction")")"
 
   replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "$decision"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "$instruction"
+  if [ "$current_decision" != "$decision" ] || [ "$current_instruction" != "$instruction" ]; then
+    replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+  fi
   replace_section_block "$ticket_file" "Next Action" "- Parked needs_user: human/planner decision is required before this ticket should be claimed again; worker may continue with the next eligible todo."
   append_note_once "$ticket_file" "Planner parking: source=inprogress-needs-user-parked; ticket is outside the normal worker claim queue until Recovery State changes."
+}
+
+ticket_needs_user_already_parked() {
+  local ticket_file="$1"
+  local decision instruction current_decision current_instruction
+
+  [ -f "$ticket_file" ] || return 1
+  [ "$(ticket_recovery_status "$ticket_file")" = "needs_user" ] || return 1
+
+  decision="Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State."
+  instruction="Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes."
+  current_decision="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Planner Decision")")"
+  current_instruction="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Owner Resume Instruction")")"
+
+  [ "$current_decision" = "$decision" ] && [ "$current_instruction" = "$instruction" ]
 }
 
 mark_ticket_repairing_timeout_needs_user() {
