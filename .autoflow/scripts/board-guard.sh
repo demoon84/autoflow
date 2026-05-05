@@ -289,12 +289,13 @@ check_recovery_state_fields() {
 
 check_recovery_state_values() {
   local file rel status failure_class invalid=0
-  local valid_statuses=(healthy stalled blocked repairing requeued needs_user)
+  local valid_statuses=(healthy stalled blocked repairing requeued resolved needs_user)
   local valid_failure_classes=(
     adapter_no_progress
     stale_todo_worktree
     missing_worktree
     dirty_root
+    dirty_root_cleared
     dirty_project_root_conflict
     allowed_path_conflict
     shared_head_conflict

@@ -180,6 +180,15 @@ require_contains "$invalid_recovery_output" "Recovery State has invalid Failure 
 
 perl -0pi -e 's/- Status: confused/- Status: healthy/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
 perl -0pi -e 's/- Failure Class: mystery_failure\n/- Failure Class:\n/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
+perl -0pi -e 's/- Status: healthy/- Status: resolved/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
+perl -0pi -e 's/- Failure Class:\n/- Failure Class: dirty_root_cleared\n/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
+resolved_recovery_output="${project_dir}/guard-resolved-recovery.out"
+"${REPO_ROOT}/bin/autoflow" guard "$project_dir" >"$resolved_recovery_output"
+require_line "$resolved_recovery_output" "status=ok"
+require_line "$resolved_recovery_output" "check.recovery_state_values=ok"
+
+perl -0pi -e 's/- Status: resolved/- Status: healthy/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
+perl -0pi -e 's/- Failure Class: dirty_root_cleared\n/- Failure Class:\n/' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
 perl -0pi -e 's/\n## Recovery State\n\n- Status: healthy\n- Detected By:\n- Failure Class:\n- Evidence:\n- Planner Decision:\n- Owner Resume Instruction:\n- Last Recovery At:\n//' "${project_dir}/.autoflow/tickets/todo/tickets_001.md"
 warning_output="${project_dir}/guard-warning.out"
 "${REPO_ROOT}/bin/autoflow" guard "$project_dir" >"$warning_output"
