@@ -380,6 +380,7 @@ function cancelInvocation(invocationId) {
 
 function appConfig() {
   return {
+    defaultProjectRoot: repoRoot,
     defaultBoardDirName
   };
 }

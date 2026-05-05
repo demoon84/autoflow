@@ -1234,6 +1234,9 @@ function App() {
         if (isMounted && !window.localStorage.getItem("autoflow.boardDirName")) {
           setDefaultFlowFolder(configuredBoardDirName);
         }
+        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && config.defaultProjectRoot) {
+          setProjectRoot(config.defaultProjectRoot);
+        }
         if (isMounted) {
           setInstalledAgentProfiles(profiles || {});
         }
@@ -2462,6 +2465,9 @@ function EssentialApp() {
         const configuredBoardDirName = config.defaultBoardDirName || fallbackFlowFolder;
         if (isMounted && !window.localStorage.getItem("autoflow.boardDirName")) {
           setDefaultFlowFolder(configuredBoardDirName);
+        }
+        if (isMounted && !window.localStorage.getItem("autoflow.projectRoot") && config.defaultProjectRoot) {
+          setProjectRoot(config.defaultProjectRoot);
         }
         if (isMounted) {
           setInstalledAgentProfiles(profiles || {});
