@@ -954,40 +954,104 @@ runner_idle_preflight_inputs_fingerprint() {
   fi
 }
 
-runner_planner_realtime_enabled() {
+runner_realtime_enabled() {
   local public_role="$1"
   local mode="$2"
+  local role_var role_value
 
-  [ "$public_role" = "planner" ] || return 1
   [ "$mode" = "loop" ] || return 1
-  [ "${AUTOFLOW_PLANNER_REALTIME_ENABLED:-0}" = "1" ] || return 1
+
+  case "$public_role" in
+    planner|ticket|verifier|wiki) ;;
+    *) return 1 ;;
+  esac
+
+  # Per-role env var: AUTOFLOW_<ROLE>_REALTIME_ENABLED=1
+  role_var="AUTOFLOW_$(printf '%s' "$public_role" | tr '[:lower:]' '[:upper:]')_REALTIME_ENABLED"
+  role_value="${!role_var:-}"
+  if [ "$role_value" = "1" ]; then
+    return 0
+  fi
+
+  # Umbrella env var: AUTOFLOW_RUNNER_REALTIME_ENABLED=1 enables all 4 roles
+  if [ "${AUTOFLOW_RUNNER_REALTIME_ENABLED:-0}" = "1" ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Backward compatibility wrapper
+runner_planner_realtime_enabled() {
+  runner_realtime_enabled "$@"
+}
+
+runner_realtime_fingerprint_path() {
+  local runner_id="$1"
+  local public_role="${2:-planner}"
+
+  runner_ensure_dirs
+  printf '%s/%s.%s-realtime-inputs.fingerprint' "$(runner_state_dir)" "$runner_id" "$public_role"
 }
 
 runner_planner_realtime_fingerprint_path() {
+  runner_realtime_fingerprint_path "$1" "planner"
+}
+
+runner_realtime_marker_path() {
   local runner_id="$1"
+  local public_role="${2:-planner}"
 
   runner_ensure_dirs
-  printf '%s/%s.planner-realtime-inputs.fingerprint' "$(runner_state_dir)" "$runner_id"
+  printf '%s/%s.%s-realtime-wakeup.pending' "$(runner_state_dir)" "$runner_id" "$public_role"
 }
 
 runner_planner_realtime_marker_path() {
-  local runner_id="$1"
-
-  runner_ensure_dirs
-  printf '%s/%s.planner-realtime-wakeup.pending' "$(runner_state_dir)" "$runner_id"
+  runner_realtime_marker_path "$1" "planner"
 }
 
-runner_planner_realtime_inputs_hash_stream() {
-  local spec dir file rel checksum
+runner_realtime_inputs_specs() {
+  # Per-role watch paths (relative to board_root)
+  # Format: "<dir>:<glob>" entries, one per line
+  case "${1:-planner}" in
+    planner)
+      printf 'tickets/inbox:order_*.md\n'
+      printf 'tickets/backlog:prd_*.md\n'
+      printf 'tickets/reject:reject_*.md\n'
+      ;;
+    ticket)
+      # Worker watches todo/ for new ticket arrival
+      printf 'tickets/todo:tickets_*.md\n'
+      ;;
+    verifier)
+      # Verifier watches verifier/ for queue entries
+      printf 'tickets/verifier:*.md\n'
+      ;;
+    wiki)
+      # Wiki AI watches done/ (new completions) and wiki/ (source changes)
+      # Note: wiki has its own debounce policy (AUTOFLOW_WIKI_DEBOUNCE_*)
+      printf 'tickets/done:*.md\n'
+      printf 'wiki:*.md\n'
+      ;;
+    *)
+      ;;
+  esac
+}
 
-  for spec in \
-    "tickets/inbox:order_*.md" \
-    "tickets/backlog:prd_*.md" \
-    "tickets/reject:reject_*.md"; do
+runner_realtime_inputs_hash_stream() {
+  local public_role="${1:-planner}"
+  local spec dir glob file rel checksum
+
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
     dir="${board_root}/${spec%%:*}"
+    glob="${spec#*:}"
     [ -d "$dir" ] || continue
     while IFS= read -r file; do
       [ -n "$file" ] || continue
+      case "$(basename "$file")" in
+        README.md) continue ;;
+      esac
       rel="${file#"$board_root"/}"
       if command -v shasum >/dev/null 2>&1; then
         checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
@@ -997,28 +1061,38 @@ runner_planner_realtime_inputs_hash_stream() {
         checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
       fi
       printf '%s  %s\n' "$checksum" "$rel"
-    done < <(find "$dir" -maxdepth 1 -type f -name "${spec#*:}" | LC_ALL=C sort)
-  done
+    done < <(find "$dir" -maxdepth 1 -type f -name "$glob" | LC_ALL=C sort)
+  done < <(runner_realtime_inputs_specs "$public_role")
 }
 
-runner_planner_realtime_inputs_fingerprint() {
+runner_planner_realtime_inputs_hash_stream() {
+  runner_realtime_inputs_hash_stream "planner"
+}
+
+runner_realtime_inputs_fingerprint() {
+  local public_role="${1:-planner}"
   if command -v shasum >/dev/null 2>&1; then
-    runner_planner_realtime_inputs_hash_stream | shasum -a 256 | awk '{ print $1 }'
+    runner_realtime_inputs_hash_stream "$public_role" | shasum -a 256 | awk '{ print $1 }'
   elif command -v sha256sum >/dev/null 2>&1; then
-    runner_planner_realtime_inputs_hash_stream | sha256sum | awk '{ print $1 }'
+    runner_realtime_inputs_hash_stream "$public_role" | sha256sum | awk '{ print $1 }'
   else
-    runner_planner_realtime_inputs_hash_stream | cksum | awk '{ print $1 ":" $2 }'
+    runner_realtime_inputs_hash_stream "$public_role" | cksum | awk '{ print $1 ":" $2 }'
   fi
 }
 
-runner_planner_realtime_mark_pending() {
+runner_planner_realtime_inputs_fingerprint() {
+  runner_realtime_inputs_fingerprint "planner"
+}
+
+runner_realtime_mark_pending() {
   local runner_id="$1"
-  local marker_path="$2"
-  local fingerprint="$3"
+  local public_role="$2"
+  local marker_path="$3"
+  local fingerprint="$4"
 
   if [ -f "$marker_path" ]; then
-    runner_append_log "$runner_id" "planner_realtime_wakeup" \
-      "role=planner" \
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
       "reason=inputs_changed" \
       "pending=merged" \
       "fingerprint=${fingerprint}"
@@ -1027,27 +1101,37 @@ runner_planner_realtime_mark_pending() {
 
   {
     printf 'created_at=%s\n' "$(runner_now_iso)"
+    printf 'role=%s\n' "$public_role"
     printf 'reason=inputs_changed\n'
     printf 'fingerprint=%s\n' "$fingerprint"
   } > "$marker_path"
-  runner_append_log "$runner_id" "planner_realtime_wakeup" \
-    "role=planner" \
+  runner_append_log "$runner_id" "realtime_wakeup" \
+    "role=${public_role}" \
     "reason=inputs_changed" \
     "pending=created" \
     "fingerprint=${fingerprint}"
 }
 
-runner_planner_realtime_consume_pending() {
+runner_planner_realtime_mark_pending() {
+  runner_realtime_mark_pending "$1" "planner" "$2" "$3"
+}
+
+runner_realtime_consume_pending() {
   local runner_id="$1"
+  local public_role="${2:-planner}"
   local marker_path
 
-  marker_path="$(runner_planner_realtime_marker_path "$runner_id")"
+  marker_path="$(runner_realtime_marker_path "$runner_id" "$public_role")"
   [ -f "$marker_path" ] || return 0
   rm -f "$marker_path"
-  runner_append_log "$runner_id" "planner_realtime_wakeup" \
-    "role=planner" \
+  runner_append_log "$runner_id" "realtime_wakeup" \
+    "role=${public_role}" \
     "reason=consumed" \
     "pending=cleared"
+}
+
+runner_planner_realtime_consume_pending() {
+  runner_realtime_consume_pending "$1" "planner"
 }
 
 runner_tick_backoff_skip_reason() {
@@ -1166,7 +1250,7 @@ runner_tick_backoff_sleep() {
   local realtime_enabled realtime_fingerprint_path realtime_marker_path previous_realtime_fingerprint current_realtime_fingerprint
 
   if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
-    if ! runner_planner_realtime_enabled "$public_role" "$mode"; then
+    if ! runner_realtime_enabled "$public_role" "$mode"; then
       sleep "$sleep_interval" &
       child_pid="$!"
       wait "$child_pid" || true
@@ -1177,11 +1261,11 @@ runner_tick_backoff_sleep() {
 
   realtime_enabled="false"
   previous_realtime_fingerprint=""
-  if runner_planner_realtime_enabled "$public_role" "$mode"; then
+  if runner_realtime_enabled "$public_role" "$mode"; then
     realtime_enabled="true"
-    realtime_fingerprint_path="$(runner_planner_realtime_fingerprint_path "$runner_id")"
-    realtime_marker_path="$(runner_planner_realtime_marker_path "$runner_id")"
-    current_realtime_fingerprint="$(runner_planner_realtime_inputs_fingerprint)"
+    realtime_fingerprint_path="$(runner_realtime_fingerprint_path "$runner_id" "$public_role")"
+    realtime_marker_path="$(runner_realtime_marker_path "$runner_id" "$public_role")"
+    current_realtime_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
     previous_realtime_fingerprint="$current_realtime_fingerprint"
     printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
   fi
@@ -1214,13 +1298,13 @@ runner_tick_backoff_sleep() {
   remaining="$sleep_interval"
   while [ "$remaining" -gt 0 ]; do
     if [ "$realtime_enabled" = "true" ]; then
-      current_realtime_fingerprint="$(runner_planner_realtime_inputs_fingerprint)"
+      current_realtime_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
       if [ -n "$current_realtime_fingerprint" ] && [ "$current_realtime_fingerprint" != "$previous_realtime_fingerprint" ]; then
         printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
-        runner_planner_realtime_mark_pending "$runner_id" "$realtime_marker_path" "$current_realtime_fingerprint"
+        runner_realtime_mark_pending "$runner_id" "$public_role" "$realtime_marker_path" "$current_realtime_fingerprint"
         runner_append_log "$runner_id" "backoff_wake" \
           "role=${public_role}" \
-          "reason=planner_realtime_inputs_changed" \
+          "reason=realtime_inputs_changed" \
           "interval_seconds=${sleep_interval}" \
           "remaining_seconds=${remaining}"
         return 0
@@ -1789,8 +1873,8 @@ loop_runner_worker() {
       continue
     fi
 
-    if runner_planner_realtime_enabled "$public_role" "$mode"; then
-      runner_planner_realtime_consume_pending "$target_runner_id"
+    if runner_realtime_enabled "$public_role" "$mode"; then
+      runner_realtime_consume_pending "$target_runner_id" "$public_role"
     fi
 
     AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &

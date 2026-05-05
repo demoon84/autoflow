@@ -13,6 +13,17 @@
 #               conflicts.
 # Wiki AI owns material baseline refresh and AI synthesis. Impl AI finalizers
 # do not call update-wiki.sh or stage .autoflow/wiki/.
+#
+# Realtime (event-driven) wakeup: when AUTOFLOW_RUNNER_REALTIME_ENABLED=1
+# (or per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1), the loop sleep is broken
+# early on watched-folder file changes:
+#   planner : tickets/{inbox,backlog,reject}
+#   worker  : tickets/todo (ticket public_role)
+#   verifier: tickets/verifier
+#   wiki    : tickets/done, wiki/ (debounced)
+# In event-driven mode interval_seconds becomes the safety heartbeat — pick
+# 1800s (30min) so reject auto-replan / blocked-dirty orchestration / adapter
+# timeout still wakes periodically even with no file activity.
 
 [[runners]]
 id = "planner"
@@ -21,7 +32,7 @@ agent = "claude"
 model = "opus-1m"
 reasoning = "high"
 mode = "loop"
-interval_seconds = 60
+interval_seconds = 1800
 enabled = true
 command = ""
 
@@ -45,7 +56,7 @@ agent = "codex"
 model = "gpt-5.3-codex-spark"
 reasoning = "low"
 mode = "loop"
-interval_seconds = 60
+interval_seconds = 1800
 enabled = true
 command = ""
 
@@ -56,7 +67,7 @@ agent = "gemini"
 model = "gemini-3-flash-preview"
 reasoning = ""
 mode = "loop"
-interval_seconds = 60
+interval_seconds = 1800
 enabled = true
 command = ""
 
@@ -67,6 +78,6 @@ agent = "claude"
 model = "sonnet-4.6"
 reasoning = "medium"
 mode = "loop"
-interval_seconds = 60
+interval_seconds = 1800
 enabled = true
 command = ""
