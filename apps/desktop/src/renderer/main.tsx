@@ -22,6 +22,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Square,
@@ -992,6 +993,12 @@ function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
 
+function runnerRecoveryInProgress(runner: AutoflowRunner) {
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
+  return activeStage === "blocked" && ["repairing", "requeued"].includes(activeRecoveryStatus);
+}
+
 function runnersNeedingAttention(runners: AutoflowRunner[]) {
   return runners.filter((runner) => {
     if ((runner.enabled || "").toLowerCase() === "false") return false;
@@ -999,9 +1006,10 @@ function runnersNeedingAttention(runners: AutoflowRunner[]) {
     const activeStage = (runner.activeStage || "").toLowerCase();
     const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const lastResult = (runner.lastResult || "").toLowerCase();
+    const recoveryInProgress = runnerRecoveryInProgress(runner);
     return (
       runnerHealthNeedsAttention(stateStatus) ||
-      runnerHealthNeedsAttention(activeStage) ||
+      (!recoveryInProgress && runnerHealthNeedsAttention(activeStage)) ||
       runnerHealthNeedsAttention(activeRecoveryStatus) ||
       runnerHealthNeedsAttention(lastResult)
     );
@@ -1069,6 +1077,7 @@ function App() {
   }, []);
   const [runnerError, setRunnerError] = React.useState("");
   const [runnerDrafts, setRunnerDrafts] = React.useState<Record<string, RunnerDraft>>({});
+  const [runnerSavedDrafts, setRunnerSavedDrafts] = React.useState<Record<string, RunnerDraft>>({});
   const [selectedRunnerId, setSelectedRunnerId] = React.useState("");
   const [selectedLogPath, setSelectedLogPath] = React.useState("");
   const [boardSearch, setBoardSearch] = React.useState("");
@@ -1590,7 +1599,6 @@ function App() {
         return;
       }
 
-      selectRunner(runnerId);
       setRunnerAction(runnerId, action);
       setRunnerError("");
       try {
@@ -1642,9 +1650,34 @@ function App() {
         });
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 작업에 실패했습니다.");
+          await loadBoard();
+          return;
         }
 
-        await loadBoard();
+        setBoard((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            runners: current.runners.map((candidate) => {
+              if (candidate.id !== runnerId) return candidate;
+              if (action === "stop") {
+                return {
+                  ...candidate,
+                  stateStatus: "stopped",
+                  pid: "",
+                  lastResult: "user_stopped"
+                };
+              }
+              return {
+                ...candidate,
+                stateStatus: "running",
+                lastResult: action === "restart" ? "restarted" : "started"
+              };
+            })
+          };
+        });
+        setRunnerAction(runnerId, "");
+        void loadBoard();
       } finally {
         setRunnerAction(runnerId, "");
       }
@@ -1792,9 +1825,49 @@ function App() {
         });
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 설정 저장에 실패했습니다.");
+          await loadBoard();
+          return;
         }
 
-        await loadBoard();
+        const savedDraft: RunnerDraft = {
+          agent: draft.agent,
+          model: normalized.model,
+          reasoning: normalized.reasoning,
+          mode: "loop",
+          intervalSeconds: "60",
+          enabled: "true",
+          command: draft.command
+        };
+        setRunnerDrafts((current) => ({
+          ...current,
+          [runner.id]: savedDraft
+        }));
+        setRunnerSavedDrafts((current) => ({
+          ...current,
+          [runner.id]: savedDraft
+        }));
+        setBoard((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            runners: current.runners.map((candidate) =>
+              candidate.id === runner.id
+                ? {
+                    ...candidate,
+                    agent: savedDraft.agent,
+                    model: savedDraft.model,
+                    reasoning: savedDraft.reasoning,
+                    mode: savedDraft.mode,
+                    intervalSeconds: savedDraft.intervalSeconds,
+                    enabled: savedDraft.enabled,
+                    command: savedDraft.command
+                  }
+                : candidate
+            )
+          };
+        });
+        setRunnerAction(runner.id, "");
+        void loadBoard();
       } finally {
         setRunnerAction(runner.id, "");
       }
@@ -1991,6 +2064,7 @@ function App() {
                       options={options}
                       actionKeys={runnerActionKeys}
                       drafts={runnerDrafts}
+                      savedDrafts={runnerSavedDrafts}
                       onSelectRunner={selectRunner}
                       onControl={controlRunner}
                       onDraftChange={updateRunnerDraft}
@@ -2607,6 +2681,7 @@ function RunnerConfigControls({
   installedAgentProfiles,
   actionKey,
   draft,
+  savedDraft,
   canEditConfig,
   onSelectRunner,
   onDraftChange,
@@ -2618,6 +2693,7 @@ function RunnerConfigControls({
   installedAgentProfiles: InstalledAgentProfiles;
   actionKey: string;
   draft: RunnerDraft;
+  savedDraft?: RunnerDraft;
   canEditConfig: boolean;
   onSelectRunner: (runnerId: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
@@ -2635,14 +2711,23 @@ function RunnerConfigControls({
   const agentOptions = runnerAgentOptions.includes(draft.agent as (typeof runnerAgentOptions)[number])
     ? runnerAgentOptions
     : [draft.agent, ...runnerAgentOptions];
+  const baseline = savedDraft || {
+    agent: runner.agent || "codex",
+    model: runner.model || "",
+    reasoning: runner.reasoning || "",
+    mode: runner.mode || "loop",
+    intervalSeconds: runner.intervalSeconds || "60",
+    enabled: runner.enabled || "true",
+    command: runner.command || ""
+  };
   const hasDraftChanges =
-    draft.agent !== (runner.agent || "codex") ||
-    normalized.model !== (runner.model || "") ||
-    normalized.reasoning !== (runner.reasoning || "") ||
-    (runner.mode || "loop") !== "loop" ||
-    (runner.intervalSeconds || "60") !== "60" ||
-    (runner.enabled || "true") !== "true" ||
-    draft.command !== (runner.command || "");
+    draft.agent !== baseline.agent ||
+    normalized.model !== baseline.model ||
+    normalized.reasoning !== baseline.reasoning ||
+    baseline.mode !== "loop" ||
+    baseline.intervalSeconds !== "60" ||
+    baseline.enabled !== "true" ||
+    draft.command !== baseline.command;
   // actionKey holds the action label for THIS runner only ("" when idle).
   const isWorking = Boolean(actionKey);
 
@@ -2735,6 +2820,12 @@ function RunnerConfigControls({
       </Button>
     </div>
   );
+}
+
+function isRunnerRowInteractiveTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement
+    ? Boolean(target.closest("button, input, select, textarea, [role='button'], [role='combobox'], [role='listbox'], [role='option']"))
+    : false;
 }
 
 function RunnerConsole({
@@ -2841,8 +2932,10 @@ function RunnerConsole({
                 key={runner.id}
                 className={`runner-row${selected ? " runner-row-selected" : ""}`}
                 aria-current={selected ? "true" : undefined}
-                onFocusCapture={() => onSelectRunner(runner.id)}
-                onPointerDown={() => onSelectRunner(runner.id)}
+                onPointerDown={(event) => {
+                  if (isRunnerRowInteractiveTarget(event.target)) return;
+                  onSelectRunner(runner.id);
+                }}
               >
                 <div className={`runner-status-dot ${runnerStatusTone(status)}`} aria-hidden="true" />
                 <div className="runner-topbar">
@@ -2895,7 +2988,6 @@ function RunnerConsole({
                         aria-label={`${runner.id} 중지`}
                         disabled={Boolean(actionKey)}
                         onClick={() => {
-                          onSelectRunner(runner.id);
                           onControl("stop", runner.id);
                         }}
                       >
@@ -2913,7 +3005,6 @@ function RunnerConsole({
                         aria-label={`${runner.id} 시작`}
                         disabled={!canStart || Boolean(actionKey)}
                         onClick={() => {
-                          onSelectRunner(runner.id);
                           onControl("start", runner.id);
                         }}
                       >
@@ -5370,6 +5461,7 @@ function TicketBoard({
   options,
   actionKeys = {},
   drafts = {},
+  savedDrafts = {},
   onSelectRunner,
   onControl,
   onDraftChange,
@@ -5385,6 +5477,7 @@ function TicketBoard({
   // that runner's row is idle and its buttons are interactable.
   actionKeys?: Record<string, string>;
   drafts?: Record<string, RunnerDraft>;
+  savedDrafts?: Record<string, RunnerDraft>;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
@@ -5552,6 +5645,7 @@ function TicketBoard({
               options={options}
               actionKey={actionKeys[runner.id] || ""}
               draft={drafts[runner.id]}
+              savedDraft={savedDrafts[runner.id]}
               onSelectRunner={onSelectRunner}
               onControl={onControl}
               onDraftChange={onDraftChange}
@@ -5910,6 +6004,7 @@ function AiProgressRow({
   options,
   actionKey = "",
   draft,
+  savedDraft,
   onSelectRunner,
   onControl,
   onDraftChange,
@@ -5921,6 +6016,7 @@ function AiProgressRow({
   options?: { projectRoot: string; boardDirName: string };
   actionKey?: string;
   draft?: RunnerDraft;
+  savedDraft?: RunnerDraft;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
@@ -5983,6 +6079,7 @@ function AiProgressRow({
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [ticketLoading, setTicketLoading] = React.useState(false);
   const [ticketError, setTicketError] = React.useState("");
+  const [configOpen, setConfigOpen] = React.useState(false);
 
   const openTicketDialog = React.useCallback(async () => {
     if (!runner.activeTicketId) return;
@@ -6055,7 +6152,7 @@ function AiProgressRow({
                 aria-label={`${runner.id} 중지`}
                 disabled={Boolean(actionKey)}
                 onClick={() => {
-                  onSelectRunner?.(runner.id);
+                  setConfigOpen(false);
                   onControl?.("stop", runner.id);
                 }}
               >
@@ -6073,7 +6170,7 @@ function AiProgressRow({
                 aria-label={`${runner.id} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
-                  onSelectRunner?.(runner.id);
+                  setConfigOpen(false);
                   onControl?.("start", runner.id);
                 }}
               >
@@ -6084,6 +6181,25 @@ function AiProgressRow({
                 )}
               </Button>
             )}
+            {canConfigure ? (
+              <Button
+                variant="outline"
+                size="icon"
+                className="runner-icon-button runner-plain-icon-button"
+                aria-label={`${runner.id} 설정`}
+                aria-expanded={configOpen}
+                disabled={Boolean(actionKey)}
+                onClick={() => {
+                  const nextOpen = !configOpen;
+                  setConfigOpen(nextOpen);
+                  if (nextOpen) {
+                    onSelectRunner?.(runner.id);
+                  }
+                }}
+              >
+                <Settings2 className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -6141,12 +6257,13 @@ function AiProgressRow({
           </Button>
         ) : null}
       </div>
-      {canConfigure ? (
+      {canConfigure && configOpen ? (
         <RunnerConfigControls
           runner={runner}
           installedAgentProfiles={installedAgentProfiles || {}}
           actionKey={actionKey}
           draft={runnerDraft}
+          savedDraft={savedDraft}
           canEditConfig={canEditConfig}
           onSelectRunner={onSelectRunner!}
           onDraftChange={onDraftChange!}

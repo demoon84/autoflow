@@ -4515,7 +4515,7 @@ agent_runtime_preflight_or_exit() {
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
 
   case "$public_role" in
-    ticket|planner)
+    ticket|planner|verifier)
       ;;
     *)
       return 0

@@ -7,6 +7,7 @@
 #   2. Per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1 enables just that role
 #   3. Per-role watch paths return correct specs
 #   4. Fingerprint generation works per-role and changes when inputs change
+#   5. Chokidar backend wakes on a watched file event when installed
 #
 # Run from repo root:
 #   bash tests/smoke/runner-realtime-event-driven-smoke.sh
@@ -31,6 +32,9 @@ mkdir -p "$board_root/runners/state" \
   "$board_root/tickets/inbox" "$board_root/tickets/backlog" "$board_root/tickets/reject" \
   "$board_root/tickets/todo" "$board_root/tickets/verifier" "$board_root/tickets/done" \
   "$board_root/wiki"
+if [ -d "$REPO_ROOT/node_modules/chokidar" ]; then
+  ln -s "$REPO_ROOT/node_modules" "$project_root/node_modules"
+fi
 
 runner_state_dir() { printf '%s' "${board_root}/runners/state"; }
 runner_ensure_dirs() { mkdir -p "$(runner_state_dir)"; }
@@ -41,11 +45,10 @@ export project_root board_root
 
 # Source only the realtime function block from runners-project.sh.
 # Extract from `runner_realtime_enabled()` start through the
-# `runner_planner_realtime_consume_pending()` wrapper end (single closing brace).
+# `runner_realtime_wait_for_event()` block.
 start_line="$(grep -n '^runner_realtime_enabled()' packages/cli/runners-project.sh | head -1 | cut -d: -f1)"
-end_anchor_line="$(grep -n '^runner_planner_realtime_consume_pending()' packages/cli/runners-project.sh | head -1 | cut -d: -f1)"
-# The wrapper body is one statement + closing brace, so extend +2 lines past the anchor.
-end_line=$((end_anchor_line + 2))
+end_anchor_line="$(grep -n '^runner_tick_backoff_skip_reason()' packages/cli/runners-project.sh | head -1 | cut -d: -f1)"
+end_line=$((end_anchor_line - 1))
 sed -n "${start_line},${end_line}p" packages/cli/runners-project.sh > "$TMPDIR_BASE/realtime_funcs.sh"
 
 # shellcheck disable=SC1091
@@ -98,10 +101,47 @@ for role in planner ticket verifier wiki; do
 done
 assert_false "invalid role rejected" runner_realtime_enabled "invalid" "loop"
 assert_false "non-loop mode rejected" runner_realtime_enabled "planner" "one-shot"
+unset AUTOFLOW_RUNNER_REALTIME_ENABLED
+
+echo ""
+echo "=== Test 1b: runner config field enables realtime ==="
+unset AUTOFLOW_PLANNER_REALTIME_ENABLED AUTOFLOW_TICKET_REALTIME_ENABLED \
+      AUTOFLOW_VERIFIER_REALTIME_ENABLED AUTOFLOW_WIKI_REALTIME_ENABLED || true
+realtime_enabled=true
+assert_true "config field enables planner" runner_realtime_enabled "planner" "loop"
+realtime_enabled=false
+assert_false "config field false leaves planner disabled" runner_realtime_enabled "planner" "loop"
+
+echo ""
+echo "=== Test 1c: runner list parses realtime_enabled ==="
+list_project="$TMPDIR_BASE/list-proj"
+"$REPO_ROOT/bin/autoflow" init "$list_project" >/dev/null
+"$REPO_ROOT/bin/autoflow" runners add rt-planner planner "$list_project" .autoflow \
+  agent=codex \
+  mode=loop \
+  realtime_enabled=true >/dev/null
+list_output="$TMPDIR_BASE/list.out"
+"$REPO_ROOT/bin/autoflow" runners list "$list_project" .autoflow > "$list_output"
+if awk -F= '
+  $1 ~ /^runner\.[0-9]+\.id$/ && $2 == "rt-planner" {
+    prefix = $1
+    sub(/\.id$/, "", prefix)
+  }
+  prefix != "" && $1 == prefix ".realtime_enabled" && $2 == "true" {
+    found = 1
+  }
+  END { exit(found ? 0 : 1) }
+' "$list_output"; then
+  echo "PASS: runners list surfaces realtime_enabled"
+  pass=$((pass + 1))
+else
+  echo "FAIL: runners list did not surface realtime_enabled=true"
+  cat "$list_output"
+  fail=$((fail + 1))
+fi
 
 echo ""
 echo "=== Test 2: per-role env only enables that role ==="
-unset AUTOFLOW_RUNNER_REALTIME_ENABLED
 export AUTOFLOW_TICKET_REALTIME_ENABLED=1
 assert_false "planner disabled when only TICKET set" runner_realtime_enabled "planner" "loop"
 assert_true  "ticket enabled when TICKET set" runner_realtime_enabled "ticket" "loop"
@@ -171,6 +211,31 @@ assert_true "legacy planner_realtime_enabled wrapper works" runner_planner_realt
 fp_legacy="$(runner_planner_realtime_inputs_fingerprint)"
 fp_new="$(runner_realtime_inputs_fingerprint planner)"
 assert_eq "legacy fingerprint matches new generic" "$fp_new" "$fp_legacy"
+
+echo ""
+echo "=== Test 7: chokidar backend wakes on file event ==="
+backend="$(runner_realtime_watch_backend)"
+if [ -d "$project_root/node_modules/chokidar" ]; then
+  assert_eq "chokidar backend preferred when installed" "chokidar" "$backend"
+  marker_path="$(runner_realtime_marker_path "test-runner" "planner")"
+  fingerprint_path="$(runner_realtime_fingerprint_path "test-runner" "planner")"
+  previous_fingerprint="$(runner_realtime_inputs_fingerprint planner)"
+  printf '%s\n' "$previous_fingerprint" > "$fingerprint_path"
+  (
+    sleep 1
+    printf 'test order wake\n' > "$board_root/tickets/inbox/order_1000.md"
+  ) &
+  if runner_realtime_wait_for_event "test-runner" "planner" 8 "$marker_path" "$fingerprint_path" "$previous_fingerprint" && [ -f "$marker_path" ]; then
+    echo "PASS: chokidar wake marker created"
+    pass=$((pass + 1))
+  else
+    echo "FAIL: chokidar wake marker not created"
+    fail=$((fail + 1))
+  fi
+else
+  echo "PASS: chokidar backend event test skipped because dependency is not installed"
+  pass=$((pass + 1))
+fi
 
 echo ""
 echo "=== Summary ==="

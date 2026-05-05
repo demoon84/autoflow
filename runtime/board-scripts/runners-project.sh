@@ -1,24 +1,14 @@
 #!/usr/bin/env bash
-#
-# STALE COPY: do not modify in isolation.
-#
-# The canonical implementation of `autoflow runners ...` is
-# `packages/cli/runners-project.sh`. That file is what `bin/autoflow`
-# exec's and is the version maintained against the current 3-runner
-# topology (planner + worker + wiki).
-#
-# This `runtime/board-scripts/` copy is not referenced by any caller and
-# is not packaged into `.autoflow/scripts/` by the board scaffolder
-# (see `packages/cli/package-board-common.sh`). It exists as a stale
-# parallel artifact and is kept only to avoid surprising users who may
-# have grepped the repo for the runner-management script. Diverge at
-# your peril; treat the packages/cli path as source of truth.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-source "${SCRIPT_DIR}/cli-common.sh"
+if [ -f "${SCRIPT_DIR}/cli-common.sh" ]; then
+  source "${SCRIPT_DIR}/cli-common.sh"
+else
+  source "${SCRIPT_DIR}/../../packages/cli/cli-common.sh"
+fi
 source "$(runtime_scripts_root)/runner-common.sh"
 
 usage() {
@@ -128,6 +118,21 @@ board_root="$(board_root_path "$project_root" "$board_dir_name")"
 export AUTOFLOW_BOARD_ROOT="$board_root"
 
 config_path="$(runner_config_path)"
+
+ensure_runner_config_write_path_or_block() {
+  local target_runner_id="$1"
+  local write_config_path
+
+  if ! write_config_path="$(runner_config_write_path)"; then
+    print_runner_common_header "blocked"
+    printf 'runner_id=%s\n' "$target_runner_id"
+    printf 'reason=runner_config_missing\n'
+    return 1
+  fi
+
+  config_path="$write_config_path"
+  return 0
+}
 
 print_runner_common_header() {
   local status="$1"
@@ -275,6 +280,84 @@ runner_pid_is_running() {
   return 1
 }
 
+runner_process_children() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$pid" 2>/dev/null || true
+  else
+    ps -axo ppid=,pid= 2>/dev/null | awk -v ppid="$pid" '$1 == ppid { print $2 }' || true
+  fi
+}
+
+runner_count_process_tree() {
+  local pid="${1:-}"
+  local child total child_total
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      printf '0'
+      return 0
+      ;;
+  esac
+
+  total=0
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    child_total="$(runner_count_process_tree "$child")"
+    total=$((total + 1 + child_total))
+  done < <(runner_process_children "$pid")
+  printf '%s' "$total"
+}
+
+runner_user_process_count() {
+  local user_name count
+
+  user_name="$(id -un 2>/dev/null || printf '')"
+  if [ -n "$user_name" ]; then
+    count="$(ps -u "$user_name" -o pid= 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    case "$count" in
+      ''|*[!0-9]*) ;;
+      *) printf '%s' "$count"; return 0 ;;
+    esac
+  fi
+
+  ps -axo pid= 2>/dev/null | wc -l | tr -d '[:space:]' || printf '0'
+}
+
+runner_process_pressure_snapshot() {
+  local loop_pid="${1:-}"
+  local user_limit runner_child_limit user_count runner_child_count result
+
+  user_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_USER_LIMIT" 1000)"
+  runner_child_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_RUNNER_CHILD_LIMIT" 200)"
+  user_count="$(runner_user_process_count)"
+  runner_child_count="$(runner_count_process_tree "$loop_pid")"
+  result="ok"
+
+  if [ "$user_limit" -gt 0 ] && [ "$user_count" -ge "$user_limit" ]; then
+    result="user_limit"
+  elif [ "$runner_child_limit" -gt 0 ] && [ "$runner_child_count" -ge "$runner_child_limit" ]; then
+    result="runner_child_limit"
+  fi
+
+  printf 'result=%s\n' "$result"
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+}
+
+runner_process_pressure_reason() {
+  awk -F= '$1 == "result" { print $2; exit }'
+}
+
 runner_kill_process_tree() {
   local pid="${1:-}"
   local child wait_index
@@ -285,12 +368,10 @@ runner_kill_process_tree() {
       ;;
   esac
 
-  if command -v pgrep >/dev/null 2>&1; then
-    while IFS= read -r child; do
-      [ -n "$child" ] || continue
-      runner_kill_process_tree "$child"
-    done < <(pgrep -P "$pid" 2>/dev/null || true)
-  fi
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    runner_kill_process_tree "$child"
+  done < <(runner_process_children "$pid")
 
   kill "$pid" 2>/dev/null || true
   for wait_index in 1 2 3 4 5; do
@@ -298,12 +379,10 @@ runner_kill_process_tree() {
     sleep 0.2
   done
 
-  if command -v pgrep >/dev/null 2>&1; then
-    while IFS= read -r child; do
-      [ -n "$child" ] || continue
-      runner_kill_process_tree "$child"
-    done < <(pgrep -P "$pid" 2>/dev/null || true)
-  fi
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    runner_kill_process_tree "$child"
+  done < <(runner_process_children "$pid")
   kill -9 "$pid" 2>/dev/null || true
 }
 
@@ -394,6 +473,40 @@ runner_loop_stderr_path() {
   printf '%s/%s.loop.stderr.log' "$(runner_log_dir)" "$target_runner_id"
 }
 
+runner_loop_max_size_bytes() {
+  local value="${AUTOFLOW_LOOP_LOG_MAX_SIZE_BYTES:-1048576}"
+  case "$value" in
+    ''|*[!0-9]*)
+      printf '1048576'
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+rotate_loop_log_if_needed() {
+  local target="$1"
+  local max_size current_size backup_one backup_two
+
+  [ -n "$target" ] || return 0
+  [ -f "$target" ] || return 0
+
+  max_size="$(runner_loop_max_size_bytes)"
+  current_size="$(wc -c < "$target" 2>/dev/null || printf '0')"
+  current_size="${current_size// /}"
+  [ -n "$current_size" ] || current_size=0
+
+  [ "$current_size" -le "$max_size" ] && return 0
+
+  backup_one="${target}.1"
+  backup_two="${target}.2"
+  [ -f "$backup_two" ] && rm -f "$backup_two"
+  [ -f "$backup_one" ] && mv "$backup_one" "$backup_two"
+  mv "$target" "$backup_one"
+  : > "$target"
+}
+
 start_loop_worker_process() {
   local target_runner_id="$1"
   local stdout_file="$2"
@@ -403,11 +516,29 @@ start_loop_worker_process() {
   loop_pid=""
 
   if command -v setsid >/dev/null 2>&1; then
-    nohup setsid "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >"$stdout_file" 2>"$stderr_file" &
+    nohup setsid "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >/dev/null 2>&1 &
+    loop_pid="$!"
+  elif command -v python3 >/dev/null 2>&1; then
+    loop_pid="$(python3 - "$SCRIPT_DIR/runners-project.sh" "$target_runner_id" "$project_root" "$board_dir_name" <<'PY'
+import subprocess
+import sys
+
+script, runner_id, project_root, board_dir_name = sys.argv[1:]
+process = subprocess.Popen(
+    [script, "loop-worker", runner_id, project_root, board_dir_name],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    start_new_session=True,
+    close_fds=True,
+)
+print(process.pid)
+PY
+)"
   else
-    nohup "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >"$stdout_file" 2>"$stderr_file" &
+    nohup "$SCRIPT_DIR/runners-project.sh" loop-worker "$target_runner_id" "$project_root" "$board_dir_name" >/dev/null 2>&1 &
+    loop_pid="$!"
   fi
-  loop_pid="$!"
 }
 
 runner_role_to_run_role() {
@@ -424,11 +555,11 @@ runner_role_to_run_role() {
     verifier)
       printf 'verifier'
       ;;
-    merge|merge-bot)
-      printf 'merge'
-      ;;
     wiki|wiki-maintainer)
       printf 'wiki'
+      ;;
+    coordinator|coord|doctor|diagnose)
+      printf 'coordinator'
       ;;
     *)
       return 1
@@ -471,6 +602,9 @@ runner_command_preview() {
     cmd=(autoflow runners start "$target_runner_id" "$project_root" "$board_dir_name")
     printf 'loop every %ss: ' "$effective_interval"
     runner_command_summary_from_array "${cmd[@]}"
+    if [ "$agent" = "codex" ] && [ -n "$reasoning" ]; then
+      printf ' with runner codex flag: -c model_reasoning_effort="%s"' "$reasoning"
+    fi
     return 0
   fi
 
@@ -594,7 +728,7 @@ runner_field_from_block() {
 
 runner_allowed_config_key() {
   case "${1:-}" in
-    agent|model|reasoning|mode|interval_seconds|enabled|command)
+    agent|model|reasoning|mode|interval_seconds|enabled|realtime_enabled|command)
       return 0
       ;;
     *)
@@ -604,8 +738,14 @@ runner_allowed_config_key() {
 }
 
 runner_allowed_role() {
+  # Active roles (4-runner topology): planner / ticket-owner / verifier / wiki-maintainer.
+  # Legacy/back-compat roles (kept reachable so users on older configs can
+  # still `autoflow runners add ...`): owner|ticket alias for ticket-owner,
+  # plan alias for planner, wiki alias for wiki-maintainer, plus
+  # todo|verifier|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher.
+  # Trial role (disabled by default): self-improve.
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|todo|verifier|merge|merge-bot|wiki-maintainer|watcher)
+    ticket-owner|owner|ticket|planner|plan|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       return 0
       ;;
     *)
@@ -625,7 +765,7 @@ runner_validate_config_value() {
   esac
 
   case "$key" in
-    enabled)
+    enabled|realtime_enabled)
       [ "$value" = "true" ] || [ "$value" = "false" ]
       ;;
     mode)
@@ -656,7 +796,7 @@ runner_validate_config_value() {
 
 runner_validate_add_update_key() {
   case "${1:-}" in
-    agent|model|reasoning|mode|interval_seconds|enabled|command)
+    agent|model|reasoning|mode|interval_seconds|enabled|realtime_enabled|command)
       return 0
       ;;
     *)
@@ -669,7 +809,7 @@ runner_toml_value() {
   local key="$1"
   local value="$2"
 
-  if [ "$key" = "enabled" ] || [ "$key" = "interval_seconds" ]; then
+  if [ "$key" = "enabled" ] || [ "$key" = "realtime_enabled" ] || [ "$key" = "interval_seconds" ]; then
     printf '%s' "$value"
     return 0
   fi
@@ -695,6 +835,739 @@ runner_normalize_interval_seconds() {
   fi
 
   printf '%s' "$value"
+}
+
+runner_public_role() {
+  case "${1:-}" in
+    ticket-owner|owner|ticket)
+      printf 'ticket'
+      ;;
+    planner|plan)
+      printf 'planner'
+      ;;
+    verifier|veri)
+      printf 'verifier'
+      ;;
+    wiki|wiki-maintainer)
+      printf 'wiki'
+      ;;
+    *)
+      printf '%s' "${1:-}"
+      ;;
+  esac
+}
+
+runner_positive_integer_or_default() {
+  local value="${1:-}"
+  local fallback="${2:-0}"
+
+  case "$value" in
+    ''|*[!0-9]*)
+      printf '%s' "$fallback"
+      return 0
+      ;;
+  esac
+
+  printf '%s' "$value"
+}
+
+runner_tick_backoff_enabled() {
+  local public_role="$1"
+  local mode="$2"
+
+  [ "$mode" = "loop" ] || return 1
+  [ "${AUTOFLOW_TICK_BACKOFF_ENABLED:-1}" != "0" ] || return 1
+
+  case "$public_role" in
+    planner|ticket|verifier)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+runner_tick_backoff_threshold_idle_ticks() {
+  runner_positive_integer_or_default "${AUTOFLOW_TICK_BACKOFF_THRESHOLD_IDLE_TICKS:-5}" "5"
+}
+
+runner_tick_backoff_max_interval_seconds() {
+  runner_normalize_interval_seconds "${AUTOFLOW_TICK_BACKOFF_MAX_INTERVAL_SECONDS:-300}"
+}
+
+runner_idle_preflight_fingerprint_path() {
+  local runner_id="$1"
+  local public_role="$2"
+
+  runner_ensure_dirs
+  printf '%s/%s.%s-idle-inputs.fingerprint' "$(runner_state_dir)" "$runner_id" "$public_role"
+}
+
+runner_idle_preflight_inputs_hash_stream() {
+  local public_role="$1"
+  local rel_dir dir file rel checksum
+
+  case "$public_role" in
+    planner)
+      set -- tickets/inbox tickets/backlog tickets/reject tickets/todo tickets/inprogress tickets/done tickets/plan plan
+      ;;
+    ticket)
+      set -- tickets/todo tickets/inprogress tickets/verifier
+      ;;
+    verifier)
+      set -- tickets/verifier
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  for rel_dir in "$@"; do
+    dir="${board_root}/${rel_dir}"
+    [ -d "$dir" ] || continue
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      case "$(basename "$file")" in
+        README.md)
+          continue
+          ;;
+      esac
+      rel="${file#"$board_root"/}"
+      if command -v shasum >/dev/null 2>&1; then
+        checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        checksum="$(sha256sum "$file" | awk '{ print $1 }')"
+      else
+        checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
+      fi
+      printf '%s  %s\n' "$checksum" "$rel"
+    done < <(find "$dir" -type f \( -name '*.md' -o -name '*.log' -o -name '*.txt' -o -name '*.json' -o -name '*.jsonl' \) | LC_ALL=C sort)
+  done
+}
+
+runner_idle_preflight_inputs_fingerprint() {
+  local public_role="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    runner_idle_preflight_inputs_hash_stream "$public_role" | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    runner_idle_preflight_inputs_hash_stream "$public_role" | sha256sum | awk '{ print $1 }'
+  else
+    runner_idle_preflight_inputs_hash_stream "$public_role" | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_realtime_enabled() {
+  local public_role="$1"
+  local mode="$2"
+  local role_var role_value
+
+  [ "$mode" = "loop" ] || return 1
+
+  case "$public_role" in
+    planner|ticket|verifier|wiki) ;;
+    *) return 1 ;;
+  esac
+
+  # Per-role env var: AUTOFLOW_<ROLE>_REALTIME_ENABLED=1
+  role_var="AUTOFLOW_$(printf '%s' "$public_role" | tr '[:lower:]' '[:upper:]')_REALTIME_ENABLED"
+  role_value="${!role_var:-}"
+  if [ "$role_value" = "1" ]; then
+    return 0
+  fi
+
+  # Umbrella env var: AUTOFLOW_RUNNER_REALTIME_ENABLED=1 enables all 4 roles
+  if [ "${AUTOFLOW_RUNNER_REALTIME_ENABLED:-0}" = "1" ]; then
+    return 0
+  fi
+
+  # Runner config field: realtime_enabled = true
+  if [ "${realtime_enabled:-false}" = "true" ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+# Backward compatibility wrapper
+runner_planner_realtime_enabled() {
+  runner_realtime_enabled "$@"
+}
+
+runner_realtime_fingerprint_path() {
+  local runner_id="$1"
+  local public_role="${2:-planner}"
+
+  runner_ensure_dirs
+  printf '%s/%s.%s-realtime-inputs.fingerprint' "$(runner_state_dir)" "$runner_id" "$public_role"
+}
+
+runner_planner_realtime_fingerprint_path() {
+  runner_realtime_fingerprint_path "$1" "planner"
+}
+
+runner_realtime_marker_path() {
+  local runner_id="$1"
+  local public_role="${2:-planner}"
+
+  runner_ensure_dirs
+  printf '%s/%s.%s-realtime-wakeup.pending' "$(runner_state_dir)" "$runner_id" "$public_role"
+}
+
+runner_planner_realtime_marker_path() {
+  runner_realtime_marker_path "$1" "planner"
+}
+
+runner_realtime_inputs_specs() {
+  # Per-role watch paths (relative to board_root)
+  # Format: "<dir>:<glob>" entries, one per line
+  case "${1:-planner}" in
+    planner)
+      printf 'tickets/inbox:order_*.md\n'
+      printf 'tickets/backlog:prd_*.md\n'
+      printf 'tickets/reject:reject_*.md\n'
+      ;;
+    ticket)
+      # Worker watches todo/ for new ticket arrival
+      printf 'tickets/todo:tickets_*.md\n'
+      ;;
+    verifier)
+      # Verifier watches verifier/ for queue entries
+      printf 'tickets/verifier:*.md\n'
+      ;;
+    wiki)
+      # Wiki AI watches done/ (new completions) and wiki/ (source changes)
+      # Note: wiki has its own debounce policy (AUTOFLOW_WIKI_DEBOUNCE_*)
+      printf 'tickets/done:*.md\n'
+      printf 'wiki:*.md\n'
+      ;;
+    *)
+      ;;
+  esac
+}
+
+runner_realtime_inputs_hash_stream() {
+  local public_role="${1:-planner}"
+  local spec dir glob file rel checksum
+
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    dir="${board_root}/${spec%%:*}"
+    glob="${spec#*:}"
+    [ -d "$dir" ] || continue
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      case "$(basename "$file")" in
+        README.md) continue ;;
+      esac
+      rel="${file#"$board_root"/}"
+      if command -v shasum >/dev/null 2>&1; then
+        checksum="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+      elif command -v sha256sum >/dev/null 2>&1; then
+        checksum="$(sha256sum "$file" | awk '{ print $1 }')"
+      else
+        checksum="$(cksum "$file" | awk '{ print $1 ":" $2 }')"
+      fi
+      printf '%s  %s\n' "$checksum" "$rel"
+    done < <(find "$dir" -maxdepth 1 -type f -name "$glob" | LC_ALL=C sort)
+  done < <(runner_realtime_inputs_specs "$public_role")
+}
+
+runner_planner_realtime_inputs_hash_stream() {
+  runner_realtime_inputs_hash_stream "planner"
+}
+
+runner_realtime_inputs_fingerprint() {
+  local public_role="${1:-planner}"
+  if command -v shasum >/dev/null 2>&1; then
+    runner_realtime_inputs_hash_stream "$public_role" | shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    runner_realtime_inputs_hash_stream "$public_role" | sha256sum | awk '{ print $1 }'
+  else
+    runner_realtime_inputs_hash_stream "$public_role" | cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_planner_realtime_inputs_fingerprint() {
+  runner_realtime_inputs_fingerprint "planner"
+}
+
+runner_realtime_watch_dirs() {
+  local public_role="${1:-planner}"
+  local spec dir
+
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    dir="${board_root}/${spec%%:*}"
+    [ -d "$dir" ] || continue
+    printf '%s\n' "$dir"
+  done < <(runner_realtime_inputs_specs "$public_role") | LC_ALL=C sort -u
+}
+
+runner_realtime_watch_backend() {
+  if command -v node >/dev/null 2>&1 && [ -d "${project_root}/node_modules/chokidar" ]; then
+    printf 'chokidar'
+    return 0
+  fi
+  if command -v fswatch >/dev/null 2>&1; then
+    printf 'fswatch'
+    return 0
+  fi
+  if command -v inotifywait >/dev/null 2>&1; then
+    printf 'inotifywait'
+    return 0
+  fi
+  printf ''
+}
+
+runner_realtime_mark_pending() {
+  local runner_id="$1"
+  local public_role="$2"
+  local marker_path="$3"
+  local fingerprint="$4"
+
+  if [ -f "$marker_path" ]; then
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
+      "reason=inputs_changed" \
+      "pending=merged" \
+      "fingerprint=${fingerprint}"
+    return 0
+  fi
+
+  {
+    printf 'created_at=%s\n' "$(runner_now_iso)"
+    printf 'role=%s\n' "$public_role"
+    printf 'reason=inputs_changed\n'
+    printf 'fingerprint=%s\n' "$fingerprint"
+  } > "$marker_path"
+  runner_append_log "$runner_id" "realtime_wakeup" \
+    "role=${public_role}" \
+    "reason=inputs_changed" \
+    "pending=created" \
+    "fingerprint=${fingerprint}"
+}
+
+runner_planner_realtime_mark_pending() {
+  runner_realtime_mark_pending "$1" "planner" "$2" "$3"
+}
+
+runner_realtime_consume_pending() {
+  local runner_id="$1"
+  local public_role="${2:-planner}"
+  local marker_path
+
+  marker_path="$(runner_realtime_marker_path "$runner_id" "$public_role")"
+  [ -f "$marker_path" ] || return 0
+  rm -f "$marker_path"
+  runner_append_log "$runner_id" "realtime_wakeup" \
+    "role=${public_role}" \
+    "reason=consumed" \
+    "pending=cleared"
+}
+
+runner_planner_realtime_consume_pending() {
+  runner_realtime_consume_pending "$1" "planner"
+}
+
+runner_realtime_wait_for_event() {
+  local runner_id="$1"
+  local public_role="$2"
+  local sleep_interval="$3"
+  local marker_path="$4"
+  local fingerprint_path="$5"
+  local previous_fingerprint="$6"
+  local backend dirs_file watch_pid sleep_pid current_fingerprint dir
+  local dirs=()
+  local event_seen wait_status sleep_status
+
+  backend="$(runner_realtime_watch_backend)"
+  [ -n "$backend" ] || return 1
+
+  dirs_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-realtime-dirs.XXXXXX")"
+  runner_realtime_watch_dirs "$public_role" > "$dirs_file"
+  if [ ! -s "$dirs_file" ]; then
+    rm -f "$dirs_file"
+    return 1
+  fi
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    dirs+=("$dir")
+  done < "$dirs_file"
+  if [ "${#dirs[@]}" -eq 0 ]; then
+    rm -f "$dirs_file"
+    return 1
+  fi
+
+  case "$backend" in
+    chokidar)
+      node --input-type=module - "$project_root" "$dirs_file" <<'NODE' >/dev/null 2>&1 &
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [projectRoot, dirsFile] = process.argv.slice(2);
+const requireFromProject = createRequire(pathToFileURL(join(projectRoot, 'package.json')).href);
+const chokidarPath = requireFromProject.resolve('chokidar');
+const { watch } = await import(pathToFileURL(chokidarPath).href);
+const dirs = readFileSync(dirsFile, 'utf8').split(/\r?\n/).filter(Boolean);
+let finished = false;
+
+const watcher = watch(dirs, {
+  ignoreInitial: true,
+  depth: 0,
+  awaitWriteFinish: {
+    stabilityThreshold: 100,
+    pollInterval: 50,
+  },
+});
+
+const finish = async (code = 0) => {
+  if (finished) return;
+  finished = true;
+  try {
+    await watcher.close();
+  } catch {
+    // Best effort cleanup; the shell parent handles timeout fallback.
+  }
+  process.exit(code);
+};
+
+watcher.on('all', () => {
+  void finish(0);
+});
+watcher.on('error', () => {
+  void finish(2);
+});
+process.on('SIGTERM', () => {
+  void finish(143);
+});
+process.on('SIGINT', () => {
+  void finish(130);
+});
+NODE
+      ;;
+    fswatch)
+      fswatch -1 "${dirs[@]}" >/dev/null 2>&1 &
+      ;;
+    inotifywait)
+      inotifywait -q -e create,modify,delete,move,attrib "${dirs[@]}" >/dev/null 2>&1 &
+      ;;
+    *)
+      rm -f "$dirs_file"
+      return 1
+      ;;
+  esac
+  watch_pid="$!"
+  sleep "$sleep_interval" &
+  sleep_pid="$!"
+  child_pid="$sleep_pid"
+  event_seen="false"
+
+  while kill -0 "$sleep_pid" 2>/dev/null; do
+    if ! kill -0 "$watch_pid" 2>/dev/null; then
+      event_seen="true"
+      break
+    fi
+    sleep 1
+  done
+
+  if [ "$event_seen" = "true" ]; then
+    kill "$sleep_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+  else
+    kill "$watch_pid" 2>/dev/null || true
+    wait "$watch_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+    rm -f "$dirs_file"
+    child_pid=""
+    return 0
+  fi
+
+  set +e
+  wait "$watch_pid" 2>/dev/null
+  wait_status="$?"
+  set -e
+  sleep_status=0
+  child_pid=""
+  rm -f "$dirs_file"
+
+  current_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
+  if [ -n "$current_fingerprint" ] && [ "$current_fingerprint" != "$previous_fingerprint" ]; then
+    printf '%s\n' "$current_fingerprint" > "$fingerprint_path"
+    runner_realtime_mark_pending "$runner_id" "$public_role" "$marker_path" "$current_fingerprint"
+    runner_append_log "$runner_id" "backoff_wake" \
+      "role=${public_role}" \
+      "reason=realtime_watch_event" \
+      "backend=${backend}" \
+      "interval_seconds=${sleep_interval}" \
+      "watch_exit=${wait_status}"
+  elif [ "$wait_status" -ne 0 ]; then
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
+      "reason=watch_backend_failed" \
+      "backend=${backend}" \
+      "watch_exit=${wait_status}" \
+      "fallback=polling"
+    return 1
+  else
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
+      "reason=watch_event_ignored" \
+      "backend=${backend}" \
+      "fingerprint=${current_fingerprint}" \
+      "previous_fingerprint=${previous_fingerprint}"
+  fi
+
+  return "$sleep_status"
+}
+
+runner_tick_backoff_skip_reason() {
+  local public_role="$1"
+
+  case "$public_role" in
+    planner)
+      printf 'planner_inputs_unchanged'
+      ;;
+    ticket)
+      printf 'ticket_inputs_unchanged'
+      ;;
+    verifier)
+      printf 'verifier_inputs_unchanged'
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+runner_tick_backoff_interval_for_streak() {
+  local base_interval="$1"
+  local idle_streak="$2"
+  local threshold max_interval multiplier effective
+
+  threshold="$(runner_tick_backoff_threshold_idle_ticks)"
+  max_interval="$(runner_tick_backoff_max_interval_seconds)"
+  effective="$base_interval"
+
+  if [ "$threshold" -le 0 ] || [ "$idle_streak" -le 0 ]; then
+    printf '%s' "$effective"
+    return 0
+  fi
+
+  multiplier=$((idle_streak / threshold))
+  while [ "$multiplier" -gt 0 ] && [ "$effective" -lt "$max_interval" ]; do
+    effective=$((effective * 2))
+    if [ "$effective" -gt "$max_interval" ]; then
+      effective="$max_interval"
+    fi
+    multiplier=$((multiplier - 1))
+  done
+
+  printf '%s' "$effective"
+}
+
+runner_tick_backoff_current_interval() {
+  local runner_id="$1"
+  local public_role="$2"
+  local mode="$3"
+  local base_interval="$4"
+  local current
+
+  if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
+    printf '%s' "$base_interval"
+    return 0
+  fi
+
+  current="$(runner_state_value_or_empty "$runner_id" "current_interval_seconds")"
+  current="$(runner_positive_integer_or_default "$current" "$base_interval")"
+  if [ "$current" -lt "$base_interval" ]; then
+    current="$base_interval"
+  fi
+
+  printf '%s' "$current"
+}
+
+runner_tick_backoff_idle_streak() {
+  local runner_id="$1"
+  local public_role="$2"
+  local mode="$3"
+  local base_interval="$4"
+  local previous_streak current_last_result skip_reason next_streak
+
+  if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
+    printf '0'
+    return 0
+  fi
+
+  previous_streak="$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$runner_id" "idle_streak_count")" "0")"
+  current_last_result="$(runner_state_value_or_empty "$runner_id" "last_result")"
+  skip_reason="$(runner_tick_backoff_skip_reason "$public_role")"
+  next_streak=0
+
+  if [ -n "$skip_reason" ] && [ "$current_last_result" = "$skip_reason" ]; then
+    next_streak=$((previous_streak + 1))
+  fi
+
+  printf '%s' "$next_streak"
+}
+
+runner_tick_backoff_next_interval() {
+  local runner_id="$1"
+  local public_role="$2"
+  local mode="$3"
+  local base_interval="$4"
+  local next_streak
+
+  if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
+    printf '%s' "$base_interval"
+    return 0
+  fi
+
+  next_streak="$(runner_tick_backoff_idle_streak "$runner_id" "$public_role" "$mode" "$base_interval")"
+  runner_tick_backoff_interval_for_streak "$base_interval" "$next_streak"
+}
+
+runner_role_queue_has_entries() {
+  local public_role="$1"
+  local candidate
+
+  case "$public_role" in
+    planner)
+      for candidate in \
+        "${board_root}/tickets/inbox" \
+        "${board_root}/tickets/backlog" \
+        "${board_root}/tickets/reject"
+      do
+        find "$candidate" -maxdepth 1 -type f -name '*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      done
+      ;;
+    ticket)
+      find "${board_root}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      ;;
+    verifier)
+      find "${board_root}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      ;;
+  esac
+
+  return 1
+}
+
+runner_should_drain_queue_now() {
+  local public_role="$1"
+  local last_result="$2"
+  local run_exit="$3"
+
+  [ "$run_exit" = "0" ] || return 1
+  case "$last_result" in
+    adapter_exit_0|success) ;;
+    *) return 1 ;;
+  esac
+  runner_role_queue_has_entries "$public_role"
+}
+
+runner_tick_backoff_sleep() {
+  local runner_id="$1"
+  local public_role="$2"
+  local mode="$3"
+  local base_interval="$4"
+  local sleep_interval="$5"
+  local fingerprint_path previous_fingerprint current_fingerprint remaining chunk
+  local realtime_enabled realtime_fingerprint_path realtime_marker_path previous_realtime_fingerprint current_realtime_fingerprint
+
+  if ! runner_tick_backoff_enabled "$public_role" "$mode"; then
+    if ! runner_realtime_enabled "$public_role" "$mode"; then
+      sleep "$sleep_interval" &
+      child_pid="$!"
+      wait "$child_pid" || true
+      child_pid=""
+      return 0
+    fi
+  fi
+
+  realtime_enabled="false"
+  previous_realtime_fingerprint=""
+  if runner_realtime_enabled "$public_role" "$mode"; then
+    realtime_enabled="true"
+    realtime_fingerprint_path="$(runner_realtime_fingerprint_path "$runner_id" "$public_role")"
+    realtime_marker_path="$(runner_realtime_marker_path "$runner_id" "$public_role")"
+    current_realtime_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
+    previous_realtime_fingerprint="$current_realtime_fingerprint"
+    printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
+    if runner_realtime_wait_for_event "$runner_id" "$public_role" "$sleep_interval" "$realtime_marker_path" "$realtime_fingerprint_path" "$previous_realtime_fingerprint"; then
+      return 0
+    fi
+  fi
+
+  if [ "$sleep_interval" -le "$base_interval" ] && [ "$realtime_enabled" != "true" ]; then
+    sleep "$sleep_interval" &
+    child_pid="$!"
+    wait "$child_pid" || true
+    child_pid=""
+    return 0
+  fi
+
+  fingerprint_path="$(runner_idle_preflight_fingerprint_path "$runner_id" "$public_role")"
+  if [ ! -f "$fingerprint_path" ] && [ "$realtime_enabled" != "true" ]; then
+    sleep "$sleep_interval" &
+    child_pid="$!"
+    wait "$child_pid" || true
+    child_pid=""
+    return 0
+  fi
+  previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  if [ -z "$previous_fingerprint" ] && [ "$realtime_enabled" != "true" ]; then
+    sleep "$sleep_interval" &
+    child_pid="$!"
+    wait "$child_pid" || true
+    child_pid=""
+    return 0
+  fi
+
+  remaining="$sleep_interval"
+  while [ "$remaining" -gt 0 ]; do
+    if [ "$realtime_enabled" = "true" ]; then
+      current_realtime_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
+      if [ -n "$current_realtime_fingerprint" ] && [ "$current_realtime_fingerprint" != "$previous_realtime_fingerprint" ]; then
+        printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
+        runner_realtime_mark_pending "$runner_id" "$public_role" "$realtime_marker_path" "$current_realtime_fingerprint"
+        runner_append_log "$runner_id" "backoff_wake" \
+          "role=${public_role}" \
+          "reason=realtime_inputs_changed" \
+          "interval_seconds=${sleep_interval}" \
+          "remaining_seconds=${remaining}"
+        return 0
+      fi
+    fi
+
+    if [ "$sleep_interval" -gt "$base_interval" ] && [ -n "$previous_fingerprint" ]; then
+      current_fingerprint="$(runner_idle_preflight_inputs_fingerprint "$public_role")"
+    else
+      current_fingerprint=""
+    fi
+    if [ -n "$current_fingerprint" ] && [ "$current_fingerprint" != "$previous_fingerprint" ]; then
+      runner_append_log "$runner_id" "backoff_wake" \
+        "role=${public_role}" \
+        "reason=inputs_changed" \
+        "interval_seconds=${sleep_interval}" \
+        "remaining_seconds=${remaining}"
+      return 0
+    fi
+
+    chunk=1
+    if [ "$remaining" -lt "$chunk" ]; then
+      chunk="$remaining"
+    fi
+    sleep "$chunk" &
+    child_pid="$!"
+    wait "$child_pid" || true
+    child_pid=""
+    remaining=$((remaining - chunk))
+  done
+
+  return 0
 }
 
 load_runner_config_or_block() {
@@ -729,9 +1602,11 @@ load_runner_config_or_block() {
   mode="$(runner_field_from_block "$runner_block" "mode")"
   interval_seconds="$(runner_field_from_block "$runner_block" "interval_seconds")"
   enabled="$(runner_field_from_block "$runner_block" "enabled")"
+  realtime_enabled="$(runner_field_from_block "$runner_block" "realtime_enabled")"
   command_value="$(runner_field_from_block "$runner_block" "command")"
 
   [ -n "$enabled" ] || enabled="true"
+  [ -n "$realtime_enabled" ] || realtime_enabled="false"
   [ -n "$mode" ] || mode="one-shot"
   [ -n "$agent" ] || agent="manual"
   interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
@@ -856,6 +1731,8 @@ start_runner() {
       "pid=${loop_pid}" \
       "started_at=${timestamp}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=" \
       "last_result=loop_started"
     runner_append_log "$target_runner_id" "loop_start" \
       "status=running" \
@@ -894,7 +1771,9 @@ start_runner() {
     "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=" \
+    "last_stop_reason="
   runner_append_log "$target_runner_id" "start" \
     "status=running" \
     "role=${role}" \
@@ -942,7 +1821,10 @@ stop_runner() {
     "active_spec_ref=" \
     "pid=" \
     "started_at=${started_at}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=user" \
+    "last_stop_reason=user_requested" \
+    "last_result=user_stopped"
   runner_append_log "$target_runner_id" "stop" \
     "status=stopped" \
     "previous_status=${previous_status:-unknown}" \
@@ -995,7 +1877,9 @@ restart_runner() {
     "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
     "pid=" \
     "started_at=${timestamp}" \
-    "last_event_at=${timestamp}"
+    "last_event_at=${timestamp}" \
+    "stopped_by=" \
+    "last_stop_reason="
   runner_append_log "$target_runner_id" "start" \
     "status=running" \
     "role=${role}" \
@@ -1007,7 +1891,9 @@ restart_runner() {
 
 loop_runner_worker() {
   local target_runner_id="$1"
-  local run_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result
+  local run_role public_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result existing_stopped_by stop_reason
+  local pressure_snapshot pressure_reason pressure_user_count pressure_user_limit pressure_runner_child_count pressure_runner_child_limit
+  local backoff_interval backoff_idle_streak
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -1020,6 +1906,7 @@ loop_runner_worker() {
     echo "runner ${target_runner_id} role cannot be looped: ${role}" >&2
     return 0
   fi
+  public_role="$(runner_public_role "$role")"
 
   interval="$(runner_normalize_interval_seconds "${AUTOFLOW_RUNNER_LOOP_INTERVAL_SECONDS:-$interval_seconds}")"
 
@@ -1031,15 +1918,24 @@ loop_runner_worker() {
   stop_loop() {
     stopping_loop="true"
     if [ -n "${child_pid:-}" ] && runner_pid_is_running "$child_pid"; then
-      kill "$child_pid" 2>/dev/null || true
+      runner_kill_process_tree "$child_pid"
     fi
     timestamp="$(runner_now_iso)"
+    existing_stopped_by="$(runner_state_value_or_empty "$target_runner_id" "stopped_by")"
+    if [ "$existing_stopped_by" = "user" ]; then
+      stop_reason="user_requested"
+    else
+      existing_stopped_by=""
+      stop_reason="parent_terminated"
+    fi
     runner_write_state "$target_runner_id" \
       "status=stopped" \
       "role=${role}" \
       "agent=${agent}" \
       "mode=${mode}" \
       "interval_seconds=${interval}" \
+      "current_interval_seconds=$(runner_tick_backoff_current_interval "$target_runner_id" "$public_role" "$mode" "$interval")" \
+      "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
       "model=${model}" \
       "reasoning=${reasoning}" \
       "active_item=" \
@@ -1050,13 +1946,16 @@ loop_runner_worker() {
       "pid=" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=${existing_stopped_by}" \
+      "last_stop_reason=${stop_reason}" \
       "last_result=loop_stopped"
     runner_append_log "$target_runner_id" "loop_stop" \
       "status=stopped" \
       "role=${role}" \
       "mode=${mode}" \
       "interval_seconds=${interval}" \
-      "pid=${loop_pid}"
+      "pid=${loop_pid}" \
+      "child_cleanup=process_tree"
     exit 0
   }
 
@@ -1071,6 +1970,8 @@ loop_runner_worker() {
       "agent=${agent}" \
       "mode=${mode}" \
       "interval_seconds=${interval}" \
+      "current_interval_seconds=$(runner_tick_backoff_current_interval "$target_runner_id" "$public_role" "$mode" "$interval")" \
+      "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
       "model=${model}" \
       "reasoning=${reasoning}" \
       "active_item=" \
@@ -1081,6 +1982,8 @@ loop_runner_worker() {
       "pid=" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=unexpected_exit" \
       "last_result=loop_exited_unexpectedly"
     runner_append_log "$target_runner_id" "loop_exit" \
       "status=stopped" \
@@ -1100,6 +2003,8 @@ loop_runner_worker() {
     "agent=${agent}" \
     "mode=${mode}" \
     "interval_seconds=${interval}" \
+    "current_interval_seconds=${interval}" \
+    "idle_streak_count=0" \
     "model=${model}" \
     "reasoning=${reasoning}" \
     "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
@@ -1116,6 +2021,8 @@ loop_runner_worker() {
     "pid=${loop_pid}" \
     "started_at=${started_at}" \
     "last_event_at=${started_at}" \
+    "stopped_by=" \
+    "last_stop_reason=" \
     "last_result=loop_running"
   runner_append_log "$target_runner_id" "loop_worker_start" \
     "status=running" \
@@ -1131,6 +2038,7 @@ loop_runner_worker() {
     [ -n "$current_enabled" ] || current_enabled="true"
     [ -n "$current_mode" ] || current_mode="one-shot"
     interval="$(runner_normalize_interval_seconds "${AUTOFLOW_RUNNER_LOOP_INTERVAL_SECONDS:-$current_interval}")"
+    backoff_interval="$(runner_tick_backoff_current_interval "$target_runner_id" "$public_role" "$mode" "$interval")"
     if [ "$current_enabled" != "true" ] || [ "$current_mode" != "loop" ]; then
       break
     fi
@@ -1140,7 +2048,69 @@ loop_runner_worker() {
       break
     fi
 
-    AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" &
+    loop_stdout_file="$(runner_loop_stdout_path "$target_runner_id")"
+    loop_stderr_file="$(runner_loop_stderr_path "$target_runner_id")"
+    rotate_loop_log_if_needed "$loop_stdout_file"
+    rotate_loop_log_if_needed "$loop_stderr_file"
+
+    pressure_snapshot="$(runner_process_pressure_snapshot "$loop_pid")"
+    pressure_reason="$(printf '%s\n' "$pressure_snapshot" | runner_process_pressure_reason)"
+    if [ "$pressure_reason" != "ok" ]; then
+      pressure_user_count="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "user_process_count" { print $2; exit }')"
+      pressure_user_limit="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "user_process_limit" { print $2; exit }')"
+      pressure_runner_child_count="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "runner_child_count" { print $2; exit }')"
+      pressure_runner_child_limit="$(printf '%s\n' "$pressure_snapshot" | awk -F= '$1 == "runner_child_limit" { print $2; exit }')"
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=running" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval}" \
+        "current_interval_seconds=${backoff_interval}" \
+        "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
+        "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
+        "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
+        "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
+        "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+        "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+        "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+        "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+        "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+        "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+        "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
+        "pid=${loop_pid}" \
+        "started_at=${started_at}" \
+        "last_event_at=${timestamp}" \
+        "stopped_by=" \
+        "last_stop_reason=" \
+        "last_result=process_pressure_guard" \
+        "process_pressure_reason=${pressure_reason}" \
+        "process_pressure_user_count=${pressure_user_count}" \
+        "process_pressure_user_limit=${pressure_user_limit}" \
+        "process_pressure_runner_child_count=${pressure_runner_child_count}" \
+        "process_pressure_runner_child_limit=${pressure_runner_child_limit}"
+      runner_append_log "$target_runner_id" "process_pressure_guard" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=${pressure_reason}" \
+        "user_process_count=${pressure_user_count}" \
+        "user_process_limit=${pressure_user_limit}" \
+        "runner_child_count=${pressure_runner_child_count}" \
+        "runner_child_limit=${pressure_runner_child_limit}" \
+        "action=skip_tick"
+      runner_tick_backoff_sleep "$target_runner_id" "$public_role" "$mode" "$interval" "$backoff_interval"
+      continue
+    fi
+
+    if runner_realtime_enabled "$public_role" "$mode"; then
+      runner_realtime_consume_pending "$target_runner_id" "$public_role"
+    fi
+
+    AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &
     child_pid="$!"
     set +e
     wait "$child_pid"
@@ -1164,12 +2134,16 @@ loop_runner_worker() {
           ;;
       esac
     fi
+    backoff_idle_streak="$(runner_tick_backoff_idle_streak "$target_runner_id" "$public_role" "$mode" "$interval")"
+    backoff_interval="$(runner_tick_backoff_next_interval "$target_runner_id" "$public_role" "$mode" "$interval")"
     runner_write_state "$target_runner_id" \
       "status=running" \
       "role=${role}" \
       "agent=${agent}" \
       "mode=${mode}" \
       "interval_seconds=${interval}" \
+      "current_interval_seconds=${backoff_interval}" \
+      "idle_streak_count=${backoff_idle_streak}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
       "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
@@ -1186,17 +2160,27 @@ loop_runner_worker() {
       "pid=${loop_pid}" \
       "started_at=${started_at}" \
       "last_event_at=${timestamp}" \
+      "stopped_by=" \
+      "last_stop_reason=" \
       "last_result=${last_result}"
     runner_append_log "$target_runner_id" "loop_tick" \
       "role=${role}" \
       "mode=${mode}" \
       "exit_code=${run_exit}" \
-      "interval_seconds=${interval}"
+      "interval_seconds=${interval}" \
+      "interval_effective_seconds=${backoff_interval}" \
+      "idle_streak_count=${backoff_idle_streak}"
 
-    sleep "$interval" &
-    child_pid="$!"
-    wait "$child_pid" || true
-    child_pid=""
+    if runner_should_drain_queue_now "$public_role" "$last_result" "$run_exit"; then
+      runner_append_log "$target_runner_id" "queue_drain_continue" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=queue_entries_remain" \
+        "interval_seconds=${interval}"
+      continue
+    fi
+
+    runner_tick_backoff_sleep "$target_runner_id" "$public_role" "$mode" "$interval" "$backoff_interval"
   done
 
   stop_loop
@@ -1205,6 +2189,8 @@ loop_runner_worker() {
 set_runner_config() {
   local target_runner_id="$1"
   local pair key value updates_file temp_file timestamp updated_count
+
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
@@ -1438,13 +2424,12 @@ sync_heartbeat_set_workers() {
   set_file="$(runner_heartbeat_set_path)"
   [ -f "$set_file" ] || return 0
 
-  for role in ticket-owner planner todo verifier merge-bot; do
+  for role in ticket-owner planner todo verifier; do
     case "$role" in
       ticket-owner) array_key="owner_workers" ;;
       planner) array_key="planner_workers" ;;
       todo) array_key="todo_workers" ;;
       verifier) array_key="verifier_workers" ;;
-      merge-bot) array_key="merge_workers" ;;
     esac
     ids="$(runner_ids_for_role "$role")"
     updated_array=""
@@ -1517,7 +2502,9 @@ add_runner_config() {
   local target_runner_id="$1"
   local target_role="$2"
   local pair key value timestamp updated_count
-  local agent_value model_value reasoning_value mode_value interval_seconds_value enabled_value command_value
+  local agent_value model_value reasoning_value mode_value interval_seconds_value enabled_value realtime_enabled_value command_value
+
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
@@ -1555,6 +2542,7 @@ add_runner_config() {
   mode_value="one-shot"
   interval_seconds_value="60"
   enabled_value="true"
+  realtime_enabled_value="false"
   command_value=""
   updated_count=0
 
@@ -1592,6 +2580,7 @@ add_runner_config() {
       mode) mode_value="$value" ;;
       interval_seconds) interval_seconds_value="$value" ;;
       enabled) enabled_value="$value" ;;
+      realtime_enabled) realtime_enabled_value="$value" ;;
       command) command_value="$value" ;;
     esac
     updated_count=$((updated_count + 1))
@@ -1607,6 +2596,7 @@ add_runner_config() {
     printf 'mode = %s\n' "$(runner_toml_value "mode" "$mode_value")"
     printf 'interval_seconds = %s\n' "$(runner_toml_value "interval_seconds" "$interval_seconds_value")"
     printf 'enabled = %s\n' "$(runner_toml_value "enabled" "$enabled_value")"
+    printf 'realtime_enabled = %s\n' "$(runner_toml_value "realtime_enabled" "$realtime_enabled_value")"
     printf 'command = %s\n' "$(runner_toml_value "command" "$command_value")"
   } >> "$config_path"
 
@@ -1619,6 +2609,7 @@ add_runner_config() {
     "agent=${agent_value}" \
     "mode=${mode_value}" \
     "interval_seconds=${interval_seconds_value}" \
+    "realtime_enabled=${realtime_enabled_value}" \
     "updated_count=${updated_count}"
 
   print_runner_common_header "ok"
@@ -1628,6 +2619,7 @@ add_runner_config() {
   printf 'agent=%s\n' "$agent_value"
   printf 'mode=%s\n' "$mode_value"
   printf 'interval_seconds=%s\n' "$interval_seconds_value"
+  printf 'realtime_enabled=%s\n' "$realtime_enabled_value"
   printf 'model=%s\n' "$model_value"
   printf 'reasoning=%s\n' "$reasoning_value"
   printf 'enabled=%s\n' "$enabled_value"
@@ -1639,6 +2631,8 @@ add_runner_config() {
 remove_runner_config() {
   local target_runner_id="$1"
   local temp_file trimmed_file timestamp state_path role agent mode model reasoning
+
+  ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
@@ -1811,13 +2805,14 @@ list_runner_artifacts() {
 
 list_runners() {
   local config_stream runner_count index in_runner line key value
-  local id role agent model reasoning mode interval_seconds enabled command
+  local id role agent model reasoning mode interval_seconds enabled realtime_enabled command
   local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref
   local active_recovery_reason active_recovery_status active_recovery_failure_class
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
   local pid started_at last_event_at last_adapter_chunk_at last_result last_log_line
   local last_runtime_log last_prompt_log last_stdout_log last_stderr_log artifact_status
   local artifact_runtime_status artifact_prompt_status artifact_stdout_status artifact_stderr_status
+  local current_interval_seconds effective_interval_seconds idle_streak_count
   local consecutive_preflight_skip_count consecutive_preflight_skip_result last_preflight_skip_at
   local preflight_skip_circuit_breaker_until preflight_skip_circuit_breaker_threshold
 
@@ -1844,6 +2839,7 @@ list_runners() {
   mode=""
   interval_seconds=""
   enabled=""
+  realtime_enabled=""
   command=""
 
   while IFS= read -r line; do
@@ -1858,6 +2854,7 @@ list_runners() {
         mode=""
         interval_seconds=""
         enabled=""
+        realtime_enabled=""
         command=""
         ;;
       runner_end)
@@ -1886,11 +2883,13 @@ list_runners() {
           last_prompt_log="$(runner_state_value_or_empty "$id" "last_prompt_log")"
           last_stdout_log="$(runner_state_value_or_empty "$id" "last_stdout_log")"
           last_stderr_log="$(runner_state_value_or_empty "$id" "last_stderr_log")"
+          current_interval_seconds="$(runner_state_value_or_empty "$id" "current_interval_seconds")"
           consecutive_preflight_skip_count="$(runner_state_value_or_empty "$id" "consecutive_preflight_skip_count")"
           consecutive_preflight_skip_result="$(runner_state_value_or_empty "$id" "consecutive_preflight_skip_result")"
           last_preflight_skip_at="$(runner_state_value_or_empty "$id" "last_preflight_skip_at")"
           preflight_skip_circuit_breaker_until="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_until")"
           preflight_skip_circuit_breaker_threshold="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_threshold")"
+          idle_streak_count="$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$id" "idle_streak_count")" "0")"
           artifact_status="$(runner_artifact_status "$last_runtime_log" "$last_prompt_log" "$last_stdout_log" "$last_stderr_log")"
           artifact_runtime_status="$(runner_artifact_path_status "$last_runtime_log")"
           artifact_prompt_status="$(runner_artifact_path_status "$last_prompt_log")"
@@ -1906,6 +2905,10 @@ list_runners() {
           fi
           pid="$(runner_effective_state_pid "$state_status" "$mode" "$pid")"
           state_status="$effective_state_status"
+          effective_interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
+          if [ -n "$current_interval_seconds" ]; then
+            effective_interval_seconds="$(runner_normalize_interval_seconds "$current_interval_seconds")"
+          fi
 
           printf 'runner.%s.id=%s\n' "$index" "$id"
           printf 'runner.%s.role=%s\n' "$index" "$role"
@@ -1914,7 +2917,10 @@ list_runners() {
           printf 'runner.%s.reasoning=%s\n' "$index" "$reasoning"
           printf 'runner.%s.mode=%s\n' "$index" "$mode"
           printf 'runner.%s.interval_seconds=%s\n' "$index" "${interval_seconds:-60}"
-          printf 'runner.%s.interval_effective_seconds=%s\n' "$index" "$(runner_normalize_interval_seconds "$interval_seconds")"
+          printf 'runner.%s.realtime_enabled=%s\n' "$index" "${realtime_enabled:-false}"
+          printf 'runner.%s.interval_effective_seconds=%s\n' "$index" "$effective_interval_seconds"
+          printf 'runner.%s.current_interval_seconds=%s\n' "$index" "$effective_interval_seconds"
+          printf 'runner.%s.idle_streak_count=%s\n' "$index" "$idle_streak_count"
           printf 'runner.%s.consecutive_preflight_skip_count=%s\n' "$index" "$consecutive_preflight_skip_count"
           printf 'runner.%s.consecutive_preflight_skip_result=%s\n' "$index" "$consecutive_preflight_skip_result"
           printf 'runner.%s.last_preflight_skip_at=%s\n' "$index" "$last_preflight_skip_at"
@@ -1968,6 +2974,7 @@ list_runners() {
             mode) mode="$value" ;;
             interval_seconds) interval_seconds="$value" ;;
             enabled) enabled="$value" ;;
+            realtime_enabled) realtime_enabled="$value" ;;
             command) command="$value" ;;
           esac
         fi

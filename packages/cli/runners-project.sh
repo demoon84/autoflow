@@ -724,7 +724,7 @@ runner_field_from_block() {
 
 runner_allowed_config_key() {
   case "${1:-}" in
-    agent|model|reasoning|mode|interval_seconds|enabled|command)
+    agent|model|reasoning|mode|interval_seconds|enabled|realtime_enabled|command)
       return 0
       ;;
     *)
@@ -734,7 +734,7 @@ runner_allowed_config_key() {
 }
 
 runner_allowed_role() {
-  # Active roles (3-runner topology): ticket-owner / planner / wiki-maintainer.
+  # Active roles (4-runner topology): planner / ticket-owner / verifier / wiki-maintainer.
   # Legacy/back-compat roles (kept reachable so users on older configs can
   # still `autoflow runners add ...`): owner|ticket alias for ticket-owner,
   # plan alias for planner, wiki alias for wiki-maintainer, plus
@@ -761,7 +761,7 @@ runner_validate_config_value() {
   esac
 
   case "$key" in
-    enabled)
+    enabled|realtime_enabled)
       [ "$value" = "true" ] || [ "$value" = "false" ]
       ;;
     mode)
@@ -792,7 +792,7 @@ runner_validate_config_value() {
 
 runner_validate_add_update_key() {
   case "${1:-}" in
-    agent|model|reasoning|mode|interval_seconds|enabled|command)
+    agent|model|reasoning|mode|interval_seconds|enabled|realtime_enabled|command)
       return 0
       ;;
     *)
@@ -805,7 +805,7 @@ runner_toml_value() {
   local key="$1"
   local value="$2"
 
-  if [ "$key" = "enabled" ] || [ "$key" = "interval_seconds" ]; then
+  if [ "$key" = "enabled" ] || [ "$key" = "realtime_enabled" ] || [ "$key" = "interval_seconds" ]; then
     printf '%s' "$value"
     return 0
   fi
@@ -978,6 +978,11 @@ runner_realtime_enabled() {
     return 0
   fi
 
+  # Runner config field: realtime_enabled = true
+  if [ "${realtime_enabled:-false}" = "true" ]; then
+    return 0
+  fi
+
   return 1
 }
 
@@ -1084,6 +1089,34 @@ runner_planner_realtime_inputs_fingerprint() {
   runner_realtime_inputs_fingerprint "planner"
 }
 
+runner_realtime_watch_dirs() {
+  local public_role="${1:-planner}"
+  local spec dir
+
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    dir="${board_root}/${spec%%:*}"
+    [ -d "$dir" ] || continue
+    printf '%s\n' "$dir"
+  done < <(runner_realtime_inputs_specs "$public_role") | LC_ALL=C sort -u
+}
+
+runner_realtime_watch_backend() {
+  if command -v node >/dev/null 2>&1 && [ -d "${project_root}/node_modules/chokidar" ]; then
+    printf 'chokidar'
+    return 0
+  fi
+  if command -v fswatch >/dev/null 2>&1; then
+    printf 'fswatch'
+    return 0
+  fi
+  if command -v inotifywait >/dev/null 2>&1; then
+    printf 'inotifywait'
+    return 0
+  fi
+  printf ''
+}
+
 runner_realtime_mark_pending() {
   local runner_id="$1"
   local public_role="$2"
@@ -1132,6 +1165,159 @@ runner_realtime_consume_pending() {
 
 runner_planner_realtime_consume_pending() {
   runner_realtime_consume_pending "$1" "planner"
+}
+
+runner_realtime_wait_for_event() {
+  local runner_id="$1"
+  local public_role="$2"
+  local sleep_interval="$3"
+  local marker_path="$4"
+  local fingerprint_path="$5"
+  local previous_fingerprint="$6"
+  local backend dirs_file watch_pid sleep_pid current_fingerprint dir
+  local dirs=()
+  local event_seen wait_status sleep_status
+
+  backend="$(runner_realtime_watch_backend)"
+  [ -n "$backend" ] || return 1
+
+  dirs_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-realtime-dirs.XXXXXX")"
+  runner_realtime_watch_dirs "$public_role" > "$dirs_file"
+  if [ ! -s "$dirs_file" ]; then
+    rm -f "$dirs_file"
+    return 1
+  fi
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    dirs+=("$dir")
+  done < "$dirs_file"
+  if [ "${#dirs[@]}" -eq 0 ]; then
+    rm -f "$dirs_file"
+    return 1
+  fi
+
+  case "$backend" in
+    chokidar)
+      node --input-type=module - "$project_root" "$dirs_file" <<'NODE' >/dev/null 2>&1 &
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const [projectRoot, dirsFile] = process.argv.slice(2);
+const requireFromProject = createRequire(pathToFileURL(join(projectRoot, 'package.json')).href);
+const chokidarPath = requireFromProject.resolve('chokidar');
+const { watch } = await import(pathToFileURL(chokidarPath).href);
+const dirs = readFileSync(dirsFile, 'utf8').split(/\r?\n/).filter(Boolean);
+let finished = false;
+
+const watcher = watch(dirs, {
+  ignoreInitial: true,
+  depth: 0,
+  awaitWriteFinish: {
+    stabilityThreshold: 100,
+    pollInterval: 50,
+  },
+});
+
+const finish = async (code = 0) => {
+  if (finished) return;
+  finished = true;
+  try {
+    await watcher.close();
+  } catch {
+    // Best effort cleanup; the shell parent handles timeout fallback.
+  }
+  process.exit(code);
+};
+
+watcher.on('all', () => {
+  void finish(0);
+});
+watcher.on('error', () => {
+  void finish(2);
+});
+process.on('SIGTERM', () => {
+  void finish(143);
+});
+process.on('SIGINT', () => {
+  void finish(130);
+});
+NODE
+      ;;
+    fswatch)
+      fswatch -1 "${dirs[@]}" >/dev/null 2>&1 &
+      ;;
+    inotifywait)
+      inotifywait -q -e create,modify,delete,move,attrib "${dirs[@]}" >/dev/null 2>&1 &
+      ;;
+    *)
+      rm -f "$dirs_file"
+      return 1
+      ;;
+  esac
+  watch_pid="$!"
+  sleep "$sleep_interval" &
+  sleep_pid="$!"
+  child_pid="$sleep_pid"
+  event_seen="false"
+
+  while kill -0 "$sleep_pid" 2>/dev/null; do
+    if ! kill -0 "$watch_pid" 2>/dev/null; then
+      event_seen="true"
+      break
+    fi
+    sleep 1
+  done
+
+  if [ "$event_seen" = "true" ]; then
+    kill "$sleep_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+  else
+    kill "$watch_pid" 2>/dev/null || true
+    wait "$watch_pid" 2>/dev/null || true
+    wait "$sleep_pid" 2>/dev/null || true
+    rm -f "$dirs_file"
+    child_pid=""
+    return 0
+  fi
+
+  set +e
+  wait "$watch_pid" 2>/dev/null
+  wait_status="$?"
+  set -e
+  sleep_status=0
+  child_pid=""
+  rm -f "$dirs_file"
+
+  current_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
+  if [ -n "$current_fingerprint" ] && [ "$current_fingerprint" != "$previous_fingerprint" ]; then
+    printf '%s\n' "$current_fingerprint" > "$fingerprint_path"
+    runner_realtime_mark_pending "$runner_id" "$public_role" "$marker_path" "$current_fingerprint"
+    runner_append_log "$runner_id" "backoff_wake" \
+      "role=${public_role}" \
+      "reason=realtime_watch_event" \
+      "backend=${backend}" \
+      "interval_seconds=${sleep_interval}" \
+      "watch_exit=${wait_status}"
+  elif [ "$wait_status" -ne 0 ]; then
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
+      "reason=watch_backend_failed" \
+      "backend=${backend}" \
+      "watch_exit=${wait_status}" \
+      "fallback=polling"
+    return 1
+  else
+    runner_append_log "$runner_id" "realtime_wakeup" \
+      "role=${public_role}" \
+      "reason=watch_event_ignored" \
+      "backend=${backend}" \
+      "fingerprint=${current_fingerprint}" \
+      "previous_fingerprint=${previous_fingerprint}"
+  fi
+
+  return "$sleep_status"
 }
 
 runner_tick_backoff_skip_reason() {
@@ -1240,6 +1426,44 @@ runner_tick_backoff_next_interval() {
   runner_tick_backoff_interval_for_streak "$base_interval" "$next_streak"
 }
 
+runner_role_queue_has_entries() {
+  local public_role="$1"
+  local candidate
+
+  case "$public_role" in
+    planner)
+      for candidate in \
+        "${board_root}/tickets/inbox" \
+        "${board_root}/tickets/backlog" \
+        "${board_root}/tickets/reject"
+      do
+        find "$candidate" -maxdepth 1 -type f -name '*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      done
+      ;;
+    ticket)
+      find "${board_root}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      ;;
+    verifier)
+      find "${board_root}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
+      ;;
+  esac
+
+  return 1
+}
+
+runner_should_drain_queue_now() {
+  local public_role="$1"
+  local last_result="$2"
+  local run_exit="$3"
+
+  [ "$run_exit" = "0" ] || return 1
+  case "$last_result" in
+    adapter_exit_0|success) ;;
+    *) return 1 ;;
+  esac
+  runner_role_queue_has_entries "$public_role"
+}
+
 runner_tick_backoff_sleep() {
   local runner_id="$1"
   local public_role="$2"
@@ -1268,6 +1492,9 @@ runner_tick_backoff_sleep() {
     current_realtime_fingerprint="$(runner_realtime_inputs_fingerprint "$public_role")"
     previous_realtime_fingerprint="$current_realtime_fingerprint"
     printf '%s\n' "$current_realtime_fingerprint" > "$realtime_fingerprint_path"
+    if runner_realtime_wait_for_event "$runner_id" "$public_role" "$sleep_interval" "$realtime_marker_path" "$realtime_fingerprint_path" "$previous_realtime_fingerprint"; then
+      return 0
+    fi
   fi
 
   if [ "$sleep_interval" -le "$base_interval" ] && [ "$realtime_enabled" != "true" ]; then
@@ -1371,9 +1598,11 @@ load_runner_config_or_block() {
   mode="$(runner_field_from_block "$runner_block" "mode")"
   interval_seconds="$(runner_field_from_block "$runner_block" "interval_seconds")"
   enabled="$(runner_field_from_block "$runner_block" "enabled")"
+  realtime_enabled="$(runner_field_from_block "$runner_block" "realtime_enabled")"
   command_value="$(runner_field_from_block "$runner_block" "command")"
 
   [ -n "$enabled" ] || enabled="true"
+  [ -n "$realtime_enabled" ] || realtime_enabled="false"
   [ -n "$mode" ] || mode="one-shot"
   [ -n "$agent" ] || agent="manual"
   interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
@@ -1938,6 +2167,15 @@ loop_runner_worker() {
       "interval_effective_seconds=${backoff_interval}" \
       "idle_streak_count=${backoff_idle_streak}"
 
+    if runner_should_drain_queue_now "$public_role" "$last_result" "$run_exit"; then
+      runner_append_log "$target_runner_id" "queue_drain_continue" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=queue_entries_remain" \
+        "interval_seconds=${interval}"
+      continue
+    fi
+
     runner_tick_backoff_sleep "$target_runner_id" "$public_role" "$mode" "$interval" "$backoff_interval"
   done
 
@@ -2260,7 +2498,7 @@ add_runner_config() {
   local target_runner_id="$1"
   local target_role="$2"
   local pair key value timestamp updated_count
-  local agent_value model_value reasoning_value mode_value interval_seconds_value enabled_value command_value
+  local agent_value model_value reasoning_value mode_value interval_seconds_value enabled_value realtime_enabled_value command_value
 
   ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
@@ -2300,6 +2538,7 @@ add_runner_config() {
   mode_value="one-shot"
   interval_seconds_value="60"
   enabled_value="true"
+  realtime_enabled_value="false"
   command_value=""
   updated_count=0
 
@@ -2337,6 +2576,7 @@ add_runner_config() {
       mode) mode_value="$value" ;;
       interval_seconds) interval_seconds_value="$value" ;;
       enabled) enabled_value="$value" ;;
+      realtime_enabled) realtime_enabled_value="$value" ;;
       command) command_value="$value" ;;
     esac
     updated_count=$((updated_count + 1))
@@ -2352,6 +2592,7 @@ add_runner_config() {
     printf 'mode = %s\n' "$(runner_toml_value "mode" "$mode_value")"
     printf 'interval_seconds = %s\n' "$(runner_toml_value "interval_seconds" "$interval_seconds_value")"
     printf 'enabled = %s\n' "$(runner_toml_value "enabled" "$enabled_value")"
+    printf 'realtime_enabled = %s\n' "$(runner_toml_value "realtime_enabled" "$realtime_enabled_value")"
     printf 'command = %s\n' "$(runner_toml_value "command" "$command_value")"
   } >> "$config_path"
 
@@ -2364,6 +2605,7 @@ add_runner_config() {
     "agent=${agent_value}" \
     "mode=${mode_value}" \
     "interval_seconds=${interval_seconds_value}" \
+    "realtime_enabled=${realtime_enabled_value}" \
     "updated_count=${updated_count}"
 
   print_runner_common_header "ok"
@@ -2373,6 +2615,7 @@ add_runner_config() {
   printf 'agent=%s\n' "$agent_value"
   printf 'mode=%s\n' "$mode_value"
   printf 'interval_seconds=%s\n' "$interval_seconds_value"
+  printf 'realtime_enabled=%s\n' "$realtime_enabled_value"
   printf 'model=%s\n' "$model_value"
   printf 'reasoning=%s\n' "$reasoning_value"
   printf 'enabled=%s\n' "$enabled_value"
@@ -2558,7 +2801,7 @@ list_runner_artifacts() {
 
 list_runners() {
   local config_stream runner_count index in_runner line key value
-  local id role agent model reasoning mode interval_seconds enabled command
+  local id role agent model reasoning mode interval_seconds enabled realtime_enabled command
   local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref
   local active_recovery_reason active_recovery_status active_recovery_failure_class
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
@@ -2592,6 +2835,7 @@ list_runners() {
   mode=""
   interval_seconds=""
   enabled=""
+  realtime_enabled=""
   command=""
 
   while IFS= read -r line; do
@@ -2606,6 +2850,7 @@ list_runners() {
         mode=""
         interval_seconds=""
         enabled=""
+        realtime_enabled=""
         command=""
         ;;
       runner_end)
@@ -2668,6 +2913,7 @@ list_runners() {
           printf 'runner.%s.reasoning=%s\n' "$index" "$reasoning"
           printf 'runner.%s.mode=%s\n' "$index" "$mode"
           printf 'runner.%s.interval_seconds=%s\n' "$index" "${interval_seconds:-60}"
+          printf 'runner.%s.realtime_enabled=%s\n' "$index" "${realtime_enabled:-false}"
           printf 'runner.%s.interval_effective_seconds=%s\n' "$index" "$effective_interval_seconds"
           printf 'runner.%s.current_interval_seconds=%s\n' "$index" "$effective_interval_seconds"
           printf 'runner.%s.idle_streak_count=%s\n' "$index" "$idle_streak_count"
@@ -2724,6 +2970,7 @@ list_runners() {
             mode) mode="$value" ;;
             interval_seconds) interval_seconds="$value" ;;
             enabled) enabled="$value" ;;
+            realtime_enabled) realtime_enabled="$value" ;;
             command) command="$value" ;;
           esac
         fi

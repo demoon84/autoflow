@@ -163,23 +163,20 @@ CHECK
 check_only_output="${tmp_root}/check-only.out"
 run_temp_runtime "${check_only_project}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$check_only_output"
 require_line "$check_only_output" "status=ok"
-require_line "$check_only_output" "source=blocked-cleanup-no-op"
-require_contains "$check_only_output" "dirty_paths=.autoflow/tickets/check/check_001.md"
+require_line "$check_only_output" "source=blocked-auto-recover"
+require_line "$check_only_output" "returned_to=tickets/todo/tickets_001.md"
 reject_contains "$check_only_output" "source=blocked-dirty-orchestration"
-if [ "$(find "${check_only_project}/.autoflow/tickets/check" -maxdepth 1 -type f -name 'check_*.md' | wc -l | tr -d '[:space:]')" != "1" ]; then
-  echo "Check-only no-op should not create another check ledger file." >&2
-  find "${check_only_project}/.autoflow/tickets/check" -maxdepth 1 -type f -name 'check_*.md' -print >&2
-  exit 1
-fi
+test -f "${check_only_project}/.autoflow/tickets/todo/tickets_001.md"
 
 fixpoint_project="${tmp_root}/fixpoint"
 init_project "$fixpoint_project"
 for index in 1 2 3 4 5; do
-  git -C "$fixpoint_project" commit --allow-empty -m "[PRD_001][ticket_001] orchestration cleanup: smoke ${index}" >/dev/null
+  git -C "$fixpoint_project" commit --allow-empty -m "[PRD_001][tickets_001] orchestration cleanup: smoke ${index}" >/dev/null
 done
 cat >"${fixpoint_project}/.autoflow/tickets/check/check_001.md" <<'CHECK'
 # fixpoint dirty fixture
 CHECK
+printf 'still dirty\n' >"${fixpoint_project}/app.txt"
 fixpoint_output="${tmp_root}/fixpoint.out"
 run_temp_runtime "${fixpoint_project}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$fixpoint_output"
 require_line "$fixpoint_output" "status=ok"
@@ -200,6 +197,6 @@ require_line "$mixed_output" "status=ok"
 require_line "$mixed_output" "source=blocked-dirty-orchestration"
 require_contains "$mixed_output" "dirty_paths="
 require_contains "$mixed_output" "app.txt"
-require_contains "$mixed_output" ".autoflow/tickets/check/check_001.md"
+reject_contains "$mixed_output" ".autoflow/tickets/check/check_001.md"
 
 echo "status=ok"

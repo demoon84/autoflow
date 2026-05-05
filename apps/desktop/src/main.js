@@ -1553,7 +1553,8 @@ async function pathExists(filePath) {
 }
 
 const runnerLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_(?:stdout|stderr)\.log$/;
-const runnerLiveLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_live_(?:stdout|stderr)\.log$/;
+const runnerLiveLogNamePattern =
+  /^(.+?)_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)_live_(?:stdout|stderr)\.log$/;
 const ansiEscapePattern = /\[[0-9;?]*[A-Za-z]/g;
 const totalTokensMarkerPattern = /total[_ -]?tokens/;
 const tokenTotalMarkers = ["total_tokens", "total tokens", "total-tokens", "totaltokens"];
@@ -1749,8 +1750,37 @@ function parseTokenUsageChunk(chunk, prior) {
   return { tokens: total, waiting, tail: newTail };
 }
 
-async function aggregateLiveTokenUsage(logsDir) {
+function timestampFromRunnerLogName(value) {
+  if (!value) return 0;
+  const normalized = value.replace(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z$/,
+    "$1T$2:$3:$4Z"
+  );
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function runningRunnerStartTimes(runners) {
+  const startTimes = new Map();
+  for (const runner of runners || []) {
+    const status = String(runner?.stateStatus || "").toLowerCase();
+    const pid = String(runner?.pid || "").trim();
+    if (status !== "running" && !pid) continue;
+    const runnerId = typeof runner?.id === "string" ? runner.id : "";
+    if (!runnerId) continue;
+    const startedAtMs = Date.parse(String(runner?.startedAt || ""));
+    startTimes.set(runnerId, Number.isFinite(startedAtMs) ? startedAtMs : 0);
+  }
+  return startTimes;
+}
+
+async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
   const totals = new Map();
+  if (!activeStartTimes || activeStartTimes.size === 0) {
+    liveTokenLogCache.clear();
+    return totals;
+  }
+
   let entries;
   try {
     entries = await fs.readdir(logsDir);
@@ -1765,6 +1795,10 @@ async function aggregateLiveTokenUsage(logsDir) {
       const match = runnerLiveLogNamePattern.exec(name);
       if (!match) return;
       const runnerId = match[1];
+      const activeStartedAtMs = activeStartTimes.get(runnerId);
+      if (activeStartedAtMs === undefined) return;
+      const logStartedAtMs = timestampFromRunnerLogName(match[2]);
+      if (activeStartedAtMs > 0 && logStartedAtMs > 0 && logStartedAtMs < activeStartedAtMs) return;
       const filePath = path.join(logsDir, name);
 
       let stat;
@@ -1829,7 +1863,7 @@ async function aggregateLiveTokenUsage(logsDir) {
   return totals;
 }
 
-async function readRunnerTokenUsage(boardRoot) {
+async function readRunnerTokenUsage(boardRoot, runners = []) {
   const cacheTotals = new Map();
   const cachePath = path.join(boardRoot, "metrics", "token-cache.tsv");
 
@@ -1883,7 +1917,10 @@ async function readRunnerTokenUsage(boardRoot) {
     }
   }
 
-  const liveTotals = await aggregateLiveTokenUsage(path.join(boardRoot, "runners", "logs"));
+  const liveTotals = await aggregateLiveTokenUsage(
+    path.join(boardRoot, "runners", "logs"),
+    runningRunnerStartTimes(runners)
+  );
   for (const [runnerId, count] of liveTotals) {
     totals.set(runnerId, (totals.get(runnerId) || 0) + count);
   }
@@ -1892,7 +1929,7 @@ async function readRunnerTokenUsage(boardRoot) {
 }
 
 async function enrichRunnerTerminalPreviews(runners, boardRoot) {
-  const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot);
+  const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot, runners);
   return Promise.all(
     runners.map(async (runner) => {
       const conversationPreview = await runnerConversationPreview(runner, boardRoot);
@@ -2573,6 +2610,10 @@ function readBoardRunnerListCacheKey(options = {}) {
   ].join("\0");
 }
 
+function clearReadBoardRunnerListCache(options = {}) {
+  readBoardRunnerListCache.delete(readBoardRunnerListCacheKey(options));
+}
+
 function cloneRunnersResult(result) {
   if (!result) {
     return result;
@@ -2666,13 +2707,17 @@ function listRunnersCachedOrRefresh(options = {}, ttlMs = readBoardRunnerListCac
   }
 
   if (!entry?.promise) {
-    void startRunnerListRefresh(options, key, entry);
+    return startRunnerListRefresh(options, key, entry).then((result) =>
+      markRunnerListFallback(cloneRunnersResult(result), { cacheStatus: "miss" })
+    );
   }
 
-  return Promise.resolve(emptyRunnerListResult(options, {
-    refreshInFlight: true,
-    cacheStatus: entry?.promise ? "pending" : "miss"
-  }));
+  return entry.promise.then((result) =>
+    markRunnerListFallback(cloneRunnersResult(result), {
+      refreshInFlight: true,
+      cacheStatus: "pending"
+    })
+  );
 }
 
 async function listRunnersStandalone(options = {}) {
@@ -2744,7 +2789,12 @@ async function controlRunner(options = {}) {
   const promise = runAutoflowArgs(
     ["runners", action, runnerId, options.projectRoot, boardDirName],
     options
-  ).finally(() => {
+  ).then((result) => {
+    if (result.ok) {
+      clearReadBoardRunnerListCache({ projectRoot: options.projectRoot, boardDirName });
+    }
+    return result;
+  }).finally(() => {
     if (runnerControlInflight.get(lockKey) === promise) {
       runnerControlInflight.delete(lockKey);
     }
@@ -2945,7 +2995,15 @@ function configureRunner(options = {}) {
   }
 
   const boardDirName = options.boardDirName || defaultBoardDirName;
-  return runAutoflowArgs(["runners", "set", runnerId, options.projectRoot, boardDirName, ...updates], options);
+  return runAutoflowArgs(
+    ["runners", "set", runnerId, options.projectRoot, boardDirName, ...updates],
+    options
+  ).then((result) => {
+    if (result.ok) {
+      clearReadBoardRunnerListCache({ projectRoot: options.projectRoot, boardDirName });
+    }
+    return result;
+  });
 }
 
 async function installBoard(options = {}) {

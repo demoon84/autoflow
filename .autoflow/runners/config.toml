@@ -34,6 +34,7 @@ reasoning = "high"
 mode = "loop"
 interval_seconds = 1800
 enabled = true
+realtime_enabled = true
 command = ""
 
 [[runners]]
@@ -45,6 +46,7 @@ reasoning = ""
 mode = "one-shot"
 interval_seconds = 1800
 enabled = false
+realtime_enabled = false
 max_duration_seconds = 10800
 max_ticks = 6
 command = ""
@@ -58,6 +60,7 @@ reasoning = "low"
 mode = "loop"
 interval_seconds = 1800
 enabled = true
+realtime_enabled = true
 command = ""
 
 [[runners]]
@@ -69,6 +72,7 @@ reasoning = ""
 mode = "loop"
 interval_seconds = 1800
 enabled = true
+realtime_enabled = true
 command = ""
 
 [[runners]]
@@ -80,4 +84,5 @@ reasoning = "medium"
 mode = "loop"
 interval_seconds = 1800
 enabled = true
+realtime_enabled = true
 command = ""

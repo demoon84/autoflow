@@ -473,6 +473,55 @@ path_is_orchestration_check_file() {
   esac
 }
 
+path_is_orchestration_generated_dirty_path() {
+  case "${1:-}" in
+    .autoflow/metrics/*|\
+    .autoflow/runners/state/*|\
+    .autoflow/telemetry/*|\
+    .autoflow/tickets/check/*|\
+    .autoflow/wiki/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+dirty_path_matches_ticket_allowed_paths() {
+  local ticket_file="$1"
+  local dirty_path="$2"
+  local allowed_path
+
+  [ -f "$ticket_file" ] || return 1
+  dirty_path="${dirty_path#./}"
+  [ -n "$dirty_path" ] || return 1
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    allowed_path_is_concrete_repo_path "$allowed_path" || continue
+    allowed_path="${allowed_path#./}"
+    if path_is_same_or_child "$dirty_path" "$allowed_path"; then
+      return 0
+    fi
+  done < <(extract_ticket_allowed_paths "$ticket_file")
+
+  return 1
+}
+
+filter_actionable_blocked_dirty_paths_for_ticket() {
+  local ticket_file="$1"
+  local path
+
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    path="${path#./}"
+    path_is_orchestration_generated_dirty_path "$path" && continue
+    dirty_path_matches_ticket_allowed_paths "$ticket_file" "$path" || continue
+    printf '%s\n' "$path"
+  done
+}
+
 project_root_dirty_status_is_only_new_orchestration_checks() {
   local git_root="${1:-$PROJECT_ROOT}"
   local line status path found=false
@@ -515,7 +564,10 @@ orchestration_cleanup_commit_count_for_ticket() {
   ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
   [ -n "$ticket_id" ] || return 1
 
-  git -C "$git_root" log --fixed-strings --grep="[ticket_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null | wc -l | tr -d '[:space:]'
+  {
+    git -C "$git_root" log --fixed-strings --grep="[ticket_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null
+    git -C "$git_root" log --fixed-strings --grep="[tickets_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null
+  } | sort -u | wc -l | tr -d '[:space:]'
 }
 
 mark_ticket_blocked_cleanup_fixpoint_exceeded() {

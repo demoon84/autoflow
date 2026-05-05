@@ -247,6 +247,7 @@ runner_list_config() {
       mode = ""
       interval_seconds = ""
       enabled = "true"
+      realtime_enabled = "false"
       command = ""
     }
 
@@ -263,6 +264,7 @@ runner_list_config() {
       print "mode=" mode
       print "interval_seconds=" interval_seconds
       print "enabled=" enabled
+      print "realtime_enabled=" realtime_enabled
       print "command=" command
       print "runner_end"
     }
@@ -297,6 +299,7 @@ runner_list_config() {
       else if (key == "mode") mode = value
       else if (key == "interval_seconds") interval_seconds = value
       else if (key == "enabled") enabled = value
+      else if (key == "realtime_enabled") realtime_enabled = value
       else if (key == "command") command = value
     }
 

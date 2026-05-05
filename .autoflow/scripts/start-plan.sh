@@ -726,7 +726,8 @@ if blocked_auto_recover_enabled; then
     esac
 
     blocked_git_root="$(git_root_path || printf '%s' "$PROJECT_ROOT")"
-    blocked_dirty_paths="$(project_root_dirty_paths "$blocked_git_root" 2>/dev/null || true)"
+    blocked_all_dirty_paths="$(project_root_dirty_paths "$blocked_git_root" 2>/dev/null || true)"
+    blocked_dirty_paths="$(printf '%s\n' "$blocked_all_dirty_paths" | filter_actionable_blocked_dirty_paths_for_ticket "$blocked_ticket" || true)"
     if [ -n "$blocked_dirty_paths" ]; then
       blocked_dirty_summary="$(printf '%s\n' "$blocked_dirty_paths" | dirty_project_root_paths_summary)"
       blocked_cleanup_count="$(orchestration_cleanup_commit_count_for_ticket "$blocked_ticket" "$blocked_git_root" 2>/dev/null || printf '0')"
@@ -745,20 +746,6 @@ if blocked_auto_recover_enabled; then
         printf 'next_action=Fixpoint guard parked %s as Recovery State needs_user after %s same-ticket orchestration cleanup commits; inspect dirty paths before retrying. No blocked-dirty-orchestration signal was emitted.\n' \
           "$(basename "$blocked_ticket")" \
           "$blocked_cleanup_count"
-        exit 0
-      fi
-
-      if project_root_dirty_status_is_only_new_orchestration_checks "$blocked_git_root"; then
-        printf 'status=ok\n'
-        printf 'source=blocked-cleanup-no-op\n'
-        printf 'blocked_origin=%s\n' "$(board_relative_path "$blocked_ticket")"
-        printf 'failure_class=%s\n' "$blocked_failure_class"
-        printf 'dirty_paths=%s\n' "$blocked_dirty_summary"
-        printf 'cleanup_commit_count=%s\n' "$blocked_cleanup_count"
-        emit_replan_skipped_metadata "$replan_skipped_file"
-        printf 'board_root=%s\n' "$BOARD_ROOT"
-        printf 'project_root=%s\n' "$PROJECT_ROOT"
-        printf 'next_action=PROJECT_ROOT dirty inventory only contains new .autoflow/tickets/check/check_NNN.md ledger files; blocked-dirty-orchestration was suppressed to avoid self-referential cleanup churn.\n'
         exit 0
       fi
 
@@ -784,7 +771,7 @@ if blocked_auto_recover_enabled; then
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
-      printf 'next_action=Orchestrator AI must integrate the dirty PROJECT_ROOT inventory for this blocked-dirty tick as one housekeeping cleanup commit, even when paths span telemetry, runtime ticket refresh, check ledger, or wiki summaries. Use [PRD_NNN][ticket_NNN] orchestration cleanup: misc housekeeping (N paths) when ownership is mixed or ambiguous. Split into more than one commit only for a mechanical git conflict, and log cleanup_commit_split_reason before continuing. Re-check git status after the single commit; the next planner tick will surface source=blocked-auto-recover when paths are clean. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
+      printf 'next_action=Orchestrator AI must integrate only the dirty PROJECT_ROOT paths that overlap this ticket Allowed Paths. Do not include telemetry, check ledger, wiki, runner state, or other generated board side effects in cleanup commits. Use [PRD_NNN][ticket_NNN] orchestration cleanup: <specific path summary> for a real Allowed Paths overlap, then re-check this ticket. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
       exit 0
     fi
 

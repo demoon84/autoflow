@@ -1449,6 +1449,9 @@ idle_preflight_skip_reason() {
     ticket)
       printf 'ticket_inputs_unchanged'
       ;;
+    verifier)
+      printf 'verifier_inputs_unchanged'
+      ;;
   esac
 }
 
@@ -1627,7 +1630,7 @@ maybe_skip_unchanged_idle_preflight() {
   [ "${mode:-}" = "loop" ] || return 1
   [ "$dry_run" = "false" ] || return 1
   case "$public_role:$preflight_status:$preflight_reason" in
-    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket)
+    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket|verifier:idle:no_unblocked_verification_ticket)
       ;;
     *)
       return 1
@@ -3240,7 +3243,7 @@ agent_runtime_preflight_or_exit() {
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
 
   case "$public_role" in
-    ticket|planner)
+    ticket|planner|verifier)
       ;;
     *)
       return 0

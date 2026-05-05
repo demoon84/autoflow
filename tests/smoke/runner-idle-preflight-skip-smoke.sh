@@ -103,6 +103,10 @@ git -C "$project_dir" config user.name "Autoflow Smoke"
   agent=codex \
   mode=loop \
   command='printf "invoked\n" >> "$AUTOFLOW_PROJECT_ROOT/adapter.marker"' >/dev/null
+"${REPO_ROOT}/bin/autoflow" runners add verifier-idle verifier "$project_dir" .autoflow \
+  agent=codex \
+  mode=loop \
+  command='printf "invoked\n" >> "$AUTOFLOW_PROJECT_ROOT/adapter.marker"' >/dev/null
 
 printf 'base\n' >"${project_dir}/target.txt"
 git -C "$project_dir" add target.txt .autoflow .claude .codex
@@ -115,6 +119,9 @@ planner_changed="${project_dir}/planner-changed.out"
 ticket_first="${project_dir}/ticket-first.out"
 ticket_second="${project_dir}/ticket-second.out"
 ticket_changed="${project_dir}/ticket-changed.out"
+verifier_first="${project_dir}/verifier-first.out"
+verifier_second="${project_dir}/verifier-second.out"
+verifier_changed="${project_dir}/verifier-changed.out"
 
 "${REPO_ROOT}/bin/autoflow" run planner "$project_dir" .autoflow --runner planner-idle >"$planner_first"
 require_line "$planner_first" "runtime_status=idle"
@@ -181,6 +188,46 @@ TICKET
 
 "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner ticket-idle >"$ticket_changed"
 require_line "$ticket_changed" "adapter_exit_code=0"
+require_marker_count 1
+
+rm -f "${project_dir}/adapter.marker"
+
+"${REPO_ROOT}/bin/autoflow" run verifier "$project_dir" .autoflow --runner verifier-idle >"$verifier_first"
+require_line "$verifier_first" "runtime_status=idle"
+require_line "$verifier_first" "reason=no_unblocked_verification_ticket"
+grep -Eq '^idle_inputs_fingerprint=.+' "$verifier_first"
+require_marker_count 0
+
+"${REPO_ROOT}/bin/autoflow" run verifier "$project_dir" .autoflow --runner verifier-idle >"$verifier_second"
+require_line "$verifier_second" "runtime_status=idle"
+require_line "$verifier_second" "reason=verifier_inputs_unchanged"
+require_line "$verifier_second" "runtime_reason=no_unblocked_verification_ticket"
+grep -Eq '^idle_inputs_fingerprint=.+' "$verifier_second"
+require_marker_count 0
+
+mkdir -p "${project_dir}/.autoflow/tickets/verifier"
+cat >"${project_dir}/.autoflow/tickets/verifier/tickets_002.md" <<'TICKET'
+# Ticket
+
+## Ticket
+
+- ID: tickets_002
+- PRD Key: project_001
+- Title: Verifier idle skip wake fixture
+- Stage: verifying
+- Verifier AI: unassigned
+
+## Allowed Paths
+
+- target.txt
+
+## Done When
+
+- [ ] Verifier runner adapter is invoked after a verifier ticket appears.
+TICKET
+
+"${REPO_ROOT}/bin/autoflow" run verifier "$project_dir" .autoflow --runner verifier-idle >"$verifier_changed"
+require_line "$verifier_changed" "adapter_exit_code=0"
 require_marker_count 1
 
 echo "status=ok"
