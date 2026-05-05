@@ -1740,6 +1740,8 @@ list_runners() {
   local pid started_at last_event_at last_adapter_chunk_at last_result last_log_line
   local last_runtime_log last_prompt_log last_stdout_log last_stderr_log artifact_status
   local artifact_runtime_status artifact_prompt_status artifact_stdout_status artifact_stderr_status
+  local consecutive_preflight_skip_count consecutive_preflight_skip_result last_preflight_skip_at
+  local preflight_skip_circuit_breaker_until preflight_skip_circuit_breaker_threshold
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
@@ -1806,6 +1808,11 @@ list_runners() {
           last_prompt_log="$(runner_state_value_or_empty "$id" "last_prompt_log")"
           last_stdout_log="$(runner_state_value_or_empty "$id" "last_stdout_log")"
           last_stderr_log="$(runner_state_value_or_empty "$id" "last_stderr_log")"
+          consecutive_preflight_skip_count="$(runner_state_value_or_empty "$id" "consecutive_preflight_skip_count")"
+          consecutive_preflight_skip_result="$(runner_state_value_or_empty "$id" "consecutive_preflight_skip_result")"
+          last_preflight_skip_at="$(runner_state_value_or_empty "$id" "last_preflight_skip_at")"
+          preflight_skip_circuit_breaker_until="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_until")"
+          preflight_skip_circuit_breaker_threshold="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_threshold")"
           artifact_status="$(runner_artifact_status "$last_runtime_log" "$last_prompt_log" "$last_stdout_log" "$last_stderr_log")"
           artifact_runtime_status="$(runner_artifact_path_status "$last_runtime_log")"
           artifact_prompt_status="$(runner_artifact_path_status "$last_prompt_log")"
@@ -1830,6 +1837,11 @@ list_runners() {
           printf 'runner.%s.mode=%s\n' "$index" "$mode"
           printf 'runner.%s.interval_seconds=%s\n' "$index" "${interval_seconds:-60}"
           printf 'runner.%s.interval_effective_seconds=%s\n' "$index" "$(runner_normalize_interval_seconds "$interval_seconds")"
+          printf 'runner.%s.consecutive_preflight_skip_count=%s\n' "$index" "$consecutive_preflight_skip_count"
+          printf 'runner.%s.consecutive_preflight_skip_result=%s\n' "$index" "$consecutive_preflight_skip_result"
+          printf 'runner.%s.last_preflight_skip_at=%s\n' "$index" "$last_preflight_skip_at"
+          printf 'runner.%s.preflight_skip_circuit_breaker_until=%s\n' "$index" "$preflight_skip_circuit_breaker_until"
+          printf 'runner.%s.preflight_skip_circuit_breaker_threshold=%s\n' "$index" "$preflight_skip_circuit_breaker_threshold"
           printf 'runner.%s.enabled=%s\n' "$index" "$enabled"
           printf 'runner.%s.command=%s\n' "$index" "$command"
           printf 'runner.%s.command_preview=%s\n' "$index" "$(runner_command_preview "$id" "$role" "$agent" "$mode" "$model" "$reasoning" "$interval_seconds" "$command")"

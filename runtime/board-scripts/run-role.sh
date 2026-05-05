@@ -2491,6 +2491,320 @@ runner_file_size_bytes() {
   wc -c < "$file" 2>/dev/null | tr -d '[:space:]'
 }
 
+telemetry_positive_integer_or_zero() {
+  local value="$1"
+
+  case "$value" in
+    ''|*[!0-9]*) printf '0' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+runner_budget_policy_path() {
+  printf '%s' "${AUTOFLOW_BUDGET_POLICY_PATH:-${board_root}/policies/budget.toml}"
+}
+
+runner_policy_positive_integer_or_empty() {
+  local value="$1"
+
+  value="$(printf '%s' "$value" | tr -d '[:space:]')"
+  case "$value" in
+    ''|*[!0-9]*) printf '' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+runner_budget_policy_value() {
+  local key="$1"
+  local policy_path
+
+  policy_path="$(runner_budget_policy_path)"
+  [ -f "$policy_path" ] || return 0
+  awk -v key="$key" -v role="$public_role" -v runner="$runner_id" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    BEGIN { section = ""; value = "" }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+      section = $0
+      sub(/^[[:space:]]*\[/, "", section)
+      sub(/\][[:space:]]*$/, "", section)
+      section = trim(section)
+      next
+    }
+    index($0, "=") > 0 {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      name = trim(substr(line, 1, index(line, "=") - 1))
+      raw = trim(substr(line, index(line, "=") + 1))
+      gsub(/^"|"$/, "", raw)
+      if (name != key) {
+        next
+      }
+      if (section == "default" || section == role || section == runner) {
+        value = raw
+      }
+    }
+    END { print value }
+  ' "$policy_path"
+}
+
+runner_epoch_to_iso() {
+  local epoch="$1"
+
+  if date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ" >/dev/null 2>&1; then
+    date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ"
+    return 0
+  fi
+  date -u -d "@$epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true
+}
+
+runner_budget_telemetry_script() {
+  if [ -x "${SCRIPT_DIR}/telemetry-project.sh" ]; then
+    printf '%s' "${SCRIPT_DIR}/telemetry-project.sh"
+    return 0
+  fi
+  if [ -x "${SCRIPT_DIR}/../../packages/cli/telemetry-project.sh" ]; then
+    printf '%s' "${SCRIPT_DIR}/../../packages/cli/telemetry-project.sh"
+    return 0
+  fi
+  return 1
+}
+
+runner_budget_telemetry_token_usage_since() {
+  local since="$1"
+  local telemetry_script output
+
+  telemetry_script="$(runner_budget_telemetry_script || true)"
+  [ -n "$telemetry_script" ] || { printf '0'; return 0; }
+  output="$("$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || true)"
+  printf '%s\n' "$output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }'
+}
+
+runner_budget_latest_adapter_ended_at() {
+  local telemetry_script
+
+  telemetry_script="$(runner_budget_telemetry_script || true)"
+  [ -n "$telemetry_script" ] || return 0
+  "$telemetry_script" query --project-root "$project_root" --runner "$runner_id" --limit 1 2>/dev/null |
+    jq -r '.ended_at // empty' 2>/dev/null |
+    head -n 1
+}
+
+runner_preflight_skip_is_repeatable() {
+  case "${1:-}" in
+    token_budget_exceeded|rate_limited|prompt_size_exceeded) return 0 ;;
+  esac
+  return 1
+}
+
+runner_preflight_skip_threshold() {
+  local threshold
+  threshold="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_threshold)")"
+  [ -n "$threshold" ] || threshold="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_THRESHOLD:-3}"
+  case "${threshold:-}" in ''|*[!0-9]*|0) threshold=3 ;; esac
+  printf '%s' "$threshold"
+}
+
+runner_preflight_skip_cooldown_seconds() {
+  local cooldown_seconds
+  cooldown_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_cooldown_seconds)")"
+  [ -n "$cooldown_seconds" ] || cooldown_seconds="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_COOLDOWN_SECONDS:-300}"
+  case "${cooldown_seconds:-}" in ''|*[!0-9]*|0) cooldown_seconds=300 ;; esac
+  printf '%s' "$cooldown_seconds"
+}
+
+runner_active_ticket_id_or_empty() {
+  local active_ticket_id
+  active_ticket_id="$(runner_adapter_state_value "active_ticket_id")"
+  [ -n "$active_ticket_id" ] && { printf '%s' "$active_ticket_id"; return 0; }
+  runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true
+}
+
+runner_preflight_recovery_field_value() {
+  local field="$1"
+  local effective_reason="$2"
+  local current_value="$3"
+
+  if [ "$effective_reason" != "circuit_breaker_tripped" ] || [ -z "$(runner_active_ticket_id_or_empty)" ]; then
+    printf '%s' "$current_value"
+    return 0
+  fi
+  case "$field" in
+    status) printf 'blocked' ;;
+    failure_class) printf 'tooling_failure' ;;
+    reason) printf 'repeated_preflight_skip' ;;
+    *) printf '%s' "$current_value" ;;
+  esac
+}
+
+runner_preflight_skip_streak_metadata() {
+  local reason="$1"
+  local timestamp="$2"
+  local previous_result previous_count next_count threshold cooldown_seconds until_epoch until_iso now_epoch
+
+  previous_result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
+  previous_count="$(telemetry_positive_integer_or_zero "$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)")"
+  if [ "$previous_result" = "$reason" ]; then next_count=$((previous_count + 1)); else next_count=1; fi
+  threshold="$(runner_preflight_skip_threshold)"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$timestamp" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  until_epoch=$((now_epoch + cooldown_seconds))
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+  printf 'preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_count=%s\n' "$next_count"
+  printf 'last_preflight_skip_at=%s\n' "$timestamp"
+  printf 'preflight_skip_circuit_breaker_threshold=%s\n' "$threshold"
+  printf 'preflight_skip_circuit_breaker_cooldown_seconds=%s\n' "$cooldown_seconds"
+  printf 'preflight_skip_circuit_breaker_until=%s\n' "$until_iso"
+  if [ "$next_count" -ge "$threshold" ]; then printf 'preflight_skip_circuit_breaker_tripped=true\n'; else printf 'preflight_skip_circuit_breaker_tripped=false\n'; fi
+}
+
+runner_budget_append_skip_log_and_state() {
+  local reason="$1" prompt_file="$2" autocommit_before_status="$3" adapter_stdout_path="$4" adapter_stderr_path="$5" adapter_last_message_path="${6:-}"
+  shift 6 || true
+  local timestamp prompt_log_path effective_reason streak_metadata preflight_cause preflight_count preflight_threshold preflight_until
+  local recovery_status recovery_failure_class recovery_reason
+
+  timestamp="$(runner_now_iso)"
+  prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+  effective_reason="$reason"
+  streak_metadata=""
+  preflight_cause="$reason"
+  if runner_preflight_skip_is_repeatable "$reason"; then
+    streak_metadata="$(runner_preflight_skip_streak_metadata "$reason" "$timestamp")"
+    preflight_count="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "consecutive_preflight_skip_count" { print $2; exit }')"
+    preflight_threshold="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_threshold" { print $2; exit }')"
+    preflight_until="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_until" { print $2; exit }')"
+    [ "${preflight_count:-0}" -ge "${preflight_threshold:-3}" ] && effective_reason="circuit_breaker_tripped"
+  elif [ "$reason" = "circuit_breaker_tripped" ]; then
+    local item
+    for item in "$@"; do
+      case "$item" in
+        preflight_skip_result=*) preflight_cause="${item#*=}" ;;
+        consecutive_preflight_skip_count=*) preflight_count="${item#*=}" ;;
+        preflight_skip_circuit_breaker_threshold=*) preflight_threshold="${item#*=}" ;;
+        preflight_skip_circuit_breaker_until=*) preflight_until="${item#*=}" ;;
+      esac
+    done
+  fi
+  recovery_status="$(runner_preflight_recovery_field_value status "$effective_reason" "${adapter_active_recovery_status}")"
+  recovery_failure_class="$(runner_preflight_recovery_field_value failure_class "$effective_reason" "${adapter_active_recovery_failure_class}")"
+  recovery_reason="$(runner_preflight_recovery_field_value reason "$effective_reason" "${adapter_active_recovery_reason}")"
+
+  runner_write_state "$runner_id" \
+    "status=idle" "role=${public_role}" "agent=${agent}" "mode=${mode}" "model=${model}" "reasoning=${reasoning}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=$(runner_adapter_state_value "active_stage")" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${recovery_reason}" \
+    "active_recovery_status=${recovery_status}" \
+    "active_recovery_failure_class=${recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=${effective_reason}" \
+    "last_prompt_log=${prompt_log_path}" \
+    $streak_metadata \
+    "$@"
+  runner_append_log "$runner_id" "budget_preflight_skip" "role=${public_role}" "agent=${agent}" "reason=${reason}" "result=${effective_reason}" "action=skip_adapter" $streak_metadata "$@"
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'reason=%s\n' "$effective_reason"
+  if [ "$effective_reason" = "circuit_breaker_tripped" ]; then
+    printf 'circuit_breaker_reason=%s\n' "$preflight_cause"
+    printf 'circuit_breaker_count=%s\n' "${preflight_count:-}"
+    printf 'circuit_breaker_threshold=%s\n' "${preflight_threshold:-}"
+    printf 'circuit_breaker_until=%s\n' "${preflight_until:-}"
+    printf 'active_recovery_status=%s\n' "$recovery_status"
+    printf 'active_recovery_failure_class=%s\n' "$recovery_failure_class"
+    printf 'active_recovery_reason=%s\n' "$recovery_reason"
+  fi
+  printf 'budget_preflight_action=skip_adapter\n'
+  printf 'prompt_log_path=%s\n' "$prompt_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  while [ "$#" -gt 0 ]; do printf '%s\n' "$1"; shift || true; done
+  rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+  exit 0
+}
+
+runner_budget_existing_preflight_circuit_or_exit() {
+  local prompt_file="$1" autocommit_before_status="$2" adapter_stdout_path="$3" adapter_stderr_path="$4" adapter_last_message_path="${5:-}"
+  local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
+
+  count="$(telemetry_positive_integer_or_zero "$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)")"
+  result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
+  [ -n "$result" ] || return 0
+  runner_preflight_skip_is_repeatable "$result" || return 0
+  threshold="$(runner_preflight_skip_threshold)"
+  [ "$count" -ge "$threshold" ] || return 0
+  last_skip_at="$(runner_state_field "$runner_id" "last_preflight_skip_at" 2>/dev/null || true)"
+  [ -n "$last_skip_at" ] || return 0
+  now_iso="$(runner_now_iso)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  last_epoch="$(telemetry_timestamp_to_epoch "$last_skip_at" || true)"
+  [ -n "$last_epoch" ] || last_epoch="$now_epoch"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  until_epoch=$((last_epoch + cooldown_seconds))
+  [ "$now_epoch" -lt "$until_epoch" ] || return 0
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+  runner_budget_append_skip_log_and_state "circuit_breaker_tripped" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+    "preflight_skip_result=${result}" "consecutive_preflight_skip_result=${result}" "consecutive_preflight_skip_count=${count}" "last_preflight_skip_at=${last_skip_at}" \
+    "preflight_skip_circuit_breaker_threshold=${threshold}" "preflight_skip_circuit_breaker_cooldown_seconds=${cooldown_seconds}" "preflight_skip_circuit_breaker_until=${until_iso}" "preflight_skip_circuit_breaker_tripped=true"
+}
+
+runner_budget_preflight_or_exit() {
+  local prompt_file="$1" autocommit_before_status="$2" adapter_stdout_path="$3" adapter_stderr_path="$4" adapter_last_message_path="${5:-}"
+  local now_iso now_epoch policy_path daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds prompt_byte_cap prompt_bytes
+
+  policy_path="$(runner_budget_policy_path)"
+  [ -f "$policy_path" ] || return 0
+  now_iso="$(runner_now_iso)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  runner_budget_existing_preflight_circuit_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+  daily_token_quota="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value daily_token_quota)")"
+  if [ -n "$daily_token_quota" ]; then
+    quota_window_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value token_quota_window_seconds)")"
+    [ -n "$quota_window_seconds" ] || quota_window_seconds=86400
+    quota_since_epoch=$((now_epoch - quota_window_seconds))
+    quota_since_iso="$(runner_epoch_to_iso "$quota_since_epoch")"
+    token_usage="$(telemetry_positive_integer_or_zero "$(runner_budget_telemetry_token_usage_since "$quota_since_iso")")"
+    [ "$token_usage" -lt "$daily_token_quota" ] || runner_budget_append_skip_log_and_state "token_budget_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}"
+  fi
+  minimum_interval_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value minimum_interval_seconds)")"
+  if [ -n "$minimum_interval_seconds" ] && [ "$minimum_interval_seconds" -gt 0 ]; then
+    latest_ended_at="$(runner_budget_latest_adapter_ended_at)"
+    latest_epoch=""
+    [ -z "$latest_ended_at" ] || latest_epoch="$(telemetry_timestamp_to_epoch "$latest_ended_at" || true)"
+    if [ -n "$latest_epoch" ]; then
+      next_allowed_epoch=$((latest_epoch + minimum_interval_seconds))
+      if [ "$now_epoch" -lt "$next_allowed_epoch" ]; then
+        remaining_seconds=$((next_allowed_epoch - now_epoch))
+        next_allowed_at="$(runner_epoch_to_iso "$next_allowed_epoch")"
+        runner_budget_append_skip_log_and_state "rate_limited" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "minimum_interval_seconds=${minimum_interval_seconds}" "last_adapter_ended_at=${latest_ended_at}" "next_allowed_at=${next_allowed_at}" "remaining_seconds=${remaining_seconds}"
+      fi
+    fi
+  fi
+  prompt_byte_cap="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value prompt_byte_cap)")"
+  if [ -n "$prompt_byte_cap" ] && [ "$prompt_byte_cap" -gt 0 ]; then
+    prompt_bytes="$(telemetry_positive_integer_or_zero "$(runner_file_size_bytes "$prompt_file")")"
+    [ "$prompt_bytes" -le "$prompt_byte_cap" ] || runner_budget_append_skip_log_and_state "prompt_size_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "prompt_bytes=${prompt_bytes}" "prompt_byte_cap=${prompt_byte_cap}"
+  fi
+}
+
 runner_adapter_heartbeat_interval_seconds() {
   local value="${AUTOFLOW_ADAPTER_HEARTBEAT_INTERVAL_SECONDS:-30}"
 
@@ -2551,7 +2865,10 @@ runner_write_adapter_running_heartbeat() {
     "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
     "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
     "last_stdout_log=$(runner_adapter_preserved_state_value "last_stdout_log" "$adapter_stdout")" \
-    "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")"
+    "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")" \
+    "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+    "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+    "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
 }
 
 start_adapter_heartbeat_monitor() {
@@ -3020,6 +3337,7 @@ case "$agent" in
     role_autocommit_capture_status "$autocommit_before_status"
     write_agent_prompt "$instruction_file" > "$prompt_file"
     planner_differential_persist_after_prompt || true
+    runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
     resolve_effective_reasoning_for_current_tick
     reasoning="$effective_reasoning"
 
@@ -3052,7 +3370,10 @@ case "$agent" in
       "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
       "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
       "last_stdout_log=${adapter_stdout}" \
-      "last_stderr_log=${adapter_stderr}"
+      "last_stderr_log=${adapter_stderr}" \
+      "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+      "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+      "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
     runner_append_log "$runner_id" "adapter_start" \
       "role=${public_role}" \
       "runtime_role=${runtime_role}" \
@@ -3231,7 +3552,10 @@ case "$agent" in
       "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
-      "last_stderr_log=${stderr_log_path}"
+      "last_stderr_log=${stderr_log_path}" \
+      "consecutive_preflight_skip_count=$([ "$adapter_exit" -eq 0 ] && printf '0' || runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+      "consecutive_preflight_skip_result=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+      "last_preflight_skip_at=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "last_preflight_skip_at")"
     runner_append_log "$runner_id" "adapter_finish" \
       "role=${public_role}" \
       "agent=${agent}" \

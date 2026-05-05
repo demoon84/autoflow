@@ -3042,7 +3042,10 @@ runner_write_adapter_running_heartbeat() {
     "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
     "last_stdout_log=$(runner_adapter_preserved_state_value "last_stdout_log" "$adapter_stdout")" \
     "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")" \
-    "consecutive_timeout_count=${timeout_count}"
+    "consecutive_timeout_count=${timeout_count}" \
+    "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+    "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+    "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
 }
 
 start_adapter_heartbeat_monitor() {
@@ -3722,6 +3725,150 @@ runner_budget_latest_adapter_ended_at() {
     head -n 1
 }
 
+runner_preflight_skip_is_repeatable() {
+  case "${1:-}" in
+    token_budget_exceeded|rate_limited|prompt_size_exceeded)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+runner_preflight_skip_threshold() {
+  local threshold
+
+  threshold="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_threshold)")"
+  [ -n "$threshold" ] || threshold="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_THRESHOLD:-3}"
+  case "${threshold:-}" in
+    ''|*[!0-9]*|0) threshold=3 ;;
+  esac
+  printf '%s' "$threshold"
+}
+
+runner_preflight_skip_cooldown_seconds() {
+  local cooldown_seconds
+
+  cooldown_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_cooldown_seconds)")"
+  [ -n "$cooldown_seconds" ] || cooldown_seconds="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_COOLDOWN_SECONDS:-300}"
+  case "${cooldown_seconds:-}" in
+    ''|*[!0-9]*|0) cooldown_seconds=300 ;;
+  esac
+  printf '%s' "$cooldown_seconds"
+}
+
+runner_active_ticket_id_or_empty() {
+  local active_ticket_id
+
+  active_ticket_id="$(runner_adapter_state_value "active_ticket_id")"
+  if [ -n "$active_ticket_id" ]; then
+    printf '%s' "$active_ticket_id"
+    return 0
+  fi
+  runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true
+}
+
+runner_preflight_recovery_field_value() {
+  local field="$1"
+  local effective_reason="$2"
+  local current_value="$3"
+
+  if [ "$effective_reason" != "circuit_breaker_tripped" ]; then
+    printf '%s' "$current_value"
+    return 0
+  fi
+  if [ -z "$(runner_active_ticket_id_or_empty)" ]; then
+    printf '%s' "$current_value"
+    return 0
+  fi
+
+  case "$field" in
+    status) printf 'blocked' ;;
+    failure_class) printf 'tooling_failure' ;;
+    reason) printf 'repeated_preflight_skip' ;;
+    *) printf '%s' "$current_value" ;;
+  esac
+}
+
+runner_preflight_skip_streak_metadata() {
+  local reason="$1"
+  local timestamp="$2"
+  local previous_result previous_count next_count threshold cooldown_seconds until_epoch until_iso
+  local now_epoch
+
+  previous_result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
+  previous_count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
+  previous_count="$(telemetry_positive_integer_or_zero "$previous_count")"
+  if [ "$previous_result" = "$reason" ]; then
+    next_count=$((previous_count + 1))
+  else
+    next_count=1
+  fi
+
+  threshold="$(runner_preflight_skip_threshold)"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$timestamp" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  until_epoch=$((now_epoch + cooldown_seconds))
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+
+  printf 'preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_count=%s\n' "$next_count"
+  printf 'last_preflight_skip_at=%s\n' "$timestamp"
+  printf 'preflight_skip_circuit_breaker_threshold=%s\n' "$threshold"
+  printf 'preflight_skip_circuit_breaker_cooldown_seconds=%s\n' "$cooldown_seconds"
+  printf 'preflight_skip_circuit_breaker_until=%s\n' "$until_iso"
+  if [ "$next_count" -ge "$threshold" ]; then
+    printf 'preflight_skip_circuit_breaker_tripped=true\n'
+  else
+    printf 'preflight_skip_circuit_breaker_tripped=false\n'
+  fi
+}
+
+runner_budget_existing_preflight_circuit_or_exit() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
+
+  count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
+  count="$(telemetry_positive_integer_or_zero "$count")"
+  result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
+  [ -n "$result" ] || return 0
+  runner_preflight_skip_is_repeatable "$result" || return 0
+  threshold="$(runner_preflight_skip_threshold)"
+  [ "$count" -ge "$threshold" ] || return 0
+
+  last_skip_at="$(runner_state_field "$runner_id" "last_preflight_skip_at" 2>/dev/null || true)"
+  [ -n "$last_skip_at" ] || return 0
+  now_iso="$(runner_now_iso)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  last_epoch="$(telemetry_timestamp_to_epoch "$last_skip_at" || true)"
+  [ -n "$last_epoch" ] || last_epoch="$now_epoch"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  until_epoch=$((last_epoch + cooldown_seconds))
+  [ "$now_epoch" -lt "$until_epoch" ] || return 0
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+
+  runner_budget_append_skip_log_and_state \
+    "circuit_breaker_tripped" \
+    "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+    "preflight_skip_result=${result}" \
+    "consecutive_preflight_skip_result=${result}" \
+    "consecutive_preflight_skip_count=${count}" \
+    "last_preflight_skip_at=${last_skip_at}" \
+    "preflight_skip_circuit_breaker_threshold=${threshold}" \
+    "preflight_skip_circuit_breaker_cooldown_seconds=${cooldown_seconds}" \
+    "preflight_skip_circuit_breaker_until=${until_iso}" \
+    "preflight_skip_circuit_breaker_tripped=true" \
+    "active_recovery_status=$(runner_preflight_recovery_field_value status circuit_breaker_tripped "${adapter_active_recovery_status}")" \
+    "active_recovery_failure_class=$(runner_preflight_recovery_field_value failure_class circuit_breaker_tripped "${adapter_active_recovery_failure_class}")" \
+    "active_recovery_reason=$(runner_preflight_recovery_field_value reason circuit_breaker_tripped "${adapter_active_recovery_reason}")"
+}
+
 runner_budget_append_skip_log_and_state() {
   local reason="$1"
   local prompt_file="$2"
@@ -3731,6 +3878,9 @@ runner_budget_append_skip_log_and_state() {
   local adapter_last_message_path="${6:-}"
   shift 6 || true
   local timestamp prompt_log_path preserved_consecutive_timeouts
+  local effective_reason="$reason"
+  local streak_metadata="" preflight_cause="" preflight_count="" preflight_threshold="" preflight_until=""
+  local recovery_status recovery_failure_class recovery_reason
 
   timestamp="$(runner_now_iso)"
   prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
@@ -3738,6 +3888,30 @@ runner_budget_append_skip_log_and_state() {
   case "${preserved_consecutive_timeouts:-0}" in
     ''|*[!0-9]*) preserved_consecutive_timeouts=0 ;;
   esac
+  if runner_preflight_skip_is_repeatable "$reason"; then
+    streak_metadata="$(runner_preflight_skip_streak_metadata "$reason" "$timestamp")"
+    preflight_cause="$reason"
+    preflight_count="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "consecutive_preflight_skip_count" { print $2; exit }')"
+    preflight_threshold="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_threshold" { print $2; exit }')"
+    preflight_until="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_until" { print $2; exit }')"
+    if [ "${preflight_count:-0}" -ge "${preflight_threshold:-3}" ]; then
+      effective_reason="circuit_breaker_tripped"
+    fi
+  elif [ "$reason" = "circuit_breaker_tripped" ]; then
+    local item
+    for item in "$@"; do
+      case "$item" in
+        preflight_skip_result=*) preflight_cause="${item#*=}" ;;
+        consecutive_preflight_skip_count=*) preflight_count="${item#*=}" ;;
+        preflight_skip_circuit_breaker_threshold=*) preflight_threshold="${item#*=}" ;;
+        preflight_skip_circuit_breaker_until=*) preflight_until="${item#*=}" ;;
+      esac
+    done
+  fi
+
+  recovery_status="$(runner_preflight_recovery_field_value status "$effective_reason" "${adapter_active_recovery_status}")"
+  recovery_failure_class="$(runner_preflight_recovery_field_value failure_class "$effective_reason" "${adapter_active_recovery_failure_class}")"
+  recovery_reason="$(runner_preflight_recovery_field_value reason "$effective_reason" "${adapter_active_recovery_reason}")"
 
   runner_write_state "$runner_id" \
     "status=idle" \
@@ -3751,30 +3925,42 @@ runner_budget_append_skip_log_and_state() {
     "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
     "active_stage=$(runner_adapter_state_value "active_stage")" \
     "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
-    "active_recovery_reason=${adapter_active_recovery_reason}" \
-    "active_recovery_status=${adapter_active_recovery_status}" \
-    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_reason=${recovery_reason}" \
+    "active_recovery_status=${recovery_status}" \
+    "active_recovery_failure_class=${recovery_failure_class}" \
     "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
     "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
     "active_recovery_board_state=${adapter_active_recovery_board_state}" \
     "pid=$(runner_state_pid_for_finish)" \
     "started_at=$(runner_state_started_at "$timestamp")" \
     "last_event_at=${timestamp}" \
-    "last_result=${reason}" \
+    "last_result=${effective_reason}" \
     "last_prompt_log=${prompt_log_path}" \
     "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
+    $streak_metadata \
     "$@"
 
   runner_append_log "$runner_id" "budget_preflight_skip" \
     "role=${public_role}" \
     "agent=${agent}" \
     "reason=${reason}" \
+    "result=${effective_reason}" \
     "action=skip_adapter" \
+    $streak_metadata \
     "$@"
 
   print_run_header "ok"
   printf 'runner_status=idle\n'
-  printf 'reason=%s\n' "$reason"
+  printf 'reason=%s\n' "$effective_reason"
+  if [ "$effective_reason" = "circuit_breaker_tripped" ]; then
+    printf 'circuit_breaker_reason=%s\n' "${preflight_cause:-$reason}"
+    printf 'circuit_breaker_count=%s\n' "${preflight_count:-}"
+    printf 'circuit_breaker_threshold=%s\n' "${preflight_threshold:-}"
+    printf 'circuit_breaker_until=%s\n' "${preflight_until:-}"
+    printf 'active_recovery_status=%s\n' "$recovery_status"
+    printf 'active_recovery_failure_class=%s\n' "$recovery_failure_class"
+    printf 'active_recovery_reason=%s\n' "$recovery_reason"
+  fi
   printf 'budget_preflight_action=skip_adapter\n'
   printf 'prompt_log_path=%s\n' "$prompt_log_path"
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
@@ -3805,6 +3991,9 @@ runner_budget_preflight_or_exit() {
   now_iso="$(runner_now_iso)"
   now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
   [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+
+  runner_budget_existing_preflight_circuit_or_exit \
+    "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
 
   daily_token_quota="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value daily_token_quota)")"
   if [ -n "$daily_token_quota" ]; then
@@ -4324,7 +4513,10 @@ case "$agent" in
       "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
       "last_stdout_log=${adapter_stdout}" \
       "last_stderr_log=${adapter_stderr}" \
-      "consecutive_timeout_count=${preserved_consecutive_timeouts}"
+      "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
+      "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+      "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+      "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
     runner_append_log "$runner_id" "adapter_start" \
       "role=${public_role}" \
       "runtime_role=${runtime_role}" \
@@ -4586,7 +4778,10 @@ case "$agent" in
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
       "last_stderr_log=${stderr_log_path}" \
-      "consecutive_timeout_count=${consecutive_timeout_count}"
+      "consecutive_timeout_count=${consecutive_timeout_count}" \
+      "consecutive_preflight_skip_count=$([ "$adapter_exit" -eq 0 ] && printf '0' || runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+      "consecutive_preflight_skip_result=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+      "last_preflight_skip_at=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "last_preflight_skip_at")"
     runner_append_log "$runner_id" "adapter_finish" \
       "role=${public_role}" \
       "agent=${agent}" \
