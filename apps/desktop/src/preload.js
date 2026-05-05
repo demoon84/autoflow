@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("autoflow", {
   runRole: (options) => ipcRenderer.invoke("autoflow:runRole", options),
   configureRunner: (options) => ipcRenderer.invoke("autoflow:configureRunner", options),
   createRunner: (options) => ipcRenderer.invoke("autoflow:createRunner", options),
+  continueRunnerAuth: (options) => ipcRenderer.invoke("autoflow:continueRunnerAuth", options),
   controlWiki: (options) => ipcRenderer.invoke("autoflow:controlWiki", options),
   writeMetricsSnapshot: (options) => ipcRenderer.invoke("autoflow:writeMetricsSnapshot", options),
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),

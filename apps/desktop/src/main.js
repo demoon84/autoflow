@@ -10,6 +10,10 @@ const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 const desktopRoot = path.resolve(__dirname, "..");
 const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
 const windowStateFileName = "window-state.json";
+const desktopSessionStateFileName = "desktop-session-state.json";
+const desktopClosePolicyFileName = "desktop-close-policy.json";
+const desktopClosePolicies = new Set(["detach", "stop"]);
+const defaultDesktopClosePolicy = "detach";
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
@@ -251,6 +255,13 @@ const cancellableInvocations = new Map();
 const agentAuthStatusCache = new Map();
 const runnerAuthProcesses = new Map();
 let runnerShutdownInProgress = false;
+let appQuitInProgress = false;
+let desktopSessionEvidence = {
+  uncleanExit: false,
+  detachedRunnerReattachEvidence: "",
+  previousStartedAt: "",
+  previousUpdatedAt: ""
+};
 const DEFAULT_MEMORY_CEILING_MB = 1500;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
 const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
@@ -308,12 +319,13 @@ async function performMemoryCeilingRestart() {
 
   try {
     const shutdownTimeoutMs = 5000;
-    const cleanup = shutdownAllRunners().catch(() => 0);
+    const cleanup = shutdownAllRunners({ allowWhileInProgress: true }).catch(() => 0);
     const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
     await Promise.race([cleanup, timeout]);
     try {
       await forceKillSurvivingRunners();
     } catch {}
+    markDesktopSessionClean("memory_ceiling_relaunch");
   } finally {
     try {
       app.relaunch();
@@ -397,7 +409,89 @@ function cancelInvocation(invocationId) {
 function appConfig() {
   return {
     defaultProjectRoot: repoRoot,
-    defaultBoardDirName
+    defaultBoardDirName,
+    desktopClosePolicy: readDesktopClosePolicy(),
+    desktopSession: desktopSessionEvidence
+  };
+}
+
+function desktopSessionStatePath() {
+  return path.join(app.getPath("userData"), desktopSessionStateFileName);
+}
+
+function desktopClosePolicyPath() {
+  return path.join(app.getPath("userData"), desktopClosePolicyFileName);
+}
+
+function readJsonFileSync(filePath) {
+  try {
+    return JSON.parse(fsSync.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFileSync(filePath, value) {
+  try {
+    fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
+    fsSync.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
+  } catch {}
+}
+
+function normalizeDesktopClosePolicy(value) {
+  return desktopClosePolicies.has(value) ? value : defaultDesktopClosePolicy;
+}
+
+function readDesktopClosePolicy() {
+  const parsed = readJsonFileSync(desktopClosePolicyPath());
+  return normalizeDesktopClosePolicy(parsed?.policy);
+}
+
+function writeDesktopClosePolicy(policy) {
+  const normalized = normalizeDesktopClosePolicy(policy);
+  writeJsonFileSync(desktopClosePolicyPath(), {
+    policy: normalized,
+    updatedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z")
+  });
+  return normalized;
+}
+
+function markDesktopSessionStarted() {
+  const previous = readJsonFileSync(desktopSessionStatePath());
+  const hadPreviousSession = Boolean(previous?.startedAt || previous?.updatedAt);
+  const uncleanExit = hadPreviousSession && previous?.cleanShutdown !== true;
+  desktopSessionEvidence = {
+    uncleanExit,
+    detachedRunnerReattachEvidence: uncleanExit
+      ? "previous desktop session lacked a clean shutdown marker; detached runner state is reattached without stop/restart/delete"
+      : "",
+    previousStartedAt: previous?.startedAt || "",
+    previousUpdatedAt: previous?.updatedAt || ""
+  };
+  const timestamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  writeJsonFileSync(desktopSessionStatePath(), {
+    cleanShutdown: false,
+    startedAt: timestamp,
+    updatedAt: timestamp
+  });
+}
+
+function markDesktopSessionClean(reason) {
+  const previous = readJsonFileSync(desktopSessionStatePath()) || {};
+  const timestamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  writeJsonFileSync(desktopSessionStatePath(), {
+    ...previous,
+    cleanShutdown: true,
+    cleanShutdownReason: reason || "quit",
+    updatedAt: timestamp
+  });
+}
+
+function desktopClosePolicyResult(policy) {
+  return {
+    ok: true,
+    policy: normalizeDesktopClosePolicy(policy),
+    policies: Array.from(desktopClosePolicies)
   };
 }
 
@@ -3897,8 +3991,8 @@ async function shutdownRunnersForScope(scope) {
   return killedCount;
 }
 
-async function shutdownAllRunners() {
-  if (runnerShutdownInProgress) return 0;
+async function shutdownAllRunners(options = {}) {
+  if (runnerShutdownInProgress && !options.allowWhileInProgress) return 0;
   runnerShutdownInProgress = true;
 
   let total = 0;
@@ -3918,10 +4012,10 @@ async function shutdownAllRunners() {
   return total;
 }
 
-// Final sweep: after the graceful SIGTERM window, any runner PID still listed
-// as `running` in a state file gets force-killed (SIGKILL). Detached runners
-// (PPID=1) survive parent death by design, so we can't rely on the TERM-only
-// graceful path alone — the user expects "app quit ⇒ runners gone".
+// Final sweep for explicit runner-stop paths: after the graceful SIGTERM
+// window, any runner PID still listed as `running` in a state file gets
+// force-killed (SIGKILL). Normal desktop quit skips this path unless the user
+// selected the stop-on-close policy.
 async function forceKillSurvivingRunners() {
   for (const scope of knownProjectScopes.values()) {
     const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
@@ -3970,6 +4064,7 @@ async function forceKillSurvivingRunners() {
 }
 
 app.whenReady().then(() => {
+  markDesktopSessionStarted();
   setupMacOsDockIcon();
 
   ipcMain.handle("dialog:selectProject", async () => {
@@ -3989,6 +4084,10 @@ app.whenReady().then(() => {
   // run/configure/create/write) intentionally have no timeout because they
   // can legitimately run for minutes (CLI work, AI synth, etc).
   ipcMain.handle("autoflow:getConfig", withTimeout(() => appConfig(), 30000));
+  ipcMain.handle("autoflow:getDesktopClosePolicy", () => desktopClosePolicyResult(readDesktopClosePolicy()));
+  ipcMain.handle("autoflow:setDesktopClosePolicy", (_event, policy) =>
+    desktopClosePolicyResult(writeDesktopClosePolicy(policy))
+  );
   ipcMain.handle(
     "autoflow:listInstalledAgentProfiles",
     withTimeout(() => readInstalledAgentProfiles(), 30000)
@@ -4035,27 +4134,32 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", (event) => {
-  if (runnerShutdownInProgress) {
+  if (appQuitInProgress || runnerShutdownInProgress) {
     return;
   }
-  // Always intercept quit: detached runners (PPID=1) won't die just because
-  // the desktop window closes, so we must explicitly stop them. If there's
-  // truly nothing to clean up, the cleanup awaits resolve immediately and
-  // the final SIGKILL sweep is a no-op — the user-visible cost is at most
-  // a few extra ms before app.exit.
   event.preventDefault();
+  appQuitInProgress = true;
 
-  const shutdownTimeoutMs = 5000;
-  const cleanup = shutdownAllRunners().catch(() => 0);
   if (memoryCeilingIntervalId) {
     clearInterval(memoryCeilingIntervalId);
     memoryCeilingIntervalId = null;
   }
+
+  const closePolicy = readDesktopClosePolicy();
+  if (closePolicy !== "stop") {
+    markDesktopSessionClean("detached_runners_preserved");
+    app.exit(0);
+    return;
+  }
+
+  const shutdownTimeoutMs = 5000;
+  const cleanup = shutdownAllRunners().catch(() => 0);
   const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
   Promise.race([cleanup, timeout]).finally(async () => {
     try {
       await forceKillSurvivingRunners();
     } catch {}
+    markDesktopSessionClean("explicit_runner_stop_policy");
     app.exit(0);
   });
 });

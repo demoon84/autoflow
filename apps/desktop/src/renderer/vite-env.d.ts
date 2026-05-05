@@ -152,6 +152,7 @@ type AutoflowInboxOrderDeleteResult = {
 };
 
 type AutoflowAppConfig = {
+  defaultProjectRoot: string;
   defaultBoardDirName: string;
 };
 
@@ -215,6 +216,13 @@ interface Window {
       projectRoot: string;
       boardDirName: string;
       config: AutoflowRunnerConfigUpdate;
+      invocationId?: string;
+    }) => Promise<AutoflowRunResult>;
+    continueRunnerAuth: (options: {
+      runnerId: string;
+      agent: string;
+      projectRoot: string;
+      boardDirName: string;
       invocationId?: string;
     }) => Promise<AutoflowRunResult>;
     controlWiki: (options: {
