@@ -45,6 +45,14 @@ json_number_or_zero() {
   esac
 }
 
+telemetry_token_usage_max_row_tokens() {
+  local value="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+  case "$value" in
+    ''|*[!0-9]*|0) value=100000000 ;;
+  esac
+  printf '%s' "$value"
+}
+
 append_jsonl_with_lock() {
   local target_path="$1"
   local row="$2"
@@ -320,7 +328,7 @@ telemetry_token_usage() {
   local since_epoch=""
   local until_epoch=""
   local target_file line runner_id ended_at ended_epoch valid
-  local input output total
+  local input output row_total total max_row_tokens skipped_suspicious_rows
   local key
 
   while [ "$#" -gt 0 ]; do
@@ -354,6 +362,8 @@ telemetry_token_usage() {
 
   target_file="$(telemetry_runs_jsonl_path "$project_root")"
   total=0
+  skipped_suspicious_rows=0
+  max_row_tokens="$(telemetry_token_usage_max_row_tokens)"
   if [ -f "$target_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       [ -n "$line" ] || continue
@@ -376,7 +386,14 @@ telemetry_token_usage() {
       output="$(printf '%s\n' "$line" | jq -r '.token_output // 0')"
       input="$(json_number_or_zero "$input")"
       output="$(json_number_or_zero "$output")"
-      total=$((total + input + output))
+      row_total=$((input + output))
+      if [ "$input" -ge "$max_row_tokens" ] || [ "$output" -ge "$max_row_tokens" ] || [ "$row_total" -ge "$max_row_tokens" ]; then
+        skipped_suspicious_rows=$((skipped_suspicious_rows + 1))
+        printf 'warning=skip_suspicious_token_row target=runs runner_id=%s ended_at=%s token_input=%s token_output=%s row_total=%s max_row_tokens=%s\n' \
+          "$runner_id" "$ended_at" "$input" "$output" "$row_total" "$max_row_tokens" >&2
+        continue
+      fi
+      total=$((total + row_total))
     done < "$target_file"
   fi
 
@@ -384,6 +401,9 @@ telemetry_token_usage() {
   printf 'since=%s\n' "$since"
   printf 'until=%s\n' "$until"
   printf 'token_usage=%s\n' "$total"
+  printf 'token_usage_trusted=%s\n' "$([ "$skipped_suspicious_rows" -eq 0 ] && printf 'true' || printf 'false')"
+  printf 'skipped_suspicious_token_rows=%s\n' "$skipped_suspicious_rows"
+  printf 'token_usage_max_row_tokens=%s\n' "$max_row_tokens"
 }
 
 compact_one_file() {

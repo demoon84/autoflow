@@ -2576,12 +2576,19 @@ runner_budget_telemetry_script() {
 
 runner_budget_telemetry_token_usage_since() {
   local since="$1"
-  local telemetry_script output
+  local output
+
+  output="$(runner_budget_telemetry_token_usage_since_output "$since")"
+  printf '%s\n' "$output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }'
+}
+
+runner_budget_telemetry_token_usage_since_output() {
+  local since="$1"
+  local telemetry_script
 
   telemetry_script="$(runner_budget_telemetry_script || true)"
-  [ -n "$telemetry_script" ] || { printf '0'; return 0; }
-  output="$("$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || true)"
-  printf '%s\n' "$output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }'
+  [ -n "$telemetry_script" ] || { printf 'token_usage=0\n'; return 0; }
+  "$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || printf 'token_usage=0\n'
 }
 
 runner_budget_latest_adapter_ended_at() {
@@ -2767,7 +2774,7 @@ runner_budget_existing_preflight_circuit_or_exit() {
 
 runner_budget_preflight_or_exit() {
   local prompt_file="$1" autocommit_before_status="$2" adapter_stdout_path="$3" adapter_stderr_path="$4" adapter_last_message_path="${5:-}"
-  local now_iso now_epoch policy_path daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds prompt_byte_cap prompt_bytes
+  local now_iso now_epoch policy_path daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage telemetry_usage_output token_usage_trusted skipped_suspicious_token_rows minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds prompt_byte_cap prompt_bytes
 
   policy_path="$(runner_budget_policy_path)"
   [ -f "$policy_path" ] || return 0
@@ -2781,8 +2788,19 @@ runner_budget_preflight_or_exit() {
     [ -n "$quota_window_seconds" ] || quota_window_seconds=86400
     quota_since_epoch=$((now_epoch - quota_window_seconds))
     quota_since_iso="$(runner_epoch_to_iso "$quota_since_epoch")"
-    token_usage="$(telemetry_positive_integer_or_zero "$(runner_budget_telemetry_token_usage_since "$quota_since_iso")")"
-    [ "$token_usage" -lt "$daily_token_quota" ] || runner_budget_append_skip_log_and_state "token_budget_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}"
+    telemetry_usage_output="$(runner_budget_telemetry_token_usage_since_output "$quota_since_iso")"
+    token_usage="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }')"
+    token_usage="$(telemetry_positive_integer_or_zero "$token_usage")"
+    token_usage_trusted="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_trusted" { print $2; found=1; exit } END { if (!found) print "true" }')"
+    skipped_suspicious_token_rows="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "skipped_suspicious_token_rows" { print $2; found=1; exit } END { if (!found) print "0" }')"
+    skipped_suspicious_token_rows="$(telemetry_positive_integer_or_zero "$skipped_suspicious_token_rows")"
+    if [ "$token_usage" -ge "$daily_token_quota" ]; then
+      if [ "$token_usage_trusted" != "true" ]; then
+        runner_append_log "$runner_id" "budget_preflight_warning" "role=${public_role}" "agent=${agent}" "reason=token_usage_suspicious" "action=continue_adapter" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}" "token_usage_trusted=${token_usage_trusted}" "skipped_suspicious_token_rows=${skipped_suspicious_token_rows}"
+      else
+        runner_budget_append_skip_log_and_state "token_budget_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}"
+      fi
+    fi
   fi
   minimum_interval_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value minimum_interval_seconds)")"
   if [ -n "$minimum_interval_seconds" ] && [ "$minimum_interval_seconds" -gt 0 ]; then
