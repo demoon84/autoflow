@@ -2,9 +2,9 @@
 auto_generated: telemetry-summary
 slug: operations/runner-timing
 window: 7d
-source_event_count: 24
-last_synced_at: 2026-05-05T00:29:17Z
-input_fingerprint: 393b881c19a899bc90a89d19a4998c6ae3ae6bd2b879e1482a079e03ea71cf3e
+source_event_count: 47
+last_synced_at: 2026-05-05T00:52:10Z
+input_fingerprint: 817cf0c5615481feb22295a267a1ce8df97df407b73bbf6fc3844b439007c2b4
 ---
 
 > This page is auto-generated from `.autoflow/telemetry/*.jsonl`; manual edits may be overwritten on the next sync. Keep durable human notes in `wiki/answers/`, `wiki/decisions/`, or another human-owned wiki page.
@@ -13,8 +13,8 @@ input_fingerprint: 393b881c19a899bc90a89d19a4998c6ae3ae6bd2b879e1482a079e03ea71c
 
 | runner_id | tick_count | p50_duration_ms | p95_duration_ms | p99_duration_ms |
 | --- | ---: | ---: | ---: | ---: |
-| planner | 4 | 326000 | 382000 | 382000 |
-| verifier | 13 | 71000 | 90000 | 90000 |
-| wiki | 6 | 15000 | 54000 | 54000 |
-| worker | 1 | 526000 | 526000 | 526000 |
+| planner | 7 | 330000 | 382000 | 382000 |
+| verifier | 22 | 72000 | 130000 | 141000 |
+| wiki | 15 | 18000 | 272000 | 272000 |
+| worker | 3 | 526000 | 632000 | 632000 |
 
