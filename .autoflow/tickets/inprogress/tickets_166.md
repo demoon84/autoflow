@@ -6,12 +6,12 @@
 - PRD Key: prd_167
 - Plan Candidate: Plan AI handoff from tickets/done/prd_167/prd_167.md
 - Title: AI work for prd_167
-- Stage: todo
-- AI:
-- Claimed By:
-- Execution AI:
-- Verifier AI:
-- Last Updated: 2026-05-03T13:26:28Z
+- Stage: blocked
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-05T00:43:23Z
 
 ## Goal
 
@@ -39,39 +39,34 @@
 - `AGENTS.md`
 
 ## Worktree
-
-- Path:
-- Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_166`
+- Branch: autoflow/tickets_166
+- Base Commit: 25c2e4527b5aabc96e44fe80f33ed64ae099edfd
+- Worktree Commit: 
+- Integration Status: blocked_dirty_project_root
 
 ## Goal Runtime
-
-- Status:
-- Started At:
-- Started Epoch:
-- Updated At:
+- Status: blocked
+- Started At: 2026-05-05T00:43:24Z
+- Started Epoch: 1777941804
+- Updated At: 2026-05-05T00:48:30Z
 - Tick Count: 0
-- Time Used Seconds: 0
-- Token Budget:
-- Tokens Used:
-- Continuation Suppressed: false
-- Last Event:
-- Last Progress Fingerprint:
-- Iteration Fingerprints: []
-- Last Lint Status: ok
-- Last Lint Vagueness Score: 0
+- Time Used Seconds: 306
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: true
+- Last Event: ticket_stage_blocked
+- Last Progress Fingerprint: 4180718384
 
 ## Recovery State
 
-- Status: healthy
-- Detected By:
-- Failure Class:
-- Evidence:
+- Status: blocked
+- Detected By: runtime
+- Failure Class: dirty_project_root_conflict
+- Evidence: dirty Allowed Paths in PROJECT_ROOT: apps/desktop/src/renderer/styles.css
 - Planner Decision:
-- Owner Resume Instruction:
-- Last Recovery At:
+- Owner Resume Instruction: Commit, stash, or explicitly integrate the PROJECT_ROOT changes before this ticket continues.
+- Last Recovery At: 2026-05-05T00:43:23Z
 
 ## Done When
 
@@ -85,8 +80,7 @@
 - [ ] `npm run desktop:check` 통과.
 
 ## Next Action
-
-- 다음에 바로 이어서 할 일: Plan AI 가 Allowed Paths 와 Done When 을 PRD 기준으로 더 좁힌다. Impl AI 는 이 티켓을 todo 에서 claim 한 뒤 mini-plan, 구현, 검증, 머지까지 한 턴에 끝낸다.
+- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (apps/desktop/src/renderer/styles.css). Commit/stash those changes or intentionally integrate them before ticket-owner continues.
 
 ## Resume Context
 
@@ -98,6 +92,8 @@
 
 - Created by planner (Plan AI) from tickets/done/prd_167/prd_167.md at 2026-05-03T13:26:28Z.
 
+- Runtime hydrated worktree dependency at 2026-05-05T00:43:23Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime auto-blocked: dirty_project_root_conflict at 2026-05-05T00:43:23Z; dirty_paths=apps/desktop/src/renderer/styles.css
 ## Verification
 
 - Run file:

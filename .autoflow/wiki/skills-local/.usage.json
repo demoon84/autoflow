@@ -1,4 +1,67 @@
 {
+  "nudge/adapter-running-state-heartbeat": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "nudge/adapter-running-state-heartbeat-2": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "nudge/adapter-running-state-heartbeat-3": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "nudge/adapter-running-state-heartbeat-4": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "nudge/adapter-running-state-heartbeat-5": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "nudge/adapter-running-state-heartbeat-6": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "orchestration-cleanup/ai-work-for-prd-167": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "orchestration-cleanup/ai-work-for-prd-167-2": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/adapter-running-state-heartbeat": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
   "ticket-completion/ai-work-for-prd-162": {
     "failure_count": 0,
     "last_used_at": "",
@@ -20,7 +83,21 @@
     "success_count": 0,
     "view_count": 0
   },
+  "ticket-completion/repeated-preflight-failure-recovery-circuit": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
   "ticket-completion/skill-curator-lifecycle-and-auto-extraction-triggers": {
+    "failure_count": 0,
+    "last_used_at": "",
+    "last_viewed_at": "",
+    "success_count": 0,
+    "view_count": 0
+  },
+  "ticket-completion/telemetry-token-usage-sanity-correction": {
     "failure_count": 0,
     "last_used_at": "",
     "last_viewed_at": "",

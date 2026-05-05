@@ -7,6 +7,8 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/prd-178-adapter-running-state-heartbeat]]** (`wiki/answers/prd-178-adapter-running-state-heartbeat.md`) : Summary of PRD 178, addressing runner state staleness during long adapter calls by introducing periodic heartbeats and chunk timestamps. Logged on 2026-05-05.
+- **[[answers/prd-166-skill-curator-lifecycle-and-auto-extraction]]** (`wiki/answers/prd-166-skill-curator-lifecycle-and-auto-extraction.md`) : Summary of PRD 166, detailing the implementation of skill curator lifecycle management, auto-extraction triggers, and CLI commands. Logged on 2026-05-04.
 - **[[answers/recent-core-and-ui-refinements-20260502]]** (`wiki/answers/recent-core-and-ui-refinements-20260502.md`): Captured the recent core and UI refinements spanning `prd_091` through `prd_097`, including Desktop TODO layer layout fixes, Planner orchestrator recovery for max retries, Worker lifecycle isolation (worktree/branch), flex-alignment for UI progress rows, Codex fast reasoning (low), and Planner/Orchestrator role label normalization.
 - **[[answers/planner-worker-lifecycle-boundaries-20260502]]** (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`): Captured the core architectural boundaries between Planner and Worker roles defined in `prd_092` and `prd_093`, focusing on retry-limit recovery signals and task-level isolation.
 - **[[answers/desktop-workflow-board-refinements-20260502]]** (`wiki/answers/desktop-workflow-board-refinements-20260502.md`): Captured the recent workflow-board polish across `prd_082` through `prd_084`, including unified `prd-NNN`/`order-NNN`/`ticket-NNN` display IDs, role labels normalized to `Planner AI`/`Worker AI`/`위키봇`, and the always-visible kanban column baseline.
@@ -33,21 +35,6 @@ Generated summaries may be written here by `autoflow wiki update`.
 - **[[answers/desktop-runner-terminal-streaming]]** (`wiki/answers/desktop-runner-terminal-streaming.md`): Captured the `prd_053` fix that restores multi-line typed terminal streaming in Desktop runner cards instead of path-only/runtime-envelope fallbacks.
 - [[answers/wiki-maintenance-pipeline]] (`wiki/answers/wiki-maintenance-pipeline.md`): Summarized the current wiki maintenance flow spanning semantic lint tightening, deterministic frontmatter retrofit, and reusable synth-save patterns.
 - [[answers/worker-state-last-result-self-reset]] (`wiki/answers/worker-state-last-result-self-reset.md`): Fixes a stale `worker.state.last_result` issue by implementing a self-reset at the start of worker ticks and an explicit reset after planner cleanup.
-
-- **[[features/finish-pass-inline-merge-summary]]** (`wiki/features/finish-pass-inline-merge-summary.md`): Captured the `prd_048` rule that fully successful `finish-ticket-owner.sh` inline merge finalization now emits one summary line, while debug paths keep the full merge output block.
-- **[[features/ticket-owner-verification-output-caps]]** (`wiki/features/ticket-owner-verification-output-caps.md`): Captured the `prd_047` rule that successful `verify-ticket-owner.sh` output uses a separate pass cap with first/last excerpts, while failure diagnostics keep the larger tail.
-- **[[features/run-role-prompt-dispatch]]** (`wiki/features/run-role-prompt-dispatch.md`): Extended the runtime prompt-shape contract with `prd_045` and `prd_046`, keeping planner and ticket-owner runtime outputs concise while preserving machine-readable keys.
-- **[[features/desktop-runner-model-options]]** (`wiki/features/desktop-runner-model-options.md`): Recorded the `prd_040` rule that Gemini stays selectable in Desktop, but unsupported Gemini 3.1 preview model ids stay out of `runnerAgentModelOptions.gemini`.
-- **[[features/desktop-layer-width]]** (`wiki/features/desktop-layer-width.md`): Captured the `prd_043` 30% Desktop layer width increase and the constraint that viewport caps and existing dialog behavior remain unchanged.
-- **[[features/planner-next-action-cues]]** (`wiki/features/planner-next-action-cues.md`): Captured the `prd_045` constraint that planner `next_action=` output should stay short, preserve machine-readable branch outputs, and point back to stable role instructions.
-- **[[features/ticket-workspace-tabs]]** (`wiki/features/ticket-workspace-tabs.md`): Added the `prd_042` layout constraint that Tickets workspace list/card content stays left-aligned while preserving the existing 3-tab workspace and detail layer.
-- **[[decisions/worker-display-policy]]** (`wiki/decisions/worker-display-policy.md`): Updated the policy so user-visible attribution normalizes to worker labels, hides the numeric suffix when only one runner of that role is enabled, and still keeps legacy `AI-N` ownership matching compatible (`prd_039`, `prd_058`).
-- **[[features/wiki-bot-codex-adapter]]** (`wiki/features/wiki-bot-codex-adapter.md`): Documented `wiki-1` Codex adapter support and the constraint that Gemini remains selectable (`prd_038`).
-- **[[learnings/manual-merge-recovery-20260427]]** (`wiki/learnings/manual-merge-recovery-20260427.md`): Documented the manual consolidation of multiple verified worktrees (`prd_012`, `prd_016`, `prd_021`, `prd_025`) to resolve `dirty_scope_conflict` gridlock in `PROJECT_ROOT`.
-- **[[features/desktop-runner-controls]]** (`wiki/features/desktop-runner-controls.md`): Simplified desktop runner control UI by removing the restart button and "AI" prefixes from start/stop labels (`prd_028`).
-- **[[decisions/design-kit-mui-migration]]** (`wiki/decisions/design-kit-mui-migration.md`): Preserved as historical migration context only; current Desktop UI work follows the newer board rule that prefers local shadcn-style components with `lucide-react`.
-- **[[features/desktop-gemini-icon]]** (`wiki/features/desktop-gemini-icon.md`): Fix Gemini app icon in Desktop AI runner UI. Verified and documented.
-- **[[features/ai-workflow-board]]** (`wiki/features/ai-workflow-board.md`): Updated with Worker 4-stage simplification and dot alignment precision from `prd_025`.
 
 ## Pages
 
@@ -97,6 +84,8 @@ Generated summaries may be written here by `autoflow wiki update`.
 
   - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/prd-178-adapter-running-state-heartbeat]] (`wiki/answers/prd-178-adapter-running-state-heartbeat.md`)
+  - [[answers/prd-166-skill-curator-lifecycle-and-auto-extraction]] (`wiki/answers/prd-166-skill-curator-lifecycle-and-auto-extraction.md`)
   - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
   - [[answers/recent-core-and-ui-refinements-20260502]] (`wiki/answers/recent-core-and-ui-refinements-20260502.md`)
   - [[answers/planner-worker-lifecycle-boundaries-20260502]] (`wiki/answers/planner-worker-lifecycle-boundaries-20260502.md`)
@@ -150,11 +139,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 156
+- Done tickets: 159
 - Reject records: 5
-- Verifier logs: 383
+- Verifier logs: 387
 - Conversation handoffs: 8
-- Last updated: 2026-05-04T22:32:23Z
+- Last updated: 2026-05-05T00:42:05Z
 
 ## Completed Tickets
 
