@@ -421,7 +421,7 @@ role_autocommit_capture_status() {
 role_autocommit_message() {
   local git_root="$1"
   shift
-  local project_key
+  local project_key source_context
 
   project_key="$(git -C "$git_root" diff --cached --name-only -- "$@" |
     sed -n 's#.*prd_\([0-9][0-9]*\).*#prd_\1#p' |
@@ -436,10 +436,27 @@ role_autocommit_message() {
       if [ -n "$project_key" ]; then
         printf '[%s] wiki knowledge update\n' "$project_key"
       else
-        printf '[wiki] wiki knowledge update\n'
+        source_context="$(role_autocommit_wiki_source_context)"
+        printf '[wiki][source: %s] wiki knowledge update\n' "${source_context:-unknown}"
       fi
       ;;
   esac
+}
+
+role_autocommit_wiki_source_context() {
+  local latest_source source_project source_ticket
+
+  latest_source="$(find "${board_root}/tickets/done" -type f \( -name 'tickets_[0-9]*.md' -o -name 'prd_[0-9]*.md' \) -exec ls -t {} + 2>/dev/null | head -n 1)"
+  [ -n "$latest_source" ] || return 0
+
+  source_project="$(printf '%s\n' "$latest_source" | sed -n 's#.*tickets/done/\(prd_[0-9][0-9]*\)/.*#\1#p' | head -n 1)"
+  source_ticket="$(basename "$latest_source" .md | sed -n 's#^\(tickets_[0-9][0-9]*\)$#\1#p')"
+
+  if [ -n "$source_project" ] && [ -n "$source_ticket" ]; then
+    printf '%s/%s\n' "$source_project" "$source_ticket"
+  elif [ -n "$source_project" ]; then
+    printf '%s\n' "$source_project"
+  fi
 }
 
 role_autocommit_after_adapter() {
