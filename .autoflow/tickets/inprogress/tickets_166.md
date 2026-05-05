@@ -49,9 +49,9 @@
 - Status: blocked
 - Started At: 2026-05-05T00:43:24Z
 - Started Epoch: 1777941804
-- Updated At: 2026-05-05T00:51:32Z
+- Updated At: 2026-05-05T00:52:33Z
 - Tick Count: 0
-- Time Used Seconds: 488
+- Time Used Seconds: 549
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
@@ -98,6 +98,7 @@
 - Cleanup commit `415725a`: grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `PRD_167` / `tickets_166`.
 - Cleanup commit `6040e2a`: bundled board/wiki/telemetry/order/todo artifacts and nested `Users/**` paths as misc housekeeping for `tickets_166`; review ledger entries are `tickets/check/check_192.md` and `tickets/check/check_193.md`.
 - Guard warning at 2026-05-05T00:50:52Z: no guard errors. Planner normalized Recovery State `Failure Class` to `dirty_root`; unresolved cleanup candidates are `autoflow/tickets_119` leftover worktree and `autoflow/tickets_163` dirty worktree for a done ticket. Planner did not delete or reset those worktrees.
+- Follow-up cleanup/evidence sync commits in the same turn: `962008f`, `9dbb9f0`, `60871a5`, `87c6799`, `abcae47`, `9e389c4`; review ledger entry is `tickets/check/check_194.md`.
 ## Verification
 
 - Run file:
