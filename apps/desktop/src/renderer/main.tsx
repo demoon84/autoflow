@@ -58,7 +58,6 @@ import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
-import autoflowAppIcon from "./assets/app/app-icon.svg";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
@@ -2239,10 +2238,6 @@ function App() {
         <section className={`settings-page${boardMissing ? " settings-page-setup" : ""}`} aria-label="Autoflow">
           {!boardMissing ? (
             <aside className="settings-nav" aria-label="메뉴">
-              <div className="settings-brand">
-                <img className="settings-brand-mark" src={autoflowAppIcon} alt="Autoflow" />
-                <span className="settings-brand-label" aria-hidden="true">Autoflow</span>
-              </div>
               <nav className="settings-nav-list" aria-label="Autoflow 메뉴">
                 {settingsNavigation.map(({ key, label, icon: Icon }) => (
                   <Button
