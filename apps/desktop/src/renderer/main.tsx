@@ -1603,6 +1603,20 @@ function App() {
       setRunnerError("");
       try {
         const runner = (board?.runners || []).find((candidate) => candidate.id === runnerId);
+        if (runner && action === "stop" && (runner.enabled || "true") !== "false") {
+          const disableResult = await window.autoflow.configureRunner({
+            runnerId,
+            ...options,
+            config: {
+              enabled: "false"
+            }
+          });
+          if (!disableResult.ok) {
+            setRunnerError(disableResult.stderr || disableResult.stdout || "AI 중지 설정 저장에 실패했습니다.");
+            await loadBoard();
+            return;
+          }
+        }
         if (runner && (action === "start" || action === "restart")) {
           const draft = runnerDrafts[runner.id] || {
             agent: runner.agent || "codex",

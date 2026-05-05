@@ -3569,6 +3569,10 @@ mark_ticket_needs_user_parked() {
   local decision instruction current_decision current_instruction
 
   [ -f "$ticket_file" ] || return 1
+  if ticket_needs_user_already_parked "$ticket_file"; then
+    return 0
+  fi
+
   timestamp="$(now_iso)"
   decision="Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State."
   instruction="Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes."
@@ -3588,6 +3592,7 @@ mark_ticket_needs_user_parked() {
 ticket_needs_user_already_parked() {
   local ticket_file="$1"
   local decision instruction current_decision current_instruction
+  local next_action notes marker_text
 
   [ -f "$ticket_file" ] || return 1
   [ "$(ticket_recovery_status "$ticket_file")" = "needs_user" ] || return 1
@@ -3597,7 +3602,20 @@ ticket_needs_user_already_parked() {
   current_decision="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Planner Decision")")"
   current_instruction="$(trim_spaces "$(extract_scalar_field_in_section "$ticket_file" "Recovery State" "Owner Resume Instruction")")"
 
-  [ "$current_decision" = "$decision" ] && [ "$current_instruction" = "$instruction" ]
+  if [ "$current_decision" = "$decision" ] && [ "$current_instruction" = "$instruction" ]; then
+    return 0
+  fi
+
+  next_action="$(extract_section_text "$ticket_file" "Next Action" 2>/dev/null || true)"
+  notes="$(extract_section_text "$ticket_file" "Notes" 2>/dev/null || true)"
+  marker_text="$(printf '%s\n%s\n%s\n%s\n' "$current_decision" "$current_instruction" "$next_action" "$notes")"
+  case "$marker_text" in
+    *"outside the worker claim queue"*|*"Do not loop"*|*"do not loop"*|*"Parked needs_user"*|*"Planner parking: source=inprogress-needs-user-parked"*|*"no physical worktree remains"*)
+      return 0
+      ;;
+  esac
+
+  return 1
 }
 
 mark_ticket_repairing_timeout_needs_user() {

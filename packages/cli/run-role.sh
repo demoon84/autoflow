@@ -510,6 +510,8 @@ run_wiki_curator_idle_best_effort() {
 run_skill_nudge_best_effort() {
   local ticket_file tick_count interval state_file in_progress cli_path output status
 
+  [ "${dry_run:-false}" = "false" ] || return 0
+
   case "$public_role" in
     planner|ticket) ;;
     *) return 0 ;;
@@ -734,11 +736,27 @@ telemetry_file_size_bytes() {
   fi
 }
 
+telemetry_file_size_bytes_without_codex_guard_warnings() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    printf '0'
+    return 0
+  fi
+
+  awk '
+    / WARN codex_core_plugins::manifest:/ { next }
+    / WARN codex_core_skills::loader:/ { next }
+    { bytes += length($0) + 1 }
+    END { printf "%d", bytes + 0 }
+  ' "$file" 2>/dev/null || printf '0'
+}
+
 telemetry_estimated_tokens_for_file() {
   local file="$1"
   local byte_count
 
-  byte_count="$(telemetry_file_size_bytes "$file")"
+  byte_count="$(telemetry_file_size_bytes_without_codex_guard_warnings "$file")"
   case "$byte_count" in
     ''|*[!0-9]*) byte_count=0 ;;
   esac
@@ -3633,6 +3651,41 @@ append_gemini_token_marker() {
   printf '\ninput_tokens=%s\noutput_tokens=%s\n' "$input_tokens" "$output_tokens" >> "$stdout_file"
 }
 
+filter_codex_guard_warnings_in_place() {
+  local file="$1"
+  local tmp count_file removed
+
+  [ -f "$file" ] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter.XXXXXX")" || return 0
+  count_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter-count.XXXXXX")" || {
+    rm -f "$tmp"
+    return 0
+  }
+
+  if ! awk -v count_file="$count_file" '
+    / WARN codex_core_plugins::manifest:/ { removed++; next }
+    / WARN codex_core_skills::loader:/ { removed++; next }
+    { print }
+    END { print removed + 0 > count_file }
+  ' "$file" > "$tmp"; then
+    rm -f "$tmp" "$count_file"
+    return 0
+  fi
+
+  removed="$(cat "$count_file" 2>/dev/null || printf '0')"
+  case "$removed" in ''|*[!0-9]*) removed=0 ;; esac
+  if [ "$removed" -gt 0 ]; then
+    mv -f "$tmp" "$file"
+    runner_append_log "$runner_id" "codex_stdout_filter_applied" \
+      "role=${public_role}" \
+      "removed_lines=${removed}" \
+      "stdout_path=${file}"
+  else
+    rm -f "$tmp"
+  fi
+  rm -f "$count_file"
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text
@@ -3684,6 +3737,7 @@ run_default_adapter_command() {
           < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
       fi
+      filter_codex_guard_warnings_in_place "$adapter_stdout"
       return "$command_exit"
       ;;
     claude)

@@ -472,6 +472,8 @@ run_wiki_curator_idle_best_effort() {
 run_skill_nudge_best_effort() {
   local ticket_file tick_count interval state_file in_progress cli_path output status
 
+  [ "${dry_run:-false}" = "false" ] || return 0
+
   case "$public_role" in
     planner|ticket) ;;
     *) return 0 ;;
@@ -3117,6 +3119,41 @@ stop_adapter_heartbeat_monitor() {
   adapter_heartbeat_pid=""
 }
 
+filter_codex_guard_warnings_in_place() {
+  local file="$1"
+  local tmp count_file removed
+
+  [ -f "$file" ] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter.XXXXXX")" || return 0
+  count_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter-count.XXXXXX")" || {
+    rm -f "$tmp"
+    return 0
+  }
+
+  if ! awk -v count_file="$count_file" '
+    / WARN codex_core_plugins::manifest:/ { removed++; next }
+    / WARN codex_core_skills::loader:/ { removed++; next }
+    { print }
+    END { print removed + 0 > count_file }
+  ' "$file" > "$tmp"; then
+    rm -f "$tmp" "$count_file"
+    return 0
+  fi
+
+  removed="$(cat "$count_file" 2>/dev/null || printf '0')"
+  case "$removed" in ''|*[!0-9]*) removed=0 ;; esac
+  if [ "$removed" -gt 0 ]; then
+    mv -f "$tmp" "$file"
+    runner_append_log "$runner_id" "codex_stdout_filter_applied" \
+      "role=${public_role}" \
+      "removed_lines=${removed}" \
+      "stdout_path=${file}"
+  else
+    rm -f "$tmp"
+  fi
+  rm -f "$count_file"
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text
@@ -3151,6 +3188,7 @@ run_default_adapter_command() {
         run_adapter_with_identity "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
         command_exit=$?
       fi
+      filter_codex_guard_warnings_in_place "$adapter_stdout"
       return "$command_exit"
       ;;
     claude)

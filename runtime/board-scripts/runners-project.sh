@@ -2905,6 +2905,20 @@ list_runners() {
           fi
           pid="$(runner_effective_state_pid "$state_status" "$mode" "$pid")"
           state_status="$effective_state_status"
+          if [ "$state_status" != "running" ]; then
+            active_item=""
+            active_ticket_id=""
+            active_ticket_title=""
+            active_stage=""
+            active_spec_ref=""
+            active_recovery_reason=""
+            active_recovery_status=""
+            active_recovery_failure_class=""
+            active_recovery_worktree_path=""
+            active_recovery_worktree_status=""
+            active_recovery_board_state=""
+            last_adapter_chunk_at=""
+          fi
           effective_interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
           if [ -n "$current_interval_seconds" ]; then
             effective_interval_seconds="$(runner_normalize_interval_seconds "$current_interval_seconds")"

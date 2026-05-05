@@ -1683,6 +1683,10 @@ function tokenUsageFromLine(lower) {
   return total;
 }
 
+function isCodexGuardWarningLine(line) {
+  return /\bWARN\s+codex_core_(?:plugins::manifest|skills::loader):/.test(line);
+}
+
 function parseTokenUsageChunk(chunk, prior) {
   const combined = (prior?.tail || "") + chunk;
   const lines = combined.split("\n");
@@ -1692,6 +1696,9 @@ function parseTokenUsageChunk(chunk, prior) {
 
   for (const rawLine of lines) {
     const clean = rawLine.replace(/\r$/, "").replace(ansiEscapePattern, "");
+    if (isCodexGuardWarningLine(clean)) {
+      continue;
+    }
     const lower = clean.toLowerCase();
     const geminiUsageTotal = geminiUsageTotalFromLine(clean);
     if (geminiUsageTotal > 0) {
