@@ -2480,6 +2480,116 @@ runner_claude_supports_effort() {
   return 1
 }
 
+runner_file_size_bytes() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    printf '0'
+    return 0
+  fi
+
+  wc -c < "$file" 2>/dev/null | tr -d '[:space:]'
+}
+
+runner_adapter_heartbeat_interval_seconds() {
+  local value="${AUTOFLOW_ADAPTER_HEARTBEAT_INTERVAL_SECONDS:-30}"
+
+  case "$value" in
+    ''|*[!0-9]*) value=30 ;;
+  esac
+  [ "$value" -gt 0 ] || value=30
+  printf '%s' "$value"
+}
+
+runner_adapter_preserved_state_value() {
+  local field="$1"
+  local fallback="${2:-}"
+  local value
+
+  value="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
+runner_write_adapter_running_heartbeat() {
+  local timestamp="$1"
+  local last_chunk_at="${2:-}"
+
+  if [ -z "$last_chunk_at" ]; then
+    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
+  fi
+
+  runner_write_state "$runner_id" \
+    "status=running" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "configured_reasoning=${configured_reasoning}" \
+    "reasoning_source=${reasoning_source}" \
+    "reasoning_complexity=${reasoning_complexity}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=adapter_running" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_start)" \
+    "started_at=$(runner_state_started_at "$started_at")" \
+    "last_event_at=${timestamp}" \
+    "last_adapter_chunk_at=${last_chunk_at}" \
+    "last_result=" \
+    "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
+    "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
+    "last_stdout_log=$(runner_adapter_preserved_state_value "last_stdout_log" "$adapter_stdout")" \
+    "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")"
+}
+
+start_adapter_heartbeat_monitor() {
+  local interval_s
+
+  interval_s="$(runner_adapter_heartbeat_interval_seconds)"
+  (
+    local previous_stdout_size previous_stderr_size current_stdout_size current_stderr_size
+    local timestamp last_chunk_at
+
+    previous_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
+    previous_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
+    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
+
+    while :; do
+      sleep "$interval_s"
+      timestamp="$(runner_now_iso)"
+      current_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
+      current_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
+      if [ "${current_stdout_size:-0}" -gt "${previous_stdout_size:-0}" ] || [ "${current_stderr_size:-0}" -gt "${previous_stderr_size:-0}" ]; then
+        last_chunk_at="$timestamp"
+      fi
+      runner_write_adapter_running_heartbeat "$timestamp" "$last_chunk_at"
+      previous_stdout_size="${current_stdout_size:-0}"
+      previous_stderr_size="${current_stderr_size:-0}"
+    done
+  ) &
+  adapter_heartbeat_pid=$!
+}
+
+stop_adapter_heartbeat_monitor() {
+  if [ -n "${adapter_heartbeat_pid:-}" ] && kill -0 "$adapter_heartbeat_pid" 2>/dev/null; then
+    kill -TERM "$adapter_heartbeat_pid" 2>/dev/null || true
+    wait "$adapter_heartbeat_pid" 2>/dev/null || true
+  fi
+  adapter_heartbeat_pid=""
+}
+
 run_default_adapter_command() {
   local prompt_file="$1"
   local prompt_text
@@ -2926,7 +3036,7 @@ case "$agent" in
       "active_item=$(runner_adapter_state_value "active_item")" \
       "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
       "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
-      "active_stage=$(runner_adapter_state_value "active_stage")" \
+      "active_stage=adapter_running" \
       "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
       "active_recovery_reason=${adapter_active_recovery_reason}" \
       "active_recovery_status=${adapter_active_recovery_status}" \
@@ -2937,7 +3047,10 @@ case "$agent" in
       "pid=$(runner_state_pid_for_start)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${started_at}" \
+      "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
       "last_result=" \
+      "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
+      "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
       "last_stdout_log=${adapter_stdout}" \
       "last_stderr_log=${adapter_stderr}"
     runner_append_log "$runner_id" "adapter_start" \
@@ -3052,6 +3165,8 @@ case "$agent" in
       exit 0
     fi
 
+    adapter_heartbeat_pid=""
+    start_adapter_heartbeat_monitor
     set +e
     if [ -n "$command_value" ]; then
       run_custom_adapter_command "$prompt_file"
@@ -3059,6 +3174,7 @@ case "$agent" in
       run_default_adapter_command "$prompt_file"
     fi
     adapter_exit=$?
+    stop_adapter_heartbeat_monitor
     set -e
 
     finished_at="$(runner_now_iso)"
@@ -3110,7 +3226,9 @@ case "$agent" in
       "pid=$([ "$runner_status" = "stopped" ] && printf '' || runner_state_pid_for_finish)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \
+      "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
       "last_result=$([ "$runner_status" = "stopped" ] && printf 'quota_limited' || printf 'adapter_exit_%s' "$adapter_exit")" \
+      "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
       "last_stderr_log=${stderr_log_path}"

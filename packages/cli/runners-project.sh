@@ -2400,7 +2400,7 @@ list_runners() {
   local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref
   local active_recovery_reason active_recovery_status active_recovery_failure_class
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
-  local pid started_at last_event_at last_result last_log_line
+  local pid started_at last_event_at last_adapter_chunk_at last_result last_log_line
   local last_runtime_log last_prompt_log last_stdout_log last_stderr_log artifact_status
   local artifact_runtime_status artifact_prompt_status artifact_stdout_status artifact_stderr_status
   local current_interval_seconds effective_interval_seconds idle_streak_count
@@ -2464,6 +2464,7 @@ list_runners() {
           pid="$(runner_state_value_or_empty "$id" "pid")"
           started_at="$(runner_state_value_or_empty "$id" "started_at")"
           last_event_at="$(runner_state_value_or_empty "$id" "last_event_at")"
+          last_adapter_chunk_at="$(runner_state_value_or_empty "$id" "last_adapter_chunk_at")"
           last_result="$(runner_state_value_or_empty "$id" "last_result")"
           last_runtime_log="$(runner_state_value_or_empty "$id" "last_runtime_log")"
           last_prompt_log="$(runner_state_value_or_empty "$id" "last_prompt_log")"
@@ -2519,6 +2520,7 @@ list_runners() {
           printf 'runner.%s.pid=%s\n' "$index" "$pid"
           printf 'runner.%s.started_at=%s\n' "$index" "$started_at"
           printf 'runner.%s.last_event_at=%s\n' "$index" "$last_event_at"
+          printf 'runner.%s.last_adapter_chunk_at=%s\n' "$index" "$last_adapter_chunk_at"
           printf 'runner.%s.last_result=%s\n' "$index" "$last_result"
           printf 'runner.%s.last_runtime_log=%s\n' "$index" "$last_runtime_log"
           printf 'runner.%s.last_prompt_log=%s\n' "$index" "$last_prompt_log"

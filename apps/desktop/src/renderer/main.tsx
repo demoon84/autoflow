@@ -5720,10 +5720,13 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
 function runnerHeartbeatStale(runner: AutoflowRunner) {
   if ((runner.stateStatus || "").toLowerCase() !== "running") return false;
-  if (!runner.lastEventAt) return false;
-  const eventTime = new Date(runner.lastEventAt).getTime();
-  if (Number.isNaN(eventTime)) return false;
-  const ageSec = (Date.now() - eventTime) / 1000;
+  const lastAdapterChunkAt = (runner as AutoflowRunner & { lastAdapterChunkAt?: string }).lastAdapterChunkAt || "";
+  const eventTimes = [runner.lastEventAt, lastAdapterChunkAt]
+    .map((value) => (value ? new Date(value).getTime() : Number.NaN))
+    .filter((value) => !Number.isNaN(value));
+  if (eventTimes.length === 0) return false;
+  const freshestEventTime = Math.max(...eventTimes);
+  const ageSec = (Date.now() - freshestEventTime) / 1000;
   const intervalSec = Number(runner.intervalEffectiveSeconds || runner.intervalSeconds || 60) || 60;
   return ageSec > Math.max(intervalSec * 3, 180);
 }

@@ -1015,6 +1015,7 @@ function parseRunnerListOutput(output) {
       pid: values[`${prefix}pid`] || "",
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
+      lastAdapterChunkAt: values[`${prefix}last_adapter_chunk_at`] || "",
       lastResult: values[`${prefix}last_result`] || "",
       lastRuntimeLog: values[`${prefix}last_runtime_log`] || "",
       lastPromptLog: values[`${prefix}last_prompt_log`] || "",
