@@ -91,6 +91,9 @@ const runnerAuthNeededPatterns = [
   /\bplease set an auth method\b/i,
   /\bmanual authorization is required\b/i,
   /\binvalid auth method selected\b/i,
+  /\badapter_auth_required\b/i,
+  /Opening authentication page in your browser/i,
+  /Attempting to open authentication page in your browser/i,
   /\bmust specify the GEMINI_API_KEY\b/i,
   /\bGEMINI_API_KEY\b.*\b(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)\b/i,
   /\bsign in required\b/i,
@@ -964,6 +967,10 @@ function runCommandWithTimeout(command, args = [], options = {}, timeoutMs = 500
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
+    if (typeof options.input === "string") {
+      child.stdin.write(options.input);
+      child.stdin.end();
+    }
     child.on("error", (error) => {
       finish({ ok: false, code: -1, stdout, stderr: `${stderr}${error.message || String(error)}` });
     });
@@ -1068,6 +1075,15 @@ function parseRunnerListOutput(output) {
 
   for (let index = 1; index <= count; index += 1) {
     const prefix = `runner.${index}.`;
+    const lastBudgetSkipReason = values[`${prefix}last_budget_skip_reason`] || "";
+    const lastBudgetSourceFresh = values[`${prefix}last_budget_source_fresh`] || "";
+    const rawLastResult = values[`${prefix}last_result`] || "";
+    const lastResult =
+      rawLastResult === "token_budget_exceeded" &&
+      lastBudgetSkipReason === "stale_token_usage_source" &&
+      lastBudgetSourceFresh === "false"
+        ? "stale_token_usage_source"
+        : rawLastResult;
     runners.push({
       id: values[`${prefix}id`] || "",
       role: values[`${prefix}role`] || "",
@@ -1096,7 +1112,11 @@ function parseRunnerListOutput(output) {
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
       lastAdapterChunkAt: values[`${prefix}last_adapter_chunk_at`] || "",
-      lastResult: values[`${prefix}last_result`] || "",
+      lastResult,
+      lastBudgetSkipReason,
+      lastBudgetSource: values[`${prefix}last_budget_source`] || "",
+      lastBudgetSourceFresh,
+      lastBudgetSourceAgeSeconds: values[`${prefix}last_budget_source_age_seconds`] || "",
       consecutivePreflightSkipCount: values[`${prefix}consecutive_preflight_skip_count`] || "",
       consecutivePreflightSkipResult: values[`${prefix}consecutive_preflight_skip_result`] || "",
       lastPreflightSkipAt: values[`${prefix}last_preflight_skip_at`] || "",
@@ -1424,6 +1444,73 @@ async function agentIsLoggedIn(agent) {
 
   agentAuthStatusCache.set(key, { checkedAt: now, loggedIn });
   return loggedIn;
+}
+
+async function continueRunnerAuth(options = {}) {
+  if (!options.projectRoot) {
+    return {
+      ok: false,
+      command: "runner auth",
+      code: -1,
+      stdout: "",
+      stderr: "Project root is required."
+    };
+  }
+
+  const agent = normalizeAgentKey(options.agent);
+  if (agent !== "gemini") {
+    return {
+      ok: false,
+      command: "runner auth",
+      code: -1,
+      stdout: "",
+      stderr: `Runner auth prompt is not supported for agent=${options.agent || ""}.`
+    };
+  }
+
+  if (!(await commandExists("gemini"))) {
+    return {
+      ok: false,
+      command: "gemini --prompt <auth-check>",
+      code: 127,
+      stdout: "",
+      stderr: "Gemini CLI is not installed or not on PATH."
+    };
+  }
+
+  const child = spawn(
+    "gemini",
+    [
+      "--skip-trust",
+      "--approval-mode",
+      "yolo",
+      "--prompt",
+      "Autoflow authentication check. Reply with OK only."
+    ],
+    {
+      cwd: options.projectRoot,
+      env: sanitizedProcessEnv(),
+      detached: true,
+      stdio: ["pipe", "ignore", "ignore"]
+    }
+  );
+
+  child.on("error", () => {});
+  child.stdin.on("error", () => {});
+  try {
+    child.stdin.write("Y\n");
+    child.stdin.end();
+  } catch {}
+  child.unref();
+  agentAuthStatusCache.delete(agent);
+
+  return {
+    ok: true,
+    command: "gemini --prompt <auth-check>",
+    code: 0,
+    stdout: "status=ok\nresult=auth_flow_started\n",
+    stderr: ""
+  };
 }
 
 async function recentRunnerArtifactLogPaths(runner, boardRoot, maxFiles = 10) {
@@ -1882,6 +1969,8 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
 async function readRunnerTokenUsage(boardRoot, runners = []) {
   const cacheTotals = new Map();
   const cachePath = path.join(boardRoot, "metrics", "token-cache.tsv");
+  const maxDataAgeSeconds = positiveIntegerValue(process.env.AUTOFLOW_TOKEN_BUDGET_MAX_DATA_AGE_SECONDS) || 3600;
+  const nowMs = Date.now();
 
   let raw;
   try {
@@ -1896,6 +1985,9 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
     if (parts.length < 4) continue;
     const tokenCount = Number.parseInt(parts[3], 10);
     if (!Number.isFinite(tokenCount) || tokenCount <= 0) continue;
+    const cacheTimestampMs = Date.parse(parts[2] || "");
+    if (!Number.isFinite(cacheTimestampMs)) continue;
+    if ((nowMs - cacheTimestampMs) / 1000 > maxDataAgeSeconds) continue;
     const match = path.basename(parts[0]).match(runnerLogNamePattern);
     if (!match) continue;
     cacheTotals.set(match[1], (cacheTotals.get(match[1]) || 0) + tokenCount);
@@ -3647,6 +3739,7 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:runRole", withScopeMemory(runRole));
   ipcMain.handle("autoflow:configureRunner", withScopeMemory(configureRunner));
   ipcMain.handle("autoflow:createRunner", withScopeMemory(createRunner));
+  ipcMain.handle("autoflow:continueRunnerAuth", withScopeMemory(continueRunnerAuth));
   ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
   ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));

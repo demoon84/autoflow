@@ -53,6 +53,33 @@ telemetry_token_usage_max_row_tokens() {
   printf '%s' "$value"
 }
 
+telemetry_token_budget_max_data_age_seconds() {
+  local value="${AUTOFLOW_TOKEN_BUDGET_MAX_DATA_AGE_SECONDS:-3600}"
+  case "$value" in
+    ''|*[!0-9]*) value=3600 ;;
+  esac
+  printf '%s' "$value"
+}
+
+telemetry_now_epoch() {
+  date -u +%s
+}
+
+telemetry_epoch_to_iso() {
+  local epoch="$1"
+
+  if date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ" >/dev/null 2>&1; then
+    date -u -r "$epoch" +"%Y-%m-%dT%H:%M:%SZ"
+    return 0
+  fi
+  date -u -d "@$epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true
+}
+
+telemetry_token_cache_path() {
+  local root="$1"
+  printf '%s/.autoflow/metrics/token-cache.tsv' "$root"
+}
+
 append_jsonl_with_lock() {
   local target_path="$1"
   local row="$2"
@@ -328,7 +355,10 @@ telemetry_token_usage() {
   local since_epoch=""
   local until_epoch=""
   local target_file line runner_id ended_at ended_epoch valid
-  local input output row_total total max_row_tokens skipped_suspicious_rows
+  local input output row_total total max_row_tokens skipped_suspicious_rows telemetry_token_rows
+  local cache_file cache_path cache_runner cache_timestamp cache_epoch cache_tokens
+  local cache_total cache_rows cache_latest_epoch cache_latest_at cache_age_seconds max_data_age_seconds
+  local cache_source_status token_usage_source token_usage_fresh
   local key
 
   while [ "$#" -gt 0 ]; do
@@ -363,6 +393,7 @@ telemetry_token_usage() {
   target_file="$(telemetry_runs_jsonl_path "$project_root")"
   total=0
   skipped_suspicious_rows=0
+  telemetry_token_rows=0
   max_row_tokens="$(telemetry_token_usage_max_row_tokens)"
   if [ -f "$target_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -387,6 +418,8 @@ telemetry_token_usage() {
       input="$(json_number_or_zero "$input")"
       output="$(json_number_or_zero "$output")"
       row_total=$((input + output))
+      [ "$row_total" -gt 0 ] || continue
+      telemetry_token_rows=$((telemetry_token_rows + 1))
       if [ "$input" -ge "$max_row_tokens" ] || [ "$output" -ge "$max_row_tokens" ] || [ "$row_total" -ge "$max_row_tokens" ]; then
         skipped_suspicious_rows=$((skipped_suspicious_rows + 1))
         printf 'warning=skip_suspicious_token_row target=runs runner_id=%s ended_at=%s token_input=%s token_output=%s row_total=%s max_row_tokens=%s\n' \
@@ -397,13 +430,72 @@ telemetry_token_usage() {
     done < "$target_file"
   fi
 
+  token_usage_source="telemetry"
+  token_usage_fresh="true"
+  cache_rows=0
+  cache_total=0
+  cache_latest_epoch=0
+  cache_latest_at=""
+  cache_age_seconds=0
+  max_data_age_seconds="$(telemetry_token_budget_max_data_age_seconds)"
+  cache_source_status="not_used"
+
+  if [ "$telemetry_token_rows" -eq 0 ]; then
+    cache_file="$(telemetry_token_cache_path "$project_root")"
+    if [ -f "$cache_file" ]; then
+      while IFS=$'\t' read -r cache_path cache_runner cache_timestamp cache_tokens _rest || [ -n "${cache_path:-}" ]; do
+        [ -n "${cache_path:-}" ] || continue
+        [ -n "${cache_runner:-}" ] || cache_runner="$(basename "$cache_path" | sed -E 's/^([^_]+)_.*/\1/')"
+        [ "$cache_runner" = "$runner_filter" ] || continue
+        cache_epoch="$(telemetry_timestamp_to_epoch "$cache_timestamp" || true)"
+        [ -n "$cache_epoch" ] || continue
+        [ -z "$since_epoch" ] || [ "$cache_epoch" -ge "$since_epoch" ] || continue
+        [ -z "$until_epoch" ] || [ "$cache_epoch" -le "$until_epoch" ] || continue
+        cache_tokens="$(json_number_or_zero "$cache_tokens")"
+        [ "$cache_tokens" -gt 0 ] || continue
+        cache_rows=$((cache_rows + 1))
+        cache_total=$((cache_total + cache_tokens))
+        if [ "$cache_epoch" -gt "$cache_latest_epoch" ]; then
+          cache_latest_epoch="$cache_epoch"
+          cache_latest_at="$cache_timestamp"
+        fi
+      done < "$cache_file"
+      if [ "$cache_rows" -gt 0 ]; then
+        token_usage_source="token-cache"
+        cache_age_seconds=$(( $(telemetry_now_epoch) - cache_latest_epoch ))
+        [ "$cache_age_seconds" -ge 0 ] || cache_age_seconds=0
+        if [ "$cache_age_seconds" -le "$max_data_age_seconds" ]; then
+          total="$cache_total"
+          token_usage_fresh="true"
+          cache_source_status="fresh_fallback"
+        else
+          total=0
+          token_usage_fresh="false"
+          cache_source_status="stale_skipped"
+        fi
+      else
+        cache_source_status="empty"
+      fi
+    else
+      cache_source_status="missing"
+    fi
+  fi
+
   printf 'runner_id=%s\n' "$runner_filter"
   printf 'since=%s\n' "$since"
   printf 'until=%s\n' "$until"
   printf 'token_usage=%s\n' "$total"
-  printf 'token_usage_trusted=%s\n' "$([ "$skipped_suspicious_rows" -eq 0 ] && printf 'true' || printf 'false')"
+  printf 'token_usage_source=%s\n' "$token_usage_source"
+  printf 'token_usage_fresh=%s\n' "$token_usage_fresh"
+  printf 'token_usage_trusted=%s\n' "$([ "$skipped_suspicious_rows" -eq 0 ] && [ "$token_usage_fresh" = "true" ] && printf 'true' || printf 'false')"
   printf 'skipped_suspicious_token_rows=%s\n' "$skipped_suspicious_rows"
   printf 'token_usage_max_row_tokens=%s\n' "$max_row_tokens"
+  printf 'token_usage_telemetry_rows=%s\n' "$telemetry_token_rows"
+  printf 'token_cache_status=%s\n' "$cache_source_status"
+  printf 'token_cache_rows=%s\n' "$cache_rows"
+  printf 'token_cache_latest_at=%s\n' "$cache_latest_at"
+  printf 'token_cache_age_seconds=%s\n' "$cache_age_seconds"
+  printf 'token_usage_max_data_age_seconds=%s\n' "$max_data_age_seconds"
 }
 
 compact_one_file() {

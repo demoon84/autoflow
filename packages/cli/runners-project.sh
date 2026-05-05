@@ -2187,8 +2187,46 @@ loop_runner_worker() {
       break
     fi
 
-    timestamp="$(runner_now_iso)"
     last_result="$(runner_state_value_or_empty "$target_runner_id" "last_result")"
+    if [ "$run_exit" = "125" ] && [ "$last_result" = "adapter_auth_required" ]; then
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=blocked" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval}" \
+        "current_interval_seconds=$(runner_tick_backoff_current_interval "$target_runner_id" "$public_role" "$mode" "$interval")" \
+        "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        $(runner_applied_config_state_fields "$target_runner_id") \
+        "active_item=" \
+        "active_ticket_id=" \
+        "active_ticket_title=" \
+        "active_stage=blocked" \
+        "active_spec_ref=" \
+        "pid=" \
+        "started_at=${started_at}" \
+        "last_event_at=${timestamp}" \
+        "last_runtime_log=$(runner_state_value_or_empty "$target_runner_id" "last_runtime_log")" \
+        "last_prompt_log=$(runner_state_value_or_empty "$target_runner_id" "last_prompt_log")" \
+        "last_stdout_log=$(runner_state_value_or_empty "$target_runner_id" "last_stdout_log")" \
+        "last_stderr_log=$(runner_state_value_or_empty "$target_runner_id" "last_stderr_log")" \
+        "stopped_by=" \
+        "last_stop_reason=adapter_auth_required" \
+        "last_result=adapter_auth_required"
+      runner_append_log "$target_runner_id" "loop_blocked" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=adapter_auth_required" \
+        "action=await_user_auth_choice" \
+        "exit_code=${run_exit}"
+      stopping_loop="true"
+      exit 0
+    fi
+
+    timestamp="$(runner_now_iso)"
     if [ "$run_exit" != "0" ]; then
       last_result="loop_waiting_exit_${run_exit}"
     else
@@ -2896,6 +2934,7 @@ list_runners() {
   local current_interval_seconds effective_interval_seconds idle_streak_count
   local consecutive_preflight_skip_count consecutive_preflight_skip_result last_preflight_skip_at
   local preflight_skip_circuit_breaker_until preflight_skip_circuit_breaker_threshold
+  local last_budget_skip_reason last_budget_source last_budget_source_fresh last_budget_source_age_seconds
 
   if [ ! -f "$config_path" ]; then
     print_runner_common_header "blocked"
@@ -2970,6 +3009,10 @@ list_runners() {
           last_preflight_skip_at="$(runner_state_value_or_empty "$id" "last_preflight_skip_at")"
           preflight_skip_circuit_breaker_until="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_until")"
           preflight_skip_circuit_breaker_threshold="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_threshold")"
+          last_budget_skip_reason="$(runner_state_value_or_empty "$id" "last_budget_skip_reason")"
+          last_budget_source="$(runner_state_value_or_empty "$id" "last_budget_source")"
+          last_budget_source_fresh="$(runner_state_value_or_empty "$id" "last_budget_source_fresh")"
+          last_budget_source_age_seconds="$(runner_state_value_or_empty "$id" "last_budget_source_age_seconds")"
           applied_config_fingerprint="$(runner_state_value_or_empty "$id" "applied_config_fingerprint")"
           config_applied_at="$(runner_state_value_or_empty "$id" "config_applied_at")"
           idle_streak_count="$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$id" "idle_streak_count")" "0")"
@@ -2995,9 +3038,14 @@ list_runners() {
             active_ticket_title=""
             active_stage=""
             active_spec_ref=""
-            active_recovery_reason=""
-            active_recovery_status=""
-            active_recovery_failure_class=""
+            case "$last_result" in
+              circuit_breaker_tripped) ;;
+              *)
+                active_recovery_reason=""
+                active_recovery_status=""
+                active_recovery_failure_class=""
+                ;;
+            esac
             active_recovery_worktree_path=""
             active_recovery_worktree_status=""
             active_recovery_board_state=""
@@ -3027,6 +3075,10 @@ list_runners() {
           printf 'runner.%s.last_preflight_skip_at=%s\n' "$index" "$last_preflight_skip_at"
           printf 'runner.%s.preflight_skip_circuit_breaker_until=%s\n' "$index" "$preflight_skip_circuit_breaker_until"
           printf 'runner.%s.preflight_skip_circuit_breaker_threshold=%s\n' "$index" "$preflight_skip_circuit_breaker_threshold"
+          printf 'runner.%s.last_budget_skip_reason=%s\n' "$index" "$last_budget_skip_reason"
+          printf 'runner.%s.last_budget_source=%s\n' "$index" "$last_budget_source"
+          printf 'runner.%s.last_budget_source_fresh=%s\n' "$index" "$last_budget_source_fresh"
+          printf 'runner.%s.last_budget_source_age_seconds=%s\n' "$index" "$last_budget_source_age_seconds"
           printf 'runner.%s.enabled=%s\n' "$index" "$enabled"
           printf 'runner.%s.command=%s\n' "$index" "$command"
           printf 'runner.%s.command_preview=%s\n' "$index" "$(runner_command_preview "$id" "$role" "$agent" "$mode" "$model" "$reasoning" "$interval_seconds" "$command")"

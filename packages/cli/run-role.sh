@@ -3598,6 +3598,8 @@ adapter_finish_class() {
 
   if [ "$runner_status_value" = "stopped" ]; then
     printf 'quota_limited'
+  elif [ "$adapter_exit" -eq 125 ]; then
+    printf 'adapter_auth_required'
   elif [ "$adapter_exit" -eq 126 ]; then
     printf 'adapter_start_failed'
   elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
@@ -3619,6 +3621,19 @@ runner_file_has_adapter_start_failure() {
   for file in "$@"; do
     [ -f "$file" ] || continue
     if grep -Eiq 'Error: thread/start|thread/start failed|error creating thread|Fatal error: Codex cannot access session files|Failed to create session' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+runner_file_has_adapter_auth_required() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|When using Gemini API, you must specify the GEMINI_API_KEY' "$file"; then
       return 0
     fi
   done
@@ -3731,6 +3746,57 @@ adapter_run_in_cwd() {
   local cwd="$1"; shift
   cd "$cwd" || return 1
   "$@"
+}
+
+run_gemini_adapter_command() {
+  local adapter_timeout_seconds="$1"
+  local adapter_kill_after_seconds="$2"
+  local child_pid started_epoch now_epoch elapsed_seconds command_exit
+
+  (
+    cd "$adapter_working_root" || exit 1
+    exec </dev/null
+    run_adapter_with_identity "${cmd[@]}"
+  ) > "$adapter_stdout" 2> "$adapter_stderr" &
+  child_pid=$!
+  started_epoch="$(date +%s)"
+
+  while kill -0 "$child_pid" 2>/dev/null; do
+    if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
+      kill -TERM "$child_pid" 2>/dev/null || true
+      wait "$child_pid" 2>/dev/null || true
+      printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
+      printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
+      return 125
+    fi
+
+    if [ "${adapter_timeout_seconds:-0}" -gt 0 ]; then
+      now_epoch="$(date +%s)"
+      elapsed_seconds=$((now_epoch - started_epoch))
+      if [ "$elapsed_seconds" -ge "$adapter_timeout_seconds" ]; then
+        kill -TERM "$child_pid" 2>/dev/null || true
+        if [ "${adapter_kill_after_seconds:-0}" -gt 0 ]; then
+          sleep "$adapter_kill_after_seconds"
+        fi
+        if kill -0 "$child_pid" 2>/dev/null; then
+          kill -KILL "$child_pid" 2>/dev/null || true
+        fi
+        wait "$child_pid" 2>/dev/null || true
+        return 124
+      fi
+    fi
+
+    sleep 1
+  done
+
+  wait "$child_pid"
+  command_exit=$?
+  if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
+    printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
+    printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
+    return 125
+  fi
+  return "$command_exit"
 }
 
 normalize_claude_model_alias() {
@@ -4067,9 +4133,7 @@ run_default_adapter_command() {
         cmd+=(--model "$model")
       fi
       command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
-      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
-        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
-        > "$adapter_stdout" 2> "$adapter_stderr"
+      run_gemini_adapter_command "$adapter_timeout_seconds" "$adapter_kill_after_seconds"
       command_exit=$?
       if [ "$command_exit" -eq 0 ]; then
         append_gemini_token_marker "$prompt_file" "$adapter_stdout" "$adapter_stderr"
@@ -4664,6 +4728,7 @@ runner_budget_preflight_or_exit() {
   local adapter_last_message_path="${5:-}"
   local now_iso now_epoch policy_path
   local daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage telemetry_usage_output token_usage_trusted skipped_suspicious_token_rows
+  local token_usage_source token_usage_fresh token_cache_status token_cache_age_seconds token_usage_max_data_age_seconds token_usage_telemetry_rows token_cache_rows token_cache_latest_at
   local minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds
   local prompt_byte_cap prompt_bytes
   local threshold cooldown_seconds consecutive_count last_result last_event_at last_event_epoch until_epoch until_iso
@@ -4690,6 +4755,35 @@ runner_budget_preflight_or_exit() {
     token_usage_trusted="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_trusted" { print $2; found=1; exit } END { if (!found) print "true" }')"
     skipped_suspicious_token_rows="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "skipped_suspicious_token_rows" { print $2; found=1; exit } END { if (!found) print "0" }')"
     skipped_suspicious_token_rows="$(telemetry_positive_integer_or_zero "$skipped_suspicious_token_rows")"
+    token_usage_source="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_source" { print $2; found=1; exit } END { if (!found) print "telemetry" }')"
+    token_usage_fresh="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_fresh" { print $2; found=1; exit } END { if (!found) print "true" }')"
+    token_cache_status="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_status" { print $2; found=1; exit } END { if (!found) print "" }')"
+    token_cache_age_seconds="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_age_seconds" { print $2; found=1; exit } END { if (!found) print "0" }')"
+    token_usage_max_data_age_seconds="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_max_data_age_seconds" { print $2; found=1; exit } END { if (!found) print "" }')"
+    token_usage_telemetry_rows="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_usage_telemetry_rows" { print $2; found=1; exit } END { if (!found) print "" }')"
+    token_cache_rows="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_rows" { print $2; found=1; exit } END { if (!found) print "" }')"
+    token_cache_latest_at="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_latest_at" { print $2; found=1; exit } END { if (!found) print "" }')"
+    if [ "$token_usage_fresh" != "true" ]; then
+      runner_append_log "$runner_id" "budget_preflight_warning" \
+        "role=${public_role}" \
+        "agent=${agent}" \
+        "reason=stale_token_usage_source" \
+        "action=continue_adapter" \
+        "budget_policy_path=${policy_path}" \
+        "token_usage=${token_usage}" \
+        "token_usage_source=${token_usage_source}" \
+        "token_usage_fresh=${token_usage_fresh}" \
+        "token_cache_status=${token_cache_status}" \
+        "token_cache_age_seconds=${token_cache_age_seconds}" \
+        "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" \
+        "token_usage_telemetry_rows=${token_usage_telemetry_rows}" \
+        "token_cache_rows=${token_cache_rows}" \
+        "token_cache_latest_at=${token_cache_latest_at}"
+      runner_replace_state_field_preserving "$runner_id" "last_budget_skip_reason" "stale_token_usage_source" || true
+      runner_replace_state_field_preserving "$runner_id" "last_budget_source" "$token_usage_source" || true
+      runner_replace_state_field_preserving "$runner_id" "last_budget_source_fresh" "$token_usage_fresh" || true
+      runner_replace_state_field_preserving "$runner_id" "last_budget_source_age_seconds" "$token_cache_age_seconds" || true
+    fi
     if [ "$token_usage" -ge "$daily_token_quota" ]; then
       if [ "$token_usage_trusted" != "true" ]; then
         runner_append_log "$runner_id" "budget_preflight_warning" \
@@ -4702,6 +4796,11 @@ runner_budget_preflight_or_exit() {
           "token_quota=${daily_token_quota}" \
           "token_quota_window_seconds=${quota_window_seconds}" \
           "token_quota_since=${quota_since_iso}" \
+          "token_usage_source=${token_usage_source}" \
+          "token_usage_fresh=${token_usage_fresh}" \
+          "token_cache_status=${token_cache_status}" \
+          "token_cache_age_seconds=${token_cache_age_seconds}" \
+          "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" \
           "token_usage_trusted=${token_usage_trusted}" \
           "skipped_suspicious_token_rows=${skipped_suspicious_token_rows}"
       else
@@ -4712,7 +4811,12 @@ runner_budget_preflight_or_exit() {
           "token_usage=${token_usage}" \
           "token_quota=${daily_token_quota}" \
           "token_quota_window_seconds=${quota_window_seconds}" \
-          "token_quota_since=${quota_since_iso}"
+          "token_quota_since=${quota_since_iso}" \
+          "token_usage_source=${token_usage_source}" \
+          "token_usage_fresh=${token_usage_fresh}" \
+          "token_cache_status=${token_cache_status}" \
+          "token_cache_age_seconds=${token_cache_age_seconds}" \
+          "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}"
       fi
     fi
   fi
@@ -5415,6 +5519,9 @@ case "$agent" in
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"
+    elif [ "$adapter_exit" -eq 125 ]; then
+      command_status="blocked"
+      runner_status="blocked"
     elif [ "$adapter_exit" -eq 124 ]; then
       # adapter watchdog timeout (run_with_timeout). 다음 tick 에서 재시도하도록 idle 로 둔다.
       # 누적 timeout 처리는 consecutive_timeout_count 기반 fallback 에서 수행한다.
@@ -5495,6 +5602,7 @@ case "$agent" in
       "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
       "last_result=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 125 ]; then printf 'adapter_auth_required';
         elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 0 ] && [ "$public_role" = "wiki" ]; then printf 'success';
         elif [ "$adapter_exit" -eq 124 ]; then
@@ -5533,6 +5641,7 @@ case "$agent" in
       "reasoning_reject_count=${reasoning_reject_count}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 125 ]; then printf 'adapter_auth_required';
         elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
         else true; fi
@@ -5581,6 +5690,8 @@ case "$agent" in
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$adapter_exit" -eq 125 ]; then
+      printf 'reason=adapter_auth_required\n'
     elif [ "$adapter_exit" -eq 126 ]; then
       printf 'reason=adapter_start_failed\n'
     elif [ "$adapter_exit" -eq 124 ]; then
