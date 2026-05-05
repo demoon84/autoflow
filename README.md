@@ -182,7 +182,8 @@ PROJECT_ROOT
 - `autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy role-pipeline
 - `autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy
 - `autoflow wiki update [project-root] [board-dir-name] [--dry-run]`
-- `autoflow wiki lint [project-root] [board-dir-name] [--semantic]`
+- `autoflow wiki lint [project-root] [board-dir-name] [--semantic]` (LLM 기반 의미론적 린트)
+- `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--rag] [--synth]` (LLM 기반 합성 답변 검색)
 - `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--rag] [--synth]`
 - `autoflow runners list [project-root] [board-dir-name]`
 - `autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...`
@@ -284,6 +285,7 @@ Electron 기반 Autoflow Dashboard 는 `apps/desktop/` 아래에 둔다. 이 앱
 - `doctor` health 와 runner adapter/mode 상태 확인
 - 상태 카운트, 티켓 큐, 최근 로그, runner logs, wiki pages, 진행 스냅샷 저장과 metrics history 확인
 - ticket/log/wiki/metrics 파일 검색과 클릭 미리보기
+- **Wiki 패널 UI 개선:** 좌우 분할 레이아웃, 클릭 시 자동 펼쳐지는 미리보기 영역, 명시적 토글 버튼 추가 (prd_003).
 
 개발 실행:
 
