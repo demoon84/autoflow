@@ -2123,8 +2123,46 @@ loop_runner_worker() {
       break
     fi
 
-    timestamp="$(runner_now_iso)"
     last_result="$(runner_state_value_or_empty "$target_runner_id" "last_result")"
+    if [ "$run_exit" = "125" ] && [ "$last_result" = "adapter_auth_required" ]; then
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=blocked" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval}" \
+        "current_interval_seconds=$(runner_tick_backoff_current_interval "$target_runner_id" "$public_role" "$mode" "$interval")" \
+        "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        $(runner_applied_config_state_fields "$target_runner_id") \
+        "active_item=" \
+        "active_ticket_id=" \
+        "active_ticket_title=" \
+        "active_stage=blocked" \
+        "active_spec_ref=" \
+        "pid=" \
+        "started_at=${started_at}" \
+        "last_event_at=${timestamp}" \
+        "last_runtime_log=$(runner_state_value_or_empty "$target_runner_id" "last_runtime_log")" \
+        "last_prompt_log=$(runner_state_value_or_empty "$target_runner_id" "last_prompt_log")" \
+        "last_stdout_log=$(runner_state_value_or_empty "$target_runner_id" "last_stdout_log")" \
+        "last_stderr_log=$(runner_state_value_or_empty "$target_runner_id" "last_stderr_log")" \
+        "stopped_by=" \
+        "last_stop_reason=adapter_auth_required" \
+        "last_result=adapter_auth_required"
+      runner_append_log "$target_runner_id" "loop_blocked" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "reason=adapter_auth_required" \
+        "action=await_user_auth_choice" \
+        "exit_code=${run_exit}"
+      stopping_loop="true"
+      exit 0
+    fi
+
+    timestamp="$(runner_now_iso)"
     if [ "$run_exit" != "0" ]; then
       last_result="loop_waiting_exit_${run_exit}"
     else
