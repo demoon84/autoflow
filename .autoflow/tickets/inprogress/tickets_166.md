@@ -49,22 +49,22 @@
 - Status: blocked
 - Started At: 2026-05-05T00:43:24Z
 - Started Epoch: 1777941804
-- Updated At: 2026-05-05T00:49:30Z
+- Updated At: 2026-05-05T00:50:31Z
 - Tick Count: 0
-- Time Used Seconds: 366
+- Time Used Seconds: 427
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
 - Last Event: ticket_stage_blocked
-- Last Progress Fingerprint: 4180718384
+- Last Progress Fingerprint: 346224780
 
 ## Recovery State
 
 - Status: repairing
 - Detected By: runtime
-- Failure Class: dirty_project_root_conflict
+- Failure Class: dirty_root
 - Evidence: PROJECT_ROOT dirty snapshot was integrated by planner cleanup commits `415725a` and `6040e2a`; the overlapping Allowed Path `apps/desktop/src/renderer/styles.css` is no longer uncommitted.
-- Planner Decision: `source=blocked-dirty-orchestration`; grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `tickets_166`, then bundled board/wiki/telemetry/order/todo and nested `Users/**` paths as misc housekeeping. `autoflow wiki query --rag` returned `result_count=0` for the direct dirty-root terms; prior wiki answer `dirty-root-finalization-blockers-20260502` still supports clearing dirty PROJECT_ROOT before owner resume.
+- Planner Decision: `source=blocked-dirty-orchestration`; grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `tickets_166`, then bundled board/wiki/telemetry/order/todo and nested `Users/**` paths as misc housekeeping. `autoflow wiki query --rag` returned `result_count=0` for the direct dirty-root terms; prior wiki answer `dirty-root-finalization-blockers-20260502` still supports clearing dirty PROJECT_ROOT before owner resume. Guard warning normalized runtime-specific `dirty_project_root_conflict` to standard `dirty_root`.
 - Owner Resume Instruction: Wait for the next planner tick to emit `source=blocked-auto-recover` and return this ticket to `tickets/todo/`; ticket-owner should then claim a fresh worktree and continue PRD_167 implementation.
 - Last Recovery At: 2026-05-05T00:49:55Z
 
@@ -86,7 +86,7 @@
 
 - 현재 상태 요약: blocked-dirty-orchestration 턴에서 PROJECT_ROOT dirty blocker를 local cleanup commits `415725a`, `6040e2a`로 통합했고, 티켓은 다음 planner tick의 blocked-auto-recover를 기다린다.
 - 직전 작업: planner가 `README.md`, `apps/desktop/src/renderer/styles.css` 및 board/wiki/telemetry/Users housekeeping dirty set을 삭제 없이 commit했다.
-- 재개 시 먼저 볼 것: `git status --short`, `tickets/check/check_192.md`, `tickets/check/check_193.md`, PRD, Goal, Allowed Paths, Done When.
+- 재개 시 먼저 볼 것: `git status --short`, `tickets/check/check_192.md`, `tickets/check/check_193.md`, PRD, Goal, Allowed Paths, Done When. Guard leftover candidates remain evidence-only: `autoflow/tickets_119` has no board ticket, and `autoflow/tickets_163` is dirty for a done ticket.
 
 ## Notes
 
@@ -97,6 +97,7 @@
 - Planner blocked-dirty orchestration at 2026-05-05T00:49:55Z: wiki RAG context pass returned `result_count=0` for direct dirty-root terms; historical wiki answer `dirty-root-finalization-blockers-20260502` and ticket history show dirty PROJECT_ROOT finalization blockers, so planner integrated rather than parking as `needs_user`.
 - Cleanup commit `415725a`: grouped `README.md` and `apps/desktop/src/renderer/styles.css` under `PRD_167` / `tickets_166`.
 - Cleanup commit `6040e2a`: bundled board/wiki/telemetry/order/todo artifacts and nested `Users/**` paths as misc housekeeping for `tickets_166`; review ledger entries are `tickets/check/check_192.md` and `tickets/check/check_193.md`.
+- Guard warning at 2026-05-05T00:50:52Z: no guard errors. Planner normalized Recovery State `Failure Class` to `dirty_root`; unresolved cleanup candidates are `autoflow/tickets_119` leftover worktree and `autoflow/tickets_163` dirty worktree for a done ticket. Planner did not delete or reset those worktrees.
 ## Verification
 
 - Run file:
