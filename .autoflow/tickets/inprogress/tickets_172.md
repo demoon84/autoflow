@@ -11,7 +11,7 @@
 - Claimed By: worker
 - Execution AI: worker
 - Verifier AI: worker
-- Last Updated: 2026-05-05T02:13:50Z
+- Last Updated: 2026-05-05T07:12:23Z
 
 ## Goal
 
@@ -55,13 +55,13 @@
 
 ## Recovery State
 
-- Status: blocked
+- Status: repairing
 - Detected By: runtime; planner
 - Failure Class: dirty_root
-- Evidence: runtime originally reported `dirty_project_root_conflict` because PROJECT_ROOT has dirty Allowed Paths: `apps/desktop/src/main.js`; `autoflow guard` at 2026-05-05T02:16:33Z warned that `dirty_project_root_conflict` is not an accepted Recovery State failure class.
-- Planner Decision: Normalize the failure class to `dirty_root` without changing the blocker; the next planner tick may handle this as blocked-dirty orchestration if the dirty path remains.
-- Owner Resume Instruction: Do not continue this ticket until PROJECT_ROOT changes in `apps/desktop/src/main.js` are committed, stashed, or intentionally integrated by the responsible orchestration flow.
-- Last Recovery At: 2026-05-05T02:16:33Z
+- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` with `dirty_paths` including `apps/desktop/src/main.js` and mixed board/runtime/wiki/check-ledger files. Planner ran `git status --short`, staged the dirty inventory, and created local cleanup commit `d3c498a` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (147 paths)`). Follow-up `git status --short` returned no output.
+- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in one local orchestration cleanup commit. No new product code was authored in this planner turn.
+- Owner Resume Instruction: Wait for the next planner tick to surface `source=blocked-auto-recover` and return this ticket to `tickets/todo/`; after that, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
+- Last Recovery At: 2026-05-05T07:12:23Z
 
 ## Done When
 
@@ -74,7 +74,7 @@
 - [ ] `npm run desktop:check` exits 0.
 
 ## Next Action
-- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (`apps/desktop/src/main.js`). Planner normalized the recovery class to `dirty_root`; next recovery tick should orchestrate or clear that dirty overlap before ticket-owner continues.
+- Planner wait: cleanup commit `d3c498a` cleared the PROJECT_ROOT dirty overlap. Next planner tick should let runtime run blocked-auto-recover and requeue this ticket; owner should not bypass that board transition.
 
 ## Resume Context
 
@@ -97,6 +97,7 @@
 - Mini-plan 2026-05-05T02:18Z: wiki query `autoflow wiki query --term "readBoard diagnostics timeout" --term "autoflow:readBoard" --term "prd_140 prd_144 listRunners" --rag` returned related done records `tickets/done/prd_140/prd_140.md`, `tickets/done/prd_104/tickets_100.md`, and `tickets/done/prd_144` context. Preserve `prd_140` top-level `readBoardMeta`/stale fields, keep `prd_144` standalone `autoflow:listRunners` TTL/inflight path, and apply the `prd_104` bounded fallback pattern to readBoard diagnostics only. Implementation steps: add a shared readBoard diagnostic timeout helper around cached background refreshes, convert readBoard diagnostic fan-out to all-settled safe result collection, and enrich `readBoardMeta.fallbackSources` with ok/cancelled/signal/stderr evidence.
 - Runtime auto-blocked: dirty_project_root_conflict at 2026-05-05T02:13:50Z; dirty_paths=apps/desktop/src/main.js
 - Planner recovery 2026-05-05T02:16:33Z: normalized guard-warning failure class `dirty_project_root_conflict` to `dirty_root` while preserving the original dirty path evidence. Guard cleanup candidates remain evidence-only: `autoflow/tickets_119` leftover worktree and dirty done-ticket worktree `autoflow/tickets_163`; planner did not delete or reset worktrees.
+- Planner blocked-dirty orchestration 2026-05-05T07:12:23Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, and `dirty_path_count=146` with `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Planner created cleanup commit `d3c498a`; `git status --short` was clean afterward. Check evidence: `tickets/check/check_207.md`.
 ## Verification
 - Run file: `tickets/inprogress/verify_172.md`
 - Log file: pending
