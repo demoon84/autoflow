@@ -4889,8 +4889,8 @@ runner_budget_preflight_or_exit() {
 }
 
 cleanup_stale_adapter_live_logs() {
-  local stale_age_seconds stale_age_minutes loop_pid
-  local file
+  local stale_age_seconds stale_age_minutes
+  local file cleaned_count=0
 
   stale_age_seconds="${AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS:-3600}"
   case "$stale_age_seconds" in
@@ -4898,11 +4898,6 @@ cleanup_stale_adapter_live_logs() {
       stale_age_seconds=3600
       ;;
   esac
-
-  loop_pid="$(runner_state_value "pid")"
-  if [ -n "$loop_pid" ] && runner_pid_is_running "$loop_pid"; then
-    return 0
-  fi
 
   stale_age_minutes=$(( (stale_age_seconds + 59) / 60 ))
   [ "$stale_age_minutes" -lt 1 ] && stale_age_minutes=1
@@ -4913,12 +4908,44 @@ cleanup_stale_adapter_live_logs() {
 
   while IFS= read -r -d '' file; do
     [ -n "$file" ] || continue
+    if [ "$file" = "$(runner_state_value "last_stdout_log")" ] || [ "$file" = "$(runner_state_value "last_stderr_log")" ]; then
+      if [ "$(runner_state_value "status")" = "running" ] &&
+         [ "$(runner_state_value "active_stage")" = "adapter_running" ] &&
+         runner_pid_is_running "$(runner_state_value "pid")"; then
+        continue
+      fi
+    fi
     rm -f "$file"
+    cleaned_count=$((cleaned_count + 1))
   done < <(find "$(runner_log_dir)" -maxdepth 1 -type f \
     \( -name "${runner_id}_*_live_stdout.log" -o \
       -name "${runner_id}_*_live_stderr.log" -o \
       -name "${runner_id}_*_last_message.txt" \) \
     -mmin +"$stale_age_minutes" -print0 2>/dev/null)
+  if [ "$cleaned_count" -gt 0 ]; then
+    runner_append_log "$runner_id" "adapter_live_log_stale_cleanup" \
+      "role=${public_role}" \
+      "cleaned_count=${cleaned_count}" \
+      "stale_age_seconds=${stale_age_seconds}"
+  fi
+}
+
+cleanup_completed_adapter_live_logs() {
+  local cleaned_count=0
+  local path
+
+  for path in "$@"; do
+    [ -n "${path:-}" ] || continue
+    [ -e "$path" ] || continue
+    rm -f "$path"
+    cleaned_count=$((cleaned_count + 1))
+  done
+
+  runner_append_log "$runner_id" "adapter_live_log_cleanup" \
+    "reason=adapter_finished" \
+    "cleaned_count=${cleaned_count}"
+  printf 'adapter_live_log_cleanup=finished\n'
+  printf 'adapter_live_log_cleaned_count=%s\n' "$cleaned_count"
 }
 
 prepare_adapter_live_logs() {
@@ -5714,7 +5741,8 @@ case "$agent" in
     if [ -n "${adapter_last_message:-}" ] && [ -f "$adapter_last_message" ] && [ -s "$adapter_last_message" ]; then
       emit_file_block "narrative_text" "$adapter_last_message"
     fi
-    rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
+    cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
+    rm -f "$prompt_file" "$autocommit_before_status"
     if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 124 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
     fi

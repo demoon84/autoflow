@@ -3533,9 +3533,69 @@ persist_run_artifact() {
   printf '%s' "$destination"
 }
 
+cleanup_completed_adapter_live_logs() {
+  local cleaned_count=0
+  local path
+
+  for path in "$@"; do
+    [ -n "${path:-}" ] || continue
+    [ -e "$path" ] || continue
+    rm -f "$path"
+    cleaned_count=$((cleaned_count + 1))
+  done
+
+  runner_append_log "$runner_id" "adapter_live_log_cleanup" \
+    "reason=adapter_finished" \
+    "cleaned_count=${cleaned_count}"
+  printf 'adapter_live_log_cleanup=finished\n'
+  printf 'adapter_live_log_cleaned_count=%s\n' "$cleaned_count"
+}
+
+cleanup_stale_adapter_live_logs() {
+  local stale_age_seconds stale_age_minutes
+  local file cleaned_count=0
+
+  stale_age_seconds="${AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS:-3600}"
+  case "$stale_age_seconds" in
+    ''|*[!0-9]*|0)
+      stale_age_seconds=3600
+      ;;
+  esac
+
+  stale_age_minutes=$(( (stale_age_seconds + 59) / 60 ))
+  [ "$stale_age_minutes" -lt 1 ] && stale_age_minutes=1
+
+  if [ ! -d "$(runner_log_dir)" ]; then
+    return 0
+  fi
+
+  while IFS= read -r -d '' file; do
+    [ -n "$file" ] || continue
+    if [ "$file" = "$(runner_state_value "last_stdout_log")" ] || [ "$file" = "$(runner_state_value "last_stderr_log")" ]; then
+      if [ "$(runner_state_value "status")" = "running" ] &&
+         [ "$(runner_state_value "active_stage")" = "adapter_running" ] &&
+         runner_pid_is_running "$(runner_state_value "pid")"; then
+        continue
+      fi
+    fi
+    rm -f "$file"
+    cleaned_count=$((cleaned_count + 1))
+  done < <(find "$(runner_log_dir)" -maxdepth 1 -type f \
+    \( -name "${runner_id}_*_live_stdout.log" -o \
+      -name "${runner_id}_*_live_stderr.log" \) \
+    -mmin +"$stale_age_minutes" -print0 2>/dev/null)
+  if [ "$cleaned_count" -gt 0 ]; then
+    runner_append_log "$runner_id" "adapter_live_log_stale_cleanup" \
+      "role=${public_role}" \
+      "cleaned_count=${cleaned_count}" \
+      "stale_age_seconds=${stale_age_seconds}"
+  fi
+}
+
 prepare_adapter_live_logs() {
   local live_stamp
 
+  cleanup_stale_adapter_live_logs
   runner_ensure_dirs
   live_stamp="$(artifact_stamp)"
   adapter_stdout="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stdout.log"
@@ -4008,7 +4068,8 @@ case "$agent" in
       printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
       printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
       emit_file_block "adapter_prompt" "$prompt_file"
-      rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
+      cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr"
+      rm -f "$prompt_file" "$autocommit_before_status"
       exit 0
     fi
 
@@ -4052,7 +4113,7 @@ case "$agent" in
     adapter_finish_classification="$(adapter_finish_class "$adapter_exit" "$runner_status" "false")"
 
     prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
-    stdout_log_path="$(persist_run_artifact "$adapter_stdout" "stdout")"
+    stdout_log_path=""
     stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
     autocommit_output="$(role_autocommit_after_adapter "$adapter_exit" "$autocommit_before_status" 2>&1)"
     if [ "$adapter_exit" -eq 0 ]; then
@@ -4146,6 +4207,8 @@ case "$agent" in
       printf 'reason=adapter_executable_missing\n'
     elif [ "$adapter_exit" -eq 126 ]; then
       printf 'reason=adapter_start_failed\n'
+    elif [ "$adapter_exit" -eq 124 ]; then
+      printf 'reason=adapter_timeout\n'
     elif [ "$runner_status" = "stopped" ]; then
       printf 'reason=quota_limited\n'
     fi
@@ -4156,8 +4219,9 @@ case "$agent" in
     fi
     emit_file_block "adapter_stdout" "$adapter_stdout"
     emit_file_block "adapter_stderr" "$adapter_stderr"
-    rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr"
-    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
+    cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr"
+    rm -f "$prompt_file" "$autocommit_before_status"
+    if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 124 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
     fi
     exit 0

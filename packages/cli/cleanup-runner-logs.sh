@@ -13,6 +13,7 @@ Usage:
 
 Outputs:
   deleted_count=<n>
+  cleaned_count=<n>
   freed_bytes=<bytes>
 EOF2
 }
@@ -42,6 +43,8 @@ outcome_archive_root="${outcome_log_root}/archive"
 
 deleted_count=0
 freed_bytes=0
+stale_live_cleaned_count=0
+stale_live_preserved_count=0
 outcome_archived_count=0
 outcome_deleted_count=0
 
@@ -51,7 +54,6 @@ cleanup_patterns=(
   "${log_root}/*_prompt.log"
   "${log_root}/*_runtime.log"
   "${log_root}/*_dry-run.log"
-  "${log_root}/*_live_*.log"
   "${log_root}/*_last_message.txt"
 )
 loop_patterns=(
@@ -65,6 +67,9 @@ file_for_cleanup() {
 
   base="${path##*/}"
   case "$base" in
+    *_live_stdout.log|*_live_stderr.log)
+      return 1
+      ;;
     *.loop.stdout.log|*.loop.stdout.log.[0-9]|*.loop.stdout.log.[0-9][0-9]|*.loop.stderr.log|*.loop.stderr.log.[0-9]|*.loop.stderr.log.[0-9][0-9])
       return 1
       ;;
@@ -203,6 +208,64 @@ cleanup_path() {
   deleted_count=$((deleted_count + 1))
 }
 
+runner_state_value_from_file() {
+  local state_file="$1"
+  local field="$2"
+
+  [ -f "$state_file" ] || return 0
+  awk -F= -v field="$field" '$1 == field { sub(/^[^=]*=/, "", $0); print; exit }' "$state_file" 2>/dev/null || true
+}
+
+runner_live_log_is_active() {
+  local path="$1"
+  local state_file status active_stage pid last_stdout_log last_stderr_log
+
+  [ -d "$state_root" ] || return 1
+  for state_file in "${state_root}"/*.state; do
+    [ -f "$state_file" ] || continue
+    status="$(runner_state_value_from_file "$state_file" "status")"
+    active_stage="$(runner_state_value_from_file "$state_file" "active_stage")"
+    pid="$(runner_state_value_from_file "$state_file" "pid")"
+    last_stdout_log="$(runner_state_value_from_file "$state_file" "last_stdout_log")"
+    last_stderr_log="$(runner_state_value_from_file "$state_file" "last_stderr_log")"
+    [ "$status" = "running" ] || continue
+    [ "$active_stage" = "adapter_running" ] || continue
+    runner_pid_is_running "$pid" || continue
+    if [ "$last_stdout_log" = "$path" ] || [ "$last_stderr_log" = "$path" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+cleanup_stale_live_logs() {
+  local stale_age_seconds stale_age_minutes path before_deleted
+
+  [ -d "$log_root" ] || return 0
+  stale_age_seconds="${AUTOFLOW_LIVE_LOG_STALE_AGE_SECONDS:-3600}"
+  case "$stale_age_seconds" in
+    ''|*[!0-9]*|0) stale_age_seconds=3600 ;;
+  esac
+  stale_age_minutes=$(( (stale_age_seconds + 59) / 60 ))
+  [ "$stale_age_minutes" -lt 1 ] && stale_age_minutes=1
+
+  while IFS= read -r -d '' path; do
+    [ -f "$path" ] || continue
+    if runner_live_log_is_active "$path"; then
+      stale_live_preserved_count=$((stale_live_preserved_count + 1))
+      continue
+    fi
+    before_deleted="$deleted_count"
+    cleanup_path "$path"
+    if [ "$deleted_count" -gt "$before_deleted" ]; then
+      stale_live_cleaned_count=$((stale_live_cleaned_count + 1))
+    fi
+  done < <(find "$log_root" -maxdepth 1 -type f \
+    \( -name '*_live_stdout.log' -o -name '*_live_stderr.log' \) \
+    -mmin +"$stale_age_minutes" -print0 2>/dev/null)
+}
+
 archive_outcome_file() {
   local path="$1"
   local month archive_dir target stem ext suffix
@@ -310,6 +373,7 @@ cleanup_logs() {
     done
   done
 
+  cleanup_stale_live_logs
   cleanup_loop_logs
 }
 
@@ -502,6 +566,9 @@ cleanup_state_files
 cleanup_outcome_logs
 
 printf 'deleted_count=%s\n' "$deleted_count"
+printf 'cleaned_count=%s\n' "$stale_live_cleaned_count"
+printf 'stale_live_cleaned_count=%s\n' "$stale_live_cleaned_count"
+printf 'stale_live_preserved_count=%s\n' "$stale_live_preserved_count"
 printf 'freed_bytes=%s\n' "$freed_bytes"
 printf 'outcome_archived_count=%s\n' "$outcome_archived_count"
 printf 'outcome_deleted_count=%s\n' "$outcome_deleted_count"
