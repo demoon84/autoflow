@@ -58,10 +58,10 @@
 - Status: repairing
 - Detected By: runtime; planner
 - Failure Class: dirty_root
-- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` with `dirty_paths` including `apps/desktop/src/main.js` and mixed board/runtime/wiki/check-ledger files. Planner ran `git status --short`, staged the dirty inventory, and created local cleanup commit `d3c498a` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (147 paths)`). Follow-up `git status --short` returned no output.
-- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in one local orchestration cleanup commit. No new product code was authored in this planner turn.
-- Owner Resume Instruction: Wait for the next planner tick to surface `source=blocked-auto-recover` and return this ticket to `tickets/todo/`; after that, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
-- Last Recovery At: 2026-05-05T07:12:23Z
+- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` with mixed board/runtime/wiki/check-ledger dirty paths after earlier cleanup commit `d3c498a`. Planner ran `git status --short`, staged the current blocked-dirty inventory plus runtime-created check/skill evidence, and created local cleanup commit `89b3a62` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (9 paths)`). Follow-up `git status --short` still shows residual untracked `tests/smoke/runner-realtime-event-driven-smoke.sh`, which was not in the runtime dirty inventory for this single-commit tick.
+- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in one local orchestration cleanup commit. Preserve the residual untracked smoke test as next-tick orchestration evidence instead of making a second cleanup commit in the same tick.
+- Owner Resume Instruction: Wait for the next planner tick. If runtime surfaces another blocked-dirty orchestration for the residual smoke test, planner should group that path before blocked-auto-recover can return this ticket to `tickets/todo/`; after requeue, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
+- Last Recovery At: 2026-05-05T07:20:45Z
 
 ## Done When
 
@@ -98,6 +98,7 @@
 - Runtime auto-blocked: dirty_project_root_conflict at 2026-05-05T02:13:50Z; dirty_paths=apps/desktop/src/main.js
 - Planner recovery 2026-05-05T02:16:33Z: normalized guard-warning failure class `dirty_project_root_conflict` to `dirty_root` while preserving the original dirty path evidence. Guard cleanup candidates remain evidence-only: `autoflow/tickets_119` leftover worktree and dirty done-ticket worktree `autoflow/tickets_163`; planner did not delete or reset worktrees.
 - Planner blocked-dirty orchestration 2026-05-05T07:12:23Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, and `dirty_path_count=146` with `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Planner created cleanup commit `d3c498a`; `git status --short` was clean afterward. Check evidence: `tickets/check/check_207.md`.
+- Planner blocked-dirty orchestration 2026-05-05T07:20:45Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, `dirty_path_count=7`, and `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Wiki query `bin/autoflow wiki query --term "desktop readboard subcall timeout isolation tickets_172 dirty_root orchestration cleanup" --rag` returned `result_count=0`. Planner created cleanup commit `89b3a62`; follow-up `git status --short` shows residual untracked `tests/smoke/runner-realtime-event-driven-smoke.sh` for next-tick orchestration. Check evidence: `tickets/check/check_211.md`, `tickets/check/check_212.md`.
 ## Verification
 - Run file: `tickets/inprogress/verify_172.md`
 - Log file: pending
