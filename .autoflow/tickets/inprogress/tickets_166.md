@@ -11,7 +11,7 @@
 - Claimed By: worker
 - Execution AI: worker
 - Verifier AI: worker
-- Last Updated: 2026-05-05T01:26:23Z
+- Last Updated: 2026-05-05T11:28:10Z
 
 ## Goal
 
@@ -39,23 +39,23 @@
 - `AGENTS.md`
 
 ## Worktree
-- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_166`
-- Branch: autoflow/tickets_166
-- Base Commit: 25c2e4527b5aabc96e44fe80f33ed64ae099edfd
+- Path:
+- Branch:
+- Base Commit:
 - Worktree Commit: 
-- Integration Status: repairing
+- Integration Status: no_worktree
 
 ## Goal Runtime
 - Status: blocked
 - Started At: 2026-05-05T00:43:24Z
 - Started Epoch: 1777941804
-- Updated At: 2026-05-05T01:26:06Z
+- Updated At: 2026-05-05T11:28:10Z
 - Tick Count: 0
 - Time Used Seconds: 2562
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
-- Last Event: ticket_stage_blocked
+- Last Event: worktree_removed_needs_user
 - Last Progress Fingerprint: 1242153409
 
 ## Recovery State
@@ -63,10 +63,10 @@
 - Status: needs_user
 - Detected By: planner
 - Failure Class: iteration_no_progress
-- Evidence: `start-plan.sh` emitted `source=blocked-dirty-orchestration` again at 2026-05-05T01:25:44Z for `tickets/inprogress/tickets_166.md`, but the dirty set was only board/runtime evidence: `.autoflow/telemetry/runs.jsonl`, `.autoflow/tickets/inprogress/tickets_166.md`, `.autoflow/logs/verifier_idle_20260505T012217Z.md`, `.autoflow/logs/verifier_idle_20260505T012427Z.md`, and `.autoflow/tickets/check/check_205.md`. The required wiki RAG pass for `tickets_166 prd_167 dirty_root blocked-dirty-orchestration check ledger live-lock order_149 order_175 graceful stop desktop runner` returned `result_count=0`.
-- Planner Decision: Park this blocked needs_user ticket outside the worker claim queue until a human or planner edit changes Recovery State.
-- Owner Resume Instruction: Do not loop on this parked ticket; claim the next eligible todo unless this ticket is explicitly requested or Recovery State changes.
-- Last Recovery At: 2026-05-05T07:09:44Z
+- Evidence: `start-plan.sh` emitted `source=blocked-dirty-orchestration` again at 2026-05-05T01:25:44Z for `tickets/inprogress/tickets_166.md`, but the dirty set was only board/runtime evidence: `.autoflow/telemetry/runs.jsonl`, `.autoflow/tickets/inprogress/tickets_166.md`, `.autoflow/logs/verifier_idle_20260505T012217Z.md`, `.autoflow/logs/verifier_idle_20260505T012427Z.md`, and `.autoflow/tickets/check/check_205.md`. The required wiki RAG pass for `tickets_166 prd_167 dirty_root blocked-dirty-orchestration check ledger live-lock order_149 order_175 graceful stop desktop runner` returned `result_count=0`. Direct cleanup on 2026-05-05T11:28:10Z confirmed the worktree was clean with no unique commits, then removed `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_166` and branch `autoflow/tickets_166`.
+- Planner Decision: Keep this blocked needs_user ticket parked outside the worker claim queue; no physical worktree remains. Resume only after a human/planner edit replaces this PRD scope with a current, non-looping implementation ticket.
+- Owner Resume Instruction: Do not loop on this parked ticket and do not recreate its old worktree automatically; claim the next eligible todo unless this ticket is explicitly re-scoped.
+- Last Recovery At: 2026-05-05T11:28:10Z
 
 ## Done When
 
@@ -84,9 +84,9 @@
 
 ## Resume Context
 
-- 현재 상태 요약: `tickets_166` 은 blocked-dirty cleanup 이 background evidence 파일을 계속 새 dirty 로 만드는 `iteration_no_progress` 상태라서 parking 처리했다.
-- 직전 작업: planner가 2026-05-05T01:25:44Z `start-plan.sh` output 과 wiki RAG `result_count=0` 를 근거로 추가 cleanup commit 대신 `needs_user` recovery 결정을 기록했다.
-- 재개 시 먼저 볼 것: `tickets/inprogress/tickets_167.md`, `tickets/inbox/order_175.md`, `tickets/inprogress/tickets_166.md` Recovery State, `git status --short`. Guard leftover candidates remain evidence-only until a later recovery turn names them.
+- 현재 상태 요약: `tickets_166` 은 blocked-dirty cleanup 이 background evidence 파일을 계속 새 dirty 로 만드는 `iteration_no_progress` 상태라서 parking 처리했고, direct cleanup 에서 clean worktree/branch 를 제거했다.
+- 직전 작업: 2026-05-05T11:28:10Z clean worktree `tickets_166` 은 unique commit 이 없어 제거했고, 보드에는 `needs_user` parking 기록만 남겼다.
+- 재개 시 먼저 볼 것: PRD `prd_167` graceful stop 범위가 여전히 유효한지 다시 판단한 뒤 새 todo 로 재작성한다. 기존 `tickets_166` worktree 는 없다.
 
 ## Notes
 
@@ -111,6 +111,7 @@
 - Planner recovery at 2026-05-05T01:26:23Z: `start-plan.sh` emitted `source=blocked-dirty-orchestration` again, but the dirty paths were only recurring board/runtime evidence (`telemetry`, `tickets_166`, verifier idle logs, and `check_205`). Wiki RAG returned `result_count=0`. Planner set `Recovery State` to `needs_user` / `iteration_no_progress` to stop the cleanup loop and let live-lock repair work (`tickets_167` / `order_175`) move next; `tickets_167` is now active under `tickets/inprogress/`. No product files were changed and no manual git commit was created in this turn.
 - Guard at 2026-05-05T01:27:10Z: `bin/autoflow guard /Users/demoon2016/Documents/project/autoflow .autoflow` returned `status=warning`, `error_count=0`, `warning_count=2`. The warnings are unchanged evidence-only cleanup candidates: `autoflow/tickets_119` leftover worktree with no board ticket and `autoflow/tickets_163` dirty worktree for done ticket `tickets/done/prd_164/tickets_163.md`; planner did not delete or reset worktrees.
 - Planner parking: source=inprogress-needs-user-parked; ticket is outside the normal worker claim queue until Recovery State changes.
+- Direct cleanup at 2026-05-05T11:28:10Z: removed clean no-unique-commit worktree `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_166` and branch `autoflow/tickets_166`; ticket remains parked as needs_user, not done.
 ## Verification
 
 - Run file:

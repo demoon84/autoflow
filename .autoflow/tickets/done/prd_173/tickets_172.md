@@ -6,12 +6,12 @@
 - PRD Key: prd_173
 - Plan Candidate: Plan AI handoff from tickets/done/prd_173/prd_173.md
 - Title: desktop readBoard subcall timeout isolation
-- Stage: blocked
+- Stage: done
 - AI: worker
 - Claimed By: worker
 - Execution AI: worker
 - Verifier AI: worker
-- Last Updated: 2026-05-05T07:12:23Z
+- Last Updated: 2026-05-05T10:54:49Z
 
 ## Goal
 
@@ -38,43 +38,43 @@
 - Branch: autoflow/tickets_172
 - Base Commit: dc9151ba1566b32c7a04ebbe026599898c939058
 - Worktree Commit: 
-- Integration Status: blocked_dirty_project_root
+- Integration Status: integrated
 
 ## Goal Runtime
-- Status: blocked
+- Status: complete
 - Started At: 2026-05-05T02:10:05Z
 - Started Epoch: 1777947005
-- Updated At: 2026-05-05T06:44:49Z
+- Updated At: 2026-05-05T10:54:49Z
 - Tick Count: 2
 - Time Used Seconds: 16484
 - Token Budget: 
 - Tokens Used: 
-- Continuation Suppressed: true
-- Last Event: ticket_stage_blocked
+- Continuation Suppressed: false
+- Last Event: pass
 - Last Progress Fingerprint: 2164060142
 
 ## Recovery State
 
-- Status: repairing
+- Status: resolved
 - Detected By: runtime; planner
-- Failure Class: dirty_root
-- Evidence: `start-plan.sh` returned `source=blocked-dirty-orchestration` for `tickets/inprogress/tickets_172.md` at 2026-05-05T07:24:18Z with dirty board/runtime/wiki/check-ledger paths plus `tests/smoke/runner-realtime-event-driven-smoke.sh`. Required wiki RAG query for `tickets_172 prd_173 dirty_root blocked-dirty-orchestration desktop readBoard timeout isolation check ledger runner-realtime-event-driven-smoke` returned `result_count=0`; existing ticket notes still cite prior `prd_140`, `prd_104`, and `prd_144` readBoard/listRunners constraints. Planner staged the runtime-listed inventory plus runtime-created check/skill evidence and created local cleanup commit `a693f20` (`[PRD_173][tickets_172] orchestration cleanup: misc housekeeping (10 paths)`). Follow-up `git status --short` shows only new runtime follow-up evidence `.autoflow/tickets/check/check_216.md` and `.autoflow/wiki/skills-local/orchestration-cleanup/desktop-readboard-subcall-timeout-isolation-9/`.
-- Planner Decision: Treat the mixed dirty inventory as misc housekeeping for the blocked ticket and integrate it in the one cleanup commit allowed for this tick. Preserve the new check/skill follow-up evidence for the next planner tick rather than creating a second cleanup commit in this tick.
-- Owner Resume Instruction: Wait for the next planner tick. If runtime surfaces only the residual check/skill follow-up evidence, planner should either let blocked-auto-recover requeue this ticket when the dirty overlap is considered clear or group that follow-up evidence in the next single cleanup turn; after requeue, ticket-owner should claim from current `main` and continue the `apps/desktop/src/main.js` readBoard timeout isolation work.
-- Last Recovery At: 2026-05-05T16:26:00+09:00
+- Failure Class: fixed
+- Evidence: Direct cleanup integrated the preserved `tickets_172` worktree implementation into `apps/desktop/src/main.js`: readBoard diagnostics now use `Promise.allSettled`, runner diagnostics use the same readBoard diagnostic timeout wrapper, fallback metadata includes source/ok/cancelled/signal/stderr/command evidence, and stale/inflight fallback semantics are preserved.
+- Planner Decision: Recovery completed by direct owner cleanup; no further blocked-dirty orchestration is needed for this ticket.
+- Owner Resume Instruction: None. Ticket is complete and archived to done.
+- Last Recovery At: 2026-05-05T10:54:49Z
 
 ## Done When
 
-- [ ] `apps/desktop/src/main.js`의 `readBoard` 내부 6개 진단 호출은 `Promise.allSettled` 또는 동등한 safe wrapper를 사용해 단일 rejected promise가 전체 `autoflow:readBoard` IPC reject로 이어지지 않는다.
-- [ ] `status`, runner list, `doctor`, `metrics`, `stop-hook-status`, `watch-status` 각각은 개별 timeout(기본 15000ms 안팎) 또는 공유 helper를 통해 handler-level 30000ms보다 짧게 fallback result를 반환한다.
-- [ ] timeout 또는 reject가 난 diagnostic result는 `ok: false` 또는 `partial/fallback` 계열 field, `cancelled`/`signal`/`stderr` 증거, source 이름을 포함해 `readBoardMeta.fallbackSources`에서 식별된다.
-- [ ] 한 diagnostic refresh가 timeout되어도 나머지 성공/캐시/파일 목록 결과는 board snapshot에 유지되고, renderer는 빈 전체 board 대신 부분 board를 받을 수 있다.
-- [ ] 기존 `readBoard` stale cache와 inflight refresh guard는 유지되며, `prd_140`의 `partial`, `fallback`, `stale`, `refreshInFlight`, `readBoardFallback`, top-level `readBoardMeta` 의미가 제거되지 않는다.
-- [ ] standalone `autoflow:listRunners` IPC의 TTL/inflight guard와 timeout cleanup은 `prd_144`의 완료 범위를 유지하며, 이번 변경이 그 경로를 다시 direct spawn 구조로 되돌리지 않는다.
-- [ ] `npm run desktop:check` exits 0.
+- [x] `apps/desktop/src/main.js`의 `readBoard` 내부 6개 진단 호출은 `Promise.allSettled` 또는 동등한 safe wrapper를 사용해 단일 rejected promise가 전체 `autoflow:readBoard` IPC reject로 이어지지 않는다.
+- [x] `status`, runner list, `doctor`, `metrics`, `stop-hook-status`, `watch-status` 각각은 개별 timeout(기본 15000ms 안팎) 또는 공유 helper를 통해 handler-level 30000ms보다 짧게 fallback result를 반환한다.
+- [x] timeout 또는 reject가 난 diagnostic result는 `ok: false` 또는 `partial/fallback` 계열 field, `cancelled`/`signal`/`stderr` 증거, source 이름을 포함해 `readBoardMeta.fallbackSources`에서 식별된다.
+- [x] 한 diagnostic refresh가 timeout되어도 나머지 성공/캐시/파일 목록 결과는 board snapshot에 유지되고, renderer는 빈 전체 board 대신 부분 board를 받을 수 있다.
+- [x] 기존 `readBoard` stale cache와 inflight refresh guard는 유지되며, `prd_140`의 `partial`, `fallback`, `stale`, `refreshInFlight`, `readBoardFallback`, top-level `readBoardMeta` 의미가 제거되지 않는다.
+- [x] standalone `autoflow:listRunners` IPC의 TTL/inflight guard와 timeout cleanup은 `prd_144`의 완료 범위를 유지하며, 이번 변경이 그 경로를 다시 direct spawn 구조로 되돌리지 않는다.
+- [x] `npm run desktop:check` exits 0.
 
 ## Next Action
-- Planner wait: cleanup commit `a693f20` integrated the runtime-listed PROJECT_ROOT dirty inventory for this tick. Next planner tick should handle the residual runtime-created check/skill evidence or let blocked-auto-recover requeue this ticket; owner should not bypass that board transition.
+- Completed: readBoard diagnostic isolation is integrated into main and verified with `npm --prefix apps/desktop run check`.
 
 ## Resume Context
 
@@ -101,11 +101,11 @@
 - Planner blocked-dirty orchestration 2026-05-05T07:20:45Z: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, `dirty_path_count=7`, and `cleanup_commit_policy=single_housekeeping_commit_per_tick`. Wiki query `bin/autoflow wiki query --term "desktop readboard subcall timeout isolation tickets_172 dirty_root orchestration cleanup" --rag` returned `result_count=0`. Planner created cleanup commit `89b3a62`; follow-up `git status --short` shows residual untracked `tests/smoke/runner-realtime-event-driven-smoke.sh` for next-tick orchestration. Check evidence: `tickets/check/check_211.md`, `tickets/check/check_212.md`.
 - Planner blocked-dirty orchestration 2026-05-05T16:26:00+09:00: `start-plan.sh` returned `source=blocked-dirty-orchestration`, `blocked_origin=tickets/inprogress/tickets_172.md`, `dirty_path_count=8`, and `cleanup_commit_policy=single_housekeeping_commit_per_tick`; runtime also produced `tickets/check/check_215.md` and skill extraction `desktop-readboard-subcall-timeout-isolation-8`. Wiki RAG returned `result_count=0`. Planner created cleanup commit `a693f20`; follow-up `git status --short` shows residual runtime follow-up evidence `tickets/check/check_216.md` and `desktop-readboard-subcall-timeout-isolation-9/` for the next tick.
 ## Verification
-- Run file: `tickets/inprogress/verify_172.md`
-- Log file: pending
-- Result: pending ticket-owner by worker
+- Run file: `tickets/done/prd_173/verify_172.md`
+- Log file: desktop check output
+- Result: passed direct cleanup at 2026-05-05T10:54:49Z
 
 ## Result
 
-- Summary:
-- Remaining risk:
+- Summary: readBoard no longer lets one diagnostic subprocess rejection reject the entire IPC result; fallback evidence is exposed in `readBoardMeta.fallbackSources`.
+- Remaining risk: GUI timing was not separately exercised after runners remain stopped; static desktop build passed.

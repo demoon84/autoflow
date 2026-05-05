@@ -2455,6 +2455,41 @@ async function readBoard({ projectRoot, boardDirName }) {
     ? await ensureProjectHostSkills({ projectRoot, boardDirName: normalizedBoardDirName })
     : null;
 
+  const diagnosticTasks = [
+    {
+      source: "status",
+      run: () => runAutoflowCachedOrRefresh("status", { projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => readBoardDiagnosticErrorResult("status", { projectRoot, boardDirName: normalizedBoardDirName }, error)
+    },
+    {
+      source: "runners",
+      run: () => listRunnersCachedOrRefresh({ projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => runnerListErrorResult({ projectRoot, boardDirName: normalizedBoardDirName }, error)
+    },
+    {
+      source: "doctor",
+      run: () => runAutoflowCachedOrRefresh("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => readBoardDiagnosticErrorResult("doctor", { projectRoot, boardDirName: normalizedBoardDirName }, error)
+    },
+    {
+      source: "metrics",
+      run: () => runAutoflowCachedOrRefresh("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => readBoardDiagnosticErrorResult("metrics", { projectRoot, boardDirName: normalizedBoardDirName }, error)
+    },
+    {
+      source: "stop-hook-status",
+      run: () => runAutoflowCachedOrRefresh("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => readBoardDiagnosticErrorResult("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }, error)
+    },
+    {
+      source: "watch-status",
+      run: () => runAutoflowCachedOrRefresh("watch-status", { projectRoot, boardDirName: normalizedBoardDirName }),
+      fallback: (error) => readBoardDiagnosticErrorResult("watch-status", { projectRoot, boardDirName: normalizedBoardDirName }, error)
+    }
+  ];
+  const diagnosticResults = exists
+    ? await Promise.allSettled(diagnosticTasks.map((task) => task.run()))
+    : [];
   const [
     statusResult,
     runnersResult,
@@ -2463,22 +2498,19 @@ async function readBoard({ projectRoot, boardDirName }) {
     stopHookResult,
     watcherResult
   ] = exists
-    ? await Promise.all([
-        runAutoflowCachedOrRefresh("status", { projectRoot, boardDirName: normalizedBoardDirName }),
-        listRunnersCachedOrRefresh({ projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCachedOrRefresh("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCachedOrRefresh("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCachedOrRefresh("stop-hook-status", { projectRoot, boardDirName: normalizedBoardDirName }),
-        runAutoflowCachedOrRefresh("watch-status", { projectRoot, boardDirName: normalizedBoardDirName })
-      ])
+    ? diagnosticResults.map((settled, index) => (
+        settled.status === "fulfilled"
+          ? settled.value
+          : diagnosticTasks[index].fallback(settled.reason)
+      ))
     : [null, null, null, null, null, null];
   const fallbackSources = [
     ["status", statusResult],
     ["runners", runnersResult],
     ["doctor", doctorResult],
     ["metrics", metricsResult],
-    ["stopHook", stopHookResult],
-    ["watcher", watcherResult]
+    ["stop-hook-status", stopHookResult],
+    ["watch-status", watcherResult]
   ].filter(([, result]) => result?.readBoardFallback);
   const readBoardMeta = {
     partial: fallbackSources.length > 0,
@@ -2487,10 +2519,15 @@ async function readBoard({ projectRoot, boardDirName }) {
     refreshInFlight: fallbackSources.some(([, result]) => result?.refreshInFlight),
     fallbackSources: fallbackSources.map(([source, result]) => ({
       source,
+      ok: result.ok !== false,
       stale: Boolean(result.stale),
       fallback: Boolean(result.fallback),
       refreshInFlight: Boolean(result.refreshInFlight),
-      cacheStatus: result.cacheStatus || ""
+      cacheStatus: result.cacheStatus || "",
+      cancelled: Boolean(result.cancelled),
+      signal: result.signal || "",
+      stderr: (result.stderr || "").slice(0, 2000),
+      command: result.command || ""
     }))
   };
 
@@ -2629,13 +2666,13 @@ function cloneRunnersResult(result) {
 
 function emptyRunnerListResult(options = {}, fallback = {}) {
   return {
-    ok: true,
+    ok: fallback.ok === false ? false : true,
     command: commandLabel(["runners", "list", options.projectRoot || "", options.boardDirName || defaultBoardDirName]),
-    code: 0,
-    signal: "",
-    cancelled: false,
+    code: fallback.code ?? 0,
+    signal: fallback.signal || "",
+    cancelled: Boolean(fallback.cancelled),
     stdout: "",
-    stderr: "",
+    stderr: fallback.stderr || "",
     values: {},
     runners: [],
     partial: true,
@@ -2649,8 +2686,8 @@ function emptyRunnerListResult(options = {}, fallback = {}) {
 
 function markRunnerListFallback(result, fallback = {}) {
   const metadata = {
-    partial: Boolean(fallback.partial),
-    fallback: Boolean(fallback.fallback),
+    partial: Boolean(fallback.partial || result?.ok === false || result?.cancelled),
+    fallback: Boolean(fallback.fallback || result?.ok === false || result?.cancelled),
     stale: Boolean(fallback.stale),
     refreshInFlight: Boolean(fallback.refreshInFlight),
     cacheStatus: fallback.cacheStatus || "fresh"
@@ -2662,6 +2699,29 @@ function markRunnerListFallback(result, fallback = {}) {
   };
 }
 
+function runnerListErrorResult(options = {}, error, fallback = {}) {
+  return emptyRunnerListResult(options, {
+    ok: false,
+    code: -1,
+    signal: fallback.signal || "",
+    cancelled: Boolean(fallback.cancelled),
+    stderr: diagnosticErrorMessage(error, "readBoard diagnostic runners failed."),
+    cacheStatus: fallback.cacheStatus || "error"
+  });
+}
+
+function listRunnersReadBoardDiagnostic(options = {}) {
+  return withReadBoardDiagnosticTimeout(
+    "runners",
+    (timeoutSignal) => listRunners({
+      ...options,
+      timeoutSignal,
+      killGraceMs: autoflowChildKillGraceMs
+    }),
+    (error, fallback) => runnerListErrorResult(options, error, fallback)
+  );
+}
+
 function startRunnerListRefresh(options, key, entry) {
   const targetEntry =
     entry || {
@@ -2670,7 +2730,7 @@ function startRunnerListRefresh(options, key, entry) {
       promise: null
     };
 
-  targetEntry.promise = listRunners(options)
+  targetEntry.promise = listRunnersReadBoardDiagnostic(options)
     .then((result) => {
       targetEntry.result = result;
       targetEntry.updatedAt = Date.now();
