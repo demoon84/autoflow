@@ -243,6 +243,7 @@
 - `render-heartbeats.sh`
   - `automations/heartbeat-set.toml` 을 읽어 role별 heartbeat TOML 파일 묶음을 렌더한다.
   - 출력 위치는 `BOARD_ROOT/automations/rendered/<set-name>/` 이다.
+  - `autoflow runners add/remove` 는 기본적으로 이 파일을 자동 수정하지 않는다. legacy heartbeat set 동기화가 꼭 필요하면 `AUTOFLOW_RUNNERS_SYNC_HEARTBEAT_SET=1` 로 opt-in 한다.
 
 - `doctor-project.sh`
   - 대상 프로젝트의 보드 구조를 검사하고 실패 시 non-zero 로 종료한다.
@@ -274,7 +275,7 @@
 - 여러 대화창에서 동시에 실행될 수 있으므로 `start-ticket-owner.sh` 와 legacy `start-todo.sh` 는 `mv` 기반 점유를 사용한다.
 - 기본 Ticket Owner 운영에서는 `AUTOFLOW_ROLE=ticket-owner`, `AUTOFLOW_WORKER_ID=worker`, `AUTOFLOW_BACKGROUND=1` 을 같이 쓰는 편이 좋다.
 - 24시간 자동화에서는 `AUTOFLOW_BACKGROUND=1` 이 기본값으로 적합하다. legacy role-pipeline 에서만 pool / load 제한 변수를 추가로 쓴다.
-- owner worker 수는 heartbeat set 의 `owner_workers` 값으로 자유롭게 늘리거나 줄일 수 있다. 예를 들어 owner 3개면 `owner_workers = ["worker", "owner-2", "owner-3"]` 로 둔다.
+- owner worker 수를 legacy heartbeat automation 으로도 관리해야 한다면 heartbeat set 의 `owner_workers` 값을 직접 편집하거나 `AUTOFLOW_RUNNERS_SYNC_HEARTBEAT_SET=1` 로 runner add/remove 동기화를 opt-in 한다.
 - 실제 Codex heartbeat payload template 은 `automations/templates/` 에 있고, 생성된 보드에도 같이 복사된다.
 - stop hook 을 쓰려면 현재 thread role 을 먼저 `set-thread-context.sh` 로 등록하고, hook 본체는 `check-stop.sh` 를 연결한다.
 - 보드 stop hook wiring 을 자동으로 붙이고 싶으면 `scripts/install-stop-hook.sh install` 을 한 번 실행한다.

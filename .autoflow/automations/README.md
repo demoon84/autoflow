@@ -177,3 +177,4 @@ The three are path-disjoint and tick on the same 1-minute heartbeat without conf
 ## Template Files
 
 Heartbeat templates live under `automations/templates/` and can be rendered by `autoflow render-heartbeats`.
+Runner add/remove does not rewrite `automations/heartbeat-set.toml` by default. Treat the file as an explicit automation source; edit it intentionally, or opt in with `AUTOFLOW_RUNNERS_SYNC_HEARTBEAT_SET=1` only when legacy rendered heartbeats must track runner ids automatically.

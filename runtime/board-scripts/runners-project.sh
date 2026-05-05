@@ -2498,6 +2498,16 @@ sync_heartbeat_set_workers() {
   ' "$set_file" > "$tmp" && mv "$tmp" "$set_file"
 }
 
+maybe_sync_heartbeat_set_workers() {
+  # Heartbeat TOML is a legacy/rendered automation source. Runner config
+  # changes should not dirty it unless an operator explicitly opts in.
+  case "${AUTOFLOW_RUNNERS_SYNC_HEARTBEAT_SET:-0}" in
+    1|true|TRUE|yes|YES|on|ON)
+      sync_heartbeat_set_workers || true
+      ;;
+  esac
+}
+
 add_runner_config() {
   local target_runner_id="$1"
   local target_role="$2"
@@ -2600,7 +2610,7 @@ add_runner_config() {
     printf 'command = %s\n' "$(runner_toml_value "command" "$command_value")"
   } >> "$config_path"
 
-  sync_heartbeat_set_workers || true
+  maybe_sync_heartbeat_set_workers
 
   timestamp="$(runner_now_iso)"
   runner_append_log "$target_runner_id" "config_add" \
@@ -2743,7 +2753,7 @@ remove_runner_config() {
   ' "$temp_file" > "$trimmed_file"
   mv "$trimmed_file" "$temp_file"
   mv "$temp_file" "$config_path"
-  sync_heartbeat_set_workers || true
+  maybe_sync_heartbeat_set_workers
   timestamp="$(runner_now_iso)"
   runner_append_log "$target_runner_id" "config_remove" \
     "status=ok" \
