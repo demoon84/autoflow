@@ -228,6 +228,20 @@ type RunnerDraft = {
   command: string;
 };
 
+type RunnerConfigApplyPending = {
+  fingerprint: string;
+  startedAtMs: number;
+  timeoutAtMs: number;
+  restartAfterSave: boolean;
+};
+
+type RunnerWithConfigEvidence = AutoflowRunner & {
+  configFingerprint?: string;
+  appliedConfigFingerprint?: string;
+  configAppliedAt?: string;
+  configUpdatedAt?: string;
+};
+
 type InstalledAgentProfiles = AutoflowInstalledAgentProfiles;
 
 type DisplayLog = AutoflowFilePreview & {
@@ -665,6 +679,16 @@ function normalizeRunnerSelections(
   };
 }
 
+function runnerAppliedConfigFingerprint(runner: AutoflowRunner) {
+  return (runner as RunnerWithConfigEvidence).appliedConfigFingerprint || "";
+}
+
+function runnerConfigApplyTimeoutMs(runner: AutoflowRunner) {
+  const intervalSeconds = Number(runner.intervalEffectiveSeconds || runner.intervalSeconds || 60);
+  const safeIntervalSeconds = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds : 60;
+  return Math.max((safeIntervalSeconds + 30) * 1000, 90 * 1000);
+}
+
 function runRoleForRunner(role: string) {
   if (role === "ticket-owner" || role === "owner") {
     return "ticket";
@@ -1064,6 +1088,7 @@ function App() {
   // runner's button disable independently so users can fire start/stop on
   // multiple runners in parallel.
   const [runnerActionKeys, setRunnerActionKeys] = React.useState<Record<string, string>>({});
+  const [runnerConfigApplyPending, setRunnerConfigApplyPending] = React.useState<Record<string, RunnerConfigApplyPending>>({});
   const setRunnerAction = React.useCallback((runnerId: string, action: string) => {
     setRunnerActionKeys((prev) => {
       if (action) {
@@ -1377,6 +1402,52 @@ function App() {
       // failure surface will come through runWikiQuery's own catch.
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!board?.runners?.length) return;
+    const now = Date.now();
+    const runnersById = new Map(board.runners.map((runner) => [runner.id, runner]));
+    const completed: string[] = [];
+    const timedOut: string[] = [];
+
+    for (const [runnerId, pending] of Object.entries(runnerConfigApplyPending)) {
+      const runner = runnersById.get(runnerId);
+      if (!runner) continue;
+      const applied = runnerAppliedConfigFingerprint(runner);
+      const isApplied = Boolean(pending.fingerprint && applied && applied === pending.fingerprint);
+      const isRestarted = !pending.restartAfterSave || (runner.stateStatus || "").toLowerCase() === "running";
+      if (isApplied && isRestarted) {
+        completed.push(runnerId);
+      } else if (now >= pending.timeoutAtMs) {
+        timedOut.push(runnerId);
+      }
+    }
+
+    if (!completed.length && !timedOut.length) return;
+
+    setRunnerConfigApplyPending((current) => {
+      const next = { ...current };
+      for (const runnerId of [...completed, ...timedOut]) {
+        delete next[runnerId];
+      }
+      return next;
+    });
+    for (const runnerId of [...completed, ...timedOut]) {
+      setRunnerAction(runnerId, "");
+    }
+    if (completed.length) {
+      setGlobalToast({
+        severity: "success",
+        message: `${completed.join(", ")} 설정 적용 완료`
+      });
+    }
+    if (timedOut.length) {
+      setGlobalToast({
+        severity: "warning",
+        message: `${timedOut.join(", ")} 설정 적용 확인 시간이 초과되었습니다. 다음 상태 갱신을 확인하세요.`
+      });
+    }
+  }, [board?.runners, runnerConfigApplyPending, setRunnerAction]);
 
   React.useEffect(() => {
     const runners = board?.runners || [];
@@ -1805,7 +1876,7 @@ function App() {
   }, [installedAgentProfiles]);
 
   const saveRunnerConfig = React.useCallback(
-    async (runner: AutoflowRunner) => {
+    async (runner: AutoflowRunner, restartAfterSave = false) => {
       if (!options.projectRoot || runnerActionKeys[runner.id]) {
         return;
       }
@@ -1821,7 +1892,7 @@ function App() {
       };
       const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
       selectRunner(runner.id);
-      setRunnerAction(runner.id, "config");
+      setRunnerAction(runner.id, restartAfterSave ? "config_applying_restart" : "config_applying");
       setRunnerError("");
       try {
         const result = await window.autoflow.configureRunner({
@@ -1839,6 +1910,7 @@ function App() {
         });
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 설정 저장에 실패했습니다.");
+          setRunnerAction(runner.id, "");
           await loadBoard();
           return;
         }
@@ -1880,10 +1952,51 @@ function App() {
             )
           };
         });
-        setRunnerAction(runner.id, "");
+        const resultWithEvidence = result as typeof result & { configFingerprint?: string; configUpdatedAt?: string };
+        const savedFingerprint = resultWithEvidence.configFingerprint || outputValue(result.stdout || "", "config_fingerprint");
+        if (!savedFingerprint) {
+          setRunnerAction(runner.id, "");
+          setGlobalToast({
+            severity: "warning",
+            message: `${runner.id} 설정은 저장됐지만 적용 확인 fingerprint 를 읽지 못했습니다.`
+          });
+          void loadBoard();
+          return;
+        }
+        setRunnerConfigApplyPending((current) => ({
+          ...current,
+          [runner.id]: {
+            fingerprint: savedFingerprint,
+            startedAtMs: Date.now(),
+            timeoutAtMs: Date.now() + runnerConfigApplyTimeoutMs(runner),
+            restartAfterSave
+          }
+        }));
+        if (restartAfterSave) {
+          const restartResult = await window.autoflow.controlRunner({
+            action: "restart",
+            runnerId: runner.id,
+            ...options
+          });
+          if (!restartResult.ok) {
+            setRunnerConfigApplyPending((current) => {
+              const { [runner.id]: _omit, ...rest } = current;
+              return rest;
+            });
+            setRunnerAction(runner.id, "");
+            setRunnerError(restartResult.stderr || restartResult.stdout || "AI 재시작에 실패했습니다.");
+            await loadBoard();
+            return;
+          }
+        }
         void loadBoard();
-      } finally {
+      } catch (error) {
+        setRunnerConfigApplyPending((current) => {
+          const { [runner.id]: _omit, ...rest } = current;
+          return rest;
+        });
         setRunnerAction(runner.id, "");
+        setRunnerError(error instanceof Error ? error.message : "AI 설정 저장에 실패했습니다.");
       }
     },
     [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
@@ -2711,7 +2824,7 @@ function RunnerConfigControls({
   canEditConfig: boolean;
   onSelectRunner: (runnerId: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
-  onConfigure: (runner: AutoflowRunner) => void;
+  onConfigure: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
   showAgent?: boolean;
   className?: string;
 }) {
@@ -2744,6 +2857,7 @@ function RunnerConfigControls({
     draft.command !== baseline.command;
   // actionKey holds the action label for THIS runner only ("" when idle).
   const isWorking = Boolean(actionKey);
+  const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
 
   return (
     <div className={`${className}${showAgent ? "" : " runner-config-no-agent"}`}>
@@ -2820,16 +2934,36 @@ function RunnerConfigControls({
           onConfigure(runner);
         }}
       >
-        {isWorking && actionKey === "config" ? (
+        {isApplyingConfig ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>저장</span>
+            <span>{actionKey === "config_applying_restart" ? "적용 대기..." : "저장 중..."}</span>
           </>
         ) : (
           <>
             <span>저장</span>
             {hasDraftChanges ? <span className="runner-save-dirty-dot" aria-hidden="true" /> : null}
           </>
+        )}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="runner-save-button"
+        aria-label={`${runner.id} 저장하고 재시작`}
+        disabled={!canEditConfig || !hasDraftChanges || Boolean(actionKey)}
+        onClick={() => {
+          onSelectRunner(runner.id);
+          onConfigure(runner, true);
+        }}
+      >
+        {isApplyingConfig && actionKey === "config_applying_restart" ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>적용 대기...</span>
+          </>
+        ) : (
+          <span>저장하고 재시작</span>
         )}
       </Button>
     </div>
@@ -2867,7 +3001,7 @@ function RunnerConsole({
   onControl: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
-  onConfigure: (runner: AutoflowRunner) => void;
+  onConfigure: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
   const runners = (board?.runners || []).filter(
     (runner) =>
@@ -5495,7 +5629,7 @@ function TicketBoard({
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
-  onConfigure?: (runner: AutoflowRunner) => void;
+  onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
   if (!board) {
     return (
@@ -6034,7 +6168,7 @@ function AiProgressRow({
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: "start" | "stop" | "restart", runnerId: string) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
-  onConfigure?: (runner: AutoflowRunner) => void;
+  onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
   const currentKey = runnerStageKey(runner);
   const hideProgressTrack = isCoordinatorRole(runner.role);
@@ -6078,6 +6212,7 @@ function AiProgressRow({
   };
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
+  const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
   const showConversation = shouldShowConversation(runner);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
@@ -6247,6 +6382,11 @@ function AiProgressRow({
         >
           {isBlocked ? "막힘" : displayStatus(status)}
         </Badge>
+        {isApplyingConfig ? (
+          <Badge variant="outline" className="ai-progress-config-pending-badge">
+            적용 대기
+          </Badge>
+        ) : null}
         {detailText ? <p title={detailText}>{detailText}</p> : null}
         {runnerHeartbeatStale(runner) ? (
           <Badge

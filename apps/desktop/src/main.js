@@ -1077,6 +1077,9 @@ function parseRunnerListOutput(output) {
       mode: values[`${prefix}mode`] || "",
       intervalSeconds: values[`${prefix}interval_seconds`] || "",
       intervalEffectiveSeconds: values[`${prefix}interval_effective_seconds`] || "",
+      configFingerprint: values[`${prefix}config_fingerprint`] || "",
+      appliedConfigFingerprint: values[`${prefix}applied_config_fingerprint`] || "",
+      configAppliedAt: values[`${prefix}config_applied_at`] || "",
       enabled: values[`${prefix}enabled`] || "",
       command: values[`${prefix}command`] || "",
       commandPreview: values[`${prefix}command_preview`] || "",
@@ -3075,10 +3078,16 @@ function configureRunner(options = {}) {
     ["runners", "set", runnerId, options.projectRoot, boardDirName, ...updates],
     options
   ).then((result) => {
+    const values = parseKeyValueOutput(result.stdout || "");
     if (result.ok) {
       clearReadBoardRunnerListCache({ projectRoot: options.projectRoot, boardDirName });
     }
-    return result;
+    return {
+      ...result,
+      values,
+      configFingerprint: values.config_fingerprint || "",
+      configUpdatedAt: values.config_updated_at || values.last_event_at || ""
+    };
   });
 }
 

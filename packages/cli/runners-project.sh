@@ -153,6 +153,13 @@ runner_active_state_value() {
   runner_state_value_or_empty "$target_runner_id" "$field"
 }
 
+runner_applied_config_state_fields() {
+  local target_runner_id="$1"
+  printf 'config_fingerprint=%s\n' "$(runner_state_value_or_empty "$target_runner_id" "config_fingerprint")"
+  printf 'applied_config_fingerprint=%s\n' "$(runner_state_value_or_empty "$target_runner_id" "applied_config_fingerprint")"
+  printf 'config_applied_at=%s\n' "$(runner_state_value_or_empty "$target_runner_id" "config_applied_at")"
+}
+
 runner_state_value_or_empty() {
   local target_runner_id="$1"
   local field="$2"
@@ -720,6 +727,40 @@ runner_field_from_block() {
       exit(found ? 0 : 1)
     }
   ' || true
+}
+
+runner_hash_stream() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{ print $1 }'
+  else
+    cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_config_fingerprint_from_values() {
+  local role_value="$1"
+  local agent_value="$2"
+  local model_value="$3"
+  local reasoning_value="$4"
+  local mode_value="$5"
+  local interval_value="$6"
+  local enabled_value="$7"
+  local realtime_value="$8"
+  local command_value="${9:-}"
+
+  {
+    printf 'role=%s\n' "$role_value"
+    printf 'agent=%s\n' "$agent_value"
+    printf 'model=%s\n' "$model_value"
+    printf 'reasoning=%s\n' "$reasoning_value"
+    printf 'mode=%s\n' "$mode_value"
+    printf 'interval_seconds=%s\n' "$(runner_normalize_interval_seconds "$interval_value")"
+    printf 'enabled=%s\n' "${enabled_value:-true}"
+    printf 'realtime_enabled=%s\n' "${realtime_value:-false}"
+    printf 'command=%s\n' "$command_value"
+  } | runner_hash_stream
 }
 
 runner_allowed_config_key() {
@@ -1722,6 +1763,7 @@ start_runner() {
       "interval_seconds=${interval_seconds}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      $(runner_applied_config_state_fields "$target_runner_id") \
       "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
       "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
       "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -1763,6 +1805,7 @@ start_runner() {
     "interval_seconds=${interval_seconds}" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_applied_config_state_fields "$target_runner_id") \
     "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
     "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -1819,6 +1862,7 @@ stop_runner() {
     "interval_seconds=${interval_seconds}" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_applied_config_state_fields "$target_runner_id") \
     "active_item=" \
     "active_ticket_id=" \
     "active_ticket_title=" \
@@ -1869,6 +1913,7 @@ restart_runner() {
     "interval_seconds=${interval_seconds}" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_applied_config_state_fields "$target_runner_id") \
     "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
     "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -1943,6 +1988,7 @@ loop_runner_worker() {
       "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      $(runner_applied_config_state_fields "$target_runner_id") \
       "active_item=" \
       "active_ticket_id=" \
       "active_ticket_title=" \
@@ -1979,6 +2025,7 @@ loop_runner_worker() {
       "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      $(runner_applied_config_state_fields "$target_runner_id") \
       "active_item=" \
       "active_ticket_id=" \
       "active_ticket_title=" \
@@ -2012,6 +2059,7 @@ loop_runner_worker() {
     "idle_streak_count=0" \
     "model=${model}" \
     "reasoning=${reasoning}" \
+    $(runner_applied_config_state_fields "$target_runner_id") \
     "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
     "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
     "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -2076,6 +2124,7 @@ loop_runner_worker() {
         "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
         "model=${model}" \
         "reasoning=${reasoning}" \
+        $(runner_applied_config_state_fields "$target_runner_id") \
         "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
         "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
         "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -2156,6 +2205,7 @@ loop_runner_worker() {
       "idle_streak_count=${backoff_idle_streak}" \
       "model=${model}" \
       "reasoning=${reasoning}" \
+      $(runner_applied_config_state_fields "$target_runner_id") \
       "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
       "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
       "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
@@ -2198,7 +2248,7 @@ loop_runner_worker() {
 
 set_runner_config() {
   local target_runner_id="$1"
-  local pair key value updates_file temp_file timestamp updated_count
+  local pair key value updates_file temp_file timestamp updated_count config_fingerprint realtime_enabled
 
   ensure_runner_config_write_path_or_block "$target_runner_id" || return 0
 
@@ -2382,6 +2432,8 @@ set_runner_config() {
   enabled="$(runner_field_from_block "$runner_block" "enabled")"
   command_value="$(runner_field_from_block "$runner_block" "command")"
   interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
+  realtime_enabled="$(runner_field_from_block "$runner_block" "realtime_enabled")"
+  config_fingerprint="$(runner_config_fingerprint_from_values "$role" "$agent" "$model" "$reasoning" "$mode" "$interval_seconds" "$enabled" "$realtime_enabled" "$command_value")"
   timestamp="$(runner_now_iso)"
 
   runner_append_log "$target_runner_id" "config_set" \
@@ -2390,7 +2442,8 @@ set_runner_config() {
     "agent=${agent}" \
     "mode=${mode}" \
     "interval_seconds=${interval_seconds}" \
-    "updated_count=${updated_count}"
+    "updated_count=${updated_count}" \
+    "config_fingerprint=${config_fingerprint}"
 
   print_runner_common_header "ok"
   printf 'result=config_updated\n'
@@ -2404,6 +2457,8 @@ set_runner_config() {
   printf 'reasoning=%s\n' "$reasoning"
   printf 'enabled=%s\n' "$enabled"
   printf 'command=%s\n' "$command_value"
+  printf 'config_fingerprint=%s\n' "$config_fingerprint"
+  printf 'config_updated_at=%s\n' "$timestamp"
   printf 'log_path=%s\n' "$(runner_log_path "$target_runner_id")"
   printf 'last_event_at=%s\n' "$timestamp"
 }
@@ -2826,6 +2881,7 @@ list_runner_artifacts() {
 list_runners() {
   local config_stream runner_count index in_runner line key value
   local id role agent model reasoning mode interval_seconds enabled realtime_enabled command
+  local config_fingerprint applied_config_fingerprint config_applied_at
   local state_path log_path state_status effective_state_status active_item active_ticket_id active_ticket_title active_stage active_spec_ref
   local active_recovery_reason active_recovery_status active_recovery_failure_class
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
@@ -2909,7 +2965,10 @@ list_runners() {
           last_preflight_skip_at="$(runner_state_value_or_empty "$id" "last_preflight_skip_at")"
           preflight_skip_circuit_breaker_until="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_until")"
           preflight_skip_circuit_breaker_threshold="$(runner_state_value_or_empty "$id" "preflight_skip_circuit_breaker_threshold")"
+          applied_config_fingerprint="$(runner_state_value_or_empty "$id" "applied_config_fingerprint")"
+          config_applied_at="$(runner_state_value_or_empty "$id" "config_applied_at")"
           idle_streak_count="$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$id" "idle_streak_count")" "0")"
+          config_fingerprint="$(runner_config_fingerprint_from_values "$role" "$agent" "$model" "$reasoning" "$mode" "$interval_seconds" "$enabled" "$realtime_enabled" "$command")"
           artifact_status="$(runner_artifact_status "$last_runtime_log" "$last_prompt_log" "$last_stdout_log" "$last_stderr_log")"
           artifact_runtime_status="$(runner_artifact_path_status "$last_runtime_log")"
           artifact_prompt_status="$(runner_artifact_path_status "$last_prompt_log")"
@@ -2952,6 +3011,9 @@ list_runners() {
           printf 'runner.%s.mode=%s\n' "$index" "$mode"
           printf 'runner.%s.interval_seconds=%s\n' "$index" "${interval_seconds:-60}"
           printf 'runner.%s.realtime_enabled=%s\n' "$index" "${realtime_enabled:-false}"
+          printf 'runner.%s.config_fingerprint=%s\n' "$index" "$config_fingerprint"
+          printf 'runner.%s.applied_config_fingerprint=%s\n' "$index" "$applied_config_fingerprint"
+          printf 'runner.%s.config_applied_at=%s\n' "$index" "$config_applied_at"
           printf 'runner.%s.interval_effective_seconds=%s\n' "$index" "$effective_interval_seconds"
           printf 'runner.%s.current_interval_seconds=%s\n' "$index" "$effective_interval_seconds"
           printf 'runner.%s.idle_streak_count=%s\n' "$index" "$idle_streak_count"
