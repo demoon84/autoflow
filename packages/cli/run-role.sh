@@ -5479,10 +5479,9 @@ case "$agent" in
       :
     elif [ -n "$command_value" ]; then
       run_custom_adapter_command "$prompt_file"
+      adapter_exit=$?
     else
       run_default_adapter_command "$prompt_file"
-    fi
-    if [ "${wiki_pre_adapter_summary_exit:-0}" -eq 0 ]; then
       adapter_exit=$?
     fi
     stop_adapter_heartbeat_monitor
