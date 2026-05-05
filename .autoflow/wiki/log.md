@@ -43,7 +43,7 @@ Each entry should cite its source ticket or log.
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-05-05T00:04:53Z
+- Last rebuilt: 2026-05-05T01:10:12Z
 
 ### Completed Tickets
 
@@ -90,9 +90,6 @@ Each entry should cite its source ticket or log.
 - # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T055648Z_blocked.md`.
 - # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T060918Z_blocked.md`.
 - # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T061328Z_blocked.md`.
-- # adapter-running state heartbeat Source: logs/verifier_177_20260505_001334Z_pass.md
-- # repeated preflight failure recovery circuit Source: logs/verifier_179_20260505_003015Z_pass.md
-- # telemetry token usage sanity correction Source: logs/verifier_180_20260505_004202Z_pass.md
 
 ### Reject Records
 
