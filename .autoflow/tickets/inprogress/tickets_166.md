@@ -49,22 +49,22 @@
 - Status: blocked
 - Started At: 2026-05-05T00:43:24Z
 - Started Epoch: 1777941804
-- Updated At: 2026-05-05T00:57:38Z
+- Updated At: 2026-05-05T00:58:39Z
 - Tick Count: 0
-- Time Used Seconds: 854
+- Time Used Seconds: 915
 - Token Budget: 
 - Tokens Used: 
 - Continuation Suppressed: true
 - Last Event: ticket_stage_blocked
-- Last Progress Fingerprint: 685663159
+- Last Progress Fingerprint: 1783066643
 
 ## Recovery State
 
 - Status: repairing
 - Detected By: runtime
 - Failure Class: dirty_root
-- Evidence: `start-plan.sh` emitted `source=blocked-dirty-orchestration` again for `tickets/inprogress/tickets_166.md` with dirty paths `.autoflow/telemetry/runs.jsonl`, `.autoflow/tickets/inprogress/tickets_166.md`, and `.autoflow/tickets/check/check_195.md`; `git status --short` also showed concurrent board/wiki/runtime artifacts already dirty in PROJECT_ROOT.
-- Planner Decision: Integrate the already-dirty board/runtime artifacts into local orchestration cleanup commits attributed to `tickets_166`; do not delete, reset, or rewrite product code. `autoflow wiki query --rag` for `prd_167 tickets_166 dirty_root blocked-dirty orchestration runs.jsonl check_195 graceful stop desktop runner` returned `result_count=0`, so the prior recorded dirty-root cleanup pattern remains the applicable context.
+- Evidence: `start-plan.sh` emitted `source=blocked-dirty-orchestration` again for `tickets/inprogress/tickets_166.md` with dirty paths `.autoflow/telemetry/runs.jsonl`, `.autoflow/tickets/inprogress/tickets_166.md`, and `.autoflow/tickets/check/check_195.md`; `git status --short` also showed concurrent board/wiki/runtime artifacts already dirty in PROJECT_ROOT. Planner integrated them in cleanup commits `d9715f6` and `834261a`.
+- Planner Decision: Integrated the already-dirty board/runtime artifacts into local orchestration cleanup commits attributed to `tickets_166`; no product code was edited, deleted, reset, or pushed. `autoflow wiki query --rag` for `prd_167 tickets_166 dirty_root blocked-dirty orchestration runs.jsonl check_195 graceful stop desktop runner` returned `result_count=0`, so the prior recorded dirty-root cleanup pattern remains the applicable context.
 - Owner Resume Instruction: Wait for the next planner tick to emit `source=blocked-auto-recover` after PROJECT_ROOT is clean, then return this ticket to `tickets/todo/`; ticket-owner should claim a fresh worktree and continue PRD_167 implementation.
 - Last Recovery At: 2026-05-05T00:57:20Z
 
@@ -80,12 +80,12 @@
 - [ ] `npm run desktop:check` 통과.
 
 ## Next Action
-- Planner cleanup in progress: integrate the current dirty board/runtime evidence into local orchestration cleanup commits, run guard, then let the next planner tick auto-return this ticket to todo via `source=blocked-auto-recover` if PROJECT_ROOT is clean.
+- Planner wait: current dirty board/runtime evidence was integrated in cleanup commits `d9715f6` and `834261a`; `autoflow guard` returned `error_count=0`, so let the next planner tick auto-return this ticket to todo via `source=blocked-auto-recover` if PROJECT_ROOT is clean.
 
 ## Resume Context
 
-- 현재 상태 요약: blocked-dirty-orchestration 턴에서 PROJECT_ROOT dirty blocker를 local cleanup commits `415725a`, `6040e2a`로 통합했고, 티켓은 다음 planner tick의 blocked-auto-recover를 기다린다.
-- 직전 작업: planner가 2026-05-05T00:57:20Z 재발한 board/runtime dirty set을 삭제 없이 orchestration cleanup commit으로 통합 중이다.
+- 현재 상태 요약: blocked-dirty-orchestration 턴에서 PROJECT_ROOT dirty blocker를 local cleanup commits `d9715f6`, `834261a`로 통합했고, guard error 없이 다음 planner tick의 blocked-auto-recover를 기다린다.
+- 직전 작업: planner가 2026-05-05T00:57:20Z 재발한 board/runtime dirty set을 삭제 없이 orchestration cleanup commit으로 통합했다.
 - 재개 시 먼저 볼 것: `git status --short`, `tickets/check/check_195.md`, `tickets/check/check_196.md`, PRD, Goal, Allowed Paths, Done When. Guard leftover candidates remain evidence-only until a later recovery turn names them.
 
 ## Notes
@@ -100,6 +100,8 @@
 - Guard warning at 2026-05-05T00:50:52Z: no guard errors. Planner normalized Recovery State `Failure Class` to `dirty_root`; unresolved cleanup candidates are `autoflow/tickets_119` leftover worktree and `autoflow/tickets_163` dirty worktree for a done ticket. Planner did not delete or reset those worktrees.
 - Follow-up cleanup/evidence sync commits in the same turn: `962008f`, `9dbb9f0`, `60871a5`, `87c6799`, `abcae47`, `9e389c4`; review ledger entry is `tickets/check/check_194.md`.
 - Planner blocked-dirty orchestration at 2026-05-05T00:57:20Z: `start-plan.sh` emitted dirty paths `.autoflow/telemetry/runs.jsonl`, `.autoflow/tickets/inprogress/tickets_166.md`, `.autoflow/tickets/check/check_195.md`; direct wiki RAG query returned `result_count=0`, so planner is preserving and committing already-dirty board/runtime artifacts as cleanup evidence instead of parking this ticket as `needs_user`.
+- Cleanup commits at 2026-05-05T00:58:40Z: `d9715f6` captured board/runtime dirty evidence including `tickets/check/check_195.md`, `tickets/check/check_196.md`, order status, verifier idle log, wiki skill extraction, and ticket recovery state; `834261a` captured the trailing telemetry/wiki log update that arrived before guard.
+- Guard at 2026-05-05T00:59:10Z: `autoflow guard` returned `status=warning`, `error_count=0`, `warning_count=2`. Evidence-only cleanup candidates remain `autoflow/tickets_119` leftover worktree with no board ticket and `autoflow/tickets_163` dirty worktree for done ticket `tickets/done/prd_164/tickets_163.md`; planner did not delete or reset worktrees in this turn.
 ## Verification
 
 - Run file:
