@@ -4377,6 +4377,32 @@ case "$agent" in
       wiki_record_inputs_fingerprint
     fi
     ticket_goal_record_adapter_result_for_current_ticket "$adapter_exit" "$ticket_goal_before_fingerprint" || true
+    finished_active_item="$(runner_adapter_state_value "active_item")"
+    finished_active_ticket_id="$(runner_adapter_state_value "active_ticket_id")"
+    finished_active_ticket_title="$(runner_adapter_state_value "active_ticket_title")"
+    finished_active_stage="$(runner_adapter_state_value "active_stage")"
+    finished_active_spec_ref="$(runner_adapter_state_value "active_spec_ref")"
+    finished_active_recovery_reason="${adapter_active_recovery_reason}"
+    finished_active_recovery_status="${adapter_active_recovery_status}"
+    finished_active_recovery_failure_class="${adapter_active_recovery_failure_class}"
+    finished_active_recovery_worktree_path="${adapter_active_recovery_worktree_path}"
+    finished_active_recovery_worktree_status="${adapter_active_recovery_worktree_status}"
+    finished_active_recovery_board_state="${adapter_active_recovery_board_state}"
+    case "${public_role}:${runner_status}" in
+      planner:idle|wiki:idle)
+        finished_active_item=""
+        finished_active_ticket_id=""
+        finished_active_ticket_title=""
+        finished_active_stage=""
+        finished_active_spec_ref=""
+        finished_active_recovery_reason=""
+        finished_active_recovery_status=""
+        finished_active_recovery_failure_class=""
+        finished_active_recovery_worktree_path=""
+        finished_active_recovery_worktree_status=""
+        finished_active_recovery_board_state=""
+        ;;
+    esac
 
     runner_write_state "$runner_id" \
       "status=${runner_status}" \
@@ -4388,17 +4414,17 @@ case "$agent" in
       "configured_reasoning=${configured_reasoning}" \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
-      "active_item=$(runner_adapter_state_value "active_item")" \
-      "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
-      "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
-      "active_stage=$(runner_adapter_state_value "active_stage")" \
-      "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
-      "active_recovery_reason=${adapter_active_recovery_reason}" \
-      "active_recovery_status=${adapter_active_recovery_status}" \
-      "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
-      "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
-      "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
-      "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+      "active_item=${finished_active_item}" \
+      "active_ticket_id=${finished_active_ticket_id}" \
+      "active_ticket_title=${finished_active_ticket_title}" \
+      "active_stage=${finished_active_stage}" \
+      "active_spec_ref=${finished_active_spec_ref}" \
+      "active_recovery_reason=${finished_active_recovery_reason}" \
+      "active_recovery_status=${finished_active_recovery_status}" \
+      "active_recovery_failure_class=${finished_active_recovery_failure_class}" \
+      "active_recovery_worktree_path=${finished_active_recovery_worktree_path}" \
+      "active_recovery_worktree_status=${finished_active_recovery_worktree_status}" \
+      "active_recovery_board_state=${finished_active_recovery_board_state}" \
       "pid=$([ "$runner_status" = "stopped" ] && printf '' || runner_state_pid_for_finish)" \
       "started_at=$(runner_state_started_at "$started_at")" \
       "last_event_at=${finished_at}" \
