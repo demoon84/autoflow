@@ -3358,6 +3358,12 @@ cleanup_stale_todo_worktree_before_claim() {
 - Integration Status: blocked_stale_todo_worktree"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "stale_todo_worktree"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "stale todo worktree has unmerged or dirty state: ${worktree_path}"
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Inspect the stale worktree, then merge/rebase, back up and discard, or park it before ticket-owner continues."
+  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
   replace_section_block "$ticket_file" "Next Action" "- 다음에 바로 이어서 할 일: stale todo worktree \`${worktree_path}\` 의 남은 변경을 수동으로 판별해 merge/discard 한 뒤 ticket-owner 를 재개한다."
   append_note "$ticket_file" "Blocked stale todo worktree at ${timestamp}: ${worktree_path} still has unmerged or dirty state, so the runtime refused to reuse it silently."
   echo "Stale todo worktree has unmerged or dirty state: $worktree_path" >&2
@@ -3422,7 +3428,7 @@ ensure_ticket_worktree() {
   worktree_path="$(ticket_worktree_path_for_id "$ticket_id")"
   parent_root="$(dirname "$worktree_path")"
   mkdir -p "$parent_root" || return 1
-  cleanup_stale_todo_worktree_before_claim "$ticket_file" "$branch" "$worktree_path" "$git_root" "$base_commit"
+  cleanup_stale_todo_worktree_before_claim "$ticket_file" "$branch" "$worktree_path" "$git_root" "$base_commit" || return 1
 
   existing_base_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Base Commit")")"
   existing_worktree_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Worktree Commit")")"

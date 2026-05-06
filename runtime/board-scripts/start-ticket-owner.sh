@@ -370,6 +370,17 @@ prepare_ticket_owner_context() {
         blocked_next_action="Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically."
         blocked_reason="shared_allowed_path_conflict"
       else
+        integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
+        if [ "$integration_status" = "blocked_stale_todo_worktree" ]; then
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "stale_todo_worktree"
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "stale todo worktree remains blocked; ticket-owner must not continue until it is resolved."
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Inspect the stale worktree, then merge/rebase, back up and discard, or park it before ticket-owner continues."
+          replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
+          blocked_next_action="Stale todo worktree is still blocked. Inspect the worktree, then merge/rebase, back up and discard, or park it before ticket-owner continues."
+          blocked_reason="stale_todo_worktree"
+        else
         blocked_next_action="$(
           extract_section_text "$ticket_file" "Next Action" \
             | sed -E 's/^[[:space:]]*[-*][[:space:]]*//' \
@@ -378,6 +389,7 @@ prepare_ticket_owner_context() {
         )"
         [ -n "$blocked_next_action" ] || blocked_next_action="Ticket is blocked; explicit recovery required (or run a legacy coordinator runner if the project still uses one)."
         blocked_reason="ticket_stage_blocked"
+        fi
       fi
 
       set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
@@ -409,6 +421,21 @@ prepare_ticket_owner_context() {
   fi
   if [ "$worktree_failed" = "true" ]; then
     worktree_evidence="$(printf '%s' "$worktree_output" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/[[:space:]]*$//')"
+    integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
+    if [ "$integration_status" = "blocked_stale_todo_worktree" ]; then
+      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+      sync_runner_active_state "$ticket_file" "blocked"
+      ticket_goal_block "$ticket_file" "stale_todo_worktree"
+      printf 'status=blocked\n'
+      printf 'reason=stale_todo_worktree\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf '%s\n' "$worktree_output"
+      printf 'next_action=Resolve stale ticket worktree before ticket-owner continues: %s\n' "$worktree_evidence"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+    fi
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
