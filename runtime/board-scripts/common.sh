@@ -1873,6 +1873,102 @@ extract_prd_verification_command() {
   ' "$prd_file"
 }
 
+extract_yaml_requires_secrets() {
+  local prd_file="$1"
+
+  [ -f "$prd_file" ] || return 0
+  awk '
+    NR == 1 && $0 == "---" { in_fm=1; next }
+    in_fm && $0 == "---" { exit }
+    !in_fm { exit }
+    in_fm && /^[[:space:]]*requires_secrets[[:space:]]*:/ {
+      line = $0
+      sub(/^[[:space:]]*requires_secrets[[:space:]]*:[[:space:]]*/, "", line)
+      gsub(/[\[\]",'\''`]/, " ", line)
+      print line
+      in_requires = 1
+      next
+    }
+    in_requires && /^[[:space:]]*-[[:space:]]*/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      gsub(/[\[\]",'\''`]/, " ", line)
+      print line
+      next
+    }
+    in_requires && /^[^[:space:]-]/ { in_requires = 0 }
+  ' "$prd_file" | tr '[:space:]' '\n' | awk '/^[A-Z_][A-Z0-9_]*$/ { print }'
+}
+
+extract_markdown_requires_secrets() {
+  local prd_file="$1"
+
+  [ -f "$prd_file" ] || return 0
+  awk '
+    /^[[:space:]]*-[[:space:]]*Requires Secrets[[:space:]]*:/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*Requires Secrets[[:space:]]*:[[:space:]]*/, "", line)
+      gsub(/[\[\]",'\''`]/, " ", line)
+      print line
+    }
+  ' "$prd_file" | tr '[:space:]' '\n' | awk '/^[A-Z_][A-Z0-9_]*$/ { print }'
+}
+
+extract_shell_env_refs() {
+  local raw="$1"
+
+  printf '%s\n' "$raw" | awk '
+    {
+      line = $0
+      while (match(line, /\$\{[A-Za-z_][A-Za-z0-9_]*\}/)) {
+        token = substr(line, RSTART + 2, RLENGTH - 3)
+        print token
+        line = substr(line, RSTART + RLENGTH)
+      }
+      line = $0
+      while (match(line, /\$[A-Za-z_][A-Za-z0-9_]*/)) {
+        token = substr(line, RSTART + 1, RLENGTH - 1)
+        print token
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+  ' | awk '/^[A-Z_][A-Z0-9_]*$/ { print }'
+}
+
+extract_prd_required_secret_names() {
+  local prd_file="$1"
+  local verification_command
+
+  [ -f "$prd_file" ] || return 0
+  verification_command="$(extract_prd_verification_command "$prd_file")"
+  {
+    extract_shell_env_refs "$verification_command"
+    extract_markdown_requires_secrets "$prd_file"
+    extract_yaml_requires_secrets "$prd_file"
+  } | awk '!seen[$0]++'
+}
+
+missing_required_secret_names() {
+  local name
+
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ -z "${!name:-}" ]; then
+      printf '%s\n' "$name"
+    fi
+  done
+}
+
+join_lines_csv() {
+  awk '
+    NF {
+      if (out != "") out = out ","
+      out = out $0
+    }
+    END { print out }
+  '
+}
+
 reject_auto_close_enabled() {
   case "${AUTOFLOW_REJECT_AUTO_CLOSE:-on}" in
     0|off|OFF|false|FALSE|disabled|DISABLED)

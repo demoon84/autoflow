@@ -6,6 +6,7 @@
 - Title:
 - AI:
 - Status: draft
+- Requires Secrets: []
 
 ## Core Scope
 
@@ -24,6 +25,7 @@
 - Verification commands run from the host project root unless a ticket says otherwise.
 - Keep acceptance criteria observable.
 - Human-readable PRD prose should be Korean by default. Preserve parser-sensitive section names, field names, ids, paths, commands, code, and runtime formats.
+- If verification requires external credentials, list only environment variable names in `Requires Secrets` (for example `[OPENAI_API_KEY]`). Do not store secret values.
 
 ## Global Acceptance Criteria
 

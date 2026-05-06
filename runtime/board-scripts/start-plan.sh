@@ -422,6 +422,7 @@ ${done_when}
 
 ## Verification
 
+- Command: ${verification_command}
 - Run file:
 - Log file:
 - Result: pending
@@ -441,6 +442,30 @@ promote_spec_to_todo_or_exit() {
   local lint_score_value=""
   local lint_terms_value=""
   local lint_output_file lint_rc created_ticket
+  local required_secrets missing_secrets missing_secrets_csv spec_ref secret_note
+
+  required_secrets="$(extract_prd_required_secret_names "$spec_file")"
+  if [ -n "$required_secrets" ]; then
+    missing_secrets="$(printf '%s\n' "$required_secrets" | missing_required_secret_names)"
+    if [ -n "$missing_secrets" ]; then
+      missing_secrets_csv="$(printf '%s\n' "$missing_secrets" | join_lines_csv)"
+      spec_ref="$(board_relative_path "$spec_file")"
+      secret_note="Planner secret preflight: missing_secrets=${missing_secrets_csv}; source=${spec_ref}; status=needs_user_secret"
+      replace_scalar_field_in_section "$spec_file" "## Project" "Status" "needs_user_secret"
+      append_note_once "$spec_file" "$secret_note"
+      printf 'status=ok\n'
+      printf 'source=needs-user-secret\n'
+      printf 'spec=%s\n' "$spec_file"
+      printf 'missing_secrets=%s\n' "$missing_secrets_csv"
+      printf 'failure_class=needs_user_decision\n'
+      printf 'recovery_state=needs_user\n'
+      emit_replan_skipped_metadata "$replan_skipped_file"
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      printf 'next_action=Set %s, then rerun planner to promote %s.\n' "$missing_secrets_csv" "$spec_ref"
+      exit 0
+    fi
+  fi
 
   # Done When / Global Acceptance Criteria vagueness lint (Ralph loop pattern
   # (a)): if the PRD's Completion Promise is too vague to verify, do not promote

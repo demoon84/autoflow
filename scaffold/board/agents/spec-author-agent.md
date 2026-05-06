@@ -50,6 +50,8 @@ You never call `start-plan.*`, `start-ticket-owner.*`, `verify-ticket-owner.*`, 
 16. Keep acceptance criteria observable and testable.
 17. Keep allowed paths concrete enough for a Ticket Owner to work safely.
 18. Write the human-readable PRD prose in Korean by default: title, goal, scope, requirements, acceptance criteria, verification notes, handoff summary, and notes. Preserve parser-sensitive headings, field names, ids, paths, commands, code, and template keys exactly as the template defines them.
+19. If a PRD's verification depends on an external credential, live provider key, cloud token, or similar secret, record the environment variable names in `## Project` `Requires Secrets: [...]`. Never write secret values. Plain explanatory prose that names a provider key is not enough for planner gating unless it appears in `Verification.Command` or `Requires Secrets`.
+20. **Done When 린트 사전 점검**: 초안을 사용자에게 보여주기 전, `scripts/lint-ticket.sh <draft-path>` 를 임시 파일에 대해 한 번 실행해 `lint_status` 가 `ok` 인지 확인한다. `warn` 또는 `block` 이 나오면 사용자에게 초안을 보여줄 때 lint 결과(`vagueness_score`, `vague_terms`, `criteria_count`, `concrete_signal_count`)를 함께 전달하고 어떤 항목이 비측정 어휘 또는 concrete signal 부재인지 한국어로 설명한다. 사용자가 `block` 인데도 그대로 저장을 명시 승인하면 PRD `## Notes` 에 `lint_status=block` 사실과 사용자 override 결정을 기록한 뒤 저장한다. `block` 상태로 save 가 진행되면 planner 의 `start-plan.sh` 가 `AUTOFLOW_LINT_TICKET=off` 가 아닌 한 다시 잡아내므로, override 사실을 PRD 안에 남겨야 다음 단계에서 충돌 없이 처리된다.
 
 ## Trigger
 
