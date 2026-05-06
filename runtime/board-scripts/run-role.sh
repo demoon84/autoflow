@@ -2207,6 +2207,53 @@ maybe_skip_unchanged_idle_preflight() {
   idle_preflight_fingerprint="$current_fingerprint"
   idle_preflight_fingerprint_path_value="$fingerprint_path"
 
+  if [ "$public_role" = "planner" ] && [ "$preflight_status" = "idle" ] && [ "$preflight_reason" = "no_actionable_plan_input" ]; then
+    skip_reason="planner_no_actionable_input"
+    timestamp="$(runner_now_iso)"
+    runner_write_state "$runner_id" \
+      "status=idle" \
+      "role=${public_role}" \
+      "agent=${agent}" \
+      "mode=${mode}" \
+      "model=${model}" \
+      "reasoning=${reasoning}" \
+      "active_item=" \
+      "active_ticket_id=" \
+      "active_ticket_title=" \
+      "active_stage=" \
+      "active_spec_ref=" \
+      "pid=$(runner_state_pid_for_finish)" \
+      "started_at=$(runner_state_started_at "$timestamp")" \
+      "last_event_at=${timestamp}" \
+      "last_result=${skip_reason}" \
+      "last_runtime_log=${preflight_log_path}"
+    runner_append_log "$runner_id" "adapter_skip" \
+      "role=${public_role}" \
+      "agent=${agent}" \
+      "reason=${skip_reason}" \
+      "runtime_reason=${preflight_reason}" \
+      "fingerprint=${current_fingerprint}"
+
+    print_run_header "ok"
+    printf 'runner_status=idle\n'
+    printf 'runtime_script=%s\n' "$runtime_path"
+    printf 'runtime_status=%s\n' "$preflight_status"
+    printf 'runtime_exit_code=0\n'
+    printf 'reason=%s\n' "$skip_reason"
+    printf 'runtime_reason=%s\n' "$preflight_reason"
+    printf 'active_item=\n'
+    printf 'idle_inputs_fingerprint=%s\n' "$current_fingerprint"
+    printf 'fingerprint_path=%s\n' "$fingerprint_path"
+    printf 'runtime_output_log_path=%s\n' "$preflight_log_path"
+    printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+    printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+    printf 'runtime_output_begin\n'
+    cat "$preflight_output"
+    printf 'runtime_output_end\n'
+    rm -f "$preflight_output"
+    exit 0
+  fi
+
   [ -n "$previous_fingerprint" ] || return 1
   [ "$current_fingerprint" = "$previous_fingerprint" ] || return 1
 
