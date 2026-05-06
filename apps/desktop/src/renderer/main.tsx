@@ -211,8 +211,7 @@ const settingsNavigation = [
   { key: "progress", label: "AI 진행 현황", icon: Workflow },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
   { key: "knowledge", label: "LLM 위키", icon: BookOpenText },
-  { key: "snapshot", label: "통계", icon: BarChart3 },
-  { key: "checks", label: "자동 개입 이력", icon: ShieldCheck }
+  { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
@@ -1687,17 +1686,7 @@ function App() {
     previousSettingsSectionRef.current = activeSettingsSection;
   }, [activeSettingsSection]);
 
-  React.useEffect(() => {
-    if (
-      activeSettingsSection === "checks" &&
-      selectedLogPath &&
-      !boardPath(selectedLogPath).includes("/tickets/check/")
-    ) {
-      setSelectedLogPath("");
-      setLogPreview(null);
-      setLogError("");
-    }
-  }, [activeSettingsSection, selectedLogPath]);
+  // (checks tab removed — no automated intervention ledger in 3-runner topology)
 
   const refreshRecentProjects = React.useCallback(async () => {
     setIsRefreshingRecentProjects(true);
@@ -2501,21 +2490,6 @@ function App() {
                       <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
                     </div>
                   </PageLayout>
-                </section>
-              </section>
-            )}
-
-            {!setupRequired && visibleSettingsSection === "checks" && (
-              <section className="dashboard-area" aria-label="자동 개입 이력">
-                <section className="board-section board-section-flush" aria-label="자동 개입 이력 본문">
-                  <CheckLedgerPage
-                    board={board}
-                    selectedPath={selectedLogPath}
-                    preview={logPreview}
-                    isLoading={isReadingLog}
-                    error={logError}
-                    onSelect={readLog}
-                  />
                 </section>
               </section>
             )}
