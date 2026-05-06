@@ -30,5 +30,4 @@ The automated runs consistently encountered:
 - **Environmental Limitation:** Automated testing for GUI-dependent features is currently blocked by the lack of a suitable GUI execution environment. This prevents full verification of certain tickets. For details on runner terminal streaming, see [[answers/desktop-runner-terminal-streaming]].
 - **Retry Budget:** Tickets with persistent, out-of-scope blockers will exhaust their retry budget and transition to `needs_user`, requiring human intervention. For the policy on manual resolution, see [[decisions/manual-resolution-policy]].
 
-## Source
-- `logs/verifier_119_20260503_064242Z_fail.md`
+

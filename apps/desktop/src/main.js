@@ -2093,7 +2093,7 @@ function tokenUsageFromLine(lower) {
 }
 
 function isCodexGuardWarningLine(line) {
-  return /\bWARN\s+codex_core_(?:plugins::manifest|skills::loader):/.test(line);
+  return /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\s+WARN\s+codex_core_(?:plugins::manifest|skills::loader):/.test(line);
 }
 
 function parseTokenUsageChunk(chunk, prior) {

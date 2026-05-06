@@ -3812,8 +3812,7 @@ filter_codex_guard_warnings_in_place() {
   }
 
   if ! awk -v count_file="$count_file" '
-    / WARN codex_core_plugins::manifest:/ { removed++; next }
-    / WARN codex_core_skills::loader:/ { removed++; next }
+    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { removed++; next }
     { print }
     END { print removed + 0 > count_file }
   ' "$file" > "$tmp"; then

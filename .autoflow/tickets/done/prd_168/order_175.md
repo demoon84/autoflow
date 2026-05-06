@@ -144,3 +144,11 @@ status_update_2026-05-05T01:27Z: |
 - **추가 검토:**
   - check/check_NNN.md 생성 자체를 best-effort 로 줄이거나 별도 디렉토리 (`.autoflow/.runtime/`) 로 이동해 git 추적 제외 가능.
   - tickets_166 같은 케이스를 manual unblock 하는 방법: 워크트리 정리 + ticket 을 done 또는 reject 로 강제 이동.
+
+## Planner Resolution
+
+- Resolved At: 2026-05-05T12:45:36Z
+- Decision: duplicate_resolved_by_existing_work
+- Evidence: `start-plan.sh` selected this order as `source=order-inbox`, but direct board evidence shows `tickets/done/prd_168/tickets_167.md` completed the planner check ledger live-lock fix and `tickets/done/prd_168/verify_167.md` passed the declared smoke verification plus `npm run desktop:check`. Required wiki RAG queries for `blocked-dirty orchestration telemetry check dirty_root tickets_166` and `planner check ledger live-lock no-op cleanup fixpoint guard prd_168` returned `result_count=0`; direct ticket/wiki grep found `prd_168` and `tickets_167` as the completed matching fix.
+- Planner Decision: do not create a duplicate generated PRD or todo ticket. Archive this order under `tickets/done/prd_168/` as follow-up evidence for the already completed fix.
+- Next Action: no new work for this order; worker may continue with the next eligible todo.

@@ -54,7 +54,6 @@ This document summarizes the work done for PRD 166, focusing on establishing the
 
 ## Artifacts
 
-- **Log File**: `logs/verifier_164_20260504_215445Z_pass.md`
 - **Ticket Path**: `tickets/done/prd_166/tickets_164.md`
 - **Verification Path**: `tickets/done/prd_166/verify_164.md`
 - **Smoke Test Script**: `tests/smoke/skill-curator-auto-extract-smoke.sh`

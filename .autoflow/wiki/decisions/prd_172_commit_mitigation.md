@@ -40,10 +40,10 @@ This decision and its implementation are expected to:
 
 ## Related PRDs/Tickets
 
-*   [[prd_154]]: Introduced output caps and `output_truncated` logging.
-*   [[prd_168]]: Addressed check ledger live-lock issues.
+*   [[answers/prd-154]]: Introduced output caps and `output_truncated` logging.
+*   [[answers/prd-168]]: Addressed check ledger live-lock issues.
 *   [[prd_172]]: The overarching project for runner commit volume throttling.
-*   [[tickets/inbox/order_152.md]]: Original ticket detailing the commit burst problem.
+*   tickets/inbox/order_152.md: Original ticket detailing the commit burst problem.
 
 ## Source
 

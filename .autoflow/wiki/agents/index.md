@@ -8,4 +8,4 @@ This index provides an overview of agent-related telemetry and documentation wit
 
 ## Agent Definitions
 
-- [[../sources/agent-definitions]]
+- [[wiki/sources/agent-definitions]]

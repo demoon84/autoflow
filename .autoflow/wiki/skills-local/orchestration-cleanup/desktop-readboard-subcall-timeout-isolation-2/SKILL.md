@@ -17,16 +17,13 @@ applies_to:
 pinned: false
 created_from:
   prd: "prd_173"
-  ticket: "tickets_172"
 created_at: "2026-05-05T07:14:18Z"
 ---
 
 # desktop readBoard subcall timeout isolation
 
 ## Trigger
-
 - Reuse when: desktop readBoard subcall timeout isolation
-- Source ticket: `tickets/inprogress/tickets_172.md`
 
 ## Recommended Procedure
 
@@ -45,7 +42,4 @@ created_at: "2026-05-05T07:14:18Z"
 - Command: ``npm run desktop:check``
 
 ## Source Evidence
-
-- Ticket: `tickets/inprogress/tickets_172.md`
 - PRD: `tickets/done/prd_173/prd_173.md`
-- Verification: `tickets/inprogress/verify_172.md`

@@ -1019,8 +1019,7 @@ telemetry_file_size_bytes_without_codex_guard_warnings() {
   fi
 
   awk '
-    / WARN codex_core_plugins::manifest:/ { next }
-    / WARN codex_core_skills::loader:/ { next }
+    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { next }
     { bytes += length($0) + 1 }
     END { printf "%d", bytes + 0 }
   ' "$file" 2>/dev/null || printf '0'
@@ -4475,8 +4474,7 @@ filter_codex_guard_warnings_in_place() {
   }
 
   if ! awk -v count_file="$count_file" '
-    / WARN codex_core_plugins::manifest:/ { removed++; next }
-    / WARN codex_core_skills::loader:/ { removed++; next }
+    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { removed++; next }
     { print }
     END { print removed + 0 > count_file }
   ' "$file" > "$tmp"; then

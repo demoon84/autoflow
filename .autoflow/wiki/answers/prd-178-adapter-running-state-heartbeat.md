@@ -50,7 +50,6 @@ This document summarizes the work done for PRD 178, which addresses issues with 
 
 ## Artifacts
 
-- **Log File**: `logs/verifier_177_20260505_001334Z_pass.md`
 - **Ticket Path**: `tickets/done/prd_178/tickets_177.md`
 - **Verification Path**: `tickets/done/prd_178/verify_177.md`
 - **Smoke Test Script**: `tests/smoke/runner-adapter-heartbeat-smoke.sh`
