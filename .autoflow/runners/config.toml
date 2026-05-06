@@ -1,32 +1,40 @@
 # Autoflow runner configuration.
 #
-# Enabled five-runner topology:
-#   planner : Orchestrator AI — backlog/PRD → todo, reject → todo
-#               (auto-replan), and markdown recovery for stalled/blocked work.
-#   worker   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
-#   monitor : Monitor AI — runner/board/telemetry/dirty-root health signals
-#               → conservative inbox order/check evidence.
-#   verifier: Verifier AI — handles the compatibility verification lane and
-#               may audit worker verification evidence without claiming the
-#               worker's active inline ticket verification.
-#   wiki    : Wiki AI — periodically refreshes .autoflow/wiki/ when
-#               tickets/done or tickets/reject change. Path-disjoint from
-#               Orchestrator AI and Impl AI so it never causes worktree/merge
-#               conflicts.
-# Wiki AI owns material baseline refresh and AI synthesis. Impl AI finalizers
-# do not call update-wiki.sh or stage .autoflow/wiki/.
+# Default 3-runner topology (post 2026-05-06 simplification):
+#   planner : Orchestrator AI — order/PRD intake, todo creation, recovery
+#               decisions. Watches tickets/{inbox,backlog}.
+#   worker  : Impl AI — claims todo, creates worktree, edits code, runs the
+#               verify command, calls finish-ticket-owner.sh pass. The
+#               finalizer's shell sanity gate (zero-diff + verify command
+#               re-run) blocks false pass without a separate verifier.
+#               worktree → master merge → worktree delete is one atomic
+#               cycle inside the worker tick, so at most one worktree is
+#               ever alive.
+#   wiki    : Wiki AI — watches tickets/done + wiki/ for source change,
+#               refreshes .autoflow/wiki/. .gitignore now excludes
+#               .autoflow/wiki/ (except curated skills/), so wiki never
+#               creates a master commit and never causes dirty PROJECT_ROOT.
+#
+# Removed from the default topology:
+#   monitor : 1-minute interval that fired ~1440 LLM calls/day. Background
+#               write paths are now .gitignore'd so dirty root is rare;
+#               runner liveness is delegated to the OS supervisor (or to
+#               planner's safety heartbeat self-check).
+#   verifier: redundant once the worker finalizer enforces shell sanity
+#               gate (zero-diff + verify command re-run + Allowed Paths
+#               boundary). Both runners are kept in this file with
+#               enabled=false so existing operators can re-enable
+#               temporarily, but the default flow does not need them.
 #
 # Realtime (event-driven) wakeup: when AUTOFLOW_RUNNER_REALTIME_ENABLED=1
 # (or per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1), the loop sleep is broken
 # early on watched-folder file changes:
-#   planner : tickets/{inbox,backlog,reject}
+#   planner : tickets/{inbox,backlog}
 #   worker  : tickets/todo (ticket public_role)
-#   monitor : runners/state, telemetry, metrics, inprogress/reject tickets
-#   verifier: tickets/verifier
 #   wiki    : tickets/done, wiki/ (debounced)
-# In event-driven mode interval_seconds becomes the safety heartbeat — pick
-# 1800s (30min) so reject auto-replan / blocked-dirty orchestration / adapter
-# timeout still wakes periodically even with no file activity.
+# In event-driven mode interval_seconds is just a safety heartbeat — pick
+# 1800s+ so adapter timeout / orphan worker recovery still wakes periodically
+# even with no file activity. fs-watch handles the actual wakeups.
 
 [[runners]]
 id = "planner"
@@ -66,6 +74,9 @@ enabled = true
 realtime_enabled = true
 command = ""
 
+# Disabled in default 3-runner topology. Was firing every 60s with idle skip
+# rarely engaging; produced ~1440 LLM calls/day with little signal once the
+# .gitignore separation removed dirty-root false positives.
 [[runners]]
 id = "monitor"
 role = "monitor"
@@ -74,8 +85,8 @@ model = "gemini-3-flash-preview"
 reasoning = ""
 mode = "loop"
 interval_seconds = 60
-enabled = true
-realtime_enabled = true
+enabled = false
+realtime_enabled = false
 command = ""
 
 [[runners]]
@@ -90,6 +101,11 @@ enabled = true
 realtime_enabled = true
 command = ""
 
+# Disabled in default 3-runner topology. Worker finalizer's shell sanity
+# gate (zero-diff + verify command re-run) replaces the redundant verifier
+# LLM that was averaging ~28K output tokens per idle tick. Re-enable only
+# if a project needs an independent compatibility-verification lane that
+# is path-disjoint from the worker.
 [[runners]]
 id = "verifier"
 role = "verifier"
@@ -98,6 +114,6 @@ model = "sonnet-4.6"
 reasoning = "medium"
 mode = "loop"
 interval_seconds = 1800
-enabled = true
-realtime_enabled = true
+enabled = false
+realtime_enabled = false
 command = ""
