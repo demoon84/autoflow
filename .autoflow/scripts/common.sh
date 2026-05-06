@@ -41,6 +41,265 @@ autoflow_cleanup_tmp() {
 
 trap autoflow_cleanup_tmp EXIT
 
+autoflow_pid_is_running() {
+  local pid="${1:-}"
+  local kill_output kill_status
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+autoflow_process_children() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$pid" 2>/dev/null || true
+  else
+    ps -axo ppid=,pid= 2>/dev/null | awk -v ppid="$pid" '$1 == ppid { print $2 }' || true
+  fi
+}
+
+autoflow_process_parent() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]' | head -n 1
+}
+
+autoflow_cleanup_protected_pids() {
+  local pid parent protected_pids_csv protected_pid
+
+  printf '%s\n' "$$"
+  printf '%s\n' "${BASHPID:-$$}"
+  [ -z "${PPID:-}" ] || printf '%s\n' "$PPID"
+
+  protected_pids_csv="${AUTOFLOW_WORKTREE_CLEANUP_PROTECT_PIDS:-}"
+  protected_pids_csv="${protected_pids_csv//,/ }"
+  for protected_pid in $protected_pids_csv; do
+    case "$protected_pid" in
+      ""|*[!0-9]*) ;;
+      *) printf '%s\n' "$protected_pid" ;;
+    esac
+  done
+
+  pid="${BASHPID:-$$}"
+  while :; do
+    parent="$(autoflow_process_parent "$pid" 2>/dev/null || true)"
+    case "$parent" in
+      ""|*[!0-9]*|0|1)
+        break
+        ;;
+    esac
+    printf '%s\n' "$parent"
+    pid="$parent"
+  done
+}
+
+autoflow_pid_is_cleanup_protected() {
+  local pid="${1:-}"
+  local protected_pid
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  while IFS= read -r protected_pid; do
+    [ -n "$protected_pid" ] || continue
+    [ "$pid" = "$protected_pid" ] && return 0
+  done < <(autoflow_cleanup_protected_pids | sort -n | uniq)
+
+  return 1
+}
+
+autoflow_kill_process_tree() {
+  local pid="${1:-}"
+  local child wait_index
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+  [ "$pid" != "$$" ] || return 0
+  [ "$pid" != "${BASHPID:-$$}" ] || return 0
+  autoflow_pid_is_cleanup_protected "$pid" && return 0
+
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    autoflow_kill_process_tree "$child"
+  done < <(autoflow_process_children "$pid")
+
+  kill "$pid" 2>/dev/null || true
+  for wait_index in 1 2 3 4 5; do
+    autoflow_pid_is_running "$pid" || return 0
+    sleep 0.2
+  done
+
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    autoflow_kill_process_tree "$child"
+  done < <(autoflow_process_children "$pid")
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+autoflow_normalize_existing_path() {
+  local path="${1:-}"
+
+  [ -n "$path" ] || return 1
+  if [ -e "$path" ]; then
+    cd "$path" 2>/dev/null && pwd -P
+    return 0
+  fi
+  printf '%s\n' "${path%/}"
+}
+
+autoflow_text_references_path_prefix() {
+  local text="${1:-}"
+  local target_path="${2:-}"
+  local rest after next_char
+
+  [ -n "$text" ] || return 1
+  [ -n "$target_path" ] || return 1
+
+  rest="$text"
+  while :; do
+    case "$rest" in
+      *"$target_path"*)
+        after="${rest#*"$target_path"}"
+        next_char="${after:0:1}"
+        case "$next_char" in
+          ""|"/"|" "|"	"|":"|"\""|"'")
+            return 0
+            ;;
+        esac
+        rest="$after"
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done
+}
+
+autoflow_process_cwd() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ { sub(/^n/, ""); print; exit }'
+    return 0
+  fi
+  if command -v pwdx >/dev/null 2>&1; then
+    pwdx "$pid" 2>/dev/null | sed 's/^[^:]*:[[:space:]]*//' | head -n 1
+  fi
+}
+
+autoflow_worktree_bound_process_pids() {
+  local worktree_path="${1:-}"
+  local target_path pid command
+
+  [ -n "$worktree_path" ] || return 0
+  case "$worktree_path" in
+    /*) ;;
+    *) return 0 ;;
+  esac
+
+  target_path="$(autoflow_normalize_existing_path "$worktree_path" 2>/dev/null || true)"
+  [ -n "$target_path" ] || return 0
+  [ "$target_path" != "/" ] || return 0
+  [ "${#target_path}" -gt 8 ] || return 0
+  if [ -n "${PROJECT_ROOT:-}" ] && [ "$target_path" = "${PROJECT_ROOT%/}" ]; then
+    return 0
+  fi
+
+  {
+    ps -axo pid=,command= 2>/dev/null | while read -r pid command; do
+      [ -n "${pid:-}" ] || continue
+      case "$pid" in
+        ""|*[!0-9]*) continue ;;
+      esac
+
+      if autoflow_text_references_path_prefix "${command:-}" "$target_path"; then
+        printf '%s\n' "$pid"
+      fi
+    done || true
+
+    if command -v lsof >/dev/null 2>&1; then
+      lsof -n -P -d cwd -Fp -Fn 2>/dev/null | awk -v target="$target_path" -v self="$$" -v bashpid="${BASHPID:-$$}" '
+        /^p/ {
+          pid = substr($0, 2)
+          next
+        }
+        /^n/ {
+          path = substr($0, 2)
+          if (pid == "" || pid == self || pid == bashpid) {
+            next
+          }
+          if (path == target || index(path, target "/") == 1) {
+            print pid
+          }
+        }
+      ' || true
+    fi
+  } | sort -n | uniq | while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    autoflow_pid_is_cleanup_protected "$pid" && continue
+    printf '%s\n' "$pid"
+  done
+}
+
+cleanup_worktree_bound_processes() {
+  local worktree_path="${1:-}"
+  local pid stopped_count=0
+
+  [ -n "$worktree_path" ] || {
+    printf 'worktree_processes_stopped=0\n'
+    return 0
+  }
+
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    autoflow_pid_is_running "$pid" || continue
+    autoflow_kill_process_tree "$pid"
+    stopped_count=$((stopped_count + 1))
+  done < <(autoflow_worktree_bound_process_pids "$worktree_path")
+
+  printf 'worktree_processes_stopped=%s\n' "$stopped_count"
+}
+
 normalize_runtime_path() {
   printf '%s' "${1:-}"
 }
@@ -3345,6 +3604,7 @@ cleanup_stale_todo_worktree_before_claim() {
   if [ -z "$status_output" ] &&
      { [ -z "$actual_branch" ] || [ "$actual_branch" = "$branch" ]; } &&
      git -C "$git_root" merge-base --is-ancestor "$branch" "$base_commit" 2>/dev/null; then
+    cleanup_worktree_bound_processes "$worktree_path" >/dev/null 2>&1 || true
     git -C "$git_root" worktree remove "$worktree_path" >/dev/null 2>&1 || true
     git -C "$git_root" branch -d "$branch" >/dev/null 2>&1 || true
     append_note "$ticket_file" "Cleaned stale todo worktree metadata at ${timestamp}: removed already-merged worktree ${worktree_path} before fresh claim."

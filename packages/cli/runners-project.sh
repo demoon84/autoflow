@@ -2041,7 +2041,7 @@ loop_runner_worker() {
   local target_runner_id="$1"
   local run_role public_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result existing_stopped_by stop_reason
   local pressure_snapshot pressure_reason pressure_user_count pressure_user_limit pressure_runner_child_count pressure_runner_child_limit
-  local backoff_interval backoff_idle_streak state_pid lock_owner_pid
+  local backoff_interval backoff_idle_streak state_pid lock_owner_pid runtime_missing_path runner_common_runtime_path
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -2315,6 +2315,49 @@ loop_runner_worker() {
     queue_fingerprint_before=""
     if runner_role_queue_has_entries "$public_role"; then
       queue_fingerprint_before="$(runner_realtime_inputs_fingerprint "$public_role" 2>/dev/null || true)"
+    fi
+
+    runtime_missing_path=""
+    runner_common_runtime_path="$(runtime_scripts_root 2>/dev/null)/runner-common.sh"
+    if [ ! -f "$SCRIPT_DIR/run-role.sh" ]; then
+      runtime_missing_path="$SCRIPT_DIR/run-role.sh"
+    elif [ ! -f "$runner_common_runtime_path" ]; then
+      runtime_missing_path="$runner_common_runtime_path"
+    fi
+    if [ -n "$runtime_missing_path" ]; then
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=stopped" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval}" \
+        "current_interval_seconds=${backoff_interval}" \
+        "idle_streak_count=$(runner_positive_integer_or_default "$(runner_state_value_or_empty "$target_runner_id" "idle_streak_count")" "0")" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        $(runner_applied_config_state_fields "$target_runner_id") \
+        "active_item=" \
+        "active_ticket_id=" \
+        "active_ticket_title=" \
+        "active_stage=" \
+        "active_spec_ref=" \
+        "pid=" \
+        "started_at=${started_at}" \
+        "last_event_at=${timestamp}" \
+        "stopped_by=" \
+        "last_stop_reason=loop_runtime_missing" \
+        "last_result=loop_runtime_missing" \
+        "runtime_missing_path=${runtime_missing_path}"
+      runner_append_log "$target_runner_id" "loop_runtime_missing" \
+        "status=stopped" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${loop_pid}" \
+        "missing_path=${runtime_missing_path}"
+      stopping_loop="true"
+      runner_release_loop_lock "$target_runner_id" "$loop_pid"
+      exit 0
     fi
 
     AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT=1 "$SCRIPT_DIR/run-role.sh" "$run_role" "$project_root" "$board_dir_name" --runner "$target_runner_id" >>"$loop_stdout_file" 2>>"$loop_stderr_file" &

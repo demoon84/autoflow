@@ -567,6 +567,14 @@ cleanup_completed_ticket_worktree() {
   cleanup_default_branch="autoflow/tickets_${ticket_id}"
 
   if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
+    cleanup_summary="$(cleanup_worktree_bound_processes "$cleanup_worktree_path" 2>/dev/null || true)"
+    if [ -n "$cleanup_summary" ]; then
+      cleanup_log_parts+=("$cleanup_summary")
+      while IFS= read -r part; do
+        [ -n "$part" ] || continue
+        cleanup_status_parts+=("$part")
+      done <<< "$cleanup_summary"
+    fi
     if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
       cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
     else
