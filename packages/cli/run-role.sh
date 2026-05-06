@@ -1675,6 +1675,13 @@ clear_parked_or_stale_repairing_active_ticket_before_dispatch() {
   fi
   [ -n "$ticket_file" ] && [ -f "$ticket_file" ] || return 0
 
+  case "$(planner_ticket_board_state "$ticket_file")" in
+    done|rejected)
+      runner_clear_stale_active_ticket_state "resolved_active_ticket_state" "$ticket_file"
+      return 0
+      ;;
+  esac
+
   stage="$(planner_ticket_field "$ticket_file" "Ticket" "Stage")"
   recovery_status="$(planner_ticket_field "$ticket_file" "Recovery State" "Status")"
   if [ "$stage" = "blocked" ] && [ "$recovery_status" = "needs_user" ]; then
@@ -2446,6 +2453,68 @@ maybe_skip_stale_planner_recovery_before_adapter() {
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
   printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
   exit 0
+}
+
+clear_finished_ticket_active_state_if_resolved() {
+  local requested_item current_ticket_file current_board_state="missing"
+  local requested_is_active_queue="false"
+
+  [ "$public_role" = "ticket" ] || return 0
+  [ "${runner_status:-}" = "idle" ] || return 0
+  [ "${adapter_exit:-1}" -eq 0 ] || return 0
+
+  requested_item="${finished_active_item:-${finished_active_ticket_id:-}}"
+  [ -n "$requested_item" ] || return 0
+  case "$requested_item" in
+    "${board_root}/tickets/inprogress/"*|\
+    "${board_root}/tickets/ready-to-merge/"*|\
+    "${board_root}/tickets/merge-blocked/"*|\
+    "${board_root}/tickets/verifier/"*|\
+    "${board_root}/tickets/todo/"*|\
+    tickets/inprogress/*|\
+    tickets/ready-to-merge/*|\
+    tickets/merge-blocked/*|\
+    tickets/verifier/*|\
+    tickets/todo/*|\
+    tickets_[0-9]*)
+      requested_is_active_queue="true"
+      ;;
+  esac
+  [ "$requested_is_active_queue" = "true" ] || return 0
+
+  current_ticket_file="$(runner_active_ticket_file_from_item "$requested_item" 2>/dev/null || true)"
+  if [ -z "$current_ticket_file" ] && [ -n "${finished_active_ticket_id:-}" ]; then
+    current_ticket_file="$(runner_active_ticket_file_from_item "$finished_active_ticket_id" 2>/dev/null || true)"
+  fi
+  if [ -n "$current_ticket_file" ]; then
+    current_board_state="$(planner_ticket_board_state "$current_ticket_file")"
+  fi
+  case "$current_board_state" in
+    done|rejected|missing)
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  runner_append_log "$runner_id" "active_ticket_resolved_after_adapter" \
+    "role=${public_role}" \
+    "stale_active_item=${requested_item}" \
+    "active_ticket_id=${finished_active_ticket_id}" \
+    "current_board_state=${current_board_state}" \
+    "current_ticket=$(runner_board_relative_path "$current_ticket_file")"
+
+  finished_active_item=""
+  finished_active_ticket_id=""
+  finished_active_ticket_title=""
+  finished_active_stage=""
+  finished_active_spec_ref=""
+  finished_active_recovery_reason=""
+  finished_active_recovery_status=""
+  finished_active_recovery_failure_class=""
+  finished_active_recovery_worktree_path=""
+  finished_active_recovery_worktree_status=""
+  finished_active_recovery_board_state=""
 }
 
 maybe_skip_planner_needs_user_decision_signal() {
@@ -6006,6 +6075,7 @@ case "$agent" in
         finished_active_recovery_board_state=""
         ;;
     esac
+    clear_finished_ticket_active_state_if_resolved
 
     runner_write_state "$runner_id" \
       "status=${runner_status}" \
