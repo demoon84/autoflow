@@ -389,9 +389,7 @@ runner_kill_process_tree() {
 runner_orphan_loop_worker_pids() {
   local target_runner_id="$1"
   local skip_pid="${2:-}"
-  local canonical_script pid command word script_path
-
-  canonical_script="${SCRIPT_DIR}/runners-project.sh"
+  local pid command
 
   ps -axo pid=,command= 2>/dev/null | while read -r pid command; do
     [ -n "${pid:-}" ] || continue
@@ -402,43 +400,21 @@ runner_orphan_loop_worker_pids() {
     [ "$pid" != "$$" ] || continue
     [ -z "$skip_pid" ] || [ "$pid" != "$skip_pid" ] || continue
     case "$command" in
-      *"runners-project.sh loop-worker ${target_runner_id} "*|*"runners-project.sh loop-worker ${target_runner_id}")
+      *"runners-project.sh loop-worker ${target_runner_id} ${project_root} ${board_dir_name}"*)
         ;;
       *)
         continue
         ;;
     esac
-
-    script_path=""
-    for word in $command; do
-      case "$word" in
-        */runners-project.sh)
-          script_path="$word"
-          break
-          ;;
-      esac
-    done
-    [ -n "$script_path" ] || continue
-    [ "$script_path" != "$canonical_script" ] || continue
-    case "$script_path" in
-      *"/worktrees/"*/runners-project.sh)
-        ;;
-      *)
-        continue
-        ;;
-    esac
-    if [ ! -e "$script_path" ]; then
-      printf '%s\n' "$pid"
-      continue
-    fi
-    case "$script_path" in
-      "${project_root}/"*)
-        ;;
-      *)
-        printf '%s\n' "$pid"
-        ;;
-    esac
+    printf '%s\n' "$pid"
   done
+}
+
+runner_existing_loop_worker_pid() {
+  local target_runner_id="$1"
+  local skip_pid="${2:-}"
+
+  runner_orphan_loop_worker_pids "$target_runner_id" "$skip_pid" | sort -n | tail -n 1 || true
 }
 
 runner_stop_orphan_loop_workers() {
@@ -457,6 +433,65 @@ runner_stop_orphan_loop_workers() {
   done < <(runner_orphan_loop_worker_pids "$target_runner_id" "$skip_pid")
 
   printf '%s' "$stopped_count"
+}
+
+runner_loop_lock_dir() {
+  local target_runner_id="$1"
+
+  runner_ensure_dirs
+  printf '%s/%s.loop.lock' "$(runner_state_dir)" "$target_runner_id"
+}
+
+runner_loop_lock_pid_path() {
+  local target_runner_id="$1"
+
+  printf '%s/pid' "$(runner_loop_lock_dir "$target_runner_id")"
+}
+
+runner_acquire_loop_lock() {
+  local target_runner_id="$1"
+  local loop_pid="$2"
+  local lock_dir pid_file existing_pid attempt
+
+  lock_dir="$(runner_loop_lock_dir "$target_runner_id")"
+  pid_file="${lock_dir}/pid"
+
+  for attempt in 1 2; do
+    if mkdir "$lock_dir" 2>/dev/null; then
+      printf '%s\n' "$loop_pid" > "$pid_file"
+      return 0
+    fi
+
+    existing_pid="$(cat "$pid_file" 2>/dev/null || true)"
+    if ! runner_pid_is_running "$existing_pid"; then
+      rm -rf "$lock_dir"
+      continue
+    fi
+    return 1
+  done
+
+  return 1
+}
+
+runner_release_loop_lock() {
+  local target_runner_id="$1"
+  local loop_pid="$2"
+  local lock_dir pid_file existing_pid
+
+  lock_dir="$(runner_loop_lock_dir "$target_runner_id")"
+  pid_file="${lock_dir}/pid"
+  existing_pid="$(cat "$pid_file" 2>/dev/null || true)"
+  [ "$existing_pid" = "$loop_pid" ] || return 0
+  rm -rf "$lock_dir"
+}
+
+runner_loop_state_owned_by_pid() {
+  local target_runner_id="$1"
+  local loop_pid="$2"
+  local state_pid
+
+  state_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
+  [ -n "$state_pid" ] && [ "$state_pid" = "$loop_pid" ]
 }
 
 runner_loop_stdout_path() {
@@ -1674,17 +1709,62 @@ print_runner_action_result() {
 
 start_runner() {
   local target_runner_id="$1"
-  local timestamp previous_pid loop_pid stdout_file stderr_file run_role
+  local timestamp previous_pid existing_pid loop_pid stdout_file stderr_file run_role orphan_stopped_count
 
   load_runner_or_block "$target_runner_id" || return 0
 
   if [ "$mode" = "loop" ]; then
     previous_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
     if runner_pid_is_running "$previous_pid"; then
+      orphan_stopped_count="$(runner_stop_orphan_loop_workers "$target_runner_id" "$previous_pid")"
       timestamp="$(runner_now_iso)"
       print_runner_action_result "ok" "already_running" "$target_runner_id" "running" "$timestamp" "$previous_pid"
       printf 'stdout=%s\n' "$(runner_loop_stdout_path "$target_runner_id")"
       printf 'stderr=%s\n' "$(runner_loop_stderr_path "$target_runner_id")"
+      printf 'orphan_loop_workers_stopped=%s\n' "$orphan_stopped_count"
+      return 0
+    fi
+
+    existing_pid="$(runner_existing_loop_worker_pid "$target_runner_id" "$previous_pid")"
+    if runner_pid_is_running "$existing_pid"; then
+      orphan_stopped_count="$(runner_stop_orphan_loop_workers "$target_runner_id" "$existing_pid")"
+      timestamp="$(runner_now_iso)"
+      runner_write_state "$target_runner_id" \
+        "status=running" \
+        "role=${role}" \
+        "agent=${agent}" \
+        "mode=${mode}" \
+        "interval_seconds=${interval_seconds}" \
+        "model=${model}" \
+        "reasoning=${reasoning}" \
+        $(runner_applied_config_state_fields "$target_runner_id") \
+        "active_item=$(runner_active_state_value "$target_runner_id" "active_item")" \
+        "active_ticket_id=$(runner_active_state_value "$target_runner_id" "active_ticket_id")" \
+        "active_ticket_title=$(runner_active_state_value "$target_runner_id" "active_ticket_title")" \
+        "active_stage=$(runner_active_state_value "$target_runner_id" "active_stage")" \
+        "active_spec_ref=$(runner_active_state_value "$target_runner_id" "active_spec_ref")" \
+        "active_recovery_reason=$(runner_active_state_value "$target_runner_id" "active_recovery_reason")" \
+        "active_recovery_status=$(runner_active_state_value "$target_runner_id" "active_recovery_status")" \
+        "active_recovery_failure_class=$(runner_active_state_value "$target_runner_id" "active_recovery_failure_class")" \
+        "active_recovery_worktree_path=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_path")" \
+        "active_recovery_worktree_status=$(runner_active_state_value "$target_runner_id" "active_recovery_worktree_status")" \
+        "active_recovery_board_state=$(runner_active_state_value "$target_runner_id" "active_recovery_board_state")" \
+        "pid=${existing_pid}" \
+        "started_at=${timestamp}" \
+        "last_event_at=${timestamp}" \
+        "stopped_by=" \
+        "last_stop_reason=" \
+        "last_result=loop_adopted"
+      runner_append_log "$target_runner_id" "loop_adopt" \
+        "status=running" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${existing_pid}" \
+        "orphan_loop_workers_stopped=${orphan_stopped_count}"
+      print_runner_action_result "ok" "already_running_adopted" "$target_runner_id" "running" "$timestamp" "$existing_pid"
+      printf 'stdout=%s\n' "$(runner_loop_stdout_path "$target_runner_id")"
+      printf 'stderr=%s\n' "$(runner_loop_stderr_path "$target_runner_id")"
+      printf 'orphan_loop_workers_stopped=%s\n' "$orphan_stopped_count"
       return 0
     fi
 
@@ -1801,7 +1881,7 @@ stop_runner() {
   elif [ -n "$previous_pid" ]; then
     result="stopped_stale_pid"
   fi
-  orphan_stopped_count="$(runner_stop_orphan_loop_workers "$target_runner_id" "$previous_pid")"
+  orphan_stopped_count="$(runner_stop_orphan_loop_workers "$target_runner_id" "")"
   if [ "$orphan_stopped_count" != "0" ]; then
     result="${result}_orphan_loop_workers_${orphan_stopped_count}"
   fi
@@ -1893,7 +1973,7 @@ loop_runner_worker() {
   local target_runner_id="$1"
   local run_role public_role interval started_at loop_pid child_pid run_exit current_status current_mode current_enabled current_interval timestamp stopping_loop last_result existing_stopped_by stop_reason
   local pressure_snapshot pressure_reason pressure_user_count pressure_user_limit pressure_runner_child_count pressure_runner_child_limit
-  local backoff_interval backoff_idle_streak
+  local backoff_interval backoff_idle_streak state_pid lock_owner_pid
 
   load_runner_or_block "$target_runner_id" || return 0
   if [ "$mode" != "loop" ]; then
@@ -1915,12 +1995,36 @@ loop_runner_worker() {
   child_pid=""
   stopping_loop="false"
 
+  if ! runner_acquire_loop_lock "$target_runner_id" "$loop_pid"; then
+    lock_owner_pid="$(cat "$(runner_loop_lock_pid_path "$target_runner_id")" 2>/dev/null || true)"
+    runner_append_log "$target_runner_id" "loop_worker_duplicate_exit" \
+      "status=stopped" \
+      "role=${role}" \
+      "mode=${mode}" \
+      "pid=${loop_pid}" \
+      "owner_pid=${lock_owner_pid}" \
+      "reason=loop_lock_held"
+    return 0
+  fi
+
   stop_loop() {
     stopping_loop="true"
     if [ -n "${child_pid:-}" ] && runner_pid_is_running "$child_pid"; then
       runner_kill_process_tree "$child_pid"
     fi
     timestamp="$(runner_now_iso)"
+    if ! runner_loop_state_owned_by_pid "$target_runner_id" "$loop_pid"; then
+      state_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
+      runner_release_loop_lock "$target_runner_id" "$loop_pid"
+      runner_append_log "$target_runner_id" "loop_stop_state_write_skipped" \
+        "status=stale_loop" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${loop_pid}" \
+        "state_pid=${state_pid}" \
+        "reason=state_pid_changed"
+      exit 0
+    fi
     existing_stopped_by="$(runner_state_value_or_empty "$target_runner_id" "stopped_by")"
     if [ "$existing_stopped_by" = "user" ]; then
       stop_reason="user_requested"
@@ -1949,6 +2053,7 @@ loop_runner_worker() {
       "stopped_by=${existing_stopped_by}" \
       "last_stop_reason=${stop_reason}" \
       "last_result=loop_stopped"
+    runner_release_loop_lock "$target_runner_id" "$loop_pid"
     runner_append_log "$target_runner_id" "loop_stop" \
       "status=stopped" \
       "role=${role}" \
@@ -1964,6 +2069,18 @@ loop_runner_worker() {
       return 0
     fi
     timestamp="$(runner_now_iso)"
+    if ! runner_loop_state_owned_by_pid "$target_runner_id" "$loop_pid"; then
+      state_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
+      runner_release_loop_lock "$target_runner_id" "$loop_pid"
+      runner_append_log "$target_runner_id" "loop_exit_state_write_skipped" \
+        "status=stale_loop" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${loop_pid}" \
+        "state_pid=${state_pid}" \
+        "reason=state_pid_changed"
+      return 0
+    fi
     runner_write_state "$target_runner_id" \
       "status=stopped" \
       "role=${role}" \
@@ -1985,6 +2102,7 @@ loop_runner_worker() {
       "stopped_by=" \
       "last_stop_reason=unexpected_exit" \
       "last_result=loop_exited_unexpectedly"
+    runner_release_loop_lock "$target_runner_id" "$loop_pid"
     runner_append_log "$target_runner_id" "loop_exit" \
       "status=stopped" \
       "role=${role}" \
@@ -2044,6 +2162,18 @@ loop_runner_worker() {
     fi
 
     current_status="$(runner_state_value_or_empty "$target_runner_id" "status")"
+    state_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
+    if [ -n "$state_pid" ] && [ "$state_pid" != "$loop_pid" ]; then
+      runner_append_log "$target_runner_id" "stale_loop_worker_exit" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${loop_pid}" \
+        "state_pid=${state_pid}" \
+        "reason=state_pid_changed_before_tick"
+      stopping_loop="true"
+      runner_release_loop_lock "$target_runner_id" "$loop_pid"
+      exit 0
+    fi
     if [ "$current_status" = "stopped" ]; then
       break
     fi
@@ -2119,6 +2249,18 @@ loop_runner_worker() {
     child_pid=""
 
     current_status="$(runner_state_value_or_empty "$target_runner_id" "status")"
+    state_pid="$(runner_state_value_or_empty "$target_runner_id" "pid")"
+    if [ -n "$state_pid" ] && [ "$state_pid" != "$loop_pid" ]; then
+      runner_append_log "$target_runner_id" "stale_loop_worker_exit" \
+        "role=${role}" \
+        "mode=${mode}" \
+        "pid=${loop_pid}" \
+        "state_pid=${state_pid}" \
+        "reason=state_pid_changed_after_tick"
+      stopping_loop="true"
+      runner_release_loop_lock "$target_runner_id" "$loop_pid"
+      exit 0
+    fi
     if [ "$current_status" = "stopped" ]; then
       break
     fi

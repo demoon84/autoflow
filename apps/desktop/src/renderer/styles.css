@@ -1829,62 +1829,6 @@ pre {
   padding: 0 4px;
 }
 
-.desktop-close-policy-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-width: 0;
-  margin-bottom: 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 10px 12px;
-}
-
-.desktop-close-policy-copy {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.desktop-close-policy-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-.desktop-close-policy-title svg {
-  flex: 0 0 auto;
-  color: var(--chart-2);
-}
-
-.desktop-close-policy-title strong {
-  font-size: var(--font-size-control-sm);
-  font-weight: 540;
-}
-
-.desktop-close-policy-copy > span {
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: var(--font-size-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.desktop-close-policy-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-
-.desktop-close-policy-actions .af-button {
-  gap: 6px;
-}
-
 .runner-row {
   position: relative;
   display: grid;

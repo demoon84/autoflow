@@ -236,7 +236,6 @@ type RunnerConfigApplyPending = {
 
 type RunnerAuthChoice = "continue" | "cancel";
 type RunnerControlAction = "start" | "stop" | "restart";
-type DesktopClosePolicy = "detach" | "stop";
 type RunnerControlOptions = {
   force?: boolean;
 };
@@ -1181,9 +1180,6 @@ function App() {
   const [runnerError, setRunnerError] = React.useState("");
   const [runnerDrafts, setRunnerDrafts] = React.useState<Record<string, RunnerDraft>>({});
   const [runnerSavedDrafts, setRunnerSavedDrafts] = React.useState<Record<string, RunnerDraft>>({});
-  const [desktopClosePolicy, setDesktopClosePolicy] = React.useState<DesktopClosePolicy>("detach");
-  const [desktopSessionEvidence, setDesktopSessionEvidence] = React.useState<AutoflowDesktopSessionEvidence | null>(null);
-  const [desktopClosePolicySaving, setDesktopClosePolicySaving] = React.useState(false);
   const [selectedRunnerId, setSelectedRunnerId] = React.useState("");
   const [selectedLogPath, setSelectedLogPath] = React.useState("");
   const [boardSearch, setBoardSearch] = React.useState("");
@@ -1303,32 +1299,6 @@ function App() {
     setActiveSettingsSection(section);
   }, []);
 
-  const updateDesktopClosePolicy = React.useCallback(
-    async (policy: DesktopClosePolicy) => {
-      if (desktopClosePolicySaving || policy === desktopClosePolicy) return;
-      setDesktopClosePolicySaving(true);
-      try {
-        const result = await window.autoflow.setDesktopClosePolicy(policy);
-        if (!result.ok) {
-          pushToast("error", "종료 정책 저장에 실패했습니다.");
-          return;
-        }
-        setDesktopClosePolicy(result.policy);
-        pushToast(
-          "success",
-          result.policy === "stop"
-            ? "앱 종료 시 러너를 함께 정지하도록 설정했습니다."
-            : "앱 종료 후 detached runner를 유지하도록 설정했습니다."
-        );
-      } catch (error) {
-        pushToast("error", error instanceof Error ? error.message : "종료 정책 저장에 실패했습니다.");
-      } finally {
-        setDesktopClosePolicySaving(false);
-      }
-    },
-    [desktopClosePolicy, desktopClosePolicySaving, pushToast]
-  );
-
   React.useEffect(() => {
     let isMounted = true;
 
@@ -1344,8 +1314,6 @@ function App() {
         }
         if (isMounted) {
           setInstalledAgentProfiles(profiles || {});
-          setDesktopClosePolicy(config.desktopClosePolicy === "stop" ? "stop" : "detach");
-          setDesktopSessionEvidence(config.desktopSession || null);
         }
       })
       .catch(() => {
@@ -2431,12 +2399,8 @@ function App() {
                       actionKeys={runnerActionKeys}
                       drafts={runnerDrafts}
                       savedDrafts={runnerSavedDrafts}
-                      desktopClosePolicy={desktopClosePolicy}
-                      desktopSessionEvidence={desktopSessionEvidence}
-                      desktopClosePolicySaving={desktopClosePolicySaving}
                       onSelectRunner={selectRunner}
                       onControl={controlRunner}
-                      onDesktopClosePolicyChange={updateDesktopClosePolicy}
                       onRunnerAuthChoice={answerRunnerAuthPrompt}
                       onDraftChange={updateRunnerDraft}
                       onConfigure={saveRunnerConfig}
@@ -5885,12 +5849,8 @@ function TicketBoard({
   actionKeys = {},
   drafts = {},
   savedDrafts = {},
-  desktopClosePolicy = "detach",
-  desktopSessionEvidence,
-  desktopClosePolicySaving = false,
   onSelectRunner,
   onControl,
-  onDesktopClosePolicyChange,
   onRunnerAuthChoice,
   onDraftChange,
   onConfigure
@@ -5906,12 +5866,8 @@ function TicketBoard({
   actionKeys?: Record<string, string>;
   drafts?: Record<string, RunnerDraft>;
   savedDrafts?: Record<string, RunnerDraft>;
-  desktopClosePolicy?: DesktopClosePolicy;
-  desktopSessionEvidence?: AutoflowDesktopSessionEvidence | null;
-  desktopClosePolicySaving?: boolean;
   onSelectRunner?: (runnerId: string) => void;
   onControl?: (action: RunnerControlAction, runnerId: string, options?: RunnerControlOptions) => void;
-  onDesktopClosePolicyChange?: (policy: DesktopClosePolicy) => void;
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
@@ -6062,44 +6018,6 @@ function TicketBoard({
       }
     >
       <div className="ai-progress-board" data-runner-count={runners.length} aria-label="AI별 작업 진행률">
-        <section className="desktop-close-policy-panel" aria-label="데스크톱 종료 정책">
-          <div className="desktop-close-policy-copy">
-            <div className="desktop-close-policy-title">
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              <strong>종료 정책</strong>
-              <Badge variant={desktopClosePolicy === "detach" ? "default" : "outline"}>
-                {desktopClosePolicy === "detach" ? "Detached 유지" : "러너 함께 정지"}
-              </Badge>
-            </div>
-            <span>
-              {desktopSessionEvidence?.uncleanExit
-                ? "이전 데스크톱 세션이 clean shutdown 없이 끝났고, 기존 detached runner 상태에 재연결했습니다."
-                : "기본 종료는 detached runner를 유지합니다."}
-            </span>
-          </div>
-          <div className="desktop-close-policy-actions" role="group" aria-label="종료 정책 선택">
-            <Button
-              type="button"
-              variant={desktopClosePolicy === "detach" ? "default" : "outline"}
-              size="xs"
-              disabled={desktopClosePolicySaving}
-              onClick={() => onDesktopClosePolicyChange?.("detach")}
-            >
-              <Check className="h-4 w-4" aria-hidden="true" />
-              <span>유지</span>
-            </Button>
-            <Button
-              type="button"
-              variant={desktopClosePolicy === "stop" ? "default" : "outline"}
-              size="xs"
-              disabled={desktopClosePolicySaving}
-              onClick={() => onDesktopClosePolicyChange?.("stop")}
-            >
-              <Square className="h-4 w-4" aria-hidden="true" />
-              <span>정지</span>
-            </Button>
-          </div>
-        </section>
         {boardMissing ? (
           <div className="ai-progress-empty ai-progress-empty-install">
             <FolderPlus className="h-5 w-5" aria-hidden="true" />

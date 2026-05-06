@@ -11,9 +11,6 @@ const desktopRoot = path.resolve(__dirname, "..");
 const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
 const windowStateFileName = "window-state.json";
 const desktopSessionStateFileName = "desktop-session-state.json";
-const desktopClosePolicyFileName = "desktop-close-policy.json";
-const desktopClosePolicies = new Set(["detach", "stop"]);
-const defaultDesktopClosePolicy = "detach";
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
@@ -409,18 +406,12 @@ function cancelInvocation(invocationId) {
 function appConfig() {
   return {
     defaultProjectRoot: repoRoot,
-    defaultBoardDirName,
-    desktopClosePolicy: readDesktopClosePolicy(),
-    desktopSession: desktopSessionEvidence
+    defaultBoardDirName
   };
 }
 
 function desktopSessionStatePath() {
   return path.join(app.getPath("userData"), desktopSessionStateFileName);
-}
-
-function desktopClosePolicyPath() {
-  return path.join(app.getPath("userData"), desktopClosePolicyFileName);
 }
 
 function readJsonFileSync(filePath) {
@@ -436,24 +427,6 @@ function writeJsonFileSync(filePath, value) {
     fsSync.mkdirSync(path.dirname(filePath), { recursive: true });
     fsSync.writeFileSync(filePath, JSON.stringify(value, null, 2), "utf8");
   } catch {}
-}
-
-function normalizeDesktopClosePolicy(value) {
-  return desktopClosePolicies.has(value) ? value : defaultDesktopClosePolicy;
-}
-
-function readDesktopClosePolicy() {
-  const parsed = readJsonFileSync(desktopClosePolicyPath());
-  return normalizeDesktopClosePolicy(parsed?.policy);
-}
-
-function writeDesktopClosePolicy(policy) {
-  const normalized = normalizeDesktopClosePolicy(policy);
-  writeJsonFileSync(desktopClosePolicyPath(), {
-    policy: normalized,
-    updatedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z")
-  });
-  return normalized;
 }
 
 function markDesktopSessionStarted() {
@@ -485,14 +458,6 @@ function markDesktopSessionClean(reason) {
     cleanShutdownReason: reason || "quit",
     updatedAt: timestamp
   });
-}
-
-function desktopClosePolicyResult(policy) {
-  return {
-    ok: true,
-    policy: normalizeDesktopClosePolicy(policy),
-    policies: Array.from(desktopClosePolicies)
-  };
 }
 
 function projectScopeKey(projectRoot, boardDirName) {
@@ -4084,10 +4049,6 @@ app.whenReady().then(() => {
   // run/configure/create/write) intentionally have no timeout because they
   // can legitimately run for minutes (CLI work, AI synth, etc).
   ipcMain.handle("autoflow:getConfig", withTimeout(() => appConfig(), 30000));
-  ipcMain.handle("autoflow:getDesktopClosePolicy", () => desktopClosePolicyResult(readDesktopClosePolicy()));
-  ipcMain.handle("autoflow:setDesktopClosePolicy", (_event, policy) =>
-    desktopClosePolicyResult(writeDesktopClosePolicy(policy))
-  );
   ipcMain.handle(
     "autoflow:listInstalledAgentProfiles",
     withTimeout(() => readInstalledAgentProfiles(), 30000)
@@ -4145,13 +4106,6 @@ app.on("before-quit", (event) => {
     memoryCeilingIntervalId = null;
   }
 
-  const closePolicy = readDesktopClosePolicy();
-  if (closePolicy !== "stop") {
-    markDesktopSessionClean("detached_runners_preserved");
-    app.exit(0);
-    return;
-  }
-
   const shutdownTimeoutMs = 5000;
   const cleanup = shutdownAllRunners().catch(() => 0);
   const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
@@ -4159,7 +4113,7 @@ app.on("before-quit", (event) => {
     try {
       await forceKillSurvivingRunners();
     } catch {}
-    markDesktopSessionClean("explicit_runner_stop_policy");
+    markDesktopSessionClean("runner_stop_policy");
     app.exit(0);
   });
 });
