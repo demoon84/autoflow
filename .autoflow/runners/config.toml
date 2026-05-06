@@ -1,6 +1,6 @@
 # Autoflow runner configuration — 3-runner topology.
 #
-#   planner : Orchestrator AI — order/PRD intake, todo creation.
+#   planner : Planner AI — order/PRD intake, todo creation.
 #               Watches tickets/{inbox,backlog}.
 #   worker  : Impl AI — claims todo, creates worktree, edits code, runs the
 #               verify command, calls finish-ticket-owner.sh pass. The

@@ -85,7 +85,7 @@
 
 ## Agent Modes
 
-이 보드에서 기본 실행은 `Orchestrator AI Mode` + `Ticket Owner Mode` 다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. legacy role-pipeline 이 필요할 때만 plan / todo / verifier heartbeat 를 분리해 쓴다.
+이 보드에서 기본 실행은 `Planner AI Mode` + `Ticket Owner Mode` 다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. legacy role-pipeline 이 필요할 때만 plan / todo / verifier heartbeat 를 분리해 쓴다.
 
 ### 1. Spec Authoring Mode
 
@@ -142,7 +142,7 @@
 - 같은 owner 가 동시에 여러 active ticket 처리
 - `git push`
 
-### 3. Orchestrator AI Mode (default planner)
+### 3. Planner AI Mode (default planner)
 
 목적:
 

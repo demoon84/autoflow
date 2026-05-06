@@ -20,21 +20,21 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 8. `.autoflow/rules/verifier/README.md`
 9. 관련 문서:
    - PRD 정리면 `.autoflow/agents/spec-author-agent.md`
-   - Orchestrator AI(`planner`) plan 도출 / reject 재계획 / board recovery 이면 `.autoflow/agents/plan-to-ticket-agent.md`
+   - Planner AI(`planner`) plan 도출 / reject 재계획 / board recovery 이면 `.autoflow/agents/plan-to-ticket-agent.md`
    - Impl AI(`worker`) 기본 실행이면 `.autoflow/agents/ticket-owner-agent.md`
    - Wiki AI(`wiki`) wiki AI synthesis 면 `.autoflow/agents/wiki-maintainer-agent.md`
    - 레거시: todo / verifier / coordinator / merge-bot agent 파일들은 backwards compatibility 용으로만 유지된다.
 
 ## Topology
 
-기본 토폴로지는 **Orchestrator AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. 멀티 owner 로 인한 worktree base drift / Allowed Paths 충돌 때문에 단일 Impl AI 로 직렬화했고, 세 역할은 디스조인트한 경로만 쓰기 때문에 동시에 ticking 해도 충돌이 발생하지 않는다.
+기본 토폴로지는 **Planner AI 1개 + Impl AI 1개 + Wiki AI 1개** 의 3-runner 모델이다. 멀티 owner 로 인한 worktree base drift / Allowed Paths 충돌 때문에 단일 Impl AI 로 직렬화했고, 세 역할은 디스조인트한 경로만 쓰기 때문에 동시에 ticking 해도 충돌이 발생하지 않는다.
 
-- `planner` (role=`planner`): Orchestrator AI. 입력은 `tickets/inbox/` order, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드/worktree 는 절대 건드리지 않는다.
+- `planner` (role=`planner`): Planner AI. 입력은 `tickets/inbox/` order, `tickets/backlog/` PRD, `tickets/reject/`, 그리고 stalled/blocked ticket markdown. 출력은 `tickets/backlog/` generated PRD, `tickets/todo/` 티켓, `Recovery State` 기반 owner 재개 지시다. 제품 코드/worktree 는 절대 건드리지 않는다.
 - `worker` (role=`ticket-owner`): Impl AI. `tickets/todo/` claim → `tickets/inprogress/` worktree → mini-plan + 구현 + 검증 + AI-led merge + `tickets/done/` 까지 한 턴에 끝낸다. 완료 finalizer 는 evidence/log/commit 만 처리하고 wiki 는 직접 갱신하지 않는다.
 - `wiki` (role=`wiki-maintainer`): Wiki AI. 1분 tick. `.autoflow/tickets/done/` 와 `.autoflow/tickets/reject/` 변동을 먼저 판단하고, 실제 baseline drift 가 있을 때만 `autoflow wiki update` / `update-wiki.sh` 를 도구로 호출한다. 확인-only 이력은 `.autoflow/runners/state/wiki-baseline.history` 에 남기고, 내용 변화가 없으면 idle 또는 `status=unchanged` 로 끝낸다.
 - `coordinator`, `merge-bot`, 추가 owner 는 신규 보드에서 더 이상 기본 runner 가 아니다. role 식별자 자체는 호환성을 위해 살아 있지만, `.autoflow/runners/config.toml` 의 디폴트는 `planner` + `worker` + `wiki` 세 개만이다.
 
-경로 분할이 충돌 방지의 핵심이다. Orchestrator AI ⊂ `.autoflow/tickets/{inbox,backlog,todo,inprogress,reject,done}/` 의 markdown-only 계획/복구 상태, Impl AI ⊂ product 코드 + 해당 ticket worktree + `tickets/{todo,inprogress,done,reject}/` 의 자기 티켓 파일, Wiki AI ⊂ `.autoflow/wiki/` 의 실제 wiki content update + `.autoflow/runners/state/wiki-baseline.history` 의 확인 이력. Impl AI 는 wiki 파일을 ticket completion commit 에 섞지 않는다.
+경로 분할이 충돌 방지의 핵심이다. Planner AI ⊂ `.autoflow/tickets/{inbox,backlog,todo,inprogress,reject,done}/` 의 markdown-only 계획/복구 상태, Impl AI ⊂ product 코드 + 해당 ticket worktree + `tickets/{todo,inprogress,done,reject}/` 의 자기 티켓 파일, Wiki AI ⊂ `.autoflow/wiki/` 의 실제 wiki content update + `.autoflow/runners/state/wiki-baseline.history` 의 확인 이력. Impl AI 는 wiki 파일을 ticket completion commit 에 섞지 않는다.
 
 ## Root Rules
 
@@ -42,8 +42,8 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. Ticket Owner 또는 legacy todo 는 git 저장소에서 티켓별 worktree 를 우선 사용하고, worktree 가 없을 때만 프로젝트 루트 기준으로 fallback 한다.
 4. `.autoflow/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
-5. 기본 실행 모델은 **Orchestrator AI + Impl AI + Wiki AI** 다. Orchestrator AI 가 order/backlog/reject 를 PRD/todo 로 흘려보내고 stalled/blocked 작업을 `Recovery State` 로 복구 지시하면, Impl AI 가 todo claim 부터 머지까지 한 번에 끝내고, Wiki AI 가 별도 tick 으로 wiki AI synthesis 를 layer 한다.
-5a. **Reject auto-replan 과 board recovery 는 Orchestrator AI (`planner`, `start-plan.sh`) 의 책임**이다. `AUTOFLOW_REJECT_AUTO_REPLAN=off` 가 아니면 `tickets/reject/` 의 티켓을 최대 `AUTOFLOW_REJECT_MAX_RETRIES` 회까지 `tickets/todo/` 로 되돌린다. Impl AI 의 `start-ticket-owner.sh` 는 reject 를 직접 재계획하지 않는다.
+5. 기본 실행 모델은 **Planner AI + Impl AI + Wiki AI** 다. Planner AI 가 order/backlog/reject 를 PRD/todo 로 흘려보내고 stalled/blocked 작업을 `Recovery State` 로 복구 지시하면, Impl AI 가 todo claim 부터 머지까지 한 번에 끝내고, Wiki AI 가 별도 tick 으로 wiki AI synthesis 를 layer 한다.
+5a. **Reject auto-replan 과 board recovery 는 Planner AI (`planner`, `start-plan.sh`) 의 책임**이다. `AUTOFLOW_REJECT_AUTO_REPLAN=off` 가 아니면 `tickets/reject/` 의 티켓을 최대 `AUTOFLOW_REJECT_MAX_RETRIES` 회까지 `tickets/todo/` 로 되돌린다. Impl AI 의 `start-ticket-owner.sh` 는 reject 를 직접 재계획하지 않는다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 `autoflow run planner` 로 todo 를 만든 뒤 `autoflow run ticket` / owner runner 로 구현하는 흐름을 우선한다.
 7. 위 heartbeat 자동화는 사용자가 명시적으로 "멈춰"라고 말하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기 상태다.
 8. ticket owner 또는 verifier 는 local commit 을 할 수 있고, `git push` 는 어떤 자동화에서도 절대 금지다.

@@ -162,4 +162,4 @@ Important:
 - Each completed owner / verifier run should leave at least one completion log under `BOARD_ROOT/logs/`.
 - Link related specs, plans, tickets, and verification notes with `## Reference Notes`.
 - Heartbeat workers do not stop themselves. `status=idle` is a valid waiting state.
-- Board location is authoritative. In the 3-runner topology (planner + worker + wiki), planner is the Orchestrator AI for board health and recovery, while Impl AI (`worker`) decides pass / fail after AI-led verification and runs the inline merge finalizer (`merge-ready-ticket.*`) itself. In the legacy role-pipeline, only verifier mode decides pass / fail.
+- Board location is authoritative. In the 3-runner topology (planner + worker + wiki), planner is the Planner AI for board health and recovery, while Impl AI (`worker`) decides pass / fail after AI-led verification and runs the inline merge finalizer (`merge-ready-ticket.*`) itself. In the legacy role-pipeline, only verifier mode decides pass / fail.

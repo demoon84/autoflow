@@ -34,7 +34,7 @@ PROJECT_ROOT
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
-- `tickets/inbox/`: quick order queue before Orchestrator AI promotion.
+- `tickets/inbox/`: quick order queue before Planner AI promotion.
 - `tickets/backlog/`: approved spec queue before execution.
 - `tickets/plan/`: legacy planning queue.
 - `tickets/todo/`: legacy implementation queue.
@@ -78,10 +78,10 @@ At the start of work, read in this order:
 
 ## Core Rules
 
-1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Orchestrator AI.
+1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Planner AI.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
-4. The default execution path is Orchestrator AI plus Ticket Owner Mode: `planner` promotes order/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
+4. The default execution path is Planner AI plus Ticket Owner Mode: `planner` promotes order/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.

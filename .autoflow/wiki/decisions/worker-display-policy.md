@@ -35,7 +35,7 @@ To provide a clean and consistent user experience across the desktop UI, tickets
 ## Origins
 - **Decision**: Established to reduce visual noise and unify worker mentions across the project (`tickets/done/prd_009/prd_009.md`).
 - **Superseding Update**: `prd_039` replaced the prior user-visible `AI-N` convention with `worker-N` while preserving parser compatibility and internal ids.
-- **Role Refinement**: `prd_096` added "오케스트레이터" to the Planner label to clarify its higher-level orchestration role within the 3-runner topology.
+- **Role Refinement**: `prd_096` added "Planner" to the Planner label to clarify its higher-level orchestration role within the 3-runner topology.
 - **Standard**: Formally documented in `AGENTS.md` and `CLAUDE.md`.
 
 ## Citations

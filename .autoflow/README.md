@@ -15,7 +15,7 @@ Use Ticket Owner Mode by default:
 4. The agent renders a full PRD draft, or multiple PRD drafts from an accepted split map, only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
 5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
 6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
-7. The planner runner acts as Orchestrator AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
+7. The planner runner acts as Planner AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
 8. The monitor runner observes runner state, board queues, telemetry/metrics, dirty root, and exact `Recovery State` `needs_user` fields. It only emits evidence or follow-up orders/checks.
 9. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
 10. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
@@ -27,7 +27,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 
 ## Important Directories
 
-- `tickets/inbox/`: quick memos waiting for Orchestrator AI promotion into generated PRDs and todo tickets.
+- `tickets/inbox/`: quick memos waiting for Planner AI promotion into generated PRDs and todo tickets.
 - `tickets/backlog/`: approved or generated specs waiting for execution.
 - `tickets/inprogress/`: active Ticket Owner tickets and verification records.
 - `tickets/ready-to-merge/`: legacy/compatibility state for verified owner tickets waiting for finalization.
@@ -53,7 +53,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Codex `$autoflow`: PRD handoff only.
 - `#autoflow`: compatibility alias for PRD handoff only.
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick memo intake only.
-- `autoflow runners start planner`: Orchestrator AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
+- `autoflow runners start planner`: Planner AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
 - `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
 - `autoflow run monitor` / `autoflow monitor scan`: Monitor AI — observe runner/board/telemetry/dirty-root/needs_user health, then emit key=value evidence and deduped follow-up order/check files. It must not stop, restart, kill, clean up, merge, or push.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
@@ -88,7 +88,7 @@ The agent must:
 1. Preserve the user's original request in `tickets/inbox/memo_NNN.md`.
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
-4. Let Orchestrator AI promote the memo into a generated PRD and todo ticket when safe.
+4. Let Planner AI promote the memo into a generated PRD and todo ticket when safe.
 5. Treat memo requests as directives and infer the safest narrow implementation scope; only unsafe memos should be blocked.
 
 ## Ticket Owner Rules

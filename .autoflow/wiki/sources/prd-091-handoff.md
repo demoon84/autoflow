@@ -13,7 +13,7 @@ concepts:
   - "Failure Class"
 ---
 
-# 반려 최대 재시도 오케스트레이터 처리 PRD
+# 반려 최대 재시도 Planner 처리 PRD
 
 ## One-liner
 
@@ -26,7 +26,7 @@ concepts:
 ## Entities
 
 - Orchestrator (System Module): 전반적인 워크플로우를 제어하며 실패 루프를 끊고 보드 상태를 관리함.
-- Planner AI (Agent): 재시도 한도 초과 상태를 진단하고 후속 조치(복구 또는 주차)를 결정하는 오케스트레이터 엔진.
+- Planner AI (Agent): 재시도 한도 초과 상태를 진단하고 후속 조치(복구 또는 주차)를 결정하는 Planner 엔진.
 
 ## Concepts
 

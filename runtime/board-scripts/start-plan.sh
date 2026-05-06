@@ -800,12 +800,12 @@ if blocked_auto_recover_enabled; then
         "start-plan.sh" \
         "Planner runtime detected a blocked ticket whose Allowed Paths still overlap dirty PROJECT_ROOT paths and emitted source=blocked-dirty-orchestration." \
         "blocked_origin=$(board_relative_path "$blocked_ticket"); failure_class=${blocked_failure_class}; dirty_paths=${blocked_dirty_summary}" \
-        "Orchestrator AI가 dirty path를 Allowed Paths 소유권별로 commit 또는 stash 처리했는지 확인한다."
+        "Planner AI가 dirty path를 Allowed Paths 소유권별로 commit 또는 stash 처리했는지 확인한다."
       record_skill_extraction "$blocked_ticket" "orchestration_cleanup" "orchestration-cleanup"
       emit_replan_skipped_metadata "$replan_skipped_file"
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
-      printf 'next_action=Orchestrator AI must integrate only the dirty PROJECT_ROOT paths that overlap this ticket Allowed Paths. Do not include telemetry, check ledger, wiki, runner state, or other generated board side effects in cleanup commits. Use [PRD_NNN][ticket_NNN] orchestration cleanup: <specific path summary> for a real Allowed Paths overlap, then re-check this ticket. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
+      printf 'next_action=Planner AI must integrate only the dirty PROJECT_ROOT paths that overlap this ticket Allowed Paths. Do not include telemetry, check ledger, wiki, runner state, or other generated board side effects in cleanup commits. Use [PRD_NNN][ticket_NNN] orchestration cleanup: <specific path summary> for a real Allowed Paths overlap, then re-check this ticket. Never git push. needs_user is reserved for mechanically impossible cases (git missing/locked).\n'
       exit 0
     fi
 

@@ -7,7 +7,7 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 Default topology (planner + worker + monitor + verifier + wiki):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner` (Orchestrator AI): converts quick orders, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns order promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
+- `planner` (Planner AI): converts quick orders, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns order promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
 - `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
 - `monitor` (Monitor AI): runs `autoflow monitor scan`, reads runner state, board queues, telemetry/metrics, dirty root, and exact `Recovery State` `needs_user` fields, then emits key=value evidence and deduped `source: autoflow-monitor-agent` order/check files. It must not stop, restart, kill, clean up, merge, or push.
 - `wiki` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
@@ -162,7 +162,7 @@ Recommended environment variables:
 
 Default (all sizes):
 
-- one Orchestrator AI (`planner`),
+- one Planner AI (`planner`),
 - one Impl AI (`worker`),
 - one Monitor AI (`monitor`),
 - one Wiki AI (`wiki`).

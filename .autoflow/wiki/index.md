@@ -185,7 +185,7 @@ Tickets, verification records, and logs remain authoritative.
 
 - [[sources/prd-038-handoff]] (Wiki Bot Codex 지원)
 
-- [[sources/prd-091-handoff]] (반려 최대 재시도 오케스트레이터 처리 PRD)
+- [[sources/prd-091-handoff]] (반려 최대 재시도 Planner 처리 PRD)
 
 - [[sources/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
@@ -200,7 +200,7 @@ urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 
 - [[sources/prd-123-spec-handoff]] (metrics-project.sh 및 _stdout.log 처리 개선)
 
-- [[sources/prd-091-spec-handoff]] (반려 최대 재시도 오케스트레이터 처리)
+- [[sources/prd-091-spec-handoff]] (반려 최대 재시도 Planner 처리)
 
 - [[sources/prd-121-spec-handoff]] (텔레메트리 레이어 도입 - 틱별 구조화 이벤트 jsonl 추출)
 
