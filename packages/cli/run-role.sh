@@ -2864,7 +2864,10 @@ maybe_skip_debounced_wiki_turn() {
     *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
   esac
 
-  if [ "$changed_weight" -gt 0 ] && { [ "$changed_weight" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
+  # Debounce is defined in terms of meaningful change count. Weight is still
+  # surfaced for commit-gating/diagnostics, but using it here made a single
+  # high-weight learned-skill file open the wiki adapter on every tick.
+  if [ "$changed_count" -gt 0 ] && { [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
     return 1
   fi
 
