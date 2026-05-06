@@ -397,12 +397,46 @@ check_resolved_ticket_worktrees() {
   fi
 }
 
+check_rogue_project_root_board_paths() {
+  local rogue_count=0 tracked_output users_autoflow_count
+
+  tracked_output=""
+  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    tracked_output="$(git -C "$PROJECT_ROOT" ls-files -- 'Users/*/.autoflow/*' 'wiki/*' 2>/dev/null || true)"
+  fi
+  if [ -n "$tracked_output" ]; then
+    rogue_count=$((rogue_count + 1))
+    record_error "project root contains tracked board path copies: $(printf '%s\n' "$tracked_output" | head -n 10 | paste -sd ',' -)"
+  fi
+
+  if [ -e "${PROJECT_ROOT}/wiki" ] && [ "${PROJECT_ROOT}/wiki" != "$BOARD_ROOT" ]; then
+    rogue_count=$((rogue_count + 1))
+    record_error "project root wiki/ exists; Autoflow wiki content must stay under ${BOARD_ROOT}/wiki"
+  fi
+
+  users_autoflow_count=0
+  if [ -e "${PROJECT_ROOT}/Users" ]; then
+    users_autoflow_count="$(find "${PROJECT_ROOT}/Users" -path '*/.autoflow/*' -print -quit 2>/dev/null | wc -l | tr -d '[:space:]')"
+    if [ "${users_autoflow_count:-0}" -gt 0 ]; then
+      rogue_count=$((rogue_count + 1))
+      record_error "project root Users/ contains a copied absolute Autoflow board path"
+    fi
+  fi
+
+  if [ "$rogue_count" -gt 0 ]; then
+    record_check "rogue_project_root_board_paths" "error"
+  else
+    record_check "rogue_project_root_board_paths" "ok"
+  fi
+}
+
 check_duplicate_ticket_ids
 check_todo_worktree_metadata
 check_active_sections
 check_recovery_state_fields
 check_recovery_state_values
 check_resolved_ticket_worktrees
+check_rogue_project_root_board_paths
 
 if [ "$strict" = "true" ] && [ "$warning_count" -gt 0 ]; then
   strict_warning_output="$(autoflow_mktemp)"

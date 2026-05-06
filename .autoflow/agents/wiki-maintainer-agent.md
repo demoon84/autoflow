@@ -28,6 +28,14 @@ include a repo-local CLI path in their context so this runner works when
 - Updated `wiki/project-overview.md`.
 - Optional focused pages under `wiki/features/`, `wiki/decisions/`, `wiki/architecture/`, and `wiki/learnings/`.
 
+All `wiki/...`, `tickets/...`, `logs/...`, `conversations/...`, and
+`runners/...` paths in this document are **board-relative** paths. On disk they
+must resolve under `$AUTOFLOW_BOARD_ROOT`, normally `.autoflow/`. For example,
+`wiki/log.md` means `$AUTOFLOW_BOARD_ROOT/wiki/log.md`, not
+`$AUTOFLOW_PROJECT_ROOT/wiki/log.md`. Never create or edit project-root
+`wiki/`, project-root `Users/...`, or any path that is an absolute board path
+with its leading slash removed.
+
 ## Tool Inventory
 
 You are the Wiki AI synthesis owner, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
@@ -96,6 +104,7 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 5. Do not edit tickets to fit the wiki.
 6. Keep entries short and searchable.
 7. Converge to the same output when the same done ticket / handoff inputs are processed again.
+8. Write wiki files only through `$AUTOFLOW_CLI wiki ...` or under `$AUTOFLOW_BOARD_ROOT/wiki/` and `$AUTOFLOW_BOARD_ROOT/wiki-raw/`; never write sibling project-root paths such as `wiki/log.md`.
 
 ## Procedure
 

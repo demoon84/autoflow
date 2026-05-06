@@ -1572,7 +1572,11 @@ idle_preflight_inputs_hash_stream() {
 
   case "$public_role" in
     planner)
-      set -- tickets/inbox tickets/backlog tickets/reject tickets/todo tickets/inprogress tickets/done tickets/plan plan
+      # Planner idle-skip fingerprints should only cover planner-owned input
+      # queues. Worker progress/done churn is checked separately by
+      # planner_orchestration_signal; including it here re-opens the LLM on
+      # every completion even when there is no actionable planning input.
+      set -- tickets/inbox tickets/backlog tickets/reject tickets/plan plan
       ;;
     ticket)
       set -- tickets/todo tickets/inprogress tickets/verifier
@@ -1795,6 +1799,105 @@ maybe_skip_unchanged_planner_recovery_signal() {
   cat "$orchestration_output"
   printf 'recovery_signal_end\n'
   rm -f "$preflight_output" "$orchestration_output"
+  exit 0
+}
+
+maybe_skip_stale_planner_recovery_before_adapter() {
+  local requested_item requested_is_active_queue="false"
+  local current_ticket_file current_board_state="missing" timestamp
+
+  [ "$public_role" = "planner" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ -n "${adapter_active_recovery_reason:-}" ] || return 1
+
+  case "${adapter_active_recovery_reason}" in
+    resolved_ticket_worktree_dirty|resolved_ticket_worktree_leftover)
+      return 1
+      ;;
+  esac
+
+  requested_item="${adapter_active_ticket_file:-${adapter_active_ticket_id:-}}"
+  [ -n "$requested_item" ] || return 1
+  case "$requested_item" in
+    "${board_root}/tickets/inprogress/"*|\
+    "${board_root}/tickets/ready-to-merge/"*|\
+    "${board_root}/tickets/merge-blocked/"*|\
+    "${board_root}/tickets/verifier/"*|\
+    "${board_root}/tickets/todo/"*|\
+    tickets/inprogress/*|\
+    tickets/ready-to-merge/*|\
+    tickets/merge-blocked/*|\
+    tickets/verifier/*|\
+    tickets/todo/*)
+      requested_is_active_queue="true"
+      ;;
+  esac
+  [ "$requested_is_active_queue" = "true" ] || return 1
+
+  current_ticket_file="$(runner_active_ticket_file_from_item "$requested_item" 2>/dev/null || true)"
+  if [ -z "$current_ticket_file" ] && [ -n "${adapter_active_ticket_id:-}" ]; then
+    current_ticket_file="$(runner_active_ticket_file_from_item "$adapter_active_ticket_id" 2>/dev/null || true)"
+  fi
+  if [ -n "$current_ticket_file" ]; then
+    current_board_state="$(planner_ticket_board_state "$current_ticket_file")"
+  fi
+  case "$current_board_state" in
+    done|rejected|missing)
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
+    "active_recovery_reason=" \
+    "active_recovery_status=" \
+    "active_recovery_failure_class=" \
+    "active_recovery_worktree_path=" \
+    "active_recovery_worktree_status=" \
+    "active_recovery_board_state=" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=planner_stale_recovery_resolved_skipped" \
+    "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=planner_stale_recovery_resolved_skipped" \
+    "recovery_reason=${adapter_active_recovery_reason}" \
+    "stale_active_item=${requested_item}" \
+    "active_ticket_id=${adapter_active_ticket_id}" \
+    "current_board_state=${current_board_state}" \
+    "current_ticket=$(runner_board_relative_path "$current_ticket_file")"
+
+  rm -f "${prompt_file:-}" "${autocommit_before_status:-}" \
+    "${adapter_stdout:-}" "${adapter_stderr:-}" "${adapter_last_message:-}"
+
+  print_run_header "ok"
+  printf 'narrative=Plan AI · 이미 완료/반려된 복구 신호라 adapter 호출을 생략했습니다: %s (%s).\n' "${adapter_active_ticket_id:-no-ticket}" "$current_board_state"
+  printf 'runner_status=idle\n'
+  printf 'reason=planner_stale_recovery_resolved_skipped\n'
+  printf 'recovery_reason=%s\n' "$adapter_active_recovery_reason"
+  printf 'stale_active_item=%s\n' "$requested_item"
+  printf 'active_ticket_id=%s\n' "$adapter_active_ticket_id"
+  printf 'current_board_state=%s\n' "$current_board_state"
+  printf 'current_ticket=%s\n' "$(runner_board_relative_path "$current_ticket_file")"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
   exit 0
 }
 
@@ -2848,6 +2951,19 @@ Context:
 - Runtime script: ${runtime_path}
 - Active item: ${active_item_display}
 EOF
+
+  if [ "$public_role" = "wiki" ]; then
+    cat <<EOF
+
+Wiki filesystem boundary:
+- Board-relative paths such as wiki/log.md resolve under Board root:
+  ${board_root}/wiki/log.md.
+- Do not create or edit project-root wiki/ paths such as ${project_root}/wiki/log.md.
+- Do not create or edit project-root Users/... paths or copies of absolute board paths
+  with the leading slash removed.
+- Prefer the repo-local CLI for writes: $(autoflow_cli_path) wiki ...
+EOF
+  fi
 
   if [ -n "${adapter_active_recovery_reason:-}" ]; then
     printf '%s\n' "- Active recovery reason: ${adapter_active_recovery_reason}"
@@ -4161,9 +4277,10 @@ case "$agent" in
       exit 0
     fi
 
-    agent_runtime_preflight_or_exit
-    maybe_skip_unchanged_wiki_turn || true
-    maybe_skip_debounced_wiki_turn || true
+	    agent_runtime_preflight_or_exit
+	    maybe_skip_unchanged_wiki_turn || true
+	    maybe_skip_debounced_wiki_turn || true
+    maybe_skip_stale_planner_recovery_before_adapter || true
     run_skill_nudge_best_effort >/dev/null 2>&1 || true
 
     started_at="$(runner_now_iso)"
@@ -4175,8 +4292,10 @@ case "$agent" in
     prepare_adapter_live_logs
     role_autocommit_capture_status "$autocommit_before_status"
     write_agent_prompt "$instruction_file" > "$prompt_file"
+    maybe_skip_stale_planner_recovery_before_adapter || true
     planner_differential_persist_after_prompt || true
     runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
+    maybe_skip_stale_planner_recovery_before_adapter || true
     resolve_effective_reasoning_for_current_tick
     reasoning="$effective_reasoning"
 
