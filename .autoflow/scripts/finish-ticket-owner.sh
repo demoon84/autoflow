@@ -773,6 +773,87 @@ case "$outcome" in
 
     [ -z "$message" ] || append_reject_reason "$ticket_file" "$message"
 
+    # ── Phase 4: dual-write fail to inbox as retry order ────────────────────
+    # The new direction is "reject queue → inbox" so planner sees a single
+    # input lane. We still drop the ticket in tickets/reject/ for now (compat
+    # with start-plan.sh's reject-aware logic), but also emit a retry order
+    # so the unified queue path works in parallel. retry_count + fingerprint
+    # dedup keeps the same failure from looping forever.
+    retry_prd_key="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- PRD Key:/{
+        sub(/^- PRD Key:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    retry_title="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- Title:/{
+        sub(/^- Title:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    retry_failure_class="$(awk '/^## Recovery State/{flag=1; next} /^## /{flag=0} flag && /^- Failure Class:/{
+        sub(/^- Failure Class:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    [ -n "$retry_failure_class" ] || retry_failure_class="rejected"
+    retry_message="${message:-}"
+
+    retry_fingerprint_input="$(printf '%s|%s|%s|%s\n' "$retry_prd_key" "$retry_title" "$retry_failure_class" "$retry_message")"
+    retry_fingerprint=""
+    if command -v sha256sum >/dev/null 2>&1; then
+      retry_fingerprint="$(printf '%s' "$retry_fingerprint_input" | sha256sum 2>/dev/null | cut -c1-12)"
+    elif command -v shasum >/dev/null 2>&1; then
+      retry_fingerprint="$(printf '%s' "$retry_fingerprint_input" | shasum -a 256 2>/dev/null | cut -c1-12)"
+    fi
+    [ -n "$retry_fingerprint" ] || retry_fingerprint="unknown"
+
+    retry_inbox_dir="${BOARD_ROOT}/tickets/inbox"
+    mkdir -p "$retry_inbox_dir" 2>/dev/null || true
+    retry_prior_count=0
+    if [ -d "$retry_inbox_dir" ]; then
+      retry_prior_count="$(grep -lF "retry_fingerprint: ${retry_fingerprint}" "${retry_inbox_dir}"/order_*_retry_*.md 2>/dev/null | wc -l 2>/dev/null | awk '{print $1+0}')"
+    fi
+    [ -n "$retry_prior_count" ] || retry_prior_count=0
+    retry_count=$((retry_prior_count + 1))
+
+    retry_max="${AUTOFLOW_INBOX_RETRY_MAX_FINGERPRINT:-3}"
+    case "$retry_max" in ''|*[!0-9]*|0) retry_max=3 ;; esac
+
+    retry_decision="retry"
+    if [ "$retry_count" -ge "$retry_max" ]; then
+      retry_decision="needs_user"
+    fi
+
+    retry_iso_compact="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || printf 'unknown')"
+    retry_inbox_path="${retry_inbox_dir}/order_${ticket_id}_retry_${retry_count}_${retry_iso_compact}.md"
+    {
+      printf '# Retry order from failed ticket %s\n\n' "$ticket_id"
+      printf 'source: retry\n'
+      printf 'retry_count: %s\n' "$retry_count"
+      printf 'retry_max: %s\n' "$retry_max"
+      printf 'retry_decision: %s\n' "$retry_decision"
+      printf 'retry_fingerprint: %s\n' "$retry_fingerprint"
+      printf 'origin_ticket: %s\n' "$ticket_id"
+      printf 'origin_prd: %s\n' "${retry_prd_key:-}"
+      printf 'failure_class: %s\n' "$retry_failure_class"
+      printf 'failed_at: %s\n\n' "$timestamp"
+      printf '## Original Title\n- %s\n\n' "${retry_title:-}"
+      printf '## Reject Reason\n```\n%s\n```\n\n' "${retry_message:-(see ticket reject reason)}"
+      printf '## Source\n- ticket file path: tickets/reject/tickets_%s.md\n' "$ticket_id"
+      printf '- retry_decision: %s (retry_count=%s of retry_max=%s)\n' "$retry_decision" "$retry_count" "$retry_max"
+      printf '\n## Planner Hint\n'
+      if [ "$retry_decision" = "needs_user" ]; then
+        printf -- '- Same fingerprint reached retry_max. Do NOT auto-create a new PRD/todo. Append a needs_user note so the user redirects the goal or relaxes Allowed Paths / Done When.\n'
+      else
+        printf -- '- Reuse the original PRD if possible. Adjust Allowed Paths or Done When to avoid the failure class above.\n'
+        printf -- '- If the failure class is `shell_sanity_gate_zero_diff`, the worker had no real change; tighten Done When so it is unambiguous.\n'
+        printf -- '- If the failure class is `shell_sanity_gate_verify_command_failed`, the verify command itself was failing — fix the underlying code, not the ticket evidence.\n'
+      fi
+    } > "$retry_inbox_path" 2>/dev/null || retry_inbox_path=""
+    # ── end Phase 4 inbox dual-write ────────────────────────────────────────
+
     reject_target="$(reject_ticket_path_for_ticket_file "$ticket_file")"
     mkdir -p "$(dirname "$reject_target")"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "rejected"
@@ -801,6 +882,12 @@ case "$outcome" in
     printf '%s\n' "$log_output"
     printf '%s\n' "$wiki_output"
     printf 'commit_status=not_committed_failed_ticket\n'
+    if [ -n "$retry_inbox_path" ] && [ -f "$retry_inbox_path" ]; then
+      printf 'inbox_retry_order=%s\n' "$retry_inbox_path"
+      printf 'retry_count=%s\n' "$retry_count"
+      printf 'retry_decision=%s\n' "$retry_decision"
+      printf 'retry_fingerprint=%s\n' "$retry_fingerprint"
+    fi
     printf 'board_root=%s\n' "$BOARD_ROOT"
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     ;;
