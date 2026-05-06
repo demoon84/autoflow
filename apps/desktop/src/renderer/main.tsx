@@ -622,6 +622,9 @@ const runnerRoleLabels: Record<string, string> = {
   ticket: "Impl AI",
   planner: "오케스트레이터",
   plan: "오케스트레이터",
+  monitor: "모니터",
+  "self-monitor": "모니터",
+  self_monitor: "모니터",
   "wiki-maintainer": "Wiki AI",
   wiki: "Wiki AI",
   coordinator: "coordinator (legacy)",
@@ -752,6 +755,10 @@ function runnerConfigApplyTimeoutMs(runner: AutoflowRunner) {
 function runRoleForRunner(role: string) {
   if (role === "ticket-owner" || role === "owner") {
     return "ticket";
+  }
+
+  if (role === "self-monitor" || role === "self_monitor") {
+    return "monitor";
   }
 
   if (role === "wiki-maintainer") {
@@ -4138,6 +4145,9 @@ function ReportingDashboard({
   const runnerIdle = statusNumber(metrics, "runner_idle_count");
   const runnerStopped = statusNumber(metrics, "runner_stopped_count");
   const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
+  const monitorSignalCount = ((board as AutoflowBoardSnapshot & { monitorSignals?: AutoflowFilePreview[] })?.monitorSignals || []).length;
+  const monitorRunner = (board?.runners || []).find((runner) => (runner.role || "").toLowerCase() === "monitor");
+  const monitorRunnerStatus = monitorRunner ? displayStatus(monitorRunner.stateStatus || monitorRunner.lastResult || "idle") : "설정 없음";
   const snapshots = reportingHistory(board, ticketTotal, lastUpdated);
   const runnerNeedsUser = (board?.runners || []).filter((runner) => {
     const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
@@ -4195,6 +4205,12 @@ function ReportingDashboard({
       value: `${formatCompactCount(artifactTotal)}개`,
       detail: `${formatCount(artifactOk)} 정상 / ${formatCount(artifactWarning)} 주의`,
       title: `러너 산출물 ${formatCount(artifactTotal)}개, 정상 ${formatCount(artifactOk)}개, 주의 ${formatCount(artifactWarning)}개`
+    },
+    {
+      label: "모니터 신호",
+      value: `${formatCompactCount(monitorSignalCount)}건`,
+      detail: monitorRunner ? monitorRunnerStatus : "monitor runner 없음",
+      title: `최근 monitor order/check ${formatCount(monitorSignalCount)}건, monitor runner 상태 ${monitorRunnerStatus}`
     }
   ];
 
@@ -5949,14 +5965,18 @@ function TicketBoard({
   const todoFiles: WorkflowFileEntry[] = Array.from(todoFilesById.values()).sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
+  const monitorSignalFiles = (((board as AutoflowBoardSnapshot & { monitorSignals?: AutoflowFilePreview[] })?.monitorSignals || [])
+    .map((file) => ({ ...file, stateLabel: "모니터", stateTone: "neutral" } as WorkflowFileEntry))
+    .sort((a, b) => String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))));
   const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
   const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length}/${todoFiles.length})`;
+  const monitorPinTitle = `MONITOR (${monitorSignalFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
 
-  const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length);
+  const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length || monitorSignalFiles.length);
 
   return (
     <PageLayout
@@ -6000,6 +6020,17 @@ function TicketBoard({
                 layerHelpText="아직 시작되지 않은 TODO 티켓 목록입니다. 항목을 클릭하면 티켓 본문이 이 화면에서 열립니다."
                 emptyText="아직 발급된 TODO 티켓이 없습니다."
                 showWhenEmpty
+              />
+            ) : null}
+            {monitorSignalFiles.length ? (
+              <WorkflowPinLayer
+                files={monitorSignalFiles}
+                options={options}
+                pinTitle={monitorPinTitle}
+                pinIcon={<Activity className="h-4 w-4" aria-hidden="true" />}
+                variant="default"
+                layerHeading="최근 모니터 신호"
+                layerHelpText="monitor runner가 자동 발행한 order/check evidence입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
               />
             ) : null}
             {rejectFiles.length ? (
@@ -6123,6 +6154,7 @@ function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
   const role = (runner.role || "").toLowerCase();
   if (role === "merge-bot" || role === "merge") return mergeBotFlowStages;
   if (role.includes("wiki")) return wikiBotFlowStages;
+  if (role === "monitor" || role === "self-monitor" || role === "self_monitor") return verifierFlowStages;
   if (role === "planner" || role === "plan") return plannerFlowStages;
   if (role === "verifier" || role === "veri") return verifierFlowStages;
   return ownerFlowStages;
@@ -6298,6 +6330,8 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "LLM위키" : "LLM위키-1";
   if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "LLM위키-");
   if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "LLM위키-");
+  if (value === "monitor") return "모니터";
+  if (/^monitor-\d+$/.test(value)) return value.replace(/^monitor-/, "모니터-");
   if (value === "coordinator-1") return "coordinator";
   return value;
 }
@@ -6315,6 +6349,7 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "오케스트레이터";
   if (role === "ticket-owner" || role === "owner") return "워커";
+  if (role === "monitor" || role === "self-monitor" || role === "self_monitor") return "모니터";
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM위키";
   if (role === "verifier" || role === "veri") return "검증";
 
@@ -6328,9 +6363,10 @@ function progressBoardRunnerOrder(runner: AutoflowRunner) {
   const idRole = canonicalWorkflowRunnerRole(runner.id);
   if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
   if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 1;
-  if (["verifier", "verification", "veri"].includes(role)) return 2;
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 3;
-  return 4;
+  if (["monitor", "self-monitor", "self_monitor"].includes(role)) return 2;
+  if (["verifier", "verification", "veri"].includes(role)) return 3;
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 4;
+  return 5;
 }
 
 function sortProgressBoardRunners(runners: AutoflowRunner[]) {

@@ -34,13 +34,14 @@ const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
 // Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
-// case statement. 3-runner active: ticket / planner / wiki (with their
+// case statement. Active: ticket / planner / monitor / wiki (with their
 // owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
 // verifier (+ veri alias), coordinator (+ coord/doctor/diagnose aliases),
 // merge / merge-bot. Trial: self-improve (+ self_improve/selfimprove).
 const allowedRunRoles = new Set([
   "ticket", "ticket-owner", "owner",
   "planner", "plan",
+  "monitor", "self-monitor", "self_monitor",
   "wiki", "wiki-maintainer",
   "todo",
   "verifier", "veri",
@@ -48,7 +49,7 @@ const allowedRunRoles = new Set([
   "merge", "merge-bot",
   "self-improve", "self_improve", "selfimprove"
 ]);
-// 3-runner active: ticket-owner / planner / wiki-maintainer (with legacy
+// Active: ticket-owner / planner / monitor / wiki-maintainer (with legacy
 // aliases owner / plan / wiki). Legacy/back-compat: todo, verifier,
 // coordinator (+ aliases coord/doctor/diagnose), merge / merge-bot,
 // watcher. Trial (disabled by default): self-improve.
@@ -56,6 +57,7 @@ const allowedRunRoles = new Set([
 const allowedRunnerRoles = new Set([
   "ticket-owner", "owner", "ticket",
   "planner", "plan",
+  "monitor", "self-monitor", "self_monitor",
   "wiki-maintainer", "wiki",
   "todo",
   "verifier",
@@ -2454,6 +2456,18 @@ async function readTextPreview(filePath) {
   }
 }
 
+async function readMonitorEvidencePreview(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    if (!/source:\s*autoflow-monitor-agent/i.test(content) && !/- Source:\s*autoflow-monitor-agent/i.test(content)) {
+      return null;
+    }
+    return await readMarkdownPreview(filePath);
+  } catch {
+    return null;
+  }
+}
+
 function byName(a, b) {
   return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
 }
@@ -2526,6 +2540,16 @@ async function listMarkdownFiles(directory, recursive = false, options = {}) {
   const selected = await selectTopFilePaths(paths, options);
   const previews = await Promise.all(selected.map((filePath) => readMarkdownPreview(filePath)));
   return previews.sort(byName);
+}
+
+async function listMonitorEvidenceFiles(boardRoot, options = {}) {
+  const candidates = [
+    ...(await walkFilePaths(path.join(boardRoot, "tickets", "inbox"), false, (name) => /^order_\d+\.md$/i.test(name))),
+    ...(await walkFilePaths(path.join(boardRoot, "tickets", "check"), false, (name) => /^check_\d+\.md$/i.test(name)))
+  ];
+  const selected = await selectTopFilePaths(candidates, { limit: options.limit || 8, orderBy: "mtime" });
+  const previews = (await Promise.all(selected.map((filePath) => readMonitorEvidencePreview(filePath)))).filter(Boolean);
+  return previews.sort(byMostRecent);
 }
 
 async function listTicketFolders(ticketsRoot) {
@@ -2976,6 +3000,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     { limit: 8, orderBy: "mtime" }
   );
   const metricsHistory = exists ? await readMetricsHistory(boardRoot) : [];
+  const monitorSignals = exists ? await listMonitorEvidenceFiles(boardRoot, { limit: 8 }) : [];
   // README.md is filtered out at the consumer slice below; bump the internal
   // cap by 1 so we still surface 24 conversations even when README is the
   // freshest file in the directory.
@@ -3018,6 +3043,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     metricsFiles: metricsFiles
       .sort((a, b) => byMostRecent(a, b))
       .slice(0, 8),
+    monitorSignals,
     metricsHistory,
     conversationFiles: conversationFiles
       .filter((file) => (file?.name || "").toLowerCase() !== "readme.md")

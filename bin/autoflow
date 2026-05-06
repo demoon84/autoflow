@@ -32,6 +32,7 @@ Usage:
   autoflow order create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]
   autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Plan AI (3-runner default)
   autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]    # Impl AI (3-runner default)
+  autoflow run monitor [project-root] [board-dir-name] [--runner runner-id] [--dry-run]   # Monitor AI
   autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Wiki AI (3-runner default)
   autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # legacy role-pipeline
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy role-pipeline
@@ -54,6 +55,7 @@ Usage:
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
+  autoflow monitor scan [project-root] [board-dir-name]
   autoflow runners list [project-root] [board-dir-name]
   autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
   autoflow runners remove <runner-id> [project-root] [board-dir-name]
@@ -83,6 +85,7 @@ Examples:
   echo "Increase body font size by 2px" | autoflow order create /path/to/project --title "Increase body font"
   autoflow run planner /path/to/project --runner planner
   autoflow run ticket /path/to/project --runner worker
+  autoflow monitor scan /path/to/project
   autoflow run wiki /path/to/project --runner wiki
   autoflow skill create /path/to/project .autoflow --from-ticket tickets/done/prd_151/tickets_150.md
   autoflow run coordinator /path/to/project --runner coordinator-1   # legacy
@@ -274,6 +277,10 @@ case "$cmd" in
   wiki)
     shift || true
     exec "${REPO_ROOT}/packages/cli/wiki-project.sh" "$@"
+    ;;
+  monitor)
+    shift || true
+    exec "${REPO_ROOT}/packages/cli/monitor-project.sh" "$@"
     ;;
   runners)
     shift || true

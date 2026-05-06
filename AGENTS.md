@@ -79,6 +79,7 @@ The default topology in `.autoflow/runners/config.toml` consists of four enabled
 - **권장 운영**: realtime 모드에서는 `interval_seconds` 를 safety heartbeat 로 재정의 (기본 1800s = 30분 권장). reject auto-replan / blocked-dirty orchestration / adapter timeout 은 heartbeat 로 보장된다.
 - env 가 unset 또는 `0` 이면 기존 interval/backoff polling 동작만 사용 (역호환).
 20. Queue priority policy: inbox order, backlog PRD, todo ticket, and legacy verifier queues sort by priority before numeric FIFO. Supported values are `critical`, `high`, `normal`, and `low`; missing or unknown priority is `normal`. Use `critical` only for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats. Use `high` for urgent user-visible breakage or blocked active work, `normal` for ordinary planned work, and `low` for cleanup or non-urgent improvements.
+21. Monitor runner policy: `monitor` 는 runner state, board queue, telemetry/metrics, dirty root, exact `Recovery State` `needs_user` 신호를 관찰하고 `source: autoflow-monitor-agent` order/check evidence 를 발행하는 역할이다. Monitor 는 `kill` / `pkill` / runner start-stop-restart / git cleanup / merge / `git push` 를 하지 않는다. 같은 fingerprint 는 cooldown 안에서 duplicate suppression evidence 만 남긴다.
 
 ## Trigger Interpretation
 

@@ -1,9 +1,11 @@
 # Autoflow runner configuration.
 #
-# Enabled four-runner topology:
+# Enabled five-runner topology:
 #   planner : Orchestrator AI — backlog/PRD → todo, reject → todo
 #               (auto-replan), and markdown recovery for stalled/blocked work.
 #   worker   : Impl AI — todo → inprogress (worktree) → verify → merge → done.
+#   monitor : Monitor AI — runner/board/telemetry/dirty-root health signals
+#               → conservative inbox order/check evidence.
 #   verifier: Verifier AI — handles the compatibility verification lane and
 #               may audit worker verification evidence without claiming the
 #               worker's active inline ticket verification.
@@ -19,6 +21,7 @@
 # early on watched-folder file changes:
 #   planner : tickets/{inbox,backlog,reject}
 #   worker  : tickets/todo (ticket public_role)
+#   monitor : runners/state, telemetry, metrics, inprogress/reject tickets
 #   verifier: tickets/verifier
 #   wiki    : tickets/done, wiki/ (debounced)
 # In event-driven mode interval_seconds becomes the safety heartbeat — pick
@@ -59,6 +62,18 @@ model = "gpt-5.3-codex-spark"
 reasoning = "low"
 mode = "loop"
 interval_seconds = 1800
+enabled = true
+realtime_enabled = true
+command = ""
+
+[[runners]]
+id = "monitor"
+role = "monitor"
+agent = "gemini"
+model = "gemini-3-flash-preview"
+reasoning = ""
+mode = "loop"
+interval_seconds = 60
 enabled = true
 realtime_enabled = true
 command = ""

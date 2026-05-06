@@ -17,6 +17,7 @@ usage() {
 Usage:
   run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Plan AI (3-runner default)
   run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]       # Impl AI (3-runner default)
+  run-role.sh monitor [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Monitor AI
   run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # Wiki AI (3-runner default)
   run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # legacy role-pipeline
   run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]     # legacy role-pipeline
@@ -92,6 +93,12 @@ case "$requested_role" in
     runtime_role="wiki"
     default_runner_id="wiki"
     runtime_script=""
+    ;;
+  monitor|self-monitor|self_monitor)
+    public_role="monitor"
+    runtime_role="monitor"
+    default_runner_id="monitor"
+    runtime_script="start-monitor.sh"
     ;;
   coordinator|coord|doctor|diagnose)
     public_role="coordinator"
@@ -2681,11 +2688,11 @@ maybe_skip_unchanged_wiki_turn() {
     "model=${model}" \
     "reasoning=${reasoning}" \
     $(runner_config_state_fields) \
-    "active_item=$(runner_active_state_value "active_item")" \
-    "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-    "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-    "active_stage=$(runner_active_state_value "active_stage")" \
-    "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
     "pid=$(runner_state_pid_for_finish)" \
     "started_at=$(runner_state_started_at "$timestamp")" \
     "last_event_at=${timestamp}" \
@@ -2769,11 +2776,11 @@ maybe_skip_debounced_wiki_turn() {
     "model=${model}" \
     "reasoning=${reasoning}" \
     $(runner_config_state_fields) \
-    "active_item=$(runner_active_state_value "active_item")" \
-    "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
-    "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
-    "active_stage=$(runner_active_state_value "active_stage")" \
-    "active_spec_ref=$(runner_active_state_value "active_spec_ref")" \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
     "pid=$(runner_state_pid_for_finish)" \
     "started_at=$(runner_state_started_at "$timestamp")" \
     "last_event_at=${timestamp}" \
@@ -3276,6 +3283,9 @@ agent_instruction_path() {
       ;;
     verifier)
       printf '%s/agents/verifier-agent.md' "$board_root"
+      ;;
+    monitor)
+      printf '%s/agents/monitor-agent.md' "$board_root"
       ;;
     wiki)
       printf '%s/agents/wiki-maintainer-agent.md' "$board_root"
@@ -5401,16 +5411,28 @@ if ! runner_validate_id "$runner_id"; then
   exit 0
 fi
 
+runner_config_missing="false"
 if ! runner_config_block "$runner_id" "$config_path" >/dev/null 2>&1; then
-  print_run_header "blocked"
-  printf 'reason=runner_not_found\n'
-  exit 0
+  if [ "$public_role" = "monitor" ] && [ "$runner_id" = "monitor" ]; then
+    runner_config_missing="true"
+  else
+    print_run_header "blocked"
+    printf 'reason=runner_not_found\n'
+    exit 0
+  fi
 fi
 
-configured_role="$(runner_field "role")"
-agent="$(runner_field "agent")"
-model="$(runner_field "model")"
-reasoning="$(runner_field "reasoning")"
+if [ "$runner_config_missing" = "true" ]; then
+  configured_role="monitor"
+  agent="manual"
+  model=""
+  reasoning=""
+else
+  configured_role="$(runner_field "role")"
+  agent="$(runner_field "agent")"
+  model="$(runner_field "model")"
+  reasoning="$(runner_field "reasoning")"
+fi
 configured_reasoning="$reasoning"
 effective_reasoning="$reasoning"
 reasoning_complexity="configured"
@@ -5419,11 +5441,19 @@ reasoning_supported="false"
 reasoning_dynamic_enabled="false"
 reasoning_actionable_count="0"
 reasoning_reject_count="0"
-mode="$(runner_field "mode")"
-enabled="$(runner_field "enabled")"
-interval_seconds="$(runner_field "interval_seconds")"
-realtime_enabled="$(runner_field "realtime_enabled")"
-command_value="$(runner_field "command")"
+if [ "$runner_config_missing" = "true" ]; then
+  mode="one-shot"
+  enabled="true"
+  interval_seconds="60"
+  realtime_enabled="false"
+  command_value=""
+else
+  mode="$(runner_field "mode")"
+  enabled="$(runner_field "enabled")"
+  interval_seconds="$(runner_field "interval_seconds")"
+  realtime_enabled="$(runner_field "realtime_enabled")"
+  command_value="$(runner_field "command")"
+fi
 
 [ -n "$agent" ] || agent="manual"
 [ -n "$mode" ] || mode="one-shot"
@@ -5456,7 +5486,7 @@ if [ "$mode" = "watch" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] 
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|monitor:monitor|monitor:self-monitor|monitor:self_monitor|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -5698,7 +5728,10 @@ case "$agent" in
         "reasoning_actionable_count=${reasoning_actionable_count}" \
         "reasoning_reject_count=${reasoning_reject_count}"
 
-      print_run_header "dry_run"
+      dry_run_status="dry_run"
+      [ "$public_role" = "monitor" ] && dry_run_status="ok"
+      print_run_header "$dry_run_status"
+      printf 'dry_run=true\n'
       printf 'runner_status=idle\n'
       printf 'adapter=%s\n' "$agent"
       printf 'configured_reasoning=%s\n' "$configured_reasoning"
@@ -5707,6 +5740,7 @@ case "$agent" in
       printf 'reasoning_complexity=%s\n' "$reasoning_complexity"
       printf 'reasoning_actionable_count=%s\n' "$reasoning_actionable_count"
       printf 'reasoning_reject_count=%s\n' "$reasoning_reject_count"
+      printf 'runtime_script=%s\n' "$runtime_path"
       printf 'adapter_command=%s\n' "$command_summary"
       printf 'prompt_file=%s\n' "$prompt_file"
       printf 'prompt_log_path=%s\n' "$prompt_log_path"
@@ -5989,7 +6023,10 @@ if [ "$dry_run" = "true" ]; then
   dry_run_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-dry-run.XXXXXX")"
 
   {
-    print_run_header "dry_run"
+    dry_run_status="dry_run"
+    [ "$public_role" = "monitor" ] && dry_run_status="ok"
+    print_run_header "$dry_run_status"
+    printf 'dry_run=true\n'
     printf 'runner_status=idle\n'
     printf 'runtime_script=%s\n' "$runtime_path"
     printf 'adapter=%s\n' "$agent"
@@ -6029,6 +6066,8 @@ if [ "$dry_run" = "true" ]; then
 
   if [ -n "$runtime_output_log_path" ]; then
     cat "$runtime_output_log_path"
+  else
+    cat "$dry_run_output"
   fi
   rm -f "$dry_run_output"
   exit 0

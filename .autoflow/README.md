@@ -16,11 +16,12 @@ Use Ticket Owner Mode by default:
 5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
 6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
 7. The planner runner acts as Orchestrator AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
-8. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
-9. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
-10. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
-11. The finalization runtime validates the AI-merged result, writes the completion log, refreshes derived wiki knowledge, and moves it to `tickets/done/<project-key>/` with a local commit.
-12. Failed work moves to `tickets/reject/` with `## Reject Reason`; recoverable blocked/stalled work is described in `Recovery State` for planner orchestration.
+8. The monitor runner observes runner state, board queues, telemetry/metrics, dirty root, and exact `Recovery State` `needs_user` fields. It only emits evidence or follow-up orders/checks.
+9. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
+10. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
+11. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
+12. The finalization runtime validates the AI-merged result, writes the completion log, refreshes derived wiki knowledge, and moves it to `tickets/done/<project-key>/` with a local commit.
+13. Failed work moves to `tickets/reject/` with `## Reject Reason`; recoverable blocked/stalled work is described in `Recovery State` for planner orchestration.
 
 Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for compatibility, but it is not the default.
 
@@ -54,6 +55,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick memo intake only.
 - `autoflow runners start planner`: Orchestrator AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
 - `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
+- `autoflow run monitor` / `autoflow monitor scan`: Monitor AI — observe runner/board/telemetry/dirty-root/needs_user health, then emit key=value evidence and deduped follow-up order/check files. It must not stop, restart, kill, clean up, merge, or push.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop Owner runner: default Impl AI execution from the UI.

@@ -200,6 +200,7 @@ template_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 template_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
 template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
+template_text|agents/monitor-agent.md|agents/monitor-agent.md
 template_text|protocols/board-orchestration.md|protocols/board-orchestration.md
 template_text|protocols/owner-contract.md|protocols/owner-contract.md
 template_text|protocols/recovery.md|protocols/recovery.md
@@ -264,6 +265,7 @@ runtime_executable|finish-ticket-owner.sh|scripts/finish-ticket-owner.sh
 runtime_executable|merge-ready-ticket.sh|scripts/merge-ready-ticket.sh
 runtime_executable|update-wiki.sh|scripts/update-wiki.sh
 runtime_executable|start-plan.sh|scripts/start-plan.sh
+runtime_executable|start-monitor.sh|scripts/start-monitor.sh
 runtime_executable|start-todo.sh|scripts/start-todo.sh
 runtime_executable|handoff-todo.sh|scripts/handoff-todo.sh
 runtime_executable|start-verifier.sh|scripts/start-verifier.sh
@@ -358,6 +360,11 @@ build_asset_temp_file() {
   case "$asset_kind" in
     template_text)
       source_file="${TEMPLATE_BOARD_ROOT}/${source_rel}"
+      if [ "$source_rel" = "runners/config.toml" ] && [ -f "${SOURCE_REPO_ROOT}/.autoflow/runners/config.toml" ]; then
+        source_file="${SOURCE_REPO_ROOT}/.autoflow/runners/config.toml"
+      elif [ ! -f "$source_file" ] && [ -f "${SOURCE_REPO_ROOT}/.autoflow/${source_rel}" ]; then
+        source_file="${SOURCE_REPO_ROOT}/.autoflow/${source_rel}"
+      fi
       render_text_file "$source_file" "$temp_file" "$board_dir_name"
       ;;
     source_text)

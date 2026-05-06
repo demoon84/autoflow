@@ -593,6 +593,9 @@ runner_role_to_run_role() {
     wiki|wiki-maintainer)
       printf 'wiki'
       ;;
+    monitor|self-monitor|self_monitor)
+      printf 'monitor'
+      ;;
     coordinator|coord|doctor|diagnose)
       printf 'coordinator'
       ;;
@@ -780,7 +783,7 @@ runner_allowed_role() {
   # todo|verifier|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher.
   # Trial role (disabled by default): self-improve.
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|plan|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
+    ticket-owner|owner|ticket|planner|plan|monitor|self-monitor|self_monitor|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       return 0
       ;;
     *)
@@ -885,6 +888,9 @@ runner_public_role() {
       ;;
     wiki|wiki-maintainer)
       printf 'wiki'
+      ;;
+    monitor|self-monitor|self_monitor)
+      printf 'monitor'
       ;;
     *)
       printf '%s' "${1:-}"
@@ -1001,7 +1007,7 @@ runner_realtime_enabled() {
   [ "$mode" = "loop" ] || return 1
 
   case "$public_role" in
-    planner|ticket|verifier|wiki) ;;
+    planner|ticket|verifier|wiki|monitor) ;;
     *) return 1 ;;
   esac
 
@@ -1076,6 +1082,13 @@ runner_realtime_inputs_specs() {
       # Note: wiki has its own debounce policy (AUTOFLOW_WIKI_DEBOUNCE_*)
       printf 'tickets/done:*.md\n'
       printf 'wiki:*.md\n'
+      ;;
+    monitor)
+      printf 'runners/state:*.state\n'
+      printf 'telemetry:*.jsonl\n'
+      printf 'metrics:*.tsv\n'
+      printf 'tickets/inprogress:tickets_*.md\n'
+      printf 'tickets/reject:*.md\n'
       ;;
     *)
       ;;
