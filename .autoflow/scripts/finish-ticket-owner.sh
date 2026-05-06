@@ -550,6 +550,85 @@ case "$outcome" in
       exit 0
     fi
 
+    # ── Shell-only sanity gate ──────────────────────────────────────────────
+    # Mechanical checks that ignore any AI-written evidence and rely on shell
+    # results only. Designed to catch worker AI false-pass patterns where:
+    #   - mini-plan was made but no code changed (zero diff),
+    #   - Verification Command actually fails when re-executed,
+    #   - evidence file was edited to overwrite a non-zero exit.
+    # If any check trips, the ticket is moved to blocked and pass is refused.
+    sanity_worktree=""
+    sanity_worktree="$(awk '/^## Worktree/{flag=1; next} /^## /{flag=0} flag && /^- Path:/{
+        sub(/^- Path:[[:space:]]*/, "")
+        gsub(/`/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    sanity_base=""
+    sanity_base="$(awk '/^## Worktree/{flag=1; next} /^## /{flag=0} flag && /^- Base Commit:/{
+        sub(/^- Base Commit:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    sanity_target=""
+    if [ -n "$sanity_worktree" ] && [ -d "$sanity_worktree" ]; then
+      sanity_target="$sanity_worktree"
+    fi
+
+    sanity_failed=""
+    sanity_detail=""
+
+    # ① zero-diff guard: refuse pass when no code actually changed.
+    if [ -z "$sanity_failed" ] && [ -n "$sanity_target" ] && [ -n "$sanity_base" ]; then
+      sanity_diff_stat=""
+      sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat "${sanity_base}..HEAD" 2>/dev/null || true)"
+      if [ -z "$sanity_diff_stat" ]; then
+        sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat 2>/dev/null || true)"
+      fi
+      sanity_diff_total="$(printf '%s\n' "$sanity_diff_stat" | awk '{s=0; for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) s+=$i+0; print s+0}')"
+      if [ "${sanity_diff_total:-0}" -lt 1 ] 2>/dev/null; then
+        sanity_failed="zero_diff"
+        sanity_detail="git diff against ${sanity_base:-HEAD} produced no changed lines; refusing pass on empty work"
+      fi
+    fi
+
+    # ② Verification Command re-run: ignore AI-written evidence, trust shell.
+    if [ -z "$sanity_failed" ] && [ -n "$sanity_target" ]; then
+      sanity_cmd=""
+      sanity_cmd="$(awk '/^## Verification/{flag=1; next} /^## /{flag=0} flag && /^- Command:/{
+          sub(/^- Command:[[:space:]]*/, "")
+          gsub(/^`|`$/, "")
+          sub(/[[:space:]]+$/, "")
+          print
+          exit
+        }' "$ticket_file" 2>/dev/null || true)"
+      if [ -n "$sanity_cmd" ]; then
+        if ! ( cd "$sanity_target" && bash -lc "$sanity_cmd" ) >/dev/null 2>&1; then
+          sanity_failed="verify_command_failed"
+          sanity_detail="re-run of ## Verification Command exited non-zero in worktree (cmd=${sanity_cmd})"
+        fi
+      fi
+    fi
+
+    if [ -n "$sanity_failed" ]; then
+      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+      append_note "$ticket_file" "Shell sanity gate refused pass at ${timestamp}: ${sanity_failed}; ${sanity_detail}"
+      ticket_goal_block "$ticket_file" "shell_sanity_gate_${sanity_failed}"
+      printf 'status=blocked\n'
+      printf 'reason=shell_sanity_gate_%s\n' "$sanity_failed"
+      printf 'detail=%s\n' "$sanity_detail"
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf 'next_action=Worker must produce a real diff in the ticket worktree and ensure ## Verification Command exits 0 there before retrying pass. The shell sanity gate ignores any pass evidence written by the AI itself.\n'
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+    fi
+    # ── end shell sanity gate ───────────────────────────────────────────────
+
     merge_prep_output="$(prepare_ticket_worktree_for_merge "$ticket_file" 2>&1)" || {
       merge_prep_status="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
       merge_prep_reason="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "reason" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
