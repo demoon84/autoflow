@@ -16,3 +16,14 @@ apps/desktop/build/
 
 # Wiki AI scratch output at repo root (replace via .autoflow/wiki/answers/)
 /semantic_findings.txt
+
+# Autoflow background / derived data — runner가 자기 일하면서 자동으로 쓰는
+# 흔적. git에 추적하면 매 tick dirty가 만들어져 cleanup live-lock을 자극하고,
+# wiki commit이 history를 도배한다. 데이터 자체는 보존되며 read는 그대로 동작.
+.autoflow/wiki/
+!.autoflow/wiki/skills/
+.autoflow/telemetry/
+.autoflow/runners/state/
+.autoflow/tickets/check/
+.autoflow/conversations/
+.claude/worktrees/

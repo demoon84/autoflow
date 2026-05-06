@@ -203,6 +203,24 @@ telemetry_record() {
   token_output="$(json_number_or_zero "$token_output")"
   stdout_bytes="$(json_number_or_zero "$stdout_bytes")"
   stderr_bytes="$(json_number_or_zero "$stderr_bytes")"
+
+  # Write-time token sanity cap. Read-side telemetry_token_usage already skips
+  # impossible rows but they were still being persisted, polluting runs.jsonl
+  # (see prd_181/tickets_180 5.2T spike). Apply the same threshold here so the
+  # corruption never lands on disk.
+  local _telemetry_max_row
+  _telemetry_max_row="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+  case "$_telemetry_max_row" in
+    ''|*[!0-9]*|0) _telemetry_max_row=100000000 ;;
+  esac
+  if { [ "$token_input" -ge "$_telemetry_max_row" ] 2>/dev/null; } \
+     || { [ "$token_output" -ge "$_telemetry_max_row" ] 2>/dev/null; }; then
+    printf 'warning=skip_suspicious_token_row_at_write runner_id=%s ended_at=%s token_input=%s token_output=%s max_row_tokens=%s\n' \
+      "$runner_id" "$ended_at" "$token_input" "$token_output" "$_telemetry_max_row" >&2
+    token_input=0
+    token_output=0
+  fi
+
   if [ "$result" != "success" ] && [ -z "$failure_class" ]; then
     failure_class="unknown_failure_class"
   fi
