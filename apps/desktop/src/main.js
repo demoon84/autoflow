@@ -253,12 +253,6 @@ const agentAuthStatusCache = new Map();
 const runnerAuthProcesses = new Map();
 let runnerShutdownInProgress = false;
 let appQuitInProgress = false;
-let desktopSessionEvidence = {
-  uncleanExit: false,
-  detachedRunnerReattachEvidence: "",
-  previousStartedAt: "",
-  previousUpdatedAt: ""
-};
 const DEFAULT_MEMORY_CEILING_MB = 1500;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
 const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
@@ -430,17 +424,6 @@ function writeJsonFileSync(filePath, value) {
 }
 
 function markDesktopSessionStarted() {
-  const previous = readJsonFileSync(desktopSessionStatePath());
-  const hadPreviousSession = Boolean(previous?.startedAt || previous?.updatedAt);
-  const uncleanExit = hadPreviousSession && previous?.cleanShutdown !== true;
-  desktopSessionEvidence = {
-    uncleanExit,
-    detachedRunnerReattachEvidence: uncleanExit
-      ? "previous desktop session lacked a clean shutdown marker; detached runner state is reattached without stop/restart/delete"
-      : "",
-    previousStartedAt: previous?.startedAt || "",
-    previousUpdatedAt: previous?.updatedAt || ""
-  };
   const timestamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
   writeJsonFileSync(desktopSessionStatePath(), {
     cleanShutdown: false,
