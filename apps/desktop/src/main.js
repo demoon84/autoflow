@@ -258,6 +258,7 @@ let appQuitInProgress = false;
 const DEFAULT_MEMORY_CEILING_MB = 1500;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
 const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
+const DEFAULT_HEARTBEAT_STALE_THRESHOLD_SECONDS = 600;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 let memoryCeilingIntervalId = null;
 let lastMemoryCeilingRestartAt = 0;
@@ -288,6 +289,13 @@ function readMemoryCeilingConfig() {
     restartCooldownSeconds,
     disabled: process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_DISABLED === "1"
   };
+}
+
+function readHeartbeatStaleThresholdSeconds() {
+  return parsePositiveIntegerOrDefault(
+    process.env.AUTOFLOW_HEARTBEAT_STALE_THRESHOLD_SECONDS,
+    DEFAULT_HEARTBEAT_STALE_THRESHOLD_SECONDS
+  );
 }
 
 function bytesToMegabytes(value) {
@@ -1291,6 +1299,7 @@ function parseRunnerListOutput(output) {
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
       lastAdapterChunkAt: values[`${prefix}last_adapter_chunk_at`] || "",
+      heartbeatStaleThresholdSeconds: String(readHeartbeatStaleThresholdSeconds()),
       lastResult,
       lastBudgetSkipReason,
       lastBudgetSource: values[`${prefix}last_budget_source`] || "",

@@ -44,6 +44,8 @@ type AutoflowRunner = {
   pid: string;
   startedAt: string;
   lastEventAt: string;
+  lastAdapterChunkAt: string;
+  heartbeatStaleThresholdSeconds: string;
   lastResult: string;
   lastRuntimeLog: string;
   lastPromptLog: string;

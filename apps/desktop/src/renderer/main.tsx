@@ -6234,17 +6234,80 @@ function runnerStageKey(runner: AutoflowRunner): string {
   return "todo";
 }
 
-function runnerHeartbeatStale(runner: AutoflowRunner) {
-  if ((runner.stateStatus || "").toLowerCase() !== "running") return false;
-  const lastAdapterChunkAt = (runner as AutoflowRunner & { lastAdapterChunkAt?: string }).lastAdapterChunkAt || "";
-  const eventTimes = [runner.lastEventAt, lastAdapterChunkAt]
+type RunnerDelaySeverity = "waiting" | "suspect" | "stuck";
+
+type RunnerDelayStage = {
+  severity: RunnerDelaySeverity;
+  label: string;
+  badgeVariant: "secondary" | "outline" | "destructive";
+  className: string;
+  title: string;
+};
+
+const DEFAULT_RUNNER_DELAY_SUSPECT_SECONDS = 600;
+const RUNNER_ADAPTER_TIMEOUT_SECONDS = 1200;
+
+function parsePositiveSeconds(value: string | number | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatRunnerDelayAge(seconds: number) {
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  if (safeSeconds < 60) return `${safeSeconds}초`;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return remainder ? `${minutes}분 ${remainder}초` : `${minutes}분`;
+}
+
+function runnerDelayStage(runner: AutoflowRunner): RunnerDelayStage | null {
+  if ((runner.stateStatus || "").toLowerCase() !== "running") return null;
+  const eventTimes = [runner.lastEventAt, runner.lastAdapterChunkAt]
     .map((value) => (value ? new Date(value).getTime() : Number.NaN))
     .filter((value) => !Number.isNaN(value));
-  if (eventTimes.length === 0) return false;
+  if (eventTimes.length === 0) return null;
   const freshestEventTime = Math.max(...eventTimes);
   const ageSec = (Date.now() - freshestEventTime) / 1000;
-  const intervalSec = Number(runner.intervalEffectiveSeconds || runner.intervalSeconds || 60) || 60;
-  return ageSec > Math.max(intervalSec * 3, 180);
+  const suspectThresholdSec = parsePositiveSeconds(
+    runner.heartbeatStaleThresholdSeconds,
+    DEFAULT_RUNNER_DELAY_SUSPECT_SECONDS
+  );
+  const stuckThresholdSec = Math.max(RUNNER_ADAPTER_TIMEOUT_SECONDS, suspectThresholdSec);
+  const ageLabel = formatRunnerDelayAge(ageSec);
+  const timeoutLabel = formatRunnerDelayAge(RUNNER_ADAPTER_TIMEOUT_SECONDS);
+  const timeoutRemainingLabel = formatRunnerDelayAge(Math.max(0, RUNNER_ADAPTER_TIMEOUT_SECONDS - ageSec));
+
+  if (ageSec >= stuckThresholdSec) {
+    return {
+      severity: "stuck",
+      label: "멈춤 가능",
+      badgeVariant: "destructive",
+      className: "ai-progress-delay-badge ai-progress-delay-badge-stuck",
+      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 동안 새 신호가 없습니다. 정상 worker/planner 호출도 5~10분 걸릴 수 있지만, 기본 adapter timeout ${timeoutLabel} 기준을 넘어 멈춤 가능성이 큽니다.`
+    };
+  }
+
+  if (ageSec >= suspectThresholdSec) {
+    return {
+      severity: "suspect",
+      label: "응답 지연 의심",
+      badgeVariant: "outline",
+      className: "ai-progress-delay-badge ai-progress-delay-badge-suspect",
+      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 동안 새 신호가 없습니다. 정상 worker/planner 호출은 5~10분 걸릴 수 있어 즉시 실패로 보지 않으며, 기본 adapter timeout ${timeoutLabel}까지 약 ${timeoutRemainingLabel} 남았습니다.`
+    };
+  }
+
+  if ((runner.activeStage || "").toLowerCase() === "adapter_running") {
+    return {
+      severity: "waiting",
+      label: "LLM 응답 대기 중",
+      badgeVariant: "secondary",
+      className: "ai-progress-delay-badge ai-progress-delay-badge-waiting",
+      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 경과했습니다. LLM 호출 중이며 정상 worker/planner 호출은 5~10분 걸릴 수 있습니다. 기본 adapter timeout ${timeoutLabel} 기준으로 아직 정상 대기 범위입니다.`
+    };
+  }
+
+  return null;
 }
 
 function runnerProgressDetail(runner: AutoflowRunner) {
@@ -6468,6 +6531,7 @@ function AiProgressRow({
   const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
   const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
   const detail = runnerProgressDetail(runner);
+  const delayStage = runnerDelayStage(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
   const ticketSummary = activeTicketSummary(runner);
@@ -6699,13 +6763,13 @@ function AiProgressRow({
           </Badge>
         ) : null}
         {detailText ? <p title={detailText}>{detailText}</p> : null}
-        {runnerHeartbeatStale(runner) ? (
+        {delayStage ? (
           <Badge
-            variant="destructive"
-            className="ai-progress-stale-badge"
-            title="3분 이상 새 이벤트가 없습니다 — 어댑터 락 대기 또는 멈춤 가능성"
+            variant={delayStage.badgeVariant}
+            className={delayStage.className}
+            title={delayStage.title}
           >
-            응답 지연
+            {delayStage.label}
           </Badge>
         ) : null}
         {runner.activeTicketId ? (
