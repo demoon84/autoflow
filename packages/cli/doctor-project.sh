@@ -555,12 +555,12 @@ record_runner_adapter_check() {
     # allowedRunnerRoles / allowedRunRoles sets. 3-runner active
     # (ticket-owner / planner / wiki-maintainer) + their aliases,
     # legacy/back-compat roles, plus the self-improve trial.
-    ticket-owner|owner|ticket|planner|plan|monitor|self-monitor|self_monitor|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
+    ticket-owner|owner|ticket|planner|plan|todo|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       record_check "${check_id}_role" "ok"
       ;;
     *)
       record_check "${check_id}_role" "warning"
-      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected one of ticket-owner/owner/ticket, planner/plan, monitor, wiki-maintainer/wiki, todo, verifier, coordinator/coord/doctor/diagnose, merge/merge-bot, watcher, or self-improve"
+      record_warning "runner ${runner_id} has unsupported role=${role:-empty}; expected one of ticket-owner/owner/ticket, planner/plan, wiki-maintainer/wiki, todo, coordinator/coord/doctor/diagnose, merge/merge-bot, watcher, or self-improve"
       ;;
   esac
 
@@ -851,7 +851,6 @@ if [ -d "$board_root" ]; then
 
   for required_nested_dir in \
     "tickets/backlog" \
-    "rules/verifier" \
     "logs/hooks" \
     "automations/state" \
     "automations/state/threads"
@@ -997,7 +996,7 @@ if [ -d "$board_root" ]; then
     record_warning "adapter scaffold is missing or incomplete; run autoflow upgrade to add agents/adapters docs"
   fi
 
-  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh merge-ready-ticket.sh update-wiki.sh start-plan.sh start-monitor.sh start-todo.sh handoff-todo.sh start-verifier.sh start-spec.sh integrate-worktree.sh write-verifier-log.sh; do
+  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh merge-ready-ticket.sh update-wiki.sh start-plan.sh start-todo.sh handoff-todo.sh start-spec.sh integrate-worktree.sh; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -1075,10 +1074,7 @@ if [ -d "$board_root" ]; then
     "automations/templates/heartbeat-set.template.toml" \
     "automations/templates/ticket-owner-heartbeat.template.toml" \
     "automations/templates/plan-heartbeat.template.toml" \
-    "automations/templates/todo-heartbeat.template.toml" \
-    "automations/templates/verifier-heartbeat.template.toml" \
-    "rules/verifier/checklist-template.md" \
-    "rules/verifier/verification-template.md"
+    "automations/templates/todo-heartbeat.template.toml"
   do
     if [ -f "${board_root}/${starter_file}" ]; then
       record_check "starter_$(basename "$starter_file" | tr '.-' '__')" "ok"

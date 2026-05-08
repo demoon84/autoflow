@@ -590,14 +590,8 @@ runner_role_to_run_role() {
     todo)
       printf 'todo'
       ;;
-    verifier)
-      printf 'verifier'
-      ;;
     wiki|wiki-maintainer)
       printf 'wiki'
-      ;;
-    monitor|self-monitor|self_monitor)
-      printf 'monitor'
       ;;
     coordinator|coord|doctor|diagnose)
       printf 'coordinator'
@@ -818,14 +812,14 @@ runner_allowed_config_key() {
 }
 
 runner_allowed_role() {
-  # Active roles (4-runner topology): planner / ticket-owner / verifier / wiki-maintainer.
+  # Active roles (3-runner topology): planner / ticket-owner / wiki-maintainer.
   # Legacy/back-compat roles (kept reachable so users on older configs can
   # still `autoflow runners add ...`): owner|ticket alias for ticket-owner,
   # plan alias for planner, wiki alias for wiki-maintainer, plus
-  # todo|verifier|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher.
+  # todo|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher.
   # Trial role (disabled by default): self-improve.
   case "${1:-}" in
-    ticket-owner|owner|ticket|planner|plan|monitor|self-monitor|self_monitor|todo|verifier|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
+    ticket-owner|owner|ticket|planner|plan|todo|wiki-maintainer|wiki|merge|merge-bot|coordinator|coord|doctor|diagnose|watcher|self-improve|self_improve|selfimprove)
       return 0
       ;;
     *)
@@ -925,14 +919,8 @@ runner_public_role() {
     planner|plan)
       printf 'planner'
       ;;
-    verifier|veri)
-      printf 'verifier'
-      ;;
     wiki|wiki-maintainer)
       printf 'wiki'
-      ;;
-    monitor|self-monitor|self_monitor)
-      printf 'monitor'
       ;;
     *)
       printf '%s' "${1:-}"
@@ -962,7 +950,7 @@ runner_tick_backoff_enabled() {
   [ "${AUTOFLOW_TICK_BACKOFF_ENABLED:-1}" != "0" ] || return 1
 
   case "$public_role" in
-    planner|ticket|verifier)
+    planner|ticket)
       return 0
       ;;
     *)
@@ -996,10 +984,7 @@ runner_idle_preflight_inputs_hash_stream() {
       set -- tickets/inbox tickets/backlog tickets/reject tickets/todo tickets/inprogress tickets/done tickets/plan plan
       ;;
     ticket)
-      set -- tickets/todo tickets/inprogress tickets/verifier
-      ;;
-    verifier)
-      set -- tickets/verifier
+      set -- tickets/todo tickets/inprogress
       ;;
     *)
       return 0
@@ -1049,7 +1034,7 @@ runner_realtime_enabled() {
   [ "$mode" = "loop" ] || return 1
 
   case "$public_role" in
-    planner|ticket|verifier|wiki|monitor) ;;
+    planner|ticket|wiki) ;;
     *) return 1 ;;
   esac
 
@@ -1060,7 +1045,7 @@ runner_realtime_enabled() {
     return 0
   fi
 
-  # Umbrella env var: AUTOFLOW_RUNNER_REALTIME_ENABLED=1 enables all 4 roles
+  # Umbrella env var: AUTOFLOW_RUNNER_REALTIME_ENABLED=1 enables all 3 roles
   if [ "${AUTOFLOW_RUNNER_REALTIME_ENABLED:-0}" = "1" ]; then
     return 0
   fi
@@ -1115,22 +1100,11 @@ runner_realtime_inputs_specs() {
       # Worker watches todo/ for new ticket arrival
       printf 'tickets/todo:tickets_*.md\n'
       ;;
-    verifier)
-      # Verifier watches verifier/ for queue entries
-      printf 'tickets/verifier:*.md\n'
-      ;;
     wiki)
       # Wiki AI watches done/ (new completions) and wiki/ (source changes)
       # Note: wiki has its own debounce policy (AUTOFLOW_WIKI_DEBOUNCE_*)
       printf 'tickets/done:*.md\n'
       printf 'wiki:*.md\n'
-      ;;
-    monitor)
-      printf 'runners/state:*.state\n'
-      printf 'telemetry:*.jsonl\n'
-      printf 'metrics:*.tsv\n'
-      printf 'tickets/inprogress:tickets_*.md\n'
-      printf 'tickets/reject:*.md\n'
       ;;
     *)
       ;;
@@ -1424,9 +1398,6 @@ runner_tick_backoff_skip_reason() {
     ticket)
       printf 'ticket_inputs_unchanged'
       ;;
-    verifier)
-      printf 'verifier_inputs_unchanged'
-      ;;
     *)
       printf ''
       ;;
@@ -1536,9 +1507,6 @@ runner_role_queue_has_entries() {
       ;;
     ticket)
       find "${board_root}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
-      ;;
-    verifier)
-      find "${board_root}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' -print -quit 2>/dev/null | grep -q . && return 0
       ;;
   esac
 
@@ -2730,12 +2698,11 @@ sync_heartbeat_set_workers() {
   set_file="$(runner_heartbeat_set_path)"
   [ -f "$set_file" ] || return 0
 
-  for role in ticket-owner planner todo verifier; do
+  for role in ticket-owner planner todo; do
     case "$role" in
       ticket-owner) array_key="owner_workers" ;;
       planner) array_key="planner_workers" ;;
       todo) array_key="todo_workers" ;;
-      verifier) array_key="verifier_workers" ;;
     esac
     ids="$(runner_ids_for_role "$role")"
     updated_array=""

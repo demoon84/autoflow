@@ -10,7 +10,6 @@
 - AI:
 - Claimed By:
 - Execution AI:
-- Verifier AI:
 - Last Updated:
 
 ## Goal
@@ -53,6 +52,9 @@
 - Continuation Suppressed: false
 - Last Event:
 - Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
 
 ## Recovery State
 
@@ -66,8 +68,8 @@
 
 ## Done When
 
-- [ ] 명령, UI 관찰, 또는 파일 검토로 확인할 수 있는 완료 조건.
-- [ ] 사용자에게 보이는 동작 또는 시스템에 보이는 결과가 기대와 일치한다.
+- [ ] 명령/증거로 확인한 완료 조건을 충족했는지를 표시한다.
+- [ ] 충족된 항목은 `[x]`, 미충족/미실행 항목은 `[ ]`으로 남기고, ticket 문서 자체가 최종 상태 증거로 보존된다.
 
 ## Next Action
 

@@ -34,33 +34,29 @@ const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
 // Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
-// case statement. Active: ticket / planner / monitor / wiki (with their
+// case statement. Active: ticket / planner / wiki (with their
 // owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
-// verifier (+ veri alias), coordinator (+ coord/doctor/diagnose aliases),
-// merge / merge-bot. Trial: self-improve (+ self_improve/selfimprove).
+// coordinator (+ coord/doctor/diagnose aliases), merge / merge-bot.
+// Trial: self-improve (+ self_improve/selfimprove).
 const allowedRunRoles = new Set([
   "ticket", "ticket-owner", "owner",
   "planner", "plan",
-  "monitor", "self-monitor", "self_monitor",
   "wiki", "wiki-maintainer",
   "todo",
-  "verifier", "veri",
   "coordinator", "coord", "doctor", "diagnose",
   "merge", "merge-bot",
   "self-improve", "self_improve", "selfimprove"
 ]);
-// Active: ticket-owner / planner / monitor / wiki-maintainer (with legacy
-// aliases owner / plan / wiki). Legacy/back-compat: todo, verifier,
+// Active: ticket-owner / planner / wiki-maintainer (with legacy
+// aliases owner / plan / wiki). Legacy/back-compat: todo,
 // coordinator (+ aliases coord/doctor/diagnose), merge / merge-bot,
 // watcher. Trial (disabled by default): self-improve.
 // Mirrors `runner_allowed_role` in packages/cli/runners-project.sh.
 const allowedRunnerRoles = new Set([
   "ticket-owner", "owner", "ticket",
   "planner", "plan",
-  "monitor", "self-monitor", "self_monitor",
   "wiki-maintainer", "wiki",
   "todo",
-  "verifier",
   "coordinator", "coord", "doctor", "diagnose",
   "merge", "merge-bot",
   "watcher",
@@ -116,8 +112,6 @@ const metricSnapshotKeys = [
   "ticket_done_count",
   "active_ticket_count",
   "reject_count",
-  "verifier_pass_count",
-  "verifier_fail_count",
   "handoff_count",
   "runner_total_count",
   "runner_running_count",
@@ -137,7 +131,6 @@ const metricSnapshotKeys = [
   "autoflow_code_volume_count",
   "autoflow_token_usage_count",
   "autoflow_token_report_count",
-  "verification_pass_rate_percent",
   "completion_rate_percent"
 ];
 
@@ -467,6 +460,10 @@ function rememberProjectScope(options) {
   const isNewScope = !knownProjectScopes.has(key);
   if (isNewScope) {
     knownProjectScopes.set(key, scope);
+    // First time we see this project scope in this desktop session: sweep any
+    // runner state.state pointing at a dead/orphan PID left over from a prior
+    // crash or red-X close. Runs once per scope per session.
+    void sweepStaleRunnersForScope(scope).catch(() => 0);
   }
   const now = Date.now();
   const lastSelfHealAt = lastSelfHealByScope.get(key) || 0;
@@ -2465,18 +2462,6 @@ async function readTextPreview(filePath) {
   }
 }
 
-async function readMonitorEvidencePreview(filePath) {
-  try {
-    const content = await fs.readFile(filePath, "utf8");
-    if (!/source:\s*autoflow-monitor-agent/i.test(content) && !/- Source:\s*autoflow-monitor-agent/i.test(content)) {
-      return null;
-    }
-    return await readMarkdownPreview(filePath);
-  } catch {
-    return null;
-  }
-}
-
 function byName(a, b) {
   return String(a?.name ?? "").localeCompare(String(b?.name ?? ""));
 }
@@ -2549,16 +2534,6 @@ async function listMarkdownFiles(directory, recursive = false, options = {}) {
   const selected = await selectTopFilePaths(paths, options);
   const previews = await Promise.all(selected.map((filePath) => readMarkdownPreview(filePath)));
   return previews.sort(byName);
-}
-
-async function listMonitorEvidenceFiles(boardRoot, options = {}) {
-  const candidates = [
-    ...(await walkFilePaths(path.join(boardRoot, "tickets", "inbox"), false, (name) => /^order_\d+\.md$/i.test(name))),
-    ...(await walkFilePaths(path.join(boardRoot, "tickets", "check"), false, (name) => /^check_\d+\.md$/i.test(name)))
-  ];
-  const selected = await selectTopFilePaths(candidates, { limit: options.limit || 8, orderBy: "mtime" });
-  const previews = (await Promise.all(selected.map((filePath) => readMonitorEvidencePreview(filePath)))).filter(Boolean);
-  return previews.sort(byMostRecent);
 }
 
 async function listTicketFolders(ticketsRoot) {
@@ -3009,7 +2984,6 @@ async function readBoard({ projectRoot, boardDirName }) {
     { limit: 8, orderBy: "mtime" }
   );
   const metricsHistory = exists ? await readMetricsHistory(boardRoot) : [];
-  const monitorSignals = exists ? await listMonitorEvidenceFiles(boardRoot, { limit: 8 }) : [];
   // README.md is filtered out at the consumer slice below; bump the internal
   // cap by 1 so we still surface 24 conversations even when README is the
   // freshest file in the directory.
@@ -3052,7 +3026,6 @@ async function readBoard({ projectRoot, boardDirName }) {
     metricsFiles: metricsFiles
       .sort((a, b) => byMostRecent(a, b))
       .slice(0, 8),
-    monitorSignals,
     metricsHistory,
     conversationFiles: conversationFiles
       .filter((file) => (file?.name || "").toLowerCase() !== "readme.md")
@@ -3830,6 +3803,136 @@ function listChildPids(parentPid) {
   }
 }
 
+// PID + PPID + command introspection. Used to tell apart:
+//   - dead PID (already gone)
+//   - PID reused by an unrelated process (false positive guard)
+//   - true orphan runner whose parent died (PPID=1 = launchd/init)
+function inspectPidIdentity(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return { alive: false, ppid: 0, command: "" };
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return { alive: false, ppid: 0, command: "" };
+  }
+  try {
+    const { spawnSync } = require("node:child_process");
+    const result = spawnSync("ps", ["-p", String(pid), "-o", "ppid=,command="], {
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    if (result.status !== 0 || !result.stdout) return { alive: true, ppid: 0, command: "" };
+    const line = result.stdout.toString().trim();
+    const match = line.match(/^\s*(\d+)\s+(.*)$/);
+    if (!match) return { alive: true, ppid: 0, command: "" };
+    return { alive: true, ppid: Number.parseInt(match[1], 10) || 0, command: match[2] || "" };
+  } catch {
+    return { alive: true, ppid: 0, command: "" };
+  }
+}
+
+// Heuristic: does this command line look like an Autoflow runner adapter?
+// Used to avoid killing arbitrary processes if PID has been reused by the OS.
+function commandLooksLikeAutoflowRunner(command) {
+  if (typeof command !== "string" || !command) return false;
+  if (command.includes("autoflow")) return true;
+  if (command.includes("run-role.sh")) return true;
+  if (command.includes("start-plan.sh")) return true;
+  if (command.includes("start-ticket-owner.sh")) return true;
+  if (command.includes("update-wiki.sh")) return true;
+  // adapter CLIs spawned by run-role.sh
+  if (/\bgemini\b/.test(command) && command.includes("--prompt")) return true;
+  if (/\bcodex\b/.test(command) && command.includes("exec")) return true;
+  if (/\bclaude\b/.test(command) && command.includes("--permission-mode")) return true;
+  return false;
+}
+
+// Startup-time sweep: any state.state with status=running but PID dead OR
+// PID alive with PPID=1 (parent crashed → orphaned to launchd) gets cleaned.
+// Same goal as forceKillSurvivingRunners but applies on app start, not quit,
+// to recover from crash / red-X / power loss / kill -9.
+async function sweepStaleRunnersForScope(scope) {
+  const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
+  let entries;
+  try {
+    entries = await fs.readdir(stateDir);
+  } catch {
+    return 0;
+  }
+  let cleanedCount = 0;
+  for (const name of entries.filter((value) => value.endsWith(".state"))) {
+    const filePath = path.join(stateDir, name);
+    let content;
+    try {
+      content = await fs.readFile(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const values = parseRunnerStateFile(content);
+    if (values.status !== "running") continue;
+    const pid = Number.parseInt(values.pid || "", 10);
+    if (!Number.isInteger(pid) || pid <= 0) {
+      // status=running but no pid recorded → reset
+      values.status = "stopped";
+      values.pid = "";
+      values.last_stop_reason = "startup_no_pid";
+      values.last_result = "loop_stopped";
+      values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+      try { await fs.writeFile(filePath, serializeRunnerState(values), "utf8"); } catch {}
+      continue;
+    }
+
+    const identity = inspectPidIdentity(pid);
+    let action = "";
+    if (!identity.alive) {
+      action = "dead_pid"; // simply reset
+    } else if (!commandLooksLikeAutoflowRunner(identity.command)) {
+      action = "pid_reused"; // OS reassigned PID; don't touch
+    } else if (identity.ppid === 1) {
+      action = "orphan"; // parent died → kill the tree
+    } else {
+      // alive + recognized runner + has live parent → leave it; another desktop
+      // (single-instance lock should prevent this, but be defensive)
+      continue;
+    }
+
+    if (action === "orphan") {
+      for (const target of collectProcessTree(pid)) {
+        try { process.kill(-target, "SIGKILL"); } catch {}
+        try { process.kill(target, "SIGKILL"); } catch {}
+      }
+    }
+
+    values.status = "stopped";
+    values.pid = "";
+    values.stopped_by = "";
+    values.last_stop_reason = `startup_${action}`;
+    values.last_result = "loop_stopped";
+    values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    // Also clear active recovery + active ticket — single-flow design:
+    // any unfinished blocker should re-emerge through inbox retry, not as
+    // stale state on the new desktop session.
+    for (const key of [
+      "active_item",
+      "active_ticket_id",
+      "active_ticket_title",
+      "active_stage",
+      "active_spec_ref",
+      "active_recovery_reason",
+      "active_recovery_status",
+      "active_recovery_failure_class",
+      "active_recovery_worktree_path",
+      "active_recovery_worktree_status",
+      "active_recovery_board_state"
+    ]) {
+      values[key] = "";
+    }
+    try {
+      await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+    } catch {}
+    cleanedCount += 1;
+  }
+  return cleanedCount;
+}
+
 function collectProcessTree(rootPid, visited = new Set()) {
   if (!Number.isInteger(rootPid) || rootPid <= 0 || visited.has(rootPid)) {
     return [];
@@ -4046,6 +4149,23 @@ async function forceKillSurvivingRunners() {
   }
 }
 
+// Single-instance lock: prevent two desktops from spawning duplicate runners
+// against the same project (the leading cause of orphan/zombie runners and
+// state-file corruption). Second instance is denied; the running window is
+// brought back to focus instead.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
+app.on("second-instance", () => {
+  const wins = BrowserWindow.getAllWindows();
+  if (wins.length > 0) {
+    if (wins[0].isMinimized()) wins[0].restore();
+    wins[0].focus();
+  }
+});
+
 app.whenReady().then(() => {
   markDesktopSessionStarted();
   setupMacOsDockIcon();
@@ -4136,8 +4256,11 @@ app.on("before-quit", (event) => {
   });
 });
 
+// Force quit on all-windows-closed (including macOS) so before-quit runs
+// shutdownAllRunners / forceKillSurvivingRunners. The macOS dock-keep
+// convention is intentionally dropped — leaving the app idle in the dock
+// while runners stay spawned causes orphan/zombie process drift after
+// crashes or background unloads.
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  app.quit();
 });

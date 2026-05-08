@@ -16,26 +16,22 @@ Use Ticket Owner Mode by default:
 5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
 6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
 7. The planner runner acts as Planner AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
-8. The monitor runner observes runner state, board queues, telemetry/metrics, dirty root, and exact `Recovery State` `needs_user` fields. It only emits evidence or follow-up orders/checks.
-9. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
-10. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
-11. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
-12. The finalization runtime validates the AI-merged result, writes the completion log, refreshes derived wiki knowledge, and moves it to `tickets/done/<project-key>/` with a local commit.
-13. Failed work moves to `tickets/reject/` with `## Reject Reason`; recoverable blocked/stalled work is described in `Recovery State` for planner orchestration.
+8. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
+9. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
+10. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
+11. The finalization runtime validates the AI-merged result via the shell sanity gate, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
+12. Wiki AI refreshes derived knowledge later when source change weight crosses the debounce threshold.
+13. Failed work embeds the entire ticket body inside `tickets/inbox/order_<id>_retry_<N>_<ts>.md` (under `## Original Ticket`) and removes the inprogress ticket. The planner re-plans it like any other inbox order. Same fingerprint reaching `retry_max` flips `retry_decision=needs_user` so the order parks in inbox until the user redirects. `done/<key>/` only contains successful tickets.
 
-Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for compatibility, but it is not the default.
+Legacy role-pipeline mode (`#plan`, `#todo`) remains available for compatibility, but it is not the default.
 
 ## Important Directories
 
-- `tickets/inbox/`: quick memos waiting for Planner AI promotion into generated PRDs and todo tickets.
-- `tickets/backlog/`: approved or generated specs waiting for execution.
-- `tickets/inprogress/`: active Ticket Owner tickets and verification records.
-- `tickets/ready-to-merge/`: legacy/compatibility state for verified owner tickets waiting for finalization.
-- `tickets/merge-blocked/`: legacy/compatibility state for ready tickets that need ticket-specific AI repair.
-- `tickets/todo/`: legacy implementation queue.
-- `tickets/verifier/`: legacy verification queue.
-- `tickets/done/<project-key>/`: passed tickets, archived specs, archived plans, and verification records.
-- `tickets/reject/`: failed tickets with reject reasons.
+- `tickets/inbox/`: quick orders + worker fail retry orders waiting for Planner AI promotion. Failed tickets are embedded inside `order_<id>_retry_<N>_<ts>.md` here.
+- `tickets/backlog/`: approved or generated PRDs waiting for execution.
+- `tickets/todo/`: tickets the Planner has issued and the Worker is about to claim.
+- `tickets/inprogress/`: active Ticket Owner tickets (only one alive worktree at a time).
+- `tickets/done/<project-key>/`: successful tickets, archived PRDs, and legacy `verify_*.md` / `reject_*.md` history. Successful only — fail flow no longer writes here.
 - `agents/`: AI role instructions.
 - `automations/`: heartbeat, hook, and context contracts.
 - `reference/`: templates and board documentation.
@@ -55,14 +51,12 @@ Legacy role-pipeline mode (`#plan`, `#todo`, `#veri`) remains available for comp
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick memo intake only.
 - `autoflow runners start planner`: Planner AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
 - `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
-- `autoflow run monitor` / `autoflow monitor scan`: Monitor AI — observe runner/board/telemetry/dirty-root/needs_user health, then emit key=value evidence and deduped follow-up order/check files. It must not stop, restart, kill, clean up, merge, or push.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop Owner runner: default Impl AI execution from the UI.
 - `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not part of default 3-runner topology).
 - `#plan`: legacy planner heartbeat (Plan AI runner replaces this).
 - `#todo`: legacy todo heartbeat (Impl AI claims todo directly).
-- `#veri`: legacy verifier heartbeat (Impl AI runs AI-led verification inline).
 
 ## Spec Handoff Rules
 

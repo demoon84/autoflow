@@ -35,15 +35,18 @@ Each entry should cite its source ticket or log.
 - `prd_045` - Shortened planner `next_action` output while preserving machine-readable runtime keys. Source: `tickets/done/prd_045/tickets_045.md`.
 - `prd_047` - Compressed successful `verify-ticket-owner` output into short pass excerpts while keeping larger failure tails. Source: `tickets/done/prd_047/tickets_047.md`.
 - `prd_048` - Compressed successful `finish-ticket-owner` inline merge output into a one-line summary while keeping diagnostic paths verbose. Source: `tickets/done/prd_048/tickets_048.md`.
+- `prd_194` - 데스크톱 오른쪽 러너/AI 카드 모델 변경 설정 항상 표시. Source: `tickets/done/prd_194/prd_194.md`.
+- `prd_193` - 러너 설정 화면의 저장하고 재시작 버튼 제거. Source: `tickets/done/prd_193/prd_193.md`.
+- `prd_192` - 데스크톱 runner start/stop transition 중 중복 클릭 방지. Source: `tickets/done/prd_192/prd_192.md`.
+- `prd_191` - worker 5.2T token telemetry raw row 출처 추적과 재발 방지 보강. Source: `tickets/done/prd_191/prd_191.md`.
+- `prd_190` - 2026-05-04 monitoring cross-verification root-cause 패턴을 wiki learnings 로 기록. Source: `tickets/done/prd_190/prd_190.md`.
 - `prd_050` - Added semantic wiki lint fingerprint gating and prompt-budget smoke coverage. Source: `tickets/done/prd_050/tickets_050.md`.
-
-
 
 
 <!-- AUTOFLOW:BEGIN derived-timeline -->
 ## Derived Timeline
 
-- Last rebuilt: 2026-05-06T00:37:36Z
+- Last rebuilt: 2026-05-08T05:29:06Z
 
 ### Completed Tickets
 
@@ -70,34 +73,11 @@ Each entry should cite its source ticket or log.
 
 ### Verifier Logs
 
-- # Coordinator Checkpoint Source: `logs/archive/2026-04/coordinator_20260426T125351Z_blocked.md`.
-- # Coordinator Log Source: `logs/archive/2026-04/coordinator_20260426T125856Z_blocked.md`.
-- # Coordinator Log Source: `logs/archive/2026-04/coordinator_20260426T130531Z_blocked.md`.
-- # Coordinator Turn - blocked Source: `logs/archive/2026-04/coordinator_20260426T130920Z_blocked.md`.
-- # Coordinator Turn - blocked Source: `logs/archive/2026-04/coordinator_20260426T131244Z_blocked.md`.
-- # Coordinator Turn - blocked Source: `logs/archive/2026-04/coordinator_20260426T131652Z_blocked.md`.
-- # Coordinator Turn - blocked Source: `logs/archive/2026-04/coordinator_20260426T132004Z_blocked.md`.
-- # Manual Worktree Merge Log Source: `logs/archive/2026-04/manual_worktree_merge_20260427_160756Z.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T050634Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T051002Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T052345Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T053051Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T053454Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T054220Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T054535Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T054853Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T055213Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T055648Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T060918Z_blocked.md`.
-- # Owner Completion Log Source: `logs/archive/2026-04/owner_002_20260426T061328Z_blocked.md`.
+- # Ticket 189 Verification Log Source: `logs/verifier_189_20260508_040644Z_pass.md`.
 
 ### Reject Records
 
-- reject_003. Source: `tickets/done/prd_003/reject_003.md`.
-- reject_049. Source: `tickets/done/prd_049/reject_049.md`.
-- reject_071. Source: `tickets/done/prd_073/reject_071.md`.
-- reject_074. Source: `tickets/done/prd_076/reject_074.md`.
-- reject_119. Source: `tickets/done/prd_120/reject_119.md`.
+- No reject records.
 
 ### Conversation Handoffs
 

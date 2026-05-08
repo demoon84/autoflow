@@ -10,7 +10,6 @@
 - AI:
 - Claimed By:
 - Execution AI:
-- Verifier AI:
 - Last Updated:
 
 ## Goal

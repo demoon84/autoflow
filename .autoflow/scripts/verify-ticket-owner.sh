@@ -155,7 +155,6 @@ if [ -z "$ticket_file" ] || [ ! -f "$ticket_file" ]; then
 fi
 
 ticket_id="$(extract_numeric_id "$ticket_file")"
-run_file="$(ensure_runs_file "$ticket_id")"
 working_root="$(ticket_working_root "$ticket_file")"
 verification_command="$(verification_command_for_ticket "$ticket_file" || true)"
 timestamp_start="$(now_iso)"
@@ -163,29 +162,14 @@ stdout_file="$(autoflow_mktemp)"
 stderr_file="$(autoflow_mktemp)"
 
 if [ -z "$verification_command" ]; then
-  replace_scalar_field_in_section "$run_file" "## Meta" "Status" "blocked"
-  replace_section_block "$run_file" "Findings" "- blocker: No verification command found in ticket or referenced PRD.
-- warning:"
-  replace_section_block "$run_file" "Next Fix Hint" "- Add `- Command: ...` under the ticket or referenced PRD `## Verification`, then rerun `scripts/verify-ticket-owner.sh ${ticket_id}`."
   append_note "$ticket_file" "Ticket owner verification blocked at ${timestamp_start}: missing verification command."
   printf 'status=blocked\n'
   printf 'reason=missing_verification_command\n'
   printf 'ticket=%s\n' "$ticket_file"
-  printf 'run=%s\n' "$run_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   exit 0
 fi
-
-replace_scalar_field_in_section "$run_file" "## Meta" "Status" "running"
-replace_scalar_field_in_section "$run_file" "## Meta" "Working Root" "$working_root"
-replace_section_block "$run_file" "Command" "- Started At: ${timestamp_start}
-- Working Root: \`${working_root}\`
-- Command: \`${verification_command}\`"
-replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
-- Log file: pending
-- Command: \`${verification_command}\`
-- Result: running ticket-owner verification by ${display_id}"
 
 set +e
 (
@@ -200,55 +184,23 @@ set -e
 timestamp_finish="$(now_iso)"
 if [ "$exit_code" -eq 0 ]; then
   outcome="pass"
-  meta_status="pass"
   result_line="passed"
-  blocker_line="blocker:"
 else
   outcome="fail"
-  meta_status="fail"
   result_line="failed"
-  blocker_line="blocker: Verification command exited ${exit_code}"
 fi
 
-replace_scalar_field_in_section "$run_file" "## Meta" "Status" "$meta_status"
-replace_section_block "$run_file" "Command" "- Started At: ${timestamp_start}
-- Finished At: ${timestamp_finish}
+replace_section_block "$ticket_file" "Verification" "- Command: \`${verification_command}\`
 - Working Root: \`${working_root}\`
-- Command: \`${verification_command}\`
-- Exit Code: ${exit_code}"
-replace_section_block "$run_file" "Checks" "- [x] PRD reference confirmed
-- [x] allowed paths respected by ticket scope
-- [x] implementation completed or intentionally unchanged
-- [$([ "$exit_code" -eq 0 ] && printf x || printf ' ')] automated verification passed"
-replace_section_block "$run_file" "Findings" "- ${blocker_line}
-- warning:"
-replace_section_block "$run_file" "Output" "### stdout
-
-\`\`\`text
-$(format_output_file "$stdout_file" "$exit_code")
-\`\`\`
-
-### stderr
-
-\`\`\`text
-$(format_output_file "$stderr_file" "$exit_code")
-\`\`\`"
-replace_section_block "$run_file" "Evidence" "- Result: ${result_line}
+- Result: ${result_line} by ${display_id} at ${timestamp_finish}
 - Exit Code: ${exit_code}
-- Completed At: ${timestamp_finish}"
-replace_section_block "$run_file" "Next Fix Hint" "- If failed, fix in the same ticket-owner loop when inside scope; otherwise finish with \`scripts/finish-ticket-owner.sh ${ticket_id} fail \"<reason>\"\`."
-
-replace_section_block "$ticket_file" "Verification" "- Run file: \`tickets/inprogress/$(basename "$run_file")\`
-- Log file: pending
-- Command: \`${verification_command}\`
-- Result: ${result_line} by ${display_id} at ${timestamp_finish}"
+- Started At: ${timestamp_start}"
 replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp_finish"
 append_note "$ticket_file" "Ticket owner verification ${result_line} by ${display_id} at ${timestamp_finish}: command exited ${exit_code}"
 
 printf 'status=%s\n' "$outcome"
 printf 'ticket=%s\n' "$ticket_file"
 printf 'ticket_id=%s\n' "$ticket_id"
-printf 'run=%s\n' "$run_file"
 printf 'working_root=%s\n' "$working_root"
 printf 'command=%s\n' "$verification_command"
 printf 'exit_code=%s\n' "$exit_code"

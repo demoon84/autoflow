@@ -3,13 +3,18 @@ kind: answer
 slug: prd-120-rejection-learning
 title: "Persistent Rejection of prd_120 Due to Dirty Project Root and Missing GUI Environment"
 created: 2026-05-03T06:46:00Z
-updated: 2026-05-03T06:46:00Z
+updated: 2026-05-08T04:55:00Z
 tags:
   - learning
   - prd-120
   - reject-119
   - dirty-project-root
   - gui-verification
+citations:
+  - tickets/done/prd_120/prd_120.md
+  - wiki/sources/prd-120-spec-handoff.md
+  - wiki/answers/dirty-root-finalization-blockers-20260502.md
+  - wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md
 ---
 
 # Persistent Rejection of prd_120 Due to Dirty Project Root and Missing GUI Environment
@@ -29,5 +34,11 @@ The automated runs consistently encountered:
 - **Recurring Blocker:** `dirty_project_root_conflict` remains a significant blocker for automated ticket processing, requiring external manual resolution for specific file paths. For more context on similar issues, refer to [[answers/dirty-root-finalization-blockers-20260502]] and [[answers/desktop-renderer-dirty-root-finalization-blocker-20260501]].
 - **Environmental Limitation:** Automated testing for GUI-dependent features is currently blocked by the lack of a suitable GUI execution environment. This prevents full verification of certain tickets. For details on runner terminal streaming, see [[answers/desktop-runner-terminal-streaming]].
 - **Retry Budget:** Tickets with persistent, out-of-scope blockers will exhaust their retry budget and transition to `needs_user`, requiring human intervention. For the policy on manual resolution, see [[decisions/manual-resolution-policy]].
+
+## Citations
+- `tickets/done/prd_120/prd_120.md`
+- `wiki/sources/prd-120-spec-handoff.md`
+- `wiki/answers/dirty-root-finalization-blockers-20260502.md`
+- `wiki/answers/desktop-renderer-dirty-root-finalization-blocker-20260501.md`
 
 

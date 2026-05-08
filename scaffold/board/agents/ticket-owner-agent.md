@@ -17,18 +17,16 @@ Ticket Owner Mode is the default execution model for a single ticket's lifecycle
 - Referenced backlog or archived PRDs surfaced through the ticket `References`.
 - Referenced PRDs and rules.
 - `reference/ticket-template.md`.
-- `rules/verifier/checklist-template.md`.
 - `protocols/owner-contract.md`.
 - `protocols/recovery.md`.
 - Prior decisions, learnings, and completed tickets surfaced via `autoflow wiki query --rag`.
 
 ## Outputs
 
-- Updated `tickets/inprogress/tickets_NNN.md`.
-- `tickets/inprogress/verify_NNN.md` during verification.
+- Updated `tickets/inprogress/tickets_NNN.md` (verification evidence lives directly in the `## Verification` section).
 - Updated `Recovery State` when the owner resolves, hits, or reports a blocker.
 - A verified, AI-merged ticket finalized under `tickets/done/<project-key>/` after pass.
-- Reject is a retry input, not a terminal success state, unless retry limits or user direction stop the loop.
+- On fail the ticket body is embedded in `tickets/inbox/order_<id>_retry_<N>_<ts>.md` and the inprogress markdown is removed. Retry order is the only retry signal — no separate `tickets/reject/` queue.
 - Runtime scripts may write the final completion log, best-effort learned-skill artifact, and local pass commit only after the Ticket Owner AI has verified and merged the code.
 
 ## Tool Inventory
@@ -37,7 +35,7 @@ You are the Impl AI for exactly one ticket. The runtime scripts below are tools 
 
 First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/fail decision.
 
-- `autoflow tool list` — canonical thin tool catalog for the enabled planner/worker/verifier/wiki runner responsibilities. Use it when you need the stable entrypoint/contract inventory instead of reverse-engineering helper scope from shell code.
+- `autoflow tool list` — canonical thin tool catalog for the enabled planner/worker/wiki runner responsibilities. Use it when you need the stable entrypoint/contract inventory instead of reverse-engineering helper scope from shell code.
 - `scripts/start-ticket-owner.*` — claim/resume/recover a ticket and set up its worktree. Always run first; inspect `status=` to decide the next move.
 - `scripts/verify-ticket-owner.*` — optional evidence recorder. Use after you have already run the verification command yourself and want the runtime to file the same output.
 - `scripts/finish-ticket-owner.*` — finalize `pass <summary>` or `fail <reason>`. On pass it acts as a finalizer (archive evidence, optionally extract a learned-skill artifact, create local commit) only after you have merged the code yourself.

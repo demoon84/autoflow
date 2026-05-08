@@ -7,6 +7,10 @@ This wiki is derived from completed Autoflow work, reject learnings, logs, and c
 Generated summaries may be written here by `autoflow wiki update`.
 
 ## Recent Synthesis
+- **[[answers/recent-core-and-ui-refinements-20260508]]** (`wiki/answers/recent-core-and-ui-refinements-20260508.md`): Captured recent refinements including Desktop runner UI (always show model config, remove save-and-restart), runner transition guard (per-runner state tracking), telemetry 5.2T spike root-cause trace, and cross-verification learning record. Logged on 2026-05-08.
+- **[[answers/recent-core-refinements-175-189]]** (`wiki/answers/recent-core-refinements-175-189.md`): Captured core refinements spanning `prd_175` through `prd_189`, including Planner realtime wakeup, telemetry usage sanity correction, live-log cleanup, and wiki commit gate. Logged on 2026-05-08.
+- **[[answers/prd-168]]** (`wiki/answers/prd-168.md`): Captured `prd_168`, which fixes a Planner check ledger live-lock by ensuring correct exit code propagation.
+- **[[answers/prd-154]]** (`wiki/answers/prd-154.md`): Captured `prd_154`, which implements proper handling for large telemetry files.
 - **[[answers/prd-063-ticket-064]]** (`wiki/answers/prd-063-ticket-064.md`) : Summary of PRD 063 and ticket 064, describing changes to the desktop dashboard's workflow pin strip for inbox card and PRD card order. Logged on 2026-05-05.
 - **[[answers/prd-178-adapter-running-state-heartbeat]]** (`wiki/answers/prd-178-adapter-running-state-heartbeat.md`) : Summary of PRD 178, addressing runner state staleness during long adapter calls by introducing periodic heartbeats and chunk timestamps. Logged on 2026-05-05.
 - **[[answers/prd-166-skill-curator-lifecycle-and-auto-extraction]]** (`wiki/answers/prd-166-skill-curator-lifecycle-and-auto-extraction.md`) : Summary of PRD 166, detailing the implementation of skill curator lifecycle management, auto-extraction triggers, and CLI commands. Logged on 2026-05-04.
@@ -64,6 +68,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[features/wiki-bot-codex-adapter]] (`wiki/features/wiki-bot-codex-adapter.md`)
 - `decisions/`
   - [[decisions/design-kit-mui-migration]] (`wiki/decisions/design-kit-mui-migration.md`)
+  - [[decisions/prd_172_commit_mitigation]] (`wiki/decisions/prd_172_commit_mitigation.md`)
   - [[decisions/manual-resolution-policy]] (`wiki/decisions/manual-resolution-policy.md`)
   - [[decisions/handoff-as-raw-source]] (`wiki/decisions/handoff-as-raw-source.md`)
   - [[decisions/prd-terminology-rename]] (`wiki/decisions/prd-terminology-rename.md`)
@@ -77,6 +82,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[learnings/manual-merge-recovery-20260427]] (`wiki/learnings/manual-merge-recovery-20260427.md`)
   - [[learnings/runtime-log-scope-vs-finish-contract-20260429]] (`wiki/learnings/runtime-log-scope-vs-finish-contract-20260429.md`)
   - [[learnings/retrofit-frontmatter-scope-limitation]] (`wiki/learnings/retrofit-frontmatter-scope-limitation.md`)
+  - [[learnings/cross-verification-root-cause-tracking-20260504]] (`wiki/learnings/cross-verification-root-cause-tracking-20260504.md`)
 - `operations/`
   - [[Operations Wiki Index]] (`wiki/operations/index.md`)
   - [[operations/runner-health]]
@@ -87,6 +93,7 @@ Generated summaries may be written here by `autoflow wiki update`.
   - [[agents/prompt-evolution]]
 
 - `skills/`
+  - [[skills/local-index]] (Agent-extracted skills catalog)
   - [[skills-local/nudge/adapter-running-state-heartbeat-2]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-2/SKILL.md`)
   - [[skills-local/nudge/adapter-running-state-heartbeat-3]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-3/SKILL.md`)
   - [[skills-local/nudge/adapter-running-state-heartbeat-4]] (`wiki/skills-local/nudge/adapter-running-state-heartbeat-4/SKILL.md`)
@@ -94,6 +101,8 @@ Generated summaries may be written here by `autoflow wiki update`.
 
   - `answers/` — `autoflow wiki query --synth --save-as <slug>` 로 저장된 합성 답변 카탈로그. 위 `Recent Synthesis`는 최신 하이라이트이고, 아래 목록은 자주 다시 찾는 answer 페이지를 빠르게 탐색하기 위한 인덱스다. 자세한 규약은 [[answers/README]] 참고.
   - [[answers/README]] (`wiki/answers/README.md`)
+  - [[answers/common-verification-failure-patterns]] (`wiki/answers/common-verification-failure-patterns.md`)
+  - [[answers/recent-core-and-ui-refinements-20260508]] (`wiki/answers/recent-core-and-ui-refinements-20260508.md`)
   - [[answers/prd-178-adapter-running-state-heartbeat]] (`wiki/answers/prd-178-adapter-running-state-heartbeat.md`)
   - [[answers/prd-166-skill-curator-lifecycle-and-auto-extraction]] (`wiki/answers/prd-166-skill-curator-lifecycle-and-auto-extraction.md`)
   - [[answers/prd-098-memo-to-order-refactor]] (`wiki/answers/prd-098-memo-to-order-refactor.md`)
@@ -149,11 +158,11 @@ Tickets, verification records, and logs remain authoritative.
 <!-- AUTOFLOW:BEGIN work-map -->
 ## Autoflow Work Map
 
-- Done tickets: 174
-- Reject records: 5
-- Verifier logs: 509
+- Done tickets: 176
+- Reject records: 0
+- Verifier logs: 1
 - Conversation handoffs: 8
-- Last updated: 2026-05-06T01:09:52Z
+- Last updated: 2026-05-08T05:29:06Z
 
 ## Completed Tickets
 
@@ -213,3 +222,51 @@ urces/prd-093-handoff]] (Worker 작업 생명주기 격리 (PRD-093))
 - [[sources/prd-003]] (Wiki 패널 - 좌우 분할 + 접이식 미리보기)
 
 - [[sources/prd_172]] (플래너 커밋 폭증 완화)
+
+- [[sources/prd_189]] (Codex stdout WARN 노이즈 필터링 (prd_189))
+
+- [[sources/prd_175]] (Planner 실시간 wakeup trigger)
+
+- [[sources/prd_176]] (Autoflow 자율회복 로드맵 통합 패스 (prd_176))
+
+- [[sources/prd_177]] (token telemetry regression recovery)
+
+- [[sources/prd_178]] (Runner 어댑터 Heartbeat 상태 관리)
+
+- [[sources/prd_179]] (token budget stale-data guard (PRD-179))
+
+- [[sources/prd_180]] (반복 preflight 실패 회복 회로 (prd_180))
+
+- [[sources/prd_181]] (telemetry token usage sanity correction)
+
+- [[sources/prd_182]] (runner live log finalize cleanup)
+
+- [[sources/prd_183]] (wiki 의미 있는 커밋 게이트 (prd_183))
+
+- [[sources/prd_184]] (데스크톱 Detached Runner 재연결 및 종료 정책 (prd_184))
+
+- [[sources/prd_185]] (Self-monitoring agent 도입과 monitor runner 표준화 (prd_185))
+
+- [[sources/prd_186]] (prd_186: 티켓 워크트리 삭제 시 고아 러너 루프 방지)
+
+- [[sources/prd_187]] (Planner Secret Dependency Preflight (prd_187))
+
+- [[sources/prd_188]] (데스크톱 응답 지연 심각도 라벨 (prd_188))
+
+- [[sources/prd_190]] (prd_190: 교차 검증 근본 원인 분석 학습 기록)
+
+- [[sources/prd_191]] (telemetry 5.2T spike root-cause trace)
+
+- [[sources/prd_192]] (데스크톱 Runner 상태 전환 액션 가드 (prd_192))
+
+- [[sources/prd_193]] (데스크톱 러너 설정의 저장 후 재시작 버튼 제거)
+
+- [[sources/prd_194]] (데스크톱 러너 모델 설정 상시 표시 (prd_194))
+
+- [[sources/prd_174]] (Runner 설정 저장 적용 피드백 개선 (PRD-174))
+
+- [[sources/prd_170]] (inprogress 복구 파킹 및 repairing 타임아웃 처리)
+
+- [[sources/prd_171]] (worker self-refresh dirty deadlock 차단)
+
+- [[sources/prd_173]] (데스크톱 readBoard 내부 호출 타임아웃 격리)

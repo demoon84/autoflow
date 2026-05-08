@@ -213,10 +213,13 @@ telemetry_record() {
   case "$_telemetry_max_row" in
     ''|*[!0-9]*|0) _telemetry_max_row=100000000 ;;
   esac
+  local _telemetry_row_total
+  _telemetry_row_total=$((token_input + token_output))
   if { [ "$token_input" -ge "$_telemetry_max_row" ] 2>/dev/null; } \
-     || { [ "$token_output" -ge "$_telemetry_max_row" ] 2>/dev/null; }; then
-    printf 'warning=skip_suspicious_token_row_at_write runner_id=%s ended_at=%s token_input=%s token_output=%s max_row_tokens=%s\n' \
-      "$runner_id" "$ended_at" "$token_input" "$token_output" "$_telemetry_max_row" >&2
+     || { [ "$token_output" -ge "$_telemetry_max_row" ] 2>/dev/null; } \
+     || { [ "$_telemetry_row_total" -ge "$_telemetry_max_row" ] 2>/dev/null; }; then
+    printf 'warning=skip_suspicious_token_row_at_write runner_id=%s ended_at=%s token_input=%s token_output=%s row_total=%s max_row_tokens=%s\n' \
+      "$runner_id" "$ended_at" "$token_input" "$token_output" "$_telemetry_row_total" "$_telemetry_max_row" >&2
     token_input=0
     token_output=0
   fi

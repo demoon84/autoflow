@@ -26,19 +26,17 @@ ticket_owned_by_worker() {
   owner="$(ticket_scalar_field "$file" "AI")"
   claimed_by="$(ticket_scalar_field "$file" "Claimed By")"
   execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
-  verifier_owner="$(ticket_scalar_field "$file" "Verifier AI")"
 
   worker_id_matches_field "$owner" "$worker_id" ||
     worker_id_matches_field "$claimed_by" "$worker_id" ||
-    worker_id_matches_field "$execution_owner" "$worker_id" ||
-    worker_id_matches_field "$verifier_owner" "$worker_id"
+    worker_id_matches_field "$execution_owner" "$worker_id"
 }
 
 ticket_claimed_by_other_worker() {
   local file="$1"
   local field value
 
-  for field in "AI" "Claimed By" "Execution AI" "Verifier AI"; do
+  for field in "AI" "Claimed By" "Execution AI"; do
     value="$(ticket_scalar_field "$file" "$field")"
     [ -n "$value" ] || continue
     worker_id_matches_field "$value" "$worker_id" && return 1
@@ -52,7 +50,7 @@ ticket_claim_owner() {
   local file="$1"
   local field value
 
-  for field in "Claimed By" "Execution AI" "AI" "Verifier AI"; do
+  for field in "Claimed By" "Execution AI" "AI"; do
     value="$(ticket_scalar_field "$file" "$field")"
     [ -n "$value" ] || continue
     printf '%s' "$value"
@@ -73,8 +71,7 @@ ticket_owner_self_refresh_dirty_path() {
   board_dir="$(basename "$BOARD_ROOT")"
 
   case "$dirty_path" in
-    "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md"|\
-    "${board_dir}/tickets/inprogress/verify_${ticket_id}.md")
+    "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md")
       return 0
       ;;
   esac
@@ -290,7 +287,6 @@ block_missing_worktree_after_setup() {
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_recovery_missing_worktree"
   replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
@@ -336,8 +332,8 @@ ensure_ready_worktree_exists_or_block() {
 prepare_ticket_owner_context() {
   local ticket_file="$1"
   local source_kind="$2"
-  local ticket_id timestamp worktree_output implementation_root run_file worktree_evidence
-  local project_key project_note ticket_note verification_note stage done_target reject_target
+  local ticket_id timestamp worktree_output implementation_root worktree_evidence
+  local project_key project_note ticket_note stage done_target
   local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
   local shared_head_blockers shared_head_summary integration_status merge_continuation=false next_action_line verification_block
   local dirty_project_root_paths dirty_project_root_summary dirty_path
@@ -392,17 +388,22 @@ prepare_ticket_owner_context() {
         fi
       fi
 
-      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
-      sync_runner_active_state "$ticket_file" "blocked"
-      ticket_goal_block "$ticket_file" "$blocked_reason"
-      printf 'status=blocked\n'
-      printf 'reason=%s\n' "$blocked_reason"
-      printf 'ticket=%s\n' "$ticket_file"
-      printf 'ticket_id=%s\n' "$ticket_id"
-      if [ -n "${blockers_summary:-}" ]; then
-        printf 'blockers=%s\n' "$blockers_summary"
+      # Single-flow safety: if a Stage=blocked ticket cannot self-recover,
+      # delegate to finish-ticket-owner fail so it routes through the inbox
+      # retry order like every other failure. Prevents ticket_stage_blocked
+      # dead-lock from re-emerging on dirty_root / sanity_gate stale states.
+      finish_script="$(cd "$(dirname "$0")" && pwd)/finish-ticket-owner.sh"
+      if [ -x "$finish_script" ]; then
+        AUTOFLOW_ROLE=ticket-owner \
+        AUTOFLOW_WORKER_ID="${worker_id}" \
+        AUTOFLOW_BOARD_ROOT="${BOARD_ROOT}" \
+        AUTOFLOW_PROJECT_ROOT="${PROJECT_ROOT}" \
+        "$finish_script" "$ticket_id" fail "auto-fail from start-ticket-owner: ${blocked_reason} — ${blocked_next_action}" 2>&1 || true
       fi
-      printf 'next_action=%s\n' "$blocked_next_action"
+      printf 'status=failed\n'
+      printf 'outcome=fail\n'
+      printf 'reason=%s\n' "$blocked_reason"
+      printf 'next_action=auto-routed to inbox retry order\n'
       printf 'board_root=%s\n' "$BOARD_ROOT"
       printf 'project_root=%s\n' "$PROJECT_ROOT"
       exit 0
@@ -440,7 +441,6 @@ prepare_ticket_owner_context() {
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_worktree_setup_failed"
     replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
@@ -504,13 +504,10 @@ prepare_ticket_owner_context() {
   fi
 
   implementation_root="$(ticket_working_root "$ticket_file")"
-  run_file="$(ensure_runs_file "$ticket_id")"
   project_key="$(project_key_from_ticket_file "$ticket_file")"
   project_note="[[${project_key}]]"
   ticket_note="[[tickets_${ticket_id}]]"
-  verification_note="[[verify_${ticket_id}]]"
   done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
-  reject_target="$(reject_ticket_path_for_ticket_file "$ticket_file")"
   stage="$(ticket_stage "$ticket_file")"
   integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
   case "${stage:-}" in
@@ -523,60 +520,29 @@ prepare_ticket_owner_context() {
       merge_continuation=true
       ;;
   esac
-  if [ "$merge_continuation" != "true" ]; then
-    dirty_project_root_paths="$(ticket_dirty_project_root_conflict_paths "$ticket_file" "$(git_root_path || true)" || true)"
-    dirty_project_root_paths="$(printf '%s\n' "$dirty_project_root_paths" | filter_ticket_owner_non_self_refresh_dirty_paths "$ticket_file")"
-    if [ -n "$dirty_project_root_paths" ]; then
-      dirty_project_root_summary="$(printf '%s\n' "$dirty_project_root_paths" | dirty_project_root_paths_summary)"
-      mark_ticket_dirty_project_root_blocked "$ticket_file" "$worker_id" "$timestamp" "$dirty_project_root_paths"
-      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
-      sync_runner_active_state "$ticket_file" "blocked"
-      ticket_goal_block "$ticket_file" "dirty_project_root_conflict"
-      printf 'status=blocked\n'
-      printf 'reason=dirty_project_root_conflict\n'
-      printf 'ticket=%s\n' "$ticket_file"
-      printf 'ticket_id=%s\n' "$ticket_id"
-      while IFS= read -r dirty_path; do
-        [ -n "$dirty_path" ] || continue
-        printf 'dirty_path=%s\n' "$dirty_path"
-      done <<< "$dirty_project_root_paths"
-      printf '%s\n' "$worktree_output"
-      printf 'next_action=Commit/stash or intentionally integrate PROJECT_ROOT dirty changes before ticket-owner continues: %s\n' "$dirty_project_root_summary"
-      printf 'board_root=%s\n' "$BOARD_ROOT"
-      printf 'project_root=%s\n' "$PROJECT_ROOT"
-      exit 0
-    fi
-  fi
+  # dirty_project_root_conflict pre-check removed (refactor 2026-05-07): a
+  # single live worker + .gitignore separation means autoflow no longer creates
+  # dirty paths itself. If the user is editing PROJECT_ROOT externally, the
+  # worker still works inside its own worktree; conflicts surface naturally at
+  # merge time and are routed through finish-ticket-owner fail → inbox retry
+  # order.
   if [ "$merge_continuation" = "true" ]; then
     next_action_line="- Next: continue AI-led merge for this ticket. Manually integrate verified worktree changes into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun required verification from PROJECT_ROOT, then rerun \`scripts/finish-ticket-owner.sh ${ticket_id} pass \"<summary>\"\`. Do not claim another ticket or call merge-ready-ticket directly."
-    verification_block="- Run file: \`tickets/inprogress/$(basename "$run_file")\`
-- Log file: pending merge continuation
-- Result: previous pass is waiting for AI-led PROJECT_ROOT merge and post-merge verification by ${display_id}"
+    verification_block="- Result: previous pass is waiting for AI-led PROJECT_ROOT merge and post-merge verification by ${display_id}"
   else
-    next_action_line="- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done/reject 이동까지 이어서 처리한다."
-    verification_block="- Run file: \`tickets/inprogress/$(basename "$run_file")\`
-- Log file: pending
-- Result: pending ticket-owner by ${display_id}"
+    next_action_line="- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done 이동까지 이어서 처리한다."
+    verification_block="- Result: pending ticket-owner by ${display_id}"
   fi
-
-  replace_scalar_field_in_section "$run_file" "## Meta" "PRD Key" "$project_key"
-  replace_scalar_field_in_section "$run_file" "## Meta" "Status" "pending"
-  replace_scalar_field_in_section "$run_file" "## Meta" "Working Root" "$implementation_root"
-  replace_section_block "$run_file" "Reference Notes" "- Project Note: ${project_note}
-- Plan Note:
-- Ticket Note: ${ticket_note}
-- Verification Note: ${verification_note}"
 
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "$stage"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Verification" "$verification_block"
   replace_section_block "$ticket_file" "Next Action" "$next_action_line"
   append_note_replacing "$ticket_file" \
-    "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}; run=$(board_relative_path "$run_file")" \
+    "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}" \
     "AI ${display_id} prepared ${source_kind}"
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
@@ -589,9 +555,7 @@ prepare_ticket_owner_context() {
   printf 'source=%s\n' "$source_kind"
   printf '%s\n' "$worktree_output"
   printf 'implementation_root=%s\n' "$implementation_root"
-  printf 'run=%s\n' "$run_file"
   printf 'done_target=%s\n' "$done_target"
-  printf 'reject_target=%s\n' "$reject_target"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
   if [ "$merge_continuation" = "true" ]; then

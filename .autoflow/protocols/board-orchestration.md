@@ -12,11 +12,10 @@ Use `autoflow tool list` as the canonical catalog when you need a stable invento
 
 Planner AI watches the full planning lane and the health signals that Impl AI leaves in tickets:
 
-- `tickets/inbox/`
+- `tickets/inbox/` (also receives worker-fail retry orders)
 - `tickets/backlog/`
 - `tickets/todo/`
 - `tickets/inprogress/`
-- `tickets/reject/`
 - `tickets/done/`
 - runner state and logs when needed for stalled or blocked diagnosis
 
@@ -71,7 +70,7 @@ When the runner wakes planner for `active_recovery_reason`, the tick is a board-
 - Keep the edit idempotent when the evidence and planner decision are unchanged.
 - If no safe board-only repair exists, set `Recovery State` status to `needs_user`, choose an explicit failure class, and park the ticket with an owner resume instruction.
 - Run `autoflow guard` or `scripts/board-guard.sh` after the markdown repair and fix guard errors before creating any new plan or ticket work.
-- Do not call owner/verifier/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
+- Do not call owner/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
 
 ## State Source
 
@@ -109,7 +108,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 
 | Helper or command | Safety-kernel responsibility | AI-owned decision |
 | --- | --- | --- |
-| `start-plan.*` | Atomically promote clear inbox/backlog/reject inputs into generated PRD/todo files, expose idle/recovery signals, and surface `source=blocked-dirty-orchestration` with a `dirty_paths` inventory when a blocked ticket's PROJECT_ROOT is dirty. | Decide whether the source request is safe, whether to split/requeue, what recovery instruction belongs in markdown, and (under `blocked-dirty-orchestration`) how to group + commit the dirty paths. |
+| `start-plan.*` | Atomically promote clear inbox/backlog inputs (including worker-fail retry orders) into generated PRD/todo files, expose idle signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
 | `start-ticket-owner.*` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
 | `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
 | `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |

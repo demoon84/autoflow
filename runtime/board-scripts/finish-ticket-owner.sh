@@ -95,7 +95,14 @@ clear_runner_active_state() {
       order[3] = "active_ticket_title"
       order[4] = "active_stage"
       order[5] = "active_spec_ref"
-      for (idx = 1; idx <= 5; idx += 1) {
+      order[6] = "active_recovery_reason"
+      order[7] = "active_recovery_status"
+      order[8] = "active_recovery_failure_class"
+      order[9] = "active_recovery_worktree_path"
+      order[10] = "active_recovery_worktree_status"
+      order[11] = "active_recovery_board_state"
+      order[12] = "last_result"
+      for (idx = 1; idx <= 12; idx += 1) {
         values[order[idx]] = ""
       }
     }
@@ -108,7 +115,7 @@ clear_runner_active_state() {
       print $0
     }
     END {
-      for (idx = 1; idx <= 5; idx += 1) {
+      for (idx = 1; idx <= 12; idx += 1) {
         key = order[idx]
         if (!(key in seen)) {
           print key "=" values[key]
@@ -117,6 +124,133 @@ clear_runner_active_state() {
     }
   ' "$state_path" > "$temp_file"
   mv "$temp_file" "$state_path"
+}
+
+# Single fail finalize path: emit inbox retry order + rm inprogress ticket.
+# All worker-pass blockers (sanity gate, dirty conflict, merge prep fail,
+# inline merge blocked, shared path, missing reject reason) route here so
+# inprogress never accumulates Stage=blocked tickets and planner re-plans
+# every fail through the same lane.
+#
+# Uses outer-scope vars: ticket_file, ticket_id, message, timestamp,
+#                       BOARD_ROOT, PROJECT_ROOT.
+# Args: $1 = failure_class, $2 = reject_message (optional)
+route_to_inbox_retry() {
+  local _failure_class="$1"
+  local _reject_msg="${2:-}"
+  local _retry_prd_key _retry_title _retry_fp_input _retry_fingerprint
+  local _retry_inbox_dir _retry_prior_count _retry_count _retry_max _retry_decision
+  local _retry_iso_compact _retry_inbox_path _ticket_body_snapshot _wiki_output
+
+  [ -n "$_reject_msg" ] && append_reject_reason "$ticket_file" "$_reject_msg" 2>/dev/null || true
+
+  _retry_prd_key="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- PRD Key:/{
+      sub(/^- PRD Key:[[:space:]]*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }' "$ticket_file" 2>/dev/null || true)"
+  _retry_title="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- Title:/{
+      sub(/^- Title:[[:space:]]*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }' "$ticket_file" 2>/dev/null || true)"
+
+  _retry_fp_input="$(printf '%s|%s|%s|%s\n' "$_retry_prd_key" "$_retry_title" "$_failure_class" "$_reject_msg")"
+  _retry_fingerprint=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    _retry_fingerprint="$(printf '%s' "$_retry_fp_input" | sha256sum 2>/dev/null | cut -c1-12)"
+  elif command -v shasum >/dev/null 2>&1; then
+    _retry_fingerprint="$(printf '%s' "$_retry_fp_input" | shasum -a 256 2>/dev/null | cut -c1-12)"
+  fi
+  [ -n "$_retry_fingerprint" ] || _retry_fingerprint="unknown"
+
+  _retry_inbox_dir="${BOARD_ROOT}/tickets/inbox"
+  mkdir -p "$_retry_inbox_dir" 2>/dev/null || true
+  _retry_prior_count=0
+  if [ -d "$_retry_inbox_dir" ]; then
+    # shopt -s nullglob via subshell so empty glob doesn't trip set -e
+    _retry_prior_count="$(
+      shopt -s nullglob
+      _files=( "${_retry_inbox_dir}"/order_*_retry_*.md )
+      if [ "${#_files[@]}" -gt 0 ]; then
+        { grep -lF "retry_fingerprint: ${_retry_fingerprint}" "${_files[@]}" 2>/dev/null || true; } | awk 'END { print NR + 0 }'
+      else
+        printf '0'
+      fi
+    )"
+  fi
+  case "$_retry_prior_count" in ''|*[!0-9]*) _retry_prior_count=0 ;; esac
+  _retry_count=$((_retry_prior_count + 1))
+
+  _retry_max="${AUTOFLOW_INBOX_RETRY_MAX_FINGERPRINT:-3}"
+  case "$_retry_max" in ''|*[!0-9]*|0) _retry_max=3 ;; esac
+
+  _retry_decision="retry"
+  if [ "$_retry_count" -ge "$_retry_max" ]; then
+    _retry_decision="needs_user"
+  fi
+
+  _retry_iso_compact="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || printf 'unknown')"
+  _retry_inbox_path="${_retry_inbox_dir}/order_${ticket_id}_retry_${_retry_count}_${_retry_iso_compact}.md"
+
+  _ticket_body_snapshot=""
+  if [ -f "$ticket_file" ]; then
+    _ticket_body_snapshot="$(cat "$ticket_file" 2>/dev/null || true)"
+  fi
+
+  {
+    printf '# Retry order from failed ticket %s\n\n' "$ticket_id"
+    printf 'source: retry\n'
+    printf 'retry_count: %s\n' "$_retry_count"
+    printf 'retry_max: %s\n' "$_retry_max"
+    printf 'retry_decision: %s\n' "$_retry_decision"
+    printf 'retry_fingerprint: %s\n' "$_retry_fingerprint"
+    printf 'origin_ticket: %s\n' "$ticket_id"
+    printf 'origin_prd: %s\n' "${_retry_prd_key:-}"
+    printf 'failure_class: %s\n' "$_failure_class"
+    printf 'failed_at: %s\n\n' "$timestamp"
+    printf '## Original Title\n- %s\n\n' "${_retry_title:-}"
+    printf '## Reject Reason\n```\n%s\n```\n\n' "${_reject_msg:-(see ticket reject reason)}"
+    printf '## Retry Decision\n- %s (retry_count=%s of retry_max=%s)\n\n' "$_retry_decision" "$_retry_count" "$_retry_max"
+    printf '## Planner Hint\n'
+    if [ "$_retry_decision" = "needs_user" ]; then
+      printf -- '- Same fingerprint reached retry_max. Do NOT auto-create a new PRD/todo. Append a needs_user note so the user redirects the goal or relaxes Allowed Paths / Done When.\n\n'
+    else
+      printf -- '- Reuse the original PRD if possible. Adjust Allowed Paths or Done When to avoid the failure class above.\n'
+      printf -- '- If failure_class starts with `shell_sanity_gate_`, tighten Done When checklist or produce a real diff in the worktree.\n'
+      printf -- '- If failure_class is `dirty_project_root_conflict` or `merge_preparation_failed`, the worker tried to merge but PROJECT_ROOT had overlapping dirty paths; resolve those first.\n\n'
+    fi
+    if [ -n "$_ticket_body_snapshot" ]; then
+      printf '## Original Ticket\n\n````markdown\n%s\n````\n' "$_ticket_body_snapshot"
+    fi
+  } > "$_retry_inbox_path" 2>/dev/null || _retry_inbox_path=""
+
+  if [ -f "$ticket_file" ]; then
+    rm -f "$ticket_file"
+  fi
+  ticket_goal_block "$ticket_file" "failed" 2>/dev/null || true
+
+  _wiki_output="$(wiki_ai_owned_notice)"
+  clear_active_ticket_context_record || true
+  clear_runner_active_state
+
+  printf 'status=failed\n'
+  printf 'outcome=fail\n'
+  printf 'failure_class=%s\n' "$_failure_class"
+  printf 'ticket=(removed; embedded in inbox retry order)\n'
+  printf 'ticket_id=%s\n' "$ticket_id"
+  printf '%s\n' "$_wiki_output"
+  printf 'commit_status=not_committed_failed_ticket\n'
+  if [ -n "$_retry_inbox_path" ] && [ -f "$_retry_inbox_path" ]; then
+    printf 'inbox_retry_order=%s\n' "$_retry_inbox_path"
+    printf 'retry_count=%s\n' "$_retry_count"
+    printf 'retry_decision=%s\n' "$_retry_decision"
+    printf 'retry_fingerprint=%s\n' "$_retry_fingerprint"
+  fi
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
 }
 
 stage_git_path_if_present() {
@@ -516,16 +650,25 @@ if [ -z "$ticket_file" ] || [ ! -f "$ticket_file" ]; then
 fi
 
 ticket_id="$(extract_numeric_id "$ticket_file")"
-run_file="$(pending_run_path "$ticket_id")"
-ready_run_file="$(ready_to_merge_run_path_for_ticket_file "$ticket_file")"
-if [ ! -f "$run_file" ] && [ -f "$ready_run_file" ]; then
-  run_file="$ready_run_file"
+# Legacy verify_NNN.md sidecar removed (refactor 2026-05-07). Verification
+# evidence is captured directly in the ticket markdown's `## Verification`
+# section. Existing pending/ready-to-merge sidecar files are still picked up
+# so older boards can drain cleanly.
+run_file=""
+candidate_run_file="$(pending_run_path "$ticket_id" 2>/dev/null || true)"
+if [ -f "$candidate_run_file" ]; then
+  run_file="$candidate_run_file"
 fi
-if [ ! -f "$run_file" ]; then
-  run_file="$(ensure_runs_file "$ticket_id")"
+if [ -z "$run_file" ]; then
+  candidate_run_file="$(ready_to_merge_run_path_for_ticket_file "$ticket_file" 2>/dev/null || true)"
+  if [ -f "$candidate_run_file" ]; then
+    run_file="$candidate_run_file"
+  fi
 fi
 
-replace_scalar_field_in_section "$run_file" "## Meta" "Status" "$outcome"
+if [ -n "$run_file" ] && [ -f "$run_file" ]; then
+  replace_scalar_field_in_section "$run_file" "## Meta" "Status" "$outcome"
+fi
 
 case "$outcome" in
   pass)
@@ -533,22 +676,88 @@ case "$outcome" in
       replace_scalar_field_in_section "$ticket_file" "## Result" "Summary" "$message"
     fi
 
+    # shared_allowed_path_conflict is impossible under single-worker topology;
+    # if it ever surfaces, route to inbox retry like any other blocker.
     shared_blockers="$(ticket_shared_allowed_path_blockers "$ticket_file" || true)"
     if [ -n "$shared_blockers" ]; then
       blockers_summary="$(printf '%s\n' "$shared_blockers" | shared_allowed_path_blockers_summary)"
-      replace_scalar_field_in_section "$run_file" "## Meta" "Status" "blocked"
-      mark_ticket_shared_allowed_path_blocked "$ticket_file" "$worker_id" "$timestamp" "$shared_blockers"
-      ticket_goal_block "$ticket_file" "shared_allowed_path_conflict"
-      printf 'status=blocked\n'
-      printf 'reason=shared_allowed_path_conflict\n'
-      printf 'ticket=%s\n' "$ticket_file"
-      printf 'ticket_id=%s\n' "$ticket_id"
-      printf 'blockers=%s\n' "$blockers_summary"
-      printf 'next_action=Runtime is waiting for lower-number in-progress ticket(s) holding overlapping project-root fallback paths. The next tick will retry automatically.\n'
-      printf 'board_root=%s\n' "$BOARD_ROOT"
-      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      route_to_inbox_retry "shared_allowed_path_conflict" "$blockers_summary"
       exit 0
     fi
+
+    # ── Shell-only sanity gate ──────────────────────────────────────────────
+    # Mechanical checks that ignore any AI-written evidence and rely on shell
+    # results only. Designed to catch worker AI false-pass patterns where:
+    #   - mini-plan was made but no code changed (zero diff),
+    #   - Verification Command actually fails when re-executed,
+    #   - evidence file was edited to overwrite a non-zero exit.
+    # If any check trips, the ticket is moved to blocked and pass is refused.
+    sanity_worktree=""
+    sanity_worktree="$(awk '/^## Worktree/{flag=1; next} /^## /{flag=0} flag && /^- Path:/{
+        sub(/^- Path:[[:space:]]*/, "")
+        gsub(/`/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    sanity_base=""
+    sanity_base="$(awk '/^## Worktree/{flag=1; next} /^## /{flag=0} flag && /^- Base Commit:/{
+        sub(/^- Base Commit:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    sanity_target=""
+    if [ -n "$sanity_worktree" ] && [ -d "$sanity_worktree" ]; then
+      sanity_target="$sanity_worktree"
+    fi
+
+    sanity_failed=""
+    sanity_detail=""
+
+    # ① zero-diff guard: refuse pass when no code actually changed.
+    if [ -z "$sanity_failed" ] && [ -n "$sanity_target" ] && [ -n "$sanity_base" ]; then
+      sanity_diff_stat=""
+      sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat "${sanity_base}..HEAD" 2>/dev/null || true)"
+      if [ -z "$sanity_diff_stat" ]; then
+        sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat 2>/dev/null || true)"
+      fi
+      sanity_diff_total="$(printf '%s\n' "$sanity_diff_stat" | awk '{s=0; for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) s+=$i+0; print s+0}')"
+      if [ "${sanity_diff_total:-0}" -lt 1 ] 2>/dev/null; then
+        sanity_failed="zero_diff"
+        sanity_detail="git diff against ${sanity_base:-HEAD} produced no changed lines; refusing pass on empty work"
+      fi
+    fi
+
+    # ② Done When checklist gate: every `- [ ]` under `## Done When` must be
+    # `- [x]`. Empty Done When is also a fail — a ticket cannot pass without
+    # explicit completion criteria.
+    if [ -z "$sanity_failed" ]; then
+      done_when_items="$(awk '
+        /^## Done When/ { in_section = 1; next }
+        in_section && /^## / { in_section = 0 }
+        in_section && /^[[:space:]]*- \[[ xX]\]/ { print }
+      ' "$ticket_file" 2>/dev/null || true)"
+
+      if [ -z "$done_when_items" ]; then
+        sanity_failed="done_when_empty"
+        sanity_detail="## Done When section has no checklist items; cannot mechanically verify completion"
+      else
+        done_when_unchecked="$(printf '%s\n' "$done_when_items" | grep -c '^[[:space:]]*- \[ \]' 2>/dev/null || printf '0')"
+        if [ "${done_when_unchecked:-0}" -gt 0 ] 2>/dev/null; then
+          done_when_total="$(printf '%s\n' "$done_when_items" | awk 'NF' | wc -l | tr -d '[:space:]')"
+          sanity_failed="done_when_unchecked"
+          sanity_detail="${done_when_unchecked} of ${done_when_total} Done When item(s) still unchecked; check every item or split the ticket scope"
+        fi
+      fi
+    fi
+
+    if [ -n "$sanity_failed" ]; then
+      append_note "$ticket_file" "Shell sanity gate refused pass at ${timestamp}: ${sanity_failed}; ${sanity_detail}"
+      route_to_inbox_retry "shell_sanity_gate_${sanity_failed}" "$sanity_detail"
+      exit 0
+    fi
+    # ── end shell sanity gate ───────────────────────────────────────────────
 
     merge_prep_output="$(prepare_ticket_worktree_for_merge "$ticket_file" 2>&1)" || {
       merge_prep_status="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
@@ -566,27 +775,14 @@ case "$outcome" in
         exit 0
       fi
       if [ "$merge_prep_status" = "blocked" ]; then
-        ticket_goal_block "$ticket_file" "${merge_prep_reason:-merge_preparation_failed}"
-        printf 'status=blocked\n'
-        printf 'reason=%s\n' "${merge_prep_reason:-merge_preparation_failed}"
-        printf 'ticket=%s\n' "$ticket_file"
-        printf 'ticket_id=%s\n' "$ticket_id"
-        printf '%s\n' "$merge_prep_output"
-        printf 'next_action=Resolve the merge preparation blocker before ticket-owner continues. Runtime scripts will not overwrite dirty PROJECT_ROOT paths.\n'
-        printf 'board_root=%s\n' "$BOARD_ROOT"
-        printf 'project_root=%s\n' "$PROJECT_ROOT"
+        merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+        append_note "$ticket_file" "AI pass finish refused at ${timestamp}: ${merge_prep_reason:-merge_preparation_failed}; ${merge_prep_output_single_line}"
+        route_to_inbox_retry "${merge_prep_reason:-merge_preparation_failed}" "$merge_prep_output_single_line"
         exit 0
       fi
       merge_prep_output_single_line="$(printf '%s' "$merge_prep_output" | tr '\r\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-      replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
       append_note "$ticket_file" "AI pass finish blocked during merge preparation at ${timestamp}: ${merge_prep_output_single_line}"
-      ticket_goal_block "$ticket_file" "merge_preparation_failed"
-      printf 'status=blocked\n'
-      printf 'reason=merge_preparation_failed\n'
-      printf 'ticket=%s\n' "$ticket_file"
-      printf '%s\n' "$merge_prep_output"
-      printf 'board_root=%s\n' "$BOARD_ROOT"
-      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      route_to_inbox_retry "merge_preparation_failed" "$merge_prep_output_single_line"
       exit 0
     }
 
@@ -596,14 +792,12 @@ case "$outcome" in
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready_to_merge"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- Next: ticket-owner AI manually integrates verified worktree changes into PROJECT_ROOT if needed, reruns verification, then reruns finish. The runtime finalizer only archives/logs/commits an already AI-merged result."
     append_note "$ticket_file" "Impl AI ${display_id} marked verification pass at ${timestamp}; runtime finalizer will not perform merge operations."
     mark_ticket_done_when_checked "$ticket_file" "$run_file"
-    replace_section_block "$ticket_file" "Verification" "- Run file: \`$(board_relative_path "$run_file")\`
-- Log file: pending AI merge finalization
-- Result: passed by ${display_id} at ${timestamp}"
+    replace_section_block "$ticket_file" "Verification" "- Result: passed by ${display_id} at ${timestamp}
+- Log file: pending AI merge finalization"
     ticket_goal_activate "$ticket_file" "pass_pending_finalizer"
 
     # Finalization call: verifies that AI already integrated the work into
@@ -641,9 +835,9 @@ case "$outcome" in
       printf 'status=needs_ai_merge\n'
       printf 'reason=%s\n' "${inline_merge_reason:-ai_merge_required}"
     elif [ "$inline_merge_status" = "blocked" ]; then
-      ticket_goal_block "$ticket_file" "${inline_merge_reason:-inline_merge_blocked}"
-      printf 'status=blocked\n'
-      [ -z "$inline_merge_reason" ] || printf 'reason=%s\n' "$inline_merge_reason"
+      append_note "$ticket_file" "Inline merge blocked at ${timestamp}: ${inline_merge_reason:-inline_merge_blocked}"
+      route_to_inbox_retry "${inline_merge_reason:-inline_merge_blocked}" "${inline_merge_output:-inline merge blocked}"
+      exit 0
     else
       ticket_goal_activate "$ticket_file" "inline_merge_failed_check_output"
       printf 'status=ready_to_merge\n'
@@ -651,7 +845,6 @@ case "$outcome" in
     printf 'outcome=pass\n'
     printf 'ticket=%s\n' "$ticket_file"
     printf 'ticket_id=%s\n' "$ticket_id"
-    printf 'run=%s\n' "$run_file"
     printf '%s\n' "$merge_prep_output"
     printf 'inline_merge_exit=%s\n' "$inline_merge_exit"
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
@@ -681,48 +874,17 @@ case "$outcome" in
     printf 'project_root=%s\n' "$PROJECT_ROOT"
     ;;
   fail)
-    if [ -z "$message" ] && ! reject_reason_exists "$ticket_file"; then
-      ticket_goal_block "$ticket_file" "missing_reject_reason"
-      printf 'status=blocked\n'
-      printf 'reason=missing_reject_reason\n'
-      printf 'ticket=%s\n' "$ticket_file"
-      printf 'next_action=Re-run with a concrete reject reason as the third argument or add a ## Reject Reason section to the ticket.\n'
-      printf 'board_root=%s\n' "$BOARD_ROOT"
-      printf 'project_root=%s\n' "$PROJECT_ROOT"
-      exit 0
-    fi
+    # Fail can be invoked without a reject message only if the ticket already
+    # carries one in `## Reject Reason`. Otherwise we synthesize a generic class.
+    _failure_class="rejected"
+    _ticket_failure_class="$(awk '/^## Recovery State/{flag=1; next} /^## /{flag=0} flag && /^- Failure Class:/{
+        sub(/^- Failure Class:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    [ -n "$_ticket_failure_class" ] && _failure_class="$_ticket_failure_class"
 
-    [ -z "$message" ] || append_reject_reason "$ticket_file" "$message"
-
-    reject_target="$(reject_ticket_path_for_ticket_file "$ticket_file")"
-    mkdir -p "$(dirname "$reject_target")"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "rejected"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-    replace_section_block "$ticket_file" "Next Action" "- reject 처리됨: Reject Reason 을 기준으로 재작업 범위를 정한다."
-    append_note "$ticket_file" "AI ${display_id} marked fail at ${timestamp}."
-    ticket_goal_block "$ticket_file" "rejected"
-    if [ "$ticket_file" != "$reject_target" ]; then
-      mv "$ticket_file" "$reject_target"
-      ticket_file="$reject_target"
-    fi
-
-    log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" fail)"
-    wiki_output="$(wiki_ai_owned_notice)"
-    clear_active_ticket_context_record || true
-    clear_runner_active_state
-
-    printf 'status=rejected\n'
-    printf 'outcome=fail\n'
-    printf 'ticket=%s\n' "$ticket_file"
-    printf 'ticket_id=%s\n' "$ticket_id"
-    printf 'run=%s\n' "$(reject_run_path_for_ticket_file "$ticket_file")"
-    printf '%s\n' "$log_output"
-    printf '%s\n' "$wiki_output"
-    printf 'commit_status=not_committed_failed_ticket\n'
-    printf 'board_root=%s\n' "$BOARD_ROOT"
-    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    route_to_inbox_retry "$_failure_class" "$message"
     ;;
 esac

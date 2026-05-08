@@ -5,50 +5,36 @@ The default execution model is **Ticket Owner Mode**: one runner owns one ticket
 
 ## Canonical Flow
 
-Default Ticket Owner flow:
+Default 3-runner flow (refactor 2026-05-07):
 
 ```text
 PROJECT_ROOT
-  -> .autoflow/tickets/backlog/prd_NNN.md
-  -> .autoflow/tickets/inprogress/tickets_NNN.md
-  -> .autoflow/tickets/inprogress/verify_NNN.md
-  -> .autoflow/logs/verifier_NNN_<timestamp>_<outcome>.md
-  -> .autoflow/tickets/done/<project-key>/tickets_NNN.md
+  -> .autoflow/tickets/inbox/order_NNN.md             (사용자 /order 또는 worker fail retry)
+  -> .autoflow/tickets/backlog/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
+  -> .autoflow/tickets/todo/tickets_NNN.md            (Planner 가 발급)
+  -> .autoflow/tickets/inprogress/tickets_NNN.md      (Worker active, worktree 1 개)
+  -> .autoflow/tickets/done/<project-key>/tickets_NNN.md (성공만 모임)
 ```
 
-Legacy role-pipeline compatibility flow:
-
-```text
-PROJECT_ROOT
-  -> .autoflow/tickets/backlog
-  -> .autoflow/tickets/plan
-  -> .autoflow/tickets/inprogress/plan_NNN.md
-  -> .autoflow/tickets/todo
-  -> .autoflow/tickets/inprogress/tickets_NNN.md
-  -> .autoflow/tickets/verifier
-  -> .autoflow/tickets/inprogress/verify_NNN.md
-  -> .autoflow/logs
-  -> .autoflow/tickets/done/<project-key>/verify_NNN.md
-```
+Worker fail 시 ticket 본문은 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 되고 inprogress markdown 은 `rm`. 별도 reject 큐 없음.
 
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
-- `tickets/inbox/`: quick order queue before Planner AI promotion.
-- `tickets/backlog/`: approved spec queue before execution.
-- `tickets/plan/`: legacy planning queue.
-- `tickets/todo/`: legacy implementation queue.
-- `tickets/inprogress/`: active Ticket Owner tickets, active verification records, and legacy claimed plans/tickets.
-- `tickets/verifier/`: legacy verification queue.
-- `tickets/done/<project-key>/`: passed tickets, archived specs, archived plans, and archived reject records.
-- `tickets/reject/`: failed tickets with `## Reject Reason`.
+- `tickets/inbox/`: quick order + worker-fail retry order 큐. Planner AI 가 promotion.
+- `tickets/backlog/`: approved spec 큐.
+- `tickets/todo/`: Planner 가 발급한 ticket 큐. Worker claim 대기.
+- `tickets/inprogress/`: active Worker ticket (single live worktree).
+- `tickets/done/<project-key>/`: passed ticket, archived spec/plan, completion log. 성공만 모임.
 - `reference/`: templates and board reference material.
 - `protocols/`: AI-first orchestration, owner, and recovery contracts.
-- `rules/`: operating rules and verifier criteria.
+- `rules/`: operating rules and wiki linting.
 - `automations/`: hook, heartbeat, and runtime context contracts.
 - `agents/`: role prompts used by human or local runner agents.
 - `logs/`: completion logs and hook dispatch logs.
 - `wiki/`: generated and human-maintained project knowledge derived from completed work.
+
+Removed (refactor 2026-05-07): `tickets/reject/`, `tickets/verifier/`, `tickets/check/`, `tickets/plan/`, `tickets/ready-to-merge/`, `tickets/merge-blocked/`. Verification evidence now lives directly in the ticket markdown's `## Verification` section.
 
 ## Read Order
 
@@ -61,20 +47,17 @@ At the start of work, read in this order:
 5. `reference/plan.md`
 6. `automations/README.md`
 7. `reference/tickets-board.md`
-8. `rules/verifier/README.md`
-9. Role-specific files:
+8. Role-specific files:
    - PRD handoff: `agents/spec-author-agent.md`
-   - default execution: `agents/ticket-owner-agent.md`
-   - orchestration / legacy planning: `agents/plan-to-ticket-agent.md`
-   - legacy todo implementation: `agents/todo-queue-agent.md`
-   - legacy verification: `agents/verifier-agent.md`
-   - wiki maintenance: `agents/wiki-maintainer-agent.md` or coordinator-backed wiki turns
-   - coordinator diagnostics / merge / wiki-bot maintenance: `agents/coordinator-agent.md`
+   - default execution (Impl AI): `agents/ticket-owner-agent.md`
+   - orchestration (Planner AI): `agents/plan-to-ticket-agent.md`
+   - wiki maintenance (Wiki AI): `agents/wiki-maintainer-agent.md`
+   - legacy compat: `agents/todo-queue-agent.md`, `agents/coordinator-agent.md`, `agents/merge-bot-agent.md`
 
 ## Runtime Command Convention
 
 - Use the matching `scripts/*.sh` entrypoint for runtime commands.
-- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, `start-todo runtime`, `handoff-todo runtime`, `start-verifier runtime`, or `write-verifier-log runtime`, run the `.sh` script.
+- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.sh` script in `scripts/`.
 
 ## Core Rules
 
@@ -88,15 +71,15 @@ At the start of work, read in this order:
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
 9. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
 10. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-11. Ticket Owner and verifier may run local verification commands, use built-in browser tools when needed, and move board files without asking again. Coordinator integrates ready worktrees and creates local pass commits inside `PROJECT_ROOT`.
+11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's shell sanity gate (git diff ≥ 1 + every Done When `[x]`) blocks false pass mechanically.
 12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
-13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright for verifier checks.
+13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
 14. There must not be two copies of the same `tickets_NNN.md` in different state folders.
-15. `tickets/inprogress/tickets_NNN.md` must keep `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, and `Resume Context` current.
+15. `tickets/inprogress/tickets_NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
 16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
 17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
-18. Verification records start as `tickets/inprogress/verify_NNN.md`, move to `tickets/ready-to-merge/verify_NNN.md` after owner pass, and move beside the final ticket after coordinator/merge completion. Failed records move to `tickets/reject/verify_NNN.md`.
-19. Done tickets must link `Verification`, `Result`, the final `verify_NNN.md`, and the completion log. Coordinator/merge completion automatically updates wiki managed sections; do not require a separate wiki runner for normal completion.
+18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
+19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
 20. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
 21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
@@ -209,25 +192,13 @@ Do:
 - Resume owned inprogress work first.
 - Use `scripts/start-todo.*` and `scripts/handoff-todo.*`.
 - Implement within `Allowed Paths`.
-- Move completed implementation to `tickets/verifier/`.
+- On completion, the worker finalizer takes over (atomic: verify → master merge → done).
 
-Do not verify, reject, commit, or push.
+Do not push.
 
-### 6. Legacy Verification Mode
+### 6. Legacy Verification Mode (removed 2026-05-07)
 
-Trigger: `#veri`.
-
-Purpose: verify tickets in `tickets/verifier/`.
-
-Do:
-
-- Keep a 1-minute heartbeat alive until the user stops it.
-- Use `scripts/start-verifier.*`.
-- Run verification from `working_root`.
-- Pass: integrate worktree, move to done, write completion log, create local commit. Commit message format is `[PRD_NNN][ticket_NNN] 작업내용 요약본`; use the ticket `PRD Key` / project key for the uppercase `PRD_` bracket, the ticket ID for the lower-case `ticket_` bracket, and fall back to `[ticket_NNN]` only for legacy tickets without a PRD key.
-- Fail: append `## Reject Reason`, move to reject, write completion log.
-
-Do not fix code, create tickets, or push.
+The standalone verifier role and `#veri` trigger were retired. Verification is now inline inside the worker's atomic cycle: `finish-ticket-owner.sh pass` runs the shell sanity gate (git diff ≥ 1 + every Done When `[x]`), and false pass is mechanically blocked.
 
 ### 7. Coordinator Mode
 
@@ -252,10 +223,9 @@ Every ticket must keep these sections or fields current:
 - `Project Key`
 - `Title`
 - `Stage`
-- `Owner`
+- `AI`
 - `Claimed By`
-- `Execution Owner`
-- `Verifier Owner`
+- `Execution AI`
 - `Goal`
 - `References`
 - `Reference Notes`
@@ -274,21 +244,19 @@ Before creating a ticket, check:
 
 - `tickets/todo/`
 - `tickets/inprogress/`
-- `tickets/verifier/`
 - `tickets/done/`
-- `tickets/reject/`
+- `tickets/inbox/` (for `order_*_retry_*.md` from worker fail)
 
-Do not create a duplicate for the same goal or same plan source. A reject retry gets a new ticket ID and archives the old reject as history.
+Do not create a duplicate for the same goal or same plan source. A retry order gets a new file under `tickets/inbox/` with `retry_count` incremented.
 
 ## Completion Standard
 
 A ticket may move to done only when:
 
-1. Every `Done When` item is satisfied.
-2. Verification was run under `rules/verifier/` criteria.
-3. The final `verify_NNN.md` is beside the final ticket.
+1. Every `## Done When` item is `[x]` (mechanically enforced by the shell sanity gate at finalize).
+2. `git diff <Worktree.Base Commit>..HEAD` line count ≥ 1 (mechanically enforced).
+3. The ticket markdown's `## Verification` section records the run result inline.
 4. A completion log exists under `logs/`.
-5. The ticket links the verification record and log.
 6. `Result` is filled.
 
 ## File Writing Style

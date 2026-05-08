@@ -4,11 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -f "${SCRIPT_DIR}/cli-common.sh" ]; then
-  source "${SCRIPT_DIR}/cli-common.sh"
-else
-  source "${SCRIPT_DIR}/../../packages/cli/cli-common.sh"
-fi
+source "${SCRIPT_DIR}/cli-common.sh"
 source "$(runtime_scripts_root)/runner-common.sh"
 
 # Thin runtime contract:
@@ -19,14 +15,12 @@ source "$(runtime_scripts_root)/runner-common.sh"
 usage() {
   cat <<'EOF' >&2
 Usage:
-  run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh monitor [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh merge [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
-  run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]
+  run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Plan AI (3-runner default)
+  run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]       # Impl AI (3-runner default)
+  run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # Wiki AI (3-runner default)
+  run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # legacy role-pipeline
+  run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
+  run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run] # trial (disabled by default)
 EOF
 }
 
@@ -86,29 +80,17 @@ case "$requested_role" in
     default_runner_id="todo-1"
     runtime_script="start-todo.sh"
     ;;
-  verifier|veri)
-    public_role="verifier"
-    runtime_role="verifier"
-    default_runner_id="verifier-1"
-    runtime_script="start-verifier.sh"
-    ;;
-  merge|merge-bot)
-    public_role="merge"
-    runtime_role="merge"
-    default_runner_id="merge-1"
-    runtime_script="merge-ready-ticket.sh"
-    ;;
   wiki|wiki-maintainer)
     public_role="wiki"
     runtime_role="wiki"
     default_runner_id="wiki"
     runtime_script=""
     ;;
-  monitor|self-monitor|self_monitor)
-    public_role="monitor"
-    runtime_role="monitor"
-    default_runner_id="monitor"
-    runtime_script="start-monitor.sh"
+  coordinator|coord|doctor|diagnose)
+    public_role="coordinator"
+    runtime_role="coordinator"
+    default_runner_id="coordinator-1"
+    runtime_script=""
     ;;
   self-improve|self_improve|selfimprove)
     public_role="self-improve"
@@ -146,6 +128,8 @@ adapter_active_recovery_failure_class=""
 adapter_active_recovery_worktree_path=""
 adapter_active_recovery_worktree_status=""
 adapter_active_recovery_board_state=""
+runner_config_fingerprint=""
+runner_config_applied_at=""
 planner_diff_context_enabled="false"
 planner_diff_mode=""
 planner_diff_reason=""
@@ -203,6 +187,54 @@ command_summary_from_array() {
 runner_field() {
   local field="$1"
   runner_config_field "$runner_id" "$field" "$config_path" 2>/dev/null || true
+}
+
+runner_normalize_interval_seconds() {
+  local value="${1:-}"
+
+  case "$value" in
+    ""|*[!0-9]*)
+      printf '60'
+      return 0
+      ;;
+  esac
+
+  if [ "$value" -lt 1 ] || [ "$value" -gt 86400 ]; then
+    printf '60'
+    return 0
+  fi
+
+  printf '%s' "$value"
+}
+
+runner_hash_stream() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{ print $1 }'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{ print $1 }'
+  else
+    cksum | awk '{ print $1 ":" $2 }'
+  fi
+}
+
+runner_current_config_fingerprint() {
+  {
+    printf 'role=%s\n' "$configured_role"
+    printf 'agent=%s\n' "$agent"
+    printf 'model=%s\n' "$model"
+    printf 'reasoning=%s\n' "$configured_reasoning"
+    printf 'mode=%s\n' "$mode"
+    printf 'interval_seconds=%s\n' "$(runner_normalize_interval_seconds "${interval_seconds:-}")"
+    printf 'enabled=%s\n' "$enabled"
+    printf 'realtime_enabled=%s\n' "${realtime_enabled:-false}"
+    printf 'command=%s\n' "$command_value"
+  } | runner_hash_stream
+}
+
+runner_config_state_fields() {
+  printf 'config_fingerprint=%s\n' "${runner_config_fingerprint:-}"
+  printf 'applied_config_fingerprint=%s\n' "${runner_config_fingerprint:-}"
+  printf 'config_applied_at=%s\n' "${runner_config_applied_at:-}"
 }
 
 runner_state_value() {
@@ -271,7 +303,9 @@ resolve_effective_reasoning_for_current_tick() {
 
   case "$public_role" in
     planner)
-      planner_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/inbox")"
+      planner_actionable_count=$(
+        run_role_count_markdown_files "${board_root}/tickets/inbox"
+      )
       planner_actionable_count=$((planner_actionable_count + $(run_role_count_markdown_files "$(spec_root_path "$board_root")")))
       reject_count="$(run_role_count_markdown_files "${board_root}/tickets/reject")"
       planner_actionable_count=$((planner_actionable_count + reject_count))
@@ -285,9 +319,6 @@ resolve_effective_reasoning_for_current_tick() {
         ticket_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/todo")"
         reasoning_actionable_count="$ticket_actionable_count"
       fi
-      ;;
-    verifier)
-      reasoning_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/verifier")"
       ;;
   esac
 
@@ -678,6 +709,46 @@ role_autocommit_after_adapter() {
   printf 'autocommit_message=%s\n' "$commit_message"
 }
 
+# adapter_exit==124 (timeout) 시 wiki working tree 의 partial 변경을 폐기한다.
+# Opt-in: AUTOFLOW_WIKI_TIMEOUT_DISCARD_PARTIAL=1 일 때만 수행.
+# Default 는 비활성 — 다음 tick 의 manifest hash 가 partial 을 input 으로 잡아서 자연 회복한다.
+role_post_adapter_cleanup_on_timeout() {
+  local adapter_exit="$1"
+  local discard_flag git_root wiki_path
+
+  [ "$adapter_exit" -eq 124 ] || return 0
+  case "$public_role" in
+    wiki) ;;
+    *) return 0 ;;
+  esac
+
+  discard_flag="${AUTOFLOW_WIKI_TIMEOUT_DISCARD_PARTIAL:-0}"
+  case "$discard_flag" in
+    ''|0|false|no|off|FALSE|NO|OFF) return 0 ;;
+  esac
+
+  git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -z "$git_root" ]; then
+    printf 'wiki_partial_discarded=skipped_not_git_repo\n'
+    return 0
+  fi
+
+  wiki_path="${board_root}/wiki"
+  if [ ! -d "$wiki_path" ]; then
+    printf 'wiki_partial_discarded=skipped_no_wiki_dir\n'
+    return 0
+  fi
+
+  if [ -z "$(git -C "$git_root" status --porcelain -- "$wiki_path" 2>/dev/null)" ]; then
+    printf 'wiki_partial_discarded=false\n'
+    return 0
+  fi
+
+  git -C "$git_root" checkout -- "$wiki_path" 2>/dev/null || true
+  git -C "$git_root" clean -fd -- "$wiki_path" 2>/dev/null || true
+  printf 'wiki_partial_discarded=true\n'
+}
+
 run_wiki_curator_idle_best_effort() {
   local cli_path output status
 
@@ -879,7 +950,6 @@ ticket_goal_active_ticket_file() {
     "${board_root}/tickets/inprogress/tickets_${id}.md" \
     "${board_root}/tickets/ready-to-merge/tickets_${id}.md" \
     "${board_root}/tickets/merge-blocked/tickets_${id}.md" \
-    "${board_root}/tickets/verifier/tickets_${id}.md" \
     "${board_root}/tickets/todo/tickets_${id}.md"; do
     [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
   done
@@ -911,6 +981,304 @@ ticket_goal_record_adapter_result_for_current_ticket() {
   ticket_file="$(ticket_goal_active_ticket_file || true)"
   [ -n "$ticket_file" ] || return 0
   ticket_goal_common_call ticket_goal_record_adapter_result "$ticket_file" "$adapter_exit" "$before_fingerprint" "$runner_id"
+}
+
+telemetry_file_size_bytes() {
+  local file="$1"
+  if [ -f "$file" ]; then
+    wc -c < "$file" 2>/dev/null | tr -d '[:space:]' || printf '0'
+  else
+    printf '0'
+  fi
+}
+
+telemetry_file_size_bytes_without_codex_guard_warnings() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    printf '0'
+    return 0
+  fi
+
+  awk '
+    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { next }
+    { bytes += length($0) + 1 }
+    END { printf "%d", bytes + 0 }
+  ' "$file" 2>/dev/null || printf '0'
+}
+
+telemetry_estimated_tokens_for_file() {
+  local file="$1"
+  local byte_count
+
+  byte_count="$(telemetry_file_size_bytes_without_codex_guard_warnings "$file")"
+  case "$byte_count" in
+    ''|*[!0-9]*) byte_count=0 ;;
+  esac
+  if [ "$byte_count" -le 0 ]; then
+    printf '0'
+    return 0
+  fi
+  printf '%s' $(((byte_count + 3) / 4))
+}
+
+telemetry_positive_integer_or_zero() {
+  local value="$1"
+
+  case "$value" in
+    ''|*[!0-9]*) printf '0' ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+telemetry_max_row_tokens() {
+  local value="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+
+  case "$value" in
+    ''|*[!0-9]*|0) value=100000000 ;;
+  esac
+  printf '%s' "$value"
+}
+
+telemetry_extract_token_components_from_logs() {
+  awk '
+    function first_number(value) {
+      gsub(/,/, "", value)
+      if (match(value, /[0-9]+/)) {
+        return substr(value, RSTART, RLENGTH) + 0
+      }
+      return 0
+    }
+
+    function add_token_key_value(key, value, lower_key) {
+      lower_key = tolower(key)
+      if (value <= 0) {
+        return
+      }
+      if (lower_key ~ /total/) {
+        total += value
+      } else if (lower_key ~ /(prompt|input|cache|cached)/) {
+        input += value
+      } else if (lower_key ~ /(completion|output|candidate|reasoning)/) {
+        output += value
+      }
+    }
+
+    function scan_json_token_keys(value, fragment, key, number_text) {
+      while (match(value, /"[^"]*(token|Token)[^"]*"[[:space:]]*:[[:space:]]*[0-9][0-9,]*/)) {
+        fragment = substr(value, RSTART, RLENGTH)
+        key = fragment
+        sub(/^"/, "", key)
+        sub(/".*/, "", key)
+        number_text = fragment
+        sub(/^.*:[[:space:]]*/, "", number_text)
+        gsub(/,/, "", number_text)
+        add_token_key_value(key, number_text + 0)
+        value = substr(value, RSTART + RLENGTH)
+      }
+    }
+
+    function is_trusted_usage_json(value, lower_value) {
+      lower_value = tolower(value)
+      return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"usage(metadata)?"[[:space:]]*:/
+    }
+
+    {
+      line = $0
+      gsub(/\r$/, "", line)
+      gsub(/\033\[[0-9;?]*[A-Za-z]/, "", line)
+      lower = tolower(line)
+      if (pending_total) {
+        if (lower ~ /^[[:space:]]*[0-9][0-9,]*[[:space:]]*$/) {
+          total += first_number(lower)
+          pending_total = 0
+          next
+        }
+        pending_total = 0
+      }
+
+      if (is_trusted_usage_json(line)) {
+        scan_json_token_keys(line)
+      }
+
+      if (lower ~ /^[[:space:]]*tokens[[:space:]]+used[[:space:]]*$/) {
+        pending_total = 1
+        next
+      }
+      if (lower ~ /^[[:space:]]*tokens[[:space:]]+used[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        total += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(total[_ -]?tokens|totaltokens)[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        total += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(input|prompt|cache|cached)[_ -]?tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        input += value
+        next
+      }
+      if (lower ~ /^[[:space:]]*(input|prompt|cache|cached)tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        input += value
+        next
+      }
+
+      if (lower ~ /^[[:space:]]*(output|completion|reasoning)[_ -]?tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        output += value
+        next
+      }
+      if (lower ~ /^[[:space:]]*(output|completion|reasoning)tokens[^0-9]*[0-9]/) {
+        value = first_number(lower)
+        output += value
+        next
+      }
+    }
+
+    END {
+      printf "%d %d %d\n", input, output, total
+    }
+  ' "$@" 2>/dev/null || printf '0 0 0\n'
+}
+
+telemetry_adapter_token_usage() {
+  local prompt_file="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  local adapter_exit="$4"
+  local parsed token_input token_output token_total estimated_input estimated_output row_total max_row_tokens
+
+  parsed="$(telemetry_extract_token_components_from_logs "$stdout_file" "$stderr_file")"
+  token_input="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $1}')")"
+  token_output="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $2}')")"
+  token_total="$(telemetry_positive_integer_or_zero "$(printf '%s' "$parsed" | awk '{print $3}')")"
+  max_row_tokens="$(telemetry_max_row_tokens)"
+
+  if [ "$token_total" -gt 0 ] && [ $((token_input + token_output)) -le 0 ]; then
+    estimated_output="$(telemetry_estimated_tokens_for_file "$stdout_file")"
+    if [ "$estimated_output" -gt 0 ] && [ "$token_total" -gt 1 ]; then
+      if [ "$estimated_output" -ge "$token_total" ]; then
+        token_output=1
+      else
+        token_output="$estimated_output"
+      fi
+      token_input=$((token_total - token_output))
+    else
+      token_input="$token_total"
+      token_output=0
+    fi
+  fi
+
+  row_total=$((token_input + token_output))
+  if [ "$token_input" -ge "$max_row_tokens" ] || [ "$token_output" -ge "$max_row_tokens" ] || [ "$row_total" -ge "$max_row_tokens" ]; then
+    token_input=0
+    token_output=0
+  fi
+
+  if [ "$adapter_exit" -ne 127 ] && [ $((token_input + token_output)) -le 0 ]; then
+    estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
+    estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
+    [ "$estimated_input" -gt 0 ] || estimated_input=1
+    [ "$estimated_output" -gt 0 ] || estimated_output=1
+    token_input="$estimated_input"
+    token_output="$estimated_output"
+  fi
+
+  printf '%s %s\n' "$token_input" "$token_output"
+}
+
+run_role_record_worker_tick_telemetry() {
+  local started_at="$1"
+  local ended_at="$2"
+  local adapter_exit="$3"
+  local adapter_stdout_path="$4"
+  local adapter_stderr_path="$5"
+  local prompt_path="$6"
+  local telemetry_script telemetry_result telemetry_failure_class
+  local start_epoch end_epoch duration_ms
+  local token_pair token_input token_output stdout_bytes stderr_bytes ticket_ref
+
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || return 0
+
+  start_epoch="$(telemetry_timestamp_to_epoch "$started_at" || true)"
+  end_epoch="$(telemetry_timestamp_to_epoch "$ended_at" || true)"
+  if [ -n "$start_epoch" ] && [ -n "$end_epoch" ] && [ "$end_epoch" -ge "$start_epoch" ]; then
+    duration_ms=$(((end_epoch - start_epoch) * 1000))
+  else
+    duration_ms=0
+  fi
+
+  case "$adapter_exit" in
+    0)
+      telemetry_result="success"
+      telemetry_failure_class=""
+      ;;
+    124)
+      telemetry_result="killed"
+      telemetry_failure_class="adapter_timeout"
+      ;;
+    *)
+      telemetry_result="failed"
+      telemetry_failure_class="adapter_exit_${adapter_exit}"
+      ;;
+  esac
+
+  if [ "$telemetry_result" != "success" ] && [ -f "$adapter_stderr_path" ] && [ -s "$adapter_stderr_path" ] && [ -z "$telemetry_failure_class" ]; then
+    telemetry_failure_class="adapter_stderr_nonempty"
+  fi
+
+  if [ "$telemetry_result" != "success" ] && [ -z "$telemetry_failure_class" ]; then
+    telemetry_failure_class="unknown_failure"
+  fi
+
+  token_pair="$(telemetry_adapter_token_usage "$prompt_path" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_exit")"
+  token_input="$(telemetry_positive_integer_or_zero "$(printf '%s' "$token_pair" | awk '{print $1}')")"
+  token_output="$(telemetry_positive_integer_or_zero "$(printf '%s' "$token_pair" | awk '{print $2}')")"
+  stdout_bytes="$(telemetry_positive_integer_or_zero "$(telemetry_file_size_bytes "$adapter_stdout_path")")"
+  stderr_bytes="$(telemetry_positive_integer_or_zero "$(telemetry_file_size_bytes "$adapter_stderr_path")")"
+  ticket_ref="$(runner_adapter_state_value "active_ticket_id")"
+
+  if [ "$telemetry_result" != "success" ]; then
+    "$telemetry_script" record \
+      --project-root "$project_root" \
+      --runner "$runner_id" \
+      --result "$telemetry_result" \
+      --started-at "$started_at" \
+      --ended-at "$ended_at" \
+      --duration-ms "$duration_ms" \
+      --token-input "$token_input" \
+      --token-output "$token_output" \
+      --ticket-id "$ticket_ref" \
+      --prd-key "$(runner_adapter_state_value "active_spec_ref")" \
+      --model "$model" \
+      --stdout-bytes "$stdout_bytes" \
+      --stderr-bytes "$stderr_bytes" \
+      --failure-class "$telemetry_failure_class" \
+      >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  "$telemetry_script" record \
+    --project-root "$project_root" \
+    --runner "$runner_id" \
+    --result "$telemetry_result" \
+    --started-at "$started_at" \
+    --ended-at "$ended_at" \
+    --duration-ms "$duration_ms" \
+    --token-input "$token_input" \
+    --token-output "$token_output" \
+    --ticket-id "$ticket_ref" \
+    --prd-key "$(runner_adapter_state_value "active_spec_ref")" \
+    --model "$model" \
+    --stdout-bytes "$stdout_bytes" \
+    --stderr-bytes "$stderr_bytes" \
+    >/dev/null 2>&1 || true
 }
 
 planner_ticket_field() {
@@ -965,7 +1333,6 @@ runner_active_ticket_file_from_item() {
     "${board_root}/tickets/inprogress/${ticket_name}.md" \
     "${board_root}/tickets/ready-to-merge/${ticket_name}.md" \
     "${board_root}/tickets/merge-blocked/${ticket_name}.md" \
-    "${board_root}/tickets/verifier/${ticket_name}.md" \
     "${board_root}/tickets/todo/${ticket_name}.md" \
     "${board_root}/tickets/reject/${ticket_name}.md" \
     "${board_root}/tickets/done"/*/"${ticket_name}.md" \
@@ -1044,6 +1411,53 @@ runner_replace_state_field_preserving() {
   }
 
   mv "$temp_file" "$state_path"
+}
+
+runner_ticket_allowed_paths_dirty() {
+  local ticket_file="$1"
+  local git_root="$2"
+  local status_file allowed_path dirty_path found=false
+
+  [ -f "$ticket_file" ] || return 1
+  [ -n "$git_root" ] || return 1
+  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+
+  status_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-dirty-paths.XXXXXX")"
+  git -C "$git_root" status --porcelain --untracked-files=all 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    dirty_path="${line#?? }"
+    case "$dirty_path" in
+      *" -> "*) dirty_path="${dirty_path##* -> }" ;;
+    esac
+    [ -n "$dirty_path" ] || continue
+    printf '%s\n' "$dirty_path"
+  done > "$status_file"
+
+  while IFS= read -r allowed_path; do
+    [ -n "$allowed_path" ] || continue
+    while IFS= read -r dirty_path; do
+      [ -n "$dirty_path" ] || continue
+      if [ "$dirty_path" = "$allowed_path" ] || [ "${dirty_path#"$allowed_path"/}" != "$dirty_path" ]; then
+        found=true
+        break
+      fi
+    done < "$status_file"
+    [ "$found" = "true" ] && break
+  done < <(
+    awk '
+      /^## Allowed Paths/ { in_section = 1; next }
+      /^## / && in_section { exit }
+      in_section && /^[[:space:]]*-[[:space:]]*`/ {
+        line = $0
+        sub(/^[[:space:]]*-[[:space:]]*`/, "", line)
+        sub(/`[[:space:]]*$/, "", line)
+        print line
+      }
+    ' "$ticket_file"
+  )
+
+  rm -f "$status_file"
+  [ "$found" = "true" ]
 }
 
 runner_ticket_self_refresh_dirty_path() {
@@ -1143,6 +1557,122 @@ reset_stale_ticket_stage_blocked_last_result_if_scope_clean() {
     "ticket=$(runner_board_relative_path "$ticket_file")"
 }
 
+runner_repairing_timeout_seconds() {
+  local value="${AUTOFLOW_REPAIRING_TIMEOUT_SECONDS:-1800}"
+
+  case "$value" in
+    ''|*[!0-9]*) value=1800 ;;
+  esac
+  [ "$value" -gt 0 ] || value=1800
+  printf '%s' "$value"
+}
+
+runner_iso_to_epoch() {
+  local value="${1:-}"
+
+  [ -n "$value" ] || return 1
+  if date -u -d "$value" +%s >/dev/null 2>&1; then
+    date -u -d "$value" +%s
+    return 0
+  fi
+  if date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s >/dev/null 2>&1; then
+    date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$value" +%s
+    return 0
+  fi
+  return 1
+}
+
+runner_ticket_repairing_age_seconds() {
+  local ticket_file="$1"
+  local timestamp then_epoch now_epoch
+
+  for timestamp in \
+    "$(planner_ticket_field "$ticket_file" "Recovery State" "Last Recovery At")" \
+    "$(planner_ticket_field "$ticket_file" "Goal Runtime" "Updated At")" \
+    "$(planner_ticket_field "$ticket_file" "Ticket" "Last Updated")"; do
+    timestamp="$(printf '%s' "$timestamp" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$timestamp" ] || continue
+    then_epoch="$(runner_iso_to_epoch "$timestamp" || true)"
+    [ -n "$then_epoch" ] || continue
+    now_epoch="$(date -u +%s)"
+    printf '%s' "$((now_epoch - then_epoch))"
+    return 0
+  done
+
+  return 1
+}
+
+runner_ticket_repairing_timeout_stale() {
+  local ticket_file="$1"
+  local age_seconds timeout_seconds
+
+  [ "$(planner_ticket_field "$ticket_file" "Recovery State" "Status")" = "repairing" ] || return 1
+  age_seconds="$(runner_ticket_repairing_age_seconds "$ticket_file" || true)"
+  [ -n "$age_seconds" ] || return 1
+  timeout_seconds="$(runner_repairing_timeout_seconds)"
+  [ "$age_seconds" -ge "$timeout_seconds" ]
+}
+
+runner_clear_stale_active_ticket_state() {
+  local reason="$1"
+  local ticket_file="$2"
+  local field
+
+  for field in \
+    active_item \
+    active_ticket_id \
+    active_ticket_title \
+    active_ticket_path \
+    active_stage \
+    active_spec_ref \
+    active_recovery_reason \
+    active_recovery_status \
+    active_recovery_failure_class \
+    active_recovery_worktree_path \
+    active_recovery_worktree_status \
+    active_recovery_board_state; do
+    runner_replace_state_field_preserving "$runner_id" "$field" "" || true
+  done
+  runner_replace_state_field_preserving "$runner_id" "last_result" "" || true
+  AUTOFLOW_ROLE="ticket-owner" AUTOFLOW_WORKER_ID="$runner_id" \
+    ticket_goal_common_call clear_active_ticket_context_record >/dev/null 2>&1 || true
+  runner_append_log "$runner_id" "stale_active_ticket_cleared" \
+    "role=${public_role}" \
+    "reason=${reason}" \
+    "ticket=$(runner_board_relative_path "$ticket_file")"
+}
+
+clear_parked_or_stale_repairing_active_ticket_before_dispatch() {
+  local active_item active_ticket_id ticket_file stage recovery_status
+
+  [ "$public_role" = "ticket" ] || return 0
+
+  active_item="$(runner_state_field "$runner_id" "active_item" 2>/dev/null || true)"
+  active_ticket_id="$(runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true)"
+  ticket_file="$(runner_active_ticket_file_from_item "$active_item" 2>/dev/null || true)"
+  if [ -z "$ticket_file" ] && [ -n "$active_ticket_id" ]; then
+    ticket_file="$(runner_active_ticket_file_from_item "$active_ticket_id" 2>/dev/null || true)"
+  fi
+  [ -n "$ticket_file" ] && [ -f "$ticket_file" ] || return 0
+
+  case "$(planner_ticket_board_state "$ticket_file")" in
+    done|rejected)
+      runner_clear_stale_active_ticket_state "resolved_active_ticket_state" "$ticket_file"
+      return 0
+      ;;
+  esac
+
+  stage="$(planner_ticket_field "$ticket_file" "Ticket" "Stage")"
+  recovery_status="$(planner_ticket_field "$ticket_file" "Recovery State" "Status")"
+  if [ "$stage" = "blocked" ] && [ "$recovery_status" = "needs_user" ]; then
+    runner_clear_stale_active_ticket_state "parked_needs_user_active_item" "$ticket_file"
+    return 0
+  fi
+  if runner_ticket_repairing_timeout_stale "$ticket_file"; then
+    runner_clear_stale_active_ticket_state "stale_repairing_active_item" "$ticket_file"
+  fi
+}
+
 runner_board_relative_path() {
   local path="$1"
 
@@ -1165,7 +1695,6 @@ planner_ticket_file_for_ticket_ref() {
     "${board_root}/tickets/inprogress/${ticket_ref}.md" \
     "${board_root}/tickets/ready-to-merge/${ticket_ref}.md" \
     "${board_root}/tickets/merge-blocked/${ticket_ref}.md" \
-    "${board_root}/tickets/verifier/${ticket_ref}.md" \
     "${board_root}/tickets/todo/${ticket_ref}.md" \
     "${board_root}/tickets/reject/${ticket_ref}.md" \
     "${board_root}/tickets/reject/reject_${ticket_num}.md"; do
@@ -1184,7 +1713,7 @@ planner_ticket_board_state() {
   local file="$1"
 
   case "$file" in
-    "${board_root}/tickets/inprogress/"*|"${board_root}/tickets/ready-to-merge/"*|"${board_root}/tickets/merge-blocked/"*|"${board_root}/tickets/verifier/"*|"${board_root}/tickets/todo/"*)
+    "${board_root}/tickets/inprogress/"*|"${board_root}/tickets/ready-to-merge/"*|"${board_root}/tickets/merge-blocked/"*|"${board_root}/tickets/todo/"*)
       printf 'active'
       ;;
     "${board_root}/tickets/reject/"*)
@@ -1417,7 +1946,7 @@ runner_state_started_at() {
 }
 
 wiki_inputs_hash_stream() {
-  local rel_dir dir file rel checksum
+  local root rel_dir dir file rel checksum
 
   for rel_dir in tickets/done tickets/reject logs conversations wiki; do
     dir="${board_root}/${rel_dir}"
@@ -1579,7 +2108,7 @@ idle_preflight_inputs_hash_stream() {
       set -- tickets/inbox tickets/backlog tickets/reject tickets/plan plan
       ;;
     ticket)
-      set -- tickets/todo tickets/inprogress tickets/verifier
+      set -- tickets/todo tickets/inprogress
       ;;
     *)
       return 0
@@ -1708,9 +2237,6 @@ idle_preflight_skip_reason() {
     ticket)
       printf 'ticket_inputs_unchanged'
       ;;
-    verifier)
-      printf 'verifier_inputs_unchanged'
-      ;;
   esac
 }
 
@@ -1773,6 +2299,7 @@ maybe_skip_unchanged_planner_recovery_signal() {
     "fingerprint=${current_fingerprint}"
 
   print_run_header "ok"
+  printf 'narrative=Plan AI · 복구 입력 변동 없음 — 동일 fingerprint(%s) 유지. 다음 tick 까지 idle.\n' "${adapter_active_ticket_id:-no-ticket}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -1823,12 +2350,10 @@ maybe_skip_stale_planner_recovery_before_adapter() {
     "${board_root}/tickets/inprogress/"*|\
     "${board_root}/tickets/ready-to-merge/"*|\
     "${board_root}/tickets/merge-blocked/"*|\
-    "${board_root}/tickets/verifier/"*|\
     "${board_root}/tickets/todo/"*|\
     tickets/inprogress/*|\
     tickets/ready-to-merge/*|\
     tickets/merge-blocked/*|\
-    tickets/verifier/*|\
     tickets/todo/*)
       requested_is_active_queue="true"
       ;;
@@ -1915,12 +2440,10 @@ clear_finished_ticket_active_state_if_resolved() {
     "${board_root}/tickets/inprogress/"*|\
     "${board_root}/tickets/ready-to-merge/"*|\
     "${board_root}/tickets/merge-blocked/"*|\
-    "${board_root}/tickets/verifier/"*|\
     "${board_root}/tickets/todo/"*|\
     tickets/inprogress/*|\
     tickets/ready-to-merge/*|\
     tickets/merge-blocked/*|\
-    tickets/verifier/*|\
     tickets/todo/*|\
     tickets_[0-9]*)
       requested_is_active_queue="true"
@@ -2013,6 +2536,7 @@ maybe_skip_planner_needs_user_decision_signal() {
     "failure_class=${adapter_active_recovery_failure_class}"
 
   print_run_header "ok"
+  printf 'narrative=Plan AI · 사용자 결정 대기(needs_user_decision) — 티켓 %s. 새 입력이 들어올 때까지 idle.\n' "${adapter_active_ticket_id:-no-ticket}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -2154,6 +2678,7 @@ maybe_skip_planner_parked_needs_user_preflight() {
     "failure_class=${failure_class}"
 
   print_run_header "ok"
+  printf 'narrative=Plan AI · parked needs_user 처리 — adapter 호출 없이 idle.\n'
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -2189,7 +2714,7 @@ maybe_skip_unchanged_idle_preflight() {
   [ "${mode:-}" = "loop" ] || return 1
   [ "$dry_run" = "false" ] || return 1
   case "$public_role:$preflight_status:$preflight_reason" in
-    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket|verifier:idle:no_unblocked_verification_ticket)
+    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket)
       ;;
     *)
       return 1
@@ -2235,6 +2760,7 @@ maybe_skip_unchanged_idle_preflight() {
       "fingerprint=${current_fingerprint}"
 
     print_run_header "ok"
+    printf 'narrative=%s · 처리할 planner 입력 없음(%s) — adapter 호출 없이 idle.\n' "${public_role}" "${skip_reason}"
     printf 'runner_status=idle\n'
     printf 'runtime_script=%s\n' "$runtime_path"
     printf 'runtime_status=%s\n' "$preflight_status"
@@ -2284,6 +2810,7 @@ maybe_skip_unchanged_idle_preflight() {
     "fingerprint=${current_fingerprint}"
 
   print_run_header "ok"
+  printf 'narrative=%s · 새 입력 없음(%s) — 동일 fingerprint 유지. 다음 tick 까지 idle.\n' "${public_role}" "${skip_reason}"
   printf 'runner_status=idle\n'
   printf 'runtime_script=%s\n' "$runtime_path"
   printf 'runtime_status=%s\n' "$preflight_status"
@@ -2300,6 +2827,195 @@ maybe_skip_unchanged_idle_preflight() {
   cat "$preflight_output"
   printf 'runtime_output_end\n'
   rm -f "$preflight_output"
+  exit 0
+}
+
+wiki_record_inputs_fingerprint() {
+  local fingerprint_path manifest_path now_epoch
+
+  [ "$public_role" = "wiki" ] || return 0
+  [ "${mode:-}" = "loop" ] || return 0
+
+  wiki_compute_inputs_state
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  manifest_path="$(wiki_inputs_manifest_path)"
+  printf '%s\n' "$WIKI_CURRENT_FINGERPRINT" > "$fingerprint_path"
+  cp -f "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path"
+
+  now_epoch="$(date +%s)"
+  wiki_debounce_write_field "last_synth_at_epoch" "$now_epoch"
+  wiki_debounce_clear_field "pending_since_epoch"
+}
+
+maybe_skip_unchanged_wiki_turn() {
+  local fingerprint_path previous_fingerprint timestamp
+
+  [ "$public_role" = "wiki" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
+
+  wiki_compute_inputs_state
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  previous_fingerprint=""
+  if [ -f "$fingerprint_path" ]; then
+    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
+  fi
+
+  [ -n "$previous_fingerprint" ] || return 1
+  [ "$WIKI_CURRENT_FINGERPRINT" = "$previous_fingerprint" ] || return 1
+
+  wiki_debounce_clear_field "pending_since_epoch"
+  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
+
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    $(runner_config_state_fields) \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=wiki_inputs_unchanged"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=wiki_inputs_unchanged" \
+    "fingerprint=${WIKI_CURRENT_FINGERPRINT}"
+
+  print_run_header "ok"
+  printf 'narrative=Wiki AI · wiki 입력 변동 없음 — 동일 fingerprint 유지. 다음 tick 까지 idle.\n'
+  printf 'runner_status=idle\n'
+  printf 'adapter=%s\n' "$agent"
+  printf 'reason=wiki_inputs_unchanged\n'
+  run_wiki_curator_idle_best_effort
+  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  exit 0
+}
+
+maybe_skip_debounced_wiki_turn() {
+  local manifest_path changed_count changed_weight primary_category total_changed_count telemetry_summary_changed_count now_epoch
+  local pending_since_epoch pending_age min_changes max_age_seconds
+  local last_synth_at_epoch synth_age timestamp fingerprint_path change_stats
+
+  [ "$public_role" = "wiki" ] || return 1
+  [ "${mode:-}" = "loop" ] || return 1
+  [ "$dry_run" = "false" ] || return 1
+  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
+  [ "${AUTOFLOW_WIKI_DEBOUNCE:-1}" != "0" ] || return 1
+
+  wiki_compute_inputs_state
+
+  min_changes="${AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES:-3}"
+  max_age_seconds="${AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS:-1800}"
+
+  manifest_path="$(wiki_inputs_manifest_path)"
+  change_stats="$(wiki_manifest_change_stats "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path")"
+  total_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^total_changed_count=//p' | tail -n 1)"
+  changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_count=//p' | tail -n 1)"
+  changed_weight="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_weight=//p' | tail -n 1)"
+  primary_category="$(printf '%s\n' "$change_stats" | sed -n 's/^primary_changed_category=//p' | tail -n 1)"
+  telemetry_summary_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^telemetry_summary_changed_count=//p' | tail -n 1)"
+  total_changed_count="${total_changed_count:-0}"
+  changed_count="${changed_count:-0}"
+  changed_weight="${changed_weight:-0}"
+  primary_category="${primary_category:-none}"
+  telemetry_summary_changed_count="${telemetry_summary_changed_count:-0}"
+
+  now_epoch="$(date +%s)"
+  pending_since_epoch="$(wiki_debounce_read_field "pending_since_epoch")"
+  case "$pending_since_epoch" in
+    ''|*[!0-9]*)
+      pending_since_epoch="$now_epoch"
+      wiki_debounce_write_field "pending_since_epoch" "$pending_since_epoch"
+      ;;
+  esac
+  pending_age=$((now_epoch - pending_since_epoch))
+
+  last_synth_at_epoch="$(wiki_debounce_read_field "last_synth_at_epoch")"
+  case "$last_synth_at_epoch" in
+    ''|*[!0-9]*) synth_age="" ;;
+    *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
+  esac
+
+  # Debounce is defined in terms of meaningful change count. Weight is still
+  # surfaced for commit-gating/diagnostics, but using it here made a single
+  # high-weight learned-skill file open the wiki adapter on every tick.
+  if [ "$changed_count" -gt 0 ] && { [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
+    return 1
+  fi
+
+  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
+  fingerprint_path="$(wiki_inputs_fingerprint_path)"
+  timestamp="$(runner_now_iso)"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    $(runner_config_state_fields) \
+    "active_item=" \
+    "active_ticket_id=" \
+    "active_ticket_title=" \
+    "active_stage=" \
+    "active_spec_ref=" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=wiki_debounced"
+  runner_append_log "$runner_id" "adapter_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=wiki_debounced" \
+    "changed_count=${changed_count}" \
+    "wiki_commit_weight=${changed_weight}" \
+    "wiki_commit_line_delta=0" \
+    "wiki_commit_primary_category=${primary_category}" \
+    "wiki_commit_gate_reason=debounced" \
+    "total_changed_count=${total_changed_count}" \
+    "telemetry_summary_changed_count=${telemetry_summary_changed_count}" \
+    "pending_since_epoch=${pending_since_epoch}" \
+    "pending_age_seconds=${pending_age}" \
+    "min_changes=${min_changes}" \
+    "max_age_seconds=${max_age_seconds}" \
+    "last_synth_age_seconds=${synth_age}"
+
+  print_run_header "ok"
+  printf 'narrative=Wiki AI · debounce 대기 중 — 의미 변경 %s건 / 최소 %s건, telemetry summary 변경 %s건, 누적 %ss / 최대 %ss. 다음 tick 까지 idle.\n' "$changed_count" "$min_changes" "$telemetry_summary_changed_count" "$pending_age" "$max_age_seconds"
+  printf 'runner_status=idle\n'
+  printf 'adapter=%s\n' "$agent"
+  printf 'reason=wiki_debounced\n'
+  run_wiki_curator_idle_best_effort
+  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
+  printf 'fingerprint_path=%s\n' "$fingerprint_path"
+  printf 'changed_count=%s\n' "$changed_count"
+  printf 'wiki_commit_weight=%s\n' "$changed_weight"
+  printf 'wiki_commit_line_delta=0\n'
+  printf 'wiki_commit_primary_category=%s\n' "$primary_category"
+  printf 'wiki_commit_gate_reason=debounced\n'
+  printf 'total_changed_count=%s\n' "$total_changed_count"
+  printf 'telemetry_summary_changed_count=%s\n' "$telemetry_summary_changed_count"
+  printf 'pending_since_epoch=%s\n' "$pending_since_epoch"
+  printf 'pending_age_seconds=%s\n' "$pending_age"
+  printf 'min_changes=%s\n' "$min_changes"
+  printf 'max_age_seconds=%s\n' "$max_age_seconds"
+  printf 'last_synth_age_seconds=%s\n' "$synth_age"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
   exit 0
 }
 
@@ -2723,191 +3439,6 @@ planner_differential_finalize_after_run() {
   planner_differential_write_state "$force_full_next"
 }
 
-wiki_record_inputs_fingerprint() {
-  local fingerprint_path manifest_path now_epoch
-
-  [ "$public_role" = "wiki" ] || return 0
-  [ "${mode:-}" = "loop" ] || return 0
-
-  wiki_compute_inputs_state
-  fingerprint_path="$(wiki_inputs_fingerprint_path)"
-  manifest_path="$(wiki_inputs_manifest_path)"
-  printf '%s\n' "$WIKI_CURRENT_FINGERPRINT" > "$fingerprint_path"
-  cp -f "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path"
-
-  now_epoch="$(date +%s)"
-  wiki_debounce_write_field "last_synth_at_epoch" "$now_epoch"
-  wiki_debounce_clear_field "pending_since_epoch"
-}
-
-maybe_skip_unchanged_wiki_turn() {
-  local fingerprint_path previous_fingerprint timestamp
-
-  [ "$public_role" = "wiki" ] || return 1
-  [ "${mode:-}" = "loop" ] || return 1
-  [ "$dry_run" = "false" ] || return 1
-  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
-
-  wiki_compute_inputs_state
-  fingerprint_path="$(wiki_inputs_fingerprint_path)"
-  previous_fingerprint=""
-  if [ -f "$fingerprint_path" ]; then
-    previous_fingerprint="$(cat "$fingerprint_path" 2>/dev/null || true)"
-  fi
-
-  [ -n "$previous_fingerprint" ] || return 1
-  [ "$WIKI_CURRENT_FINGERPRINT" = "$previous_fingerprint" ] || return 1
-
-  wiki_debounce_clear_field "pending_since_epoch"
-  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
-
-  timestamp="$(runner_now_iso)"
-  runner_write_state "$runner_id" \
-    "status=idle" \
-    "role=${public_role}" \
-    "agent=${agent}" \
-    "mode=${mode}" \
-    "model=${model}" \
-    "reasoning=${reasoning}" \
-    "active_item=" \
-    "active_ticket_id=" \
-    "active_ticket_title=" \
-    "active_stage=" \
-    "active_spec_ref=" \
-    "pid=$(runner_state_pid_for_finish)" \
-    "started_at=$(runner_state_started_at "$timestamp")" \
-    "last_event_at=${timestamp}" \
-    "last_result=wiki_inputs_unchanged"
-  runner_append_log "$runner_id" "adapter_skip" \
-    "role=${public_role}" \
-    "agent=${agent}" \
-    "reason=wiki_inputs_unchanged" \
-    "fingerprint=${WIKI_CURRENT_FINGERPRINT}"
-
-  print_run_header "ok"
-  printf 'runner_status=idle\n'
-  printf 'adapter=%s\n' "$agent"
-  printf 'reason=wiki_inputs_unchanged\n'
-  run_wiki_curator_idle_best_effort
-  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
-  printf 'fingerprint_path=%s\n' "$fingerprint_path"
-  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
-  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
-  exit 0
-}
-
-maybe_skip_debounced_wiki_turn() {
-  local manifest_path changed_count changed_weight primary_category total_changed_count telemetry_summary_changed_count now_epoch
-  local pending_since_epoch pending_age min_changes max_age_seconds
-  local last_synth_at_epoch synth_age timestamp fingerprint_path change_stats
-
-  [ "$public_role" = "wiki" ] || return 1
-  [ "${mode:-}" = "loop" ] || return 1
-  [ "$dry_run" = "false" ] || return 1
-  [ "${AUTOFLOW_WIKI_IDLE_SKIP:-1}" != "0" ] || return 1
-  [ "${AUTOFLOW_WIKI_DEBOUNCE:-1}" != "0" ] || return 1
-
-  wiki_compute_inputs_state
-
-  min_changes="${AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES:-3}"
-  max_age_seconds="${AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS:-1800}"
-
-  manifest_path="$(wiki_inputs_manifest_path)"
-  change_stats="$(wiki_manifest_change_stats "$WIKI_CURRENT_MANIFEST_PATH" "$manifest_path")"
-  total_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^total_changed_count=//p' | tail -n 1)"
-  changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_count=//p' | tail -n 1)"
-  changed_weight="$(printf '%s\n' "$change_stats" | sed -n 's/^meaningful_changed_weight=//p' | tail -n 1)"
-  primary_category="$(printf '%s\n' "$change_stats" | sed -n 's/^primary_changed_category=//p' | tail -n 1)"
-  telemetry_summary_changed_count="$(printf '%s\n' "$change_stats" | sed -n 's/^telemetry_summary_changed_count=//p' | tail -n 1)"
-  total_changed_count="${total_changed_count:-0}"
-  changed_count="${changed_count:-0}"
-  changed_weight="${changed_weight:-0}"
-  primary_category="${primary_category:-none}"
-  telemetry_summary_changed_count="${telemetry_summary_changed_count:-0}"
-
-  now_epoch="$(date +%s)"
-  pending_since_epoch="$(wiki_debounce_read_field "pending_since_epoch")"
-  case "$pending_since_epoch" in
-    ''|*[!0-9]*)
-      pending_since_epoch="$now_epoch"
-      wiki_debounce_write_field "pending_since_epoch" "$pending_since_epoch"
-      ;;
-  esac
-  pending_age=$((now_epoch - pending_since_epoch))
-
-  last_synth_at_epoch="$(wiki_debounce_read_field "last_synth_at_epoch")"
-  case "$last_synth_at_epoch" in
-    ''|*[!0-9]*) synth_age="" ;;
-    *) synth_age=$((now_epoch - last_synth_at_epoch)) ;;
-  esac
-
-  # Debounce is defined in terms of meaningful change count. Weight is still
-  # surfaced for commit-gating/diagnostics, but using it here made a single
-  # high-weight learned-skill file open the wiki adapter on every tick.
-  if [ "$changed_count" -gt 0 ] && { [ "$changed_count" -ge "$min_changes" ] || [ "$pending_age" -ge "$max_age_seconds" ]; }; then
-    return 1
-  fi
-
-  rm -f "$WIKI_CURRENT_MANIFEST_PATH"
-  fingerprint_path="$(wiki_inputs_fingerprint_path)"
-  timestamp="$(runner_now_iso)"
-  runner_write_state "$runner_id" \
-    "status=idle" \
-    "role=${public_role}" \
-    "agent=${agent}" \
-    "mode=${mode}" \
-    "model=${model}" \
-    "reasoning=${reasoning}" \
-    "active_item=" \
-    "active_ticket_id=" \
-    "active_ticket_title=" \
-    "active_stage=" \
-    "active_spec_ref=" \
-    "pid=$(runner_state_pid_for_finish)" \
-    "started_at=$(runner_state_started_at "$timestamp")" \
-    "last_event_at=${timestamp}" \
-    "last_result=wiki_debounced"
-  runner_append_log "$runner_id" "adapter_skip" \
-    "role=${public_role}" \
-    "agent=${agent}" \
-    "reason=wiki_debounced" \
-    "changed_count=${changed_count}" \
-    "wiki_commit_weight=${changed_weight}" \
-    "wiki_commit_line_delta=0" \
-    "wiki_commit_primary_category=${primary_category}" \
-    "wiki_commit_gate_reason=debounced" \
-    "total_changed_count=${total_changed_count}" \
-    "telemetry_summary_changed_count=${telemetry_summary_changed_count}" \
-    "pending_since_epoch=${pending_since_epoch}" \
-    "pending_age_seconds=${pending_age}" \
-    "min_changes=${min_changes}" \
-    "max_age_seconds=${max_age_seconds}" \
-    "last_synth_age_seconds=${synth_age}"
-
-  print_run_header "ok"
-  printf 'runner_status=idle\n'
-  printf 'adapter=%s\n' "$agent"
-  printf 'reason=wiki_debounced\n'
-  run_wiki_curator_idle_best_effort
-  printf 'wiki_inputs_fingerprint=%s\n' "$WIKI_CURRENT_FINGERPRINT"
-  printf 'fingerprint_path=%s\n' "$fingerprint_path"
-  printf 'changed_count=%s\n' "$changed_count"
-  printf 'wiki_commit_weight=%s\n' "$changed_weight"
-  printf 'wiki_commit_line_delta=0\n'
-  printf 'wiki_commit_primary_category=%s\n' "$primary_category"
-  printf 'wiki_commit_gate_reason=debounced\n'
-  printf 'total_changed_count=%s\n' "$total_changed_count"
-  printf 'telemetry_summary_changed_count=%s\n' "$telemetry_summary_changed_count"
-  printf 'pending_since_epoch=%s\n' "$pending_since_epoch"
-  printf 'pending_age_seconds=%s\n' "$pending_age"
-  printf 'min_changes=%s\n' "$min_changes"
-  printf 'max_age_seconds=%s\n' "$max_age_seconds"
-  printf 'last_synth_age_seconds=%s\n' "$synth_age"
-  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
-  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
-  exit 0
-}
-
 write_blocked_state() {
   local reason="$1"
   local timestamp
@@ -2921,6 +3452,7 @@ write_blocked_state() {
     "model=${model:-}" \
     "reasoning=${reasoning:-}" \
     "active_item=" \
+    $(runner_config_state_fields) \
     "pid=" \
     "started_at=" \
     "last_event_at=${timestamp}" \
@@ -2941,17 +3473,11 @@ agent_instruction_path() {
     todo)
       printf '%s/agents/todo-queue-agent.md' "$board_root"
       ;;
-    verifier)
-      printf '%s/agents/verifier-agent.md' "$board_root"
-      ;;
-    monitor)
-      printf '%s/agents/monitor-agent.md' "$board_root"
-      ;;
-    merge)
-      printf '%s/agents/merge-bot-agent.md' "$board_root"
-      ;;
     wiki)
       printf '%s/agents/wiki-maintainer-agent.md' "$board_root"
+      ;;
+    coordinator)
+      printf '%s/agents/coordinator-agent.md' "$board_root"
       ;;
   esac
 }
@@ -2963,16 +3489,13 @@ role_boundary_for_current_role() {
   # instruction file already see the full contract there.
   case "$public_role" in
     ticket)
-      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
+      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo runners. Never push."
       ;;
     planner)
       printf '%s\n' "- planner: act as Planner AI. Promote quick orders into generated PRDs, create/update plans and todo tickets, and repair board markdown when owner work stalls or breaks. Query the wiki before order promotion, drafting, ticket generation, or recovery decisions. Do not implement product code, manage worktrees directly, manage runner or OS processes, verify, manually git commit, or push. The runner harness creates a scoped local commit for planner-owned board changes after a successful turn."
       ;;
     todo)
-      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
-      ;;
-    verifier)
-      printf '%s\n' "- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline."
+      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
       ;;
     wiki)
       printf '%s\n' "- wiki: inspect done tickets, reject records, logs, and existing managed sections, then update derived wiki pages only when content actually changes. In the 3-runner topology this is \`wiki\`'s exclusive responsibility: Impl AI finalizers do not call \`update-wiki.sh\` or stage \`.autoflow/wiki/\`. Check-only state belongs in \`runners/state/wiki-baseline.history\`. Do not manually git commit; the runner harness creates a scoped local commit for wiki-owned content after a successful turn. Never treat the wiki as proof of completion."
@@ -2994,10 +3517,10 @@ emit_required_flow() {
   printf '%s\n' "2. Execute exactly one safe ${public_role} turn. Autoflow is AI-led: shell scripts are deterministic tools for claim/state/finalization, not replacement workers or hidden decision makers."
   case "$public_role" in
     planner|ticket|todo)
-      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query --rag' with distinctive terms from the memo/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
+      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the order/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
       ;;
   esac
-  printf '%s\n' "4. Treat wiki results as memory and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
+  printf '%s\n' "4. Treat wiki results as context and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
   printf '%s\n' "5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work."
   printf '%s\n' "6. Use runtime scripts as tools when claiming or preparing board state if a runtime script is defined; inspect their key=value output before choosing the next action."
   case "$public_role" in
@@ -3012,7 +3535,7 @@ emit_required_flow() {
       ;;
   esac
   printf '%s\n' "9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context."
-  printf '%s\n' "10. Do not rely on this prompt as future memory."
+  printf '%s\n' "10. Do not rely on this prompt as future context."
   printf '%s\n' "11. Never git push."
 }
 
@@ -3128,22 +3651,209 @@ with a concise explanation.
 EOF
 }
 
+role_prompt_byte_cap_value() {
+  local value=""
+
+  case "$public_role" in
+    planner)
+      value="${AUTOFLOW_PLANNER_PROMPT_BYTES:-65536}"
+      ;;
+    ticket)
+      value="${AUTOFLOW_WORKER_PROMPT_BYTES:-98304}"
+      ;;
+    *)
+      value=""
+      ;;
+  esac
+
+  case "$value" in
+    ''|*[!0-9]*)
+      printf ''
+      ;;
+    *)
+      printf '%s' "$value"
+      ;;
+  esac
+}
+
+role_prompt_byte_cap_env_name() {
+  case "$public_role" in
+    planner)
+      printf 'AUTOFLOW_PLANNER_PROMPT_BYTES'
+      ;;
+    ticket)
+      printf 'AUTOFLOW_WORKER_PROMPT_BYTES'
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+role_output_token_cap_value() {
+  local env_name default_value raw_value
+
+  case "$public_role" in
+    planner)
+      env_name="AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS"
+      default_value=8000
+      ;;
+    ticket)
+      env_name="AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS"
+      default_value=16000
+      ;;
+    wiki)
+      env_name="AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS"
+      default_value=2000
+      ;;
+    *)
+      printf ''
+      return 0
+      ;;
+  esac
+
+  raw_value="${!env_name:-}"
+  if [ -z "$raw_value" ]; then
+    printf '%s' "$default_value"
+    return 0
+  fi
+
+  autoflow_positive_integer_or_zero "$raw_value"
+}
+
+role_output_token_cap_env_name() {
+  case "$public_role" in
+    planner)
+      printf 'AUTOFLOW_PLANNER_MAX_OUTPUT_TOKENS'
+      ;;
+    ticket)
+      printf 'AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS'
+      ;;
+    wiki)
+      printf 'AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS'
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+apply_role_prompt_byte_cap() {
+  local prompt_file="$1"
+  local prompt_cap cap_output applied original_bytes final_bytes capped_bytes byte_cap
+
+  prompt_cap="$(role_prompt_byte_cap_value)"
+  if [ -z "$prompt_cap" ]; then
+    printf 'applied=false\n'
+    return 0
+  fi
+
+  cap_output="$(autoflow_apply_head_tail_byte_cap "$prompt_file" "$prompt_cap")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
+apply_role_output_token_cap_to_file() {
+  local target_file="$1"
+  local output_cap cap_output applied original_bytes final_bytes capped_bytes token_cap byte_cap
+
+  output_cap="$(role_output_token_cap_value)"
+  if [ -z "$output_cap" ] || [ ! -f "$target_file" ]; then
+    printf 'applied=false\n'
+    printf 'original_bytes=0\n'
+    printf 'final_bytes=0\n'
+    printf 'capped_bytes=0\n'
+    printf 'token_cap=0\n'
+    printf 'byte_cap=0\n'
+    return 0
+  fi
+
+  cap_output="$(autoflow_apply_output_token_cap "$target_file" "$output_cap")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  token_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'token_cap=%s\n' "${token_cap:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
+apply_role_output_token_cap() {
+  local output_target output_target_label cap_output applied
+  local original_bytes final_bytes capped_bytes token_cap byte_cap
+
+  output_target=""
+  output_target_label="none"
+  if [ -n "${adapter_last_message:-}" ] && [ -s "${adapter_last_message:-}" ]; then
+    output_target="$adapter_last_message"
+    output_target_label="last_message"
+  elif [ -n "${adapter_stdout:-}" ] && [ -s "${adapter_stdout:-}" ]; then
+    output_target="$adapter_stdout"
+    output_target_label="stdout"
+  fi
+
+  if [ -z "$output_target" ]; then
+    printf 'applied=false\n'
+    printf 'target=none\n'
+    printf 'original_bytes=0\n'
+    printf 'final_bytes=0\n'
+    printf 'capped_bytes=0\n'
+    printf 'token_cap=0\n'
+    printf 'byte_cap=0\n'
+    return 0
+  fi
+
+  cap_output="$(apply_role_output_token_cap_to_file "$output_target")"
+  applied="$(printf '%s\n' "$cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+  original_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+  final_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+  capped_bytes="$(printf '%s\n' "$cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+  token_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+  byte_cap="$(printf '%s\n' "$cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+
+  printf 'applied=%s\n' "${applied:-false}"
+  printf 'target=%s\n' "$output_target_label"
+  printf 'original_bytes=%s\n' "${original_bytes:-0}"
+  printf 'final_bytes=%s\n' "${final_bytes:-0}"
+  printf 'capped_bytes=%s\n' "${capped_bytes:-0}"
+  printf 'token_cap=%s\n' "${token_cap:-0}"
+  printf 'byte_cap=%s\n' "${byte_cap:-0}"
+}
+
 run_custom_adapter_command() {
   local prompt_file="$1"
+  local adapter_timeout_seconds adapter_kill_after_seconds
 
   prepare_adapter_cli_env
   command_summary="$command_value"
-  (
-    cd "$adapter_working_root"
-    AUTOFLOW_ROLE="$runtime_role" \
-      AUTOFLOW_WORKER_ID="$runner_id" \
-      AUTOFLOW_BACKGROUND=1 \
-      AUTOFLOW_BOARD_ROOT="$board_root" \
-      AUTOFLOW_PROJECT_ROOT="$project_root" \
-      AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
-    AUTOFLOW_PROMPT_FILE="$prompt_file" \
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
+  run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+    adapter_run_in_cwd "$adapter_working_root" \
+      env \
+        AUTOFLOW_ROLE="$runtime_role" \
+        AUTOFLOW_WORKER_ID="$runner_id" \
+        AUTOFLOW_BACKGROUND=1 \
+        AUTOFLOW_BOARD_ROOT="$board_root" \
+        AUTOFLOW_PROJECT_ROOT="$project_root" \
+        AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
+        AUTOFLOW_PROMPT_FILE="$prompt_file" \
       bash -lc "$command_value" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
-  )
 }
 
 run_adapter_with_identity() {
@@ -3156,6 +3866,355 @@ run_adapter_with_identity() {
     AUTOFLOW_PROJECT_ROOT="$project_root" \
     AUTOFLOW_IMPLEMENTATION_ROOT="$adapter_working_root" \
     "$@"
+}
+
+# 정수 env var 해석 (비어있거나 non-numeric 이면 default 반환).
+runner_resolve_int_env() {
+  local var_name="$1"
+  local default_value="$2"
+  local value="${!var_name:-}"
+  if [ -z "$value" ]; then
+    printf '%s' "$default_value"
+    return 0
+  fi
+  case "$value" in
+    *[!0-9]*) printf '%s' "$default_value" ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
+# adapter 호출용 timeout watchdog. macOS BSD (timeout/gtimeout 부재) 호환.
+# 사용: run_with_timeout TIMEOUT_SECONDS KILL_AFTER_SECONDS COMMAND [ARGS...]
+# - TIMEOUT_SECONDS 가 0/empty/non-numeric 이면 watchdog 비활성 (그대로 실행).
+# - timeout 으로 SIGTERM 보낸 뒤에도 KILL_AFTER_SECONDS 동안 살아있으면 SIGKILL.
+# - timeout 발생 시 exit code 124 반환. 그 외에는 child 의 exit code 그대로 반환.
+run_with_timeout() {
+  local timeout_s="${1:-0}"; shift || true
+  local kill_after_s="${1:-30}"; shift || true
+
+  case "$timeout_s" in
+    ''|*[!0-9]*) timeout_s=0 ;;
+  esac
+  case "$kill_after_s" in
+    ''|*[!0-9]*) kill_after_s=30 ;;
+  esac
+
+  if [ "$timeout_s" -le 0 ]; then
+    "$@"
+    return $?
+  fi
+
+  local marker prev_errexit prev_monitor
+  marker="$(mktemp "${TMPDIR:-/tmp}/autoflow-adapter-timeout.XXXXXX")"
+
+  # 호출자의 shell option (errexit, monitor) 보존을 위해 저장.
+  case "$-" in
+    *e*) prev_errexit=1 ;;
+    *) prev_errexit=0 ;;
+  esac
+  case "$-" in
+    *m*) prev_monitor=1 ;;
+    *) prev_monitor=0 ;;
+  esac
+  # 백그라운드 child 가 SIGTERM 으로 죽을 때 bash 가 stderr 에 "Terminated: 15" 노이즈 찍는 것 방지.
+  set +m
+
+  "$@" <&0 &
+  local child_pid=$!
+
+  (
+    sleep "$timeout_s"
+    if kill -0 "$child_pid" 2>/dev/null; then
+      printf 'timeout' > "$marker"
+      tree_pids="$child_pid"
+      scan_pids="$child_pid"
+      while [ -n "$scan_pids" ]; do
+        next_pids=""
+        for scan_pid in $scan_pids; do
+          while IFS= read -r descendant_pid; do
+            [ -n "$descendant_pid" ] || continue
+            case " $tree_pids " in
+              *" $descendant_pid "*) ;;
+              *)
+                tree_pids="${tree_pids} ${descendant_pid}"
+                next_pids="${next_pids} ${descendant_pid}"
+                ;;
+            esac
+          done < <(pgrep -P "$scan_pid" 2>/dev/null || ps -axo ppid=,pid= 2>/dev/null | while read -r ppid pid; do [ "$ppid" = "$scan_pid" ] && printf '%s\n' "$pid"; done)
+        done
+        scan_pids="$next_pids"
+      done
+      for tree_pid in $tree_pids; do
+        [ "$tree_pid" = "$child_pid" ] && continue
+        kill -TERM "$tree_pid" 2>/dev/null || true
+      done
+      kill -TERM "$child_pid" 2>/dev/null || true
+      sleep "$kill_after_s"
+      if kill -0 "$child_pid" 2>/dev/null; then
+        scan_pids="$child_pid"
+        while [ -n "$scan_pids" ]; do
+          next_pids=""
+          for scan_pid in $scan_pids; do
+            while IFS= read -r descendant_pid; do
+              [ -n "$descendant_pid" ] || continue
+              case " $tree_pids " in
+                *" $descendant_pid "*) ;;
+                *)
+                  tree_pids="${tree_pids} ${descendant_pid}"
+                  next_pids="${next_pids} ${descendant_pid}"
+                  ;;
+              esac
+            done < <(pgrep -P "$scan_pid" 2>/dev/null || ps -axo ppid=,pid= 2>/dev/null | while read -r ppid pid; do [ "$ppid" = "$scan_pid" ] && printf '%s\n' "$pid"; done)
+          done
+          scan_pids="$next_pids"
+        done
+        for tree_pid in $tree_pids; do
+          [ "$tree_pid" = "$child_pid" ] && continue
+          kill -KILL "$tree_pid" 2>/dev/null || true
+        done
+        kill -KILL "$child_pid" 2>/dev/null || true
+      fi
+    fi
+  ) &
+  local watcher_pid=$!
+
+  set +e
+  wait "$child_pid"
+  local child_exit=$?
+  if [ "$prev_errexit" = "1" ]; then set -e; fi
+
+  if kill -0 "$watcher_pid" 2>/dev/null; then
+    kill -TERM "$watcher_pid" 2>/dev/null || true
+    wait "$watcher_pid" 2>/dev/null || true
+  fi
+
+  if [ "$prev_monitor" = "1" ]; then set -m; fi
+
+  if [ -s "$marker" ]; then
+    rm -f "$marker"
+    return 124
+  fi
+  rm -f "$marker"
+  return "$child_exit"
+}
+
+runner_file_size_bytes() {
+  local file="$1"
+
+  if [ ! -f "$file" ]; then
+    printf '0'
+    return 0
+  fi
+
+  wc -c < "$file" 2>/dev/null | tr -d '[:space:]'
+}
+
+adapter_finish_class() {
+  local adapter_exit="$1"
+  local runner_status_value="$2"
+  local output_truncated_value="${3:-false}"
+
+  if [ "$runner_status_value" = "stopped" ]; then
+    printf 'quota_limited'
+  elif [ "$adapter_exit" -eq 125 ]; then
+    printf 'adapter_auth_required'
+  elif [ "$adapter_exit" -eq 126 ]; then
+    printf 'adapter_start_failed'
+  elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
+    printf 'normal_output_truncated'
+  elif [ "$adapter_exit" -eq 0 ]; then
+    printf 'normal'
+  elif [ "$adapter_exit" -eq 124 ]; then
+    printf 'adapter_timeout_sigterm'
+  elif [ "$adapter_exit" -eq 127 ]; then
+    printf 'adapter_executable_missing'
+  else
+    printf 'adapter_exit_%s' "$adapter_exit"
+  fi
+}
+
+runner_file_has_adapter_start_failure() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'Error: thread/start|thread/start failed|error creating thread|Fatal error: Codex cannot access session files|Failed to create session' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+runner_file_has_adapter_auth_required() {
+  local file
+
+  for file in "$@"; do
+    [ -f "$file" ] || continue
+    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|When using Gemini API, you must specify the GEMINI_API_KEY' "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+runner_adapter_preserved_state_value() {
+  local field="$1"
+  local fallback="${2:-}"
+  local value
+
+  value="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
+runner_write_adapter_running_heartbeat() {
+  local timestamp="$1"
+  local last_chunk_at="${2:-}"
+  local timeout_count
+
+  if [ -z "$last_chunk_at" ]; then
+    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
+  fi
+  timeout_count="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+  case "${timeout_count:-0}" in
+    ''|*[!0-9]*) timeout_count=0 ;;
+  esac
+
+  runner_write_state "$runner_id" \
+    "status=running" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "configured_reasoning=${configured_reasoning}" \
+    "reasoning_source=${reasoning_source}" \
+    "reasoning_complexity=${reasoning_complexity}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=adapter_running" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_start)" \
+    "started_at=$(runner_state_started_at "$started_at")" \
+    "last_event_at=${timestamp}" \
+    "last_adapter_chunk_at=${last_chunk_at}" \
+    "last_result=" \
+    "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
+    "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
+    "last_stdout_log=$(runner_adapter_preserved_state_value "last_stdout_log" "$adapter_stdout")" \
+    "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")" \
+    "consecutive_timeout_count=${timeout_count}" \
+    "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+    "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
+    "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
+}
+
+start_adapter_heartbeat_monitor() {
+  local interval_s
+
+  interval_s="$(runner_resolve_int_env "AUTOFLOW_ADAPTER_HEARTBEAT_INTERVAL_SECONDS" 30)"
+  [ "$interval_s" -gt 0 ] || interval_s=30
+
+  (
+    local previous_stdout_size previous_stderr_size current_stdout_size current_stderr_size
+    local timestamp last_chunk_at
+
+    previous_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
+    previous_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
+    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
+
+    while :; do
+      sleep "$interval_s"
+      timestamp="$(runner_now_iso)"
+      current_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
+      current_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
+      if [ "${current_stdout_size:-0}" -gt "${previous_stdout_size:-0}" ] || [ "${current_stderr_size:-0}" -gt "${previous_stderr_size:-0}" ]; then
+        last_chunk_at="$timestamp"
+      fi
+      runner_write_adapter_running_heartbeat "$timestamp" "$last_chunk_at"
+      previous_stdout_size="${current_stdout_size:-0}"
+      previous_stderr_size="${current_stderr_size:-0}"
+    done
+  ) &
+  adapter_heartbeat_pid=$!
+}
+
+stop_adapter_heartbeat_monitor() {
+  if [ -n "${adapter_heartbeat_pid:-}" ] && kill -0 "$adapter_heartbeat_pid" 2>/dev/null; then
+    kill -TERM "$adapter_heartbeat_pid" 2>/dev/null || true
+    wait "$adapter_heartbeat_pid" 2>/dev/null || true
+  fi
+  adapter_heartbeat_pid=""
+}
+
+# run_with_timeout 안에서 cd 후 명령을 실행할 때 사용 (cd 가 watchdog subshell 안에 머무름).
+adapter_run_in_cwd() {
+  local cwd="$1"; shift
+  cd "$cwd" || return 1
+  "$@"
+}
+
+run_gemini_adapter_command() {
+  local adapter_timeout_seconds="$1"
+  local adapter_kill_after_seconds="$2"
+  local child_pid started_epoch now_epoch elapsed_seconds command_exit
+
+  (
+    cd "$adapter_working_root" || exit 1
+    exec </dev/null
+    run_adapter_with_identity "${cmd[@]}"
+  ) > "$adapter_stdout" 2> "$adapter_stderr" &
+  child_pid=$!
+  started_epoch="$(date +%s)"
+
+  while kill -0 "$child_pid" 2>/dev/null; do
+    if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
+      kill -TERM "$child_pid" 2>/dev/null || true
+      wait "$child_pid" 2>/dev/null || true
+      printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
+      printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
+      return 125
+    fi
+
+    if [ "${adapter_timeout_seconds:-0}" -gt 0 ]; then
+      now_epoch="$(date +%s)"
+      elapsed_seconds=$((now_epoch - started_epoch))
+      if [ "$elapsed_seconds" -ge "$adapter_timeout_seconds" ]; then
+        kill -TERM "$child_pid" 2>/dev/null || true
+        if [ "${adapter_kill_after_seconds:-0}" -gt 0 ]; then
+          sleep "$adapter_kill_after_seconds"
+        fi
+        if kill -0 "$child_pid" 2>/dev/null; then
+          kill -KILL "$child_pid" 2>/dev/null || true
+        fi
+        wait "$child_pid" 2>/dev/null || true
+        return 124
+      fi
+    fi
+
+    sleep 1
+  done
+
+  wait "$child_pid"
+  command_exit=$?
+  if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
+    printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
+    printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
+    return 125
+  fi
+  return "$command_exit"
 }
 
 normalize_claude_model_alias() {
@@ -3272,11 +4331,16 @@ prepare_adapter_cli_env() {
 }
 
 runner_claude_base_cmd() {
+  # Populate the named array variable with the canonical claude invocation.
+  # Usage: runner_claude_base_cmd cmd
+  # Sets cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
   local __dest_var="$1"
   eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)"
 }
 
 runner_claude_supports_effort() {
+  # Best-effort detection of `--effort` flag on the installed claude CLI.
+  # Returns 0 if --effort appears in `claude --help`, else 1. Cached per shell.
   if [ -n "${__autoflow_claude_effort_cached:-}" ]; then
     [ "$__autoflow_claude_effort_cached" = "yes" ]
     return $?
@@ -3289,74 +4353,450 @@ runner_claude_supports_effort() {
   return 1
 }
 
-runner_file_size_bytes() {
-  local file="$1"
+gemini_usage_value_from_files() {
+  local key_pattern="$1"
+  shift
 
-  if [ ! -f "$file" ]; then
-    printf '0'
+  awk -v key_pattern="$key_pattern" '
+    {
+      line = $0
+      while (match(line, "\"(" key_pattern ")\"[[:space:]]*:[[:space:]]*[0-9]+")) {
+        value = substr(line, RSTART, RLENGTH)
+        sub(/^.*:[[:space:]]*/, "", value)
+        if (value + 0 > max) {
+          max = value + 0
+        }
+        line = substr(line, RSTART + RLENGTH)
+      }
+    }
+    END {
+      if (max > 0) {
+        print max
+      }
+    }
+  ' "$@" 2>/dev/null | tail -n 1
+}
+
+append_gemini_token_marker() {
+  local prompt_file="$1"
+  local stdout_file="$2"
+  local stderr_file="$3"
+  local total_tokens input_tokens output_tokens prompt_chars output_chars
+
+  total_tokens="$(gemini_usage_value_from_files 'totalTokenCount|total_token_count' "$stdout_file" "$stderr_file")"
+  input_tokens="$(gemini_usage_value_from_files 'promptTokenCount|prompt_token_count|inputTokenCount|input_token_count' "$stdout_file" "$stderr_file")"
+  output_tokens="$(gemini_usage_value_from_files 'candidatesTokenCount|candidates_token_count|outputTokenCount|output_token_count' "$stdout_file" "$stderr_file")"
+
+  if [ -n "$total_tokens" ] && [ "$total_tokens" -gt 0 ] 2>/dev/null; then
+    printf '\ntotal_tokens=%s\n' "$total_tokens" >> "$stdout_file"
     return 0
   fi
 
-  wc -c < "$file" 2>/dev/null | tr -d '[:space:]'
+  if [ -n "$input_tokens" ] && [ "$input_tokens" -gt 0 ] 2>/dev/null &&
+     [ -n "$output_tokens" ] && [ "$output_tokens" -gt 0 ] 2>/dev/null; then
+    printf '\ninput_tokens=%s\noutput_tokens=%s\n' "$input_tokens" "$output_tokens" >> "$stdout_file"
+    return 0
+  fi
+
+  prompt_chars="$(wc -c < "$prompt_file" 2>/dev/null | tr -d '[:space:]' || true)"
+  output_chars="$(wc -c < "$stdout_file" 2>/dev/null | tr -d '[:space:]' || true)"
+  case "$prompt_chars" in ''|*[!0-9]*) prompt_chars=0 ;; esac
+  case "$output_chars" in ''|*[!0-9]*) output_chars=0 ;; esac
+
+  input_tokens=$(( (prompt_chars + 3) / 4 ))
+  output_tokens=$(( (output_chars + 3) / 4 ))
+  [ "$input_tokens" -gt 0 ] || input_tokens=1
+  [ "$output_tokens" -gt 0 ] || output_tokens=1
+  printf '\ninput_tokens=%s\noutput_tokens=%s\n' "$input_tokens" "$output_tokens" >> "$stdout_file"
 }
 
-adapter_finish_class() {
-  local adapter_exit="$1"
-  local runner_status_value="$2"
-  local output_truncated_value="${3:-false}"
+filter_codex_guard_warnings_in_place() {
+  local file="$1"
+  local tmp count_file removed
 
-  if [ "$runner_status_value" = "stopped" ]; then
-    printf 'quota_limited'
-  elif [ "$adapter_exit" -eq 125 ]; then
-    printf 'adapter_auth_required'
-  elif [ "$adapter_exit" -eq 126 ]; then
-    printf 'adapter_start_failed'
-  elif [ "$adapter_exit" -eq 0 ] && [ "$output_truncated_value" = "true" ]; then
-    printf 'normal_output_truncated'
-  elif [ "$adapter_exit" -eq 0 ]; then
-    printf 'normal'
-  elif [ "$adapter_exit" -eq 124 ]; then
-    printf 'adapter_timeout_sigterm'
-  elif [ "$adapter_exit" -eq 127 ]; then
-    printf 'adapter_executable_missing'
+  [ -f "$file" ] || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter.XXXXXX")" || return 0
+  count_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter-count.XXXXXX")" || {
+    rm -f "$tmp"
+    return 0
+  }
+
+  if ! awk -v count_file="$count_file" '
+    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { removed++; next }
+    { print }
+    END { print removed + 0 > count_file }
+  ' "$file" > "$tmp"; then
+    rm -f "$tmp" "$count_file"
+    return 0
+  fi
+
+  removed="$(cat "$count_file" 2>/dev/null || printf '0')"
+  case "$removed" in ''|*[!0-9]*) removed=0 ;; esac
+  if [ "$removed" -gt 0 ]; then
+    mv -f "$tmp" "$file"
+    runner_append_log "$runner_id" "codex_stdout_filter_applied" \
+      "role=${public_role}" \
+      "removed_lines=${removed}" \
+      "stdout_path=${file}"
   else
-    printf 'adapter_exit_%s' "$adapter_exit"
+    rm -f "$tmp"
+  fi
+  rm -f "$count_file"
+}
+
+run_default_adapter_command() {
+  local prompt_file="$1"
+  local prompt_text
+  local cmd=()
+  local command_exit codex_wrapper
+  local adapter_timeout_seconds adapter_kill_after_seconds
+
+  # adapter 호출 timeout. ECONNRESET 등으로 인한 무한 hang 을 끊기 위해 외부 watchdog 으로 강제 종료.
+  # 0 또는 unset 으로 두면 watchdog 비활성 (이전 동작 그대로).
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
+
+  case "$agent" in
+    codex)
+      ensure_agent_on_path codex || return 127
+      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
+      if [ -n "$model" ]; then
+        cmd+=(-m "$model")
+      fi
+      if [ -n "$reasoning" ]; then
+        cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
+      fi
+      # Capture only the AI's final user-facing message into a sidecar file so
+      # the runner can surface it as a clean narrative; the raw transcript
+      # (tool calls / apply_patch diffs / shell command lines) stays in
+      # adapter_stdout for debug-only viewing.
+      if [ -n "${adapter_last_message:-}" ]; then
+        cmd+=(-o "$adapter_last_message")
+      fi
+      cmd+=(-)
+      command_summary="$(command_summary_from_array "${cmd[@]}")"
+      if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v script >/dev/null 2>&1 && [ "${AUTOFLOW_CODEX_DISABLE_PTY:-}" != "1" ]; then
+        codex_wrapper="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-wrapper.XXXXXX")"
+        {
+          printf '#!/usr/bin/env bash\n'
+          printf 'exec'
+          printf ' %q' "${cmd[@]}"
+          printf ' < "$1"\n'
+        } > "$codex_wrapper"
+        chmod +x "$codex_wrapper"
+        run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+          run_adapter_with_identity script -q /dev/null "$codex_wrapper" "$prompt_file" \
+          > "$adapter_stdout" 2> "$adapter_stderr"
+        command_exit=$?
+        rm -f "$codex_wrapper"
+      else
+        run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+          run_adapter_with_identity "${cmd[@]}" \
+          < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        command_exit=$?
+      fi
+      filter_codex_guard_warnings_in_place "$adapter_stdout"
+      return "$command_exit"
+      ;;
+    claude)
+      ensure_agent_on_path claude || return 127
+      prompt_text="$(cat "$prompt_file")"
+      runner_claude_base_cmd cmd
+      if [ -n "$model" ]; then
+        cmd+=(--model "$(normalize_claude_model_alias "$model")")
+      fi
+      if [ -n "$reasoning" ] && runner_claude_supports_effort; then
+        cmd+=(--effort "$reasoning")
+      fi
+      cmd+=("$prompt_text")
+      command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
+      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
+        > "$adapter_stdout" 2> "$adapter_stderr"
+      command_exit=$?
+      # claude --output-format text 의 stdout 은 곧 어시스턴트의 최종 응답이므로
+      # 그대로 narrative sidecar 에 복사한다 (Codex 와 같은 통일 인터페이스).
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
+      ;;
+    opencode)
+      ensure_agent_on_path opencode || return 127
+      prompt_text="$(cat "$prompt_file")"
+      cmd=(opencode run)
+      if [ -n "$model" ]; then
+        cmd+=(--model "$model")
+      fi
+      if [ -n "$reasoning" ]; then
+        cmd+=(--variant "$reasoning")
+      fi
+      cmd+=("$prompt_text")
+      command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
+      run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+        adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
+        > "$adapter_stdout" 2> "$adapter_stderr"
+      command_exit=$?
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
+      ;;
+    gemini)
+      ensure_agent_on_path gemini || return 127
+      prompt_text="$(cat "$prompt_file")"
+      cmd=(gemini --skip-trust --approval-mode yolo --prompt "$prompt_text")
+      if [ -n "$model" ]; then
+        cmd+=(--model "$model")
+      fi
+      command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
+      run_gemini_adapter_command "$adapter_timeout_seconds" "$adapter_kill_after_seconds"
+      command_exit=$?
+      if [ "$command_exit" -eq 0 ]; then
+        append_gemini_token_marker "$prompt_file" "$adapter_stdout" "$adapter_stderr"
+      fi
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+      fi
+      return "$command_exit"
+      ;;
+    *)
+      return 127
+      ;;
+  esac
+}
+
+emit_file_block() {
+  local label="$1"
+  local file="$2"
+
+  printf '%s_begin\n' "$label"
+  if [ -f "$file" ]; then
+    cat "$file"
+  fi
+  printf '%s_end\n' "$label"
+}
+
+artifact_stamp() {
+  runner_now_iso | tr ':' '-'
+}
+
+persist_run_artifact() {
+  local source_file="$1"
+  local suffix="$2"
+  local destination
+
+  case "$suffix" in
+    prompt|runtime|dry-run)
+      printf ''
+      return 0
+      ;;
+    stderr)
+      if [ ! -s "$source_file" ]; then
+        printf ''
+        return 0
+      fi
+      ;;
+  esac
+
+  runner_ensure_dirs
+  destination="$(runner_log_dir)/${runner_id}_$(artifact_stamp)_${suffix}.log"
+  cp "$source_file" "$destination"
+  printf '%s' "$destination"
+}
+
+run_role_pid_is_running() {
+  local pid="${1:-}"
+  local kill_output kill_status
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  kill_output="$(kill -0 "$pid" 2>&1)"
+  kill_status=$?
+  [ "$kill_status" -eq 0 ] && return 0
+
+  case "$kill_output" in
+    *[Oo]peration\ not\ permitted*|*[Nn]ot\ permitted*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+run_role_process_children() {
+  local pid="${1:-}"
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -P "$pid" 2>/dev/null || true
+  else
+    ps -axo ppid=,pid= 2>/dev/null | awk -v ppid="$pid" '$1 == ppid { print $2 }' || true
   fi
 }
 
-runner_file_has_adapter_start_failure() {
-  local file
+run_role_count_process_tree() {
+  local pid="${1:-}"
+  local child total child_total
 
-  for file in "$@"; do
-    [ -f "$file" ] || continue
-    if grep -Eiq 'Error: thread/start|thread/start failed|error creating thread|Fatal error: Codex cannot access session files|Failed to create session' "$file"; then
+  case "$pid" in
+    ""|*[!0-9]*)
+      printf '0'
       return 0
-    fi
-  done
-
-  return 1
-}
-
-runner_file_has_adapter_auth_required() {
-  local file
-
-  for file in "$@"; do
-    [ -f "$file" ] || continue
-    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|When using Gemini API, you must specify the GEMINI_API_KEY' "$file"; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-telemetry_positive_integer_or_zero() {
-  local value="$1"
-
-  case "$value" in
-    ''|*[!0-9]*) printf '0' ;;
-    *) printf '%s' "$value" ;;
+      ;;
   esac
+
+  total=0
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    child_total="$(run_role_count_process_tree "$child")"
+    total=$((total + 1 + child_total))
+  done < <(run_role_process_children "$pid")
+  printf '%s' "$total"
+}
+
+run_role_kill_process_tree_signal() {
+  local pid="${1:-}"
+  local signal="${2:-TERM}"
+  local child
+
+  case "$pid" in
+    ""|*[!0-9]*)
+      return 0
+      ;;
+  esac
+
+  while IFS= read -r child; do
+    [ -n "$child" ] || continue
+    run_role_kill_process_tree_signal "$child" "$signal"
+  done < <(run_role_process_children "$pid")
+
+  kill "-${signal}" "$pid" 2>/dev/null || true
+}
+
+run_role_user_process_count() {
+  local user_name count
+
+  user_name="$(id -un 2>/dev/null || printf '')"
+  if [ -n "$user_name" ]; then
+    count="$(ps -u "$user_name" -o pid= 2>/dev/null | wc -l | tr -d '[:space:]' || true)"
+    case "$count" in
+      ''|*[!0-9]*) ;;
+      *) printf '%s' "$count"; return 0 ;;
+    esac
+  fi
+
+  ps -axo pid= 2>/dev/null | wc -l | tr -d '[:space:]' || printf '0'
+}
+
+run_role_process_pressure_snapshot() {
+  local user_limit runner_child_limit user_count runner_child_count result
+
+  user_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_USER_LIMIT" 1000)"
+  runner_child_limit="$(runner_resolve_int_env "AUTOFLOW_PROCESS_PRESSURE_RUNNER_CHILD_LIMIT" 200)"
+  user_count="$(run_role_user_process_count)"
+  runner_child_count="$(run_role_count_process_tree "$$")"
+  result="ok"
+
+  if [ "$user_limit" -gt 0 ] && [ "$user_count" -ge "$user_limit" ]; then
+    result="user_limit"
+  elif [ "$runner_child_limit" -gt 0 ] && [ "$runner_child_count" -ge "$runner_child_limit" ]; then
+    result="runner_child_limit"
+  fi
+
+  printf 'result=%s\n' "$result"
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+}
+
+run_role_process_pressure_reason() {
+  awk -F= '$1 == "result" { print $2; exit }'
+}
+
+maybe_skip_adapter_for_process_pressure() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local snapshot reason timestamp prompt_log_path
+  local user_count user_limit runner_child_count runner_child_limit
+
+  snapshot="$(run_role_process_pressure_snapshot)"
+  reason="$(printf '%s\n' "$snapshot" | run_role_process_pressure_reason)"
+  [ "$reason" != "ok" ] || return 1
+
+  user_count="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "user_process_count" { print $2; exit }')"
+  user_limit="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "user_process_limit" { print $2; exit }')"
+  runner_child_count="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "runner_child_count" { print $2; exit }')"
+  runner_child_limit="$(printf '%s\n' "$snapshot" | awk -F= '$1 == "runner_child_limit" { print $2; exit }')"
+
+  runner_append_log "$runner_id" "process_pressure_guard" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${reason}" \
+    "user_process_count=${user_count}" \
+    "user_process_limit=${user_limit}" \
+    "runner_child_count=${runner_child_count}" \
+    "runner_child_limit=${runner_child_limit}" \
+    "action=skip_adapter"
+
+  timestamp="$(runner_now_iso)"
+  prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+  runner_write_state "$runner_id" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
+    "active_item=$(runner_adapter_state_value "active_item")" \
+    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
+    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
+    "active_stage=$(runner_adapter_state_value "active_stage")" \
+    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
+    "active_recovery_reason=${adapter_active_recovery_reason}" \
+    "active_recovery_status=${adapter_active_recovery_status}" \
+    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
+    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
+    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
+    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
+    "pid=$(runner_state_pid_for_finish)" \
+    "started_at=$(runner_state_started_at "$timestamp")" \
+    "last_event_at=${timestamp}" \
+    "last_result=process_pressure_guard" \
+    "last_prompt_log=${prompt_log_path}" \
+    "process_pressure_reason=${reason}" \
+    "process_pressure_user_count=${user_count}" \
+    "process_pressure_user_limit=${user_limit}" \
+    "process_pressure_runner_child_count=${runner_child_count}" \
+    "process_pressure_runner_child_limit=${runner_child_limit}"
+
+  print_run_header "ok"
+  printf 'runner_status=idle\n'
+  printf 'reason=process_pressure_guard\n'
+  printf 'process_pressure_reason=%s\n' "$reason"
+  printf 'process_pressure_action=skip_adapter\n'
+  printf 'user_process_count=%s\n' "$user_count"
+  printf 'user_process_limit=%s\n' "$user_limit"
+  printf 'runner_child_count=%s\n' "$runner_child_count"
+  printf 'runner_child_limit=%s\n' "$runner_child_limit"
+  printf 'prompt_log_path=%s\n' "$prompt_log_path"
+  printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
+  printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
+  rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+  exit 0
 }
 
 runner_budget_policy_path() {
@@ -3379,6 +4819,7 @@ runner_budget_policy_value() {
 
   policy_path="$(runner_budget_policy_path)"
   [ -f "$policy_path" ] || return 0
+
   awk -v key="$key" -v role="$public_role" -v runner="$runner_id" '
     function trim(value) {
       sub(/^[[:space:]]+/, "", value)
@@ -3421,18 +4862,6 @@ runner_epoch_to_iso() {
   date -u -d "@$epoch" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true
 }
 
-runner_budget_telemetry_script() {
-  if [ -x "${SCRIPT_DIR}/telemetry-project.sh" ]; then
-    printf '%s' "${SCRIPT_DIR}/telemetry-project.sh"
-    return 0
-  fi
-  if [ -x "${SCRIPT_DIR}/../../packages/cli/telemetry-project.sh" ]; then
-    printf '%s' "${SCRIPT_DIR}/../../packages/cli/telemetry-project.sh"
-    return 0
-  fi
-  return 1
-}
-
 runner_budget_telemetry_token_usage_since() {
   local since="$1"
   local output
@@ -3441,20 +4870,30 @@ runner_budget_telemetry_token_usage_since() {
   printf '%s\n' "$output" | awk -F= '$1 == "token_usage" { print $2; found=1; exit } END { if (!found) print "0" }'
 }
 
+runner_budget_telemetry_max_row_tokens() {
+  local value="${AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS:-100000000}"
+
+  case "$value" in
+    ''|*[!0-9]*|0) value=100000000 ;;
+  esac
+  printf '%s' "$value"
+}
+
 runner_budget_telemetry_token_usage_since_output() {
   local since="$1"
   local telemetry_script
 
-  telemetry_script="$(runner_budget_telemetry_script || true)"
-  [ -n "$telemetry_script" ] || { printf 'token_usage=0\n'; return 0; }
-  "$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || printf 'token_usage=0\n'
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || { printf 'token_usage=0\n'; return 0; }
+  AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS="$(runner_budget_telemetry_max_row_tokens)" \
+    "$telemetry_script" token-usage --project-root "$project_root" --runner "$runner_id" --since "$since" 2>/dev/null || printf 'token_usage=0\n'
 }
 
 runner_budget_latest_adapter_ended_at() {
   local telemetry_script
 
-  telemetry_script="$(runner_budget_telemetry_script || true)"
-  [ -n "$telemetry_script" ] || return 0
+  telemetry_script="${SCRIPT_DIR}/telemetry-project.sh"
+  [ -x "$telemetry_script" ] || return 0
   "$telemetry_script" query --project-root "$project_root" --runner "$runner_id" --limit 1 2>/dev/null |
     jq -r '.ended_at // empty' 2>/dev/null |
     head -n 1
@@ -3462,31 +4901,43 @@ runner_budget_latest_adapter_ended_at() {
 
 runner_preflight_skip_is_repeatable() {
   case "${1:-}" in
-    token_budget_exceeded|rate_limited|prompt_size_exceeded) return 0 ;;
+    token_budget_exceeded|rate_limited|prompt_size_exceeded)
+      return 0
+      ;;
   esac
   return 1
 }
 
 runner_preflight_skip_threshold() {
   local threshold
+
   threshold="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_threshold)")"
   [ -n "$threshold" ] || threshold="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_THRESHOLD:-3}"
-  case "${threshold:-}" in ''|*[!0-9]*|0) threshold=3 ;; esac
+  case "${threshold:-}" in
+    ''|*[!0-9]*|0) threshold=3 ;;
+  esac
   printf '%s' "$threshold"
 }
 
 runner_preflight_skip_cooldown_seconds() {
   local cooldown_seconds
+
   cooldown_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value preflight_skip_circuit_breaker_cooldown_seconds)")"
   [ -n "$cooldown_seconds" ] || cooldown_seconds="${AUTOFLOW_PREFLIGHT_SKIP_CIRCUIT_BREAKER_COOLDOWN_SECONDS:-300}"
-  case "${cooldown_seconds:-}" in ''|*[!0-9]*|0) cooldown_seconds=300 ;; esac
+  case "${cooldown_seconds:-}" in
+    ''|*[!0-9]*|0) cooldown_seconds=300 ;;
+  esac
   printf '%s' "$cooldown_seconds"
 }
 
 runner_active_ticket_id_or_empty() {
   local active_ticket_id
+
   active_ticket_id="$(runner_adapter_state_value "active_ticket_id")"
-  [ -n "$active_ticket_id" ] && { printf '%s' "$active_ticket_id"; return 0; }
+  if [ -n "$active_ticket_id" ]; then
+    printf '%s' "$active_ticket_id"
+    return 0
+  fi
   runner_state_field "$runner_id" "active_ticket_id" 2>/dev/null || true
 }
 
@@ -3495,10 +4946,15 @@ runner_preflight_recovery_field_value() {
   local effective_reason="$2"
   local current_value="$3"
 
-  if [ "$effective_reason" != "circuit_breaker_tripped" ] || [ -z "$(runner_active_ticket_id_or_empty)" ]; then
+  if [ "$effective_reason" != "circuit_breaker_tripped" ]; then
     printf '%s' "$current_value"
     return 0
   fi
+  if [ -z "$(runner_active_ticket_id_or_empty)" ]; then
+    printf '%s' "$current_value"
+    return 0
+  fi
+
   case "$field" in
     status) printf 'blocked' ;;
     failure_class) printf 'tooling_failure' ;;
@@ -3510,17 +4966,25 @@ runner_preflight_recovery_field_value() {
 runner_preflight_skip_streak_metadata() {
   local reason="$1"
   local timestamp="$2"
-  local previous_result previous_count next_count threshold cooldown_seconds until_epoch until_iso now_epoch
+  local previous_result previous_count next_count threshold cooldown_seconds until_epoch until_iso
+  local now_epoch
 
   previous_result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
-  previous_count="$(telemetry_positive_integer_or_zero "$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)")"
-  if [ "$previous_result" = "$reason" ]; then next_count=$((previous_count + 1)); else next_count=1; fi
+  previous_count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
+  previous_count="$(telemetry_positive_integer_or_zero "$previous_count")"
+  if [ "$previous_result" = "$reason" ]; then
+    next_count=$((previous_count + 1))
+  else
+    next_count=1
+  fi
+
   threshold="$(runner_preflight_skip_threshold)"
   cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
   now_epoch="$(telemetry_timestamp_to_epoch "$timestamp" || true)"
   [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
   until_epoch=$((now_epoch + cooldown_seconds))
   until_iso="$(runner_epoch_to_iso "$until_epoch")"
+
   printf 'preflight_skip_result=%s\n' "$reason"
   printf 'consecutive_preflight_skip_result=%s\n' "$reason"
   printf 'consecutive_preflight_skip_count=%s\n' "$next_count"
@@ -3528,26 +4992,85 @@ runner_preflight_skip_streak_metadata() {
   printf 'preflight_skip_circuit_breaker_threshold=%s\n' "$threshold"
   printf 'preflight_skip_circuit_breaker_cooldown_seconds=%s\n' "$cooldown_seconds"
   printf 'preflight_skip_circuit_breaker_until=%s\n' "$until_iso"
-  if [ "$next_count" -ge "$threshold" ]; then printf 'preflight_skip_circuit_breaker_tripped=true\n'; else printf 'preflight_skip_circuit_breaker_tripped=false\n'; fi
+  if [ "$next_count" -ge "$threshold" ]; then
+    printf 'preflight_skip_circuit_breaker_tripped=true\n'
+  else
+    printf 'preflight_skip_circuit_breaker_tripped=false\n'
+  fi
+}
+
+runner_budget_existing_preflight_circuit_or_exit() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
+
+  count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
+  count="$(telemetry_positive_integer_or_zero "$count")"
+  result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
+  [ -n "$result" ] || return 0
+  runner_preflight_skip_is_repeatable "$result" || return 0
+  threshold="$(runner_preflight_skip_threshold)"
+  [ "$count" -ge "$threshold" ] || return 0
+
+  last_skip_at="$(runner_state_field "$runner_id" "last_preflight_skip_at" 2>/dev/null || true)"
+  [ -n "$last_skip_at" ] || return 0
+  now_iso="$(runner_now_iso)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  last_epoch="$(telemetry_timestamp_to_epoch "$last_skip_at" || true)"
+  [ -n "$last_epoch" ] || last_epoch="$now_epoch"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  until_epoch=$((last_epoch + cooldown_seconds))
+  [ "$now_epoch" -lt "$until_epoch" ] || return 0
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+
+  runner_budget_append_skip_log_and_state \
+    "circuit_breaker_tripped" \
+    "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+    "preflight_skip_result=${result}" \
+    "consecutive_preflight_skip_result=${result}" \
+    "consecutive_preflight_skip_count=${count}" \
+    "last_preflight_skip_at=${last_skip_at}" \
+    "preflight_skip_circuit_breaker_threshold=${threshold}" \
+    "preflight_skip_circuit_breaker_cooldown_seconds=${cooldown_seconds}" \
+    "preflight_skip_circuit_breaker_until=${until_iso}" \
+    "preflight_skip_circuit_breaker_tripped=true" \
+    "active_recovery_status=$(runner_preflight_recovery_field_value status circuit_breaker_tripped "${adapter_active_recovery_status}")" \
+    "active_recovery_failure_class=$(runner_preflight_recovery_field_value failure_class circuit_breaker_tripped "${adapter_active_recovery_failure_class}")" \
+    "active_recovery_reason=$(runner_preflight_recovery_field_value reason circuit_breaker_tripped "${adapter_active_recovery_reason}")"
 }
 
 runner_budget_append_skip_log_and_state() {
-  local reason="$1" prompt_file="$2" autocommit_before_status="$3" adapter_stdout_path="$4" adapter_stderr_path="$5" adapter_last_message_path="${6:-}"
+  local reason="$1"
+  local prompt_file="$2"
+  local autocommit_before_status="$3"
+  local adapter_stdout_path="$4"
+  local adapter_stderr_path="$5"
+  local adapter_last_message_path="${6:-}"
   shift 6 || true
-  local timestamp prompt_log_path effective_reason streak_metadata preflight_cause preflight_count preflight_threshold preflight_until
+  local timestamp prompt_log_path preserved_consecutive_timeouts
+  local effective_reason="$reason"
+  local streak_metadata="" preflight_cause="" preflight_count="" preflight_threshold="" preflight_until=""
   local recovery_status recovery_failure_class recovery_reason
 
   timestamp="$(runner_now_iso)"
   prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
-  effective_reason="$reason"
-  streak_metadata=""
-  preflight_cause="$reason"
+  preserved_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+  case "${preserved_consecutive_timeouts:-0}" in
+    ''|*[!0-9]*) preserved_consecutive_timeouts=0 ;;
+  esac
   if runner_preflight_skip_is_repeatable "$reason"; then
     streak_metadata="$(runner_preflight_skip_streak_metadata "$reason" "$timestamp")"
+    preflight_cause="$reason"
     preflight_count="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "consecutive_preflight_skip_count" { print $2; exit }')"
     preflight_threshold="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_threshold" { print $2; exit }')"
     preflight_until="$(printf '%s\n' "$streak_metadata" | awk -F= '$1 == "preflight_skip_circuit_breaker_until" { print $2; exit }')"
-    [ "${preflight_count:-0}" -ge "${preflight_threshold:-3}" ] && effective_reason="circuit_breaker_tripped"
+    if [ "${preflight_count:-0}" -ge "${preflight_threshold:-3}" ]; then
+      effective_reason="circuit_breaker_tripped"
+    fi
   elif [ "$reason" = "circuit_breaker_tripped" ]; then
     local item
     for item in "$@"; do
@@ -3559,12 +5082,18 @@ runner_budget_append_skip_log_and_state() {
       esac
     done
   fi
+
   recovery_status="$(runner_preflight_recovery_field_value status "$effective_reason" "${adapter_active_recovery_status}")"
   recovery_failure_class="$(runner_preflight_recovery_field_value failure_class "$effective_reason" "${adapter_active_recovery_failure_class}")"
   recovery_reason="$(runner_preflight_recovery_field_value reason "$effective_reason" "${adapter_active_recovery_reason}")"
 
   runner_write_state "$runner_id" \
-    "status=idle" "role=${public_role}" "agent=${agent}" "mode=${mode}" "model=${model}" "reasoning=${reasoning}" \
+    "status=idle" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "mode=${mode}" \
+    "model=${model}" \
+    "reasoning=${reasoning}" \
     "active_item=$(runner_adapter_state_value "active_item")" \
     "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
     "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
@@ -3581,14 +5110,24 @@ runner_budget_append_skip_log_and_state() {
     "last_event_at=${timestamp}" \
     "last_result=${effective_reason}" \
     "last_prompt_log=${prompt_log_path}" \
+    "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
     $streak_metadata \
     "$@"
-  runner_append_log "$runner_id" "budget_preflight_skip" "role=${public_role}" "agent=${agent}" "reason=${reason}" "result=${effective_reason}" "action=skip_adapter" $streak_metadata "$@"
+
+  runner_append_log "$runner_id" "budget_preflight_skip" \
+    "role=${public_role}" \
+    "agent=${agent}" \
+    "reason=${reason}" \
+    "result=${effective_reason}" \
+    "action=skip_adapter" \
+    $streak_metadata \
+    "$@"
+
   print_run_header "ok"
   printf 'runner_status=idle\n'
   printf 'reason=%s\n' "$effective_reason"
   if [ "$effective_reason" = "circuit_breaker_tripped" ]; then
-    printf 'circuit_breaker_reason=%s\n' "$preflight_cause"
+    printf 'circuit_breaker_reason=%s\n' "${preflight_cause:-$reason}"
     printf 'circuit_breaker_count=%s\n' "${preflight_count:-}"
     printf 'circuit_breaker_threshold=%s\n' "${preflight_threshold:-}"
     printf 'circuit_breaker_until=%s\n' "${preflight_until:-}"
@@ -3600,48 +5139,37 @@ runner_budget_append_skip_log_and_state() {
   printf 'prompt_log_path=%s\n' "$prompt_log_path"
   printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
   printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
-  while [ "$#" -gt 0 ]; do printf '%s\n' "$1"; shift || true; done
+  while [ "$#" -gt 0 ]; do
+    printf '%s\n' "$1"
+    shift || true
+  done
   rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
   exit 0
 }
 
-runner_budget_existing_preflight_circuit_or_exit() {
-  local prompt_file="$1" autocommit_before_status="$2" adapter_stdout_path="$3" adapter_stderr_path="$4" adapter_last_message_path="${5:-}"
-  local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
-
-  count="$(telemetry_positive_integer_or_zero "$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)")"
-  result="$(runner_state_field "$runner_id" "consecutive_preflight_skip_result" 2>/dev/null || true)"
-  [ -n "$result" ] || return 0
-  runner_preflight_skip_is_repeatable "$result" || return 0
-  threshold="$(runner_preflight_skip_threshold)"
-  [ "$count" -ge "$threshold" ] || return 0
-  last_skip_at="$(runner_state_field "$runner_id" "last_preflight_skip_at" 2>/dev/null || true)"
-  [ -n "$last_skip_at" ] || return 0
-  now_iso="$(runner_now_iso)"
-  now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
-  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
-  last_epoch="$(telemetry_timestamp_to_epoch "$last_skip_at" || true)"
-  [ -n "$last_epoch" ] || last_epoch="$now_epoch"
-  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
-  until_epoch=$((last_epoch + cooldown_seconds))
-  [ "$now_epoch" -lt "$until_epoch" ] || return 0
-  until_iso="$(runner_epoch_to_iso "$until_epoch")"
-  runner_budget_append_skip_log_and_state "circuit_breaker_tripped" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
-    "preflight_skip_result=${result}" "consecutive_preflight_skip_result=${result}" "consecutive_preflight_skip_count=${count}" "last_preflight_skip_at=${last_skip_at}" \
-    "preflight_skip_circuit_breaker_threshold=${threshold}" "preflight_skip_circuit_breaker_cooldown_seconds=${cooldown_seconds}" "preflight_skip_circuit_breaker_until=${until_iso}" "preflight_skip_circuit_breaker_tripped=true"
-}
-
 runner_budget_preflight_or_exit() {
-  local prompt_file="$1" autocommit_before_status="$2" adapter_stdout_path="$3" adapter_stderr_path="$4" adapter_last_message_path="${5:-}"
-  local now_iso now_epoch policy_path daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage telemetry_usage_output token_usage_trusted skipped_suspicious_token_rows minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds prompt_byte_cap prompt_bytes
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local now_iso now_epoch policy_path
+  local daily_token_quota quota_window_seconds quota_since_epoch quota_since_iso token_usage telemetry_usage_output token_usage_trusted skipped_suspicious_token_rows
   local token_usage_source token_usage_fresh token_cache_status token_cache_age_seconds token_usage_max_data_age_seconds token_usage_telemetry_rows token_cache_rows token_cache_latest_at
+  local minimum_interval_seconds latest_ended_at latest_epoch next_allowed_epoch next_allowed_at remaining_seconds
+  local prompt_byte_cap prompt_bytes
+  local threshold cooldown_seconds consecutive_count last_result last_event_at last_event_epoch until_epoch until_iso
 
   policy_path="$(runner_budget_policy_path)"
   [ -f "$policy_path" ] || return 0
+
   now_iso="$(runner_now_iso)"
   now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
   [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
-  runner_budget_existing_preflight_circuit_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+
+  runner_budget_existing_preflight_circuit_or_exit \
+    "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path"
+
   daily_token_quota="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value daily_token_quota)")"
   if [ -n "$daily_token_quota" ]; then
     quota_window_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value token_quota_window_seconds)")"
@@ -3663,7 +5191,21 @@ runner_budget_preflight_or_exit() {
     token_cache_rows="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_rows" { print $2; found=1; exit } END { if (!found) print "" }')"
     token_cache_latest_at="$(printf '%s\n' "$telemetry_usage_output" | awk -F= '$1 == "token_cache_latest_at" { print $2; found=1; exit } END { if (!found) print "" }')"
     if [ "$token_usage_fresh" != "true" ]; then
-      runner_append_log "$runner_id" "budget_preflight_warning" "role=${public_role}" "agent=${agent}" "reason=stale_token_usage_source" "action=continue_adapter" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_usage_source=${token_usage_source}" "token_usage_fresh=${token_usage_fresh}" "token_cache_status=${token_cache_status}" "token_cache_age_seconds=${token_cache_age_seconds}" "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" "token_usage_telemetry_rows=${token_usage_telemetry_rows}" "token_cache_rows=${token_cache_rows}" "token_cache_latest_at=${token_cache_latest_at}"
+      runner_append_log "$runner_id" "budget_preflight_warning" \
+        "role=${public_role}" \
+        "agent=${agent}" \
+        "reason=stale_token_usage_source" \
+        "action=continue_adapter" \
+        "budget_policy_path=${policy_path}" \
+        "token_usage=${token_usage}" \
+        "token_usage_source=${token_usage_source}" \
+        "token_usage_fresh=${token_usage_fresh}" \
+        "token_cache_status=${token_cache_status}" \
+        "token_cache_age_seconds=${token_cache_age_seconds}" \
+        "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" \
+        "token_usage_telemetry_rows=${token_usage_telemetry_rows}" \
+        "token_cache_rows=${token_cache_rows}" \
+        "token_cache_latest_at=${token_cache_latest_at}"
       runner_replace_state_field_preserving "$runner_id" "last_budget_skip_reason" "stale_token_usage_source" || true
       runner_replace_state_field_preserving "$runner_id" "last_budget_source" "$token_usage_source" || true
       runner_replace_state_field_preserving "$runner_id" "last_budget_source_fresh" "$token_usage_fresh" || true
@@ -3671,12 +5213,41 @@ runner_budget_preflight_or_exit() {
     fi
     if [ "$token_usage" -ge "$daily_token_quota" ]; then
       if [ "$token_usage_trusted" != "true" ]; then
-        runner_append_log "$runner_id" "budget_preflight_warning" "role=${public_role}" "agent=${agent}" "reason=token_usage_suspicious" "action=continue_adapter" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}" "token_usage_source=${token_usage_source}" "token_usage_fresh=${token_usage_fresh}" "token_cache_status=${token_cache_status}" "token_cache_age_seconds=${token_cache_age_seconds}" "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" "token_usage_trusted=${token_usage_trusted}" "skipped_suspicious_token_rows=${skipped_suspicious_token_rows}"
+        runner_append_log "$runner_id" "budget_preflight_warning" \
+          "role=${public_role}" \
+          "agent=${agent}" \
+          "reason=token_usage_suspicious" \
+          "action=continue_adapter" \
+          "budget_policy_path=${policy_path}" \
+          "token_usage=${token_usage}" \
+          "token_quota=${daily_token_quota}" \
+          "token_quota_window_seconds=${quota_window_seconds}" \
+          "token_quota_since=${quota_since_iso}" \
+          "token_usage_source=${token_usage_source}" \
+          "token_usage_fresh=${token_usage_fresh}" \
+          "token_cache_status=${token_cache_status}" \
+          "token_cache_age_seconds=${token_cache_age_seconds}" \
+          "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}" \
+          "token_usage_trusted=${token_usage_trusted}" \
+          "skipped_suspicious_token_rows=${skipped_suspicious_token_rows}"
       else
-        runner_budget_append_skip_log_and_state "token_budget_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "token_usage=${token_usage}" "token_quota=${daily_token_quota}" "token_quota_window_seconds=${quota_window_seconds}" "token_quota_since=${quota_since_iso}" "token_usage_source=${token_usage_source}" "token_usage_fresh=${token_usage_fresh}" "token_cache_status=${token_cache_status}" "token_cache_age_seconds=${token_cache_age_seconds}" "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}"
+        runner_budget_append_skip_log_and_state \
+          "token_budget_exceeded" \
+          "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+          "budget_policy_path=${policy_path}" \
+          "token_usage=${token_usage}" \
+          "token_quota=${daily_token_quota}" \
+          "token_quota_window_seconds=${quota_window_seconds}" \
+          "token_quota_since=${quota_since_iso}" \
+          "token_usage_source=${token_usage_source}" \
+          "token_usage_fresh=${token_usage_fresh}" \
+          "token_cache_status=${token_cache_status}" \
+          "token_cache_age_seconds=${token_cache_age_seconds}" \
+          "token_usage_max_data_age_seconds=${token_usage_max_data_age_seconds}"
       fi
     fi
   fi
+
   minimum_interval_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value minimum_interval_seconds)")"
   if [ -n "$minimum_interval_seconds" ] && [ "$minimum_interval_seconds" -gt 0 ]; then
     latest_ended_at="$(runner_budget_latest_adapter_ended_at)"
@@ -3687,330 +5258,61 @@ runner_budget_preflight_or_exit() {
       if [ "$now_epoch" -lt "$next_allowed_epoch" ]; then
         remaining_seconds=$((next_allowed_epoch - now_epoch))
         next_allowed_at="$(runner_epoch_to_iso "$next_allowed_epoch")"
-        runner_budget_append_skip_log_and_state "rate_limited" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "minimum_interval_seconds=${minimum_interval_seconds}" "last_adapter_ended_at=${latest_ended_at}" "next_allowed_at=${next_allowed_at}" "remaining_seconds=${remaining_seconds}"
+        runner_budget_append_skip_log_and_state \
+          "rate_limited" \
+          "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+          "budget_policy_path=${policy_path}" \
+          "minimum_interval_seconds=${minimum_interval_seconds}" \
+          "last_adapter_ended_at=${latest_ended_at}" \
+          "next_allowed_at=${next_allowed_at}" \
+          "remaining_seconds=${remaining_seconds}"
       fi
     fi
   fi
+
   prompt_byte_cap="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value prompt_byte_cap)")"
   if [ -n "$prompt_byte_cap" ] && [ "$prompt_byte_cap" -gt 0 ]; then
-    prompt_bytes="$(telemetry_positive_integer_or_zero "$(runner_file_size_bytes "$prompt_file")")"
-    [ "$prompt_bytes" -le "$prompt_byte_cap" ] || runner_budget_append_skip_log_and_state "prompt_size_exceeded" "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" "budget_policy_path=${policy_path}" "prompt_bytes=${prompt_bytes}" "prompt_byte_cap=${prompt_byte_cap}"
-  fi
-}
-
-runner_adapter_heartbeat_interval_seconds() {
-  local value="${AUTOFLOW_ADAPTER_HEARTBEAT_INTERVAL_SECONDS:-30}"
-
-  case "$value" in
-    ''|*[!0-9]*) value=30 ;;
-  esac
-  [ "$value" -gt 0 ] || value=30
-  printf '%s' "$value"
-}
-
-runner_adapter_preserved_state_value() {
-  local field="$1"
-  local fallback="${2:-}"
-  local value
-
-  value="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
-  if [ -n "$value" ]; then
-    printf '%s' "$value"
-  else
-    printf '%s' "$fallback"
-  fi
-}
-
-runner_write_adapter_running_heartbeat() {
-  local timestamp="$1"
-  local last_chunk_at="${2:-}"
-
-  if [ -z "$last_chunk_at" ]; then
-    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
-  fi
-
-  runner_write_state "$runner_id" \
-    "status=running" \
-    "role=${public_role}" \
-    "agent=${agent}" \
-    "mode=${mode}" \
-    "model=${model}" \
-    "reasoning=${reasoning}" \
-    "configured_reasoning=${configured_reasoning}" \
-    "reasoning_source=${reasoning_source}" \
-    "reasoning_complexity=${reasoning_complexity}" \
-    "active_item=$(runner_adapter_state_value "active_item")" \
-    "active_ticket_id=$(runner_adapter_state_value "active_ticket_id")" \
-    "active_ticket_title=$(runner_adapter_state_value "active_ticket_title")" \
-    "active_stage=adapter_running" \
-    "active_spec_ref=$(runner_adapter_state_value "active_spec_ref")" \
-    "active_recovery_reason=${adapter_active_recovery_reason}" \
-    "active_recovery_status=${adapter_active_recovery_status}" \
-    "active_recovery_failure_class=${adapter_active_recovery_failure_class}" \
-    "active_recovery_worktree_path=${adapter_active_recovery_worktree_path}" \
-    "active_recovery_worktree_status=${adapter_active_recovery_worktree_status}" \
-    "active_recovery_board_state=${adapter_active_recovery_board_state}" \
-    "pid=$(runner_state_pid_for_start)" \
-    "started_at=$(runner_state_started_at "$started_at")" \
-    "last_event_at=${timestamp}" \
-    "last_adapter_chunk_at=${last_chunk_at}" \
-    "last_result=" \
-    "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
-    "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
-    "last_stdout_log=$(runner_adapter_preserved_state_value "last_stdout_log" "$adapter_stdout")" \
-    "last_stderr_log=$(runner_adapter_preserved_state_value "last_stderr_log" "$adapter_stderr")" \
-    "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
-    "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
-    "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
-}
-
-start_adapter_heartbeat_monitor() {
-  local interval_s
-
-  interval_s="$(runner_adapter_heartbeat_interval_seconds)"
-  (
-    local previous_stdout_size previous_stderr_size current_stdout_size current_stderr_size
-    local timestamp last_chunk_at
-
-    previous_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
-    previous_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
-    last_chunk_at="$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)"
-
-    while :; do
-      sleep "$interval_s"
-      timestamp="$(runner_now_iso)"
-      current_stdout_size="$(runner_file_size_bytes "$adapter_stdout")"
-      current_stderr_size="$(runner_file_size_bytes "$adapter_stderr")"
-      if [ "${current_stdout_size:-0}" -gt "${previous_stdout_size:-0}" ] || [ "${current_stderr_size:-0}" -gt "${previous_stderr_size:-0}" ]; then
-        last_chunk_at="$timestamp"
-      fi
-      runner_write_adapter_running_heartbeat "$timestamp" "$last_chunk_at"
-      previous_stdout_size="${current_stdout_size:-0}"
-      previous_stderr_size="${current_stderr_size:-0}"
-    done
-  ) &
-  adapter_heartbeat_pid=$!
-}
-
-stop_adapter_heartbeat_monitor() {
-  if [ -n "${adapter_heartbeat_pid:-}" ] && kill -0 "$adapter_heartbeat_pid" 2>/dev/null; then
-    kill -TERM "$adapter_heartbeat_pid" 2>/dev/null || true
-    wait "$adapter_heartbeat_pid" 2>/dev/null || true
-  fi
-  adapter_heartbeat_pid=""
-}
-
-filter_codex_guard_warnings_in_place() {
-  local file="$1"
-  local tmp count_file removed
-
-  [ -f "$file" ] || return 0
-  tmp="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter.XXXXXX")" || return 0
-  count_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-stdout-filter-count.XXXXXX")" || {
-    rm -f "$tmp"
-    return 0
-  }
-
-  if ! awk -v count_file="$count_file" '
-    /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z[[:space:]]+WARN codex_core_(plugins::manifest|skills::loader):/ { removed++; next }
-    { print }
-    END { print removed + 0 > count_file }
-  ' "$file" > "$tmp"; then
-    rm -f "$tmp" "$count_file"
-    return 0
-  fi
-
-  removed="$(cat "$count_file" 2>/dev/null || printf '0')"
-  case "$removed" in ''|*[!0-9]*) removed=0 ;; esac
-  if [ "$removed" -gt 0 ]; then
-    mv -f "$tmp" "$file"
-    runner_append_log "$runner_id" "codex_stdout_filter_applied" \
-      "role=${public_role}" \
-      "removed_lines=${removed}" \
-      "stdout_path=${file}"
-  else
-    rm -f "$tmp"
-  fi
-  rm -f "$count_file"
-}
-
-run_gemini_adapter_command() {
-  local child_pid started_epoch now_epoch elapsed_seconds command_exit
-  local adapter_timeout_seconds="${AUTOFLOW_AGENT_TIMEOUT_SECONDS:-1200}"
-  local adapter_kill_after_seconds="${AUTOFLOW_AGENT_KILL_AFTER_SECONDS:-30}"
-
-  case "$adapter_timeout_seconds" in ''|*[!0-9]*) adapter_timeout_seconds=1200 ;; esac
-  case "$adapter_kill_after_seconds" in ''|*[!0-9]*) adapter_kill_after_seconds=30 ;; esac
-
-  (
-    cd "$adapter_working_root" || exit 1
-    exec </dev/null
-    run_adapter_with_identity "${cmd[@]}"
-  ) > "$adapter_stdout" 2> "$adapter_stderr" &
-  child_pid=$!
-  started_epoch="$(date +%s)"
-
-  while kill -0 "$child_pid" 2>/dev/null; do
-    if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
-      kill -TERM "$child_pid" 2>/dev/null || true
-      wait "$child_pid" 2>/dev/null || true
-      printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
-      printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
-      return 125
+    prompt_bytes="$(telemetry_file_size_bytes "$prompt_file")"
+    prompt_bytes="$(telemetry_positive_integer_or_zero "$prompt_bytes")"
+    if [ "$prompt_bytes" -gt "$prompt_byte_cap" ]; then
+      runner_budget_append_skip_log_and_state \
+        "prompt_size_exceeded" \
+        "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+        "budget_policy_path=${policy_path}" \
+        "prompt_bytes=${prompt_bytes}" \
+        "prompt_byte_cap=${prompt_byte_cap}"
     fi
+  fi
 
-    if [ "$adapter_timeout_seconds" -gt 0 ]; then
-      now_epoch="$(date +%s)"
-      elapsed_seconds=$((now_epoch - started_epoch))
-      if [ "$elapsed_seconds" -ge "$adapter_timeout_seconds" ]; then
-        kill -TERM "$child_pid" 2>/dev/null || true
-        if [ "$adapter_kill_after_seconds" -gt 0 ]; then
-          sleep "$adapter_kill_after_seconds"
-        fi
-        if kill -0 "$child_pid" 2>/dev/null; then
-          kill -KILL "$child_pid" 2>/dev/null || true
-        fi
-        wait "$child_pid" 2>/dev/null || true
-        return 124
-      fi
+  threshold="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value timeout_circuit_breaker_threshold)")"
+  cooldown_seconds="$(runner_policy_positive_integer_or_empty "$(runner_budget_policy_value timeout_circuit_breaker_cooldown_seconds)")"
+  if [ -n "$threshold" ] && [ "$threshold" -gt 0 ] && [ -n "$cooldown_seconds" ] && [ "$cooldown_seconds" -gt 0 ]; then
+    consecutive_count="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    consecutive_count="$(telemetry_positive_integer_or_zero "$consecutive_count")"
+    if [ "$consecutive_count" -ge "$threshold" ]; then
+      last_result="$(runner_state_field "$runner_id" "last_result" 2>/dev/null || true)"
+      case "$last_result" in
+        adapter_timeout|adapter_timeout_fallback|circuit_breaker_tripped)
+          last_event_at="$(runner_state_field "$runner_id" "last_event_at" 2>/dev/null || true)"
+          last_event_epoch=""
+          [ -z "$last_event_at" ] || last_event_epoch="$(telemetry_timestamp_to_epoch "$last_event_at" || true)"
+          [ -n "$last_event_epoch" ] || last_event_epoch="$now_epoch"
+          until_epoch=$((last_event_epoch + cooldown_seconds))
+          if [ "$now_epoch" -lt "$until_epoch" ]; then
+            until_iso="$(runner_epoch_to_iso "$until_epoch")"
+            runner_budget_append_skip_log_and_state \
+              "circuit_breaker_tripped" \
+              "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+              "budget_policy_path=${policy_path}" \
+              "consecutive_timeout_count=${consecutive_count}" \
+              "timeout_circuit_breaker_threshold=${threshold}" \
+              "timeout_circuit_breaker_cooldown_seconds=${cooldown_seconds}" \
+              "circuit_breaker_until=${until_iso}"
+          fi
+          ;;
+      esac
     fi
-
-    sleep 1
-  done
-
-  wait "$child_pid"
-  command_exit=$?
-  if runner_file_has_adapter_auth_required "$adapter_stdout" "$adapter_stderr"; then
-    printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$adapter_stderr"
-    printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive runner use\n' >> "$adapter_stderr"
-    return 125
   fi
-  return "$command_exit"
-}
-
-run_default_adapter_command() {
-  local prompt_file="$1"
-  local prompt_text
-  local cmd=()
-  local command_exit codex_wrapper
-
-  case "$agent" in
-    codex)
-      ensure_agent_on_path codex || return 127
-      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
-      if [ -n "$model" ]; then
-        cmd+=(-m "$model")
-      fi
-      if [ -n "$reasoning" ]; then
-        cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
-      fi
-      cmd+=(-)
-      command_summary="$(command_summary_from_array "${cmd[@]}")"
-      if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v script >/dev/null 2>&1 && [ "${AUTOFLOW_CODEX_DISABLE_PTY:-}" != "1" ]; then
-        codex_wrapper="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-wrapper.XXXXXX")"
-        {
-          printf '#!/usr/bin/env bash\n'
-          printf 'exec'
-          printf ' %q' "${cmd[@]}"
-          printf ' < "$1"\n'
-        } > "$codex_wrapper"
-        chmod +x "$codex_wrapper"
-        run_adapter_with_identity script -q /dev/null "$codex_wrapper" "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
-        command_exit=$?
-        rm -f "$codex_wrapper"
-      else
-        run_adapter_with_identity "${cmd[@]}" < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
-        command_exit=$?
-      fi
-      filter_codex_guard_warnings_in_place "$adapter_stdout"
-      return "$command_exit"
-      ;;
-    claude)
-      ensure_agent_on_path claude || return 127
-      prompt_text="$(cat "$prompt_file")"
-      runner_claude_base_cmd cmd
-      if [ -n "$model" ]; then
-        cmd+=(--model "$(normalize_claude_model_alias "$model")")
-      fi
-      if [ -n "$reasoning" ] && runner_claude_supports_effort; then
-        cmd+=(--effort "$reasoning")
-      fi
-      cmd+=("$prompt_text")
-      command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
-      ;;
-    opencode)
-      ensure_agent_on_path opencode || return 127
-      prompt_text="$(cat "$prompt_file")"
-      cmd=(opencode run)
-      if [ -n "$model" ]; then
-        cmd+=(--model "$model")
-      fi
-      if [ -n "$reasoning" ]; then
-        cmd+=(--variant "$reasoning")
-      fi
-      cmd+=("$prompt_text")
-      command_summary="$(command_summary_from_array "${cmd[@]:0:${#cmd[@]}-1}") prompt"
-      (cd "$adapter_working_root" && run_adapter_with_identity "${cmd[@]}") > "$adapter_stdout" 2> "$adapter_stderr"
-      ;;
-    gemini)
-      ensure_agent_on_path gemini || return 127
-      prompt_text="$(cat "$prompt_file")"
-      cmd=(gemini --skip-trust --approval-mode yolo --prompt "$prompt_text")
-      if [ -n "$model" ]; then
-        cmd+=(--model "$model")
-      fi
-      command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
-      run_gemini_adapter_command
-      ;;
-    *)
-      return 127
-      ;;
-  esac
-}
-
-emit_file_block() {
-  local label="$1"
-  local file="$2"
-
-  printf '%s_begin\n' "$label"
-  if [ -f "$file" ]; then
-    cat "$file"
-  fi
-  printf '%s_end\n' "$label"
-}
-
-artifact_stamp() {
-  runner_now_iso | tr ':' '-'
-}
-
-persist_run_artifact() {
-  local source_file="$1"
-  local suffix="$2"
-  local destination
-
-  runner_ensure_dirs
-  destination="$(runner_log_dir)/${runner_id}_$(artifact_stamp)_${suffix}.log"
-  cp "$source_file" "$destination"
-  printf '%s' "$destination"
-}
-
-cleanup_completed_adapter_live_logs() {
-  local cleaned_count=0
-  local path
-
-  for path in "$@"; do
-    [ -n "${path:-}" ] || continue
-    [ -e "$path" ] || continue
-    rm -f "$path"
-    cleaned_count=$((cleaned_count + 1))
-  done
-
-  runner_append_log "$runner_id" "adapter_live_log_cleanup" \
-    "reason=adapter_finished" \
-    "cleaned_count=${cleaned_count}"
-  printf 'adapter_live_log_cleanup=finished\n'
-  printf 'adapter_live_log_cleaned_count=%s\n' "$cleaned_count"
 }
 
 cleanup_stale_adapter_live_logs() {
@@ -4044,7 +5346,8 @@ cleanup_stale_adapter_live_logs() {
     cleaned_count=$((cleaned_count + 1))
   done < <(find "$(runner_log_dir)" -maxdepth 1 -type f \
     \( -name "${runner_id}_*_live_stdout.log" -o \
-      -name "${runner_id}_*_live_stderr.log" \) \
+      -name "${runner_id}_*_live_stderr.log" -o \
+      -name "${runner_id}_*_last_message.txt" \) \
     -mmin +"$stale_age_minutes" -print0 2>/dev/null)
   if [ "$cleaned_count" -gt 0 ]; then
     runner_append_log "$runner_id" "adapter_live_log_stale_cleanup" \
@@ -4054,16 +5357,40 @@ cleanup_stale_adapter_live_logs() {
   fi
 }
 
+cleanup_completed_adapter_live_logs() {
+  local cleaned_count=0
+  local path
+
+  for path in "$@"; do
+    [ -n "${path:-}" ] || continue
+    [ -e "$path" ] || continue
+    rm -f "$path"
+    cleaned_count=$((cleaned_count + 1))
+  done
+
+  runner_append_log "$runner_id" "adapter_live_log_cleanup" \
+    "reason=adapter_finished" \
+    "cleaned_count=${cleaned_count}"
+  printf 'adapter_live_log_cleanup=finished\n'
+  printf 'adapter_live_log_cleaned_count=%s\n' "$cleaned_count"
+}
+
 prepare_adapter_live_logs() {
   local live_stamp
 
   cleanup_stale_adapter_live_logs
+
   runner_ensure_dirs
   live_stamp="$(artifact_stamp)"
   adapter_stdout="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stdout.log"
   adapter_stderr="$(runner_log_dir)/${runner_id}_${live_stamp}_live_stderr.log"
+  # AI 주도 sh 실행 원칙: Codex/Claude 같은 어댑터의 raw transcript 는 디버그용이고,
+  # 사용자 view 에는 AI 의 narrative 만 surface 한다. 어댑터 실행 종료 후 이 파일에
+  # AI 의 최종 메시지 (narrative) 만 담아 'narrative_text' envelope 으로 emit 한다.
+  adapter_last_message="$(runner_log_dir)/${runner_id}_${live_stamp}_last_message.txt"
   : > "$adapter_stdout"
   : > "$adapter_stderr"
+  : > "$adapter_last_message"
 }
 
 agent_runtime_preflight_or_exit() {
@@ -4075,13 +5402,14 @@ agent_runtime_preflight_or_exit() {
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
 
   case "$public_role" in
-    ticket|planner|verifier)
+    ticket|planner)
       ;;
     *)
       return 0
       ;;
   esac
   reset_stale_ticket_stage_blocked_last_result_if_scope_clean
+  clear_parked_or_stale_repairing_active_ticket_before_dispatch
   [ -n "${runtime_path:-}" ] || return 0
   [ "$dry_run" = "true" ] && return 0
 
@@ -4104,7 +5432,7 @@ agent_runtime_preflight_or_exit() {
   active_item="$(awk -F= '$1 == "ticket" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   active_ticket_id="$(awk -F= '$1 == "ticket_id" { sub(/^[^=]*=/, "", $0); value=$0; found=1 } END { if (found) print value; exit(found ? 0 : 1) }' "$preflight_output" 2>/dev/null || true)"
   if [ "$public_role" = "planner" ]; then
-    active_item="$(awk -F= '$1 == "memo" || $1 == "spec" || $1 == "plan" || $1 == "reject_origin" || $1 == "todo_ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$preflight_output" 2>/dev/null || true)"
+    active_item="$(awk -F= '$1 == "order" || $1 == "spec" || $1 == "plan" || $1 == "reject_origin" || $1 == "todo_ticket" { sub(/^[^=]*=/, "", $0); print $0; exit }' "$preflight_output" 2>/dev/null || true)"
   fi
   if [ -n "$active_ticket_id" ]; then
     case "$active_ticket_id" in
@@ -4275,28 +5603,16 @@ if ! runner_validate_id "$runner_id"; then
   exit 0
 fi
 
-runner_config_missing="false"
 if ! runner_config_block "$runner_id" "$config_path" >/dev/null 2>&1; then
-  if [ "$public_role" = "monitor" ] && [ "$runner_id" = "monitor" ]; then
-    runner_config_missing="true"
-  else
-    print_run_header "blocked"
-    printf 'reason=runner_not_found\n'
-    exit 0
-  fi
+  print_run_header "blocked"
+  printf 'reason=runner_not_found\n'
+  exit 0
 fi
 
-if [ "$runner_config_missing" = "true" ]; then
-  configured_role="monitor"
-  agent="manual"
-  model=""
-  reasoning=""
-else
-  configured_role="$(runner_field "role")"
-  agent="$(runner_field "agent")"
-  model="$(runner_field "model")"
-  reasoning="$(runner_field "reasoning")"
-fi
+configured_role="$(runner_field "role")"
+agent="$(runner_field "agent")"
+model="$(runner_field "model")"
+reasoning="$(runner_field "reasoning")"
 configured_reasoning="$reasoning"
 effective_reasoning="$reasoning"
 reasoning_complexity="configured"
@@ -4305,19 +5621,23 @@ reasoning_supported="false"
 reasoning_dynamic_enabled="false"
 reasoning_actionable_count="0"
 reasoning_reject_count="0"
-if [ "$runner_config_missing" = "true" ]; then
-  mode="one-shot"
-  enabled="true"
-  command_value=""
-else
-  mode="$(runner_field "mode")"
-  enabled="$(runner_field "enabled")"
-  command_value="$(runner_field "command")"
-fi
+mode="$(runner_field "mode")"
+enabled="$(runner_field "enabled")"
+interval_seconds="$(runner_field "interval_seconds")"
+realtime_enabled="$(runner_field "realtime_enabled")"
+command_value="$(runner_field "command")"
 
 [ -n "$agent" ] || agent="manual"
 [ -n "$mode" ] || mode="one-shot"
 [ -n "$enabled" ] || enabled="true"
+[ -n "$realtime_enabled" ] || realtime_enabled="false"
+interval_seconds="$(runner_normalize_interval_seconds "$interval_seconds")"
+runner_config_fingerprint="$(runner_current_config_fingerprint)"
+previous_applied_config_fingerprint="$(runner_state_field "$runner_id" "applied_config_fingerprint" 2>/dev/null || true)"
+runner_config_applied_at="$(runner_state_field "$runner_id" "config_applied_at" 2>/dev/null || true)"
+if [ -z "$runner_config_applied_at" ] || [ "$previous_applied_config_fingerprint" != "$runner_config_fingerprint" ]; then
+  runner_config_applied_at="$(runner_now_iso)"
+fi
 
 if [ "$enabled" != "true" ]; then
   write_blocked_state "runner_disabled"
@@ -4338,7 +5658,7 @@ if [ "$mode" = "watch" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] 
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|monitor:monitor|monitor:self-monitor|monitor:self_monitor|todo:todo|verifier:verifier|merge:merge|merge:merge-bot|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -4351,6 +5671,8 @@ esac
 
 if [ "$public_role" = "wiki" ]; then
   runtime_path="${SCRIPT_DIR}/wiki-project.sh"
+elif [ "$public_role" = "coordinator" ]; then
+  runtime_path="${SCRIPT_DIR}/coordinator-project.sh"
 elif [ -z "$runtime_script" ]; then
   write_blocked_state "role_run_not_implemented"
   print_run_header "blocked"
@@ -4399,16 +5721,47 @@ case "$agent" in
     autocommit_before_status="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-before-status.XXXXXX")"
     adapter_stdout=""
     adapter_stderr=""
+    adapter_last_message=""
     ticket_goal_before_fingerprint="$(ticket_goal_progress_fingerprint_for_current_ticket || true)"
     prepare_adapter_live_logs
     role_autocommit_capture_status "$autocommit_before_status"
+    wiki_pre_adapter_summary_output=""
+    wiki_pre_adapter_summary_exit=0
+    if [ "$public_role" = "wiki" ]; then
+      set +e
+      wiki_pre_adapter_summary_output="$("$runtime_path" summarize-telemetry "$project_root" "$board_dir_name" --slug-set telemetry-default --window 7d 2>&1)"
+      wiki_pre_adapter_summary_exit=$?
+      set -e
+      if [ "$wiki_pre_adapter_summary_exit" -ne 0 ]; then
+        printf '%s\n' "$wiki_pre_adapter_summary_output" > "$adapter_stderr"
+        adapter_exit="$wiki_pre_adapter_summary_exit"
+      fi
+    fi
     write_agent_prompt "$instruction_file" > "$prompt_file"
     maybe_skip_stale_planner_recovery_before_adapter || true
     planner_differential_persist_after_prompt || true
+    prompt_cap_applied="false"
+    prompt_cap_original_bytes="0"
+    prompt_cap_final_bytes="0"
+    prompt_cap_capped_bytes="0"
+    prompt_cap_byte_cap="0"
+    prompt_cap_output="$(apply_role_prompt_byte_cap "$prompt_file")"
+    prompt_cap_applied="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+    prompt_cap_original_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+    prompt_cap_final_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+    prompt_cap_capped_bytes="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+    prompt_cap_byte_cap="$(printf '%s\n' "$prompt_cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
     runner_budget_preflight_or_exit "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
     maybe_skip_stale_planner_recovery_before_adapter || true
     resolve_effective_reasoning_for_current_tick
     reasoning="$effective_reasoning"
+
+    # tick 시작 시 status=running 으로 state 를 새로 쓰면 atomic mv 가 기존 필드를 모두 갈아엎는다.
+    # consecutive_timeout_count 같은 누적 필드는 보존해야 하므로 미리 읽어서 다시 함께 써준다.
+    preserved_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    case "${preserved_consecutive_timeouts:-0}" in
+      ''|*[!0-9]*) preserved_consecutive_timeouts=0 ;;
+    esac
 
     runner_write_state "$runner_id" \
       "status=running" \
@@ -4418,6 +5771,7 @@ case "$agent" in
       "model=${model}" \
       "reasoning=${reasoning}" \
       "configured_reasoning=${configured_reasoning}" \
+      $(runner_config_state_fields) \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
       "active_item=$(runner_adapter_state_value "active_item")" \
@@ -4440,6 +5794,7 @@ case "$agent" in
       "last_prompt_log=$(runner_adapter_preserved_state_value "last_prompt_log")" \
       "last_stdout_log=${adapter_stdout}" \
       "last_stderr_log=${adapter_stderr}" \
+      "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
       "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
       "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
       "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
@@ -4454,9 +5809,25 @@ case "$agent" in
       "reasoning_complexity=${reasoning_complexity}" \
       "reasoning_actionable_count=${reasoning_actionable_count}" \
       "reasoning_reject_count=${reasoning_reject_count}"
+    if [ "$prompt_cap_applied" = "true" ]; then
+      runner_append_log "$runner_id" "prompt_cap_applied" \
+        "role=${public_role}" \
+        "prompt_cap_env=$(role_prompt_byte_cap_env_name)" \
+        "prompt_bytes_original=${prompt_cap_original_bytes}" \
+        "prompt_bytes_final=${prompt_cap_final_bytes}" \
+        "prompt_bytes_capped=${prompt_cap_capped_bytes}" \
+        "prompt_byte_cap=${prompt_cap_byte_cap}"
+    fi
 
     adapter_exit=0
     command_summary=""
+    output_cap_applied="false"
+    output_cap_target="none"
+    output_cap_original_bytes="0"
+    output_cap_final_bytes="0"
+    output_cap_capped_bytes="0"
+    output_cap_token_cap="0"
+    output_cap_byte_cap="0"
 
     if [ "$dry_run" = "true" ]; then
       if [ -n "$command_value" ]; then
@@ -4502,6 +5873,7 @@ case "$agent" in
         "model=${model}" \
         "reasoning=${reasoning}" \
         "configured_reasoning=${configured_reasoning}" \
+        $(runner_config_state_fields) \
         "reasoning_source=${reasoning_source}" \
         "reasoning_complexity=${reasoning_complexity}" \
         "active_item=$(runner_adapter_state_value "active_item")" \
@@ -4531,9 +5903,7 @@ case "$agent" in
         "reasoning_actionable_count=${reasoning_actionable_count}" \
         "reasoning_reject_count=${reasoning_reject_count}"
 
-      dry_run_status="dry_run"
-      [ "$public_role" = "monitor" ] && dry_run_status="ok"
-      print_run_header "$dry_run_status"
+      print_run_header "dry_run"
       printf 'dry_run=true\n'
       printf 'runner_status=idle\n'
       printf 'adapter=%s\n' "$agent"
@@ -4555,33 +5925,64 @@ case "$agent" in
       printf 'state_path=%s\n' "$(runner_state_path "$runner_id")"
       printf 'log_path=%s\n' "$(runner_log_path "$runner_id")"
       emit_file_block "adapter_prompt" "$prompt_file"
-      cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr"
-      rm -f "$prompt_file" "$autocommit_before_status"
+      rm -f "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
       exit 0
     fi
+
+    maybe_skip_adapter_for_process_pressure "$prompt_file" "$autocommit_before_status" "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}" || true
 
     adapter_heartbeat_pid=""
     start_adapter_heartbeat_monitor
     set +e
-    if [ -n "$command_value" ]; then
+    if [ "${wiki_pre_adapter_summary_exit:-0}" -ne 0 ]; then
+      :
+    elif [ -n "$command_value" ]; then
       run_custom_adapter_command "$prompt_file"
+      adapter_exit=$?
     else
       run_default_adapter_command "$prompt_file"
+      adapter_exit=$?
     fi
-    adapter_exit=$?
     stop_adapter_heartbeat_monitor
     set -e
+
+    output_cap_output="$(apply_role_output_token_cap)"
+    output_cap_applied="$(printf '%s\n' "$output_cap_output" | sed -n 's/^applied=//p' | tail -n 1)"
+    output_cap_target="$(printf '%s\n' "$output_cap_output" | sed -n 's/^target=//p' | tail -n 1)"
+    output_cap_original_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^original_bytes=//p' | tail -n 1)"
+    output_cap_final_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^final_bytes=//p' | tail -n 1)"
+    output_cap_capped_bytes="$(printf '%s\n' "$output_cap_output" | sed -n 's/^capped_bytes=//p' | tail -n 1)"
+    output_cap_token_cap="$(printf '%s\n' "$output_cap_output" | sed -n 's/^token_cap=//p' | tail -n 1)"
+    output_cap_byte_cap="$(printf '%s\n' "$output_cap_output" | sed -n 's/^byte_cap=//p' | tail -n 1)"
+    if [ "$output_cap_applied" = "true" ]; then
+      runner_append_log "$runner_id" "output_cap_applied" \
+        "role=${public_role}" \
+        "output_cap_env=$(role_output_token_cap_env_name)" \
+        "output_cap_target=${output_cap_target}" \
+        "output_bytes_original=${output_cap_original_bytes}" \
+        "output_bytes_final=${output_cap_final_bytes}" \
+        "output_bytes_capped=${output_cap_capped_bytes}" \
+        "output_token_cap=${output_cap_token_cap}" \
+        "output_byte_cap=${output_cap_byte_cap}" \
+        "output_truncated=true"
+    fi
 
     if [ "$adapter_exit" -eq 0 ] && runner_file_has_adapter_start_failure "$adapter_stdout" "$adapter_stderr"; then
       adapter_exit=126
     fi
 
     finished_at="$(runner_now_iso)"
+    run_role_record_worker_tick_telemetry "$started_at" "$finished_at" "$adapter_exit" "$adapter_stdout" "$adapter_stderr" "$prompt_file" || true
     planner_differential_finalize_after_run || true
     if [ "$adapter_exit" -eq 0 ]; then
       command_status="ok"
       runner_status="idle"
+    elif [ "$adapter_exit" -eq 125 ]; then
+      command_status="blocked"
+      runner_status="blocked"
     elif [ "$adapter_exit" -eq 124 ]; then
+      # adapter watchdog timeout (run_with_timeout). 다음 tick 에서 재시도하도록 idle 로 둔다.
+      # 누적 timeout 처리는 consecutive_timeout_count 기반 fallback 에서 수행한다.
       command_status="timeout"
       runner_status="idle"
     elif [ "$adapter_exit" -eq 127 ]; then
@@ -4597,16 +5998,39 @@ case "$agent" in
       command_status="failed"
       runner_status="failed"
     fi
-    adapter_finish_classification="$(adapter_finish_class "$adapter_exit" "$runner_status" "false")"
+    adapter_finish_classification="$(adapter_finish_class "$adapter_exit" "$runner_status" "${output_cap_applied:-false}")"
 
-    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
-    stdout_log_path=""
-    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
+	    prompt_log_path="$(persist_run_artifact "$prompt_file" "prompt")"
+	    stdout_log_path=""
+	    stderr_log_path="$(persist_run_artifact "$adapter_stderr" "stderr")"
     autocommit_output="$(role_autocommit_after_adapter "$adapter_exit" "$autocommit_before_status" 2>&1)"
+    if [ "$adapter_exit" -eq 124 ]; then
+      timeout_cleanup_output="$(role_post_adapter_cleanup_on_timeout "$adapter_exit" 2>&1)"
+      if [ -n "$timeout_cleanup_output" ]; then
+        autocommit_output="${autocommit_output}${autocommit_output:+$'\n'}${timeout_cleanup_output}"
+      fi
+    fi
     if [ "$adapter_exit" -eq 0 ]; then
       wiki_record_inputs_fingerprint
     fi
     ticket_goal_record_adapter_result_for_current_ticket "$adapter_exit" "$ticket_goal_before_fingerprint" || true
+
+    # 직전 state 의 consecutive_timeout_count 를 읽어 갱신.
+    # adapter_exit==124 (timeout) 면 +1, 0 (성공) 이면 0 으로 reset, 그 외는 보존.
+    prev_consecutive_timeouts="$(runner_state_field "$runner_id" "consecutive_timeout_count" 2>/dev/null || true)"
+    case "${prev_consecutive_timeouts:-0}" in
+      ''|*[!0-9]*) prev_consecutive_timeouts=0 ;;
+    esac
+    if [ "$adapter_exit" -eq 124 ]; then
+      consecutive_timeout_count=$((prev_consecutive_timeouts + 1))
+    elif [ "$adapter_exit" -eq 0 ]; then
+      consecutive_timeout_count=0
+    else
+      consecutive_timeout_count="$prev_consecutive_timeouts"
+    fi
+    adapter_timeout_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+    adapter_kill_after_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
+    adapter_timeout_fallback_threshold="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_FALLBACK_THRESHOLD" 3)"
     finished_active_item="$(runner_adapter_state_value "active_item")"
     finished_active_ticket_id="$(runner_adapter_state_value "active_ticket_id")"
     finished_active_ticket_title="$(runner_adapter_state_value "active_ticket_title")"
@@ -4643,6 +6067,7 @@ case "$agent" in
       "model=${model}" \
       "reasoning=${reasoning}" \
       "configured_reasoning=${configured_reasoning}" \
+      $(runner_config_state_fields) \
       "reasoning_source=${reasoning_source}" \
       "reasoning_complexity=${reasoning_complexity}" \
       "active_item=${finished_active_item}" \
@@ -4662,13 +6087,22 @@ case "$agent" in
       "last_adapter_chunk_at=$(runner_state_field "$runner_id" "last_adapter_chunk_at" 2>/dev/null || true)" \
       "last_result=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 125 ]; then printf 'adapter_auth_required';
         elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
+        elif [ "$adapter_exit" -eq 0 ] && [ "$public_role" = "wiki" ]; then printf 'success';
+        elif [ "$adapter_exit" -eq 124 ]; then
+          if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
+            printf 'adapter_timeout_fallback';
+          else
+            printf 'adapter_timeout';
+          fi
         else printf 'adapter_exit_%s' "$adapter_exit"; fi
       )" \
       "last_runtime_log=$(runner_adapter_preserved_state_value "last_runtime_log")" \
       "last_prompt_log=${prompt_log_path}" \
       "last_stdout_log=${stdout_log_path}" \
       "last_stderr_log=${stderr_log_path}" \
+      "consecutive_timeout_count=${consecutive_timeout_count}" \
       "consecutive_preflight_skip_count=$([ "$adapter_exit" -eq 0 ] && printf '0' || runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
       "consecutive_preflight_skip_result=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
       "last_preflight_skip_at=$([ "$adapter_exit" -eq 0 ] && printf '' || runner_adapter_preserved_state_value "last_preflight_skip_at")"
@@ -4677,10 +6111,13 @@ case "$agent" in
       "agent=${agent}" \
       "exit_code=${adapter_exit}" \
       "runner_status=${runner_status}" \
-      "output_truncated=false" \
+      "output_truncated=${output_cap_applied}" \
       "finish_class=${adapter_finish_classification}" \
       "watchdog_signal=$([ "$adapter_exit" -eq 124 ] && printf 'SIGTERM' || printf 'none')" \
       "timeout_cleanup=$([ "$adapter_exit" -eq 124 ] && printf 'true' || printf 'false')" \
+      "output_cap_env=$(role_output_token_cap_env_name)" \
+      "output_cap_target=${output_cap_target}" \
+      "output_token_cap=${output_cap_token_cap}" \
       "configured_reasoning=${configured_reasoning}" \
       "effective_reasoning=${reasoning}" \
       "reasoning_source=${reasoning_source}" \
@@ -4689,18 +6126,32 @@ case "$agent" in
       "reasoning_reject_count=${reasoning_reject_count}" \
       "reason=$(
         if [ "$runner_status" = "stopped" ]; then printf 'quota_limited';
+        elif [ "$adapter_exit" -eq 125 ]; then printf 'adapter_auth_required';
         elif [ "$adapter_exit" -eq 126 ]; then printf 'adapter_start_failed';
         elif [ "$adapter_exit" -eq 124 ]; then printf 'adapter_timeout';
         else true; fi
       )" \
+      "consecutive_timeout_count=${consecutive_timeout_count}" \
       "command=${command_summary}"
     if [ "$adapter_exit" -eq 124 ]; then
       runner_append_log "$runner_id" "adapter_timeout" \
-        "role=${public_role}" \
-        "agent=${agent}" \
-        "finish_class=${adapter_finish_classification}" \
-        "watchdog_signal=SIGTERM" \
+      "role=${public_role}" \
+      "agent=${agent}" \
+      "timeout_seconds=${adapter_timeout_seconds_for_log}" \
+      "kill_after_seconds=${adapter_kill_after_seconds_for_log}" \
+      "finish_class=${adapter_finish_classification}" \
+      "watchdog_signal=SIGTERM" \
+      "consecutive_count=${consecutive_timeout_count}" \
         "command=${command_summary}"
+      if [ "$consecutive_timeout_count" -ge "$adapter_timeout_fallback_threshold" ]; then
+        runner_append_log "$runner_id" "adapter_timeout_fallback" \
+          "role=${public_role}" \
+          "agent=${agent}" \
+          "consecutive_count=${consecutive_timeout_count}" \
+          "threshold=${adapter_timeout_fallback_threshold}" \
+          "fallback_action=needs_user_marker" \
+          "command=${command_summary}"
+      fi
     fi
 
     print_run_header "$command_status"
@@ -4714,15 +6165,26 @@ case "$agent" in
     printf 'reasoning_actionable_count=%s\n' "$reasoning_actionable_count"
     printf 'reasoning_reject_count=%s\n' "$reasoning_reject_count"
     printf 'adapter_command=%s\n' "$command_summary"
+    if [ -n "${wiki_pre_adapter_summary_output:-}" ]; then
+      printf 'wiki_pre_adapter_summary_begin\n'
+      printf '%s\n' "$wiki_pre_adapter_summary_output"
+      printf 'wiki_pre_adapter_summary_end\n'
+    fi
     printf 'prompt_log_path=%s\n' "$prompt_log_path"
     printf 'stdout_log_path=%s\n' "$stdout_log_path"
     printf 'stderr_log_path=%s\n' "$stderr_log_path"
     if [ "$adapter_exit" -eq 127 ]; then
       printf 'reason=adapter_executable_missing\n'
+    elif [ "$adapter_exit" -eq 125 ]; then
+      printf 'reason=adapter_auth_required\n'
     elif [ "$adapter_exit" -eq 126 ]; then
       printf 'reason=adapter_start_failed\n'
     elif [ "$adapter_exit" -eq 124 ]; then
       printf 'reason=adapter_timeout\n'
+      printf 'consecutive_timeout_count=%s\n' "${consecutive_timeout_count:-0}"
+      if [ "${consecutive_timeout_count:-0}" -ge "${adapter_timeout_fallback_threshold:-3}" ]; then
+        printf 'fallback=needs_user (consecutive_timeouts>=%s)\n' "${adapter_timeout_fallback_threshold:-3}"
+      fi
     elif [ "$runner_status" = "stopped" ]; then
       printf 'reason=quota_limited\n'
     fi
@@ -4733,7 +6195,12 @@ case "$agent" in
     fi
     emit_file_block "adapter_stdout" "$adapter_stdout"
     emit_file_block "adapter_stderr" "$adapter_stderr"
-    cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr"
+    # AI 의 최종 메시지(narrative_text) 만 사용자 view 에 surface 한다.
+    # renderer 는 adapter_stdout content 를 drop 하고 narrative_text content 를 keep.
+    if [ -n "${adapter_last_message:-}" ] && [ -f "$adapter_last_message" ] && [ -s "$adapter_last_message" ]; then
+      emit_file_block "narrative_text" "$adapter_last_message"
+    fi
+    cleanup_completed_adapter_live_logs "$adapter_stdout" "$adapter_stderr" "${adapter_last_message:-}"
     rm -f "$prompt_file" "$autocommit_before_status"
     if [ "$adapter_exit" -ne 0 ] && [ "$adapter_exit" -ne 124 ] && [ "$adapter_exit" -ne 127 ] && [ "$runner_status" != "stopped" ]; then
       exit "$adapter_exit"
@@ -4756,9 +6223,7 @@ if [ "$dry_run" = "true" ]; then
   dry_run_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-dry-run.XXXXXX")"
 
   {
-    dry_run_status="dry_run"
-    [ "$public_role" = "monitor" ] && dry_run_status="ok"
-    print_run_header "$dry_run_status"
+    print_run_header "dry_run"
     printf 'dry_run=true\n'
     printf 'runner_status=idle\n'
     printf 'runtime_script=%s\n' "$runtime_path"
@@ -4814,6 +6279,7 @@ runner_write_state "$runner_id" \
   "mode=${mode}" \
   "model=${model}" \
   "reasoning=${reasoning}" \
+  $(runner_config_state_fields) \
   "active_item=$(runner_active_state_value "active_item")" \
   "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
   "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \
@@ -4833,6 +6299,8 @@ runtime_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-output.XXXXXX")"
 runtime_command=("$runtime_path")
 if [ "$public_role" = "wiki" ]; then
   runtime_command+=("update" "$project_root" "$board_dir_name")
+elif [ "$public_role" = "coordinator" ]; then
+  runtime_command+=("$project_root" "$board_dir_name")
 fi
 set +e
 AUTOFLOW_ROLE="$runtime_role" \
@@ -4850,7 +6318,13 @@ active_item="$(awk -F= '$1 == "claimed" || $1 == "verify" || $1 == "plan" { sub(
 finished_at="$(runner_now_iso)"
 runtime_output_log_path="$(persist_run_artifact "$runtime_output" "runtime")"
 
-if [ "$runtime_exit" -eq 0 ]; then
+if [ "$runtime_exit" -eq 0 ] && [ "$runtime_status" = "blocked" ]; then
+  command_status="blocked"
+  runner_status="blocked"
+elif [ "$runtime_exit" -eq 0 ] && [ "$runtime_status" = "idle" ]; then
+  command_status="ok"
+  runner_status="idle"
+elif [ "$runtime_exit" -eq 0 ]; then
   command_status="ok"
   runner_status="idle"
 else
@@ -4865,6 +6339,7 @@ runner_write_state "$runner_id" \
   "mode=${mode}" \
   "model=${model}" \
   "reasoning=${reasoning}" \
+  $(runner_config_state_fields) \
   "active_item=${active_item}" \
   "active_ticket_id=$(runner_active_state_value "active_ticket_id")" \
   "active_ticket_title=$(runner_active_state_value "active_ticket_title")" \

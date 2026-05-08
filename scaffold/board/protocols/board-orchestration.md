@@ -12,11 +12,10 @@ Use `autoflow tool list` as the canonical catalog when you need a stable invento
 
 Planner AI watches the full planning lane and the health signals that Impl AI leaves in tickets:
 
-- `tickets/inbox/`
+- `tickets/inbox/` (also receives worker-fail retry orders)
 - `tickets/backlog/`
 - `tickets/todo/`
 - `tickets/inprogress/`
-- `tickets/reject/`
 - `tickets/done/`
 - runner state and logs when needed for stalled or blocked diagnosis
 
@@ -36,7 +35,7 @@ On each planner tick:
 
 Planner AI may perform these actions directly in markdown:
 
-- Promote a clear order to a generated PRD.
+- Promote a clear memo to a generated PRD.
 - Create todo tickets from a plan or generated PRD.
 - Fold reject evidence into a new ticket attempt.
 - Add or update `Recovery State` for a stalled or blocked ticket.
@@ -46,12 +45,21 @@ Planner AI may perform these actions directly in markdown:
 
 Planner AI must not:
 
-- modify product code,
+- author new product code (it may stage and commit changes that are *already* dirty in PROJECT_ROOT during blocked-dirty orchestration, but it does not write fresh implementation),
 - create or delete git worktrees directly,
 - manage runner or OS processes directly (`kill`, `pkill`, runner start/stop/restart, background cleanup),
-- resolve merge conflicts in product files,
+- resolve merge conflicts in product files (during blocked-dirty orchestration, planner integrates already-dirty changes only — actual conflict resolution belongs to Impl AI),
 - run final pass/fail bookkeeping for Impl AI,
-- create commits or push.
+- push (`git push` is forbidden in every mode), `git reset --hard`, `git clean -fd`, amend non-orchestration commits, or `git rm` files.
+
+Planner AI **may** during blocked-dirty orchestration only:
+
+- read PROJECT_ROOT working tree (`git status`, `git diff`, `git log`, `git show`),
+- `git add` paths the runtime listed under `dirty_paths`,
+- create local commits using `[PRD_NNN][ticket_NNN] orchestration cleanup: <summary>` (or `[ticket_NNN] ...` when no PRD key),
+- `git stash push -m "<ticket_id>: ..."` instead of committing when committing is genuinely impossible.
+
+Default action is integrate, not stop. The Autoflow first principle (`멈추지 않는다`) outranks classification perfectionism.
 
 ## Planner Recovery Action Contract
 
@@ -62,7 +70,7 @@ When the runner wakes planner for `active_recovery_reason`, the tick is a board-
 - Keep the edit idempotent when the evidence and planner decision are unchanged.
 - If no safe board-only repair exists, set `Recovery State` status to `needs_user`, choose an explicit failure class, and park the ticket with an owner resume instruction.
 - Run `autoflow guard` or `scripts/board-guard.sh` after the markdown repair and fix guard errors before creating any new plan or ticket work.
-- Do not call owner/verifier/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
+- Do not call owner/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
 
 ## State Source
 
@@ -100,7 +108,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 
 | Helper or command | Safety-kernel responsibility | AI-owned decision |
 | --- | --- | --- |
-| `start-plan.*` | Atomically promote clear inbox/backlog/reject inputs into generated PRD/todo files and expose idle/recovery signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
+| `start-plan.*` | Atomically promote clear inbox/backlog inputs (including worker-fail retry orders) into generated PRD/todo files, expose idle signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
 | `start-ticket-owner.*` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
 | `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
 | `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |

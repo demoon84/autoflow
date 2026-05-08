@@ -56,8 +56,24 @@ set_worker_command() {
     my $command = $ENV{SMOKE_WORKER_COMMAND};
     $command =~ s/\\/\\\\/g;
     $command =~ s/"/\\"/g;
-    s/id = "worker"\nrole = "ticket-owner"\nagent = "codex"\nmodel = ""\nreasoning = "low"\nmode = "loop"\ninterval_seconds = 60\nenabled = true\ncommand = ""/id = "worker"\nrole = "ticket-owner"\nagent = "codex"\nmodel = ""\nreasoning = "low"\nmode = "one-shot"\ninterval_seconds = 60\nenabled = true\ncommand = "$command"/
-      or die "failed to patch worker runner command\n";
+    my $in_worker = 0;
+    my $patched_mode = 0;
+    my $patched_command = 0;
+    my @lines = split(/^/, $_);
+    for my $line (@lines) {
+      $in_worker = 0 if $line =~ /^\[\[runners\]\]/;
+      $in_worker = 1 if $line eq "id = \"worker\"\n";
+      if ($in_worker && $line =~ /^mode = /) {
+        $line = "mode = \"one-shot\"\n";
+        $patched_mode = 1;
+      }
+      if ($in_worker && $line =~ /^command = /) {
+        $line = "command = \"$command\"\n";
+        $patched_command = 1;
+      }
+    }
+    die "failed to patch worker runner command\n" unless $patched_mode && $patched_command;
+    $_ = join("", @lines);
   ' "${target_project_dir}/.autoflow/runners/config.toml"
 }
 
@@ -102,11 +118,12 @@ usage_err="${project_dir}/usage.err"
 until_out="${project_dir}/until.out"
 since_out="${project_dir}/since.out"
 run_out="${project_dir}/run.out"
+noise_out="${project_dir}/noise.out"
 preflight_out="${project_dir}/preflight.out"
 state_file="${project_dir}/.autoflow/runners/state/worker.state"
 
 cat >"${project_dir}/.autoflow/telemetry/runs.jsonl" <<'JSONL'
-{"event_version":1,"runner_id":"worker","started_at":"2026-05-04T00:00:00Z","ended_at":"2026-05-04T00:00:01Z","duration_ms":1,"result":"success","token_input":43000004027,"token_output":43000000020}
+{"event_version":1,"runner_id":"worker","started_at":"2026-05-04T00:00:00Z","ended_at":"2026-05-04T00:00:01Z","duration_ms":1,"result":"success","token_input":5247000554307,"token_output":5247000065696}
 {"event_version":1,"runner_id":"worker","started_at":"2026-05-04T00:01:00Z","ended_at":"2026-05-04T00:01:01Z","duration_ms":1,"result":"success","token_input":20,"token_output":22}
 {"event_version":1,"runner_id":"worker","started_at":"2026-05-04T00:02:00Z","ended_at":"2026-05-04T00:02:01Z","duration_ms":1,"result":"success","token_input":7,"token_output":8}
 {"event_version":1,"runner_id":"planner","started_at":"2026-05-04T00:01:00Z","ended_at":"2026-05-04T00:01:01Z","duration_ms":1,"result":"success","token_input":999,"token_output":999}
@@ -119,8 +136,8 @@ require_line "$usage_out" "until=2026-05-04T00:01:30Z"
 require_line "$usage_out" "token_usage=42"
 require_line "$usage_out" "token_usage_trusted=false"
 require_line "$usage_out" "skipped_suspicious_token_rows=1"
-require_pattern "$usage_err" 'warning=skip_suspicious_token_row .*token_input=43000004027 .*token_output=43000000020'
-reject_pattern "$usage_out" '^token_usage=86004270902$'
+require_pattern "$usage_err" 'warning=skip_suspicious_token_row .*token_input=5247000554307 .*token_output=5247000065696'
+reject_pattern "$usage_out" '^token_usage=10494000620003$'
 reject_pattern "$usage_out" '^token_usage=[1-9][0-9]{8,}$'
 
 "${REPO_ROOT}/packages/cli/telemetry-project.sh" token-usage --project-root "$project_dir" --runner worker --until "2026-05-03T23:59:59Z" >"$until_out"
@@ -153,6 +170,42 @@ if [ "$parser_total" != "1200" ]; then
   exit 1
 fi
 
+SMOKE_WORKER_COMMAND='printf "%s\n" "adapter progress noise 5247000 5247000554307 5247000065696 without a usage object" "done"' set_worker_command "$project_dir"
+write_fixture_ticket "${project_dir}/.autoflow/tickets/todo/tickets_003.md" "numeric noise sanity fixture" "tickets_003"
+git -C "$project_dir" add .autoflow/runners/config.toml .autoflow/tickets/todo/tickets_003.md
+git -C "$project_dir" commit -m "numeric noise fixture" >/dev/null
+noise_before_count="$(wc -l < "${project_dir}/.autoflow/telemetry/runs.jsonl" | tr -d '[:space:]')"
+
+AUTOFLOW_WORKTREE_ROOT="${project_dir}/.autoflow/worktrees" \
+  "${REPO_ROOT}/bin/autoflow" run ticket "$project_dir" .autoflow --runner worker >"$noise_out"
+require_line "$noise_out" "adapter_exit_code=0"
+
+noise_after_count="$(wc -l < "${project_dir}/.autoflow/telemetry/runs.jsonl" | tr -d '[:space:]')"
+if [ "$noise_after_count" -le "$noise_before_count" ]; then
+  echo "Expected numeric noise fixture telemetry row" >&2
+  cat "$noise_out" >&2
+  cat "${project_dir}/.autoflow/telemetry/runs.jsonl" >&2
+  exit 1
+fi
+
+noise_total="$(
+  tail -n 1 "${project_dir}/.autoflow/telemetry/runs.jsonl" | jq -r '
+    ((.token_input | tonumber) + (.token_output | tonumber))
+  '
+)"
+if [ "$noise_total" -ge 100000000 ]; then
+  echo "Expected numeric noise fixture to stay below sanity cap, got ${noise_total}" >&2
+  cat "${project_dir}/.autoflow/telemetry/runs.jsonl" >&2
+  exit 1
+fi
+if tail -n 1 "${project_dir}/.autoflow/telemetry/runs.jsonl" | jq -e '
+  select((.token_input >= 100000000) or (.token_output >= 100000000) or ((.token_input + .token_output) >= 100000000))
+' >/dev/null; then
+  echo "Numeric noise fixture wrote a suspicious telemetry row" >&2
+  cat "${project_dir}/.autoflow/telemetry/runs.jsonl" >&2
+  exit 1
+fi
+
 git -C "$preflight_project_dir" init -q
 git -C "$preflight_project_dir" config user.email autoflow-smoke@example.test
 git -C "$preflight_project_dir" config user.name "Autoflow Smoke"
@@ -174,7 +227,7 @@ POLICY
 
 now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 cat >"${preflight_project_dir}/.autoflow/telemetry/runs.jsonl" <<JSONL
-{"event_version":1,"runner_id":"worker","started_at":"${now}","ended_at":"${now}","duration_ms":1,"result":"success","token_input":43000004027,"token_output":43000000020}
+{"event_version":1,"runner_id":"worker","started_at":"${now}","ended_at":"${now}","duration_ms":1,"result":"success","token_input":5247000554307,"token_output":5247000065696}
 {"event_version":1,"runner_id":"worker","started_at":"${now}","ended_at":"${now}","duration_ms":1,"result":"success","token_input":7,"token_output":8}
 JSONL
 

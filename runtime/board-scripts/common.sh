@@ -646,26 +646,6 @@ ticket_path_has_dirty_project_root_conflict() {
   return 0
 }
 
-ticket_dirty_project_root_conflict_paths() {
-  local ticket_file="$1"
-  local git_root="${2:-$PROJECT_ROOT}"
-  local allowed_path found=false
-
-  [ -f "$ticket_file" ] || return 1
-  [ -n "$git_root" ] || return 1
-  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
-
-  while IFS= read -r allowed_path; do
-    [ -n "$allowed_path" ] || continue
-    allowed_path_is_concrete_repo_path "$allowed_path" || continue
-    if ticket_path_has_dirty_project_root_conflict "$ticket_file" "$allowed_path" "$git_root"; then
-      printf '%s\n' "$allowed_path"
-      found=true
-    fi
-  done < <(extract_ticket_allowed_paths "$ticket_file")
-
-  [ "$found" = "true" ]
-}
 
 project_root_dirty_paths() {
   local git_root="${1:-$PROJECT_ROOT}"
@@ -768,18 +748,6 @@ dirty_path_matches_ticket_allowed_paths() {
   return 1
 }
 
-filter_actionable_blocked_dirty_paths_for_ticket() {
-  local ticket_file="$1"
-  local path
-
-  while IFS= read -r path; do
-    [ -n "$path" ] || continue
-    path="${path#./}"
-    path_is_orchestration_generated_dirty_path "$path" && continue
-    dirty_path_matches_ticket_allowed_paths "$ticket_file" "$path" || continue
-    printf '%s\n' "$path"
-  done
-}
 
 project_root_dirty_status_is_only_new_orchestration_checks() {
   local git_root="${1:-$PROJECT_ROOT}"
@@ -811,74 +779,8 @@ project_root_dirty_status_is_only_new_orchestration_checks() {
   [ "$found" = "true" ]
 }
 
-orchestration_cleanup_commit_count_for_ticket() {
-  local ticket_file="$1"
-  local git_root="${2:-$PROJECT_ROOT}"
-  local ticket_id
 
-  [ -f "$ticket_file" ] || return 1
-  [ -n "$git_root" ] || return 1
-  git -C "$git_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
 
-  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
-  [ -n "$ticket_id" ] || return 1
-
-  {
-    git -C "$git_root" log --fixed-strings --grep="[ticket_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null
-    git -C "$git_root" log --fixed-strings --grep="[tickets_${ticket_id}] orchestration cleanup:" --format='%H' 2>/dev/null
-  } | sort -u | wc -l | tr -d '[:space:]'
-}
-
-mark_ticket_blocked_cleanup_fixpoint_exceeded() {
-  local ticket_file="$1"
-  local cleanup_count="$2"
-  local dirty_summary="$3"
-  local timestamp
-
-  [ -f "$ticket_file" ] || return 1
-  timestamp="$(now_iso)"
-
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "needs_user"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "blocked_cleanup_fixpoint_exceeded"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "Same-ticket orchestration cleanup commits reached ${cleanup_count}; dirty_paths=${dirty_summary}; fixpoint guard triggered at ${timestamp}."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Planner Decision" "Park this blocked ticket because repeated orchestration cleanup did not converge; do not emit blocked-dirty-orchestration for the same evidence."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Needs user or planner intervention before another cleanup attempt; inspect the dirty inventory and prior cleanup commits."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Needs user/planner decision: fixpoint guard stopped repeated blocked-dirty orchestration after ${cleanup_count} cleanup commits; inspect dirty paths (${dirty_summary}) before retrying."
-  append_note "$ticket_file" "Fixpoint guard at ${timestamp}: source=blocked-cleanup-fixpoint-exceeded; cleanup_count=${cleanup_count}; dirty_paths=${dirty_summary}"
-}
-
-mark_ticket_dirty_project_root_blocked() {
-  local ticket_file="$1"
-  local worker="$2"
-  local timestamp="$3"
-  local dirty_paths="$4"
-  local summary display_worker
-
-  display_worker="$(display_worker_id "$worker")"
-  summary="$(printf '%s\n' "$dirty_paths" | dirty_project_root_paths_summary)"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_dirty_project_root"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "runtime"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "dirty_project_root_conflict"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "dirty Allowed Paths in PROJECT_ROOT: ${summary}"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Commit, stash, or explicitly integrate the PROJECT_ROOT changes before this ticket continues."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (${summary}). Commit/stash those changes or intentionally integrate them before ticket-owner continues."
-
-  if ! grep -Fq "Runtime auto-blocked: dirty_project_root_conflict" "$ticket_file"; then
-    append_note "$ticket_file" "Runtime auto-blocked: dirty_project_root_conflict at ${timestamp}; dirty_paths=${summary}"
-  fi
-}
 
 ticket_uses_project_root_workspace() {
   local ticket_file="$1"
@@ -928,96 +830,7 @@ ticket_concrete_allowed_paths() {
   done < <(extract_ticket_allowed_paths "$ticket_file") | sort -u
 }
 
-ticket_shared_allowed_path_blockers() {
-  local ticket_file="$1"
-  local ticket_id ticket_num current_paths other_file other_id other_num other_stage
-  local other_path current_project_root_workspace=false found=false
 
-  [ -f "$ticket_file" ] || return 1
-
-  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
-  [ -n "$ticket_id" ] || return 1
-  ticket_num="$((10#$ticket_id))"
-  current_paths="$(ticket_concrete_allowed_paths "$ticket_file")"
-  [ -n "$current_paths" ] || return 1
-  if ticket_uses_project_root_workspace "$ticket_file"; then
-    current_project_root_workspace=true
-  fi
-
-  while IFS= read -r other_file; do
-    [ -n "$other_file" ] || continue
-    [ "$other_file" != "$ticket_file" ] || continue
-    ticket_owner_queue_parked_blocker "$other_file" && continue
-
-    other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
-    [ -n "$other_id" ] || continue
-    other_num="$((10#$other_id))"
-    [ "$other_num" -lt "$ticket_num" ] || continue
-
-    other_stage="$(ticket_stage "$other_file")"
-    ticket_project_root_conflict_stage "$other_stage" || continue
-    if [ "$current_project_root_workspace" != "true" ] && ! ticket_uses_project_root_workspace "$other_file"; then
-      continue
-    fi
-
-    while IFS= read -r other_path; do
-      [ -n "$other_path" ] || continue
-      if printf '%s\n' "$current_paths" | grep -Fqx -- "$other_path"; then
-        printf 'tickets_%s:%s\n' "$other_id" "$other_path"
-        found=true
-      fi
-    done < <(ticket_concrete_allowed_paths "$other_file")
-  done < <(
-    list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md'
-    list_matching_files "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md'
-    list_matching_files "${BOARD_ROOT}/tickets/merge-blocked" 'tickets_*.md'
-  )
-
-  [ "$found" = "true" ]
-}
-
-ticket_shared_nonbase_head_blockers() {
-  local ticket_file="$1"
-  local ticket_id worktree_path base_commit current_head other_file other_id
-  local other_stage other_path other_head found=false
-
-  [ -f "$ticket_file" ] || return 1
-
-  ticket_id="$(extract_numeric_id "$ticket_file" 2>/dev/null || true)"
-  [ -n "$ticket_id" ] || return 1
-  worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
-  [ -n "$worktree_path" ] && [ -d "$worktree_path" ] || return 1
-
-  base_commit="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Base Commit")")"
-  [ -n "$base_commit" ] || return 1
-  current_head="$(git -C "$worktree_path" rev-parse --verify HEAD 2>/dev/null || true)"
-  [ -n "$current_head" ] || return 1
-  [ "$current_head" != "$base_commit" ] || return 1
-
-  while IFS= read -r other_file; do
-    [ -n "$other_file" ] || continue
-    [ "$other_file" != "$ticket_file" ] || continue
-    ticket_owner_queue_parked_blocker "$other_file" && continue
-
-    other_id="$(extract_numeric_id "$other_file" 2>/dev/null || true)"
-    [ -n "$other_id" ] || continue
-    other_stage="$(ticket_stage "$other_file")"
-    ticket_project_root_conflict_stage "$other_stage" || continue
-    other_path="$(ticket_worktree_path_from_file "$other_file")"
-    [ -n "$other_path" ] && [ -d "$other_path" ] || continue
-    other_head="$(git -C "$other_path" rev-parse --verify HEAD 2>/dev/null || true)"
-    if [ "$other_head" = "$current_head" ]; then
-      printf 'tickets_%s:%s\n' "$other_id" "$current_head"
-      found=true
-    fi
-  done < <(
-    list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md'
-    list_matching_files "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md'
-    list_matching_files "${BOARD_ROOT}/tickets/merge-blocked" 'tickets_*.md'
-  )
-
-  [ "$found" = "true" ]
-}
 
 shared_allowed_path_blockers_summary() {
   awk '
@@ -1074,49 +887,7 @@ ticket_has_recoverable_worktree_blocker() {
     "$ticket_file"
 }
 
-mark_ticket_shared_allowed_path_blocked() {
-  local ticket_file="$1"
-  local worker="$2"
-  local timestamp="$3"
-  local blockers="$4"
-  local summary display_worker
 
-  display_worker="$(display_worker_id "$worker")"
-  summary="$(printf '%s\n' "$blockers" | shared_allowed_path_blockers_summary)"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: shared Allowed Paths are already held by lower-number in-progress ticket(s): ${summary}. Retry automatically when blockers clear."
-
-  if ! grep -Fq "Runtime auto-blocked: shared_allowed_path_conflict" "$ticket_file"; then
-    append_note "$ticket_file" "Runtime auto-blocked: shared_allowed_path_conflict at ${timestamp}; blockers=${summary}"
-  fi
-}
-
-mark_ticket_shared_nonbase_head_blocked() {
-  local ticket_file="$1"
-  local worker="$2"
-  local timestamp="$3"
-  local blockers="$4"
-  local summary display_worker
-
-  display_worker="$(display_worker_id "$worker")"
-  summary="$(printf '%s\n' "$blockers" | shared_nonbase_head_blockers_summary)"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" "$display_worker"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Runtime wait: this ticket worktree shares a non-base HEAD with other active ticket(s): ${summary}. Restore an isolated clean snapshot before owner verify/finish resumes."
-
-  if ! grep -Fq "Runtime auto-blocked: shared_nonbase_head_conflict" "$ticket_file"; then
-    append_note "$ticket_file" "Runtime auto-blocked: shared_nonbase_head_conflict at ${timestamp}; blockers=${summary}"
-  fi
-}
 
 worktree_mode_disabled() {
   case "${AUTOFLOW_WORKTREE_MODE:-auto}" in
@@ -1738,16 +1509,6 @@ list_reject_ticket_files() {
   find "$reject_dir" -maxdepth 1 -type f \( -name 'reject_[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' \) | sort
 }
 
-reject_auto_replan_enabled() {
-  case "${AUTOFLOW_REJECT_AUTO_REPLAN:-on}" in
-    0|off|OFF|false|FALSE|disabled|DISABLED)
-      return 1
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
 
 reject_max_retries() {
   local raw="${AUTOFLOW_REJECT_MAX_RETRIES:-3}"
@@ -1782,29 +1543,6 @@ list_reject_tickets_for_replan() {
   done < <(list_reject_ticket_files)
 }
 
-find_replannable_reject() {
-  local skipped_file="${1:-}"
-  local file retry_count max_retries rel
-
-  reject_auto_replan_enabled || return 1
-
-  while IFS=$'\t' read -r _ file; do
-    [ -n "$file" ] || continue
-    retry_count="$(ticket_retry_count "$file")"
-    max_retries="$(ticket_max_retries "$file")"
-    if [ "$retry_count" -lt "$max_retries" ]; then
-      printf '%s' "$file"
-      return 0
-    fi
-
-    if [ -n "$skipped_file" ]; then
-      rel="$(board_relative_path "$file")"
-      printf '%s|max_retries_reached|%s\n' "$rel" "$retry_count" >> "$skipped_file"
-    fi
-  done < <(list_reject_tickets_for_replan | sort -n)
-
-  return 1
-}
 
 ticket_at_max_retries() {
   local file="$1"
@@ -1969,98 +1707,11 @@ join_lines_csv() {
   '
 }
 
-reject_auto_close_enabled() {
-  case "${AUTOFLOW_REJECT_AUTO_CLOSE:-on}" in
-    0|off|OFF|false|FALSE|disabled|DISABLED)
-      return 1
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
 
-reject_auto_close_timeout_seconds() {
-  local raw="${AUTOFLOW_REJECT_AUTO_CLOSE_TIMEOUT_SECONDS:-300}"
 
-  raw="${raw//[^0-9]/}"
-  if [ -z "$raw" ]; then
-    raw="300"
-  fi
 
-  printf '%s' "$((10#$raw))"
-}
 
-run_verification_command_for_auto_close() {
-  local cmd="$1"
-  local timeout_s
-  local rc=0
 
-  [ -n "$cmd" ] || return 1
-
-  timeout_s="$(reject_auto_close_timeout_seconds)"
-
-  if command -v gtimeout >/dev/null 2>&1; then
-    ( cd "$PROJECT_ROOT" && gtimeout "${timeout_s}s" bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
-  elif command -v timeout >/dev/null 2>&1; then
-    ( cd "$PROJECT_ROOT" && timeout "${timeout_s}s" bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
-  else
-    ( cd "$PROJECT_ROOT" && bash -lc "$cmd" >/dev/null 2>&1 ) || rc=$?
-  fi
-
-  return $rc
-}
-
-archive_reject_companion_files() {
-  local reject_file="$1"
-  local target_dir="$2"
-  local id reject_dir companion target_companion stamp_suffix
-
-  id="$(extract_numeric_id "$reject_file")"
-  [ -n "$id" ] || return 0
-  reject_dir="$(dirname "$reject_file")"
-
-  while IFS= read -r companion; do
-    [ -n "$companion" ] || continue
-    [ -f "$companion" ] || continue
-    target_companion="${target_dir}/$(basename "$companion")"
-    if [ -e "$target_companion" ]; then
-      stamp_suffix="$(date -u +%Y%m%dT%H%M%SZ)"
-      target_companion="${target_dir}/$(basename "${companion%.md}").${stamp_suffix}.md"
-    fi
-    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      git -C "$PROJECT_ROOT" mv "$companion" "$target_companion" 2>/dev/null \
-        || mv "$companion" "$target_companion"
-    else
-      mv "$companion" "$target_companion"
-    fi
-  done < <(find "$reject_dir" -maxdepth 1 -type f -name "verify_${id}*.md")
-}
-
-blocked_auto_recover_enabled() {
-  case "${AUTOFLOW_BLOCKED_AUTO_RECOVER:-on}" in
-    0|off|OFF|false|FALSE|disabled|DISABLED)
-      return 1
-      ;;
-    *)
-      return 0
-      ;;
-  esac
-}
-
-list_blocked_inprogress_tickets() {
-  local file
-  local stage
-
-  while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    [ -f "$file" ] || continue
-    stage="$(ticket_stage "$file" 2>/dev/null || true)"
-    if [ "$stage" = "blocked" ]; then
-      printf '%s\n' "$file"
-    fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
-}
 
 ticket_failure_class() {
   local file="$1"
@@ -2091,66 +1742,6 @@ cleanup_blocked_inprogress_verify_companions() {
   done < <(find "$inprogress_dir" -maxdepth 1 -type f -name "verify_${ticket_id}*.md")
 }
 
-unblock_dirty_root_resolved_ticket() {
-  local ticket_file="$1"
-  local timestamp ticket_id target_file
-
-  [ -f "$ticket_file" ] || return 1
-  timestamp="$(now_iso)"
-  ticket_id="$(extract_numeric_id "$ticket_file")"
-  [ -n "$ticket_id" ] || return 1
-  target_file="${BOARD_ROOT}/tickets/todo/tickets_${ticket_id}.md"
-
-  if [ -e "$target_file" ] && [ "$target_file" != "$ticket_file" ]; then
-    return 1
-  fi
-
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "todo"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" ""
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" ""
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$ticket_file" "Worktree" "- Path:
-- Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim"
-  replace_section_block "$ticket_file" "Goal Runtime" "- Status:
-- Started At:
-- Started Epoch:
-- Updated At:
-- Tick Count:
-- Time Used Seconds:
-- Token Budget:
-- Tokens Used:
-- Continuation Suppressed:
-- Last Event:
-- Last Progress Fingerprint:"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Status" "resolved"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Detected By" "planner"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Failure Class" "dirty_root_cleared"
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Evidence" "PROJECT_ROOT no longer reports dirty Allowed Paths overlapping this ticket; auto-recovered at ${timestamp}."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Owner Resume Instruction" "Restart from todo with a fresh worktree based on current main; reuse the existing PRD, Allowed Paths, and Done When."
-  replace_scalar_field_in_section "$ticket_file" "## Recovery State" "Last Recovery At" "$timestamp"
-  replace_section_block "$ticket_file" "Next Action" "- Resume from todo: PROJECT_ROOT is clean for this ticket's Allowed Paths; ticket-owner can claim this ticket and build a fresh worktree from current main."
-
-  append_note "$ticket_file" "Auto-recovery at ${timestamp}: dirty_project_root_conflict cleared; ticket returned to todo for fresh claim."
-
-  mkdir -p "$(dirname "$target_file")"
-  if [ "$ticket_file" != "$target_file" ]; then
-    if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      git -C "$PROJECT_ROOT" mv "$ticket_file" "$target_file" 2>/dev/null \
-        || mv "$ticket_file" "$target_file"
-    else
-      mv "$ticket_file" "$target_file"
-    fi
-  fi
-
-  cleanup_blocked_inprogress_verify_companions "$ticket_id"
-
-  printf '%s' "$target_file"
-}
 
 orchestration_check_dir() {
   printf '%s/tickets/check' "$BOARD_ROOT"
@@ -2181,137 +1772,17 @@ single_line_value() {
   printf '%s' "${1:-}" | tr '\r\n' '  ' | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//'
 }
 
+# Orchestration check ledger (tickets/check/check_NNN.md) was removed along
+# with the monitor runner (refactor 2026-05-07). These helpers stay as no-op
+# stubs so legacy callers keep their key=value contract without writing files.
 record_orchestration_check() {
-  local event_type="$1"
-  local title="$2"
-  local prd_key="$3"
-  local ticket_id="$4"
-  local source="$5"
-  local what_happened="$6"
-  local evidence="$7"
-  local recommended_action="$8"
-  local dir id file created_at
-
-  event_type="$(single_line_value "$event_type")"
-  title="$(single_line_value "$title")"
-  prd_key="$(single_line_value "$prd_key")"
-  ticket_id="$(single_line_value "$ticket_id")"
-  source="$(single_line_value "$source")"
-  what_happened="$(single_line_value "$what_happened")"
-  evidence="$(single_line_value "$evidence")"
-  recommended_action="$(single_line_value "$recommended_action")"
-
-  [ -n "$event_type" ] || return 1
-  [ -n "$title" ] || title="Autoflow orchestration intervention"
-  [ -n "$source" ] || source="planner"
-  [ -n "$what_happened" ] || what_happened="Planner runtime completed an automatic orchestration intervention."
-  [ -n "$recommended_action" ] || recommended_action="자동 개입 내용과 관련 티켓 상태를 확인한 뒤 필요하면 사람 확인 완료 체크박스를 표시한다."
-
-  dir="$(orchestration_check_dir)"
-  mkdir -p "$dir" || return 1
-  id="$(next_orchestration_check_id)" || return 1
-  file="${dir}/check_${id}.md"
-  created_at="$(now_iso)"
-
-  if [ -e "$file" ]; then
-    return 1
-  fi
-
-  cat > "$file" <<CHECK
----
-title: ${title}
-created_at: ${created_at}
-event_type: ${event_type}
-prd_key: ${prd_key}
-ticket_id: ${ticket_id}
-source: ${source}
----
-
-# ${title}
-
-## What Happened
-
-${what_happened}
-
-## Evidence
-
-${evidence}
-
-## Recommended Human Action
-
-${recommended_action}
-
-## Status
-
-- [ ] 사람 확인 완료
-CHECK
-
-  printf '%s' "$file"
-}
-
-record_orchestration_check_best_effort() {
-  local check_file
-
-  if check_file="$(record_orchestration_check "$@" 2>/dev/null)"; then
-    if [ -n "$check_file" ]; then
-      printf 'check_file=%s\n' "$(board_relative_path "$check_file")"
-    fi
-    return 0
-  fi
-
-  printf 'warning=orchestration_check_record_failed\n'
   return 0
 }
 
-archive_reject_with_manual_resolution() {
-  local reject_file="$1"
-  local prd_key="$2"
-  local verification_cmd="$3"
-  local target_dir base_name target_file timestamp stamp_suffix
-  local rc mr
-
-  [ -f "$reject_file" ] || return 1
-  [ -n "$prd_key" ] || return 1
-
-  target_dir="${BOARD_ROOT}/tickets/done/${prd_key}"
-  mkdir -p "$target_dir"
-
-  base_name="$(basename "$reject_file")"
-  target_file="${target_dir}/${base_name}"
-  timestamp="$(now_iso)"
-
-  if [ -e "$target_file" ]; then
-    stamp_suffix="$(date -u +%Y%m%dT%H%M%SZ)"
-    target_file="${target_dir}/${base_name%.md}.${stamp_suffix}.md"
-  fi
-
-  rc="$(ticket_retry_count "$reject_file")"
-  mr="$(ticket_max_retries "$reject_file")"
-
-  cat >> "$reject_file" <<RESOLUTION
-
-## Manual Resolution (auto-close)
-
-- Decided By: planner runner (start-plan.sh auto-close branch).
-- Outcome: manually_resolved.
-- Resolved At: ${timestamp}
-- Trigger: retry cap reached (Retry Count: ${rc} / Max Retries: ${mr}); PRD verification command passed at PROJECT_ROOT.
-- Verification Command: ${verification_cmd}
-- Project Root: ${PROJECT_ROOT}
-- Notes: 자동 close 는 PRD 의 Verification Command 가 root 에서 통과한 신호만 사용한다. 코드 마커 단위 또는 시각 회귀 확인은 다음 LLM tick 또는 사용자 수동 검증으로 보강할 수 있다.
-RESOLUTION
-
-  if git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git -C "$PROJECT_ROOT" mv "$reject_file" "$target_file" 2>/dev/null \
-      || mv "$reject_file" "$target_file"
-  else
-    mv "$reject_file" "$target_file"
-  fi
-
-  archive_reject_companion_files "$reject_file" "$target_dir"
-
-  printf '%s' "$target_file"
+record_orchestration_check_best_effort() {
+  return 0
 }
+
 
 plan_root_path() {
   if [ -d "${BOARD_ROOT}/tickets/plan" ]; then
@@ -3345,71 +2816,6 @@ append_reject_history_entry() {
   replace_section_block "$file" "Reject History" "$block"
 }
 
-replan_reject_to_todo() {
-  local reject_file="$1"
-  local ticket_id target_file timestamp retry_count reject_reason verification_log reject_origin
-
-  [ -f "$reject_file" ] || return 1
-
-  ticket_id="$(extract_numeric_id "$reject_file")"
-  target_file="$(ticket_path "todo" "$ticket_id")"
-  if [ -e "$target_file" ] && [ "$target_file" != "$reject_file" ]; then
-    return 1
-  fi
-
-  timestamp="$(now_iso)"
-  reject_origin="$(board_relative_path "$reject_file")"
-  verification_log="$(extract_scalar_field_in_section "$reject_file" "Verification" "Log file")"
-  reject_reason="$(
-    extract_section_text "$reject_file" "Reject Reason" \
-      | sed -E 's/^[[:space:]]*-[[:space:]]*//' \
-      | sed '/^[[:space:]]*$/d' \
-      | tr '\n' ' ' \
-      | sed 's/[[:space:]]\+/ /g; s/[[:space:]]*$//'
-  )"
-  if [ -z "$reject_reason" ]; then
-    reject_reason="No recorded reject reason."
-  fi
-
-  if is_recovery_auto_enabled; then
-    local unmet_paths
-    unmet_paths="$(parse_unmet_paths_from_reject_reason "$reject_reason")"
-    if [ -n "$unmet_paths" ]; then
-      auto_expand_allowed_paths_if_same_scope "$reject_file" "$unmet_paths" || true
-    fi
-  fi
-
-  retry_count="$(bump_ticket_retry_count "$reject_file")"
-  append_reject_history_entry \
-    "$reject_file" \
-    "${timestamp} | retry_count=${retry_count} | source=\`${reject_origin}\` | log=\`${verification_log:-pending}\` | reason=${reject_reason}"
-
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Stage" "todo"
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "AI" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Claimed By" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Execution AI" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Verifier AI" ""
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Last Updated" "$timestamp"
-  replace_section_block "$reject_file" "Worktree" "- Path:
-- Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim"
-  replace_section_block "$reject_file" "Next Action" "- 다음에 바로 이어서 할 일: 가장 최근 Reject History 를 반영해 mini-plan 을 다시 적고 구현을 재개한다."
-  replace_section_block "$reject_file" "Verification" "- Run file:
-- Log file:
-- Result: pending"
-  replace_section_block "$reject_file" "Result" "- Summary:
-- Remaining risk:"
-  append_note "$reject_file" "Ticket automatically replanned from ${reject_origin} at ${timestamp}; retry_count=${retry_count}"
-
-  mkdir -p "$(dirname "$target_file")"
-  if [ "$reject_file" != "$target_file" ]; then
-    mv "$reject_file" "$target_file"
-  fi
-
-  printf '%s' "$target_file"
-}
 
 auto_recover_blocked_ticket() {
   local ticket_file="$1"
@@ -3661,7 +3067,6 @@ reset_todo_ticket_worktree_metadata() {
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" ""
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Verifier AI" ""
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Worktree" "- Path:
 - Branch:
@@ -4257,115 +3662,18 @@ done_ticket_path_for_ticket_file() {
   printf '%s/tickets_%s.md' "$(done_dir_for_project_key "$project_key")" "$ticket_id"
 }
 
-reject_ticket_path_for_ticket_file() {
-  local ticket_file="$1"
-  local ticket_id
-
-  ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/reject/reject_%s.md' "$BOARD_ROOT" "$ticket_id"
+# Fail flow no longer writes a separate ticket archive. The full ticket body
+# is embedded in tickets/inbox/order_<id>_retry_*.md and the inprogress file is
+# removed. These helpers stay only as no-op stubs for any straggler caller.
+failed_ticket_path_for_ticket_file() {
+  printf ''
 }
 
-done_reject_path_for_reject_file() {
-  local reject_file="$1"
-  local reject_id project_key
-
-  reject_id="$(extract_numeric_id "$reject_file")"
-  project_key="$(project_key_from_ticket_file "$reject_file")"
-  printf '%s/reject_%s.md' "$(done_dir_for_project_key "$project_key")" "$reject_id"
+failed_run_path_for_ticket_file() {
+  printf ''
 }
 
-archive_reject_file_to_done() {
-  local reject_file="$1"
-  local reject_id target_file target_run_file source_run_file timestamp timestamp_slug
 
-  [ -f "$reject_file" ] || return 1
-
-  reject_id="$(extract_numeric_id "$reject_file")"
-  target_file="$(done_reject_path_for_reject_file "$reject_file")"
-  source_run_file="${BOARD_ROOT}/tickets/reject/verify_${reject_id}.md"
-  target_run_file="$(done_run_path_for_ticket_file "$reject_file")"
-  timestamp="$(now_iso)"
-  timestamp_slug="$(printf '%s' "$timestamp" | tr -d ':-')"
-
-  mkdir -p "$(dirname "$target_file")"
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Stage" "replanned"
-  replace_scalar_field_in_section "$reject_file" "## Ticket" "Last Updated" "$timestamp"
-
-  if [ -f "$source_run_file" ]; then
-    mkdir -p "$(dirname "$target_run_file")"
-    replace_literal_in_file_runtime "$reject_file" "$(board_relative_path "$source_run_file")" "$(board_relative_path "$target_run_file")" || true
-    if [ "$source_run_file" != "$target_run_file" ]; then
-      if [ -f "$target_run_file" ]; then
-        if cmp -s "$source_run_file" "$target_run_file"; then
-          rm -f "$source_run_file"
-        else
-          target_run_file="${target_run_file%.md}.${timestamp_slug}.duplicate.md"
-          mv "$source_run_file" "$target_run_file"
-        fi
-      else
-        mv "$source_run_file" "$target_run_file"
-      fi
-    fi
-  fi
-
-  append_note "$reject_file" "Archived to done after planner created or found a retry candidate at ${timestamp}"
-
-  if [ "$reject_file" != "$target_file" ]; then
-    if [ -f "$target_file" ]; then
-      if cmp -s "$reject_file" "$target_file"; then
-        rm -f "$reject_file"
-      else
-        target_file="${target_file%.md}.${timestamp_slug}.duplicate.md"
-        mv "$reject_file" "$target_file"
-      fi
-    else
-      mv "$reject_file" "$target_file"
-    fi
-  fi
-
-  printf '%s' "$target_file"
-}
-
-archive_orphan_reject_runs() {
-  local run_file run_id project_key target_run_file timestamp_slug done_reject_file old_ref new_ref
-
-  [ -d "${BOARD_ROOT}/tickets/reject" ] || return 0
-
-  while IFS= read -r run_file; do
-    [ -n "$run_file" ] || continue
-    run_id="$(extract_numeric_id "$run_file")"
-
-    if [ -f "${BOARD_ROOT}/tickets/reject/reject_${run_id}.md" ] || [ -f "${BOARD_ROOT}/tickets/reject/tickets_${run_id}.md" ]; then
-      continue
-    fi
-
-    project_key="$(extract_scalar_field_in_section "$run_file" "Meta" "PRD Key")"
-    if [ -z "$project_key" ]; then
-      continue
-    fi
-
-    target_run_file="$(done_dir_for_project_key "$project_key")/verify_${run_id}.md"
-    mkdir -p "$(dirname "$target_run_file")"
-    if [ -f "$target_run_file" ]; then
-      if cmp -s "$run_file" "$target_run_file"; then
-        rm -f "$run_file"
-      else
-        timestamp_slug="$(printf '%s' "$(now_iso)" | tr -d ':-')"
-        target_run_file="${target_run_file%.md}.${timestamp_slug}.duplicate.md"
-        mv "$run_file" "$target_run_file"
-      fi
-    else
-      mv "$run_file" "$target_run_file"
-    fi
-    done_reject_file="$(done_dir_for_project_key "$project_key")/reject_${run_id}.md"
-    if [ -f "$done_reject_file" ]; then
-      old_ref="tickets/reject/verify_${run_id}.md"
-      new_ref="$(board_relative_path "$target_run_file")"
-      replace_literal_in_file_runtime "$done_reject_file" "$old_ref" "$new_ref" || true
-    fi
-    printf 'archived_orphan_reject_run=%s\n' "$target_run_file"
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/reject" 'verify_[0-9][0-9][0-9].md')
-}
 
 done_run_path_for_ticket_file() {
   local ticket_file="$1"
@@ -4376,14 +3684,6 @@ done_run_path_for_ticket_file() {
   printf '%s/verify_%s.md' "$(done_dir_for_project_key "$project_key")" "$ticket_id"
 }
 
-reject_run_path_for_ticket_file() {
-  local ticket_file="$1"
-  local ticket_id
-
-  ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/reject/verify_%s.md' "$BOARD_ROOT" "$ticket_id"
-}
-
 final_run_path_for_ticket_file() {
   local ticket_file="$1"
   local outcome="$2"
@@ -4391,9 +3691,6 @@ final_run_path_for_ticket_file() {
   case "$outcome" in
     pass)
       done_run_path_for_ticket_file "$ticket_file"
-      ;;
-    fail)
-      reject_run_path_for_ticket_file "$ticket_file"
       ;;
     *)
       pending_run_path "$(extract_numeric_id "$ticket_file")"
@@ -4481,24 +3778,6 @@ update_ticket_plan_source_refs() {
   done < <(list_ticket_record_files_under "${BOARD_ROOT}/tickets")
 }
 
-archive_replanned_rejects_for_plan() {
-  local plan_id="$1"
-  local reject_file target_file old_ref new_ref
-
-  while IFS= read -r reject_file; do
-    [ -n "$reject_file" ] || continue
-    if ! ticket_belongs_to_plan_id "$reject_file" "$plan_id"; then
-      continue
-    fi
-
-    old_ref="$(board_relative_path "$reject_file")"
-    target_file="$(archive_reject_file_to_done "$reject_file")"
-    new_ref="$(board_relative_path "$target_file")"
-
-    update_ticket_plan_source_refs "$plan_id" "$old_ref" "$new_ref"
-    printf 'archived_reject=%s\n' "$target_file"
-  done < <(list_reject_ticket_files)
-}
 
 archive_ticketed_plan_file() {
   local plan_file="$1"
@@ -4598,26 +3877,14 @@ ticket_exists_for_plan_candidate() {
 }
 
 ensure_runs_file() {
-  local ticket_id="$1"
-  local file
-  local template_file
-
-  file="$(pending_run_path "$ticket_id")"
-  if [ ! -f "$file" ]; then
-    mkdir -p "${BOARD_ROOT}/tickets/inprogress"
-    template_file="${BOARD_ROOT}/rules/verifier/verification-template.md"
-    if [ ! -f "$template_file" ]; then
-      template_file="${BOARD_ROOT}/verifier/templates/verification-template.md"
-    fi
-    if [ ! -f "$template_file" ]; then
-      template_file="${BOARD_ROOT}/runs/verification-template.md"
-    fi
-    cp "$template_file" "$file"
-    replace_scalar_field_in_section "$file" "## Meta" "Ticket ID" "$ticket_id"
-    replace_scalar_field_in_section "$file" "## Meta" "Target" "tickets_${ticket_id}.md"
-    replace_scalar_field_in_section "$file" "## Meta" "Status" "pending"
-  fi
-  printf '%s' "$file"
+  # Verification evidence now lives inside the ticket markdown's
+  # `## Verification` section (Result / Exit Code / Last Run). The legacy
+  # tickets/inprogress/verify_NNN.md sidecar has been removed entirely
+  # (refactor 2026-05-07). This helper is kept as a no-op so older callers
+  # that read its output continue to work without crashing — it just emits
+  # an empty path. Callers must guard with `[ -n "$run_file" ]` before any
+  # file-mutating operation.
+  return 0
 }
 
 count_execution_load_for_owner() {
@@ -4779,119 +4046,9 @@ release_wiki_baseline_lock() {
 # two attempts that fail for the same underlying reason produce the same
 # fingerprint even when their attempt metadata differs.
 
-compute_iteration_fingerprint() {
-  local ticket_path="$1"
-  local payload ticket_id failure_class evidence reject_reason last_history_reason
 
-  [ -f "$ticket_path" ] || return 1
 
-  ticket_id="$(awk -F': *' '/^- ID:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
-  failure_class="$(awk -F': *' '/^- Failure Class:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
-  evidence="$(awk -F': *' '/^- Evidence:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
 
-  reject_reason="$(awk '
-    /^## Reject Reason/ { in_section=1; next }
-    /^## / && in_section { in_section=0 }
-    in_section { print }
-  ' "$ticket_path" 2>/dev/null | tr -s '[:space:]' ' ' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)"
-
-  last_history_reason="$(awk '
-    /^## Reject History/ { in_section=1; next }
-    /^## / && in_section { in_section=0 }
-    in_section && /reason=/ {
-      sub(/^.*reason=/, "")
-      print
-    }
-  ' "$ticket_path" 2>/dev/null | tail -1 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' || true)"
-
-  payload="${ticket_id}|${failure_class}|${evidence}|${reject_reason}|${last_history_reason}"
-
-  if command -v shasum >/dev/null 2>&1; then
-    printf '%s' "$payload" | shasum -a 256 | awk '{ print substr($1, 1, 12) }'
-  elif command -v sha256sum >/dev/null 2>&1; then
-    printf '%s' "$payload" | sha256sum | awk '{ print substr($1, 1, 12) }'
-  else
-    return 1
-  fi
-}
-
-read_iteration_fingerprints() {
-  local ticket_path="$1"
-  local raw
-
-  [ -f "$ticket_path" ] || return 0
-
-  raw="$(awk -F': *' '/^- Iteration Fingerprints:/ { print $2; exit }' "$ticket_path" 2>/dev/null || true)"
-  raw="$(printf '%s' "$raw" | sed -e 's/^\[//' -e 's/\]$//')"
-
-  [ -n "$raw" ] || return 0
-
-  printf '%s' "$raw" | tr ',' '\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$' || true
-}
-
-append_iteration_fingerprint() {
-  local ticket_path="$1"
-  local new_fp="$2"
-  local existing latest joined tmp
-
-  [ -f "$ticket_path" ] || return 1
-  [ -n "$new_fp" ] || return 1
-
-  existing="$(read_iteration_fingerprints "$ticket_path")"
-  latest="$(printf '%s\n' "$existing" | tail -1)"
-
-  if [ "$latest" = "$new_fp" ]; then
-    return 0
-  fi
-
-  if [ -n "$existing" ]; then
-    joined="$(printf '%s\n%s' "$existing" "$new_fp" | paste -sd ',' -)"
-  else
-    joined="$new_fp"
-  fi
-
-  tmp="$(autoflow_mktemp)"
-  if grep -q '^- Iteration Fingerprints:' "$ticket_path"; then
-    awk -v list="$joined" '
-      /^- Iteration Fingerprints:/ { print "- Iteration Fingerprints: [" list "]"; next }
-      { print }
-    ' "$ticket_path" > "$tmp"
-  elif grep -q '^## Goal Runtime' "$ticket_path"; then
-    awk -v list="$joined" '
-      /^## Goal Runtime/ { in_section=1; print; next }
-      /^## / && in_section {
-        print "- Iteration Fingerprints: [" list "]"
-        in_section=0
-      }
-      { print }
-      END {
-        if (in_section) {
-          print "- Iteration Fingerprints: [" list "]"
-        }
-      }
-    ' "$ticket_path" > "$tmp"
-  else
-    cat "$ticket_path" > "$tmp"
-    {
-      printf '\n## Goal Runtime\n\n'
-      printf -- '- Iteration Fingerprints: [%s]\n' "$joined"
-    } >> "$tmp"
-  fi
-
-  mv "$tmp" "$ticket_path"
-}
-
-iteration_fingerprint_matches_latest() {
-  local ticket_path="$1"
-  local candidate_fp="$2"
-  local latest
-
-  [ -n "$candidate_fp" ] || return 1
-
-  latest="$(read_iteration_fingerprints "$ticket_path" | tail -1)"
-  [ -n "$latest" ] || return 1
-  [ "$latest" = "$candidate_fp" ]
-}
 
 # Look up the most recent archived reject for a given PRD key and return its
 # fingerprint, computed from the archived reject markdown. Used by the planner
@@ -4901,33 +4058,13 @@ iteration_fingerprint_matches_latest() {
 # timestamp suffix. Falls back to the bare `reject_NNN.md` (the very first
 # archive) only when no timestamped sibling exists, since `replan_reject_to_todo`
 # adds the timestamp suffix only on the second-and-later archive.
-latest_archived_reject_fingerprint() {
-  local prd_key="$1"
-  local exclude_path="${2:-}"
-  local archive_dir="${BOARD_ROOT}/tickets/done/${prd_key}"
-  local candidate
 
-  [ -n "$prd_key" ] || return 0
-  [ -d "$archive_dir" ] || return 0
-
-  candidate="$(
-    find "$archive_dir" -maxdepth 1 -type f -name 'reject_*.md' 2>/dev/null \
-      | awk -v ex="$exclude_path" '
-          $0 != ex {
-            base = $0
-            sub(/.*\//, "", base)
-            if (base ~ /^reject_[0-9]+\.[0-9]{8}T[0-9]{6}Z\.md$/) {
-              print "1\t" base "\t" $0
-            } else if (base ~ /^reject_[0-9]+\.md$/) {
-              print "0\t" base "\t" $0
-            }
-          }
-        ' \
-      | sort -k1,1r -k2,2r \
-      | head -1 \
-      | awk -F'\t' '{ print $3 }'
-  )"
-
-  [ -n "$candidate" ] || return 0
-  compute_iteration_fingerprint "$candidate"
-}
+# ── No-op stubs for legacy callers (refactor 2026-05-07) ──────────────
+# These helpers were stripped above; the call sites that survive sit
+# inside dead branches (single worker, no shared-path/dirty conflicts)
+# but bash still resolves the name. Stubs make the runtime safe.
+ticket_shared_allowed_path_blockers() { return 1; }
+ticket_shared_nonbase_head_blockers() { return 1; }
+mark_ticket_dirty_project_root_blocked() { return 0; }
+mark_ticket_shared_allowed_path_blocked() { return 0; }
+mark_ticket_shared_nonbase_head_blocked() { return 0; }

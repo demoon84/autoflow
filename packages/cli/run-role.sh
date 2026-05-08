@@ -17,10 +17,8 @@ usage() {
 Usage:
   run-role.sh planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Plan AI (3-runner default)
   run-role.sh ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]       # Impl AI (3-runner default)
-  run-role.sh monitor [project-root] [board-dir-name] [--runner runner-id] [--dry-run]      # Monitor AI
   run-role.sh wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # Wiki AI (3-runner default)
   run-role.sh todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]         # legacy role-pipeline
-  run-role.sh verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]     # legacy role-pipeline
   run-role.sh coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
   run-role.sh self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run] # trial (disabled by default)
 EOF
@@ -82,23 +80,11 @@ case "$requested_role" in
     default_runner_id="todo-1"
     runtime_script="start-todo.sh"
     ;;
-  verifier|veri)
-    public_role="verifier"
-    runtime_role="verifier"
-    default_runner_id="verifier-1"
-    runtime_script="start-verifier.sh"
-    ;;
   wiki|wiki-maintainer)
     public_role="wiki"
     runtime_role="wiki"
     default_runner_id="wiki"
     runtime_script=""
-    ;;
-  monitor|self-monitor|self_monitor)
-    public_role="monitor"
-    runtime_role="monitor"
-    default_runner_id="monitor"
-    runtime_script="start-monitor.sh"
     ;;
   coordinator|coord|doctor|diagnose)
     public_role="coordinator"
@@ -333,9 +319,6 @@ resolve_effective_reasoning_for_current_tick() {
         ticket_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/todo")"
         reasoning_actionable_count="$ticket_actionable_count"
       fi
-      ;;
-    verifier)
-      reasoning_actionable_count="$(run_role_count_markdown_files "${board_root}/tickets/verifier")"
       ;;
   esac
 
@@ -967,7 +950,6 @@ ticket_goal_active_ticket_file() {
     "${board_root}/tickets/inprogress/tickets_${id}.md" \
     "${board_root}/tickets/ready-to-merge/tickets_${id}.md" \
     "${board_root}/tickets/merge-blocked/tickets_${id}.md" \
-    "${board_root}/tickets/verifier/tickets_${id}.md" \
     "${board_root}/tickets/todo/tickets_${id}.md"; do
     [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
   done
@@ -1351,7 +1333,6 @@ runner_active_ticket_file_from_item() {
     "${board_root}/tickets/inprogress/${ticket_name}.md" \
     "${board_root}/tickets/ready-to-merge/${ticket_name}.md" \
     "${board_root}/tickets/merge-blocked/${ticket_name}.md" \
-    "${board_root}/tickets/verifier/${ticket_name}.md" \
     "${board_root}/tickets/todo/${ticket_name}.md" \
     "${board_root}/tickets/reject/${ticket_name}.md" \
     "${board_root}/tickets/done"/*/"${ticket_name}.md" \
@@ -1714,7 +1695,6 @@ planner_ticket_file_for_ticket_ref() {
     "${board_root}/tickets/inprogress/${ticket_ref}.md" \
     "${board_root}/tickets/ready-to-merge/${ticket_ref}.md" \
     "${board_root}/tickets/merge-blocked/${ticket_ref}.md" \
-    "${board_root}/tickets/verifier/${ticket_ref}.md" \
     "${board_root}/tickets/todo/${ticket_ref}.md" \
     "${board_root}/tickets/reject/${ticket_ref}.md" \
     "${board_root}/tickets/reject/reject_${ticket_num}.md"; do
@@ -1733,7 +1713,7 @@ planner_ticket_board_state() {
   local file="$1"
 
   case "$file" in
-    "${board_root}/tickets/inprogress/"*|"${board_root}/tickets/ready-to-merge/"*|"${board_root}/tickets/merge-blocked/"*|"${board_root}/tickets/verifier/"*|"${board_root}/tickets/todo/"*)
+    "${board_root}/tickets/inprogress/"*|"${board_root}/tickets/ready-to-merge/"*|"${board_root}/tickets/merge-blocked/"*|"${board_root}/tickets/todo/"*)
       printf 'active'
       ;;
     "${board_root}/tickets/reject/"*)
@@ -2128,10 +2108,7 @@ idle_preflight_inputs_hash_stream() {
       set -- tickets/inbox tickets/backlog tickets/reject tickets/plan plan
       ;;
     ticket)
-      set -- tickets/todo tickets/inprogress tickets/verifier
-      ;;
-    verifier)
-      set -- tickets/verifier
+      set -- tickets/todo tickets/inprogress
       ;;
     *)
       return 0
@@ -2260,9 +2237,6 @@ idle_preflight_skip_reason() {
     ticket)
       printf 'ticket_inputs_unchanged'
       ;;
-    verifier)
-      printf 'verifier_inputs_unchanged'
-      ;;
   esac
 }
 
@@ -2376,12 +2350,10 @@ maybe_skip_stale_planner_recovery_before_adapter() {
     "${board_root}/tickets/inprogress/"*|\
     "${board_root}/tickets/ready-to-merge/"*|\
     "${board_root}/tickets/merge-blocked/"*|\
-    "${board_root}/tickets/verifier/"*|\
     "${board_root}/tickets/todo/"*|\
     tickets/inprogress/*|\
     tickets/ready-to-merge/*|\
     tickets/merge-blocked/*|\
-    tickets/verifier/*|\
     tickets/todo/*)
       requested_is_active_queue="true"
       ;;
@@ -2468,12 +2440,10 @@ clear_finished_ticket_active_state_if_resolved() {
     "${board_root}/tickets/inprogress/"*|\
     "${board_root}/tickets/ready-to-merge/"*|\
     "${board_root}/tickets/merge-blocked/"*|\
-    "${board_root}/tickets/verifier/"*|\
     "${board_root}/tickets/todo/"*|\
     tickets/inprogress/*|\
     tickets/ready-to-merge/*|\
     tickets/merge-blocked/*|\
-    tickets/verifier/*|\
     tickets/todo/*|\
     tickets_[0-9]*)
       requested_is_active_queue="true"
@@ -2744,7 +2714,7 @@ maybe_skip_unchanged_idle_preflight() {
   [ "${mode:-}" = "loop" ] || return 1
   [ "$dry_run" = "false" ] || return 1
   case "$public_role:$preflight_status:$preflight_reason" in
-    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket|verifier:idle:no_unblocked_verification_ticket)
+    planner:idle:no_actionable_plan_input|ticket:idle:no_actionable_ticket)
       ;;
     *)
       return 1
@@ -3503,12 +3473,6 @@ agent_instruction_path() {
     todo)
       printf '%s/agents/todo-queue-agent.md' "$board_root"
       ;;
-    verifier)
-      printf '%s/agents/verifier-agent.md' "$board_root"
-      ;;
-    monitor)
-      printf '%s/agents/monitor-agent.md' "$board_root"
-      ;;
     wiki)
       printf '%s/agents/wiki-maintainer-agent.md' "$board_root"
       ;;
@@ -3525,16 +3489,13 @@ role_boundary_for_current_role() {
   # instruction file already see the full contract there.
   case "$public_role" in
     ticket)
-      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo/verifier runners. Never push."
+      printf '%s\n' "- ticket: own one ticket from local planning through implementation, verification, evidence logging, AI-led merge into PROJECT_ROOT, and done/reject movement. Do not split the work across planner/todo runners. Never push."
       ;;
     planner)
       printf '%s\n' "- planner: act as Planner AI. Promote quick orders into generated PRDs, create/update plans and todo tickets, and repair board markdown when owner work stalls or breaks. Query the wiki before order promotion, drafting, ticket generation, or recovery decisions. Do not implement product code, manage worktrees directly, manage runner or OS processes, verify, manually git commit, or push. The runner harness creates a scoped local commit for planner-owned board changes after a successful turn."
       ;;
     todo)
-      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths, then hand off to verifier when done. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
-      ;;
-    verifier)
-      printf '%s\n' "- verifier (legacy): verify one verifier ticket, record pass/fail evidence, move it to done or reject, and local commit only on pass. Never push. Not part of the default 3-runner topology — Impl AI runs AI-led verification inline."
+      printf '%s\n' "- todo (legacy): claim/resume one todo ticket, query the wiki before implementation, implement within Allowed Paths. Do not verify, commit, or push. Not part of the default 3-runner topology — Impl AI claims todo directly."
       ;;
     wiki)
       printf '%s\n' "- wiki: inspect done tickets, reject records, logs, and existing managed sections, then update derived wiki pages only when content actually changes. In the 3-runner topology this is \`wiki\`'s exclusive responsibility: Impl AI finalizers do not call \`update-wiki.sh\` or stage \`.autoflow/wiki/\`. Check-only state belongs in \`runners/state/wiki-baseline.history\`. Do not manually git commit; the runner harness creates a scoped local commit for wiki-owned content after a successful turn. Never treat the wiki as proof of completion."
@@ -3700,9 +3661,6 @@ role_prompt_byte_cap_value() {
     ticket)
       value="${AUTOFLOW_WORKER_PROMPT_BYTES:-98304}"
       ;;
-    verifier)
-      value="${AUTOFLOW_VERIFIER_PROMPT_BYTES:-32768}"
-      ;;
     *)
       value=""
       ;;
@@ -3726,9 +3684,6 @@ role_prompt_byte_cap_env_name() {
     ticket)
       printf 'AUTOFLOW_WORKER_PROMPT_BYTES'
       ;;
-    verifier)
-      printf 'AUTOFLOW_VERIFIER_PROMPT_BYTES'
-      ;;
     *)
       printf ''
       ;;
@@ -3746,10 +3701,6 @@ role_output_token_cap_value() {
     ticket)
       env_name="AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS"
       default_value=16000
-      ;;
-    verifier)
-      env_name="AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS"
-      default_value=4000
       ;;
     wiki)
       env_name="AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS"
@@ -3777,9 +3728,6 @@ role_output_token_cap_env_name() {
       ;;
     ticket)
       printf 'AUTOFLOW_WORKER_MAX_OUTPUT_TOKENS'
-      ;;
-    verifier)
-      printf 'AUTOFLOW_VERIFIER_MAX_OUTPUT_TOKENS'
       ;;
     wiki)
       printf 'AUTOFLOW_WIKI_MAX_OUTPUT_TOKENS'
@@ -5444,7 +5392,7 @@ agent_runtime_preflight_or_exit() {
   local active_recovery_worktree_path active_recovery_worktree_status active_recovery_board_state
 
   case "$public_role" in
-    ticket|planner|verifier)
+    ticket|planner)
       ;;
     *)
       return 0
@@ -5645,28 +5593,16 @@ if ! runner_validate_id "$runner_id"; then
   exit 0
 fi
 
-runner_config_missing="false"
 if ! runner_config_block "$runner_id" "$config_path" >/dev/null 2>&1; then
-  if [ "$public_role" = "monitor" ] && [ "$runner_id" = "monitor" ]; then
-    runner_config_missing="true"
-  else
-    print_run_header "blocked"
-    printf 'reason=runner_not_found\n'
-    exit 0
-  fi
+  print_run_header "blocked"
+  printf 'reason=runner_not_found\n'
+  exit 0
 fi
 
-if [ "$runner_config_missing" = "true" ]; then
-  configured_role="monitor"
-  agent="manual"
-  model=""
-  reasoning=""
-else
-  configured_role="$(runner_field "role")"
-  agent="$(runner_field "agent")"
-  model="$(runner_field "model")"
-  reasoning="$(runner_field "reasoning")"
-fi
+configured_role="$(runner_field "role")"
+agent="$(runner_field "agent")"
+model="$(runner_field "model")"
+reasoning="$(runner_field "reasoning")"
 configured_reasoning="$reasoning"
 effective_reasoning="$reasoning"
 reasoning_complexity="configured"
@@ -5675,19 +5611,11 @@ reasoning_supported="false"
 reasoning_dynamic_enabled="false"
 reasoning_actionable_count="0"
 reasoning_reject_count="0"
-if [ "$runner_config_missing" = "true" ]; then
-  mode="one-shot"
-  enabled="true"
-  interval_seconds="60"
-  realtime_enabled="false"
-  command_value=""
-else
-  mode="$(runner_field "mode")"
-  enabled="$(runner_field "enabled")"
-  interval_seconds="$(runner_field "interval_seconds")"
-  realtime_enabled="$(runner_field "realtime_enabled")"
-  command_value="$(runner_field "command")"
-fi
+mode="$(runner_field "mode")"
+enabled="$(runner_field "enabled")"
+interval_seconds="$(runner_field "interval_seconds")"
+realtime_enabled="$(runner_field "realtime_enabled")"
+command_value="$(runner_field "command")"
 
 [ -n "$agent" ] || agent="manual"
 [ -n "$mode" ] || mode="one-shot"
@@ -5720,7 +5648,7 @@ if [ "$mode" = "watch" ] && [ "${AUTOFLOW_RUNNER_ALLOW_NON_ONESHOT:-}" != "1" ] 
 fi
 
 case "$public_role:$configured_role" in
-  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|monitor:monitor|monitor:self-monitor|monitor:self_monitor|todo:todo|verifier:verifier|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
+  ticket:ticket-owner|ticket:owner|planner:planner|planner:plan|todo:todo|wiki:wiki-maintainer|wiki:wiki|wiki:coordinator|wiki:coord|wiki:doctor|wiki:diagnose|coordinator:coordinator|coordinator:coord|coordinator:doctor|coordinator:diagnose|self-improve:self-improve|self-improve:self_improve|self-improve:selfimprove)
     ;;
   *)
     write_blocked_state "runner_role_mismatch"
@@ -5965,9 +5893,7 @@ case "$agent" in
         "reasoning_actionable_count=${reasoning_actionable_count}" \
         "reasoning_reject_count=${reasoning_reject_count}"
 
-      dry_run_status="dry_run"
-      [ "$public_role" = "monitor" ] && dry_run_status="ok"
-      print_run_header "$dry_run_status"
+      print_run_header "dry_run"
       printf 'dry_run=true\n'
       printf 'runner_status=idle\n'
       printf 'adapter=%s\n' "$agent"
@@ -6287,9 +6213,7 @@ if [ "$dry_run" = "true" ]; then
   dry_run_output="$(mktemp "${TMPDIR:-/tmp}/autoflow-run-dry-run.XXXXXX")"
 
   {
-    dry_run_status="dry_run"
-    [ "$public_role" = "monitor" ] && dry_run_status="ok"
-    print_run_header "$dry_run_status"
+    print_run_header "dry_run"
     printf 'dry_run=true\n'
     printf 'runner_status=idle\n'
     printf 'runtime_script=%s\n' "$runtime_path"

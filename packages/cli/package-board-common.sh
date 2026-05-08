@@ -195,12 +195,10 @@ template_text|agents/adapters/opencode.md|agents/adapters/opencode.md
 template_text|agents/adapters/gemini-cli.md|agents/adapters/gemini-cli.md
 template_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 template_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
-template_text|agents/verifier-agent.md|agents/verifier-agent.md
 template_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 template_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
 template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
-template_text|agents/monitor-agent.md|agents/monitor-agent.md
 template_text|protocols/board-orchestration.md|protocols/board-orchestration.md
 template_text|protocols/owner-contract.md|protocols/owner-contract.md
 template_text|protocols/recovery.md|protocols/recovery.md
@@ -212,7 +210,6 @@ template_text|automations/templates/heartbeat-set.template.toml|automations/temp
 template_text|automations/templates/ticket-owner-heartbeat.template.toml|automations/templates/ticket-owner-heartbeat.template.toml
 template_text|automations/templates/plan-heartbeat.template.toml|automations/templates/plan-heartbeat.template.toml
 template_text|automations/templates/todo-heartbeat.template.toml|automations/templates/todo-heartbeat.template.toml
-template_text|automations/templates/verifier-heartbeat.template.toml|automations/templates/verifier-heartbeat.template.toml
 template_text|rules/README.md|rules/README.md
 template_text|rules/wiki/README.md|rules/wiki/README.md
 template_text|rules/wiki/page-template.md|rules/wiki/page-template.md
@@ -265,17 +262,11 @@ runtime_executable|finish-ticket-owner.sh|scripts/finish-ticket-owner.sh
 runtime_executable|merge-ready-ticket.sh|scripts/merge-ready-ticket.sh
 runtime_executable|update-wiki.sh|scripts/update-wiki.sh
 runtime_executable|start-plan.sh|scripts/start-plan.sh
-runtime_executable|start-monitor.sh|scripts/start-monitor.sh
 runtime_executable|start-todo.sh|scripts/start-todo.sh
 runtime_executable|handoff-todo.sh|scripts/handoff-todo.sh
-runtime_executable|start-verifier.sh|scripts/start-verifier.sh
 runtime_executable|start-spec.sh|scripts/start-spec.sh
 runtime_executable|integrate-worktree.sh|scripts/integrate-worktree.sh
 runtime_executable|watch-board.sh|scripts/watch-board.sh
-template_text|rules/verifier/README.md|rules/verifier/README.md
-template_text|rules/verifier/checklist-template.md|rules/verifier/checklist-template.md
-template_text|rules/verifier/verification-template.md|rules/verifier/verification-template.md
-runtime_executable|write-verifier-log.sh|scripts/write-verifier-log.sh
 EOF
 }
 
@@ -291,7 +282,6 @@ automations/templates
 conversations
 reference
 rules
-rules/verifier
 rules/wiki
 scripts
 runners

@@ -332,7 +332,7 @@ Bash/macOS/Linux 에서 file-watch hook 루프를 직접 돌릴 때는 아래를
 - 생성된 로컬 보드는 작업 보드 흐름을 제공한다.
 - 새 보드는 `runners/`, `wiki/`, `metrics/`, `conversations/`, `agents/adapters/`, `rules/wiki/` scaffold 를 포함한다. 이 단계의 scaffold 는 실행 원장이 아니라 local runner harness 와 coordinator 기반 wiki-bot 을 위한 계약면이다.
 - `autoflow run` 과 Desktop Flow Viewer 의 runner controls 는 기본적으로 `ticket-owner` runner 를 실행해 한 LLM 이 local planning, 구현, 검증, evidence 기록까지 이어서 맡게 한다. `planner/todo/verifier` runtime 은 role-pipeline 호환 경로로 남아 있다.
-- `ticket-owner` 시작 런타임은 `tickets/reject/` 도 함께 살펴보고, `AUTOFLOW_REJECT_AUTO_REPLAN=off` 가 아니면 반려 티켓을 최대 `AUTOFLOW_REJECT_MAX_RETRIES` 회까지 자동으로 `todo` 로 되돌린다.
+- 워커가 fail 을 호출하면 ticket 본문이 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 에 embed 되고 inprogress ticket 은 삭제된다. planner 가 다음 tick 에 retry order 를 일반 order 처럼 재계획한다 (`AUTOFLOW_INBOX_RETRY_MAX_FINGERPRINT` 회 누적 시 needs_user 로 park).
 
 권장 시작 순서는 아래와 같다.
 

@@ -84,8 +84,6 @@ type AutoflowMetricSnapshot = {
   ticket_done_count: number;
   active_ticket_count: number;
   reject_count: number;
-  verifier_pass_count: number;
-  verifier_fail_count: number;
   handoff_count: number;
   runner_total_count: number;
   runner_running_count: number;
@@ -105,7 +103,6 @@ type AutoflowMetricSnapshot = {
   autoflow_code_volume_count: number;
   autoflow_token_usage_count: number;
   autoflow_token_report_count: number;
-  verification_pass_rate_percent: number;
   completion_rate_percent: number;
 };
 
