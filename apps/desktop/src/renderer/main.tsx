@@ -22,7 +22,6 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Settings2,
   ShieldCheck,
   Sparkles,
   Square,
@@ -91,7 +90,7 @@ function AlertBox({
   );
 }
 
-const ticketFolders = ["backlog", "inbox", "todo", "inprogress", "done", "reject"] as const;
+const ticketFolders = ["backlog", "inbox", "todo", "inprogress", "done"] as const;
 
 function DesktopGlobalLoading({
   open,
@@ -150,13 +149,6 @@ const plannerFlowStages = [
   { key: "planning", label: "계획", meta: "PRD 분해 / 재계획", icon: ClipboardList, tone: "flow-plan" },
   { key: "done", label: "완료", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" },
   { key: "blocked", label: "정체", meta: "PRD 누락 등", icon: TriangleAlert, tone: "flow-reject" }
-] as const;
-
-const verifierFlowStages = [
-  { key: "idle", label: "대기", meta: "verifier 큐 감시", icon: Layers3, tone: "flow-todo" },
-  { key: "verifying", label: "검증", meta: "수락 기준 점검", icon: ShieldCheck, tone: "flow-inprogress" },
-  { key: "done", label: "통과", meta: "done 으로 이동", icon: CheckCircle2, tone: "flow-done" },
-  { key: "reject", label: "반려", meta: "reject 사유 기록", icon: TriangleAlert, tone: "flow-reject" }
 ] as const;
 
 type FlowStageDef = {
@@ -593,7 +585,6 @@ const statusLabels: Record<string, string> = {
   error: "오류",
   planning: "계획 중",
   executing: "구현 중",
-  verifying: "검증 중",
   done: "완료",
   rejected: "반려",
   disabled: "꺼짐",
@@ -612,18 +603,15 @@ const statusLabels: Record<string, string> = {
   false: "중지"
 };
 
-// Default topology is Plan AI + Impl AI. Legacy role labels are kept so older
-// boards with coordinator / wiki-maintainer / merge / verifier runners still
-// render readable names.
+// Default topology is Planner AI + Impl AI + Wiki AI. Legacy role labels are
+// kept so older boards with coordinator / merge runners still render readable
+// names.
 const runnerRoleLabels: Record<string, string> = {
   "ticket-owner": "Impl AI",
   owner: "Impl AI",
   ticket: "Impl AI",
   planner: "Planner",
   plan: "Planner",
-  monitor: "모니터",
-  "self-monitor": "모니터",
-  self_monitor: "모니터",
   "wiki-maintainer": "Wiki AI",
   wiki: "Wiki AI",
   coordinator: "coordinator (legacy)",
@@ -631,8 +619,6 @@ const runnerRoleLabels: Record<string, string> = {
   doctor: "coordinator (legacy)",
   diagnose: "coordinator (legacy)",
   todo: "작업자 (legacy)",
-  verifier: "검증",
-  veri: "검증",
   watcher: "감시기",
   runner: "AI"
 };
@@ -754,10 +740,6 @@ function runnerConfigApplyTimeoutMs(runner: AutoflowRunner) {
 function runRoleForRunner(role: string) {
   if (role === "ticket-owner" || role === "owner") {
     return "ticket";
-  }
-
-  if (role === "self-monitor" || role === "self_monitor") {
-    return "monitor";
   }
 
   if (role === "wiki-maintainer") {
@@ -1122,16 +1104,15 @@ function runnerHealthToastKey(runners: AutoflowRunner[]) {
 }
 
 function runnerHealthToastMessage(unhealthy: AutoflowRunner[], allRunners: AutoflowRunner[]) {
+  // Single-flow design: every worker fail routes through inbox retry orders,
+  // so raw failure_class / recovery_status / last_result are noise here. We
+  // only surface the runner display name and its top-level stateStatus
+  // (running / idle / blocked / failed) — actionable retry context lives in
+  // the inbox retry order itself.
   const preview = unhealthy.slice(0, 3).map((runner) => {
     const display = displayWorkflowRunnerId(runner.id, allRunners);
-    const parts = [
-      runner.stateStatus,
-      runner.activeStage,
-      runner.activeRecoveryStatus ? `복구: ${runner.activeRecoveryStatus}` : "",
-      runner.activeRecoveryFailureClass ? `원인: ${runner.activeRecoveryFailureClass}` : "",
-      runner.lastResult ? `결과: ${runner.lastResult}` : "",
-    ].filter(Boolean);
-    return parts.length ? `${display} — ${parts.join(" · ")}` : display;
+    const status = runner.stateStatus ? displayStatus(runner.stateStatus) : "";
+    return status ? `${display} — ${status}` : display;
   });
   const suffix = unhealthy.length > preview.length ? ` 외 ${unhealthy.length - preview.length}개` : "";
   return `런너 점검 필요 (${unhealthy.length}): ${preview.join(" / ")}${suffix}`;
@@ -3141,26 +3122,6 @@ function RunnerConfigControls({
           </>
         )}
       </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        className="runner-save-button"
-        aria-label={`${runner.id} 저장하고 재시작`}
-        disabled={!canEditConfig || !hasDraftChanges || Boolean(actionKey)}
-        onClick={() => {
-          onSelectRunner(runner.id);
-          onConfigure(runner, true);
-        }}
-      >
-        {isApplyingConfig && actionKey === "config_applying_restart" ? (
-          <>
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>적용 대기...</span>
-          </>
-        ) : (
-          <span>저장하고 재시작</span>
-        )}
-      </Button>
     </div>
   );
 }
@@ -3698,7 +3659,6 @@ function SnapshotGrid({
     ["버전", statusValue(status, "board_version", "-")],
     ["상태", displayStatus(statusValue(doctor, "status", board?.exists ? "unknown" : "-"))],
     ["완료율", `${statusValue(metrics, "completion_rate_percent", "0.0")}%`],
-    ["통과율", `${statusValue(metrics, "verification_pass_rate_percent", "0.0")}%`],
     ["티켓 파일", statusValue(metrics, "ticket_total", String(ticketTotal))],
     [
       "산출물",
@@ -3766,8 +3726,6 @@ function currentMetricSnapshot(
     ticket_done_count: statusNumber(metrics, "ticket_done_count"),
     active_ticket_count: statusNumber(metrics, "active_ticket_count"),
     reject_count: statusNumber(metrics, "reject_count"),
-    verifier_pass_count: statusNumber(metrics, "verifier_pass_count"),
-    verifier_fail_count: statusNumber(metrics, "verifier_fail_count"),
     handoff_count: statusNumber(metrics, "handoff_count", board.conversationFiles?.length || 0),
     runner_total_count: statusNumber(metrics, "runner_total_count", board.runners?.length || 0),
     runner_running_count: statusNumber(metrics, "runner_running_count"),
@@ -3787,7 +3745,11 @@ function currentMetricSnapshot(
     autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
     autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
     autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
-    verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent"),
+    ...{
+      verifier_pass_count: statusNumber(metrics, "verifier_pass_count"),
+      verifier_fail_count: statusNumber(metrics, "verifier_fail_count"),
+      verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent")
+    },
     completion_rate_percent: statusNumber(metrics, "completion_rate_percent")
   };
 }
@@ -4093,15 +4055,10 @@ function ReportingDashboard({
   const todoCount = statusNumber(metrics, "ticket_todo_count", board?.tickets.todo?.length || 0);
   const inprogressCount = statusNumber(metrics, "ticket_inprogress_count", board?.tickets.inprogress?.length || 0);
   const planningCount = statusNumber(metrics, "ticket_planning_count");
-  const verifierCount = statusNumber(metrics, "ticket_verifier_count", board?.tickets.verifier?.length || 0);
   const rejectCount = statusNumber(metrics, "reject_count", board?.tickets.reject?.length || 0);
-  const activeCount = statusNumber(metrics, "active_ticket_count", todoCount + inprogressCount + verifierCount);
+  const activeCount = statusNumber(metrics, "active_ticket_count", todoCount + inprogressCount);
   const specTotal = statusNumber(metrics, "spec_total", board?.tickets.backlog?.length || 0);
   const handoffCount = statusNumber(metrics, "handoff_count", board?.conversationFiles?.length || 0);
-  const passCount = statusNumber(metrics, "verifier_pass_count");
-  const failCount = statusNumber(metrics, "verifier_fail_count");
-  const verifierTotal = statusNumber(metrics, "verifier_total", passCount + failCount);
-  const passRate = statusNumber(metrics, "verification_pass_rate_percent");
   const completionRate = statusNumber(metrics, "completion_rate_percent");
   const artifactOk = statusNumber(metrics, "runner_artifact_ok_count");
   const artifactWarning = statusNumber(metrics, "runner_artifact_warning_count");
@@ -4119,9 +4076,6 @@ function ReportingDashboard({
   const runnerIdle = statusNumber(metrics, "runner_idle_count");
   const runnerStopped = statusNumber(metrics, "runner_stopped_count");
   const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
-  const monitorSignalCount = ((board as AutoflowBoardSnapshot & { monitorSignals?: AutoflowFilePreview[] })?.monitorSignals || []).length;
-  const monitorRunner = (board?.runners || []).find((runner) => (runner.role || "").toLowerCase() === "monitor");
-  const monitorRunnerStatus = monitorRunner ? displayStatus(monitorRunner.stateStatus || monitorRunner.lastResult || "idle") : "설정 없음";
   const snapshots = reportingHistory(board, ticketTotal, lastUpdated);
   const runnerNeedsUser = (board?.runners || []).filter((runner) => {
     const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
@@ -4130,20 +4084,14 @@ function ReportingDashboard({
   }).length;
   const mergeBlockedCount = board?.tickets["merge-blocked"]?.length || 0;
   const blockedSignalCount = rejectCount + runnerBlocked + runnerNeedsUser + mergeBlockedCount;
-  const hasVerificationData = verifierTotal > 0;
   const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
   const hasCodeImpactData = codeVolumeCount > 0 || codeFilesChangedCount > 0;
   const trendMeta = snapshots.length > 1 ? "이번 7일" : snapshots.length === 1 ? "최근 스냅샷" : "전체 누적";
   const ticketStateData: ReportDatum[] = [
     { label: "대기", value: todoCount, color: reportColors.blue },
     { label: "실행", value: inprogressCount + planningCount, color: reportColors.teal },
-    { label: "검증", value: verifierCount, color: reportColors.violet },
     { label: "완료", value: doneCount, color: reportColors.green },
     { label: "반려", value: rejectCount, color: reportColors.red }
-  ];
-  const verifierData: ReportDatum[] = [
-    { label: "통과", value: passCount, color: reportColors.green },
-    { label: "실패", value: failCount, color: reportColors.red }
   ];
   const runnerData: ReportDatum[] = [
     { label: "실행 중", value: runnerRunning, color: reportColors.teal },
@@ -4179,12 +4127,6 @@ function ReportingDashboard({
       value: `${formatCompactCount(artifactTotal)}개`,
       detail: `${formatCount(artifactOk)} 정상 / ${formatCount(artifactWarning)} 주의`,
       title: `러너 산출물 ${formatCount(artifactTotal)}개, 정상 ${formatCount(artifactOk)}개, 주의 ${formatCount(artifactWarning)}개`
-    },
-    {
-      label: "모니터 신호",
-      value: `${formatCompactCount(monitorSignalCount)}건`,
-      detail: monitorRunner ? monitorRunnerStatus : "monitor runner 없음",
-      title: `최근 monitor order/check ${formatCount(monitorSignalCount)}건, monitor runner 상태 ${monitorRunnerStatus}`
     }
   ];
 
@@ -4198,18 +4140,6 @@ function ReportingDashboard({
           icon={CheckCircle2}
           tone="report-tone-green"
           title={`완료 티켓 ${formatCount(doneCount)}개, 완료율 ${formatPercentValue(completionRate)}, 전체 누적`}
-        />
-        <ReportMetricCard
-          label="검증 통과율"
-          value={hasVerificationData ? formatPercentValue(passRate) : "0.0%"}
-          detail={
-            hasVerificationData
-              ? `${formatCount(passCount)}개 통과 / ${formatCount(failCount)}개 실패`
-              : "검증이 완료되면 채워집니다"
-          }
-          icon={ShieldCheck}
-          tone="report-tone-violet"
-          title={`검증 통과율 ${formatPercentValue(passRate)}, 통과 ${formatCount(passCount)}개, 실패 ${formatCount(failCount)}개`}
         />
         <ReportMetricCard
           label="막힌 항목"
@@ -4246,19 +4176,6 @@ function ReportingDashboard({
           meta={`${formatCount(activeCount)}개 활성 / ${formatCount(ticketTotal)}개 전체`}
         >
           <ReportBarBreakdown data={ticketStateData} />
-        </ReportChartCard>
-
-        <ReportChartCard
-          label="검증 결과"
-          icon={PieChart}
-          title="검증 결과"
-          meta={hasVerificationData ? `${formatPercentValue(passRate)} 통과율` : "검증이 완료되면 채워집니다"}
-        >
-          {hasVerificationData ? (
-            <ReportDonutChart data={verifierData} centerValue={`${formatCompactCount(verifierTotal)}개`} centerLabel="검증" />
-          ) : (
-            <ReportFallback>검증이 완료되면 채워집니다</ReportFallback>
-          )}
         </ReportChartCard>
 
         <ReportChartCard
@@ -4446,9 +4363,6 @@ function MetricsHistory({
 function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
   const status = board?.status || {};
   const metrics = board?.metrics || {};
-  const passRate = statusValue(metrics, "verification_pass_rate_percent", "0.0");
-  const passCount = statusValue(metrics, "verifier_pass_count", "0");
-  const verifierTotal = statusValue(metrics, "verifier_total", "0");
   const handoffCount = statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0));
   const runnerRunningCount = statusValue(metrics, "runner_running_count", "0");
   const runnerTotalCount = statusValue(metrics, "runner_total_count", String(board?.runners?.length || 0));
@@ -4480,13 +4394,6 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
       detail: `계획 ${planningCount}개 / AI ${runnerRunningCount}/${runnerEnabledCount}`,
       icon: Activity,
       tone: "metric-teal"
-    },
-    {
-      label: "통과율",
-      value: `${passRate}%`,
-      detail: `${passCount}/${verifierTotal}`,
-      icon: ShieldCheck,
-      tone: "metric-violet"
     },
     {
       label: "완료",
@@ -4522,7 +4429,7 @@ type WorkflowFileEntry = AutoflowFilePreview & {
 };
 
 type TicketWorkspaceTabKey = "prd" | "inbox" | "issued";
-type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "verifier" | "done" | "reject";
+type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done" | "reject";
 type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
 type TicketKanbanFolderKey = string;
 type TicketPriority = "critical" | "high" | "normal" | "low";
@@ -4548,7 +4455,7 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketKanbanFolderOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject"] as const;
+const ticketKanbanFolderOrder = ["backlog", "inbox", "todo", "inprogress", "done"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
@@ -4760,9 +4667,6 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   if (normalized.includes("/tickets/merge-blocked/")) {
     return "merge-blocked";
   }
-  if (normalized.includes("/tickets/verifier/")) {
-    return "verifier";
-  }
   if (normalized.includes("/tickets/done/")) {
     return "done";
   }
@@ -4797,7 +4701,6 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
 
   const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "order" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
     todo: "발급됨",
-    verifier: "검증",
     done: "완료",
     reject: "반려"
   };
@@ -4809,7 +4712,7 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
     return "destructive" as const;
   }
 
-  if (statusKey === "inprogress" || statusKey === "ready-to-merge" || statusKey === "verifier" || statusKey === "done") {
+  if (statusKey === "inprogress" || statusKey === "ready-to-merge" || statusKey === "done") {
     return "default" as const;
   }
 
@@ -5873,9 +5776,6 @@ function TicketBoard({
   const runners = sortProgressBoardRunners(
     (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve")
   );
-  const rejectFiles = (board?.tickets.reject || [])
-    .filter((file) => (file?.name || "").startsWith("reject_"))
-    .map((file) => ({ ...file, stateLabel: "반려", stateTone: "destructive" } as WorkflowFileEntry));
   const backlogSpecs = (board?.tickets.backlog || [])
     .filter((file) => {
       const name = file?.name || "";
@@ -5939,18 +5839,14 @@ function TicketBoard({
   const todoFiles: WorkflowFileEntry[] = Array.from(todoFilesById.values()).sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
-  const monitorSignalFiles = (((board as AutoflowBoardSnapshot & { monitorSignals?: AutoflowFilePreview[] })?.monitorSignals || [])
-    .map((file) => ({ ...file, stateLabel: "모니터", stateTone: "neutral" } as WorkflowFileEntry))
-    .sort((a, b) => String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))));
   const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
   const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length}/${todoFiles.length})`;
-  const monitorPinTitle = `MONITOR (${monitorSignalFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
 
-  const hasHeader = Boolean(hasWorkflowPins || rejectFiles.length || monitorSignalFiles.length);
+  const hasHeader = Boolean(hasWorkflowPins);
 
   return (
     <PageLayout
@@ -5994,28 +5890,6 @@ function TicketBoard({
                 layerHelpText="아직 시작되지 않은 TODO 티켓 목록입니다. 항목을 클릭하면 티켓 본문이 이 화면에서 열립니다."
                 emptyText="아직 발급된 TODO 티켓이 없습니다."
                 showWhenEmpty
-              />
-            ) : null}
-            {monitorSignalFiles.length ? (
-              <WorkflowPinLayer
-                files={monitorSignalFiles}
-                options={options}
-                pinTitle={monitorPinTitle}
-                pinIcon={<Activity className="h-4 w-4" aria-hidden="true" />}
-                variant="default"
-                layerHeading="최근 모니터 신호"
-                layerHelpText="monitor runner가 자동 발행한 order/check evidence입니다. 항목을 클릭하면 본문이 이 화면에서 열립니다."
-              />
-            ) : null}
-            {rejectFiles.length ? (
-              <WorkflowPinLayer
-                files={rejectFiles}
-                options={options}
-                pinTitle={`반려 ${rejectFiles.length}건 보류`}
-                pinIcon={<TriangleAlert className="h-4 w-4" aria-hidden="true" />}
-                variant="destructive"
-                layerHeading={`반려 ${rejectFiles.length}건 보류 중`}
-                layerHelpText="AI 는 반려 티켓을 자동 재시도 상한까지 다시 todo 로 되돌릴 수 있습니다. 항목을 클릭하면 reject 본문이 이 화면에서 열립니다."
               />
             ) : null}
           </div>
@@ -6128,9 +6002,7 @@ function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
   const role = (runner.role || "").toLowerCase();
   if (role === "merge-bot" || role === "merge") return mergeBotFlowStages;
   if (role.includes("wiki")) return wikiBotFlowStages;
-  if (role === "monitor" || role === "self-monitor" || role === "self_monitor") return verifierFlowStages;
   if (role === "planner" || role === "plan") return plannerFlowStages;
-  if (role === "verifier" || role === "veri") return verifierFlowStages;
   return ownerFlowStages;
 }
 
@@ -6181,15 +6053,6 @@ function runnerStageKey(runner: AutoflowRunner): string {
     return "idle";
   }
 
-  if (role === "verifier" || role === "veri") {
-    if (isFailLike) return "reject";
-    if (/^(reject|rejected|fail|failed)$/.test(activeStage)) return "reject";
-    if (/^(pass|done|complete|completed)$/.test(activeStage)) return "done";
-    if (status === "running" && (hasActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "verifying";
-    if (hasActiveTicket) return "verifying";
-    return "idle";
-  }
-
   if (isFailLike) return "reject";
 
   if (/\bcommitted_via_inline_merge\b|event=adapter_finish.*status=ok/.test(stateText)) return "done";
@@ -6197,7 +6060,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   if (hasActiveTicket) {
     if (/^(done|pass|complete|completed|committed_via_inline_merge)$/.test(activeStage)) return "done";
     if (/^(blocked|merge_blocked|merge-blocked|rejected|reject)$/.test(activeStage)) return "reject";
-    if (/^(executing|claimed|inprogress|verifying|verifier|ready_for_verification|ready_to_merge|ready-to-merge|review|merging)$/.test(activeStage)) {
+    if (/^(executing|claimed|inprogress|ready_to_merge|ready-to-merge|review|merging)$/.test(activeStage)) {
       return "inprogress";
     }
     return "inprogress";
@@ -6285,11 +6148,9 @@ function runnerDelayStage(runner: AutoflowRunner): RunnerDelayStage | null {
 }
 
 function runnerProgressDetail(runner: AutoflowRunner) {
-  if (runner.activeRecoveryReason) {
-    const failureClass = runner.activeRecoveryFailureClass ? ` · ${runner.activeRecoveryFailureClass}` : "";
-    return `복구: ${displayStatus(runner.activeRecoveryReason)}${failureClass}`;
-  }
-
+  // Recovery reason / failure_class strings (e.g. "recovery_state_blocked",
+  // "dirty_root") are no longer surfaced — single-flow fail handling routes
+  // every blocker to inbox retry, so users only need the active title.
   if (runner.activeTicketTitle) {
     return runner.activeTicketTitle;
   }
@@ -6367,8 +6228,6 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "LLM위키" : "LLM위키-1";
   if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "LLM위키-");
   if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "LLM위키-");
-  if (value === "monitor") return "모니터";
-  if (/^monitor-\d+$/.test(value)) return value.replace(/^monitor-/, "모니터-");
   if (value === "coordinator-1") return "coordinator";
   return value;
 }
@@ -6386,9 +6245,7 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "Planner";
   if (role === "ticket-owner" || role === "owner") return "워커";
-  if (role === "monitor" || role === "self-monitor" || role === "self_monitor") return "모니터";
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM위키";
-  if (role === "verifier" || role === "veri") return "검증";
 
   const metaLabel = displayWorkflowRunnerId(runner.id);
   const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
@@ -6400,10 +6257,8 @@ function progressBoardRunnerOrder(runner: AutoflowRunner) {
   const idRole = canonicalWorkflowRunnerRole(runner.id);
   if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
   if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 1;
-  if (["monitor", "self-monitor", "self_monitor"].includes(role)) return 2;
-  if (["verifier", "verification", "veri"].includes(role)) return 3;
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 4;
-  return 5;
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 2;
+  return 3;
 }
 
 function sortProgressBoardRunners(runners: AutoflowRunner[]) {
@@ -6545,15 +6400,12 @@ function AiProgressRow({
     runner.role === "ticket-owner" ||
     runner.role === "owner" ||
     runner.role === "planner" ||
-    runner.role === "plan" ||
-    runner.role === "verifier" ||
-    runner.role === "veri";
+    runner.role === "plan";
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [ticketLoading, setTicketLoading] = React.useState(false);
   const [ticketError, setTicketError] = React.useState("");
-  const [configOpen, setConfigOpen] = React.useState(false);
 
   const openTicketDialog = React.useCallback(async () => {
     if (!runner.activeTicketId) return;
@@ -6570,7 +6422,6 @@ function AiProgressRow({
     const candidatePaths = [
       `${projectRoot}/${boardDir}/tickets/inprogress/${ticketFile}`,
       `${projectRoot}/${boardDir}/tickets/todo/${ticketFile}`,
-      `${projectRoot}/${boardDir}/tickets/verifier/${ticketFile}`,
       `${projectRoot}/${boardDir}/tickets/reject/${ticketFile}`
     ];
     setTicketLoading(true);
@@ -6627,7 +6478,6 @@ function AiProgressRow({
                   aria-label={`${runner.id} 중지`}
                   disabled={Boolean(actionKey)}
                   onClick={() => {
-                    setConfigOpen(false);
                     onControl?.("stop", runner.id);
                   }}
                 >
@@ -6645,7 +6495,6 @@ function AiProgressRow({
                     aria-label={`${runner.id} 강제 종료`}
                     onClick={() => {
                       if (window.confirm(`${displayWorkflowRunnerId(runner.id)} runner 를 강제 종료할까요?`)) {
-                        setConfigOpen(false);
                         onControl?.("stop", runner.id, { force: true });
                       }
                     }}
@@ -6662,7 +6511,6 @@ function AiProgressRow({
                 aria-label={`${runner.id} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
-                  setConfigOpen(false);
                   onControl?.("start", runner.id);
                 }}
               >
@@ -6673,25 +6521,6 @@ function AiProgressRow({
                 )}
               </Button>
             )}
-            {canConfigure ? (
-              <Button
-                variant="outline"
-                size="icon"
-                className="runner-icon-button runner-plain-icon-button"
-                aria-label={`${runner.id} 설정`}
-                aria-expanded={configOpen}
-                disabled={Boolean(actionKey)}
-                onClick={() => {
-                  const nextOpen = !configOpen;
-                  setConfigOpen(nextOpen);
-                  if (nextOpen) {
-                    onSelectRunner?.(runner.id);
-                  }
-                }}
-              >
-                <Settings2 className="h-4 w-4" />
-              </Button>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -6760,7 +6589,7 @@ function AiProgressRow({
           </Button>
         ) : null}
       </div>
-      {canConfigure && configOpen ? (
+      {canConfigure ? (
         <RunnerConfigControls
           runner={runner}
           installedAgentProfiles={installedAgentProfiles || {}}

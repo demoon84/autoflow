@@ -2183,14 +2183,14 @@ pre {
 
 .runner-config {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(56px, auto) minmax(132px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(56px, auto);
   gap: 3px;
   min-width: 0;
   width: 100%;
 }
 
 .runner-config-no-agent {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(56px, auto) minmax(132px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(56px, auto);
 }
 
 .runner-empty-state {
@@ -6343,4 +6343,3 @@ pre {
   background: color-mix(in srgb, var(--chart-2) 10%, var(--card));
   color: color-mix(in srgb, var(--chart-2) 80%, var(--foreground));
 }
-
