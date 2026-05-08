@@ -2125,6 +2125,12 @@ pre {
   flex-shrink: 0;
 }
 
+.runner-save-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .runner-save-dirty-dot {
   display: inline-block;
   width: 6px;
@@ -3171,15 +3177,22 @@ pre {
 
 .ai-progress-config {
   width: 100%;
+  box-sizing: border-box;
   align-items: center;
+  justify-items: stretch;
   justify-content: stretch;
   gap: 3px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto !important;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(72px, 0.42fr) !important;
   padding-top: 0;
 }
 
 .ai-progress-config-with-agent {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(78px, auto) minmax(132px, auto) !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(112px, 0.52fr) !important;
+}
+
+.ai-progress-config > * {
+  min-width: 0;
 }
 
 .ai-progress-config .runner-select {
