@@ -525,6 +525,11 @@ stage_ticket_commit_scope() {
   stage_git_path_if_present "$git_root" "$ticket_file"
   if [ -n "$ticket_id" ]; then
     for lifecycle_path in \
+      "${board_abs_root}/tickets/todo/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/inprogress/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/verifier/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/ready-to-merge/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/merge-blocked/Todo-${ticket_id}.md" \
       "${board_abs_root}/tickets/todo/tickets_${ticket_id}.md" \
       "${board_abs_root}/tickets/inprogress/tickets_${ticket_id}.md" \
       "${board_abs_root}/tickets/verifier/tickets_${ticket_id}.md" \
@@ -715,17 +720,56 @@ case "$outcome" in
     sanity_failed=""
     sanity_detail=""
 
-    # ① zero-diff guard: refuse pass when no code actually changed.
-    if [ -z "$sanity_failed" ] && [ -n "$sanity_target" ] && [ -n "$sanity_base" ]; then
+    # change_type matrix (PRD 2): docs / cleanup tickets may legitimately
+    # produce no code diff (e.g. file moves) so zero_diff is allowed; infra
+    # tickets get a higher threshold to flag trivial config tweaks; code
+    # (default) keeps the original ≥1-line guard.
+    sanity_change_type=""
+    sanity_change_type="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- Change Type:/{
+        sub(/^- Change Type:[[:space:]]*/, "")
+        sub(/[[:space:]]+$/, "")
+        print
+        exit
+      }' "$ticket_file" 2>/dev/null || true)"
+    sanity_change_type="$(printf '%s' "$sanity_change_type" | tr '[:upper:]' '[:lower:]' | xargs 2>/dev/null || true)"
+    case "$sanity_change_type" in
+      docs|cleanup|infra) ;;
+      *) sanity_change_type="code" ;;
+    esac
+
+    sanity_min_diff_lines=1
+    case "$sanity_change_type" in
+      docs|cleanup)
+        sanity_min_diff_lines=0
+        ;;
+      infra)
+        sanity_min_diff_lines="${AUTOFLOW_INFRA_MIN_DIFF_LINES:-10}"
+        case "$sanity_min_diff_lines" in
+          ''|*[!0-9]*) sanity_min_diff_lines=10 ;;
+        esac
+        ;;
+      *)
+        sanity_min_diff_lines=1
+        ;;
+    esac
+
+    # ① zero-diff guard: refuse pass when no code actually changed (skipped
+    # for docs/cleanup change types).
+    if [ -z "$sanity_failed" ] && [ -n "$sanity_target" ] && [ -n "$sanity_base" ] && [ "$sanity_min_diff_lines" -gt 0 ]; then
       sanity_diff_stat=""
       sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat "${sanity_base}..HEAD" 2>/dev/null || true)"
       if [ -z "$sanity_diff_stat" ]; then
         sanity_diff_stat="$(cd "$sanity_target" && git diff --shortstat 2>/dev/null || true)"
       fi
       sanity_diff_total="$(printf '%s\n' "$sanity_diff_stat" | awk '{s=0; for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) s+=$i+0; print s+0}')"
-      if [ "${sanity_diff_total:-0}" -lt 1 ] 2>/dev/null; then
-        sanity_failed="zero_diff"
-        sanity_detail="git diff against ${sanity_base:-HEAD} produced no changed lines; refusing pass on empty work"
+      if [ "${sanity_diff_total:-0}" -lt "$sanity_min_diff_lines" ] 2>/dev/null; then
+        if [ "$sanity_change_type" = "infra" ]; then
+          sanity_failed="zero_diff_infra"
+          sanity_detail="infra change_type requires ≥${sanity_min_diff_lines} diff lines (saw ${sanity_diff_total:-0}); raise AUTOFLOW_INFRA_MIN_DIFF_LINES or split the ticket"
+        else
+          sanity_failed="zero_diff"
+          sanity_detail="git diff against ${sanity_base:-HEAD} produced no changed lines (change_type=${sanity_change_type}); refusing pass on empty work"
+        fi
       fi
     fi
 
@@ -758,6 +802,25 @@ case "$outcome" in
       exit 0
     fi
     # ── end shell sanity gate ───────────────────────────────────────────────
+
+    # PRD 8 (2026-05-09): best-effort project verify-post hook. Runs after
+    # the sanity gate passes but before merge prep / commit. Non-fatal: any
+    # failure prints to stderr and continues.
+    project_hook="${BOARD_ROOT}/project/hooks/verify-post.sh"
+    if [ -x "$project_hook" ]; then
+      hook_prd_key="$(awk '/^## Ticket/{flag=1; next} /^## /{flag=0} flag && /^- PRD Key:/{
+          sub(/^- PRD Key:[[:space:]]*/, "")
+          sub(/[[:space:]]+$/, "")
+          print
+          exit
+        }' "$ticket_file" 2>/dev/null || true)"
+      AUTOFLOW_HOOK_TICKET_FILE="$ticket_file" \
+      AUTOFLOW_HOOK_TICKET_ID="$ticket_id" \
+      AUTOFLOW_HOOK_PRD_KEY="${hook_prd_key:-}" \
+      AUTOFLOW_HOOK_CHANGE_TYPE="${sanity_change_type:-code}" \
+        "$project_hook" 2>/dev/null || \
+        echo "[verify-post] hook returned non-zero (non-fatal)" >&2
+    fi
 
     merge_prep_output="$(prepare_ticket_worktree_for_merge "$ticket_file" 2>&1)" || {
       merge_prep_status="$(printf '%s\n' "$merge_prep_output" | awk -F= '$1 == "status" { sub(/^[^=]*=/, "", $0); print; exit }' 2>/dev/null || true)"
@@ -836,8 +899,18 @@ case "$outcome" in
       printf 'reason=%s\n' "${inline_merge_reason:-ai_merge_required}"
     elif [ "$inline_merge_status" = "blocked" ]; then
       append_note "$ticket_file" "Inline merge blocked at ${timestamp}: ${inline_merge_reason:-inline_merge_blocked}"
-      route_to_inbox_retry "${inline_merge_reason:-inline_merge_blocked}" "${inline_merge_output:-inline merge blocked}"
-      exit 0
+      if [ "${inline_merge_reason:-}" = "post_merge_cleanup_failed" ]; then
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+        replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_post_merge_cleanup"
+        replace_section_block "$ticket_file" "Next Action" "- Fail: final merge cleanup failed after verification. AI/owner must rerun merge finalization only after cleanup is resolved; do not claim another ticket until this ticket is cleared by owner or planner."
+        ticket_goal_block "$ticket_file" "post_merge_cleanup_failed"
+        printf 'status=blocked\n'
+        printf 'reason=post_merge_cleanup_failed\n'
+      else
+        route_to_inbox_retry "${inline_merge_reason:-inline_merge_blocked}" "${inline_merge_output:-inline merge blocked}"
+        exit 0
+      fi
     else
       ticket_goal_activate "$ticket_file" "inline_merge_failed_check_output"
       printf 'status=ready_to_merge\n'
@@ -852,6 +925,23 @@ case "$outcome" in
       printf 'inline_merge=done; log written; wiki deferred to Wiki AI\n'
       printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/ || /^wiki\.status=/ || /^wiki\.next_action=/'
       printf '%s\n' "${skill_output:-}" | awk 'NF'
+
+      # PRD 6 (2026-05-09): write a PR body draft for the user. This never
+      # pushes or calls gh. The user runs `gh pr create --body-file ...` after
+      # pushing the branch themselves.
+      draft_dir="${BOARD_ROOT}/runners/state/pr-drafts"
+      draft_script="$(cd "$(dirname "$0")" && pwd)/draft-pr.sh"
+      if [ -x "$draft_script" ] && [ -n "$ticket_id" ]; then
+        mkdir -p "$draft_dir" 2>/dev/null || true
+        draft_file="${draft_dir}/${ticket_id}.md"
+        inline_commit_hash="$(printf '%s\n' "$inline_merge_output" | awk -F= '$1 == "commit_hash" { sub(/^[^=]*=/, ""); print; exit }' 2>/dev/null || true)"
+        if "$draft_script" "$ticket_file" "$inline_commit_hash" > "$draft_file" 2>/dev/null; then
+          printf 'pr_draft=%s\n' "$draft_file"
+        else
+          rm -f "$draft_file" 2>/dev/null || true
+          printf 'pr_draft=draft_failed\n'
+        fi
+      fi
     elif [ -n "$inline_merge_output" ]; then
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
     fi

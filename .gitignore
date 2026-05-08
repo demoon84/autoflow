@@ -27,3 +27,10 @@ apps/desktop/build/
 .autoflow/tickets/check/
 .autoflow/conversations/
 .claude/worktrees/
+
+# PRD 7 (2026-05-09): sqlite state ledger snapshot. The schema in
+# .autoflow/state-schema/ is checked in; the database file is rebuilt by
+# state-db.sh sync from existing markdown/state files.
+.autoflow/state.db
+.autoflow/state.db-shm
+.autoflow/state.db-wal

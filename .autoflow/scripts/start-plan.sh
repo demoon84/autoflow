@@ -6,7 +6,7 @@
 # code edits — and emits a ticket in tickets/todo/ as the only output:
 #   1. Auto-replan rejected tickets back to todo (reject/ -> todo/).
 #   2. Promote lightweight orders in tickets/inbox/ into PRD/todo work.
-#   3. Convert populated PRDs in backlog/ into a fresh tickets_NNN.md in todo/.
+#   3. Convert populated PRDs in backlog/ into a fresh Todo-NNN.md in todo/.
 # Legacy plan/ files (rules/plan or tickets/plan) are still consumed as a
 # transitional fallback when neither (1), (2), nor (3) yields work, so older
 # sample boards keep functioning.
@@ -240,6 +240,279 @@ extract_spec_source_order_ref() {
   ' "$file"
 }
 
+# --- Express path: order -> todo (skips PRD authoring) -----------------------
+# Read a scalar field under `## Order` (e.g. Title, Express, Priority).
+extract_order_field() {
+  local file="$1"
+  local field="$2"
+  extract_scalar_field_in_section "$file" "Order" "$field"
+}
+
+# Order is express-eligible iff (a) ## Order has `- Express: true|yes|1|on`,
+# (b) ## Allowed Paths lists ≥1 concrete path, (c) ## Done When has ≥1 `- [ ]`.
+# Returns 0 if eligible, 1 otherwise. No side effects.
+order_is_express_eligible() {
+  local file="$1"
+  local express raw_paths raw_done_when
+
+  [ -f "$file" ] || return 1
+
+  express="$(trim_spaces "$(extract_order_field "$file" "Express" 2>/dev/null || true)")"
+  case "$(printf '%s' "$express" | tr '[:upper:]' '[:lower:]')" in
+    true|yes|1|on) ;;
+    *) return 1 ;;
+  esac
+
+  raw_paths="$(awk '
+    /^## Allowed Paths/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*[-*][[:space:]]+/ {
+      sub(/^[[:space:]]*[-*][[:space:]]+/, "", $0)
+      if ($0 != "" && $0 != "...") print
+    }
+  ' "$file" 2>/dev/null || true)"
+  [ -n "$raw_paths" ] || return 1
+
+  raw_done_when="$(awk '
+    /^## Done When/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*- \[[ xX]\]/ { print }
+  ' "$file" 2>/dev/null || true)"
+  [ -n "$raw_done_when" ] || return 1
+
+  return 0
+}
+
+select_express_inbox_order() {
+  local order_file id
+
+  if [ -n "$requested_normalized" ]; then
+    order_file="${BOARD_ROOT}/tickets/inbox/order_${requested_normalized}.md"
+    if order_file_is_actionable "$order_file" && order_is_express_eligible "$order_file"; then
+      printf '%s' "$order_file"
+      return 0
+    fi
+    return 1
+  fi
+
+  while IFS= read -r order_file; do
+    [ -n "$order_file" ] || continue
+    order_file_is_actionable "$order_file" || continue
+    order_is_express_eligible "$order_file" || continue
+    id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
+    [ -n "$id" ] || continue
+    printf '%s' "$order_file"
+    return 0
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'order_*.md')
+
+  return 1
+}
+
+# Promote an express-eligible order directly to tickets/todo/ without a PRD.
+# project_key = `express_<order_id>` so commits read [EXPRESS_NNN][ticket_NNN]
+# via the existing finalizer code path. Returns the new ticket file path on
+# stdout and archives the consumed order under done/<project_key>/.
+create_express_todo_from_order() {
+  local order_file="$1"
+  local order_id project_key ticket_id ticket_file ticket_note project_note timestamp
+  local title goal priority priority_lc allowed_paths done_when verification_command change_type request_body notes_body
+  local order_archive_dir order_archive_path order_basename
+
+  order_id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
+  [ -n "$order_id" ] || return 1
+
+  project_key="express_${order_id}"
+  ticket_id="$(next_ticket_id)"
+  ticket_file="$(ticket_path "todo" "$ticket_id")"
+  ticket_note="[[Todo-${ticket_id}]]"
+  project_note="[[${project_key}]]"
+  timestamp="$(now_iso)"
+
+  title="$(trim_spaces "$(extract_order_field "$order_file" "Title" 2>/dev/null || true)")"
+  [ -n "$title" ] || title="Express order ${order_id}"
+
+  priority="$(trim_spaces "$(extract_order_field "$order_file" "Priority" 2>/dev/null || true)")"
+  priority_lc="$(printf '%s' "$priority" | tr '[:upper:]' '[:lower:]')"
+  case "$(trim_spaces "$priority_lc")" in
+    critical|crit|p0) priority="critical" ;;
+    high|p1) priority="high" ;;
+    low|p3) priority="low" ;;
+    *) priority="normal" ;;
+  esac
+
+  change_type="$(trim_spaces "$(extract_order_field "$order_file" "Change Type" 2>/dev/null || true)")"
+  case "$(printf '%s' "$change_type" | tr '[:upper:]' '[:lower:]')" in
+    docs) change_type="docs" ;;
+    cleanup) change_type="cleanup" ;;
+    infra) change_type="infra" ;;
+    *) change_type="code" ;;
+  esac
+
+  allowed_paths="$(awk '
+    /^## Allowed Paths/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*[-*][[:space:]]+/ {
+      sub(/^[[:space:]]*[-*][[:space:]]+/, "", $0)
+      if ($0 != "" && $0 != "...") print "- " $0
+    }
+  ' "$order_file" 2>/dev/null || true)"
+
+  done_when="$(awk '
+    /^## Done When/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && /^[[:space:]]*- \[[ xX]\]/ { print }
+  ' "$order_file" 2>/dev/null || true)"
+
+  verification_command="$(extract_scalar_field_in_section "$order_file" "Verification" "Command" 2>/dev/null || true)"
+
+  request_body="$(awk '
+    /^## Request/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section { print }
+  ' "$order_file" 2>/dev/null || true)"
+
+  goal="$(printf '%s\n' "$request_body" | awk 'NF { print; exit }' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$goal" ] || goal="Express 처리 대상: ${title}"
+
+  notes_body="$(awk '
+    /^## Notes/ { in_section=1; next }
+    /^## / && in_section { in_section=0 }
+    in_section && NF { print }
+  ' "$order_file" 2>/dev/null || true)"
+
+  order_basename="$(basename "$order_file")"
+
+  mkdir -p "$(dirname "$ticket_file")"
+  {
+    cat <<TICKETHEADER
+# Ticket
+
+## Ticket
+
+- ID: Todo-${ticket_id}
+- PRD Key: ${project_key}
+- Plan Candidate: Express promotion from tickets/inbox/${order_basename}
+- Title: ${title}
+- Priority: ${priority}
+- Change Type: ${change_type}
+- Stage: todo
+- AI:
+- Claimed By:
+- Execution AI:
+- Verifier AI:
+- Last Updated: ${timestamp}
+
+## Goal
+
+- 이번 작업의 목표: ${goal}
+
+## References
+
+- PRD: (express; no PRD authored)
+- Order: tickets/done/${project_key}/${order_basename}
+- Plan Source: express-skip-prd
+
+## Reference Notes
+
+- Project Note: ${project_note}
+- Plan Note:
+- Ticket Note: ${ticket_note}
+
+## Allowed Paths
+
+${allowed_paths}
+
+## Worktree
+
+- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: pending_claim
+
+## Goal Runtime
+
+- Status:
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count: 0
+- Time Used Seconds: 0
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed: false
+- Last Event:
+- Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+${done_when}
+
+## Next Action
+
+- 다음에 바로 이어서 할 일: Impl AI 가 이 express 티켓을 todo 에서 claim 한 뒤, Allowed Paths 안에서 mini-plan, 구현, 검증, 머지까지 한 턴에 끝낸다. PRD 단계는 의도적으로 생략됐다.
+
+## Resume Context
+
+- 현재 상태 요약: Express order ${order_id} 가 PRD 없이 todo 로 직접 승격된 직후.
+- 직전 작업: scripts/start-plan.sh 의 express 분기가 order 파일을 읽어 todo 를 생성했다.
+- 재개 시 먼저 볼 것: Order, Goal, Allowed Paths, Done When.
+
+## Notes
+
+- Created by ${display_id} (Plan AI, express path) from tickets/inbox/${order_basename} at ${timestamp}.
+- Express promotion: order_${order_id} 의 Allowed Paths 와 Done When 이 모두 명시돼 있어 PRD 단계를 생략했다.
+TICKETHEADER
+
+    if [ -n "$notes_body" ]; then
+      printf '\n### Order Notes\n\n'
+      printf '%s\n' "$notes_body"
+    fi
+
+    cat <<TICKETFOOTER
+
+### Original Request
+
+${request_body}
+
+## Verification
+
+- Command: ${verification_command}
+- Run file:
+- Log file:
+- Result: pending
+
+## Result
+
+- Summary:
+- Remaining risk:
+TICKETFOOTER
+  } > "$ticket_file"
+
+  order_archive_dir="${BOARD_ROOT}/tickets/done/${project_key}"
+  mkdir -p "$order_archive_dir"
+  order_archive_path="${order_archive_dir}/${order_basename}"
+  if [ -f "$order_archive_path" ] && [ "$order_archive_path" != "$order_file" ]; then
+    rm -f "$order_archive_path"
+  fi
+  mv "$order_file" "$order_archive_path"
+
+  printf '%s' "$ticket_file"
+}
+
 archive_source_order_for_spec() {
   local project_key="$1"
   local spec_file="$2"
@@ -272,7 +545,7 @@ archive_source_order_for_spec() {
 create_todo_ticket_from_spec() {
   local spec_file="$1"
   local spec_ref project_key ticket_id ticket_file ticket_note project_note
-  local archived_spec_ref archived_spec_file title goal priority priority_lc allowed_paths done_when verification_command timestamp
+  local archived_spec_ref archived_spec_file title goal priority priority_lc change_type allowed_paths done_when verification_command timestamp
 
   spec_ref="$(board_relative_path "$spec_file")"
   project_key="$(project_key_from_spec_ref "$spec_ref")"
@@ -292,7 +565,7 @@ create_todo_ticket_from_spec() {
   archive_source_order_for_spec "$project_key" "$archived_spec_file"
   ticket_id="$(next_ticket_id)"
   ticket_file="$(ticket_path "todo" "$ticket_id")"
-  ticket_note="[[tickets_${ticket_id}]]"
+  ticket_note="[[Todo-${ticket_id}]]"
   project_note="[[${project_key}]]"
   timestamp="$(now_iso)"
 
@@ -305,6 +578,13 @@ create_todo_ticket_from_spec() {
     high|p1) priority="high" ;;
     low|p3) priority="low" ;;
     *) priority="normal" ;;
+  esac
+  change_type="$(trim_spaces "$(extract_scalar_field_in_section "$archived_spec_file" "Project" "Change Type" 2>/dev/null || true)")"
+  case "$(printf '%s' "$change_type" | tr '[:upper:]' '[:lower:]')" in
+    docs) change_type="docs" ;;
+    cleanup) change_type="cleanup" ;;
+    infra) change_type="infra" ;;
+    *) change_type="code" ;;
   esac
   verification_command="$(extract_scalar_field_in_section "$archived_spec_file" "Verification" "Command")"
   allowed_paths="$(extract_spec_allowed_paths "$archived_spec_file")"
@@ -322,11 +602,12 @@ create_todo_ticket_from_spec() {
 
 ## Ticket
 
-- ID: tickets_${ticket_id}
+- ID: Todo-${ticket_id}
 - PRD Key: ${project_key}
 - Plan Candidate: Plan AI handoff from ${archived_spec_ref}
 - Title: ${title}
 - Priority: ${priority}
+- Change Type: ${change_type}
 - Stage: todo
 - AI:
 - Claimed By:
@@ -506,6 +787,31 @@ promote_spec_to_todo_or_exit() {
   printf 'next_action=Todo %s created from %s; hand off to ticket owner.\n' "$(basename "$created_ticket")" "$(board_relative_path "$spec_file")"
   exit 0
 }
+
+# --- Branch 1.5: express inbox order -> todo ticket (skips PRD) -------------
+# Express orders carry their own Allowed Paths + Done When + Verification, so
+# the planner promotes them straight to todo without spending an LLM tick on
+# PRD authoring. Express is fail-safe: if the order is malformed, the eligibility
+# check returns false and the standard inbox-order branch handles it.
+express_order_file="$(select_express_inbox_order || true)"
+if [ -n "$express_order_file" ]; then
+  express_ticket_file="$(create_express_todo_from_order "$express_order_file" || true)"
+  if [ -n "$express_ticket_file" ] && [ -f "$express_ticket_file" ]; then
+    printf 'status=ok\n'
+    printf 'source=express-order-to-todo\n'
+    printf 'order=tickets/done/express_%s/%s\n' \
+      "$(extract_numeric_id "$express_order_file")" \
+      "$(basename "$express_order_file")"
+    printf 'todo_ticket=%s\n' "$express_ticket_file"
+    printf 'project_key=express_%s\n' "$(extract_numeric_id "$express_order_file")"
+    printf 'path=express\n'
+    emit_replan_skipped_metadata "$replan_skipped_file"
+    printf 'board_root=%s\n' "$BOARD_ROOT"
+    printf 'project_root=%s\n' "$PROJECT_ROOT"
+    printf 'next_action=Express ticket %s ready for ticket owner; PRD authoring skipped.\n' "$(basename "$express_ticket_file")"
+    exit 0
+  fi
+fi
 
 # --- Branch 1.9: order-generated backlog PRD -> todo ticket ------------------
 # If an earlier planner turn already promoted an order into backlog, finish that

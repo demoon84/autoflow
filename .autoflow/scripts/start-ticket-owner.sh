@@ -19,6 +19,55 @@ fi
 
 set_thread_context_record "ticket-owner" "$worker_id" "" "" ""
 
+# PRD 5 (2026-05-09): optional multi-worker path conflict guard.
+# Returns 0 (conflict) when candidate's Allowed Paths overlap any inprogress
+# ticket owned by a different worker. Returns 1 otherwise. No-op when
+# AUTOFLOW_PATH_CONFLICT_CHECK is unset/off, so single-worker default is fast.
+todo_conflicts_with_other_inprogress() {
+  local candidate="$1"
+  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-}" in
+    on|1|true|yes) ;;
+    *) return 1 ;;
+  esac
+
+  local script_dir conflict_script other_file owner_field
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  conflict_script="${script_dir}/path-conflict-check.sh"
+  [ -x "$conflict_script" ] || return 1
+
+  while IFS= read -r other_file; do
+    [ -n "$other_file" ] || continue
+    [ -f "$other_file" ] || continue
+    [ "$other_file" = "$candidate" ] && continue
+    owner_field="$(ticket_claim_owner "$other_file" 2>/dev/null || true)"
+    [ -n "$owner_field" ] || continue
+    worker_id_matches_field "$owner_field" "$worker_id" && continue
+    if ! "$conflict_script" "$candidate" "$other_file" >/dev/null 2>&1; then
+      return 0
+    fi
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
+
+  return 1
+}
+
+find_next_dispatchable_todo() {
+  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-}" in
+    on|1|true|yes)
+      local candidate
+      while IFS= read -r candidate; do
+        [ -n "$candidate" ] || continue
+        todo_conflicts_with_other_inprogress "$candidate" && continue
+        printf '%s' "$candidate"
+        return 0
+      done < <(list_matching_files "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md')
+      return 1
+      ;;
+    *)
+      lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md'
+      ;;
+  esac
+}
+
 ticket_owned_by_worker() {
   local file="$1"
   local owner claimed_by execution_owner verifier_owner
@@ -71,7 +120,7 @@ ticket_owner_self_refresh_dirty_path() {
   board_dir="$(basename "$BOARD_ROOT")"
 
   case "$dirty_path" in
-    "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md")
+    "${board_dir}/tickets/inprogress/Todo-${ticket_id}.md"|"${board_dir}/tickets/inprogress/tickets_${ticket_id}.md")
       return 0
       ;;
   esac
@@ -124,7 +173,7 @@ find_owned_inprogress_ticket() {
       printf '%s' "$file"
       return 0
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }
@@ -133,7 +182,7 @@ ticket_referenced_by_runner_state() {
   local ticket_file="$1"
   local ticket_id rel_path state_file active_id active_path
 
-  ticket_id="tickets_$(extract_numeric_id "$ticket_file")"
+  ticket_id="Todo-20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400extract_numeric_id "$ticket_file")"
   rel_path="$(board_relative_path "$ticket_file")"
 
   while IFS= read -r state_file; do
@@ -161,7 +210,7 @@ find_adoptable_inprogress_ticket() {
     stage_is_execution_candidate "$stage" || continue
     printf '%s' "$file"
     return 0
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }
@@ -216,7 +265,7 @@ sync_runner_active_state() {
   state_path="${BOARD_ROOT}/runners/state/${worker_id}.state"
   [ -f "$state_path" ] || return 0
 
-  ticket_id="tickets_$(extract_numeric_id "$ticket_file")"
+  ticket_id="Todo-20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400extract_numeric_id "$ticket_file")"
   title="$(ticket_scalar_field "$ticket_file" "Title")"
   project_key="$(project_key_from_ticket_file "$ticket_file")"
   spec_ref="$(extract_scalar_field_in_section "$ticket_file" "References" "PRD")"
@@ -506,7 +555,7 @@ prepare_ticket_owner_context() {
   implementation_root="$(ticket_working_root "$ticket_file")"
   project_key="$(project_key_from_ticket_file "$ticket_file")"
   project_note="[[${project_key}]]"
-  ticket_note="[[tickets_${ticket_id}]]"
+  ticket_note="[[Todo-${ticket_id}]]"
   done_target="$(done_ticket_path_for_ticket_file "$ticket_file")"
   stage="$(ticket_stage "$ticket_file")"
   integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
@@ -608,7 +657,7 @@ if [ -n "$requested_normalized" ]; then
   if [ -n "$requested_ticket" ]; then
     claimed_ticket="$(claim_existing_ticket "$requested_ticket" || true)"
     if [ -z "$claimed_ticket" ]; then
-      fail_or_idle "Ticket is already claimed by another owner: tickets_${requested_normalized}.md" "ticket_claim_conflict"
+      fail_or_idle "Ticket is already claimed by another owner: Todo-${requested_normalized}.md" "ticket_claim_conflict"
     fi
     auto_resume_finish_pass_or_continue "$claimed_ticket"
     printf 'status=ok\n'
@@ -616,7 +665,12 @@ if [ -n "$requested_normalized" ]; then
     exit 0
   fi
 else
-  next_ticket="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'tickets_*.md' || true)"
+  # PRD 5 (2026-05-09): when AUTOFLOW_PATH_CONFLICT_CHECK is on, walk the todo
+  # queue in order and skip candidates whose Allowed Paths overlap any
+  # inprogress ticket owned by a different worker. Default (off) keeps the
+  # single-worker fast path: lowest_matching_file returns the first todo and
+  # claim proceeds.
+  next_ticket="$(find_next_dispatchable_todo || true)"
   if [ -n "$next_ticket" ]; then
     claimed_ticket="$(claim_existing_ticket "$next_ticket" || true)"
     if [ -z "$claimed_ticket" ]; then
@@ -627,7 +681,7 @@ else
     exit 0
   fi
 
-  legacy_verifier_ticket="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'tickets_*.md' || true)"
+  legacy_verifier_ticket="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'Todo-*.md' 'tickets_*.md' || true)"
   if [ -n "$legacy_verifier_ticket" ]; then
     claimed_ticket="$(claim_existing_ticket "$legacy_verifier_ticket" || true)"
     if [ -z "$claimed_ticket" ]; then

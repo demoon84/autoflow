@@ -22,6 +22,17 @@
 # (or per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1), the loop sleep is broken
 # early on watched-folder file changes. interval_seconds is just a safety
 # heartbeat — fs-watch handles the actual wakeups.
+#
+# Recommended model tiers (PRD 3, 2026-05-09):
+#   planner — sonnet-class reasoning is enough; backlog/PRD analysis rarely
+#     needs the heaviest model. Use opus-1m only when the project routinely
+#     handles >50 file PRDs.
+#   worker  — opus-class for code edits + verification reasoning. Trim to
+#     sonnet-class if cost dominates and the project is mostly small fixes.
+#   wiki    — haiku-class flash model is sufficient for material baseline
+#     refresh + RAG synthesis. Heavier models do not improve wiki quality.
+#
+# These are guidelines; explicit `model` below wins over any default.
 
 [[runners]]
 id = "planner"

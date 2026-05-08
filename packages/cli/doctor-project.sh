@@ -1260,6 +1260,92 @@ cat "$check_output"
 cat "$detail_output"
 cat "$recovery_log"
 
+# --- PRD 4 (2026-05-09): operator-visibility snapshot ----------------------
+# Read-only env / board / runner / fingerprint summary so `autoflow doctor` is
+# a single-stop diagnostic when a runner stalls or a tick looks weird.
+doctor_env_summary() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      AUTOFLOW_*=*) printf 'env.%s\n' "$line" ;;
+    esac
+  done < <(env | sort)
+}
+
+doctor_board_counts() {
+  local dir count
+  for dir in inbox backlog todo inprogress; do
+    count="$(find "${board_root}/tickets/${dir}" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    printf 'board_count.%s=%s\n' "$dir" "${count:-0}"
+  done
+  count="$(find "${board_root}/tickets/done" -mindepth 2 -maxdepth 2 -type f -name 'Todo-*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'board_count.done_tickets=%s\n' "${count:-0}"
+  count="$(find "${board_root}/tickets/done" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'board_count.done_projects=%s\n' "${count:-0}"
+  count="$(find "${board_root}/tickets/inbox" -maxdepth 1 -type f -name 'order_*_retry_*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  printf 'board_count.inbox_retry_orders=%s\n' "${count:-0}"
+}
+
+doctor_runner_state_summary() {
+  local state_dir state_file runner_id base value field mtime
+  state_dir="${board_root}/runners/state"
+  [ -d "$state_dir" ] || return 0
+  while IFS= read -r state_file; do
+    [ -f "$state_file" ] || continue
+    base="$(basename "$state_file")"
+    runner_id="${base%.state}"
+    [ "$runner_id" != "$base" ] || continue
+    for field in last_result consecutive_timeout_count active_ticket_id active_stage; do
+      value="$(awk -F= -v key="$field" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$state_file" 2>/dev/null || true)"
+      printf 'runner_state.%s.%s=%s\n' "$runner_id" "$field" "${value:-}"
+    done
+    if mtime="$(stat -f '%m' "$state_file" 2>/dev/null || stat -c '%Y' "$state_file" 2>/dev/null)"; then
+      printf 'runner_state.%s.mtime_epoch=%s\n' "$runner_id" "$mtime"
+    fi
+  done < <(find "$state_dir" -maxdepth 1 -name '*.state' -type f 2>/dev/null | sort)
+}
+
+doctor_fingerprint_summary() {
+  local state_dir fp_count oldest_epoch newest_epoch fp_file mtime
+  state_dir="${board_root}/runners/state"
+  [ -d "$state_dir" ] || { printf 'fingerprint.count=0\n'; return 0; }
+  fp_count=0
+  oldest_epoch=""
+  newest_epoch=""
+  while IFS= read -r fp_file; do
+    [ -f "$fp_file" ] || continue
+    fp_count=$((fp_count + 1))
+    if mtime="$(stat -f '%m' "$fp_file" 2>/dev/null || stat -c '%Y' "$fp_file" 2>/dev/null)"; then
+      if [ -z "$oldest_epoch" ] || [ "$mtime" -lt "$oldest_epoch" ]; then
+        oldest_epoch="$mtime"
+      fi
+      if [ -z "$newest_epoch" ] || [ "$mtime" -gt "$newest_epoch" ]; then
+        newest_epoch="$mtime"
+      fi
+    fi
+  done < <(find "$state_dir" -maxdepth 2 -name '*.fingerprint' -type f 2>/dev/null)
+  printf 'fingerprint.count=%s\n' "$fp_count"
+  [ -n "$oldest_epoch" ] && printf 'fingerprint.oldest_epoch=%s\n' "$oldest_epoch"
+  [ -n "$newest_epoch" ] && printf 'fingerprint.newest_epoch=%s\n' "$newest_epoch"
+}
+
+doctor_env_summary
+doctor_board_counts
+doctor_runner_state_summary
+doctor_fingerprint_summary
+
+# PRD 7 (2026-05-09): if .autoflow/state.db exists, surface its drift summary.
+# The DB is opt-in (rebuilt on demand by `state-db.sh sync`), so absence is
+# normal and not a failure.
+state_db_path="${board_root}/state.db"
+state_db_script="${board_root}/scripts/state-db.sh"
+if [ -f "$state_db_path" ] && [ -x "$state_db_script" ]; then
+  AUTOFLOW_BOARD_ROOT="$board_root" "$state_db_script" drift-summary 2>/dev/null \
+    | awk '{ print "state_db." $0 }'
+else
+  printf 'state_db.status=not_initialized\n'
+fi
+
 if [ "$error_count" -gt 0 ]; then
   exit 1
 fi
