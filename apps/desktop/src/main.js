@@ -2556,6 +2556,10 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
     telemetryRaw = "";
   }
 
+  // Apply the same recent-window cap as metrics-project.sh's
+  // count_autoflow_token_metrics so per-runner footers and the dashboard
+  // header total stay consistent. Old inflated rows pollute the cumulative
+  // sum and disagree with the 1h-windowed header otherwise.
   for (const line of telemetryRaw.split(/\r?\n/)) {
     if (!line.trim()) continue;
     let row;
@@ -2567,6 +2571,9 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
     if (!row || typeof row !== "object") continue;
     const runnerId = typeof row.runner_id === "string" ? row.runner_id : "";
     if (!runnerId) continue;
+    const rowTimestamp = Date.parse(row.ended_at || row.started_at || "");
+    if (!Number.isFinite(rowTimestamp)) continue;
+    if ((nowMs - rowTimestamp) / 1000 > maxDataAgeSeconds) continue;
     const tokenInput = positiveIntegerValue(row.token_input);
     const tokenOutput = positiveIntegerValue(row.token_output);
     const tokenCount = tokenInput + tokenOutput;
