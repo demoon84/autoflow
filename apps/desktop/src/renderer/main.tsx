@@ -6598,10 +6598,11 @@ function useLiveStdoutText(
 ): string {
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
+  // 어댑터가 실행 중일 때만 스트림을 보여준다. idle/finished 이면 빈 화면.
+  const isActive =
+    (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
   // PRD 228: persistent `<runner_id>.log` (event metadata) + active
   // live_stdout.log (claude stream-json JSONL) 두 stream 을 merge.
-  // persistent 가 항상 살아 있어 base layer 역할, 활성 live_stdout.log 가
-  // 있으면 JSONL 을 사람이 읽는 한 줄 요약으로 변환해 뒤에 붙인다.
   const persistentPath =
     runner.id && projectRoot && boardDirName
       ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
@@ -6611,7 +6612,7 @@ function useLiveStdoutText(
   const [text, setText] = React.useState("");
 
   React.useEffect(() => {
-    if (!persistentPath || !projectRoot || !boardDirName) {
+    if (!isActive || !persistentPath || !projectRoot || !boardDirName) {
       setText("");
       return;
     }
@@ -6654,7 +6655,7 @@ function useLiveStdoutText(
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [persistentPath, livePath, projectRoot, boardDirName, maxBytes]);
+  }, [isActive, persistentPath, livePath, projectRoot, boardDirName, maxBytes]);
 
   return text;
 }
