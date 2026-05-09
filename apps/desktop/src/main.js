@@ -33,7 +33,6 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
-const allowedSkillActions = new Set(["list", "view", "archive", "history"]);
 // Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
 // case statement. Active: ticket / planner / wiki (with their
 // owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
@@ -3747,58 +3746,6 @@ function controlWiki(options = {}) {
   return runAutoflowArgs(args, options);
 }
 
-function controlSkill(options = {}) {
-  if (!options.projectRoot) {
-    return Promise.resolve({
-      ok: false,
-      command: "skill",
-      code: -1,
-      stdout: "",
-      stderr: "Project root is required."
-    });
-  }
-
-  const action = options.action || "";
-  if (!allowedSkillActions.has(action)) {
-    return Promise.resolve({
-      ok: false,
-      command: `skill ${action}`,
-      code: -1,
-      stdout: "",
-      stderr: `Unsupported skill action: ${action}`
-    });
-  }
-
-  const boardDirName = options.boardDirName || defaultBoardDirName;
-  const args = ["skill", action, options.projectRoot, boardDirName];
-
-  if (action === "list") {
-    if (options.includeArchived === false) {
-      args.push("--no-archived");
-    } else {
-      args.push("--include-archived");
-    }
-  } else if (action === "view" || action === "archive") {
-    const ref = typeof options.ref === "string" ? options.ref.trim() : "";
-    if (!ref) {
-      return Promise.resolve({
-        ok: false,
-        command: `skill ${action}`,
-        code: -1,
-        stdout: "",
-        stderr: "Skill reference (category/name) is required."
-      });
-    }
-    args.push(ref);
-  } else if (action === "history") {
-    const rawLimit = options.limit;
-    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 20;
-    args.push("--limit", String(limit));
-  }
-
-  return runAutoflowArgs(args, options);
-}
-
 function writeMetricsSnapshot(options = {}) {
   if (!options.projectRoot) {
     return Promise.resolve({
@@ -4404,7 +4351,6 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:createRunner", withScopeMemory(createRunner));
   ipcMain.handle("autoflow:continueRunnerAuth", withScopeMemory(continueRunnerAuth));
   ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
-  ipcMain.handle("autoflow:controlSkill", withTimeout(withScopeMemory(controlSkill), 30000));
   ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));

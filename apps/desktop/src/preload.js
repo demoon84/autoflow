@@ -14,7 +14,6 @@ contextBridge.exposeInMainWorld("autoflow", {
   createRunner: (options) => ipcRenderer.invoke("autoflow:createRunner", options),
   continueRunnerAuth: (options) => ipcRenderer.invoke("autoflow:continueRunnerAuth", options),
   controlWiki: (options) => ipcRenderer.invoke("autoflow:controlWiki", options),
-  controlSkill: (options) => ipcRenderer.invoke("autoflow:controlSkill", options),
   writeMetricsSnapshot: (options) => ipcRenderer.invoke("autoflow:writeMetricsSnapshot", options),
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options) => ipcRenderer.invoke("autoflow:controlWatcher", options),

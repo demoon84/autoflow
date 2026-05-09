@@ -240,15 +240,6 @@ interface Window {
       includeSnippets?: boolean;
       invocationId?: string;
     }) => Promise<AutoflowRunResult>;
-    controlSkill: (options: {
-      action: "list" | "view" | "archive" | "history";
-      projectRoot: string;
-      boardDirName: string;
-      ref?: string;
-      includeArchived?: boolean;
-      limit?: number;
-      invocationId?: string;
-    }) => Promise<AutoflowRunResult>;
     writeMetricsSnapshot: (options: {
       projectRoot: string;
       boardDirName: string;
