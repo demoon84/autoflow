@@ -168,17 +168,51 @@ cmd_drift_summary() {
   printf 'drift_count=%s\n' "$drift"
 }
 
+cmd_origin_sync() {
+  ensure_sqlite
+  local db extractor
+  db="$(state_db_path)"
+  extractor="$(cd "$(dirname "$0")" && pwd)/origin-extractor.py"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 not found; skipping origin-sync." >&2
+    printf 'status=skipped\n'
+    printf 'reason=python3_missing\n'
+    return 0
+  fi
+  if [ ! -f "$extractor" ]; then
+    echo "extractor not found: $extractor" >&2
+    printf 'status=skipped\n'
+    printf 'reason=extractor_missing\n'
+    return 0
+  fi
+
+  if [ ! -f "$db" ]; then
+    cmd_init >/dev/null
+  fi
+
+  python3 "$extractor" \
+    --board-root "$BOARD_ROOT" \
+    --project-root "$PROJECT_ROOT" \
+    "$@"
+}
+
 case "$cmd" in
   init) shift; cmd_init ;;
   sync) shift; cmd_sync ;;
+  origin-sync) shift; cmd_origin_sync "$@" ;;
   drift-summary) shift; cmd_drift_summary ;;
   schema-version) shift; cmd_schema_version ;;
   help|*)
     cat <<USAGE >&2
-Usage: $(basename "$0") <init|sync|drift-summary|schema-version>
+Usage: $(basename "$0") <init|sync|origin-sync|drift-summary|schema-version>
 
 Phase 1 scaffold (PRD 7). Set AUTOFLOW_STATE_DB=on to enable read-side
 consumers in the future. Until then, this is informational only.
+
+PRD 9 (origin ledger): \`origin-sync\` reads ~/.claude/projects/<encoded>/
+and ~/.codex/archived_sessions/ jsonl files for this project, extracts
+PRD/order trigger chains, and rebuilds origin_chain + ticket_lifecycle.
 USAGE
     exit "${cmd:+1}"
     ;;

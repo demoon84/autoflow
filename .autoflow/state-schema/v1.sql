@@ -54,3 +54,76 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 CREATE INDEX IF NOT EXISTS idx_runs_ts ON runs(ts);
 CREATE INDEX IF NOT EXISTS idx_runs_runner ON runs(runner_id);
+
+-- ── PRD 9: Origin Ledger (2026-05-09) ───────────────────────────────────
+-- Tracks the chain: Claude Code / Codex session → PRD/order → ticket → commit.
+
+CREATE TABLE IF NOT EXISTS sessions (
+  session_id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,                  -- 'claude_code' | 'codex'
+  source_path TEXT NOT NULL,             -- absolute jsonl path
+  started_at TEXT,
+  ended_at TEXT,
+  message_count INTEGER DEFAULT 0,
+  user_prompt_count INTEGER DEFAULT 0,
+  ai_title TEXT,                         -- Claude Code 'ai-title' record value when present
+  cwd TEXT,                              -- working directory if recorded
+  git_branch TEXT,
+  total_input_tokens INTEGER DEFAULT 0,
+  total_output_tokens INTEGER DEFAULT 0,
+  synced_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source);
+
+CREATE TABLE IF NOT EXISTS origin_chain (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  source TEXT NOT NULL,                  -- 'claude_code' | 'codex'
+  trigger_kind TEXT NOT NULL,            -- 'autoflow' | 'order' | 'plan' | 'todo'
+  trigger_ts TEXT NOT NULL,
+  user_prompt_excerpt TEXT,              -- first 280 chars of the triggering user prompt
+  prd_path TEXT,                         -- e.g. '.autoflow/tickets/done/prd_142/prd_142.md' or inbox/order_NNN.md
+  prd_key TEXT,                          -- 'prd_142' | 'express_900' | 'order_88'
+  ticket_id TEXT,                        -- normalized 3-digit id of the resulting Todo-NNN
+  ticket_status TEXT,                    -- 'inbox' | 'backlog' | 'todo' | 'inprogress' | 'done' | 'failed'
+  commit_hash TEXT,
+  commit_subject TEXT,
+  done_at TEXT,
+  synced_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_origin_session ON origin_chain(session_id);
+CREATE INDEX IF NOT EXISTS idx_origin_ticket ON origin_chain(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_origin_prd ON origin_chain(prd_key);
+CREATE INDEX IF NOT EXISTS idx_origin_status ON origin_chain(ticket_status);
+CREATE INDEX IF NOT EXISTS idx_origin_trigger_ts ON origin_chain(trigger_ts);
+
+CREATE TABLE IF NOT EXISTS ticket_lifecycle (
+  ticket_id TEXT PRIMARY KEY,
+  prd_key TEXT,
+  title TEXT,
+  change_type TEXT,
+  created_at TEXT,
+  inprogress_at TEXT,
+  done_at TEXT,
+  lead_seconds INTEGER,
+  active_seconds INTEGER,
+  tick_count INTEGER DEFAULT 0,
+  status TEXT,
+  commit_hash TEXT,
+  synced_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lifecycle_status ON ticket_lifecycle(status);
+CREATE INDEX IF NOT EXISTS idx_lifecycle_prd ON ticket_lifecycle(prd_key);
+
+CREATE TABLE IF NOT EXISTS file_touches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  ts TEXT NOT NULL,
+  tool TEXT,                             -- 'Edit' | 'Write' | 'Read' | 'Bash' etc.
+  file_path TEXT,
+  FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_touches_path ON file_touches(file_path);
+CREATE INDEX IF NOT EXISTS idx_touches_session ON file_touches(session_id);
