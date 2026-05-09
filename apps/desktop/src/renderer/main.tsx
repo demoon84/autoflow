@@ -6565,6 +6565,11 @@ function LiveTerminalView({
       aria-label={ariaLabel}
     >
       <div ref={hostRef} className="live-terminal-view-host" />
+      {!text ? (
+        <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
+          처리할 작업 없습니다.
+        </div>
+      ) : null}
       {showQuotaToast && quotaSignal ? (
         <div className="live-terminal-view-quota-toast" role="alert" aria-live="assertive">
           <TriangleAlert className="live-terminal-view-quota-toast-icon" aria-hidden="true" />
