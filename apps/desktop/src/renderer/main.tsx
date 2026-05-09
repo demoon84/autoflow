@@ -6335,8 +6335,6 @@ function useLiveStdoutText(
   options?: { projectRoot: string; boardDirName: string },
   maxBytes = 16 * 1024
 ): string {
-  const stateStatus = (runner.stateStatus || "").toLowerCase();
-  const isRunning = stateStatus === "running" && Boolean(runner.pid);
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
   // persistent <runner_id>.log 만 사용. state 의 last_stdout_log 는 tick 시작
@@ -6350,7 +6348,7 @@ function useLiveStdoutText(
   const [text, setText] = React.useState("");
 
   React.useEffect(() => {
-    if (!isRunning || !stdoutPath || !projectRoot || !boardDirName) {
+    if (!stdoutPath || !projectRoot || !boardDirName) {
       setText("");
       return;
     }
@@ -6375,7 +6373,7 @@ function useLiveStdoutText(
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [isRunning, stdoutPath, projectRoot, boardDirName, maxBytes]);
+  }, [stdoutPath, projectRoot, boardDirName, maxBytes]);
 
   return text;
 }
@@ -7182,11 +7180,7 @@ function AiProgressRow({
           </div>
         </div>
       ) : null}
-      {(runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid) ? (
-        <LiveTerminalView text={liveStdoutText} ariaLabel={`${agentLabel} 라이브 터미널`} />
-      ) : showConversation ? (
-        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
-      ) : null}
+      <LiveTerminalView text={liveStdoutText || conversationText} ariaLabel={`${agentLabel} 라이브 터미널`} />
       <RunnerActivityFooter runner={runner} options={options} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
