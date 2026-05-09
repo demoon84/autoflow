@@ -6983,7 +6983,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (hasWorkerIdleSignal) return "todo";
 
-  if (/\bdone\b|\bpass\b|\bcomplete\b|adapter_exit_0/.test(stateText)) return "done";
+  if (/\bdone\b|\bpass\b|\bcomplete\b/.test(stateText)) return "done";
 
   return "todo";
 }
