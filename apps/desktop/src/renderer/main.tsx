@@ -6565,9 +6565,6 @@ function AiProgressRow({
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
   const agentLabel = displayProgressRunnerLabel(runner);
   const agentTitle = displayProgressRoleLabel(runner);
-  const tokenUsageValue = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
-  const animatedTokenUsage = useCountUp(tokenUsageValue);
-  const tokenUsageLabel = animatedTokenUsage > 0 ? `${formatCount(animatedTokenUsage)} 토큰 사용` : "";
   const conversationText = runnerConversationText(runner);
   const statusLower = status.toLowerCase();
   const mode = "loop";
@@ -6669,9 +6666,6 @@ function AiProgressRow({
             <AgentAppIcon agent={runner.agent || ""} />
             <div className="ai-progress-agent-label-cluster">
               <strong>{agentTitle}</strong>
-              {tokenUsageLabel ? (
-                <span className="ai-progress-token-usage">{tokenUsageLabel}</span>
-              ) : null}
             </div>
           </div>
         </div>
