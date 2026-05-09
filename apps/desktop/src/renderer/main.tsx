@@ -4157,10 +4157,10 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
             avgActiveSeconds
           )}s, ticks=${avgTicksPerDoneTicket.toFixed(1)}, 24h=${formatCount(durationTotal24hSeconds)}s`}
         >
-          <Badge variant="secondary">처리 시간</Badge>
+          <Badge variant="secondary">평균 처리 시간</Badge>
           <strong>{formatDurationMetric(avgActiveSeconds)}</strong>
           <span>
-            lead {formatDurationMetric(avgLeadSeconds)} / 누적 24h {formatDurationMetric(durationTotal24hSeconds)}
+            평균 대기시간 {formatDurationMetric(avgLeadSeconds)} / 최근 24시간 누적 처리 {formatDurationMetric(durationTotal24hSeconds)}
           </span>
         </div>
       </div>
