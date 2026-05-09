@@ -3134,11 +3134,10 @@ pre {
 
 .ai-conversation-panel-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin-bottom: 12px;
 }
-
 
 .ai-conversation-panel-head strong {
   font-size: var(--font-size-control-sm);
@@ -3146,9 +3145,44 @@ pre {
   color: var(--foreground);
 }
 
-.ai-conversation-panel-head span {
+.ai-conversation-panel-head > span:not(.ai-conversation-panel-status) {
   font-size: var(--font-size-meta);
   color: var(--muted-foreground);
+}
+
+.ai-conversation-panel-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-meta);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ai-conversation-panel-status-dot {
+  line-height: 1;
+}
+
+.ai-conversation-panel-head .ai-conversation-panel-status-label {
+  color: currentColor;
+}
+
+.ai-conversation-panel-status-running {
+  color: var(--chart-2);
+}
+
+.ai-conversation-panel-status-stopped {
+  color: color-mix(in srgb, var(--chart-3) 68%, white);
+}
+
+.ai-conversation-panel-status-blocked {
+  color: var(--destructive);
+}
+
+.ai-conversation-panel-status-idle {
+  color: color-mix(in srgb, var(--chart-1) 72%, white);
 }
 
 .ai-progress-row-top {

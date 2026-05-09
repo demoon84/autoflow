@@ -853,6 +853,40 @@ function runnerStatusTone(status: string) {
   return "runner-status-idle";
 }
 
+function aiConversationPanelStatus(runner: AutoflowRunner) {
+  const status = runner.stateStatus;
+
+  if (status === "running" || Boolean(runner.pid)) {
+    return {
+      className: "ai-conversation-panel-status-running",
+      dot: "●",
+      label: "실행 중"
+    };
+  }
+
+  if (status === "stopped") {
+    return {
+      className: "ai-conversation-panel-status-stopped",
+      dot: "○",
+      label: "정지"
+    };
+  }
+
+  if (status === "blocked" || status === "needs_user") {
+    return {
+      className: "ai-conversation-panel-status-blocked",
+      dot: "⚠",
+      label: "막힘"
+    };
+  }
+
+  return {
+    className: "ai-conversation-panel-status-idle",
+    dot: "◌",
+    label: "대기"
+  };
+}
+
 function runnerIsEnabled(value: string) {
   return value ? value === "true" : true;
 }
@@ -6283,6 +6317,7 @@ function PageLayout({
 }
 
 function AiConversationPanel({
+  runner,
   runnerLabel,
   agentLabel,
   text
@@ -6292,11 +6327,22 @@ function AiConversationPanel({
   agentLabel: string;
   text: string;
 }) {
+  const panelStatus = aiConversationPanelStatus(runner);
+
   return (
     <article className="ai-conversation-panel" aria-label={`${runnerLabel} 처리 내용`}>
       <header className="ai-conversation-panel-head">
         <strong>{runnerLabel}</strong>
         <span>{agentLabel}</span>
+        <span
+          className={`ai-conversation-panel-status ${panelStatus.className}`}
+          aria-live="polite"
+        >
+          <span className="ai-conversation-panel-status-dot" aria-hidden="true">
+            {panelStatus.dot}
+          </span>
+          <span className="ai-conversation-panel-status-label">{panelStatus.label}</span>
+        </span>
       </header>
       <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} streamId={`panel:${runnerLabel}`} />
     </article>
