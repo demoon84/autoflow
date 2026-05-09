@@ -34,7 +34,6 @@ import {
   TriangleAlert,
   PieChart,
   Trash2,
-  TrendingUp,
   Workflow,
   X
 } from "lucide-react";
@@ -3821,149 +3820,6 @@ function ConversationStream({
   );
 }
 
-function SnapshotGrid({
-  board,
-  lastUpdated,
-  ticketTotal
-}: {
-  board: AutoflowBoardSnapshot | null;
-  lastUpdated: string;
-  ticketTotal: number;
-}) {
-  const status = board?.status || {};
-  const doctor = board?.doctor || {};
-  const metrics = board?.metrics || {};
-  const rows = [
-    ["흐름 소스", board?.exists ? "autoflow 발견" : "없음"],
-    ["버전", statusValue(status, "board_version", "-")],
-    ["상태", displayStatus(statusValue(doctor, "status", board?.exists ? "unknown" : "-"))],
-    ["완료율", `${statusValue(metrics, "completion_rate_percent", "0.0")}%`],
-    ["티켓 파일", statusValue(metrics, "ticket_total", String(ticketTotal))],
-    [
-      "산출물",
-      `${statusValue(metrics, "runner_artifact_ok_count", "0")} 정상 / ${statusValue(
-        metrics,
-        "runner_artifact_warning_count",
-        "0"
-      )} 주의`
-    ],
-    ["전달된 요청", statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0))],
-    ["업데이트", lastUpdated ? formatDate(lastUpdated) : "-"]
-  ];
-
-  return (
-    <div className="snapshot-grid">
-      {rows.map(([label, value]) => (
-        <div key={label} className="snapshot-item">
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-type ReportDatum = {
-  label: string;
-  value: number;
-  displayValue?: string;
-  detail?: string;
-  color: string;
-};
-
-type ReportInlineStat = {
-  label: string;
-  value: string;
-  detail?: string;
-  title?: string;
-};
-
-const reportColors = {
-  blue: "#4f7db8",
-  teal: "#5f968d",
-  green: "#6f9f73",
-  amber: "#bc8d3e",
-  red: "#b86d67",
-  violet: "#7f72b2",
-  slate: "#8b948f"
-};
-
-function currentMetricSnapshot(
-  board: AutoflowBoardSnapshot | null,
-  ticketTotal: number,
-  lastUpdated: string
-): AutoflowMetricSnapshot | null {
-  if (!board?.exists) {
-    return null;
-  }
-
-  const metrics = board.metrics || {};
-  return {
-    timestamp: statusValue(metrics, "timestamp", lastUpdated),
-    spec_total: statusNumber(metrics, "spec_total"),
-    ticket_total: statusNumber(metrics, "ticket_total", ticketTotal),
-    ticket_done_count: statusNumber(metrics, "ticket_done_count"),
-    active_ticket_count: statusNumber(metrics, "active_ticket_count"),
-    reject_count: statusNumber(metrics, "reject_count"),
-    handoff_count: statusNumber(metrics, "handoff_count", board.conversationFiles?.length || 0),
-    runner_total_count: statusNumber(metrics, "runner_total_count", board.runners?.length || 0),
-    runner_running_count: statusNumber(metrics, "runner_running_count"),
-    runner_idle_count: statusNumber(metrics, "runner_idle_count"),
-    runner_stopped_count: statusNumber(metrics, "runner_stopped_count"),
-    runner_blocked_count: statusNumber(metrics, "runner_blocked_count"),
-    runner_enabled_count: statusNumber(metrics, "runner_enabled_count", board.runners?.length || 0),
-    runner_disabled_count: statusNumber(metrics, "runner_disabled_count"),
-    runner_invalid_config_count: statusNumber(metrics, "runner_invalid_config_count"),
-    runner_artifact_ok_count: statusNumber(metrics, "runner_artifact_ok_count"),
-    runner_artifact_warning_count: statusNumber(metrics, "runner_artifact_warning_count"),
-    runner_artifact_not_applicable_count: statusNumber(metrics, "runner_artifact_not_applicable_count"),
-    autoflow_commit_count: statusNumber(metrics, "autoflow_commit_count"),
-    autoflow_code_files_changed_count: statusNumber(metrics, "autoflow_code_files_changed_count"),
-    autoflow_code_insertions_count: statusNumber(metrics, "autoflow_code_insertions_count"),
-    autoflow_code_deletions_count: statusNumber(metrics, "autoflow_code_deletions_count"),
-    autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
-    autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
-    autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
-    autoflow_avg_lead_seconds: statusNumber(metrics, "autoflow_avg_lead_seconds"),
-    autoflow_avg_active_seconds: statusNumber(metrics, "autoflow_avg_active_seconds"),
-    autoflow_avg_ticks_per_done_ticket: statusNumber(metrics, "autoflow_avg_ticks_per_done_ticket"),
-    autoflow_duration_total_24h_seconds: statusNumber(metrics, "autoflow_duration_total_24h_seconds"),
-    ...{
-      verifier_pass_count: statusNumber(metrics, "verifier_pass_count"),
-      verifier_fail_count: statusNumber(metrics, "verifier_fail_count"),
-      verification_pass_rate_percent: statusNumber(metrics, "verification_pass_rate_percent")
-    },
-    completion_rate_percent: statusNumber(metrics, "completion_rate_percent")
-  };
-}
-
-function reportingHistory(board: AutoflowBoardSnapshot | null, ticketTotal: number, lastUpdated: string) {
-  const history = [...(board?.metricsHistory || [])];
-  const current = currentMetricSnapshot(board, ticketTotal, lastUpdated);
-
-  if (current?.timestamp && history[history.length - 1]?.timestamp !== current.timestamp) {
-    history.push(current);
-  }
-
-  const latest = history[history.length - 1];
-  if (!latest?.timestamp) {
-    return history.slice(-30);
-  }
-
-  const latestTime = new Date(latest.timestamp).getTime();
-  if (Number.isNaN(latestTime)) {
-    return history.slice(-30);
-  }
-
-  const weekStart = latestTime - 7 * 24 * 60 * 60 * 1000;
-  const weeklyHistory = history.filter((snapshot) => {
-    const snapshotTime = new Date(snapshot.timestamp).getTime();
-    return Number.isFinite(snapshotTime) && snapshotTime >= weekStart;
-  });
-
-  return (weeklyHistory.length ? weeklyHistory : [latest]).slice(-30);
-}
-
 function ReportMetricCard({
   label,
   value,
@@ -3994,201 +3850,6 @@ function ReportMetricCard({
         <em>{detail}</em>
       </CardContent>
     </Card>
-  );
-}
-
-function ReportChartCard({
-  label,
-  wide = false,
-  icon: Icon,
-  title,
-  meta,
-  children
-}: {
-  label: string;
-  wide?: boolean;
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  meta: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className={`report-chart-card${wide ? " report-chart-wide" : ""}`} aria-label={label} title={`${title}: ${meta}`}>
-      <CardContent className="report-chart-card-content">
-        <div className="report-chart-heading">
-          <Icon className="h-4 w-4" />
-          <div>
-            <h3>{title}</h3>
-            <span>{meta}</span>
-          </div>
-        </div>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ReportInlineStats({ stats }: { stats: ReportInlineStat[] }) {
-  return (
-    <div className="report-inline-stats">
-      {stats.map((stat) => (
-        <div key={stat.label} className="report-inline-stat" title={stat.title || `${stat.label}: ${stat.value}`}>
-          <span>{stat.label}</span>
-          <strong>{stat.value}</strong>
-          {stat.detail ? <em>{stat.detail}</em> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ReportFallback({ children }: { children: React.ReactNode }) {
-  return <div className="report-fallback">{children}</div>;
-}
-
-function ReportBarBreakdown({ data }: { data: ReportDatum[] }) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-
-  return (
-    <div className="report-bar-list">
-      {data.map((item) => {
-        const width = total > 0 ? Math.max(4, (item.value / total) * 100) : 0;
-        return (
-          <div key={item.label} className="report-bar-row">
-            <div className="report-bar-row-label">
-              <span>{item.label}</span>
-              <strong>{item.displayValue || formatCount(item.value)}</strong>
-            </div>
-            <div className="report-bar-track" aria-hidden="true">
-              <span
-                className="report-bar-fill"
-                style={{
-                  width: `${width}%`,
-                  background: item.color
-                }}
-              />
-            </div>
-            {item.detail ? <em>{item.detail}</em> : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ReportSplitBar({ data }: { data: ReportDatum[] }) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-
-  return (
-    <div className="report-split-layout">
-      <div className="report-split-track" aria-hidden="true">
-        {data.map((item) => {
-          const width = total > 0 ? (item.value / total) * 100 : 0;
-          return (
-            <span
-              key={item.label}
-              style={{
-                width: `${width}%`,
-                background: item.color
-              }}
-            />
-          );
-        })}
-      </div>
-      <div className="report-split-legend">
-        {data.map((item) => (
-          <div key={item.label} className="report-split-legend-item">
-            <span style={{ background: item.color }} aria-hidden="true" />
-            <strong>{item.label}</strong>
-            <em>{item.displayValue || formatCount(item.value)}</em>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReportDonutChart({
-  data,
-  centerValue,
-  centerLabel
-}: {
-  data: ReportDatum[];
-  centerValue: string;
-  centerLabel: string;
-}) {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
-  let cursor = 0;
-  const segments = data
-    .filter((item) => item.value > 0)
-    .map((item) => {
-      const start = cursor;
-      const end = cursor + (item.value / total) * 100;
-      cursor = end;
-      return `${item.color} ${start}% ${end}%`;
-    });
-  const background = segments.length ? `conic-gradient(${segments.join(", ")})` : "var(--muted)";
-
-  return (
-    <div className="report-donut-layout">
-      <div className="report-donut" style={{ background }} aria-label={`${centerLabel} ${centerValue}`}>
-        <div>
-          <strong>{centerValue}</strong>
-          <span>{centerLabel}</span>
-        </div>
-      </div>
-      <div className="report-donut-legend">
-        {data.map((item) => (
-          <div key={item.label} className="report-donut-legend-item">
-            <span style={{ background: item.color }} aria-hidden="true" />
-            <strong>{item.label}</strong>
-            <em>{item.displayValue || formatCount(item.value)}</em>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CompletionTrend({ snapshots }: { snapshots: AutoflowMetricSnapshot[] }) {
-  const width = 520;
-  const height = 168;
-  const padding = 18;
-  const values = snapshots.map((snapshot) => snapshot.completion_rate_percent);
-  const maxValue = Math.max(100, ...values);
-  const points = snapshots.map((snapshot, index) => {
-    const x =
-      snapshots.length <= 1
-        ? width / 2
-        : padding + (index / (snapshots.length - 1)) * (width - padding * 2);
-    const y = height - padding - (snapshot.completion_rate_percent / maxValue) * (height - padding * 2);
-    return { x, y, snapshot };
-  });
-  const polyline = points.map((point) => `${point.x},${point.y}`).join(" ");
-  const first = snapshots[0];
-  const last = snapshots[snapshots.length - 1];
-  const doneDelta = first && last ? last.ticket_done_count - first.ticket_done_count : 0;
-
-  return (
-    <div className="report-trend">
-      {points.length ? (
-        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="완료율 추세">
-          <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} />
-          <line x1={padding} y1={padding} x2={padding} y2={height - padding} />
-          <polyline points={polyline} />
-          {points.map((point) => (
-            <circle key={point.snapshot.timestamp} cx={point.x} cy={point.y} r="4" />
-          ))}
-        </svg>
-      ) : (
-        <div className="empty-panel report-trend-empty">저장된 지표가 없습니다</div>
-      )}
-      <div className="report-trend-caption">
-        <span>{snapshots.length > 1 ? `${snapshots.length}개 지점` : "현재 지점"}</span>
-        <strong>{last ? formatPercentValue(last.completion_rate_percent) : "0.0%"}</strong>
-        <em>{doneDelta > 0 ? `+${formatCount(doneDelta)} 완료` : "추가 완료 없음"}</em>
-      </div>
-    </div>
   );
 }
 
@@ -4252,107 +3913,39 @@ function ReportingDashboard({
   ticketTotal: number;
 }) {
   const metrics = board?.metrics || {};
-  const doneCount = statusNumber(metrics, "ticket_done_count");
-  const todoCount = statusNumber(metrics, "ticket_todo_count", board?.tickets.todo?.length || 0);
-  const inprogressCount = statusNumber(metrics, "ticket_inprogress_count", board?.tickets.inprogress?.length || 0);
-  const planningCount = statusNumber(metrics, "ticket_planning_count");
-  const rejectCount = statusNumber(metrics, "reject_count", board?.tickets.reject?.length || 0);
-  const activeCount = statusNumber(metrics, "active_ticket_count", todoCount + inprogressCount);
-  const specTotal = statusNumber(metrics, "spec_total", board?.tickets.backlog?.length || 0);
-  const handoffCount = statusNumber(metrics, "handoff_count", board?.conversationFiles?.length || 0);
-  const completionRate = statusNumber(metrics, "completion_rate_percent");
-  const artifactOk = statusNumber(metrics, "runner_artifact_ok_count");
-  const artifactWarning = statusNumber(metrics, "runner_artifact_warning_count");
-  const artifactTotal = artifactOk + artifactWarning;
   const commitCount = statusNumber(metrics, "autoflow_commit_count");
   const {
     codeFilesChangedCount,
-    codeInsertionsCount,
-    codeDeletionsCount,
     codeVolumeCount,
     tokenUsageCount,
     tokenReportCount
   } = getWorkflowMetricCounts(board);
   const runnerRunning = statusNumber(metrics, "runner_running_count");
-  const runnerIdle = statusNumber(metrics, "runner_idle_count");
-  const runnerStopped = statusNumber(metrics, "runner_stopped_count");
   const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
-  const snapshots = reportingHistory(board, ticketTotal, lastUpdated);
+  const runnerEnabled = statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0);
   const runnerNeedsUser = (board?.runners || []).filter((runner) => {
     const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
     return recoveryStatus === "needs_user" || activeStage === "blocked";
   }).length;
-  const mergeBlockedCount = board?.tickets["merge-blocked"]?.length || 0;
-  const blockedSignalCount = rejectCount + runnerBlocked + runnerNeedsUser + mergeBlockedCount;
   const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
   const hasCodeImpactData = codeVolumeCount > 0 || codeFilesChangedCount > 0;
-  const trendMeta = snapshots.length > 1 ? "이번 7일" : snapshots.length === 1 ? "최근 스냅샷" : "전체 누적";
-  const ticketStateData: ReportDatum[] = [
-    { label: "대기", value: todoCount, color: reportColors.blue },
-    { label: "실행", value: inprogressCount + planningCount, color: reportColors.teal },
-    { label: "완료", value: doneCount, color: reportColors.green },
-    { label: "반려", value: rejectCount, color: reportColors.red }
-  ];
-  const runnerData: ReportDatum[] = [
-    { label: "실행 중", value: runnerRunning, color: reportColors.teal },
-    { label: "대기", value: runnerIdle, color: reportColors.blue },
-    { label: "중지", value: runnerStopped, color: reportColors.slate },
-    { label: "막힘", value: runnerBlocked, color: reportColors.red }
-  ];
-  const codeLineData: ReportDatum[] = [
-    { label: "추가 라인", value: codeInsertionsCount, displayValue: `${formatCount(codeInsertionsCount)}줄`, color: reportColors.green },
-    { label: "삭제 라인", value: codeDeletionsCount, displayValue: `${formatCount(codeDeletionsCount)}줄`, color: reportColors.red }
-  ];
-  const secondaryStats: ReportInlineStat[] = [
-    {
-      label: "전달된 요청",
-      value: `${formatCompactCount(handoffCount)}개`,
-      detail: `${formatCount(specTotal)}개 PRD 처리`,
-      title: `전달된 요청 ${formatCount(handoffCount)}개, PRD ${formatCount(specTotal)}개`
-    },
-    {
-      label: "완료 커밋",
-      value: `${formatCompactCount(commitCount)}커밋`,
-      detail: "전체 누적",
-      title: `완료 커밋 ${formatCount(commitCount)}커밋`
-    },
-    {
-      label: "변경 파일",
-      value: `${formatCompactCount(codeFilesChangedCount)}개`,
-      detail: `${formatCount(codeVolumeCount)}줄 변경`,
-      title: `변경 파일 ${formatCount(codeFilesChangedCount)}개, 변경 코드량 ${formatCount(codeVolumeCount)}줄`
-    },
-    {
-      label: "러너 산출물",
-      value: `${formatCompactCount(artifactTotal)}개`,
-      detail: `${formatCount(artifactOk)} 정상 / ${formatCount(artifactWarning)} 주의`,
-      title: `러너 산출물 ${formatCount(artifactTotal)}개, 정상 ${formatCount(artifactOk)}개, 주의 ${formatCount(artifactWarning)}개`
-    }
-  ];
+  const totalTickets = formatCount(ticketTotal);
+  const lastUpdatedLabel = lastUpdated ? formatDate(lastUpdated) : "미확인";
+  const runnerStatusNote =
+    `${formatCount(runnerRunning)}개 실행 / ${formatCount(runnerBlocked)}개 막힘` +
+    (runnerNeedsUser > 0 ? ` / ${formatCount(runnerNeedsUser)}개 needs_user` : "");
 
   return (
-    <div className="report-dashboard">
+    <div className="report-dashboard" aria-label={`통계 카드 ${totalTickets}개 · 마지막 업데이트 ${lastUpdatedLabel}`}>
       <div className="report-metric-grid report-metric-grid-primary" aria-label="핵심 보드 상태 요약">
         <ReportMetricCard
-          label="완료 티켓"
-          value={`${formatCompactCount(doneCount)}개`}
-          detail={`${formatPercentValue(completionRate)} 완료 · 전체 누적`}
-          icon={CheckCircle2}
+          label="코드 영향"
+          value={`${formatCompactCount(codeFilesChangedCount)}개`}
+          detail={hasCodeImpactData ? `${formatCount(codeVolumeCount)}줄 변경` : "완료 커밋 후 채워집니다"}
+          icon={FolderPlus}
           tone="report-tone-green"
-          title={`완료 티켓 ${formatCount(doneCount)}개, 완료율 ${formatPercentValue(completionRate)}, 전체 누적`}
-        />
-        <ReportMetricCard
-          label="막힌 항목"
-          value={`${formatCompactCount(blockedSignalCount)}개`}
-          detail={
-            blockedSignalCount > 0
-              ? `${formatCount(rejectCount)}개 반려 / ${formatCount(runnerBlocked + runnerNeedsUser + mergeBlockedCount)}개 러너·티켓 신호`
-              : "막힘 신호가 없습니다"
-          }
-          icon={TriangleAlert}
-          tone={blockedSignalCount > 0 ? "report-tone-red" : "report-tone-blue"}
-          title={`막힌 항목 ${formatCount(blockedSignalCount)}개, 반려 ${formatCount(rejectCount)}개, runnerBlocked ${formatCount(runnerBlocked)}개, needs_user/blocked 티켓 신호 ${formatCount(runnerNeedsUser + mergeBlockedCount)}개`}
+          title={`코드 영향 ${formatCount(codeFilesChangedCount)}개 파일, ${formatCount(codeVolumeCount)}줄 변경`}
         />
         <ReportMetricCard
           label="토큰 사용량"
@@ -4362,99 +3955,22 @@ function ReportingDashboard({
           tone="report-tone-violet"
           title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, 실행 로그 ${formatCount(tokenReportCount)}개, 전체 누적`}
         />
-      </div>
-
-      <div className="report-secondary-panel" aria-label="보조 통계">
-        <ReportInlineStats stats={secondaryStats} />
-      </div>
-
-      <div className="report-chart-grid">
-        <ReportChartCard
-          label="티켓 처리량"
-          wide
-          icon={BarChart3}
-          title="보드 흐름"
-          meta={`${formatCount(activeCount)}개 활성 / ${formatCount(ticketTotal)}개 전체`}
-        >
-          <ReportBarBreakdown data={ticketStateData} />
-        </ReportChartCard>
-
-        <ReportChartCard
-          label="완료 추세"
-          wide
-          icon={TrendingUp}
-          title="완료 추세"
-          meta={snapshots.length ? trendMeta : "전체 누적"}
-        >
-          <CompletionTrend snapshots={snapshots} />
-        </ReportChartCard>
-
-        <ReportChartCard
-          label="코드 영향"
-          wide
-          icon={ClipboardList}
-          title="코드 영향"
-          meta={
-            hasCodeImpactData
-              ? `${formatCount(codeFilesChangedCount)}개 파일 / ${formatCount(codeVolumeCount)}줄`
-              : "완료 커밋 후 채워집니다"
-          }
-        >
-          {hasCodeImpactData ? (
-            <>
-              <ReportInlineStats
-                stats={[
-                  {
-                    label: "변경 파일",
-                    value: `${formatCompactCount(codeFilesChangedCount)}개`,
-                    detail: `${formatCount(commitCount)}커밋 기준`,
-                    title: `변경 파일 ${formatCount(codeFilesChangedCount)}개, 완료 커밋 ${formatCount(commitCount)}커밋`
-                  }
-                ]}
-              />
-              <ReportSplitBar data={codeLineData} />
-            </>
-          ) : (
-            <ReportFallback>완료 커밋 후 채워집니다</ReportFallback>
-          )}
-        </ReportChartCard>
-
-        <ReportChartCard
-          label="토큰 사용량"
-          icon={Terminal}
-          title="토큰 사용량"
-          meta={hasTokenData ? `${formatCompactCount(tokenUsageCount)}토큰 · 전체 누적` : "러너 실행 후 채워집니다"}
-        >
-          {hasTokenData ? (
-            <ReportInlineStats
-              stats={[
-                {
-                  label: "사용 토큰",
-                  value: `${formatCompactCount(tokenUsageCount)}토큰`,
-                  detail: `${formatCount(tokenUsageCount)}토큰 정확값`,
-                  title: `사용 토큰 ${formatCount(tokenUsageCount)}토큰`
-                },
-                {
-                  label: "실행 로그",
-                  value: `${formatCompactCount(tokenReportCount)}개`,
-                  detail: "토큰 집계 기준",
-                  title: `토큰 실행 로그 ${formatCount(tokenReportCount)}개`
-                }
-              ]}
-            />
-          ) : (
-            <ReportFallback>러너 실행 후 채워집니다</ReportFallback>
-          )}
-        </ReportChartCard>
-
-        <ReportChartCard
-          label="AI 가동 상태"
+        <ReportMetricCard
+          label="러너 상태"
+          value={`${formatCompactCount(runnerEnabled)}개`}
+          detail={runnerStatusNote}
           icon={Activity}
-          title="러너 상태"
-          meta={`${formatCount(statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0))}개 사용`}
-        >
-          <ReportBarBreakdown data={runnerData} />
-        </ReportChartCard>
+          tone="report-tone-blue"
+          title={`러너 상태 ${formatCount(runnerRunning)}개 실행 중, ${formatCount(runnerBlocked)}개 막힘`}
+        />
+        <ReportMetricCard
+          label="완료 커밋"
+          value={`${formatCompactCount(commitCount)}개`}
+          detail={`${formatCount(commitCount)}개 완료 커밋 누적`}
+          icon={CheckCircle2}
+          tone="report-tone-green"
+          title={`완료 커밋 ${formatCount(commitCount)}개`}
+        />
       </div>
     </div>
   );
