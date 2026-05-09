@@ -1024,6 +1024,15 @@ telemetry_extract_token_components_from_logs() {
       return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"type"[[:space:]]*:[[:space:]]*"(assistant|user|stream_event|system)"/
     }
 
+    function is_codex_intermediate_stream_event(value, lower_value) {
+      # codex --json emits item.completed with embedded aggregated_output that
+      # may itself include past telemetry JSON ("usage": {"input_tokens":...}).
+      # Only turn.completed carries authoritative cumulative usage. Skip every
+      # other codex stream event to prevent ghost-summing of nested JSON.
+      lower_value = tolower(value)
+      return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"type"[[:space:]]*:[[:space:]]*"(thread\.started|turn\.started|item\.started|item\.completed)"/
+    }
+
     {
       line = $0
       gsub(/\r$/, "", line)
@@ -1039,6 +1048,10 @@ telemetry_extract_token_components_from_logs() {
       }
 
       if (is_claude_intermediate_stream_event(line)) {
+        next
+      }
+
+      if (is_codex_intermediate_stream_event(line)) {
         next
       }
 
