@@ -618,11 +618,6 @@ wiki_ai_owned_notice() {
   printf 'wiki.next_action=Wiki AI inspects done/reject/log sources and runs scripts/update-wiki.sh only when material baseline drift exists.\n'
 }
 
-run_skill_auto_extract_best_effort() {
-  local ticket_file="$1"
-  record_skill_extraction "$ticket_file" "ticket_completion" "ticket-completion"
-}
-
 move_run_file_to_ready_to_merge() {
   local source_run_file="$1"
   local ticket_file="$2"
@@ -921,10 +916,8 @@ case "$outcome" in
     printf '%s\n' "$merge_prep_output"
     printf 'inline_merge_exit=%s\n' "$inline_merge_exit"
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
-      skill_output="$(run_skill_auto_extract_best_effort "$ticket_file")"
       printf 'inline_merge=done; log written; wiki deferred to Wiki AI\n'
       printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/ || /^wiki\.status=/ || /^wiki\.next_action=/'
-      printf '%s\n' "${skill_output:-}" | awk 'NF'
 
       # PRD 6 (2026-05-09): write a PR body draft for the user. This never
       # pushes or calls gh. The user runs `gh pr create --body-file ...` after

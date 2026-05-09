@@ -612,11 +612,11 @@ role_autocommit_message() {
 role_autocommit_wiki_source_context() {
   local latest_source source_project source_ticket
 
-  latest_source="$(find "${board_root}/tickets/done" -type f \( -name 'tickets_[0-9]*.md' -o -name 'prd_[0-9]*.md' \) -exec ls -t {} + 2>/dev/null | head -n 1)"
+  latest_source="$(find "${board_root}/tickets/done" -type f \( -name 'Todo-[0-9]*.md' -o -name 'tickets_[0-9]*.md' -o -name 'prd_[0-9]*.md' \) -exec ls -t {} + 2>/dev/null | head -n 1)"
   [ -n "$latest_source" ] || return 0
 
   source_project="$(printf '%s\n' "$latest_source" | sed -n 's#.*tickets/done/\(prd_[0-9][0-9]*\)/.*#\1#p' | head -n 1)"
-  source_ticket="$(basename "$latest_source" .md | sed -n 's#^\(tickets_[0-9][0-9]*\)$#\1#p')"
+  source_ticket="$(basename "$latest_source" .md | sed -n -e 's#^\(Todo-[0-9][0-9]*\)$#\1#p' -e 's#^\(tickets_[0-9][0-9]*\)$#\1#p')"
 
   if [ -n "$source_project" ] && [ -n "$source_ticket" ]; then
     printf '%s/%s\n' "$source_project" "$source_ticket"
@@ -764,74 +764,6 @@ run_wiki_curator_idle_best_effort() {
   printf '%s\n' "$output" | awk -F= '/^(status|reason|last_run_at|run_count|reviewed_count|stale_marked_count|archived_count|pinned_skipped_count|auxiliary_client|main_prompt_cache_touched)=/ { print "curator_idle." $0 }'
 }
 
-run_skill_nudge_best_effort() {
-  local ticket_file tick_count interval state_file in_progress cli_path output status
-
-  [ "${dry_run:-false}" = "false" ] || return 0
-
-  case "$public_role" in
-    planner|ticket) ;;
-    *) return 0 ;;
-  esac
-  case "${AUTOFLOW_SKILL_NUDGE_ENABLED:-1}" in
-    0|false|off|no|FALSE|OFF|NO) return 0 ;;
-  esac
-
-  ticket_file="$(ticket_goal_active_ticket_file 2>/dev/null || true)"
-  if [ -z "$ticket_file" ] && [ "$public_role" = "planner" ]; then
-    ticket_file="$(runner_active_ticket_file_from_item "$(runner_adapter_state_value "active_item")" 2>/dev/null || true)"
-  fi
-  [ -n "$ticket_file" ] || return 0
-  interval="${AUTOFLOW_SKILL_NUDGE_INTERVAL_TICKS:-10}"
-  case "$interval" in ''|*[!0-9]*) interval=10 ;; esac
-  [ "$interval" -gt 0 ] || return 0
-
-  tick_count="$(planner_ticket_field "$ticket_file" "Goal Runtime" "Tick Count")"
-  case "$tick_count" in ''|*[!0-9]*) tick_count=0 ;; esac
-  [ "$tick_count" -gt 0 ] || return 0
-  [ $((tick_count % interval)) -eq 0 ] || return 0
-
-  state_file="${board_root}/runners/state/skill-nudge.${runner_id}.state"
-  in_progress="$(awk -F= '$1 == "skill_extraction_in_progress" { print $2; found=1; exit } END { exit(found ? 0 : 1) }' "$state_file" 2>/dev/null || true)"
-  if [ "$in_progress" = "true" ]; then
-    printf 'skill_nudge.status=skipped_recursion_guard\n'
-    printf 'skill_nudge.state_file=%s\n' "$state_file"
-    return 0
-  fi
-
-  mkdir -p "$(dirname "$state_file")"
-  {
-    printf 'skill_extraction_in_progress=true\n'
-    printf 'runner_id=%s\n' "$runner_id"
-    printf 'ticket=%s\n' "$ticket_file"
-    printf 'tick_count=%s\n' "$tick_count"
-  } > "$state_file"
-
-  cli_path="${project_root}/bin/autoflow"
-  if [ -x "$cli_path" ]; then
-    set +e
-    output="$("$cli_path" skill auto-extract "$project_root" "$board_dir_name" --from-ticket "$ticket_file" --pattern-type skill_nudge --category nudge 2>&1)"
-    status=$?
-    set -e
-  else
-    output="autoflow cli missing"
-    status=127
-  fi
-
-  {
-    printf 'skill_extraction_in_progress=false\n'
-    printf 'runner_id=%s\n' "$runner_id"
-    printf 'ticket=%s\n' "$ticket_file"
-    printf 'tick_count=%s\n' "$tick_count"
-    printf 'last_exit=%s\n' "$status"
-    printf 'last_run_at=%s\n' "$(runner_now_iso)"
-  } > "$state_file"
-
-  printf 'skill_nudge.status=%s\n' "$status"
-  printf 'skill_nudge.state_file=%s\n' "$state_file"
-  printf '%s\n' "$output" | awk -F= '/^(status|skill_file|skill_path|skill_id|created_from)=/ { print "skill_nudge." $0 }'
-}
-
 runner_ticket_id_from_active_item() {
   local item="$1"
   local name
@@ -840,8 +772,8 @@ runner_ticket_id_from_active_item() {
   name="${item##*/}"
   name="${name%.md}"
   case "$name" in
-    tickets_[0-9]*)
-      id="$(printf '%s' "$name" | sed -n 's/^\(tickets_[0-9][0-9]*\).*/\1/p')"
+    Todo-[0-9]*|tickets_[0-9]*)
+      id="$(printf '%s' "$name" | sed -n -e 's/^\(Todo-[0-9][0-9]*\).*/\1/p' -e 's/^\(tickets_[0-9][0-9]*\).*/\1/p')"
       [ -n "$id" ] && printf '%s' "$id"
       ;;
     verify_[0-9]*)
@@ -942,14 +874,16 @@ ticket_goal_active_ticket_file() {
   fi
 
   active_id="${adapter_active_ticket_id:-$(runner_active_state_value "active_ticket_id")}"
-  id="$(printf '%s' "$active_id" | sed -n 's/^tickets_\([0-9][0-9][0-9]\)$/\1/p')"
+  id="$(printf '%s' "$active_id" | sed -n -e 's/^Todo-\([0-9][0-9][0-9]\)$/\1/p' -e 's/^tickets_\([0-9][0-9][0-9]\)$/\1/p')"
   [ -n "$id" ] || id="$(printf '%s' "$active_id" | sed -n 's/^\([0-9][0-9][0-9]\)$/\1/p')"
   [ -n "$id" ] || return 1
 
   for candidate in \
-    "${board_root}/tickets/inprogress/tickets_${id}.md" \
+    "${board_root}/tickets/inprogress/Todo-${id}.md" \
     "${board_root}/tickets/ready-to-merge/tickets_${id}.md" \
     "${board_root}/tickets/merge-blocked/tickets_${id}.md" \
+    "${board_root}/tickets/todo/Todo-${id}.md" \
+    "${board_root}/tickets/inprogress/tickets_${id}.md" \
     "${board_root}/tickets/todo/tickets_${id}.md"; do
     [ -f "$candidate" ] && printf '%s' "$candidate" && return 0
   done
@@ -1326,7 +1260,8 @@ runner_active_ticket_file_from_item() {
 
   ticket_name="$(runner_ticket_id_from_active_item "$item")"
   [ -n "$ticket_name" ] || return 1
-  ticket_number="${ticket_name#tickets_}"
+  ticket_number="${ticket_name#Todo-}"
+  ticket_number="${ticket_number#tickets_}"
   ticket_number="${ticket_number#verify_}"
 
   for candidate in \
@@ -1336,6 +1271,11 @@ runner_active_ticket_file_from_item() {
     "${board_root}/tickets/todo/${ticket_name}.md" \
     "${board_root}/tickets/reject/${ticket_name}.md" \
     "${board_root}/tickets/done"/*/"${ticket_name}.md" \
+    "${board_root}/tickets/inprogress/Todo-${ticket_number}.md" \
+    "${board_root}/tickets/ready-to-merge/Todo-${ticket_number}.md" \
+    "${board_root}/tickets/merge-blocked/Todo-${ticket_number}.md" \
+    "${board_root}/tickets/todo/Todo-${ticket_number}.md" \
+    "${board_root}/tickets/done"/*/"Todo-${ticket_number}.md" \
     "${board_root}/tickets/inprogress/tickets_${ticket_number}.md" \
     "${board_root}/tickets/ready-to-merge/tickets_${ticket_number}.md" \
     "${board_root}/tickets/merge-blocked/tickets_${ticket_number}.md" \
@@ -1467,11 +1407,13 @@ runner_ticket_self_refresh_dirty_path() {
 
   [ -n "$dirty_path" ] || return 1
   ticket_id="$(runner_ticket_id_from_active_item "$ticket_file")"
+  ticket_id="${ticket_id#Todo-}"
   ticket_id="${ticket_id#tickets_}"
   [ -n "$ticket_id" ] || return 1
   board_dir="$(basename "$board_root")"
 
   case "$dirty_path" in
+    "${board_dir}/tickets/inprogress/Todo-${ticket_id}.md"|\
     "${board_dir}/tickets/inprogress/tickets_${ticket_id}.md"|\
     "${board_dir}/tickets/inprogress/verify_${ticket_id}.md")
       return 0
@@ -1688,7 +1630,8 @@ runner_board_relative_path() {
 
 planner_ticket_file_for_ticket_ref() {
   local ticket_ref="$1"
-  local ticket_num="${ticket_ref#tickets_}"
+  local ticket_num="${ticket_ref#Todo-}"
+  ticket_num="${ticket_num#tickets_}"
   local candidate
 
   for candidate in \
@@ -1697,6 +1640,10 @@ planner_ticket_file_for_ticket_ref() {
     "${board_root}/tickets/merge-blocked/${ticket_ref}.md" \
     "${board_root}/tickets/todo/${ticket_ref}.md" \
     "${board_root}/tickets/reject/${ticket_ref}.md" \
+    "${board_root}/tickets/inprogress/Todo-${ticket_num}.md" \
+    "${board_root}/tickets/ready-to-merge/Todo-${ticket_num}.md" \
+    "${board_root}/tickets/merge-blocked/Todo-${ticket_num}.md" \
+    "${board_root}/tickets/todo/Todo-${ticket_num}.md" \
     "${board_root}/tickets/reject/reject_${ticket_num}.md"; do
     [ -f "$candidate" ] && {
       printf '%s' "$candidate"
@@ -1818,9 +1765,13 @@ planner_orchestration_signal() {
 
   for file in \
     "${board_root}"/tickets/inprogress/tickets_*.md \
+    "${board_root}"/tickets/inprogress/Todo-*.md \
     "${board_root}"/tickets/merge-blocked/tickets_*.md \
+    "${board_root}"/tickets/merge-blocked/Todo-*.md \
     "${board_root}"/tickets/ready-to-merge/tickets_*.md \
-    "${board_root}"/tickets/todo/tickets_*.md; do
+    "${board_root}"/tickets/ready-to-merge/Todo-*.md \
+    "${board_root}"/tickets/todo/tickets_*.md \
+    "${board_root}"/tickets/todo/Todo-*.md; do
     [ -f "$file" ] || continue
     runner_ticket_is_parked_needs_user "$file" && continue
 
@@ -2445,7 +2396,8 @@ clear_finished_ticket_active_state_if_resolved() {
     tickets/ready-to-merge/*|\
     tickets/merge-blocked/*|\
     tickets/todo/*|\
-    tickets_[0-9]*)
+    Todo-[0-9]*|\
+    Todo-[0-9]*|tickets_[0-9]*)
       requested_is_active_queue="true"
       ;;
   esac
@@ -5436,8 +5388,8 @@ agent_runtime_preflight_or_exit() {
   fi
   if [ -n "$active_ticket_id" ]; then
     case "$active_ticket_id" in
-      tickets_*) ;;
-      *) active_ticket_id="tickets_${active_ticket_id}" ;;
+      Todo-*|tickets_*) ;;
+      *) active_ticket_id="Todo-${active_ticket_id}" ;;
     esac
     [ -n "$active_item" ] || active_item="$active_ticket_id"
     active_stage="${preflight_status:-}"
@@ -5710,11 +5662,10 @@ case "$agent" in
       exit 0
     fi
 
-	    agent_runtime_preflight_or_exit
-	    maybe_skip_unchanged_wiki_turn || true
-	    maybe_skip_debounced_wiki_turn || true
+    agent_runtime_preflight_or_exit
+    maybe_skip_unchanged_wiki_turn || true
+    maybe_skip_debounced_wiki_turn || true
     maybe_skip_stale_planner_recovery_before_adapter || true
-    run_skill_nudge_best_effort >/dev/null 2>&1 || true
 
     started_at="$(runner_now_iso)"
     prompt_file="$(mktemp "${TMPDIR:-/tmp}/autoflow-agent-prompt.XXXXXX")"
