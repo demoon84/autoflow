@@ -666,7 +666,11 @@ runner_command_preview() {
       runner_command_summary_from_array "${cmd[@]}"
       ;;
     claude)
-      cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+      if [ "${AUTOFLOW_CLAUDE_STREAM:-1}" != "0" ] && command -v claude >/dev/null 2>&1 && claude --help 2>&1 | grep -q -- 'stream-json'; then
+        cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose)
+      else
+        cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+      fi
       [ -z "$model" ] || cmd+=(--model "$model")
       [ -z "$reasoning" ] || cmd+=(--effort "$reasoning")
       runner_command_summary_from_array "${cmd[@]}"

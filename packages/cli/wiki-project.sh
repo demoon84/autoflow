@@ -757,6 +757,54 @@ wiki_runner_field() {
   runner_config_field "$runner_id" "$field" "$(runner_config_path)" 2>/dev/null || true
 }
 
+wiki_claude_extract_last_message() {
+  local stdout_file="$1"
+  local dest_file="$2"
+
+  [ -n "$dest_file" ] || return 1
+  [ -f "$stdout_file" ] || return 1
+  [ -s "$stdout_file" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+
+  python3 - "$stdout_file" "$dest_file" <<'PY'
+import json
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+last_result_text = None
+assistant_chunks = []
+try:
+    with open(src, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") == "result" and obj.get("subtype") == "success":
+                result = obj.get("result")
+                if isinstance(result, str) and result:
+                    last_result_text = result
+            elif obj.get("type") == "assistant":
+                message = obj.get("message") or {}
+                for block in message.get("content") or []:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text")
+                        if isinstance(text, str) and text:
+                            assistant_chunks.append(text)
+except Exception:
+    sys.exit(2)
+
+text = last_result_text if last_result_text else ("".join(assistant_chunks) if assistant_chunks else "")
+if not text:
+    sys.exit(3)
+with open(dst, "w", encoding="utf-8") as out:
+    out.write(text)
+PY
+}
+
 run_wiki_adapter_prompt() {
   local project_root="$1"
   local board_root="$2"
@@ -764,7 +812,7 @@ run_wiki_adapter_prompt() {
   local prompt_file="$4"
   local stdout_file="$5"
   local stderr_file="$6"
-  local agent model reasoning command_value
+  local agent model reasoning command_value adapter_exit wiki_claude_stream_enabled
   local cmd=()
 
   agent="$(wiki_runner_field "$board_root" "$runner_id" "agent")"
@@ -798,11 +846,25 @@ run_wiki_adapter_prompt() {
       ;;
     claude)
       command -v claude >/dev/null 2>&1 || return 127
-      cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+      # 기본 stream-json + include-partial-messages. AUTOFLOW_CLAUDE_STREAM=0
+      # 또는 CLI 미지원 시 legacy text 모드로 자동 fallback (1원칙).
+      if [ "${AUTOFLOW_CLAUDE_STREAM:-1}" != "0" ] && claude --help 2>&1 | grep -q -- 'stream-json'; then
+        cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose)
+        wiki_claude_stream_enabled=true
+      else
+        cmd=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)
+        wiki_claude_stream_enabled=false
+      fi
       [ -z "$model" ] || cmd+=(--model "$model")
       [ -z "$reasoning" ] || cmd+=(--effort "$reasoning")
       cmd+=("$(cat "$prompt_file")")
       AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      adapter_exit=$?
+      if [ "$wiki_claude_stream_enabled" = "true" ] && [ -s "$stdout_file" ]; then
+        wiki_claude_extract_last_message "$stdout_file" "$stdout_file.extracted" && mv -f "$stdout_file.extracted" "$stdout_file"
+        rm -f "$stdout_file.extracted"
+      fi
+      return "$adapter_exit"
       ;;
     opencode)
       command -v opencode >/dev/null 2>&1 || return 127

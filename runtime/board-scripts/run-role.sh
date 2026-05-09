@@ -4282,99 +4282,94 @@ prepare_adapter_cli_env() {
   fi
 }
 
-runner_claude_supports_stream_json() {
-  if [ -n "${__autoflow_claude_stream_json_cached:-}" ]; then
-    [ "$__autoflow_claude_stream_json_cached" = "yes" ]
+runner_claude_supports_stream() {
+  # Best-effort detection of `--output-format stream-json` on the installed
+  # claude CLI. Cached per shell. AUTOFLOW_CLAUDE_STREAM=0 forces legacy text
+  # mode regardless of CLI capability (rollback escape hatch).
+  if [ "${AUTOFLOW_CLAUDE_STREAM:-1}" = "0" ]; then
+    return 1
+  fi
+  if [ -n "${__autoflow_claude_stream_cached:-}" ]; then
+    [ "$__autoflow_claude_stream_cached" = "yes" ]
     return $?
   fi
   if claude --help 2>&1 | grep -q -- 'stream-json'; then
-    __autoflow_claude_stream_json_cached="yes"
+    __autoflow_claude_stream_cached="yes"
     return 0
   fi
-  __autoflow_claude_stream_json_cached="no"
+  __autoflow_claude_stream_cached="no"
   return 1
 }
 
-runner_claude_stream_mode_active() {
-  case "${AUTOFLOW_CLAUDE_STREAM:-1}" in
-    0|false|False|FALSE|off|OFF|no|No|NO) return 1 ;;
-  esac
-  runner_claude_supports_stream_json
-}
-
 runner_claude_base_cmd() {
+  # Populate the named array variable with the canonical claude invocation.
+  # Defaults to stream-json + include-partial-messages so JSONL flushes per
+  # event into stdout (live_stdout grows during the tick instead of at the
+  # end). Falls back to legacy text mode when AUTOFLOW_CLAUDE_STREAM=0 or the
+  # installed CLI lacks stream-json support.
   local __dest_var="$1"
-  if runner_claude_stream_mode_active; then
+  if runner_claude_supports_stream; then
     eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose)"
   else
     eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)"
   fi
 }
 
-runner_claude_extract_last_message_from_jsonl() {
-  local src="$1"
-  local dst="$2"
-  [ -s "$src" ] || return 1
-  command -v python3 >/dev/null 2>&1 || return 1
-  python3 - "$src" "$dst" <<'PY' 2>/dev/null || return 1
+runner_claude_extract_last_message() {
+  # Read stream-json JSONL from $1 and write the last assistant message text
+  # into $2. Prefers the final `{"type":"result","subtype":"success",...}`
+  # event's `result` field; falls back to concatenating assistant text blocks
+  # if no result event was emitted; leaves the destination untouched if both
+  # paths fail (caller may copy raw stdout as last-resort legacy fallback).
+  local stdout_file="$1"
+  local dest_file="$2"
+
+  [ -n "$dest_file" ] || return 1
+  [ -f "$stdout_file" ] || return 1
+  [ -s "$stdout_file" ] || return 1
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$stdout_file" "$dest_file" <<'PY' && return 0
 import json
 import sys
 
 src, dst = sys.argv[1], sys.argv[2]
-final_result = None
-assistant_texts = []
-with open(src, "r", encoding="utf-8", errors="replace") as fh:
-    for raw in fh:
-        line = raw.strip()
-        if not line or line[0] != "{":
-            continue
-        try:
-            event = json.loads(line)
-        except Exception:
-            continue
-        etype = event.get("type")
-        if etype == "result":
-            r = event.get("result")
-            if isinstance(r, str) and r:
-                final_result = r
-        elif etype == "assistant":
-            msg = event.get("message", {})
-            for block in (msg.get("content") or []):
-                if isinstance(block, dict) and block.get("type") == "text":
-                    t = block.get("text")
-                    if isinstance(t, str):
-                        assistant_texts.append(t)
+last_result_text = None
+assistant_chunks = []
+try:
+    with open(src, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            t = obj.get("type")
+            if t == "result" and obj.get("subtype") == "success":
+                value = obj.get("result")
+                if isinstance(value, str) and value:
+                    last_result_text = value
+            elif t == "assistant":
+                msg = obj.get("message") or {}
+                for block in msg.get("content") or []:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text")
+                        if isinstance(text, str) and text:
+                            assistant_chunks.append(text)
+except Exception:
+    sys.exit(2)
 
-text = final_result if final_result is not None else "".join(assistant_texts)
+text = last_result_text if last_result_text else ("".join(assistant_chunks) if assistant_chunks else "")
+if not text:
+    sys.exit(3)
 with open(dst, "w", encoding="utf-8") as out:
-    out.write(text or "")
+    out.write(text)
 PY
-  [ -s "$dst" ]
-}
+  fi
 
-runner_claude_finalize_last_message() {
-  local stdout_path="$1"
-  local last_message_path="$2"
-  [ -n "$last_message_path" ] || return 0
-  [ -s "$stdout_path" ] || return 0
-
-  local first_line
-  first_line="$(head -n 1 "$stdout_path" 2>/dev/null || true)"
-  case "$first_line" in
-    '{"type":'*)
-      local tmp_extract
-      tmp_extract="${last_message_path}.tmp.$$"
-      if runner_claude_extract_last_message_from_jsonl "$stdout_path" "$tmp_extract"; then
-        mv "$tmp_extract" "$last_message_path" 2>/dev/null || cp "$stdout_path" "$last_message_path" 2>/dev/null || true
-      else
-        rm -f "$tmp_extract" 2>/dev/null || true
-        cp "$stdout_path" "$last_message_path" 2>/dev/null || true
-      fi
-      ;;
-    *)
-      cp "$stdout_path" "$last_message_path" 2>/dev/null || true
-      ;;
-  esac
+  return 1
 }
 
 runner_claude_supports_effort() {
@@ -4553,7 +4548,20 @@ run_default_adapter_command() {
         adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
         > "$adapter_stdout" 2> "$adapter_stderr"
       command_exit=$?
-      runner_claude_finalize_last_message "$adapter_stdout" "${adapter_last_message:-}"
+      # stream-json 모드에서는 stdout 이 JSONL (system/init, assistant,
+      # stream_event, result ...) 이므로 narrative sidecar 에는 마지막 result
+      # 이벤트의 result 필드 (또는 assistant text concat fallback) 만 추출해
+      # 기록한다. legacy text 모드일 때는 stdout 자체가 최종 응답이라 그대로
+      # 복사한다 (1원칙: legacy fallback 항상 살아 있음).
+      if [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        if runner_claude_supports_stream; then
+          if ! runner_claude_extract_last_message "$adapter_stdout" "$adapter_last_message"; then
+            cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+          fi
+        else
+          cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+        fi
+      fi
       return "$command_exit"
       ;;
     opencode)

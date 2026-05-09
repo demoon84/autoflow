@@ -2240,16 +2240,66 @@ function isCodexGuardWarningLine(line) {
   return /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\s+WARN\s+codex_core_(?:plugins::manifest|skills::loader):/.test(line);
 }
 
+function claudeStreamJsonUsageFromLine(line) {
+  // Claude `--output-format stream-json --include-partial-messages` emits one
+  // JSON object per line. Only the final `{"type":"result","subtype":"success"}`
+  // event carries authoritative cumulative `usage` for the whole turn. The
+  // intermediate `assistant` / `stream_event:message_delta` events also carry
+  // partial usage values; summing all of them via regex would multi-count
+  // dramatically. Returns the result-event usage total when present, else 0.
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return 0;
+  }
+  if (!parsed || typeof parsed !== "object") return 0;
+  if (parsed.type !== "result" || parsed.subtype !== "success") return 0;
+  const usage = parsed.usage;
+  if (!usage || typeof usage !== "object") return 0;
+  const input = positiveIntegerValue(usage.input_tokens);
+  const output = positiveIntegerValue(usage.output_tokens);
+  const cacheCreate = positiveIntegerValue(usage.cache_creation_input_tokens);
+  const cacheRead = positiveIntegerValue(usage.cache_read_input_tokens);
+  return input + output + cacheCreate + cacheRead;
+}
+
+function isClaudeStreamJsonLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return false;
+  return /"type"\s*:\s*"(?:system|assistant|user|stream_event|result)"/.test(trimmed);
+}
+
 function parseTokenUsageChunk(chunk, prior) {
   const combined = (prior?.tail || "") + chunk;
   const lines = combined.split("\n");
   const newTail = lines.pop() ?? "";
-  let total = prior?.tokens ?? 0;
+  // prior.tokens = regex-sum + claudeFinalUsage. We resume the regex sum on
+  // its own track so a newer `result` event simply replaces the prior claude
+  // usage without double-counting on top of the previous regex-sum total.
+  const priorClaudeFinalUsage = prior?.claudeFinalUsage ?? 0;
+  let total = (prior?.tokens ?? 0) - priorClaudeFinalUsage;
+  if (total < 0) total = 0;
+  let claudeFinalUsage = priorClaudeFinalUsage;
   let waiting = prior?.waiting ?? false;
 
   for (const rawLine of lines) {
     const clean = rawLine.replace(/\r$/, "").replace(ansiEscapePattern, "");
     if (isCodexGuardWarningLine(clean)) {
+      continue;
+    }
+    const claudeResultUsage = claudeStreamJsonUsageFromLine(clean);
+    if (claudeResultUsage > 0) {
+      // Authoritative per-turn usage; replace prior result-event value rather
+      // than summing across multiple result events in the same file.
+      claudeFinalUsage = claudeResultUsage;
+      continue;
+    }
+    if (isClaudeStreamJsonLine(clean)) {
+      // Skip intermediate stream-json events to avoid double-counting partial
+      // `usage` fields that already roll up into the final result event.
       continue;
     }
     const lower = clean.toLowerCase();
@@ -2307,7 +2357,7 @@ function parseTokenUsageChunk(chunk, prior) {
     }
   }
 
-  return { tokens: total, waiting, tail: newTail };
+  return { tokens: total + claudeFinalUsage, waiting, tail: newTail, claudeFinalUsage };
 }
 
 function timestampFromRunnerLogName(value) {
@@ -2379,10 +2429,15 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
       }
 
       let startOffset = 0;
-      let prior = { tokens: 0, waiting: false, tail: "" };
+      let prior = { tokens: 0, waiting: false, tail: "", claudeFinalUsage: 0 };
       if (cached && cached.size > 0 && cached.size <= stat.size) {
         startOffset = cached.size;
-        prior = { tokens: cached.tokens, waiting: cached.waiting, tail: cached.tail };
+        prior = {
+          tokens: cached.tokens,
+          waiting: cached.waiting,
+          tail: cached.tail,
+          claudeFinalUsage: cached.claudeFinalUsage || 0
+        };
       }
 
       let content = "";
@@ -2407,7 +2462,8 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
         mtimeMs: stat.mtimeMs,
         tokens: result.tokens,
         waiting: result.waiting,
-        tail: result.tail
+        tail: result.tail,
+        claudeFinalUsage: result.claudeFinalUsage
       });
 
       totals.set(runnerId, (totals.get(runnerId) || 0) + result.tokens);
