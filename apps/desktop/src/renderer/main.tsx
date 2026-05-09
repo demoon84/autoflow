@@ -6326,8 +6326,10 @@ function liveTerminalThemeFor(mode: "light" | "dark") {
 const TYPEWRITER_CHARS_PER_TICK = 8;
 const TYPEWRITER_INTERVAL_MS = 16;
 
-const RUNNER_QUOTA_KEYWORD_PATTERN =
-  /\b(?:usage limit|rate limit|quota exceeded|too many requests|resource_exhausted|model_capacity_exhausted)\b/i;
+const RUNNER_RATE_LIMIT_QUOTA_KEYWORD_PATTERN =
+  /\b(?:rate limit|too many requests|429)\b/i;
+const RUNNER_QUOTA_EXHAUSTED_KEYWORD_PATTERN =
+  /\b(?:usage limit|quota exceeded|resource_exhausted|model_capacity_exhausted)\b/i;
 
 function extractRunnerQuotaRetryAfter(text: string): string {
   const tryAgainMatch = text.match(/try again at\s+([^\n.]+)/i);
@@ -6336,15 +6338,30 @@ function extractRunnerQuotaRetryAfter(text: string): string {
   return resetMatch?.[1]?.trim() || "";
 }
 
-function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string) {
+type RunnerQuotaToastSignal = {
+  kind: "rate_limit" | "quota_exhausted";
+  fingerprint: string;
+  retryAfter: string;
+};
+
+function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string): RunnerQuotaToastSignal | null {
   if (!runner) return null;
   const lastResult = (runner.lastResult || "").toLowerCase();
   const hasLastResultSignal = lastResult === "quota_limited";
-  const hasStdoutSignal = RUNNER_QUOTA_KEYWORD_PATTERN.test(text);
-  if (!hasLastResultSignal && !hasStdoutSignal) return null;
+  const hasRateLimitStdoutSignal = RUNNER_RATE_LIMIT_QUOTA_KEYWORD_PATTERN.test(text);
+  const hasQuotaExhaustedStdoutSignal = RUNNER_QUOTA_EXHAUSTED_KEYWORD_PATTERN.test(text);
+
+  if (!hasLastResultSignal && !hasRateLimitStdoutSignal && !hasQuotaExhaustedStdoutSignal) return null;
+
+  const kind: RunnerQuotaToastSignal["kind"] = hasRateLimitStdoutSignal
+    ? "rate_limit"
+    : hasQuotaExhaustedStdoutSignal
+      ? "quota_exhausted"
+      : "quota_exhausted";
 
   return {
-    fingerprint: `quota:${runner.id}:${hasLastResultSignal ? lastResult : "stdout"}`,
+    kind,
+    fingerprint: `quota:${runner.id}:${kind}`,
     retryAfter: extractRunnerQuotaRetryAfter(text)
   };
 }
@@ -6379,6 +6396,11 @@ function LiveTerminalView({
   const showQuotaToast =
     Boolean(quotaSignal) && quotaSignal?.fingerprint !== dismissedQuotaFingerprint;
   const quotaAgentLabel = agentLabel || runner?.agent || runner?.id || "AI";
+  const quotaToastTitle = quotaSignal?.kind === "rate_limit" ? "API 속도 제한" : "사용 한도 소진";
+  const quotaToastBody =
+    quotaSignal?.kind === "rate_limit"
+      ? `일시적 제한입니다. 잠시 후 자동으로 재시도됩니다.${quotaSignal.retryAfter ? ` ${quotaSignal.retryAfter}에 재개 가능.` : ""}`
+      : `${quotaAgentLabel} 한도가 소진됐습니다. 모델을 교체하거나 한도 회복을 기다려주세요.`;
 
   // prd_225: <html data-theme="..."> 변화를 구독해 xterm theme 도 즉시 swap.
   // 사용자가 헤더 토글을 누르면 documentElement.dataset.theme 가 바뀌므로
@@ -6547,11 +6569,9 @@ function LiveTerminalView({
         <div className="live-terminal-view-quota-toast" role="alert" aria-live="assertive">
           <TriangleAlert className="live-terminal-view-quota-toast-icon" aria-hidden="true" />
           <div className="live-terminal-view-quota-toast-copy">
-            <strong>토큰 한도 도달</strong>
+            <strong>{quotaToastTitle}</strong>
             <span>
-              {quotaAgentLabel}의 사용 한도를 초과했습니다.
-              {quotaSignal.retryAfter ? ` ${quotaSignal.retryAfter}에 재개 가능.` : ""}
-              {" "}다른 모델로 임시 swap 하거나 한도 회복을 기다려주세요.
+              {quotaToastBody}
             </span>
           </div>
           <Button
