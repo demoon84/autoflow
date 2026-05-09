@@ -14,7 +14,6 @@ Before writing the inbox order, surface relevant prior work so the user can buil
 1. Identify 1–3 distinctive keywords from the user's request: feature noun, file path basename, error string, UI element name, etc.
 2. Run, best-effort (any error → treat as "no hits", continue):
    - `autoflow origin search "<keyword>"` — past PRDs/orders matching prompt, prd_path, ticket title, or commit subject.
-   - `autoflow wiki query --rag --term "<keyword>" --limit 3` — wiki + skill RAG hits.
 3. If non-trivial hits return, briefly summarize them in Korean to the user:
    "비슷한 과거 작업: prd_142 (...), order_88 (...). 그대로 발행할까요?"
 4. Proceed to save the order regardless of lookup outcome — the user's intent is the source of truth, lookup only highlights duplicates or relevant context.
