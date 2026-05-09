@@ -107,8 +107,8 @@ const agentDisplayLabels = {
   gemini: "Gemini"
 };
 const metricSnapshotKeys = [
-  "spec_total",
   "ticket_total",
+  "spec_total",
   "ticket_done_count",
   "active_ticket_count",
   "reject_count",
@@ -131,8 +131,33 @@ const metricSnapshotKeys = [
   "autoflow_code_volume_count",
   "autoflow_token_usage_count",
   "autoflow_token_report_count",
+  "autoflow_token_usage_1h_count",
+  "autoflow_token_usage_24h_count",
+  "autoflow_token_input_1h_count",
+  "autoflow_token_output_1h_count",
+  "autoflow_token_cache_1h_count",
+  "autoflow_token_input_24h_count",
+  "autoflow_token_output_24h_count",
+  "autoflow_token_cache_24h_count",
+  "autoflow_token_runner_breakdown_24h_json",
+  "autoflow_token_model_breakdown_24h_json",
+  "autoflow_runner_status_24h_json",
+  "autoflow_code_net_delta_count",
+  "autoflow_commit_count_24h",
+  "autoflow_commit_auto_count_24h",
+  "autoflow_commit_manual_count_24h",
+  "autoflow_commit_recent_subjects_json",
   "completion_rate_percent"
 ];
+
+const metricSnapshotStringKeys = new Set([
+  "autoflow_token_runner_breakdown_24h_json",
+  "autoflow_token_model_breakdown_24h_json",
+  "autoflow_runner_status_24h_json",
+  "autoflow_commit_recent_subjects_json",
+  "project_root",
+  "board_root"
+]);
 
 function stripTomlComment(line) {
   let quote = "";
@@ -2836,6 +2861,12 @@ function normalizeMetricSnapshot(rawSnapshot) {
 
   const snapshot = { timestamp };
   for (const key of metricSnapshotKeys) {
+    if (metricSnapshotStringKeys.has(key)) {
+      const rawValue = rawSnapshot[key];
+      snapshot[key] = rawValue == null ? "" : String(rawValue);
+      continue;
+    }
+
     const value = Number(rawSnapshot[key]);
     snapshot[key] = Number.isFinite(value) ? value : 0;
   }

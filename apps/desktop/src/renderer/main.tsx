@@ -550,8 +550,20 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
     codeInsertionsCount: statusNumber(metrics, "autoflow_code_insertions_count"),
     codeDeletionsCount: statusNumber(metrics, "autoflow_code_deletions_count"),
     codeVolumeCount: statusNumber(metrics, "autoflow_code_volume_count"),
+    codeNetDeltaCount: statusNumber(metrics, "autoflow_code_net_delta_count"),
     tokenUsageCount: statusNumber(metrics, "autoflow_token_usage_count"),
     tokenReportCount: statusNumber(metrics, "autoflow_token_report_count"),
+    tokenUsage1hCount: statusNumber(metrics, "autoflow_token_usage_1h_count"),
+    tokenUsage24hCount: statusNumber(metrics, "autoflow_token_usage_24h_count"),
+    tokenInput1hCount: statusNumber(metrics, "autoflow_token_input_1h_count"),
+    tokenOutput1hCount: statusNumber(metrics, "autoflow_token_output_1h_count"),
+    tokenCache1hCount: statusNumber(metrics, "autoflow_token_cache_1h_count"),
+    tokenInput24hCount: statusNumber(metrics, "autoflow_token_input_24h_count"),
+    tokenOutput24hCount: statusNumber(metrics, "autoflow_token_output_24h_count"),
+    tokenCache24hCount: statusNumber(metrics, "autoflow_token_cache_24h_count"),
+    commit24hCount: statusNumber(metrics, "autoflow_commit_count_24h"),
+    commitAuto24hCount: statusNumber(metrics, "autoflow_commit_auto_count_24h"),
+    commitManual24hCount: statusNumber(metrics, "autoflow_commit_manual_count_24h"),
     avgLeadSeconds: statusNumber(metrics, "autoflow_avg_lead_seconds"),
     avgActiveSeconds: statusNumber(metrics, "autoflow_avg_active_seconds"),
     avgTicksPerDoneTicket: statusNumber(metrics, "autoflow_avg_ticks_per_done_ticket"),
@@ -578,6 +590,98 @@ function formatDurationMetric(seconds: number) {
 
 function formatPercentValue(value: number) {
   return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
+}
+
+function parseMetricJsonObject(value: string) {
+  if (!value) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function parseMetricJsonStringList(value: string) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+function formatUnixDate(value: number | string) {
+  const safe = Number(value);
+  if (!Number.isFinite(safe) || safe <= 0) {
+    return "-";
+  }
+
+  const date = new Date(safe * 1000);
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function metricDateLabel(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "short",
+    day: "numeric"
+  }).format(date);
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function metricHistoryPoints(history: AutoflowBoardSnapshot["metricsHistory"] | undefined, key: string, maxPoints = 7) {
+  const rows = (history || []).slice(-maxPoints);
+  const points = [];
+
+  for (const row of rows as Array<Record<string, unknown>>) {
+    const value = toNumber(row?.[key], 0);
+    const timestamp = typeof row?.timestamp === "string" ? row.timestamp : "";
+    if (!timestamp || !Number.isFinite(value)) {
+      continue;
+    }
+    points.push({ timestamp, value });
+  }
+
+  return points.slice(-maxPoints);
+}
+
+function buildSortedBreakdown(raw: Record<string, unknown>, fallbackCount = 8) {
+  return Object.entries(raw)
+    .map(([label, rawValue]) => ({ label, value: toNumber(rawValue) }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
+    .slice(0, fallbackCount);
 }
 
 function formatDate(value: string) {
@@ -3827,7 +3931,8 @@ function ReportMetricCard({
   icon: Icon,
   tone,
   className = "",
-  title
+  title,
+  children
 }: {
   label: string;
   value: string;
@@ -3836,6 +3941,7 @@ function ReportMetricCard({
   tone: string;
   className?: string;
   title?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <Card className={`report-metric-card ${tone} ${className}`.trim()} title={title || `${label}: ${value}, ${detail}`}>
@@ -3848,8 +3954,106 @@ function ReportMetricCard({
           <span>{label}</span>
         </div>
         <em>{detail}</em>
+        {children ? <div className="report-metric-card-children">{children}</div> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function MetricTrend({
+  points,
+  yLabel = "값"
+}: {
+  points: { timestamp: string; value: number }[];
+  yLabel?: string;
+}) {
+  if (points.length < 2) {
+    return (
+      <div className="report-fallback" role="status" aria-label="데이터 부족으로 추세 미생성">
+        {points.length === 1 ? "최근 1건 데이터" : "최근 7일 추세 데이터를 기다리는 중"}
+      </div>
+    );
+  }
+
+  const chartWidth = 100;
+  const chartHeight = 80;
+  const leftPadding = 6;
+  const rightPadding = 6;
+  const topPadding = 8;
+  const bottomPadding = 18;
+  const values = points.map((point) => point.value);
+  const maxValue = Math.max(...values, 0);
+  const minValue = Math.min(...values, 0);
+  const span = Math.max(1, maxValue - minValue);
+  const stepX = (chartWidth - leftPadding - rightPadding) / (points.length - 1);
+  const mapY = (value: number) => topPadding + ((maxValue - value) / span) * (chartHeight - topPadding - bottomPadding);
+
+  const polylinePoints = points
+    .map((point, index) => `${(leftPadding + stepX * index).toFixed(1)},${mapY(point.value).toFixed(1)}`)
+    .join(" ");
+  const firstValue = formatCount(points[0].value);
+  const lastValue = formatCount(points[points.length - 1].value);
+  const firstLabel = metricDateLabel(points[0].timestamp);
+  const lastLabel = metricDateLabel(points[points.length - 1].timestamp);
+
+  return (
+    <div className="report-trend" aria-label={`최근 추세 ${yLabel}`}>
+      <div>
+        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-hidden="true">
+          <line x1={leftPadding} y1={chartHeight - bottomPadding} x2={chartWidth - rightPadding} y2={chartHeight - bottomPadding} />
+          <polyline points={polylinePoints} />
+          {points.map((point, index) => (
+            <circle
+              key={point.timestamp}
+              cx={leftPadding + stepX * index}
+              cy={mapY(point.value)}
+              r={1.8}
+              aria-label={`${point.timestamp} ${formatCount(point.value)}`}
+            />
+          ))}
+        </svg>
+      </div>
+      <div className="report-trend-caption">
+        <span>{yLabel}</span>
+        <strong>{`${firstValue} → ${lastValue}`}</strong>
+        <em>
+          {firstLabel} ~ {lastLabel}
+        </em>
+      </div>
+    </div>
+  );
+}
+
+function ReportSplitBars({
+  title,
+  items
+}: {
+  title: string;
+  items: { label: string; value: number }[];
+}) {
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  if (!items.length || total <= 0) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+
+  return (
+    <div className="report-split-layout" aria-label={title}>
+      {items.map((item) => {
+        const ratio = (item.value / total) * 100;
+        return (
+          <div key={item.label} className="report-bar-row">
+            <div className="report-bar-row-label">
+              <span>{item.label}</span>
+              <strong>{formatCount(item.value)}</strong>
+            </div>
+            <div className="report-split-track">
+              <span style={{ width: `${ratio.toFixed(2)}%`, backgroundColor: "var(--accent)" }} />
+            </div>
+            <em>{ratio.toFixed(1)}%</em>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -3913,28 +4117,97 @@ function ReportingDashboard({
   ticketTotal: number;
 }) {
   const metrics = board?.metrics || {};
+  const metricHistory = board?.metricsHistory || [];
   const commitCount = statusNumber(metrics, "autoflow_commit_count");
   const {
     codeFilesChangedCount,
     codeVolumeCount,
     tokenUsageCount,
-    tokenReportCount
+    tokenReportCount,
+    codeInsertionsCount,
+    codeDeletionsCount,
+    codeNetDeltaCount,
+    tokenUsage1hCount,
+    tokenUsage24hCount,
+    tokenInput1hCount,
+    tokenOutput1hCount,
+    tokenCache1hCount,
+    tokenInput24hCount,
+    tokenOutput24hCount,
+    tokenCache24hCount,
+    commit24hCount,
+    commitAuto24hCount,
+    commitManual24hCount
   } = getWorkflowMetricCounts(board);
   const runnerRunning = statusNumber(metrics, "runner_running_count");
   const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
   const runnerEnabled = statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0);
-  const runnerNeedsUser = (board?.runners || []).filter((runner) => {
+  const commitSubjects = parseMetricJsonStringList(statusValue(metrics, "autoflow_commit_recent_subjects_json", "[]"));
+  const codeTrendPoints = metricHistoryPoints(metricHistory, "autoflow_code_volume_count", 7);
+  const runnerStatus24hMap = parseMetricJsonObject(statusValue(metrics, "autoflow_runner_status_24h_json", "{}"));
+  const runnerBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}")));
+  const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
+  const runnerNeedUser = (board?.runners || []).filter((runner) => {
     const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
     return recoveryStatus === "needs_user" || activeStage === "blocked";
   }).length;
-  const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
-  const hasCodeImpactData = codeVolumeCount > 0 || codeFilesChangedCount > 0;
+  const commitRatioTotal = commit24hCount > 0 ? commit24hCount : 1;
+  const commitAutoRatio = (commitAuto24hCount / commitRatioTotal) * 100;
+  const commitManualRatio = (commitManual24hCount / commitRatioTotal) * 100;
+
+  const hasCodeImpactData =
+    codeVolumeCount > 0 ||
+    codeFilesChangedCount > 0 ||
+    codeInsertionsCount > 0 ||
+    codeDeletionsCount > 0 ||
+    codeTrendPoints.length > 0;
+  const hasTokenData =
+    tokenUsageCount > 0 ||
+    tokenUsage1hCount > 0 ||
+    tokenUsage24hCount > 0 ||
+    runnerBreakdown.length > 0 ||
+    modelBreakdown.length > 0;
+  const hasRunnerData = (board?.runners?.length || 0) > 0;
+  const hasCommitData =
+    commitCount > 0 ||
+    commit24hCount > 0 ||
+    commitAuto24hCount > 0 ||
+    commitManual24hCount > 0 ||
+    commitSubjects.length > 0;
+
+  const runnerRows = React.useMemo(() => {
+    const rows = new Map<string, { id: string; label: string }>();
+
+    (board?.runners || []).forEach((runner) => {
+      rows.set(runner.id, { id: runner.id, label: displayWorkflowRunnerId(runner.id, board?.runners) });
+    });
+
+    Object.keys(runnerStatus24hMap).forEach((runnerId) => {
+      if (!rows.has(runnerId)) {
+        rows.set(runnerId, { id: runnerId, label: displayWorkflowRunnerId(runnerId, board?.runners) });
+      }
+    });
+
+    return Array.from(rows.values())
+      .map((item) => {
+        const raw = runnerStatus24hMap[item.id] as Record<string, unknown> | undefined;
+        return {
+          ...item,
+          success: toNumber(raw?.success),
+          failure: toNumber(raw?.failure),
+          timeout: toNumber(raw?.timeout),
+          lastActivity: formatUnixDate((raw?.last_activity as number | string) || 0)
+        };
+      })
+      .sort((left, right) => left.label.localeCompare(right.label, "ko-KR"));
+  }, [board?.runners, runnerStatus24hMap]);
+
   const totalTickets = formatCount(ticketTotal);
   const lastUpdatedLabel = lastUpdated ? formatDate(lastUpdated) : "미확인";
   const runnerStatusNote =
     `${formatCount(runnerRunning)}개 실행 / ${formatCount(runnerBlocked)}개 막힘` +
-    (runnerNeedsUser > 0 ? ` / ${formatCount(runnerNeedsUser)}개 needs_user` : "");
+    (runnerNeedUser > 0 ? ` / ${formatCount(runnerNeedUser)}개 needs_user` : "");
 
   return (
     <div className="report-dashboard" aria-label={`통계 카드 ${totalTickets}개 · 마지막 업데이트 ${lastUpdatedLabel}`}>
@@ -3942,11 +4215,31 @@ function ReportingDashboard({
         <ReportMetricCard
           label="코드 영향"
           value={`${formatCompactCount(codeFilesChangedCount)}개`}
-          detail={hasCodeImpactData ? `${formatCount(codeVolumeCount)}줄 변경` : "완료 커밋 후 채워집니다"}
+          detail={hasCodeImpactData ? "변경 파일/추가/삭제/순변동" : "완료 커밋 후 채워집니다"}
           icon={FolderPlus}
           tone="report-tone-green"
           title={`코드 영향 ${formatCount(codeFilesChangedCount)}개 파일, ${formatCount(codeVolumeCount)}줄 변경`}
-        />
+        >
+          <div className="report-inline-stats">
+            <div className="report-inline-stat">
+              <span>변경 파일</span>
+              <strong>{formatCount(codeFilesChangedCount)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>추가</span>
+              <strong>{formatSignedCount(codeInsertionsCount)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>삭제</span>
+              <strong>-{formatCount(codeDeletionsCount)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>순변동</span>
+              <strong>{formatSignedCount(codeNetDeltaCount)}</strong>
+            </div>
+          </div>
+          <MetricTrend points={codeTrendPoints} yLabel="최근 7일 변경량 추세" />
+        </ReportMetricCard>
         <ReportMetricCard
           label="토큰 사용량"
           value={`${formatCompactCount(tokenUsageCount)}토큰`}
@@ -3954,7 +4247,58 @@ function ReportingDashboard({
           icon={Terminal}
           tone="report-tone-violet"
           title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, 실행 로그 ${formatCount(tokenReportCount)}개, 전체 누적`}
-        />
+        >
+          {hasTokenData ? (
+            <>
+              <div className="report-inline-stats">
+                <div className="report-inline-stat">
+                  <span>누적</span>
+                  <strong>{formatCount(tokenUsageCount)}</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>최근 1h</span>
+                  <strong>{formatCount(tokenUsage1hCount)} 토큰</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>최근 24h</span>
+                  <strong>{formatCount(tokenUsage24hCount)} 토큰</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>입력</span>
+                  <strong>{formatCount(tokenInput24hCount)}</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>출력</span>
+                  <strong>{formatCount(tokenOutput24hCount)}</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>캐시 입력</span>
+                  <strong>{formatCount(tokenCache24hCount)}</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>러너 분해</span>
+                  <strong>{runnerBreakdown.length}개</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>모델 분해</span>
+                  <strong>{modelBreakdown.length}개</strong>
+                </div>
+              </div>
+              {tokenInput1hCount + tokenOutput1hCount + tokenCache1hCount > 0 ? (
+                <div className="report-inline-stat">
+                  <span>최근 1h 상세</span>
+                  <em>
+                    입력 {formatCount(tokenInput1hCount)} / 출력 {formatCount(tokenOutput1hCount)} / 캐시 {formatCount(tokenCache1hCount)}
+                  </em>
+                </div>
+              ) : null}
+              <ReportSplitBars title="러너별 24h 토큰" items={runnerBreakdown} />
+              {modelBreakdown.length ? <ReportSplitBars title="모델별 24h 토큰" items={modelBreakdown} /> : null}
+            </>
+          ) : (
+            <div className="report-fallback">러너 실행 로그가 없어 분해 데이터가 없습니다</div>
+          )}
+        </ReportMetricCard>
         <ReportMetricCard
           label="러너 상태"
           value={`${formatCompactCount(runnerEnabled)}개`}
@@ -3962,15 +4306,67 @@ function ReportingDashboard({
           icon={Activity}
           tone="report-tone-blue"
           title={`러너 상태 ${formatCount(runnerRunning)}개 실행 중, ${formatCount(runnerBlocked)}개 막힘`}
-        />
+        >
+          <div className="report-inline-stats">
+            <div className="report-inline-stat">
+              <span>러너 총 수</span>
+              <strong>{formatCount((board?.runners || []).length)}</strong>
+            </div>
+            {runnerRows.map((runner) => (
+              <div key={runner.id} className="report-inline-stat">
+                <span>{runner.label}</span>
+                <strong>{runner.lastActivity}</strong>
+                <em>
+                  성공 {formatCount(runner.success)} · 실패 {formatCount(runner.failure)} · timeout {formatCount(runner.timeout)}
+                </em>
+              </div>
+            ))}
+            {!hasRunnerData ? <div className="report-fallback">최근 24h 러너 상태가 없습니다</div> : null}
+          </div>
+        </ReportMetricCard>
         <ReportMetricCard
           label="완료 커밋"
           value={`${formatCompactCount(commitCount)}개`}
-          detail={`${formatCount(commitCount)}개 완료 커밋 누적`}
+          detail={hasCommitData ? `${formatCount(commitCount)}개 완료 커밋 누적` : "완료 커밋 후 채워집니다"}
           icon={CheckCircle2}
           tone="report-tone-green"
           title={`완료 커밋 ${formatCount(commitCount)}개`}
-        />
+        >
+          {hasCommitData ? (
+            <div className="report-inline-stats">
+              <div className="report-inline-stat">
+                <span>누적 커밋</span>
+                <strong>{formatCount(commitCount)}개</strong>
+              </div>
+              <div className="report-inline-stat">
+                <span>24h 커밋</span>
+                <strong>{formatCount(commit24hCount)}개</strong>
+              </div>
+              <div className="report-inline-stat">
+                <span>자동 / 수동</span>
+                <strong>{formatPercentValue(commitAutoRatio)} / {formatPercentValue(commitManualRatio)}</strong>
+              </div>
+              <div className="report-inline-stat">
+                <span>최근 subject (최대 5건)</span>
+              </div>
+              <div className="report-bar-list">
+                {commitSubjects.length > 0 ? (
+                  commitSubjects.map((subject) => (
+                    <div key={subject} className="report-bar-row">
+                      <em style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{subject}</em>
+                    </div>
+                  ))
+                ) : (
+                  <div className="report-bar-row">
+                    <em>최근 커밋 데이터가 없습니다</em>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="report-fallback">완료 커밋 데이터가 없습니다</div>
+          )}
+        </ReportMetricCard>
       </div>
     </div>
   );

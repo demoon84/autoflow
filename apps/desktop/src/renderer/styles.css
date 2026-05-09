@@ -5439,6 +5439,12 @@ pre {
   gap: 10px;
 }
 
+.report-metric-card-children {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+}
+
 .report-metric-card-content:last-child {
   padding-bottom: 13px;
 }

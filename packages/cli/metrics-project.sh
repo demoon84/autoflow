@@ -89,12 +89,36 @@ write_snapshot() {
   local autoflow_avg_ticks_per_done_ticket="${32}"
   local autoflow_duration_total_24h_seconds="${33}"
   local completion_rate_percent="${34}"
+  local autoflow_code_net_delta_count="${35}"
+  local autoflow_token_usage_1h_count="${36}"
+  local autoflow_token_usage_24h_count="${37}"
+  local autoflow_token_input_1h_count="${38}"
+  local autoflow_token_output_1h_count="${39}"
+  local autoflow_token_cache_1h_count="${40}"
+  local autoflow_token_input_24h_count="${41}"
+  local autoflow_token_output_24h_count="${42}"
+  local autoflow_token_cache_24h_count="${43}"
+  local autoflow_token_runner_breakdown_24h_json="${44}"
+  local autoflow_token_model_breakdown_24h_json="${45}"
+  local autoflow_runner_status_24h_json="${46}"
+  local autoflow_commit_count_24h="${47}"
+  local autoflow_commit_auto_count_24h="${48}"
+  local autoflow_commit_manual_count_24h="${49}"
+  local autoflow_commit_recent_subjects_json="${50}"
   local escaped_project escaped_board
+  local escaped_runner_breakdown
+  local escaped_model_breakdown
+  local escaped_runner_status
+  local escaped_commit_subjects
 
   mkdir -p "$metrics_root"
   escaped_project="$(printf '%s' "$project_root" | json_escape)"
   escaped_board="$(printf '%s' "$board_root" | json_escape)"
-  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"autoflow_avg_lead_seconds":%s,"autoflow_avg_active_seconds":%s,"autoflow_avg_ticks_per_done_ticket":%s,"autoflow_duration_total_24h_seconds":%s,"completion_rate_percent":%s}\n' \
+  escaped_runner_breakdown="$(printf '%s' "$autoflow_token_runner_breakdown_24h_json" | json_escape)"
+  escaped_model_breakdown="$(printf '%s' "$autoflow_token_model_breakdown_24h_json" | json_escape)"
+  escaped_runner_status="$(printf '%s' "$autoflow_runner_status_24h_json" | json_escape)"
+  escaped_commit_subjects="$(printf '%s' "$autoflow_commit_recent_subjects_json" | json_escape)"
+  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_code_net_delta_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"autoflow_token_usage_1h_count":%s,"autoflow_token_usage_24h_count":%s,"autoflow_token_input_1h_count":%s,"autoflow_token_output_1h_count":%s,"autoflow_token_cache_1h_count":%s,"autoflow_token_input_24h_count":%s,"autoflow_token_output_24h_count":%s,"autoflow_token_cache_24h_count":%s,"autoflow_token_runner_breakdown_24h_json":"%s","autoflow_token_model_breakdown_24h_json":"%s","autoflow_runner_status_24h_json":"%s","autoflow_commit_count_24h":%s,"autoflow_commit_auto_count_24h":%s,"autoflow_commit_manual_count_24h":%s,"autoflow_commit_recent_subjects_json":"%s","autoflow_avg_lead_seconds":%s,"autoflow_avg_active_seconds":%s,"autoflow_avg_ticks_per_done_ticket":%s,"autoflow_duration_total_24h_seconds":%s,"completion_rate_percent":%s}\n' \
     "$timestamp" \
     "$escaped_project" \
     "$escaped_board" \
@@ -120,8 +144,24 @@ write_snapshot() {
     "$autoflow_code_insertions_count" \
     "$autoflow_code_deletions_count" \
     "$autoflow_code_volume_count" \
+    "$autoflow_code_net_delta_count" \
     "$autoflow_token_usage_count" \
     "$autoflow_token_report_count" \
+    "$autoflow_token_usage_1h_count" \
+    "$autoflow_token_usage_24h_count" \
+    "$autoflow_token_input_1h_count" \
+    "$autoflow_token_output_1h_count" \
+    "$autoflow_token_cache_1h_count" \
+    "$autoflow_token_input_24h_count" \
+    "$autoflow_token_output_24h_count" \
+    "$autoflow_token_cache_24h_count" \
+    "$escaped_runner_breakdown" \
+    "$escaped_model_breakdown" \
+    "$escaped_runner_status" \
+    "$autoflow_commit_count_24h" \
+    "$autoflow_commit_auto_count_24h" \
+    "$autoflow_commit_manual_count_24h" \
+    "$escaped_commit_subjects" \
     "$autoflow_avg_lead_seconds" \
     "$autoflow_avg_active_seconds" \
     "$autoflow_avg_ticks_per_done_ticket" \
@@ -281,38 +321,88 @@ EOF
 }
 
 count_autoflow_commit_metrics() {
-  local git_root done_ticket_paths commit_hashes commit_hash added removed file_path board_root_relative
+  local git_root done_ticket_paths
+  local commit_lines commit_hash commit_epoch commit_subject
+  local commit_subjects
+  local now_epoch one_day_ago
+  local board_root_relative
+  local added removed file_path
   local numstat_stream in_commit
+  local i=0
+  local -a commit_hash_arr
 
   autoflow_commit_count=0
+  autoflow_commit_count_24h=0
+  autoflow_commit_auto_count_24h=0
+  autoflow_commit_manual_count_24h=0
+  autoflow_commit_recent_subjects_json='[]'
   autoflow_code_files_changed_count=0
   autoflow_code_insertions_count=0
   autoflow_code_deletions_count=0
   autoflow_code_volume_count=0
+  autoflow_code_net_delta_count=0
 
   git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
   [ -n "$git_root" ] || return 0
   [ -d "${board_root}/tickets/done" ] || return 0
 
   board_root_relative="${board_root#${git_root}/}"
-  done_ticket_paths="$(find "${board_root}/tickets/done" -type f -name 'tickets_*.md' -print | sort)"
+  done_ticket_paths="$(find "${board_root}/tickets/done" -type f \( -name 'Todo-*.md' -o -name 'tickets_*.md' -o -name 'prd_*.md' \) -print | sort)"
   [ -n "$done_ticket_paths" ] || return 0
 
-  commit_hashes="$(git -C "$git_root" log --diff-filter=A --format='%H' -- $done_ticket_paths 2>/dev/null | awk 'NF && !seen[$0]++')"
-  [ -n "$commit_hashes" ] || return 0
+  now_epoch="$(date -u +%s)"
+  one_day_ago="$((now_epoch - 86400))"
+  commit_lines="$(git -C "$git_root" log --format='%H|%at|%s' -- "$done_ticket_paths" 2>/dev/null || true)"
+  [ -n "$commit_lines" ] || return 0
 
-  autoflow_commit_count="$(printf '%s\n' "$commit_hashes" | awk 'NF { count += 1 } END { print count + 0 }')"
-  numstat_stream="$(git -C "$git_root" show --numstat --format='commit %H' $commit_hashes 2>/dev/null || true)"
+  autoflow_commit_count="$(printf '%s\n' "$commit_lines" | awk 'NF && $1 != "- " { count += 1 } END { print count + 0 }')"
+  commit_subjects=""
+  while IFS='|' read -r commit_hash commit_epoch commit_subject; do
+    [ -n "$commit_hash" ] || continue
+    commit_hash_arr+=("$commit_hash")
+
+    case "$commit_epoch" in
+      ''|*[!0-9]*) commit_epoch=0 ;;
+    esac
+    if [ "$commit_epoch" -ge "$one_day_ago" ]; then
+      autoflow_commit_count_24h=$((autoflow_commit_count_24h + 1))
+      if [[ "$commit_subject" =~ ^\[[^]]+\] ]]; then
+        autoflow_commit_auto_count_24h=$((autoflow_commit_auto_count_24h + 1))
+      else
+        autoflow_commit_manual_count_24h=$((autoflow_commit_manual_count_24h + 1))
+      fi
+    fi
+
+    if [ -n "$commit_subject" ] && [ "$i" -lt 5 ]; then
+      i=$((i + 1))
+      commit_subjects="${commit_subjects},$(printf '%s' "$commit_subject" | json_escape)"
+    fi
+  done <<EOF
+$commit_lines
+EOF
+
+  if [ -n "$commit_subjects" ]; then
+    commit_subjects="$(printf '%s' "$commit_subjects" | sed 's/^,//')"
+    autoflow_commit_recent_subjects_json="$(printf '[%s]' "$commit_subjects")"
+  fi
+
+  numstat_stream=""
+  if [ ${#commit_hash_arr[@]} -gt 0 ]; then
+    numstat_stream="$(printf '%s\n' "${commit_hash_arr[@]}" | git -C "$git_root" show --numstat --format='commit %H' --stdin 2>/dev/null || true)"
+  fi
 
   in_commit=0
   while IFS=$'\t' read -r added removed file_path; do
     case "$added" in
       commit\ *)
         commit_hash="${added#commit }"
-        case "$commit_hashes" in
-          *"$commit_hash"*) in_commit=1 ;;
-          *) in_commit=0 ;;
-        esac
+        in_commit=0
+        for commit_line in "${commit_hash_arr[@]}"; do
+          if [ "$commit_line" = "$commit_hash" ]; then
+            in_commit=1
+            break
+          fi
+        done
         continue
         ;;
     esac
@@ -334,14 +424,27 @@ $numstat_stream
 EOF
 
   autoflow_code_volume_count=$((autoflow_code_insertions_count + autoflow_code_deletions_count))
+  autoflow_code_net_delta_count=$((autoflow_code_insertions_count - autoflow_code_deletions_count))
 }
 
 count_autoflow_token_metrics() {
   local telemetry_runs_file token_result max_row_tokens max_data_age_seconds
+  local now_epoch one_hour_ago token_result_json
   local now_epoch max_token_epoch
 
   autoflow_token_usage_count=0
   autoflow_token_report_count=0
+  autoflow_token_usage_1h_count=0
+  autoflow_token_usage_24h_count=0
+  autoflow_token_input_1h_count=0
+  autoflow_token_output_1h_count=0
+  autoflow_token_cache_1h_count=0
+  autoflow_token_input_24h_count=0
+  autoflow_token_output_24h_count=0
+  autoflow_token_cache_24h_count=0
+  autoflow_token_runner_breakdown_24h_json='{}'
+  autoflow_token_model_breakdown_24h_json='{}'
+  autoflow_runner_status_24h_json='{}'
 
   command -v jq >/dev/null 2>&1 || return 0
   telemetry_runs_file="$(telemetry_runs_jsonl_path "$project_root")"
@@ -360,23 +463,86 @@ count_autoflow_token_metrics() {
   esac
   now_epoch="$(date -u +%s)"
   max_token_epoch=$((now_epoch - max_data_age_seconds))
+  one_hour_ago=$((now_epoch - 3600))
 
-  token_result="$(
-    jq -rs --argjson max_row_tokens "$max_row_tokens" --argjson max_token_epoch "$max_token_epoch" '
+  token_result_json="$(
+    jq -rs --argjson max_row_tokens "$max_row_tokens" --argjson max_token_epoch "$max_token_epoch" --argjson one_hour_ago "$one_hour_ago" '
       reduce .[] as $row (
-        {usage: 0, reports: 0};
+        {
+          usage: 0,
+          reports: 0,
+          usage_1h: 0,
+          usage_24h: 0,
+          input_1h: 0,
+          output_1h: 0,
+          cache_1h: 0,
+          input_24h: 0,
+          output_24h: 0,
+          cache_24h: 0,
+          runner_24h: {},
+          model_24h: {},
+          runner_status_24h: {}
+        };
         if ($row | type) == "object" then
           ($row.token_input // 0 | tonumber? // 0) as $input
           | ($row.token_output // 0 | tonumber? // 0) as $output
-          | ($input + $output) as $total
+          | (($row.token_cache_input // 0 | tonumber? // 0)) as $cache
+          | ($input + $output + $cache) as $total
           | (($row.ended_at // $row.started_at // "") | fromdateiso8601? // 0) as $row_ts
-          | if (($row | has("token_input") or has("token_output"))
+          | ($row.runner_id // "unknown") as $runner_id
+          | ($row.model // "unknown") as $model
+          | ($row.result // "success") as $result
+          | if (($row | has("token_input") or has("token_output") or has("token_cache_input"))
               and ($row_ts >= $max_token_epoch)
               and ($input < $max_row_tokens)
               and ($output < $max_row_tokens)
+              and ($cache < $max_row_tokens)
               and ($total < $max_row_tokens)) then
-              .usage += $total
+              .usage += ($input + $output)
               | .reports += 1
+              | if ($row_ts >= $one_hour_ago) then
+                  .usage_1h += ($input + $output + $cache)
+                  | .input_1h += $input
+                  | .output_1h += $output
+                  | .cache_1h += $cache
+                else
+                  .
+                end
+              | .usage_24h += ($input + $output + $cache)
+              | .input_24h += $input
+              | .output_24h += $output
+              | .cache_24h += $cache
+              | .runner_24h[$runner_id] = (.runner_24h[$runner_id] // 0) + ($input + $output)
+              | .model_24h[$model] = (.model_24h[$model] // 0) + ($input + $output)
+              | if $result == "success" then
+                  .runner_status_24h[$runner_id] = {
+                    success: ((.runner_status_24h[$runner_id].success // 0) + 1),
+                    failure: (.runner_status_24h[$runner_id].failure // 0),
+                    timeout: (.runner_status_24h[$runner_id].timeout // 0),
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                  }
+                elif ($result == "failure" or $result == "failed" or $result == "error") then
+                  .runner_status_24h[$runner_id] = {
+                    success: (.runner_status_24h[$runner_id].success // 0),
+                    failure: ((.runner_status_24h[$runner_id].failure // 0) + 1),
+                    timeout: (.runner_status_24h[$runner_id].timeout // 0),
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                  }
+                elif $result == "timeout" then
+                  .runner_status_24h[$runner_id] = {
+                    success: (.runner_status_24h[$runner_id].success // 0),
+                    failure: (.runner_status_24h[$runner_id].failure // 0),
+                    timeout: ((.runner_status_24h[$runner_id].timeout // 0) + 1),
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                  }
+                else
+                  .runner_status_24h[$runner_id] = {
+                    success: (.runner_status_24h[$runner_id].success // 0),
+                    failure: (.runner_status_24h[$runner_id].failure // 0),
+                    timeout: (.runner_status_24h[$runner_id].timeout // 0),
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                  }
+                end
             else
               .
             end
@@ -384,17 +550,86 @@ count_autoflow_token_metrics() {
           .
         end
       )
-      | "\(.usage) \(.reports)"
-    ' "$telemetry_runs_file" 2>/dev/null || printf '0 0'
+      | {
+          usage: .usage,
+          reports: .reports,
+          usage_1h: .usage_1h,
+          usage_24h: .usage_24h,
+          input_1h: .input_1h,
+          output_1h: .output_1h,
+          cache_1h: .cache_1h,
+          input_24h: .input_24h,
+          output_24h: .output_24h,
+          cache_24h: .cache_24h,
+          runner_24h: .runner_24h,
+          model_24h: .model_24h,
+          runner_status_24h: .runner_status_24h
+        }
+      | @json
+    ' "$telemetry_runs_file" 2>/dev/null || printf '{}'
+  )"
+  token_result="$(
+    printf '%s' "$token_result_json" | jq -r '"\(.usage) \(.reports) \(.usage_1h) \(.usage_24h) \(.input_1h) \(.output_1h) \(.cache_1h) \(.input_24h) \(.output_24h) \(.cache_24h)"'
   )"
   autoflow_token_usage_count="${token_result%% *}"
   autoflow_token_report_count="${token_result##* }"
+  autoflow_token_usage_1h_count="$(printf '%s' "$token_result" | awk '{print $3}')"
+  autoflow_token_usage_24h_count="$(printf '%s' "$token_result" | awk '{print $4}')"
+  autoflow_token_input_1h_count="$(printf '%s' "$token_result" | awk '{print $5}')"
+  autoflow_token_output_1h_count="$(printf '%s' "$token_result" | awk '{print $6}')"
+  autoflow_token_cache_1h_count="$(printf '%s' "$token_result" | awk '{print $7}')"
+  autoflow_token_input_24h_count="$(printf '%s' "$token_result" | awk '{print $8}')"
+  autoflow_token_output_24h_count="$(printf '%s' "$token_result" | awk '{print $9}')"
+  autoflow_token_cache_24h_count="$(printf '%s' "$token_result" | awk '{print $10}')"
+  autoflow_token_runner_breakdown_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.runner_24h')"
+  autoflow_token_model_breakdown_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.model_24h')"
+  autoflow_runner_status_24h_json="$(printf '%s' "$token_result_json" | jq -c '
+    to_entries
+    | map({key: .key, value: .value})
+    | from_entries
+    | with_entries(
+        .value |= {
+          success: (.value.success // 0),
+          failure: (.value.failure // 0),
+          timeout: (.value.timeout // 0),
+          last_activity: (.value.last_activity // 0)
+        }
+      )
+    | @json
+  ')"
   case "$autoflow_token_usage_count" in
     ''|*[!0-9]*) autoflow_token_usage_count=0 ;;
   esac
   case "$autoflow_token_report_count" in
     ''|*[!0-9]*) autoflow_token_report_count=0 ;;
   esac
+  case "$autoflow_token_usage_1h_count" in
+    ''|*[!0-9]*) autoflow_token_usage_1h_count=0 ;;
+  esac
+  case "$autoflow_token_usage_24h_count" in
+    ''|*[!0-9]*) autoflow_token_usage_24h_count=0 ;;
+  esac
+  case "$autoflow_token_input_1h_count" in
+    ''|*[!0-9]*) autoflow_token_input_1h_count=0 ;;
+  esac
+  case "$autoflow_token_output_1h_count" in
+    ''|*[!0-9]*) autoflow_token_output_1h_count=0 ;;
+  esac
+  case "$autoflow_token_cache_1h_count" in
+    ''|*[!0-9]*) autoflow_token_cache_1h_count=0 ;;
+  esac
+  case "$autoflow_token_input_24h_count" in
+    ''|*[!0-9]*) autoflow_token_input_24h_count=0 ;;
+  esac
+  case "$autoflow_token_output_24h_count" in
+    ''|*[!0-9]*) autoflow_token_output_24h_count=0 ;;
+  esac
+  case "$autoflow_token_cache_24h_count" in
+    ''|*[!0-9]*) autoflow_token_cache_24h_count=0 ;;
+  esac
+  [ -n "$autoflow_token_runner_breakdown_24h_json" ] || autoflow_token_runner_breakdown_24h_json='{}'
+  [ -n "$autoflow_token_model_breakdown_24h_json" ] || autoflow_token_model_breakdown_24h_json='{}'
+  [ -n "$autoflow_runner_status_24h_json" ] || autoflow_runner_status_24h_json='{}'
 }
 
 sanitize_nonnegative_metric() {
@@ -598,11 +833,14 @@ load_heavy_metrics_cache() {
 
   [ -f "$cache_file" ] || return 1
   while IFS='=' read -r key value; do
-    case "$key" in
-      autoflow_commit_count|autoflow_code_files_changed_count|autoflow_code_insertions_count|autoflow_code_deletions_count|autoflow_code_volume_count|autoflow_token_usage_count|autoflow_token_report_count)
+      case "$key" in
+      autoflow_commit_count|autoflow_code_files_changed_count|autoflow_code_insertions_count|autoflow_code_deletions_count|autoflow_code_volume_count|autoflow_code_net_delta_count|autoflow_token_usage_count|autoflow_token_report_count|autoflow_token_usage_1h_count|autoflow_token_usage_24h_count|autoflow_token_input_1h_count|autoflow_token_output_1h_count|autoflow_token_cache_1h_count|autoflow_token_input_24h_count|autoflow_token_output_24h_count|autoflow_token_cache_24h_count|autoflow_commit_count_24h|autoflow_commit_auto_count_24h|autoflow_commit_manual_count_24h)
         case "$value" in
           ''|*[!0-9]*) value=0 ;;
         esac
+        printf -v "$key" '%s' "$value"
+        ;;
+      autoflow_token_runner_breakdown_24h_json|autoflow_token_model_breakdown_24h_json|autoflow_runner_status_24h_json|autoflow_commit_recent_subjects_json)
         printf -v "$key" '%s' "$value"
         ;;
     esac
@@ -621,8 +859,24 @@ write_heavy_metrics_cache() {
     printf 'autoflow_code_insertions_count=%s\n' "$autoflow_code_insertions_count"
     printf 'autoflow_code_deletions_count=%s\n' "$autoflow_code_deletions_count"
     printf 'autoflow_code_volume_count=%s\n' "$autoflow_code_volume_count"
+    printf 'autoflow_code_net_delta_count=%s\n' "$autoflow_code_net_delta_count"
     printf 'autoflow_token_usage_count=%s\n' "$autoflow_token_usage_count"
     printf 'autoflow_token_report_count=%s\n' "$autoflow_token_report_count"
+    printf 'autoflow_token_usage_1h_count=%s\n' "$autoflow_token_usage_1h_count"
+    printf 'autoflow_token_usage_24h_count=%s\n' "$autoflow_token_usage_24h_count"
+    printf 'autoflow_token_input_1h_count=%s\n' "$autoflow_token_input_1h_count"
+    printf 'autoflow_token_output_1h_count=%s\n' "$autoflow_token_output_1h_count"
+    printf 'autoflow_token_cache_1h_count=%s\n' "$autoflow_token_cache_1h_count"
+    printf 'autoflow_token_input_24h_count=%s\n' "$autoflow_token_input_24h_count"
+    printf 'autoflow_token_output_24h_count=%s\n' "$autoflow_token_output_24h_count"
+    printf 'autoflow_token_cache_24h_count=%s\n' "$autoflow_token_cache_24h_count"
+    printf 'autoflow_token_runner_breakdown_24h_json=%s\n' "$autoflow_token_runner_breakdown_24h_json"
+    printf 'autoflow_token_model_breakdown_24h_json=%s\n' "$autoflow_token_model_breakdown_24h_json"
+    printf 'autoflow_runner_status_24h_json=%s\n' "$autoflow_runner_status_24h_json"
+    printf 'autoflow_commit_count_24h=%s\n' "$autoflow_commit_count_24h"
+    printf 'autoflow_commit_auto_count_24h=%s\n' "$autoflow_commit_auto_count_24h"
+    printf 'autoflow_commit_manual_count_24h=%s\n' "$autoflow_commit_manual_count_24h"
+    printf 'autoflow_commit_recent_subjects_json=%s\n' "$autoflow_commit_recent_subjects_json"
   } > "$tmp_file"
   mv "$tmp_file" "$cache_file"
 }
@@ -666,8 +920,24 @@ count_heavy_metrics_with_cache() {
   autoflow_code_insertions_count=0
   autoflow_code_deletions_count=0
   autoflow_code_volume_count=0
+  autoflow_code_net_delta_count=0
   autoflow_token_usage_count=0
   autoflow_token_report_count=0
+  autoflow_token_usage_1h_count=0
+  autoflow_token_usage_24h_count=0
+  autoflow_token_input_1h_count=0
+  autoflow_token_output_1h_count=0
+  autoflow_token_cache_1h_count=0
+  autoflow_token_input_24h_count=0
+  autoflow_token_output_24h_count=0
+  autoflow_token_cache_24h_count=0
+  autoflow_token_runner_breakdown_24h_json='{}'
+  autoflow_token_model_breakdown_24h_json='{}'
+  autoflow_runner_status_24h_json='{}'
+  autoflow_commit_count_24h=0
+  autoflow_commit_auto_count_24h=0
+  autoflow_commit_manual_count_24h=0
+  autoflow_commit_recent_subjects_json='[]'
   [ "$lock_acquired" = "true" ] && autoflow_release_lock "$lock_dir"
 }
 
@@ -773,8 +1043,24 @@ if [ "$write" = "true" ]; then
     "$autoflow_code_insertions_count" \
     "$autoflow_code_deletions_count" \
     "$autoflow_code_volume_count" \
+    "$autoflow_code_net_delta_count" \
     "$autoflow_token_usage_count" \
     "$autoflow_token_report_count" \
+    "$autoflow_token_usage_1h_count" \
+    "$autoflow_token_usage_24h_count" \
+    "$autoflow_token_input_1h_count" \
+    "$autoflow_token_output_1h_count" \
+    "$autoflow_token_cache_1h_count" \
+    "$autoflow_token_input_24h_count" \
+    "$autoflow_token_output_24h_count" \
+    "$autoflow_token_cache_24h_count" \
+    "$autoflow_token_runner_breakdown_24h_json" \
+    "$autoflow_token_model_breakdown_24h_json" \
+    "$autoflow_runner_status_24h_json" \
+    "$autoflow_commit_count_24h" \
+    "$autoflow_commit_auto_count_24h" \
+    "$autoflow_commit_manual_count_24h" \
+    "$autoflow_commit_recent_subjects_json" \
     "$autoflow_avg_lead_seconds" \
     "$autoflow_avg_active_seconds" \
     "$autoflow_avg_ticks_per_done_ticket" \
@@ -825,8 +1111,24 @@ printf 'autoflow_code_files_changed_count=%s\n' "$autoflow_code_files_changed_co
 printf 'autoflow_code_insertions_count=%s\n' "$autoflow_code_insertions_count"
 printf 'autoflow_code_deletions_count=%s\n' "$autoflow_code_deletions_count"
 printf 'autoflow_code_volume_count=%s\n' "$autoflow_code_volume_count"
+printf 'autoflow_code_net_delta_count=%s\n' "$autoflow_code_net_delta_count"
 printf 'autoflow_token_usage_count=%s\n' "$autoflow_token_usage_count"
 printf 'autoflow_token_report_count=%s\n' "$autoflow_token_report_count"
+printf 'autoflow_token_usage_1h_count=%s\n' "$autoflow_token_usage_1h_count"
+printf 'autoflow_token_usage_24h_count=%s\n' "$autoflow_token_usage_24h_count"
+printf 'autoflow_token_input_1h_count=%s\n' "$autoflow_token_input_1h_count"
+printf 'autoflow_token_output_1h_count=%s\n' "$autoflow_token_output_1h_count"
+printf 'autoflow_token_cache_1h_count=%s\n' "$autoflow_token_cache_1h_count"
+printf 'autoflow_token_input_24h_count=%s\n' "$autoflow_token_input_24h_count"
+printf 'autoflow_token_output_24h_count=%s\n' "$autoflow_token_output_24h_count"
+printf 'autoflow_token_cache_24h_count=%s\n' "$autoflow_token_cache_24h_count"
+printf 'autoflow_token_runner_breakdown_24h_json=%s\n' "$autoflow_token_runner_breakdown_24h_json"
+printf 'autoflow_token_model_breakdown_24h_json=%s\n' "$autoflow_token_model_breakdown_24h_json"
+printf 'autoflow_runner_status_24h_json=%s\n' "$autoflow_runner_status_24h_json"
+printf 'autoflow_commit_count_24h=%s\n' "$autoflow_commit_count_24h"
+printf 'autoflow_commit_auto_count_24h=%s\n' "$autoflow_commit_auto_count_24h"
+printf 'autoflow_commit_manual_count_24h=%s\n' "$autoflow_commit_manual_count_24h"
+printf 'autoflow_commit_recent_subjects_json=%s\n' "$autoflow_commit_recent_subjects_json"
 printf 'autoflow_avg_lead_seconds=%s\n' "$autoflow_avg_lead_seconds"
 printf 'autoflow_avg_active_seconds=%s\n' "$autoflow_avg_active_seconds"
 printf 'autoflow_avg_ticks_per_done_ticket=%s\n' "$autoflow_avg_ticks_per_done_ticket"
