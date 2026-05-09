@@ -6423,7 +6423,9 @@ function LiveTerminalView({
 
     // vibe-terminal renderer.js line 5389~5413 옵션 풀세트.
     const terminal = new XTermTerminal({
-      cursorBlink: true,
+      cursorBlink: false,
+      cursorStyle: "bar",
+      cursorInactiveStyle: "none",
       convertEol: true,
       disableStdin: true,
       allowProposedApi: false,
