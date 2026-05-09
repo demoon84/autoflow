@@ -6241,9 +6241,16 @@ function useLiveStdoutText(
 ): string {
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
-  const stdoutPath = runner.lastStdoutLog || "";
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
+  // 우선순위: (1) state 의 last_stdout_log (현재 tick live, 가장 fresh —
+  // 단 tick rotation 사이엔 비거나 사라질 수 있음), (2) persistent
+  // <runner_id>.log (누적 로그, 항상 존재).
+  const persistentLog =
+    runner.id && projectRoot && boardDirName
+      ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
+      : "";
+  const stdoutPath = runner.lastStdoutLog || persistentLog;
 
   const [text, setText] = React.useState("");
 
@@ -6284,9 +6291,13 @@ function useLiveStdoutRate(
 ): { bytesPerSec: number; totalBytes: number } | null {
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
-  const stdoutPath = runner.lastStdoutLog || "";
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
+  const persistentLog =
+    runner.id && projectRoot && boardDirName
+      ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
+      : "";
+  const stdoutPath = runner.lastStdoutLog || persistentLog;
 
   const [sample, setSample] = React.useState<{ size: number; ts: number } | null>(null);
   const [rate, setRate] = React.useState(0);
