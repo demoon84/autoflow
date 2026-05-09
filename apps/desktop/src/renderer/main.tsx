@@ -6228,6 +6228,78 @@ const LIVE_TERMINAL_FONT_FAMILY =
   '"D2Coding", "Cascadia Mono", "Consolas", "Courier New", monospace';
 const LIVE_TERMINAL_FONT_SIZE = 12;
 
+// prd_225 (2026-05-09): xterm theme 을 라이트/다크 카드 톤에 정렬한다.
+// LOG_TOKEN_ANSI 는 ANSI palette index (\x1b[36m = cyan 등) 만 쓰므로 같은
+// escape 가 palette 에 따라 색이 달라진다. 라이트 팔레트는 ansiConverter
+// (line ~3515) 의 colors map 톤을 차용해 ConversationStream 시리즈와 시각
+// 일관성을 맞췄고, 다크 팔레트는 기존 vibe-terminal 톤을 유지한다.
+const LIVE_TERMINAL_THEME_LIGHT = {
+  background: "#FFFFFF",
+  foreground: "#1f2937",
+  cursor: "#1f2937",
+  cursorAccent: "#FFFFFF",
+  selectionBackground: "rgba(31, 41, 55, 0.18)",
+  selectionInactiveBackground: "rgba(31, 41, 55, 0.10)",
+  scrollbarSliderBackground: "rgba(31, 41, 55, 0.20)",
+  scrollbarSliderHoverBackground: "rgba(31, 41, 55, 0.32)",
+  scrollbarSliderActiveBackground: "rgba(31, 41, 55, 0.42)",
+  overviewRulerBorder: "#FFFFFF",
+  black: "#1f2937",
+  red: "#dc2626",
+  green: "#16a34a",
+  yellow: "#ca8a04",
+  blue: "#2563eb",
+  magenta: "#9333ea",
+  cyan: "#0891b2",
+  white: "#4b5563",
+  brightBlack: "#6b7280",
+  brightRed: "#ef4444",
+  brightGreen: "#22c55e",
+  brightYellow: "#eab308",
+  brightBlue: "#3b82f6",
+  brightMagenta: "#a855f7",
+  brightCyan: "#06b6d4",
+  brightWhite: "#111827"
+} as const;
+
+const LIVE_TERMINAL_THEME_DARK = {
+  background: "#2d323b",
+  foreground: "#d6d8de",
+  cursor: "#aeafad",
+  cursorAccent: "#2d323b",
+  selectionBackground: "rgba(255, 255, 255, 0.2)",
+  selectionInactiveBackground: "rgba(255, 255, 255, 0.12)",
+  scrollbarSliderBackground: "rgba(121, 121, 121, 0.36)",
+  scrollbarSliderHoverBackground: "rgba(121, 121, 121, 0.52)",
+  scrollbarSliderActiveBackground: "rgba(121, 121, 121, 0.64)",
+  overviewRulerBorder: "#2d323b",
+  black: "#3a3f4a",
+  red: "#ef4444",
+  green: "#22c55e",
+  yellow: "#eab308",
+  blue: "#3b82f6",
+  magenta: "#a855f7",
+  cyan: "#06b6d4",
+  white: "#d6d8de",
+  brightBlack: "#6b7280",
+  brightRed: "#f87171",
+  brightGreen: "#4ade80",
+  brightYellow: "#facc15",
+  brightBlue: "#60a5fa",
+  brightMagenta: "#c084fc",
+  brightCyan: "#22d3ee",
+  brightWhite: "#f3f4f6"
+} as const;
+
+function readDocumentThemeMode(): "light" | "dark" {
+  if (typeof document === "undefined") return "light";
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function liveTerminalThemeFor(mode: "light" | "dark") {
+  return mode === "dark" ? LIVE_TERMINAL_THEME_DARK : LIVE_TERMINAL_THEME_LIGHT;
+}
+
 function LiveTerminalView({
   text,
   ariaLabel
@@ -6243,6 +6315,24 @@ function LiveTerminalView({
   const pendingChunksRef = React.useRef<string[]>([]);
   const flushRafRef = React.useRef<number | null>(null);
   const writtenLengthRef = React.useRef(0);
+  const [terminalThemeMode, setTerminalThemeMode] = React.useState<
+    "light" | "dark"
+  >(() => readDocumentThemeMode());
+
+  // prd_225: <html data-theme="..."> 변화를 구독해 xterm theme 도 즉시 swap.
+  // 사용자가 헤더 토글을 누르면 documentElement.dataset.theme 가 바뀌므로
+  // MutationObserver 한 개로 충분하다. prop drilling / context 도입 없음.
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const apply = () => setTerminalThemeMode(readDocumentThemeMode());
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
+    return () => observer.disconnect();
+  }, []);
 
   React.useEffect(() => {
     const host = hostRef.current;
@@ -6260,36 +6350,7 @@ function LiveTerminalView({
       rescaleOverlappingGlyphs: false,
       scrollback: LIVE_TERMINAL_SCROLLBACK,
       overviewRuler: { width: 1 },
-      theme: {
-        background: "#2d323b",
-        foreground: "#d6d8de",
-        cursor: "#aeafad",
-        cursorAccent: "#2d323b",
-        selectionBackground: "rgba(255, 255, 255, 0.2)",
-        selectionInactiveBackground: "rgba(255, 255, 255, 0.12)",
-        scrollbarSliderBackground: "rgba(121, 121, 121, 0.36)",
-        scrollbarSliderHoverBackground: "rgba(121, 121, 121, 0.52)",
-        scrollbarSliderActiveBackground: "rgba(121, 121, 121, 0.64)",
-        overviewRulerBorder: "#2d323b",
-        // 컬러감 — 이전 autoflow palette (vibrant ANSI). vibe-terminal 의
-        // 무채 톤만으로는 log 가 단조로워 사용자가 색 구분 어려움.
-        black: "#3a3f4a",
-        red: "#ef4444",
-        green: "#22c55e",
-        yellow: "#eab308",
-        blue: "#3b82f6",
-        magenta: "#a855f7",
-        cyan: "#06b6d4",
-        white: "#d6d8de",
-        brightBlack: "#6b7280",
-        brightRed: "#f87171",
-        brightGreen: "#4ade80",
-        brightYellow: "#facc15",
-        brightBlue: "#60a5fa",
-        brightMagenta: "#c084fc",
-        brightCyan: "#22d3ee",
-        brightWhite: "#f3f4f6"
-      }
+      theme: { ...liveTerminalThemeFor(readDocumentThemeMode()) }
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -6351,6 +6412,14 @@ function LiveTerminalView({
       writtenLengthRef.current = 0;
     };
   }, []);
+
+  // prd_225: themeMode 가 바뀌면 이미 mount 된 xterm 의 theme 만 swap.
+  // xterm Terminal#options.theme setter 가 palette 를 즉시 반영한다.
+  React.useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
+  }, [terminalThemeMode]);
 
   // vibe-terminal scheduleTerminalOutputFlush (renderer.js line 3716) 패턴:
   // pendingChunks 배열에 push 한 뒤 RAF 안에서 join → terminal.write. 매

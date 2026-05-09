@@ -3237,15 +3237,21 @@ pre {
   flex: 1 1 0;
   min-height: 200px;
   margin-top: 10px;
-  border: 1px solid #1f242c;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #2d323b;
+  background: var(--card);
   overflow: hidden;
   /* outer 만 padding — 시각 여백 제공. xterm host 는 padding 0 영역에서
      fit 계산 → 우측 글자 잘림 없음. */
   padding: 6px 8px;
   box-sizing: border-box;
   display: flex;
+}
+
+[data-theme="dark"] .live-terminal-view {
+  /* 다크는 vibe-terminal 톤 유지. xterm theme 객체와 한 쌍으로 정렬. */
+  border-color: #1f242c;
+  background: #2d323b;
 }
 
 .live-terminal-view-host {
@@ -3265,6 +3271,10 @@ pre {
 }
 
 .live-terminal-view .xterm .xterm-viewport {
+  background: var(--card) !important;
+}
+
+[data-theme="dark"] .live-terminal-view .xterm .xterm-viewport {
   background: #2d323b !important;
 }
 
