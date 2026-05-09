@@ -337,7 +337,8 @@ EOF
 }
 
 count_autoflow_token_metrics() {
-  local telemetry_runs_file token_result max_row_tokens
+  local telemetry_runs_file token_result max_row_tokens max_data_age_seconds
+  local now_epoch max_token_epoch
 
   autoflow_token_usage_count=0
   autoflow_token_report_count=0
@@ -350,15 +351,27 @@ count_autoflow_token_metrics() {
     ''|*[!0-9]*|0) max_row_tokens=100000000 ;;
   esac
 
+  # Keep metric inflation bounded by summing only recent telemetry rows (default:
+  # 1h) so a historical corrupted row is not repeatedly included in current
+  # dashboard counts.
+  max_data_age_seconds="${AUTOFLOW_TOKEN_BUDGET_MAX_DATA_AGE_SECONDS:-3600}"
+  case "$max_data_age_seconds" in
+    ''|*[!0-9]*|0) max_data_age_seconds=3600 ;;
+  esac
+  now_epoch="$(date -u +%s)"
+  max_token_epoch=$((now_epoch - max_data_age_seconds))
+
   token_result="$(
-    jq -rs --argjson max_row_tokens "$max_row_tokens" '
+    jq -rs --argjson max_row_tokens "$max_row_tokens" --argjson max_token_epoch "$max_token_epoch" '
       reduce .[] as $row (
         {usage: 0, reports: 0};
         if ($row | type) == "object" then
           ($row.token_input // 0 | tonumber? // 0) as $input
           | ($row.token_output // 0 | tonumber? // 0) as $output
           | ($input + $output) as $total
+          | (($row.ended_at // $row.started_at // "") | fromdateiso8601? // 0) as $row_ts
           | if (($row | has("token_input") or has("token_output"))
+              and ($row_ts >= $max_token_epoch)
               and ($input < $max_row_tokens)
               and ($output < $max_row_tokens)
               and ($total < $max_row_tokens)) then
