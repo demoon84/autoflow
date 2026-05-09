@@ -3237,10 +3237,10 @@ pre {
   border-radius: 8px;
   background: #2d323b;
   overflow: hidden;
-  /* fit 계산이 outer width 기준이라 padding 두면 글자가 잘림. padding 0 +
-     box-sizing border-box 로 fit 폭과 실제 표시 폭을 맞춘다 (vibe-terminal
-     의 .terminal-host 도 padding 0). */
-  padding: 0;
+  /* padding 은 두되 box-sizing: border-box 로 outer width 안에서 차감.
+     xterm FitAddon 은 host 의 clientWidth (padding 빠진 inner content
+     영역) 를 기준으로 cols 계산하므로 box-sizing border-box 면 정확. */
+  padding: 6px 8px;
   box-sizing: border-box;
 }
 
