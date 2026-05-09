@@ -6840,11 +6840,9 @@ function AiProgressRow({
         </div>
       ) : null}
       {showConversation ? (
-        <>
-          <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
-          <RunnerActivityFooter runner={runner} />
-        </>
+        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
       ) : null}
+      <RunnerActivityFooter runner={runner} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
           className="workflow-pin-layer-panel workflow-pin-layer-default"

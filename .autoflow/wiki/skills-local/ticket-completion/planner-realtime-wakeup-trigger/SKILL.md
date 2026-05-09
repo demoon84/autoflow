@@ -1,6 +1,9 @@
 ---
 name: "planner-realtime-wakeup-trigger"
-description: "Planner realtime wakeup trigger"
+description: "Use when Planner realtime wakeup trigger"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: "packages/cli/runners-project.sh"
@@ -21,6 +24,10 @@ created_from:
   prd: "prd_175"
   ticket: "tickets_174"
 created_at: "2026-05-04T22:24:10Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # Planner realtime wakeup trigger

@@ -1,6 +1,9 @@
 ---
 name: "desktop-detached-runner-reconnect-policy"
-description: "desktop detached runner reconnect policy"
+description: "Use when desktop detached runner reconnect policy"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "apps/desktop/src/main.js"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_184"
   ticket: "tickets_183"
 created_at: "2026-05-05T23:40:16Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # desktop detached runner reconnect policy

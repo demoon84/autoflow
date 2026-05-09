@@ -1,6 +1,9 @@
 ---
 name: "runner-live-log-finalize-cleanup"
-description: "runner live log finalize cleanup"
+description: "Use when runner live log finalize cleanup"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_182"
   ticket: "tickets/done/prd_182/tickets_181.md"
 created_at: "2026-05-05T22:47:33Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # runner live log finalize cleanup

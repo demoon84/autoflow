@@ -3,11 +3,11 @@
 This directory is the state board inside `BOARD_ROOT`.
 
 - `todo/`: tickets that are ready but not started.
-- `inprogress/`: claimed `tickets_*.md` files and active verification notes. Legacy planner `plan_*.md` files also use this state while generating tickets.
+- `inprogress/`: claimed `Todo-*.md` files and active verification notes. Legacy planner `plan_*.md` files also use this state while generating tickets.
 - `ready-to-merge/`: legacy/compatibility state for Ticket Owner Mode tickets that passed owner verification and wait for finalization.
 - `merge-blocked/`: legacy/compatibility state for ready tickets that need ticket-specific AI repair.
 - `verifier/`: legacy tickets that finished implementation and wait for verification. Ticket Owner Mode may also resume compatible tickets from this state.
-- `done/`: tickets that passed verification and were committed locally (`done/<project-key>/tickets_NNN.md`).
+- `done/`: tickets that passed verification and were committed locally (`done/<project-key>/Todo-NNN.md`).
 - `reject/`: tickets that failed verification and include `## Reject Reason`.
 - `check/`: human-review ledger for automatic planner interventions. Files use `check_NNN.md`, start at `check_001.md`, and are separate from ticket / PRD / reject sequences.
 - `verify_NNN.md`: a verification evidence file created under `inprogress/` and moved beside the final ticket.
@@ -17,13 +17,13 @@ This directory is the state board inside `BOARD_ROOT`.
 - `inprogress/plan_*.md`: legacy plans currently being consumed into tickets.
 - `../logs/`: owner / verifier completion logs (`verifier_<ticket-id>_<timestamp>_<outcome>.md`).
 
-Every `tickets_*.md` file under `inprogress/` should carry these owner fields:
+Every `Todo-*.md` file under `inprogress/` should carry these owner fields:
 
 - `Claimed By`
 - `Execution Owner`
 - `Verifier Owner`
 
-Ticket filenames use `tickets_NNN.md`, for example `tickets_001.md`, `tickets_014.md`, or `tickets_120.md`.
+Ticket filenames use `Todo-NNN.md`, for example `Todo-001.md`, `Todo-014.md`, or `Todo-120.md`.
 
 ## Lifecycle
 
@@ -31,10 +31,10 @@ Default Ticket Owner flow:
 
 ```text
 tickets/backlog/prd_001.md
-  -> tickets/inprogress/tickets_001.md
+  -> tickets/inprogress/Todo-001.md
   -> tickets/inprogress/verify_001.md
   -> AI-led merge into PROJECT_ROOT
-  -> tickets/done/prd_001/tickets_001.md
+  -> tickets/done/prd_001/Todo-001.md
   -> tickets/done/prd_001/prd_001.md
    -> tickets/reject/reject_001.md
 ```
@@ -45,10 +45,10 @@ Legacy role-pipeline flow:
 tickets/backlog/prd_001.md
   -> tickets/plan/plan_001.md
   -> tickets/inprogress/plan_001.md
-  -> tickets/todo/tickets_001.md
-  -> tickets/inprogress/tickets_001.md
-  -> tickets/verifier/tickets_001.md
-  -> tickets/done/prd_001/tickets_001.md
+  -> tickets/todo/Todo-001.md
+  -> tickets/inprogress/Todo-001.md
+  -> tickets/verifier/Todo-001.md
+  -> tickets/done/prd_001/Todo-001.md
   -> tickets/done/prd_001/prd_001.md
   -> tickets/done/prd_001/plan_001.md
    -> tickets/reject/reject_001.md
@@ -67,9 +67,9 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - If a file is in `todo/`, treat it as implementation work even when the title or acceptance criteria mention review or verification.
   - Ticket Owner Mode or legacy `start-todo.sh` claims one file by moving it to `inprogress/`.
 - `inprogress/`
-  - `tickets_*.md` files are claimed by Ticket Owner Mode or by a legacy todo worker.
+  - `Todo-*.md` files are claimed by Ticket Owner Mode or by a legacy todo worker.
   - Legacy `plan_*.md` files mean the planner is generating tickets from a plan.
-  - One agent conversation should actively process one `tickets_*.md` file at a time.
+  - One agent conversation should actively process one `Todo-*.md` file at a time.
   - If the same owner already has an `inprogress` ticket, resume that ticket instead of claiming a new one.
   - Required fields include `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Owner`, `Worktree`, `Last Updated`, `Next Action`, and `Resume Context`.
   - In a git repository, the owner works in the ticket worktree when one exists.
@@ -102,7 +102,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - After retry ticket creation, move the consumed reject file to `done/<project-key>/reject_NNN.md` as history.
 - `check/`
   - Contains best-effort records for automatic planner interventions such as reject auto-replan, reject auto-close, blocked-auto-recover, blocked-dirty-orchestration, and planner-authored orchestration cleanup commits.
-  - File names use `check_NNN.md`; this sequence is independent from `tickets_NNN`, `prd_NNN`, `order_NNN`, and `reject_NNN`.
+  - File names use `check_NNN.md`; this sequence is independent from `Todo-NNN`, `prd_NNN`, `order_NNN`, and `reject_NNN`.
   - Each check file must include `title`, `created_at`, `event_type`, `prd_key`, `ticket_id`, and `source` metadata plus `## What Happened`, `## Evidence`, `## Recommended Human Action`, and `## Status`.
   - `## Status` must include `- [ ] 사람 확인 완료`. A human may mark it as `- [x] 사람 확인 완료` after review; desktop refresh treats checked files as confirmed.
   - Archiving or moving a check file out of `tickets/check/` removes it from the active desktop count on the next board refresh. Check files are review evidence only; they do not determine ticket pass/fail or runner stage.

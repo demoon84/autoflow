@@ -1,0 +1,96 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-070
+- PRD Key: prd_072
+- Plan Candidate: Plan AI handoff from tickets/done/prd_072/prd_072.md
+- Title: 데스크톱 UI hover 툴팁 제거
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-01T00:28:54Z
+
+## Goal
+
+- 이번 작업의 목표: 데스크톱 앱의 아이콘 버튼 hover 시 뜨는 시각적 텍스트 말풍선을 제거해 러너 카드와 주요 툴바가 덜 거슬리게 보이도록 한다. 접근성 이름은 `aria-label` 로 유지한다.
+
+## References
+
+- PRD: tickets/done/prd_072/prd_072.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Obsidian Links
+
+- Project Note: [[prd_072]]
+- Plan Note:
+- Ticket Note: [[Todo-070]]
+
+## Allowed Paths
+
+- `apps/desktop/src/renderer/main.tsx`
+- `apps/desktop/src/renderer/styles.css`
+
+## Worktree
+- Path: `/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/Todo-070`
+- Branch: autoflow/Todo-070
+- Base Commit: 2be520895f228d7435c7f569613c2fde3580304b
+- Worktree Commit: dc9334ae5898c4b709feb377e47f6041c31cb1b6
+- Integration Status: integrated
+
+## Done When
+
+- [x] 러너 카드와 진행 보드의 시작/중지 버튼에 `data-tooltip` 또는 버튼 hover 말풍선을 만드는 `title` 이 남아 있지 않다.
+- [x] 새로고침, 설치, 지표 스냅샷 저장처럼 아이콘 중심 버튼에 hover 했을 때 커스텀 텍스트 말풍선이 보이지 않는다.
+- [x] 버튼의 `aria-label` 은 유지되어 스크린리더와 키보드 포커스 접근성이 깨지지 않는다.
+- [x] 정보성 긴 텍스트 확인용 `title` 을 제외하고, `data-tooltip` 기반 커스텀 툴팁 스타일은 제거되거나 더 이상 사용되지 않는다.
+- [x] 러너 시작/중지 클릭 동작, disabled 상태, 로딩 spinner, `반복 모드에서만 시작할 수 있습니다` 조건은 기존과 같다.
+- [x] `npm run desktop:check` 가 통과한다.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 `tickets/inbox/memo_038.md` 를 `tickets/done/prd_072/prd_072.md` 로 승격하고 이 todo 티켓을 생성했다.
+- 직전 작업: `bin/autoflow wiki query --term "desktop tooltip data-tooltip title runner button start stop apps/desktop/src/renderer/main.tsx"` 및 `desktop runner controls` / `data-tooltip` 조회로 과거 러너 컨트롤 툴팁 이력을 확인했다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_072/prd_072.md`, `apps/desktop/src/renderer/main.tsx` 의 `data-tooltip`/button `title` 사용처, `apps/desktop/src/renderer/styles.css` 의 `[data-tooltip]` 스타일.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_072/prd_072.md at 2026-04-30T22:07:26Z.
+- Wiki/ticket context: `tickets/done/prd_028/Todo-028.md` 는 러너 시작/중지 컨트롤의 `title`, `data-tooltip`, `aria-label` 문구를 `시작`/`중지`로 단순화한 선행 작업이다. 이번 작업은 같은 컨트롤의 hover 말풍선을 제거하되 `aria-label` 은 유지해야 한다.
+- Active-board context: 현재 `tickets/inprogress/Todo-003.md`, `tickets/inprogress/Todo-064.md`, `tickets/inprogress/Todo-067.md` 가 `apps/desktop/src/renderer/main.tsx` 또는 `styles.css` 를 포함한다. 단일 Impl AI 직렬 실행 모델을 따르되, claim 시 최신 파일과 겹침을 다시 확인한다.
+- Scope guard: `data-tooltip` 속성과 관련 CSS 제거가 핵심이다. 러너 lifecycle, start/stop handlers, disabled 조건, spinner, project picker, 로그/wiki 긴 텍스트 표시용 정보성 `title` 은 불필요하게 바꾸지 않는다.
+
+- Runtime hydrated worktree dependency at 2026-04-30T22:08:21Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-01T00:20:15Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/Todo-070; run=tickets/inprogress/verify_070.md
+- AI worker prepared resume at 2026-05-01T00:20:33Z; worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/Todo-070; run=tickets/inprogress/verify_070.md
+- Mini-plan by worker at 2026-05-01T17:40:00+09:00:
+  1. Remove all `data-tooltip` attributes in `apps/desktop/src/renderer/main.tsx` while keeping the corresponding `aria-label` values.
+  2. Remove hover-producing `title` from targeted icon/runner control buttons: install, metrics snapshot, refresh, runner start, and runner stop; keep informational long-text `title` values such as paths, log tails, and snippets.
+  3. Remove unused `[data-tooltip]` CSS rules from `apps/desktop/src/renderer/styles.css`, including progress action overrides.
+  4. Verify with `rg` for `data-tooltip` / targeted button `title` remnants and run `npm run desktop:check`; then AI-merge the verified files into PROJECT_ROOT before finalization.
+- Wiki context used by worker: `./bin/autoflow wiki query --term "desktop tooltip data-tooltip title runner button start stop apps/desktop/src/renderer/main.tsx"` matched `tickets/done/prd_072/prd_072.md`; `tickets/done/prd_028/Todo-028.md` remains the relevant prior runner-control ticket and constrains this change to preserve start/stop handlers, disabled state, loading spinner, and the non-loop disabled condition.
+- Implementation by worker at 2026-05-01T17:44:00+09:00: removed `data-tooltip` attributes from targeted install, metrics snapshot, refresh, runner start, and runner stop buttons; removed hover-producing `title` from those controls; preserved their `aria-label`, disabled conditions, click handlers, and spinner branches; removed unused `[data-tooltip]` CSS rules from `apps/desktop/src/renderer/styles.css`.
+- Verification by worker at 2026-05-01T17:45:00+09:00: `rg` confirmed no `data-tooltip` or targeted hover button `title` remnants in the allowed files, and `npm run desktop:check` passed in the ticket worktree and PROJECT_ROOT. Worktree was fast-forwarded to PROJECT_ROOT HEAD after verification setup, then `npm run desktop:check` passed again.
+- Merge resolution by worker at 2026-05-01T17:50:00+09:00: finalizer first stopped with `needs_ai_merge` for `apps/desktop/src/renderer/main.tsx` because PROJECT_ROOT had unrelated same-file dirty context. The AI had already applied the tooltip removals in PROJECT_ROOT, then updated the worktree snapshot to match PROJECT_ROOT allowed files and amended the worktree commit to `dc9334ae5898c4b709feb377e47f6041c31cb1b6` so the finalizer can validate the AI-merged result without performing merge logic.
+- Prepared worktree commit d8c91b9a3588eeb3b92674cf0729e6b2469f3d01 at 2026-05-01T00:26:56Z; Impl AI integrates it into PROJECT_ROOT and the inline finalizer creates the local completion commit.
+- Impl AI worker marked verification pass at 2026-05-01T00:26:56Z; runtime finalizer will not perform merge operations.
+- Merge finalizer stopped at 2026-05-01T00:26:56Z: PROJECT_ROOT does not yet contain the AI-merged result for commit paths (apps/desktop/src/renderer/main.tsx). No rebase, cherry-pick, or conflict resolution was performed by script.
+- Impl AI worker marked verification pass at 2026-05-01T00:28:53Z; runtime finalizer will not perform merge operations.
+- Merge finalizer verified at 2026-05-01T00:28:54Z: AI already integrated worktree commit dc9334ae5898c4b709feb377e47f6041c31cb1b6 into PROJECT_ROOT; script performed no rebase or cherry-pick.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-01T00:28:54Z.
+- Coordinator post-merge cleanup at 2026-05-01T00:28:54Z: removed_worktree=/Users/demoon2016/Documents/project/.autoflow-worktrees/autoflow/Todo-070 deleted_branch=autoflow/Todo-070.
+## Verification
+- Run file: `tickets/done/prd_072/verify_070.md`
+- Log file: `logs/verifier_070_20260501_002856Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: Removed desktop hover tooltip hooks while preserving aria labels and runner controls
+- Remaining risk: Browser hover inspection was not run; static source checks plus `desktop:check` covered the requested tooltip removal and behavior-preservation criteria.

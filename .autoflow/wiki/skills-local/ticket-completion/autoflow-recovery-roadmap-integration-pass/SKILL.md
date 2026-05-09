@@ -1,6 +1,9 @@
 ---
 name: "autoflow-recovery-roadmap-integration-pass"
-description: "autoflow recovery roadmap integration pass"
+description: "Use when autoflow recovery roadmap integration pass"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: ".autoflow/scripts/start-plan.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_176"
   ticket: "tickets_175"
 created_at: "2026-05-05T13:31:36Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # autoflow recovery roadmap integration pass

@@ -29,7 +29,7 @@ $ tail -5 .autoflow/metrics/telemetry-runs.jsonl
 → PRD-129 의 source 파일이 존재하지 않거나 빈 상태.
 
 ### 3. Runner 들은 정상 호출 중
-- worker: last_event_at=22:07:05Z, active=tickets_174, stdout 진행 중 (223KB live log)
+- worker: last_event_at=22:07:05Z, active=Todo-174, stdout 진행 중 (223KB live log)
 - planner: 22:07:57Z, 7분 31초 LLM 호출 직후 회복
 - verifier: 22:08:06Z, adapter_exit_0
 - wiki: 22:06:35Z, success

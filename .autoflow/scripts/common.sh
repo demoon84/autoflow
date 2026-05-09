@@ -457,14 +457,25 @@ canonical_worker_id() {
 }
 
 record_skill_extraction() {
+  # Hermes-equivalent skill review path (refactor 2026-05-08, queued 2026-05-08).
+  #
+  # Worker no longer invokes the LLM review directly. Instead it appends
+  # the ticket abs path to the review queue sidecar so Wiki AI can drain
+  # it on its own tick. This keeps ticket finalization fast, isolates the
+  # worker from a slow / rate-limited review LLM, and matches Hermes'
+  # auxiliary-client pattern (main agent vs forked review agent on a
+  # separate runtime).
+  #
+  # Best-effort: any failure here is logged but does not affect ticket
+  # finalization or worker exit status.
   local ticket_ref="$1"
-  local pattern_type="${2:-ticket_completion}"
-  local category="${3:-}"
+  local _ignored_pattern_type="${2:-}"
+  local _ignored_category="${3:-}"
   local cli_path board_dir_name output status
 
   if [ "${AUTOFLOW_SKILL_AUTO_EXTRACT:-on}" = "off" ]; then
-    printf 'skill_auto_extract.status=skipped_by_env\n'
-    printf 'skill_auto_extract.reason=AUTOFLOW_SKILL_AUTO_EXTRACT=off\n'
+    printf 'skill_review_request.status=skipped_by_env\n'
+    printf 'skill_review_request.reason=AUTOFLOW_SKILL_AUTO_EXTRACT=off\n'
     return 0
   fi
 
@@ -475,24 +486,18 @@ record_skill_extraction() {
   fi
 
   set +e
-  if [ -n "$category" ]; then
-    output="$("$cli_path" skill auto-extract "$PROJECT_ROOT" "$board_dir_name" --from-ticket "$ticket_ref" --pattern-type "$pattern_type" --category "$category" 2>&1)"
-  else
-    output="$("$cli_path" skill auto-extract "$PROJECT_ROOT" "$board_dir_name" --from-ticket "$ticket_ref" --pattern-type "$pattern_type" 2>&1)"
-  fi
+  output="$("$cli_path" skill review-queue "$PROJECT_ROOT" "$board_dir_name" --enqueue "$ticket_ref" 2>&1)"
   status=$?
   set -e
 
   if [ "$status" -ne 0 ]; then
-    printf 'skill_auto_extract.status=warning\n'
-    printf 'skill_auto_extract.exit_code=%s\n' "$status"
-    printf 'skill_auto_extract.pattern_type=%s\n' "$pattern_type"
-    printf 'skill_auto_extract.output_begin\n%s\nskill_auto_extract.output_end\n' "$output"
+    printf 'skill_review_request.status=warning\n'
+    printf 'skill_review_request.exit_code=%s\n' "$status"
+    printf 'skill_review_request.output_begin\n%s\nskill_review_request.output_end\n' "$output"
     return 0
   fi
 
-  printf '%s\n' "$output" | awk '/^status=/ || /^skill_file=/ || /^skill_path=/ || /^skill_id=/ || /^created_from=/' | sed 's/^/skill_auto_extract./'
-  printf 'skill_auto_extract.pattern_type=%s\n' "$pattern_type"
+  printf '%s\n' "$output" | awk '/^status=/ || /^skill_review_queue\./'
 }
 
 worker_id_matches_field() {
@@ -932,6 +937,9 @@ worktree_parent_root() {
 
 ticket_worktree_branch_for_id() {
   local ticket_id="$1"
+  # Keep the legacy branch namespace stable during the Todo-NNN board-file
+  # migration: branch names are internal git refs, not ticket storage IDs, and
+  # retaining them avoids disrupting existing worktree cleanup/recovery refs.
   printf 'autoflow/tickets_%s' "$ticket_id"
 }
 
@@ -941,6 +949,8 @@ ticket_worktree_path_for_id() {
 
   git_root="$(git_root_path)" || return 1
   parent_root="$(worktree_parent_root "$git_root")"
+  # Keep legacy worktree directory names for compatibility with live worktrees
+  # created before Todo-NNN became the primary board filename contract.
   printf '%s/tickets_%s' "$parent_root" "$ticket_id"
 }
 
@@ -1499,7 +1509,7 @@ list_ticket_record_files_under() {
   local dir="$1"
 
   [ -d "$dir" ] || return 0
-  find "$dir" -type f \( -name 'tickets_[0-9][0-9][0-9].md' -o -name 'reject_[0-9][0-9][0-9].md' \) | sort
+  find "$dir" -type f \( -name 'Todo-[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' -o -name 'reject_[0-9][0-9][0-9].md' \) | sort
 }
 
 list_reject_ticket_files() {
@@ -1827,11 +1837,11 @@ ticket_path() {
   local project_key="${3:-}"
 
   if [ "$state_dir" = "done" ] && [ -n "$project_key" ]; then
-    printf '%s/tickets/done/%s/tickets_%s.md' "$BOARD_ROOT" "$project_key" "$id"
+    printf '%s/tickets/done/%s/Todo-%s.md' "$BOARD_ROOT" "$project_key" "$id"
     return 0
   fi
 
-  printf '%s/tickets/%s/tickets_%s.md' "$BOARD_ROOT" "$state_dir" "$id"
+  printf '%s/tickets/%s/Todo-%s.md' "$BOARD_ROOT" "$state_dir" "$id"
 }
 
 plan_path() {
@@ -2410,7 +2420,7 @@ ticket_goal_prompt_block() {
   ticket_goal_enabled || return 0
   [ -f "$file" ] || return 0
 
-  ticket_id="tickets_$(extract_numeric_id "$file" 2>/dev/null || true)"
+  ticket_id="Todo-$(extract_numeric_id "$file" 2>/dev/null || true)"
   title="$(ticket_scalar_field "$file" "Title")"
   status="$(ticket_goal_field "$file" "Status")"
   tick_count="$(ticket_goal_numeric_field "$file" "Tick Count" "0")"
@@ -2568,7 +2578,7 @@ backup_diff_and_discard_worktree() {
   local source_reason="$3"
   local ticket_id timestamp backup_dir backup_file log_file
 
-  ticket_id="tickets_$(extract_numeric_id "$ticket_file")"
+  ticket_id="Todo-$(extract_numeric_id "$ticket_file")"
   timestamp="$(date -u +"%Y%m%dT%H%M%SZ")"
   backup_dir="${BOARD_ROOT}/runners/state/recovery-discarded"
   mkdir -p "$backup_dir"
@@ -2927,7 +2937,7 @@ recover_passed_inprogress_ticket() {
 
   [ -f "$ticket_file" ] || return 1
   case "$ticket_file" in
-    "${BOARD_ROOT}/tickets/inprogress/"tickets_*.md) ;;
+    "${BOARD_ROOT}/tickets/inprogress/"Todo-*.md|"${BOARD_ROOT}/tickets/inprogress/"tickets_*.md) ;;
     *) return 1 ;;
   esac
   ticket_has_passed_finish_marker "$ticket_file" || return 1
@@ -3513,14 +3523,14 @@ ticket_note_name_from_ticket_file() {
 
   base_name="$(basename "$ticket_file" .md)"
   case "$base_name" in
-    tickets_[0-9][0-9][0-9]|reject_[0-9][0-9][0-9])
+    Todo-[0-9][0-9][0-9]|tickets_[0-9][0-9][0-9]|reject_[0-9][0-9][0-9])
       printf '%s' "$base_name"
       return 0
       ;;
   esac
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf 'tickets_%s' "$ticket_id"
+  printf 'Todo-%s' "$ticket_id"
 }
 
 verification_note_name_for_ticket() {
@@ -3542,7 +3552,7 @@ ready_to_merge_ticket_path_for_ticket_file() {
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/inprogress/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/Todo-%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 ready_to_merge_run_path_for_ticket_file() {
@@ -3561,7 +3571,7 @@ merge_blocked_ticket_path_for_ticket_file() {
   local ticket_id
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
-  printf '%s/tickets/inprogress/tickets_%s.md' "$BOARD_ROOT" "$ticket_id"
+  printf '%s/tickets/inprogress/Todo-%s.md' "$BOARD_ROOT" "$ticket_id"
 }
 
 merge_blocked_run_path_for_ticket_file() {
@@ -3659,7 +3669,7 @@ done_ticket_path_for_ticket_file() {
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   project_key="$(project_key_from_ticket_file "$ticket_file")"
-  printf '%s/tickets_%s.md' "$(done_dir_for_project_key "$project_key")" "$ticket_id"
+  printf '%s/Todo-%s.md' "$(done_dir_for_project_key "$project_key")" "$ticket_id"
 }
 
 # Fail flow no longer writes a separate ticket archive. The full ticket body
@@ -3759,7 +3769,7 @@ plan_has_done_tickets() {
     if ticket_belongs_to_plan_id "$ticket_file" "$plan_id"; then
       return 0
     fi
-  done < <(find "${BOARD_ROOT}/tickets/done" -type f -name 'tickets_*.md' | sort)
+  done < <(find "${BOARD_ROOT}/tickets/done" -type f \( -name 'Todo-*.md' -o -name 'tickets_*.md' \) | sort)
 
   return 1
 }
@@ -3901,7 +3911,7 @@ count_execution_load_for_owner() {
     if stage_is_execution_candidate "$stage"; then
       count=$((count + 1))
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   printf '%s' "$count"
 }
@@ -3921,7 +3931,7 @@ count_verification_load_for_owner() {
       count=$((count + 1))
       ;;
     esac
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   printf '%s' "$count"
 }

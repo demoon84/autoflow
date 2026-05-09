@@ -18,7 +18,7 @@ created: 2026-05-01
   - `project_NNN` → `PRD-NNN`
   - `reject_NNN` → `Reject-NNN`
   - `memo_NNN` → `Order-NNN`
-  - `tickets_NNN` → `Ticket-NNN`
+  - `Todo-NNN` → `Ticket-NNN`
 - 의도된 변경 (Plan AI 가 표기 형식 최종 결정):
   - 모두 소문자 prefix 로 통일. 후보 형식 두 가지:
     - 하이픈 유지: `prd-NNN`, `reject-NNN`, `order-NNN`, `ticket-NNN`
@@ -32,7 +32,7 @@ created: 2026-05-01
   - `:4711` 핀 레이어 셀렉티드 타이틀
   - `:5555` 러너 진행 카드의 활성 티켓 표시
 - 절대 건드리면 안 되는 것 (CLAUDE.md 규칙 15/15a/16 항):
-  - 파일명 자체 (`memo_NNN.md`, `prd_NNN.md`, `tickets_NNN.md`, `reject_NNN.md`)
+  - 파일명 자체 (`memo_NNN.md`, `prd_NNN.md`, `Todo-NNN.md`, `reject_NNN.md`)
   - parser 가 읽는 키 (`ID`, `PRD Key`, `Stage` 등 섹션 헤더 / 필드명)
   - PRD KEY 값 (`prd_080`) 처럼 보드 contract 로 쓰이는 식별자
   - storage runner id (`owner-1`, `planner-1`, `wiki-1`), role key, ticket field, key=value 출력

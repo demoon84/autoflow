@@ -9,18 +9,18 @@
 - Created At: 2026-05-03T12:09:09Z
 - Source: autoflow order create
 - Archived At: 2026-05-03T12:15:21Z
-- Duplicate Of: tickets/done/prd_151/tickets_150.md
+- Duplicate Of: tickets/done/prd_151/Todo-150.md
 - Related PRD: tickets/done/prd_151/prd_151.md
 
 ## Planner Note
 
 - Planner runtime: `.autoflow/scripts/start-plan.sh` returned `status=ok`, `source=order-inbox`, `order_id=144`.
 - Wiki context pass: `bin/autoflow wiki query --term "withScopeMemory selfHeal listRunners IPC" --rag`, `bin/autoflow wiki query --term "PRD_144 listRunners fork-bomb guard selfHeal cache" --rag`, and `bin/autoflow wiki query --term "runner health self-resurrect runners-project.sh list leak" --rag` all returned `result_count=0`; no direct wiki constraint was found.
-- Relevant prior ticket: `tickets/done/prd_144/tickets_143.md` completed standalone `autoflow:listRunners` IPC inflight/TTL guard and child cleanup, but left the internal self-heal callsite as follow-up scope.
-- Ticket finding: `tickets_150` (`prd_151`) already owns `apps/desktop/src/main.js` for the same design-level root cause: `rememberProjectScope`/`withScopeMemory` 반복 IPC가 self-heal을 호출하고 `selfHealStoppedRunnersForScope`가 runner list spawn 경로를 탈 수 있는 문제를 cache/inflight + cooldown으로 막는다. During this planner tick the worker finalized it to `tickets/done/prd_151/tickets_150.md`.
+- Relevant prior ticket: `tickets/done/prd_144/Todo-143.md` completed standalone `autoflow:listRunners` IPC inflight/TTL guard and child cleanup, but left the internal self-heal callsite as follow-up scope.
+- Ticket finding: `Todo-150` (`prd_151`) already owns `apps/desktop/src/main.js` for the same design-level root cause: `rememberProjectScope`/`withScopeMemory` 반복 IPC가 self-heal을 호출하고 `selfHealStoppedRunnersForScope`가 runner list spawn 경로를 탈 수 있는 문제를 cache/inflight + cooldown으로 막는다. During this planner tick the worker finalized it to `tickets/done/prd_151/Todo-150.md`.
 - Code evidence at archive time: `apps/desktop/src/main.js` already has `selfHealStoppedRunnersCooldownMs`, `lastSelfHealByScope`, `selfHealInFlightScopes`, `rememberProjectScope` first-registration/cooldown gating, and `selfHealStoppedRunnersForScope(scope)` calling `listRunnersCachedOrRefresh(scope)` instead of direct `listRunners(scope)`.
-- Planner decision: this order is archived beside `prd_151` as duplicate/supplemental root-cause evidence. No new PRD or todo ticket is created because doing so would duplicate the active same-path work. If `tickets_150` later rejects on the same leak vector, reopen this archived note as reject context rather than creating a parallel `apps/desktop/src/main.js` ticket.
-- Guard after archive: `bin/autoflow guard . .autoflow` returned `status=warning`, `error_count=0`, with cleanup candidate `autoflow/tickets_119 has a ticket worktree but no board ticket: /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_119`; planner did not delete or reset the worktree.
+- Planner decision: this order is archived beside `prd_151` as duplicate/supplemental root-cause evidence. No new PRD or todo ticket is created because doing so would duplicate the active same-path work. If `Todo-150` later rejects on the same leak vector, reopen this archived note as reject context rather than creating a parallel `apps/desktop/src/main.js` ticket.
+- Guard after archive: `bin/autoflow guard . .autoflow` returned `status=warning`, `error_count=0`, with cleanup candidate `autoflow/Todo-119 has a ticket worktree but no board ticket: /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-119`; planner did not delete or reset the worktree.
 
 ## Request
 

@@ -21,10 +21,10 @@ runtime_output_begin
 status=resume
 status=blocked
 reason=ticket_stage_blocked
-ticket=/.../tickets_163.md
+ticket=/.../Todo-163.md
 ticket_id=163
 next_action=Runtime wait: PROJECT_ROOT has dirty changes in this ticket's 
-  Allowed Paths (.autoflow/tickets/inprogress/tickets_163.md, 
+  Allowed Paths (.autoflow/tickets/inprogress/Todo-163.md, 
                  .autoflow/tickets/inprogress/verify_163.md). 
   Commit/stash those changes or intentionally integrate them before ticket-owner continues.
 runtime_output_end
@@ -34,7 +34,7 @@ runtime_output_end
 
 ```
 T+0:  worker tick 시작 → ticket_163.md Stage 갱신 (자기 자신 modified)
-T+1:  worker 가 git status 읽음 → tickets_163.md, verify_163.md 가 dirty
+T+1:  worker 가 git status 읽음 → Todo-163.md, verify_163.md 가 dirty
 T+2:  worker 가 "Allowed Paths 가 dirty" → wait + stage_blocked
 T+3:  planner 가 dirty-orchestration 으로 commit (PRD_150)
 T+4:  worker 다음 tick → ticket_163.md Stage 갱신 (또 dirty)
@@ -47,7 +47,7 @@ ticket_163 의 Allowed Paths 가 **자기 자신을 포함**하면 self-refresh 
 
 ```
 PID 51945 (정상) — /Users/demoon2016/.../packages/cli/runners-project.sh loop-worker worker
-PID 65987 (좀비) — /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_155/packages/cli/...
+PID 65987 (좀비) — /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-155/packages/cli/...
 ```
 
 PID 65987 의 stderr:
@@ -55,7 +55,7 @@ PID 65987 의 stderr:
 /Users/demoon2016/Documents/runtime/board-scripts/runner-common.sh: No such file or directory
 ```
 
-→ tickets_155 worktree 안의 runners-project.sh 가 실행되면서 잘못된 path 로 board-scripts 참조 → 실패하지만 process 는 살아있음. worktree cleanup 이 worker process 를 kill 안 한 잔재.
+→ Todo-155 worktree 안의 runners-project.sh 가 실행되면서 잘못된 path 로 board-scripts 참조 → 실패하지만 process 는 살아있음. worktree cleanup 이 worker process 를 kill 안 한 잔재.
 
 ## Suggested Fix
 

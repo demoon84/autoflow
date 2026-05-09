@@ -79,7 +79,7 @@ resolve_ticket_path() {
       printf '%s' "$candidate"
       return 0
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }

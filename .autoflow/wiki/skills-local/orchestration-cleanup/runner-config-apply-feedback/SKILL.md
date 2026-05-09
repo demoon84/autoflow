@@ -1,6 +1,9 @@
 ---
 name: "runner-config-apply-feedback"
-description: "runner config apply feedback"
+description: "Use when runner config apply feedback"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "apps/desktop/src/renderer/main.tsx"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_174"
   ticket: "tickets_173"
 created_at: "2026-05-05T13:10:52Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # runner config apply feedback

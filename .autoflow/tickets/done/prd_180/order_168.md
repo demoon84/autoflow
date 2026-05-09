@@ -8,7 +8,7 @@ detected_during: realtime monitoring tick #12
 
 ## Request
 
-🚨 critical — worker 가 `last_result=token_budget_exceeded` 로 **3 tick 연속 같은 실패** 반복 (감시 #2 임계 도달). active_ticket_id=tickets_177 (PRD-179 = order_165 의 state heartbeat) 처리 못 끝내고 cycle. 회복 정책 / circuit breaker 부재로 stuck. 1원칙(멈추지 않음) 위배 추세.
+🚨 critical — worker 가 `last_result=token_budget_exceeded` 로 **3 tick 연속 같은 실패** 반복 (감시 #2 임계 도달). active_ticket_id=Todo-177 (PRD-179 = order_165 의 state heartbeat) 처리 못 끝내고 cycle. 회복 정책 / circuit breaker 부재로 stuck. 1원칙(멈추지 않음) 위배 추세.
 
 ## 검출 증거
 
@@ -19,7 +19,7 @@ Tick #12 (22:41:17Z): worker last_result=token_budget_exceeded
                       ↑ 3회 연속 같은 fail
                       
 worker.state:
-  active_ticket_id=tickets_177  (변화 없음, 6분+ 같은 ticket)
+  active_ticket_id=Todo-177  (변화 없음, 6분+ 같은 ticket)
   active_recovery_status=healthy  ← 모순 (실패인데 healthy)
   last_event_at=2026-05-04T22:40:03Z (state 갱신은 됨)
   last_result=token_budget_exceeded
@@ -28,7 +28,7 @@ worker.state:
 ## 영향
 
 1. **PRD-179 (order_165 state heartbeat) 처리 차단** — 회복하려는 PRD 자체가 차단되니 cycle.
-2. **worker 가 다른 ticket 처리 못 함** — tickets_177 에 묶여 다음 todo 못 claim.
+2. **worker 가 다른 ticket 처리 못 함** — Todo-177 에 묶여 다음 todo 못 claim.
 3. **1원칙 위배** — 자율 흐름이 자기 보호 정책 (token budget) 으로 인해 stuck. order_139 의 의도와 반대 결과.
 4. **active_recovery_status=healthy 와 last_result=fail 의 모순** — recovery 트리거가 budget_exceeded 를 인식 안 함.
 
@@ -45,7 +45,7 @@ worker.state:
 # worker 강제 reset (graceful 또는 force)
 bash bin/autoflow runners stop worker /Users/demoon2016/Documents/project/autoflow .autoflow --force
 # 또는 ticket reclaim
-mv .autoflow/tickets/inprogress/tickets_177.md .autoflow/tickets/todo/tickets_177.md
+mv .autoflow/tickets/inprogress/Todo-177.md .autoflow/tickets/todo/Todo-177.md
 bash bin/autoflow runners start worker /Users/demoon2016/Documents/project/autoflow .autoflow
 ```
 

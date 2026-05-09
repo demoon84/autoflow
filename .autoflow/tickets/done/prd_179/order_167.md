@@ -20,7 +20,7 @@ detected_during: realtime monitoring tick #10
 
 ```
 worker.state:
-  active_ticket_id=tickets_177
+  active_ticket_id=Todo-177
   active_ticket_title=adapter-running state heartbeat   (= order_165 → PRD-179)
   active_recovery_status=healthy
   last_event_at=2026-05-04T22:35:02Z

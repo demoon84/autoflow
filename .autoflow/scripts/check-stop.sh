@@ -162,11 +162,11 @@ todo_hook_reason() {
           ;;
       esac
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   export AUTOFLOW_EXECUTION_POOL="${hook_execution_pool:-$hook_worker_id}"
   if execution_pool_has_capacity; then
-    todo_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'tickets_*.md' || true)"
+    todo_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md' || true)"
     if [ -n "$todo_file" ]; then
       printf 'todo work remains: claimable todo ticket %s is waiting.' "$(basename "$todo_file")"
       return 0
@@ -194,7 +194,7 @@ verifier_hook_reason() {
       printf 'verifier work remains: ticket %s is awaiting verification.' "$(basename "$verifier_file")"
       return 0
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/verifier" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/verifier" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }
@@ -224,16 +224,16 @@ ticket_owner_hook_reason() {
             ;;
         esac
       fi
-    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
   fi
 
-  todo_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'tickets_*.md' || true)"
+  todo_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md' || true)"
   if [ -n "$todo_file" ]; then
     printf 'ticket-owner work remains: claimable ticket %s is waiting.' "$(basename "$todo_file")"
     return 0
   fi
 
-  verifier_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'tickets_*.md' || true)"
+  verifier_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'Todo-*.md' 'tickets_*.md' || true)"
   if [ -n "$verifier_file" ]; then
     printf 'ticket-owner work remains: legacy verifier ticket %s should be finished by an owner.' "$(basename "$verifier_file")"
     return 0
@@ -245,7 +245,7 @@ ticket_owner_hook_reason() {
 merge_hook_reason() {
   local ready_file
 
-  ready_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
+  ready_file="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'Todo-*.md' 'tickets_*.md' || true)"
   if [ -n "$ready_file" ]; then
     printf 'merge finalization work remains: ready-to-merge ticket %s is waiting for Impl AI to rerun finish-ticket-owner pass (or for a legacy coordinator/merge runner if the project still uses one).' "$(basename "$ready_file")"
     return 0

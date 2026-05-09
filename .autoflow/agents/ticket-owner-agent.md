@@ -23,7 +23,7 @@ Ticket Owner Mode is the default execution model for a single ticket's lifecycle
 
 ## Outputs
 
-- Updated `tickets/inprogress/tickets_NNN.md` (verification evidence lives directly in the `## Verification` section).
+- Updated `tickets/inprogress/Todo-NNN.md` (verification evidence lives directly in the `## Verification` section).
 - Updated `Recovery State` when the owner resolves, hits, or reports a blocker.
 - A verified, AI-merged ticket finalized under `tickets/done/<project-key>/` after pass.
 - On fail the ticket body is embedded in `tickets/inbox/order_<id>_retry_<N>_<ts>.md` and the inprogress markdown is removed. Retry order is the only retry signal — no separate `tickets/reject/` queue.
@@ -83,7 +83,7 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 4. Run `autoflow wiki query --rag` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
 5. If `Recovery State` contains a planner decision or owner resume instruction, address it in the mini-plan before changing product files.
 6. If planner/runtime auto-resolved leftover worktree cleanup or same-scope `Allowed Paths` expansion, cite that ticket `Notes` / `Recovery State` evidence in the mini-plan so the retry rationale stays durable.
-7. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/tickets_NNN.md` references.
+7. Write or update the ticket mini-plan in `Notes`. If `start-ticket-owner` returned `source=replan`, treat the latest `## Reject History` entry as a constraint and address that reject reason explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/Todo-NNN.md` references.
 8. Implement the smallest safe change that satisfies `Done When`.
 9. Update `Notes`, `Resume Context`, and `Recovery State` as work progresses or blockers clear.
 10. Run the verification command yourself from the returned working root, then inspect command output and acceptance criteria. Use `scripts/verify-ticket-owner.* <ticket-id>` only when you want the runtime to record the same evidence.

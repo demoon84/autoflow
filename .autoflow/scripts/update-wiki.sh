@@ -354,7 +354,7 @@ update_wiki() {
   reject_files="$(autoflow_mktemp)"
   verifier_logs="$(autoflow_mktemp)"
   handoff_files="$(autoflow_mktemp)"
-  collect_files "${BOARD_ROOT}/tickets/done" 'tickets_[0-9][0-9][0-9].md' "$done_tickets"
+  collect_files "${BOARD_ROOT}/tickets/done" 'Todo-[0-9][0-9][0-9].md' "$done_tickets"
   collect_files "${BOARD_ROOT}/tickets" 'reject_[0-9][0-9][0-9].md' "$reject_files"
   collect_files "${BOARD_ROOT}/logs" '*.md' "$verifier_logs"
   collect_files "${BOARD_ROOT}/conversations" 'spec-handoff.md' "$handoff_files"

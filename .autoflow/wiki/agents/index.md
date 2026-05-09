@@ -6,6 +6,11 @@ This index provides an overview of agent-related telemetry and documentation wit
 
 - [[agents/prompt-evolution]]
 
+## Core Policies
+
+- [[decisions/planner-prioritization]] (Detailed policy for Backlog Priority)
+- [[sources/prd_211]] (Planner Backlog Priority Policy PRD)
+
 ## Agent Definitions
 
-- [[wiki/sources/agent-definitions]]
+- [[sources/agent-definitions]]

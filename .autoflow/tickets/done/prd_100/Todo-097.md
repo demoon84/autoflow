@@ -1,0 +1,131 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-097
+- PRD Key: prd_100
+- Plan Candidate: Plan AI handoff from tickets/done/prd_100/prd_100.md
+- Title: 완료 커밋 메시지에 PRD와 ticket 번호 모두 포함
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-02T02:00:05Z
+
+## Goal
+
+- 이번 작업의 목표: Autoflow pass/completion local commit subject를 일반 티켓에서 `[PRD_NNN][ticket_NNN] 작업내용 요약` 형식으로 바꿔, 하나의 PRD에서 여러 ticket이 생성되어도 completion commit만 보고 PRD와 ticket을 모두 식별할 수 있게 한다.
+
+## References
+
+- PRD: tickets/done/prd_100/prd_100.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_100]]
+- Plan Note:
+- Ticket Note: [[Todo-097]]
+
+## Allowed Paths
+
+- `.autoflow/scripts/finish-ticket-owner.sh`
+- `runtime/board-scripts/finish-ticket-owner.sh`
+- `.autoflow/scripts/merge-ready-ticket.sh`
+- `runtime/board-scripts/merge-ready-ticket.sh`
+- `.autoflow/scripts/start-verifier.sh`
+- `runtime/board-scripts/start-verifier.sh`
+- `.autoflow/scripts/run-hook.sh`
+- `runtime/board-scripts/run-hook.sh`
+- `.autoflow/automations/templates/verifier-heartbeat.template.toml`
+- `scaffold/board/automations/templates/verifier-heartbeat.template.toml`
+- `.autoflow/AGENTS.md`
+- `AGENTS.md`
+- `.autoflow/agents/ticket-owner-agent.md`
+- `.autoflow/agents/verifier-agent.md`
+- `.autoflow/protocols/owner-contract.md`
+- `scaffold/board/AGENTS.md`
+- `scaffold/board/agents/ticket-owner-agent.md`
+- `scaffold/board/agents/verifier-agent.md`
+- `scaffold/board/protocols/owner-contract.md`
+- `tests/smoke/ticket-owner-smoke.sh`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-097`
+- Branch: autoflow/Todo-097
+- Base Commit: cd4d3e8575550ef09236813325e94f4eb7bec37a
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-02T01:53:12Z
+- Started Epoch: 1777686792
+- Updated At: 2026-05-02T02:00:08Z
+- Tick Count: 3
+- Time Used Seconds: 416
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 56029469
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] Ticket Owner Mode pass/completion commit subject for a normal PRD ticket is `[PRD_NNN][ticket_NNN] <summary>`.
+- [x] The PRD bracket is derived from the ticket `PRD Key` / project key and rendered as uppercase `PRD_`.
+- [x] The ticket bracket is derived from the ticket `ID` or ticket filename and rendered as lower-case `ticket_`.
+- [x] The summary remains a concise one-line summary from the existing pass summary / `Result.Summary` / verified change source.
+- [x] Legacy tickets without `PRD Key` fall back to `[ticket_NNN] <summary>` rather than PRD-only or title-based brackets.
+- [x] `.autoflow/scripts/*` and `runtime/board-scripts/*` copies touched by this work remain behaviorally synchronized.
+- [x] Legacy verifier/run-hook/heartbeat guidance no longer tells agents to use `[prd_NNN] <summary>` or `[ticket title] concise change summary`.
+- [x] Live and scaffold owner/verifier/AGENTS/owner-contract docs describe `[PRD_NNN][ticket_NNN] 작업내용 요약`.
+- [x] `tests/smoke/ticket-owner-smoke.sh` asserts the new completion commit subject format.
+- [x] Existing smoke expectations unrelated to the subject, including finish/merge cleanup evidence that is already required by the smoke, still pass.
+- [x] Implementation stays inside Allowed Paths.
+- [x] Verification command exits 0.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: commit subject 생성 로직, legacy 안내, live/scaffold 계약 문서, smoke assertion을 새 `[PRD_NNN][ticket_NNN]` 형식으로 갱신했고 PROJECT_ROOT에 수동 통합했다.
+- 직전 작업: worktree와 PROJECT_ROOT 양쪽에서 지정 검증 명령이 exit 0으로 통과했다.
+- 재개 시 먼저 볼 것: finish-ticket-owner finalizer output, completion commit subject, done ticket/run/log 이동 상태.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_100/prd_100.md at 2026-05-02T01:52:51Z.
+
+- Runtime hydrated worktree dependency at 2026-05-02T01:53:10Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-02T01:53:09Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-097; run=tickets/inprogress/verify_097.md
+- Mini-plan at 2026-05-02T01:54:39Z: update `git_commit_if_possible` in both live/runtime finish and merge finalizers to build `[PRD_NNN][ticket_NNN] <summary>` from `PRD Key` plus ticket id, falling back to `[ticket_NNN] <summary>` when `PRD Key` is absent; then update legacy verifier/hook/heartbeat guidance, live/scaffold docs, and the owner smoke assertion. Wiki context returned `tickets/done/prd_100/prd_100.md` and `tickets/done/prd_100/memo_065.md`; the relevant constraints are mirror synchronization and preserving existing finish/merge smoke evidence expectations.
+- Implementation completed at 2026-05-02T01:59:08Z: updated finish/merge commit subject logic in live and runtime copies, updated start-verifier/run-hook/heartbeat guidance, updated live/scaffold contract docs, and changed `tests/smoke/ticket-owner-smoke.sh` to assert `[PRD_001][ticket_001] owner smoke artifact verified`. Replaced two smoke-only `rg` calls with `grep -E` so the existing smoke can run in this runner environment without changing its cleanup expectations.
+- Verification evidence at 2026-05-02T01:59:08Z: `bash -n ... && bash tests/smoke/ticket-owner-smoke.sh` passed in the ticket worktree with `status=ok` and commit hash `888f3f331c90a77086a098fb2ba82ee85133f619`; the same command passed after manual integration in PROJECT_ROOT with `status=ok` and commit hash `88b61ce830d7fa154c68c68f126d836b4e111d5c`.
+- AI worker prepared resume at 2026-05-02T01:53:37Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-097; run=tickets/inprogress/verify_097.md
+- Queued without worktree commit at 2026-05-02T02:00:02Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-02T02:00:02Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-02T02:00:05Z: removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-097 deleted_branch=autoflow/Todo-097.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-02T02:00:05Z.
+## Verification
+- Run file: `tickets/done/prd_100/verify_097.md`
+- Log file: `logs/verifier_097_20260502_020007Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: completion commit subject includes PRD and ticket ids
+- Remaining risk: Low; verified by syntax checks, owner smoke, mirror comparisons, grep for removed legacy subject guidance, and PROJECT_ROOT rerun after manual integration.

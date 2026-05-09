@@ -1,6 +1,9 @@
 ---
 name: "planner-secret-dependency-preflight"
-description: "planner secret dependency preflight"
+description: "Use when planner secret dependency preflight"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: ".autoflow/scripts/start-plan.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_187"
   ticket: "tickets_186"
 created_at: "2026-05-06T00:54:50Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # planner secret dependency preflight

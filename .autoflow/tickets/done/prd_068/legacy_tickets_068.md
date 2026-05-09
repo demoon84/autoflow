@@ -2,7 +2,7 @@
 
 ## Ticket
 
-- ID: legacy_tickets_068
+- ID: legacy_Todo-068
 - PRD Key: prd_068
 - Plan Candidate: 데스크톱 사이드바 첫 자리 대화 메뉴 + 단일 영속 스레드 + memo/PRD 저장 + 보드/Wiki 컨텍스트 자동 주입
 - Title: 데스크톱 대화 메뉴로 memo·PRD 작성하기
@@ -27,7 +27,7 @@
 
 - Project Note: [[prd_068]]
 - Plan Note:
-- Ticket Note: [[legacy_tickets_068]]
+- Ticket Note: [[legacy_Todo-068]]
 
 ## Allowed Paths
 
@@ -116,4 +116,4 @@
 
 - `References` are relative to `BOARD_ROOT`.
 - `Allowed Paths` are relative to PROJECT_ROOT (no worktree this ticket).
-- `Obsidian Links` use `[[prd_068]]` / `[[tickets_068]]`.
+- `Obsidian Links` use `[[prd_068]]` / `[[Todo-068]]`.

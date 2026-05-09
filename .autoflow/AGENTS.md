@@ -11,9 +11,9 @@ Default 3-runner flow (refactor 2026-05-07):
 PROJECT_ROOT
   -> .autoflow/tickets/inbox/order_NNN.md             (사용자 /order 또는 worker fail retry)
   -> .autoflow/tickets/backlog/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
-  -> .autoflow/tickets/todo/tickets_NNN.md            (Planner 가 발급)
-  -> .autoflow/tickets/inprogress/tickets_NNN.md      (Worker active, worktree 1 개)
-  -> .autoflow/tickets/done/<project-key>/tickets_NNN.md (성공만 모임)
+  -> .autoflow/tickets/todo/Todo-NNN.md            (Planner 가 발급)
+  -> .autoflow/tickets/inprogress/Todo-NNN.md      (Worker active, worktree 1 개)
+  -> .autoflow/tickets/done/<project-key>/Todo-NNN.md (성공만 모임)
 ```
 
 Worker fail 시 ticket 본문은 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 되고 inprogress markdown 은 `rm`. 별도 reject 큐 없음.
@@ -65,7 +65,7 @@ At the start of work, read in this order:
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
 4. The default execution path is Planner AI plus Ticket Owner Mode: `planner` promotes order/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
-5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
+5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
@@ -74,13 +74,13 @@ At the start of work, read in this order:
 11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's shell sanity gate (git diff ≥ 1 + every Done When `[x]`) blocks false pass mechanically.
 12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
-14. There must not be two copies of the same `tickets_NNN.md` in different state folders.
-15. `tickets/inprogress/tickets_NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
+14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
+15. `tickets/inprogress/Todo-NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
 16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
 17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
 18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
 19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
-20. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
+20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
 21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.

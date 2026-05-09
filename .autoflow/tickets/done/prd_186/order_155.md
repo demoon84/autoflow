@@ -19,7 +19,7 @@ git worktree 정리 시 그 worktree 안에서 동작 중이던 runner loop proc
 발견된 orphan:
 ```
 PID 65987   ELAPSED 11:20:25  (11시간+ 살아있음)
-COMMAND: bash /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_155/packages/cli/runners-project.sh \
+COMMAND: bash /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-155/packages/cli/runners-project.sh \
          loop-worker worker /var/folders/2m/.../tmp.iqijrZ3yyv .autoflow
 ```
 
@@ -28,7 +28,7 @@ stderr (반복):
 /Users/demoon2016/Documents/runtime/board-scripts/runner-common.sh: No such file or directory
 ```
 
-→ tickets_155 worktree 가 이미 cleanup / merge 됐는데도 그 worktree path 안의 runner loop 가 살아남아 잘못된 path 로 board-scripts 참조. 매 tick 무한 실패하지만 process 자체는 종료 안 됨.
+→ Todo-155 worktree 가 이미 cleanup / merge 됐는데도 그 worktree path 안의 runner loop 가 살아남아 잘못된 path 로 board-scripts 참조. 매 tick 무한 실패하지만 process 자체는 종료 안 됨.
 
 ## Root Cause
 
@@ -61,10 +61,10 @@ C) **runners list 의 stale process 표시**:
 
 ```bash
 # fix 후, 테스트:
-# 1. tickets_NNN worktree 생성 → runner loop 시작
+# 1. Todo-NNN worktree 생성 → runner loop 시작
 # 2. worktree merge 또는 remove
 # 3. 그 worktree path 로 시작하는 process 확인:
-ps -ef | grep -c "/worktrees/autoflow/tickets_NNN/"
+ps -ef | grep -c "/worktrees/autoflow/Todo-NNN/"
 # 0 이어야 함
 
 # 사용자 환경 cleanup (현재):

@@ -1,0 +1,141 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-162
+- PRD Key: prd_163
+- Plan Candidate: Plan AI handoff from tickets/done/prd_163/prd_163.md
+- Title: skill RAG injection and usage stats automation
+- Stage: blocked
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-03T14:16:42Z
+
+## Goal
+
+- 이번 작업의 목표: Phase 1/2 skill 인프라 위에 planner/worker prompt skill matching + injection, `autoflow skill apply ... --to-ticket ...` explicit invocation, `skill_used:` marker 기반 usage stats, verify pass/fail 기반 success/failure stats, low_confidence 다운랭킹을 구현한다.
+
+## References
+
+- PRD: tickets/done/prd_163/prd_163.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_163]]
+- Plan Note:
+- Ticket Note: [[Todo-162]]
+
+## Allowed Paths
+
+- `packages/cli/skill-project.sh`
+- `bin/autoflow`
+- `packages/cli/run-role.sh`
+- `runtime/board-scripts/run-role.sh`
+- `.autoflow/scripts/common.sh`
+- `runtime/board-scripts/common.sh`
+- `.autoflow/scripts/finish-ticket-owner.sh`
+- `runtime/board-scripts/finish-ticket-owner.sh`
+- `.autoflow/agents/plan-to-ticket-agent.md`
+- `.autoflow/agents/ticket-owner-agent.md`
+- `scaffold/board/agents/plan-to-ticket-agent.md`
+- `scaffold/board/agents/ticket-owner-agent.md`
+- `.autoflow/wiki/skills-local/`
+- `scaffold/board/wiki/skills-local/`
+- `packages/cli/README.md`
+- `tests/smoke/skill-injection-usage-stats-smoke.sh`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-162`
+- Branch: autoflow/Todo-162
+- Base Commit: 0f7fce7ecc5fe1ce0271d4d799a9b08533f16564
+- Worktree Commit: 
+- Integration Status: blocked_dirty_project_root
+
+## Goal Runtime
+- Status: blocked
+- Started At: 2026-05-03T14:16:43Z
+- Started Epoch: 1777817803
+- Updated At: 2026-05-03T14:39:08Z
+- Tick Count: 0
+- Time Used Seconds: 1345
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: true
+- Last Event: ticket_stage_blocked
+- Last Progress Fingerprint: 4130972414
+
+## Recovery State
+
+- Status: healthy
+- Detected By: runtime
+- Failure Class: leftover_worktree
+- Evidence: auto-discarded leftover worktree /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-162; backup=/Users/demoon2016/Documents/project/autoflow/.autoflow/runners/state/recovery-discarded/Todo-162-20260504T002912Z.diff; source_reason=resolved_ticket_worktree_leftover
+- Planner Decision: auto_discard_agent_only_leftover
+- Owner Resume Instruction: No manual cleanup is required; continue normal planning or retry flow.
+- Last Recovery At: 2026-05-04T00:29:13Z
+
+## Done When
+
+- [ ] planner/worker 가 새 작업 받을 때 매칭 skill (top-N) 이 prompt 에 자동 주입됨.
+- [ ] LLM 응답의 `skill_used: <name>` marker 검출 + sidecar stats 자동 갱신.
+- [ ] verify pass/fail 후 success_count / failure_count 자동 갱신.
+- [ ] failure threshold 도달 skill 이 `state: low_confidence` 마킹 + 매칭 가중치 하향 (다음 매칭에서 후순위).
+- [ ] `autoflow skill apply ... --to-ticket ...` 명시 호출 시 강제 주입 동작.
+- [ ] `AUTOFLOW_SKILL_INJECTION_ENABLED=0` 으로 끄면 기존 동작.
+- [ ] template 변수 (`${AUTOFLOW_BOARD_ROOT}` 등) 가 preprocessing 시 정상 치환.
+- [ ] 7일 운영 후 skill 활용 통계 (전체 활용 횟수, top-3 skill, low_confidence 개수) 측정 가능.
+- [ ] 결과 품질 (PRD 처리 / 검증 통과율) baseline ±3%p 이내.
+- [ ] `npm run desktop:check` 통과.
+
+## Next Action
+- Runtime wait: PROJECT_ROOT has dirty changes in this ticket's Allowed Paths (.autoflow/wiki/skills-local/). Commit/stash those changes or intentionally integrate them before ticket-owner continues.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 `prd_163`에서 todo 티켓을 생성했고, PRD 기준으로 Allowed Paths / Next Action / Verification 을 구현 가능한 Phase 3 범위로 좁혔다.
+- 직전 작업: `.autoflow/scripts/start-plan.sh` 가 `source=backlog-to-todo`, `todo_ticket=Todo-162.md`, `lint_status=ok`, `lint_vagueness_score=0`를 반환했다. Plan AI 는 wiki RAG와 선행 done ticket context를 확인했다.
+- 재개 시 먼저 볼 것: `tickets/done/prd_163/prd_163.md`, `tickets/done/prd_160/prd_160.md`, `tickets/done/prd_162/prd_162.md`, `packages/cli/skill-project.sh`, `packages/cli/run-role.sh`, `.autoflow/scripts/finish-ticket-owner.sh`.
+- Wiki/ticket constraints: `skill`/`Hermes` RAG는 `tickets/done/prd_160/order_146.md`, `tickets/done/prd_160/prd_160.md`, `tickets/done/prd_162/prd_162.md`를 반환했다. Phase 3는 Phase 1/2의 최종 폴더형 `.autoflow/wiki/skills-local/<category>/<name>/SKILL.md` + `.usage.json` schema를 재사용하고, 보안 scan/agentskills.io/desktop UI/deterministic mode는 후속 PRD 범위로 남긴다.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_163/prd_163.md at 2026-05-03T13:03:48Z.
+- Planner runtime: `.autoflow/scripts/start-plan.sh` returned `source=backlog-to-todo`, `todo_ticket=Todo-162.md`, `lint_status=ok`, `lint_vagueness_score=0`.
+- Planner wiki pass: `bin/autoflow wiki query --term "Hermes skill injection RAG explicit invocation usage stats skill apply" --rag` returned `result_count=0`; broader `bin/autoflow wiki query --term "skill" --term "Hermes" --term "self-improvement" --limit 10 --rag` returned `tickets/done/prd_160/order_146.md`, `tickets/done/prd_160/prd_160.md`, and `tickets/done/prd_162/prd_162.md` as the relevant prior context.
+- Planner wiki pass: `bin/autoflow wiki query --term "run-role" --term "runners-project" --term "backoff" --limit 10 --rag` returned `tickets/done/prd_044/prd_044.md`, `tickets/done/prd_044/Todo-044.md`, and `wiki/features/run-role-prompt-dispatch.md`; keep `packages/cli/run-role.sh` and `runtime/board-scripts/run-role.sh` prompt-dispatch behavior aligned while adding injection.
+- Dependency decision: this ticket assumes the Phase 1/2 skill storage and curator tickets have landed first. If worker claims this ticket before `Todo-159`/`Todo-161` and `Todo-164` or their replacements establish `packages/cli/skill-project.sh`, `.autoflow/wiki/skills-local/.usage.json`, and Curator lifecycle conventions, update `Recovery State` instead of inventing a second schema.
+- Active queue constraint: `tickets/inprogress/Todo-155.md`, `tickets_todo/Todo-156.md`, and `tickets_todo/Todo-158.md` already touch runner dispatch paths such as `packages/cli/run-role.sh`. The default single worker should serialize these; if manual/concurrent execution occurs, avoid overlapping edits and preserve the source/runtime run-role mirror contract.
+- Scope decision: implement RAG-style matching/injection, explicit apply, preprocessing variables, usage stats, verify-result stats, low_confidence weighting, and `skill_used:` marker handling only. Do not implement Desktop skill UI, security scan, agentskills.io import/export, clustering, or deterministic mode here.
+- Planner guard pass: `bin/autoflow guard . .autoflow` returned `status=warning`, `error_count=0`, `warning_count=1`; unresolved warning is the existing `Todo-119` leftover worktree with no board ticket. Planner did not delete or reset that worktree.
+
+- Runtime hydrated worktree dependency at 2026-05-03T14:16:42Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime auto-blocked: dirty_project_root_conflict at 2026-05-03T14:16:42Z; dirty_paths=.autoflow/wiki/skills-local/
+- Blocked-dirty orchestration at 2026-05-03T14:22:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/Todo-162.md + .autoflow/tickets/check/check_005.md integrated as PRD_163/Todo-162 cleanup commit and misc telemetry cleanup commit (see check_006.md). Next planner tick should emit source=blocked-auto-recover.
+- Blocked-dirty orchestration at 2026-05-03T14:27:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/Todo-162.md + .autoflow/tickets/check/check_009.md + .autoflow/tickets/inbox/order_148.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit (board housekeeping; order_148 is a follow-up intake from PRD_150 that wasn't yet processed). Runtime check records check_009.md and check_010.md captured the events. Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
+- Blocked-dirty orchestration at 2026-05-03T14:30:00Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/Todo-162.md + .autoflow/wiki/operations/runner-health.md + .autoflow/wiki/operations/runner-timing.md + .autoflow/tickets/check/check_010.md + .autoflow/tickets/check/check_011.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit 4336258 (board housekeeping; wiki ops drift from Wiki AI ticks, telemetry append, runtime fingerprint bump). Runtime check record check_012.md captured this tick. Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
+- Blocked-dirty orchestration at 2026-05-03T14:32:01Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/Todo-162.md + .autoflow/tickets/check/check_013.md + .autoflow/tickets/check/check_014.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit (board housekeeping; telemetry append, runtime fingerprint bump, planner check records). Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
+- Blocked-dirty orchestration at 2026-05-03T14:34:13Z: residual dirty paths .autoflow/telemetry/runs.jsonl + .autoflow/tickets/inprogress/Todo-162.md + .autoflow/tickets/check/check_015.md + .autoflow/tickets/check/check_016.md bundled into single [PRD_163][ticket_162] orchestration cleanup commit 8fa17b1 (board housekeeping; telemetry append, runtime fingerprint bump, planner check records). Next planner tick should emit source=blocked-auto-recover and return ticket to todo.
+- Live-lock detected and escalated at 2026-05-03T14:36:30Z: 사용자가 tickets/inbox/order_149.md 로 cleanup commit 의 self-referential 무한 loop 를 보고. 6시간+ Stage:blocked 유지, .autoflow/tickets/check/ 16건 누적, ticket_162 attribution cleanup commit 15+/h. 매 cleanup 이 새 check_NNN.md 를 만들고 다음 tick 의 dirty path 가 되는 self-reference. Recovery State 를 needs_user 로 escalate 해 추가 auto orchestration cleanup 을 차단. Runtime fixpoint guard 는 backlog/prd_168.md (planner check ledger live-lock fix) 로 승격함. 이 ticket 자체는 PRD_168 머지 후 재평가.
+- Auto-recovery: agent-only leftover worktree discarded at 2026-05-04T00:29:13Z; backup=/Users/demoon2016/Documents/project/autoflow/.autoflow/runners/state/recovery-discarded/Todo-162-20260504T002912Z.diff
+## Verification
+
+- Command: `bash -lc 'bash -n packages/cli/skill-project.sh packages/cli/run-role.sh runtime/board-scripts/run-role.sh .autoflow/scripts/common.sh runtime/board-scripts/common.sh .autoflow/scripts/finish-ticket-owner.sh runtime/board-scripts/finish-ticket-owner.sh && tests/smoke/skill-injection-usage-stats-smoke.sh && npm run desktop:check'`
+- Run file:
+- Log file:
+- Result: pending
+
+## Result
+
+- Summary:
+- Remaining risk:
+
+
+## Manual Resolution
+
+- Resolved At: 2026-05-04T00:20:55Z
+- Resolution: 사용자 명시 요청으로 manual mitigate. self-refresh dirty deadlock / needs_user / cleanup live-lock 으로 자율 회복 불가 → done/prd_163/ 로 archive.
+- Notes: 17 orders (121-151) 발행 완료. order_151 (worker self-refresh deadlock fix) 머지 후 재실행 권장.

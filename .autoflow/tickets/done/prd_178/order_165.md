@@ -18,7 +18,7 @@ detected_during: realtime monitoring tick #5
 ```
 worker state:
   status=running
-  active_ticket_id=tickets_174  (order_160 → PRD-175 처리 중)
+  active_ticket_id=Todo-174  (order_160 → PRD-175 처리 중)
   last_event_at=2026-05-04T22:07:05Z  ← 14분 16초 stale 처럼 보임
 
 worker stdout (live):

@@ -18,12 +18,12 @@
 
 ```
 inprogress 폴더:
-  tickets_157.md   Recovery: needs_user (ANTHROPIC_API_KEY) — 1시간 47분
-  tickets_162.md   Recovery: needs_user (Last Updated 14:16:42Z) — 1시간 47분
-  tickets_163.md   Recovery: repairing (Last Updated 14:50:51Z) — 1시간 13분
+  Todo-157.md   Recovery: needs_user (ANTHROPIC_API_KEY) — 1시간 47분
+  Todo-162.md   Recovery: needs_user (Last Updated 14:16:42Z) — 1시간 47분
+  Todo-163.md   Recovery: repairing (Last Updated 14:50:51Z) — 1시간 13분
 
-planner.active_item = tickets_157
-worker.active_item = tickets_163, last_result=ticket_stage_blocked
+planner.active_item = Todo-157
+worker.active_item = Todo-163, last_result=ticket_stage_blocked
 ```
 
 지난 1시간:

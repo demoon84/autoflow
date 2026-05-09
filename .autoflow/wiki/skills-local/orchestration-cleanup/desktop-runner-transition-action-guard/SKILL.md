@@ -1,6 +1,9 @@
 ---
 name: "desktop-runner-transition-action-guard"
-description: "desktop runner transition action guard"
+description: "Use when desktop runner transition action guard"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "apps/desktop/src/renderer/main.tsx"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_192"
   ticket: "tickets_191"
 created_at: "2026-05-05T13:53:01Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # desktop runner transition action guard

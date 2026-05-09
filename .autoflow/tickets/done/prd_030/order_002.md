@@ -35,4 +35,4 @@
 
 - Promoted by planner-1 at 2026-04-28T14:43:32Z into `tickets/backlog/prd_030.md`.
 - Scope inferred as desktop ticket workspace navigation because the request says “인박스도 PRD옆에 보여줘” and wiki context identifies the current workspace tabs as `PRD` and `발급 티켓`.
-- Archived by planner-1 after `tickets/todo/tickets_030.md` was created.
+- Archived by planner-1 after `tickets/todo/Todo-030.md` was created.

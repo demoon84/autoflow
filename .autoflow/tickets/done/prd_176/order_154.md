@@ -20,7 +20,7 @@
 | 우선 | 항목 | 증상 | 관련 order |
 |---|---|---|---|
 | **A1** | **worker self-refresh dirty deadlock** | ticket Allowed Paths 가 자기 자신 ticket md 포함 → worker tick 마다 Stage 갱신 → modified → wait 무한 | order_151 |
-| **A2** | needs_user / repairing 인 ticket 이 inprogress 무한 잔류 | tickets_157(ANTHROPIC_API_KEY), 162(cleanup loop) 가 9시간+ 잔류 | order_150 |
+| **A2** | needs_user / repairing 인 ticket 이 inprogress 무한 잔류 | Todo-157(ANTHROPIC_API_KEY), 162(cleanup loop) 가 9시간+ 잔류 | order_150 |
 | **A3** | check ledger 자기참조 live-lock | cleanup commit 마다 새 check_NNN 생성 → 다음 tick dirty → 또 cleanup. 80초당 1건 누적 | order_149 |
 | **A4** | worker.state.last_result 자가 reset 부재 | stage_blocked set 후 영원히 stuck | order_148 |
 | **A5** | withScopeMemory IPC wrapper 가 selfHeal 자동 발동 | 15개 IPC 모두 selfHeal trigger → cache 우회 spawn 누적 | order_144 |

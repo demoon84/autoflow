@@ -57,11 +57,11 @@ guard_ticket_files() {
 
   for dir in todo inprogress ready-to-merge merge-blocked verifier reject; do
     [ -d "${BOARD_ROOT}/tickets/${dir}" ] || continue
-    find "${BOARD_ROOT}/tickets/${dir}" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md'
+    find "${BOARD_ROOT}/tickets/${dir}" -maxdepth 1 -type f \( -name 'Todo-[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' \)
   done
 
   if [ -d "${BOARD_ROOT}/tickets/done" ]; then
-    find "${BOARD_ROOT}/tickets/done" -type f -name 'tickets_[0-9][0-9][0-9].md'
+    find "${BOARD_ROOT}/tickets/done" -type f \( -name 'Todo-[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' \)
   fi
 }
 
@@ -70,13 +70,14 @@ active_ticket_files() {
 
   for dir in todo inprogress ready-to-merge merge-blocked verifier; do
     [ -d "${BOARD_ROOT}/tickets/${dir}" ] || continue
-    find "${BOARD_ROOT}/tickets/${dir}" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md'
+    find "${BOARD_ROOT}/tickets/${dir}" -maxdepth 1 -type f \( -name 'Todo-[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' \)
   done
 }
 
 ticket_file_for_id() {
   local ticket_ref="$1"
-  local ticket_num="${ticket_ref#tickets_}"
+  local ticket_num="${ticket_ref#Todo-}"
+  ticket_num="${ticket_num#tickets_}"
   local file
 
   for file in \
@@ -86,6 +87,11 @@ ticket_file_for_id() {
     "${BOARD_ROOT}/tickets/merge-blocked/${ticket_ref}.md" \
     "${BOARD_ROOT}/tickets/verifier/${ticket_ref}.md" \
     "${BOARD_ROOT}/tickets/reject/${ticket_ref}.md" \
+    "${BOARD_ROOT}/tickets/todo/Todo-${ticket_num}.md" \
+    "${BOARD_ROOT}/tickets/inprogress/Todo-${ticket_num}.md" \
+    "${BOARD_ROOT}/tickets/ready-to-merge/Todo-${ticket_num}.md" \
+    "${BOARD_ROOT}/tickets/merge-blocked/Todo-${ticket_num}.md" \
+    "${BOARD_ROOT}/tickets/verifier/Todo-${ticket_num}.md" \
     "${BOARD_ROOT}/tickets/reject/reject_${ticket_num}.md"; do
     [ -f "$file" ] && {
       printf '%s' "$file"
@@ -233,7 +239,7 @@ check_todo_worktree_metadata() {
       stale_count=$((stale_count + 1))
       record_error "${rel} is in todo but still has worktree metadata"
     fi
-  done < <(find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'tickets_[0-9][0-9][0-9].md' | sort)
+  done < <(find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f \( -name 'Todo-[0-9][0-9][0-9].md' -o -name 'tickets_[0-9][0-9][0-9].md' \) | sort)
 
   if [ "$stale_count" -gt 0 ]; then
     record_check "todo_worktree_metadata" "error"

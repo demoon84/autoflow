@@ -4,7 +4,7 @@ priority: normal
 created_at: 2026-05-05T00:46Z
 source: claude-code-monitoring
 detected_during: realtime monitoring tick #21
-related: [order_169, order_170, order_171, prd_181, tickets_180]
+related: [order_169, order_170, order_171, prd_181, Todo-180]
 status_update_2026-05-05T00:55Z: |
   Tick #24 검증 결과, 본 spike 와 동일 root cause 의 fix 가 이미 배포됨:
   - commit 25c2e45 (09:42:02Z) "[PRD_181][ticket_180] telemetry token usage sanity correction"
@@ -32,7 +32,7 @@ token reset 직후의 새 baseline 위에서, 2시간 모니터링 round 의 Tic
   "result":"success",
   "token_input":5247000554307,
   "token_output":5247000065696,
-  "ticket_id":"tickets_180",
+  "ticket_id":"Todo-180",
   "prd_key":"prd_181",
   "model":"gpt-5.5",
   "stdout_bytes":3673016,
@@ -49,7 +49,7 @@ token reset 직후의 새 baseline 위에서, 2시간 모니터링 round 의 Tic
 | 단일 row token spike | 43B, 86B, 88B | **5.2T (10^12)** |
 | stdout_bytes | 86B 와 거의 일치 | 3.6MB (token 값과 무관) |
 | runner | worker (codex) | worker (codex) |
-| ticket | 다양 | tickets_180 / prd_181 |
+| ticket | 다양 | Todo-180 / prd_181 |
 | token-cache.tsv | 582K (정상) | 0 (reset 후 초기) |
 | daily.jsonl 누적 | 86M+ (false trigger 임박) | 누적 미확인 (이번 round 측정 중) |
 
@@ -100,7 +100,7 @@ token reset 직후의 새 baseline 위에서, 2시간 모니터링 round 의 Tic
 ## Verification
 
 - Phase A 적용 후: 새로운 worker 호출 100건 실행 시 spike row 가 0건 (또는 sanity cap 에 의해 drop 된 로그 확인).
-- Phase B 적용 후: 동일 ticket (tickets_180 등) 재실행해도 5.2T 같은 비정상 값 미발생.
+- Phase B 적용 후: 동일 ticket (Todo-180 등) 재실행해도 5.2T 같은 비정상 값 미발생.
 - Phase C 적용 후: daily.jsonl 의 autoflow_token_usage_count 가 정상 범위 (수십M~100M/일) 유지.
 - 회귀: 정상 worker 호출 (145K avg, 189K max) 의 token 값이 정확히 기록.
 

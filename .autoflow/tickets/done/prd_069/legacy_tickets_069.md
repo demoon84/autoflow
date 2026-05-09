@@ -2,7 +2,7 @@
 
 ## Ticket
 
-- ID: legacy_tickets_069
+- ID: legacy_Todo-069
 - PRD Key: prd_069
 - Plan Candidate: 데스크톱 대화 UI claude 스타일 + 이미지 첨부
 - Title: 데스크톱 대화 UI 다듬기 + 이미지 첨부
@@ -26,7 +26,7 @@
 ## Obsidian Links
 
 - Project Note: [[prd_069]]
-- Ticket Note: [[legacy_tickets_069]]
+- Ticket Note: [[legacy_Todo-069]]
 
 ## Allowed Paths
 
@@ -99,4 +99,4 @@
 
 - `References` are relative to `BOARD_ROOT`.
 - `Allowed Paths` are relative to PROJECT_ROOT (no worktree this ticket).
-- `Obsidian Links` use `[[prd_069]]` / `[[tickets_069]]`.
+- `Obsidian Links` use `[[prd_069]]` / `[[Todo-069]]`.

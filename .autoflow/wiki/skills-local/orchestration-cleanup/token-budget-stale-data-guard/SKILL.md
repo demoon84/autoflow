@@ -1,6 +1,9 @@
 ---
 name: "token-budget-stale-data-guard"
-description: "token budget stale-data guard"
+description: "Use when token budget stale-data guard"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_179"
   ticket: "tickets_178"
 created_at: "2026-05-05T13:45:46Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # token budget stale-data guard

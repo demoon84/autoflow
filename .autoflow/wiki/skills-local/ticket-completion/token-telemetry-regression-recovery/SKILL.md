@@ -1,6 +1,9 @@
 ---
 name: "token-telemetry-regression-recovery"
-description: "token telemetry regression recovery"
+description: "Use when token telemetry regression recovery"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_177"
   ticket: "tickets_176"
 created_at: "2026-05-04T22:32:20Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # token telemetry regression recovery

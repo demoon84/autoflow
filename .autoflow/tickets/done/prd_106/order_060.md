@@ -32,7 +32,7 @@ created: 2026-05-02
 
 ## 현 케이스 (배경 — 동기 부여용)
 
-- `tickets/inprogress/tickets_102.md` (PRD prd_098, "Order/PRD wording 변경") 가 `Recovery State: needs_user`, `Failure Class: leftover_worktree` 로 무기한 멈춤.
+- `tickets/inprogress/Todo-102.md` (PRD prd_098, "Order/PRD wording 변경") 가 `Recovery State: needs_user`, `Failure Class: leftover_worktree` 로 무기한 멈춤.
 - 원인: dirty worktree (에이전트 자기 실패), `allowed_path_conflict` 가 `scaffold/board/reference/*` (같은 영향권). 위 자동 회복 정책 둘 다에 해당.
 - 사용자 입장: 이런 거 해결하라고 오케스트레이터를 붙였는데, 사람한테 결정 받으려고 멈추는 건 본말전도.
 
@@ -61,4 +61,4 @@ created: 2026-05-02
 - `AUTOFLOW_RECOVERY_AUTO=off` 환경에서 기존(현재) 동작이 그대로 재현되는지 확인.
 - `AUTOFLOW_REJECT_MAX_RETRIES` 도달 케이스가 진짜 `needs_user` 로 가는지 확인.
 - planner.log 에 `event=auto_recovery_resolved` 가 기록되는지 확인.
-- 현재 막힌 `tickets_102` 가 새 정책 적용 후 자동 흐름으로 풀리는지 (또는 별도 retry 티켓이 자동 발급되는지) 확인.
+- 현재 막힌 `Todo-102` 가 새 정책 적용 후 자동 흐름으로 풀리는지 (또는 별도 retry 티켓이 자동 발급되는지) 확인.

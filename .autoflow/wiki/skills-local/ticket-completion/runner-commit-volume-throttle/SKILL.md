@@ -1,6 +1,9 @@
 ---
 name: "runner-commit-volume-throttle"
-description: "runner commit volume throttle"
+description: "Use when runner commit volume throttle"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: ".autoflow/scripts/start-plan.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_172"
   ticket: "tickets_171"
 created_at: "2026-05-05T02:08:43Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # runner commit volume throttle

@@ -1,0 +1,116 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-138
+- PRD Key: prd_139
+- Plan Candidate: Plan AI handoff from tickets/done/prd_139/prd_139.md
+- Title: AI 진행 현황 헤더 미표기 placeholder 제거
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-03T10:45:38Z
+
+## Goal
+
+- 이번 작업의 목표: 데스크톱 UI에서 `lastUpdated` 값이 없을 때 헤더 우측에 의미 없는 "미표기" 문구가 노출되지 않게 한다.
+
+## References
+
+- PRD: tickets/done/prd_139/prd_139.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_139]]
+- Plan Note:
+- Ticket Note: [[Todo-138]]
+
+## Allowed Paths
+
+- `apps/desktop/src/renderer/main.tsx`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-138`
+- Branch: autoflow/Todo-138
+- Base Commit: 239776e3627807c204e920747c86ba64f3062bd3
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-03T10:42:15Z
+- Started Epoch: 1777804935
+- Updated At: 2026-05-03T10:45:39Z
+- Tick Count: 3
+- Time Used Seconds: 204
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 1157335020
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] `apps/desktop/src/renderer/main.tsx`의 settings content header에서 `lastUpdated`가 비어 있을 때 "미표기" 텍스트가 렌더링되지 않는다.
+- [x] `apps/desktop/src/renderer/main.tsx`의 essential title row에서 `lastUpdated`가 비어 있을 때 "미표기" 텍스트가 렌더링되지 않는다.
+- [x] `lastUpdated` 값이 있을 때 두 위치 모두 기존 "마지막 업데이트 ${formatDate(lastUpdated)}" 의미의 문구를 유지한다.
+- [x] `grep -n "미표기" apps/desktop/src/renderer/main.tsx` 결과가 0건이다.
+- [x] `npm run desktop:check` exits 0.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 order_131을 generated PRD와 todo 티켓으로 승격했다.
+- 직전 작업: `start-plan.sh`가 `source=order-inbox`로 `order_131`을 반환했고, planner가 `prd_139`와 `Todo-138`을 생성했다.
+- 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When, 그리고 `main.tsx`의 settings content header/essential title row fallback 표현.
+- Wiki/ticket constraints: wiki RAG 결과는 0건이었다. 이 티켓은 `order_132`-`order_135`의 IPC/CLI/process/orchestration-history 범위와 분리된 좁은 renderer placeholder 제거다.
+- Guard warning: `bin/autoflow guard` at 2026-05-03T10:41:04Z reported leftover ticket worktree `autoflow/Todo-119`; planner recorded it as an unrelated cleanup candidate and did not delete or reset the worktree.
+- 현재 상태 요약: `apps/desktop/src/renderer/main.tsx`의 두 `lastUpdated` fallback을 조건부 렌더링으로 수정했고, worktree와 `PROJECT_ROOT` 양쪽에서 `grep -n "미표기"` 0건 및 `npm run desktop:check` exit 0을 확인했다.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_139/prd_139.md at 2026-05-03T10:34:22Z.
+- Planner wiki pass: combined RAG query for `lastUpdated 미표기`, `readBoard IPC timeout`, `doctor metrics lock`, `run_with_timeout watchdog`, and `orchestration cleanup check_NNN` returned `result_count=0`.
+- Repository context: `grep -n "미표기\\|lastUpdated\\|content-updated-at\\|settings-title-status" apps/desktop/src/renderer/main.tsx` found the target fallback expressions at the settings content header and essential title row.
+- Runtime fallback note: the required second `start-plan.sh` call failed with `/Users/demoon2016/Documents/project/autoflow/.autoflow/scripts/common.sh: fork: Resource temporarily unavailable`; planner completed the board-only handoff manually to prevent duplicate `order_131` promotion. Do not treat that runtime failure as implementation failure for this ticket; the broader resource issue remains in `order_134`.
+
+- Runtime hydrated worktree dependency at 2026-05-03T10:41:04Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-03T10:38:53Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-138; run=tickets/inprogress/verify_138.md
+- AI worker prepared resume at 2026-05-03T10:42:32Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-138; run=tickets/inprogress/verify_138.md
+- AI mini-plan at 2026-05-03T10:43:00Z:
+  1. Keep the change limited to `apps/desktop/src/renderer/main.tsx`.
+  2. In the settings content header, render `.settings-title-status` only when `lastUpdated` has a value so the old `미표기` fallback and empty status wrapper disappear.
+  3. In the essential title row, keep the status badge and render the update timestamp `<span>` only when `lastUpdated` has a value.
+  4. Verify with `grep -n "미표기" apps/desktop/src/renderer/main.tsx` and `npm run desktop:check`.
+- Wiki context pass at 2026-05-03T10:43:00Z: attempted `autoflow wiki query --term "lastUpdated 미표기 AI 진행 현황 settings-title-status" --term "apps/desktop/src/renderer/main.tsx content-updated-at settings title status" --term "Todo-138 prd_139 placeholder" --rag`; the command produced no output and had to be stopped/retried with a 20s alarm. Existing PRD/ticket wiki context already records `result_count=0`, so no prior wiki constraint changes this narrow placeholder-removal implementation.
+- Implementation evidence at 2026-05-03T10:44:53Z: changed only `apps/desktop/src/renderer/main.tsx`. Settings content header now renders `.settings-title-status` only when `lastUpdated` is truthy. Essential title row keeps the status badge and renders the update timestamp `<span>` only when `lastUpdated` is truthy. Both non-empty branches preserve `마지막 업데이트 {formatDate(lastUpdated)}`.
+- Verification evidence at 2026-05-03T10:44:53Z: in the ticket worktree and in `PROJECT_ROOT`, `grep -n "미표기" apps/desktop/src/renderer/main.tsx` returned 0 matches and `npm run desktop:check` exited 0.
+- Queued without worktree commit at 2026-05-03T10:45:38Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-03T10:45:37Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-03T10:45:38Z: removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-138 deleted_branch=autoflow/Todo-138.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-03T10:45:38Z.
+## Verification
+- Run file: `tickets/done/prd_139/verify_138.md`
+- Log file: `logs/verifier_138_20260503_104539Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: lastUpdated 미표기 placeholder 제거
+- Remaining risk: No known ticket-scope risk. `vite build` still reports the pre-existing chunk-size warning, but the check exits 0.

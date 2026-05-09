@@ -23,7 +23,7 @@ Autoflow 1원칙(멈추지 않는다) 으로 오케스트레이터(planner) 가 
 
 ### 1. 데이터 적층 — `.autoflow/tickets/check/check_NNN.md`
 - 신규 폴더 `.autoflow/tickets/check/` + `.gitkeep`.
-- 번호 별도 sequence (`check_001.md` 부터). 다른 `tickets_NNN`/`prd_NNN`/`order_NNN` 와 충돌 없음.
+- 번호 별도 sequence (`check_001.md` 부터). 다른 `Todo-NNN`/`prd_NNN`/`order_NNN` 와 충돌 없음.
 - 오케스트레이터(planner) 가 자동 개입을 수행한 직후 한 건 작성. 동작 자체는 변경하지 않고 "기록만" 추가.
 - 본문 템플릿:
   ```markdown

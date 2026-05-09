@@ -1,6 +1,9 @@
 ---
 name: "desktop-response-delay-severity-labels"
-description: "desktop response delay severity labels"
+description: "Use when desktop response delay severity labels"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: "apps/desktop/src/renderer/main.tsx"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_188"
   ticket: "tickets_187"
 created_at: "2026-05-06T01:09:47Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # desktop response delay severity labels

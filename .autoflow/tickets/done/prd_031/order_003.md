@@ -33,6 +33,6 @@ AI관리 메뉴를 없애줘 ai 관리 페이지도 삭제
 
 ## Planner Notes
 
-- Promoted by planner-1 at 2026-04-28T14:52:56Z into `tickets/done/prd_031/prd_031.md` and `tickets/todo/tickets_031.md`.
+- Promoted by planner-1 at 2026-04-28T14:52:56Z into `tickets/done/prd_031/prd_031.md` and `tickets/todo/Todo-031.md`.
 - Scope inferred as desktop navigation/page routing removal because the request says “AI관리 메뉴” and “ai 관리 페이지도 삭제”; memo hints narrowed Allowed Paths to `apps/desktop/src` and verification to `npm run desktop:check`.
 - Wiki context requires preserving workflow page runner controls from `prd_021` while removing only the separate management surface.

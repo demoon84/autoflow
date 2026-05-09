@@ -1,6 +1,9 @@
 ---
 name: "skill-curator-lifecycle-and-auto-extraction-triggers"
-description: "skill curator lifecycle and auto-extraction triggers"
+description: "Use when skill curator lifecycle and auto-extraction triggers"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: ".autoflow/scripts/curator-run.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_166"
   ticket: "tickets_164"
 created_at: "2026-05-04T21:54:47Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # skill curator lifecycle and auto-extraction triggers

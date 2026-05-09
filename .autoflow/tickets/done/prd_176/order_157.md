@@ -94,5 +94,5 @@ git log --since="1 hour ago" --grep "\[wiki\]" --oneline
 - Resolved At: 2026-05-05T01:33:49Z
 - Resolved By: planner
 - Resolution: covered_by_existing_ticket
-- Covered By: `tickets/todo/tickets_175.md`
-- Notes: `tickets_175` already contains an explicit Done When item for wiki commit/log source PRD/ticket attribution across `packages/cli/wiki-project.sh`, `packages/cli/run-role.sh`, and mirrored runtime scripts. Planner archived this order under `tickets/done/prd_176/` to avoid creating a duplicate overlapping todo while preserving the original request as source evidence.
+- Covered By: `tickets/todo/Todo-175.md`
+- Notes: `Todo-175` already contains an explicit Done When item for wiki commit/log source PRD/ticket attribution across `packages/cli/wiki-project.sh`, `packages/cli/run-role.sh`, and mirrored runtime scripts. Planner archived this order under `tickets/done/prd_176/` to avoid creating a duplicate overlapping todo while preserving the original request as source evidence.

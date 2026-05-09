@@ -131,7 +131,7 @@ created_at: <ISO>
 
 ## Verification (hint)
 
-- `bash bin/autoflow skill create "$PWD" .autoflow --from-ticket tickets_NNN` 호출 → `.autoflow/wiki/skills/skill_NNN.md` 생성, frontmatter / 본문 형식 정상.
+- `bash bin/autoflow skill create "$PWD" .autoflow --from-ticket Todo-NNN` 호출 → `.autoflow/wiki/skills/skill_NNN.md` 생성, frontmatter / 본문 형식 정상.
 - `bash bin/autoflow skill match "$PWD" .autoflow --keywords "desktop sidebar"` 호출 → 매칭되는 skill 목록 + 점수.
 - PRD 완료 시 자동 호출 (Phase 1 trigger) 후 skill 1건 생성 확인.
 - 7일 운영 후 skills/ 누적 개수 + 평균 success_count 측정.

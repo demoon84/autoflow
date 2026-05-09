@@ -21,9 +21,8 @@ The desktop runner controls were simplified to improve visual clarity and focus 
 ## Key Changes
 
 - **Removed Restart Control**: The `AI 재시작` (Restart) button was removed from the runner control surface. Users can achieve the same result by stopping and starting the runner.
-- **Label Simplification**: The `AI` prefix was removed from start and stop controls.
-  - `AI 시작` → `시작` (Start)
-  - `AI 중지` → `중지` (Stop)
+- **Label Simplification**: The `AI 시작` → `시작` (Start) and `AI 중지` → `중지` (Stop) labels were simplified (`prd_028`).
+- **Always-Visible Model Controls**: The collapse/expand toggle for model and inference settings was removed from the runner card. These controls are now always visible when the runner is configurable (`prd_194`).
 - **Accessibility**: Tooltips and aria-labels were updated to match the simplified labels while preserving existing behavior.
 
 ## Implementation Details
@@ -38,8 +37,10 @@ The desktop runner controls were simplified to improve visual clarity and focus 
 
 - Introduced in [[features/ai-workflow-board]] (`prd_021`).
 - Simplified in `prd_028` (2026-04-28).
+- Model and inference settings changed to be always visible in `prd_194` (2026-05-08).
 
 ## Citations
 
 - Source: `tickets/done/prd_028/prd_028.md`
+- Source: `tickets/done/prd_194/prd_194.md`
 - Related: [[features/ai-workflow-board]]

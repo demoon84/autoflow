@@ -1,6 +1,9 @@
 ---
 name: "worktree-bound-runner-loop-orphan-cleanup"
-description: "worktree-bound runner loop orphan cleanup"
+description: "Use when worktree-bound runner loop orphan cleanup"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: blocked_recovery
 applies_to:
   module: "packages/cli/runners-project.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_186"
   ticket: "tickets_185"
 created_at: "2026-05-06T00:28:15Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # worktree-bound runner loop orphan cleanup

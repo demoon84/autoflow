@@ -27,11 +27,11 @@ ticket_164 cleanup:    21
 가장 자주 modified 파일:
 ```
 35회  .autoflow/telemetry/runs.jsonl                       ← 매 tick append, 1줄 = 1 commit
-25회  .autoflow/tickets/inprogress/tickets_163.md          ← archive 후에도 history 에 잡힘
+25회  .autoflow/tickets/inprogress/Todo-163.md          ← archive 후에도 history 에 잡힘
 22회  .autoflow/wiki/operations/runner-timing.md           ← Wiki AI debounce 무력화
 22회  .autoflow/wiki/operations/runner-health.md
 21회  .autoflow/wiki/agents/prompt-evolution.md
-16회  .autoflow/tickets/inprogress/tickets_164.md          ← worker tick 마다 Stage 갱신
+16회  .autoflow/tickets/inprogress/Todo-164.md          ← worker tick 마다 Stage 갱신
 ```
 
 cleanup commit 예시: `a2b08a5 [PRD_166][ticket_164] orchestration cleanup: telemetry evidence`

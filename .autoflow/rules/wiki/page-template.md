@@ -6,7 +6,7 @@ State why this page exists.
 
 ## Sources
 
-- Ticket: `tickets/done/<project-key>/tickets_NNN.md`
+- Ticket: `tickets/done/<project-key>/Todo-NNN.md`
 - Verification: `tickets/done/<project-key>/verify_NNN.md`
 - Log: `logs/verifier_NNN_<timestamp>_pass.md`
 

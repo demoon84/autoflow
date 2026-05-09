@@ -16,7 +16,7 @@ tags:
 To provide a clean and consistent user experience across the desktop UI, tickets, and logs, Autoflow uses a standardized naming convention for AI workers. This policy decouples internal storage identifiers from user-facing labels.
 
 ## Policy: Roles and worker-N Convention
-- **Runner Cards**: On the AI Workflow Board, runners are identified by their primary role (e.g., `Planner`, `Worker`, `위키봇`) for immediate functional clarity (`tickets/done/prd_021/prd_021.md`).
+- **Runner Cards**: On the AI Workflow Board, runners are identified by their primary role (e.g., `Planner`, `Worker`, `LLM Wiki`) for immediate functional clarity (`tickets/done/prd_021/prd_021.md`).
 - **Actor Attribution**: New user-visible runtime notes, logs, ticket previews, and desktop metadata prefer `worker-N` (e.g., `worker-1`) instead of `AI-N`.
 - **Internal ID**: The underlying storage identifier (e.g., `owner-1`, `wiki-1`) remains unchanged for backward compatibility and internal configuration consistency.
 - **Normalization**: Board scripts use `display_worker_id` to emit `worker-N` and compatible ownership checks to treat legacy `AI-N`, `owner-N`, and `worker-N` values as the same worker.

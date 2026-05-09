@@ -37,7 +37,7 @@ source: claude-code /order
 prd_141 → PRD-141
 order_141 → Order-141
 reject_141 → Reject-141
-tickets_141 → Ticket-141
+Todo-141 → Ticket-141
 ```
 
 → ticket workspace 카드 / 핀 레이어 등 다른 자리는 모두 `Ticket-141` 풀 표기. **`#141` 만 일관성 깨짐**.

@@ -1,6 +1,9 @@
 ---
 name: "adapter-running-state-heartbeat"
-description: "adapter-running state heartbeat"
+description: "Use when adapter-running state heartbeat"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: skill_nudge
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_178"
   ticket: "tickets_177"
 created_at: "2026-05-04T22:44:50Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # adapter-running state heartbeat

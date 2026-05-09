@@ -1,6 +1,9 @@
 ---
 name: "codex-stdout-warning-noise-filter"
-description: "codex stdout warning noise filter"
+description: "Use when codex stdout warning noise filter"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_189"
   ticket: "tickets_188"
 created_at: "2026-05-06T01:12:10Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # codex stdout warning noise filter

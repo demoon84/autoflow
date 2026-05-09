@@ -1,6 +1,9 @@
 ---
 name: "desktop-readboard-subcall-timeout-isolation"
-description: "desktop readBoard subcall timeout isolation"
+description: "Use when desktop readBoard subcall timeout isolation"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: orchestration_cleanup
 applies_to:
   module: "apps/desktop/src/main.js"
@@ -19,6 +22,10 @@ created_from:
   prd: "prd_173"
   ticket: "tickets_172"
 created_at: "2026-05-05T07:11:45Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # desktop readBoard subcall timeout isolation

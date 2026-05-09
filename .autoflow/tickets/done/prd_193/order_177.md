@@ -38,4 +38,4 @@
 - Archived By: planner
 - Archived At: 2026-05-06T00:07:59Z
 - Generated PRD: `tickets/done/prd_193/prd_193.md`
-- Generated Ticket: `tickets/todo/tickets_192.md`
+- Generated Ticket: `tickets/todo/Todo-192.md`

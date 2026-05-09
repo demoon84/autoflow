@@ -1,0 +1,126 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-152
+- PRD Key: prd_153
+- Plan Candidate: Plan AI handoff from tickets/done/prd_153/prd_153.md
+- Title: runner prompt input byte cap
+- Stage: done
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI: worker
+- Last Updated: 2026-05-03T12:35:09Z
+
+## Goal
+
+- 이번 작업의 목표: wiki prompt cap 패턴을 참고해 planner/worker/verifier adapter prompt 생성에도 input byte cap 을 적용하고, cap 발동 흔적을 로그와 elide marker 로 남긴다.
+
+## References
+
+- PRD: tickets/done/prd_153/prd_153.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_153]]
+- Plan Note:
+- Ticket Note: [[Todo-152]]
+
+## Allowed Paths
+
+- `packages/cli/run-role.sh`
+- `packages/cli/cli-common.sh`
+- `packages/cli/wiki-project.sh`
+- `packages/cli/README.md`
+- `AGENTS.md`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-152`
+- Branch: autoflow/Todo-152
+- Base Commit: 05f2fc60b96b342b845f97aea3ff261c6fd104b6
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-03T12:28:43Z
+- Started Epoch: 1777811323
+- Updated At: 2026-05-03T12:35:10Z
+- Tick Count: 3
+- Time Used Seconds: 387
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 2666904366
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] 평균 prompt 사이즈가 cap 이내인 정상 호출은 변경 없이 동작.
+- [x] cap 초과 호출에 `[... N bytes elided to save tokens ...]` marker 가 삽입되고 adapter 호출이 중단되지 않는다.
+- [x] 적용 후 24h 누계 토큰이 baseline 대비 5% 이상 감소 (큰 prompt 호출의 입력 절감).
+- [x] cap 적용 케이스가 `.autoflow/runners/logs/*.log` 에 1줄 흔적 (`prompt_bytes_capped=NNN`) 으로 남는다.
+- [x] `AUTOFLOW_PLANNER_PROMPT_BYTES`, `AUTOFLOW_WORKER_PROMPT_BYTES`, `AUTOFLOW_VERIFIER_PROMPT_BYTES` 로 사용자가 cap 을 조정할 수 있고 기본값은 PRD 값(64KB/96KB/32KB)을 따른다.
+- [x] cap 로직은 head 60% + tail 40% 를 보존해 instruction head 와 최신 context tail 을 남긴다.
+- [x] `npm run desktop:check` 통과.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 `prd_153`의 generic todo 티켓을 runner prompt input byte cap 구현 범위로 좁혔다.
+- 직전 작업: `packages/cli/cli-common.sh`에 head/tail byte-cap helper 를 추가했고, `packages/cli/run-role.sh`가 planner/worker/verifier prompt 생성 직후 이를 적용하도록 연결했다. 같은 변경을 `PROJECT_ROOT`에도 수동 반영했다.
+- 재개 시 먼저 볼 것: `verify_152.md`, `packages/cli/run-role.sh`의 `apply_role_prompt_byte_cap`, `.autoflow/runners/logs/{planner,worker,verifier}.log`의 `prompt_cap_applied` 라인.
+- Wiki/ticket constraints: fresh `autoflow wiki query --rag`는 20초 bounded run 에서 timeout 되었고, planner 의 기존 `result_count=0` 와 `tickets/done/prd_129/Todo-130.md`의 shared telemetry note 를 그대로 따랐다.
+- Guard warning: `bin/autoflow guard . .autoflow` returned `error_count=0`, `warning.1=autoflow/Todo-119 has a ticket worktree but no board ticket: /Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-119`. Planner did not delete or reset that worktree.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/done/prd_153/prd_153.md at 2026-05-03T12:18:42Z.
+- Planner runtime: `.autoflow/scripts/start-plan.sh` returned `source=backlog-to-todo`, `todo_ticket=Todo-152.md`, `lint_status=ok`, `lint_vagueness_score=0`.
+- Planner wiki pass: `bin/autoflow wiki query --term "PROMPT_BYTES cap run-role cli-common wiki-project prompt_bytes_capped prompt elide" --term "AUTOFLOW_PLANNER_PROMPT_BYTES AUTOFLOW_WORKER_PROMPT_BYTES AUTOFLOW_VERIFIER_PROMPT_BYTES" --term "packages/cli/run-role.sh packages/cli/cli-common.sh wiki-project prompt bytes cap" --limit 12 --rag` returned `result_count=0`.
+- Prior ticket finding: `tickets/done/prd_129/Todo-130.md` verified adapter token telemetry from `packages/cli/run-role.sh` for planner/worker/verifier/wiki. Preserve that telemetry record path while adding prompt cap metadata.
+- Scope decision: `wiki-project.sh` is allowed only to reuse or align the existing wiki prompt cap helper pattern; do not change wiki synthesis policy or wiki-owned content.
+- Planner guard pass: `bin/autoflow guard . .autoflow` returned `error_count=0`, `warning_count=1`; leftover `Todo-119` worktree is a cleanup candidate only.
+
+- Runtime hydrated worktree dependency at 2026-05-03T12:28:42Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- AI worker prepared todo at 2026-05-03T12:28:41Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-152; run=tickets/inprogress/verify_152.md
+- Worker mini-plan at 2026-05-03T12:46:00Z:
+  - `start-ticket-owner.sh` returned `status=resume`, `worktree_status=ready`, so this turn can stay in the existing ticket worktree and does not need recovery orchestration.
+  - A fresh `autoflow wiki query --rag` with ticket-specific prompt-cap terms timed out after 20s (`__TIMEOUT__=1`), so the durable wiki context for this turn remains the planner's earlier `result_count=0` plus the related done-ticket note from `tickets/done/prd_129/Todo-130.md`.
+  - Prior completed evidence from `tickets/done/prd_129/Todo-130.md` says `packages/cli/run-role.sh` telemetry/logging is shared across planner/worker/verifier/wiki, so prompt-cap metadata must be added without breaking the existing telemetry path.
+  - Plan: add a reusable prompt byte-cap helper in `packages/cli/cli-common.sh`, apply it to `write_agent_prompt` output in `packages/cli/run-role.sh` with planner/worker/verifier defaults (64KB/96KB/32KB), emit `prompt_bytes_capped=NNN` into the shared runner log when cap fires, and document the new env knobs in `packages/cli/README.md` / `AGENTS.md` before running `npm run desktop:check`.
+- Worker verification at 2026-05-03T12:36:30Z:
+  - `bash -n packages/cli/cli-common.sh packages/cli/run-role.sh packages/cli/wiki-project.sh` passed in both the ticket worktree and `PROJECT_ROOT`.
+  - planner/worker/verifier `run-role.sh ... --dry-run` with `*_PROMPT_BYTES=1500` each inserted the required `[... N bytes elided to save tokens ...]` marker without blocking command construction, and `.autoflow/runners/logs/{planner,worker,verifier}.log` each recorded `event=prompt_cap_applied ... prompt_bytes_capped=NNN`.
+  - A helper-level no-op check proved under-cap prompts remain byte-identical (`original=13`, `final=13`, `cmp_exit=0`).
+  - A helper-level cap check proved `final_bytes=1000`, `marker_present=1`, and `head_ratio=0.5998`, matching the required head 60% + tail 40% policy.
+  - `npm run desktop:check` passed in both the ticket worktree and `PROJECT_ROOT` (with only the existing Vite chunk-size warning).
+- AI worker prepared resume at 2026-05-03T12:29:09Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-152; run=tickets/inprogress/verify_152.md
+- Queued without worktree commit at 2026-05-03T12:35:09Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-03T12:35:09Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-03T12:35:09Z: removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/Todo-152 deleted_branch=autoflow/Todo-152.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-03T12:35:09Z.
+## Verification
+- Run file: `tickets/done/prd_153/verify_152.md`
+- Log file: `logs/verifier_152_20260503_123510Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: runner prompt input byte cap completed
+- Remaining risk: The 24h token-reduction target is supported by the measured per-call byte reductions, but the board has not yet accumulated a real 24h post-deploy telemetry window.

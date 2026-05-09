@@ -15,7 +15,7 @@ source: claude-code /order
   - `.autoflow/tickets/inbox/` ↔ `.autoflow/tickets/done/<project-key>/` 사이의 memo 이동 (예: `memo_054`, `memo_065~068`, `memo_076~077` 등 inbox에서 사라지고 done 또는 done/prd_NNN/ 아래에 묶임).
   - `.autoflow/tickets/done/prd_098/`, `done/prd_116/` 등 신규 PRD 완료 묶음 추가.
   - `.autoflow/tickets/done/prd_099~103/` 의 memo 갱신 (러너 finalizer 결과).
-  - `.autoflow/tickets/inprogress/tickets_115.md`, `verify_115.md` 등 진행/검증 산출물.
+  - `.autoflow/tickets/inprogress/Todo-115.md`, `verify_115.md` 등 진행/검증 산출물.
   - `.autoflow/tickets/reject/verify_115.md` 등 반려 결과.
   - `.autoflow/wiki/` (index, log, project-overview, features/*) 갱신.
   - `.autoflow/wiki-raw/prd-*-handoff.md` 다수 신규(98, 99, 100, 102~113 등).

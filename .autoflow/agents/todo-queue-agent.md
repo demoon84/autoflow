@@ -8,8 +8,8 @@ Claim tickets from `tickets/todo/`, manage their progression through implementat
 
 ## Inputs
 
-- `tickets/todo/tickets_NNN.md`.
-- Owned `tickets/inprogress/tickets_NNN.md`.
+- `tickets/todo/Todo-NNN.md`.
+- Owned `tickets/inprogress/Todo-NNN.md`.
 - Referenced PRDs and plans.
 - `scripts/start-todo.*` output.
 

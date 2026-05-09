@@ -35,6 +35,6 @@ Screenshot: /var/folders/2m/xlbkckq158l79qnmb9ytdrnm0000gn/T/TemporaryItems/NSIR
 
 ## Planner Notes
 
-- Promoted by planner-1 at 2026-04-28T15:09:23Z into `tickets/backlog/prd_033.md`, then runtime archived the PRD to `tickets/done/prd_033/prd_033.md` and created `tickets/todo/tickets_033.md`.
-- Screenshot was accessible during planning and showed a `#tickets_029` tag/chip with a grey selected block and heavy rounded outline after Escape.
+- Promoted by planner-1 at 2026-04-28T15:09:23Z into `tickets/backlog/prd_033.md`, then runtime archived the PRD to `tickets/done/prd_033/prd_033.md` and created `tickets/todo/Todo-033.md`.
+- Screenshot was accessible during planning and showed a `#Todo-029` tag/chip with a grey selected block and heavy rounded outline after Escape.
 - Wiki context: exact Esc/MUI focus-artifact query returned no direct prior result; broad MUI desktop query surfaced `wiki/decisions/design-kit-mui-migration.md`, `tickets/done/prd_027/prd_027.md`, and `tickets/done/prd_029/prd_029.md`.

@@ -1,6 +1,9 @@
 ---
 name: "telemetry-token-usage-sanity-correction"
-description: "telemetry token usage sanity correction"
+description: "Use when telemetry token usage sanity correction"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: ticket_completion
 applies_to:
   module: "packages/cli/telemetry-project.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_181"
   ticket: "tickets_180"
 created_at: "2026-05-05T00:42:03Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # telemetry token usage sanity correction

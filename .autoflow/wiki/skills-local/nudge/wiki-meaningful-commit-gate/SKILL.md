@@ -1,6 +1,9 @@
 ---
 name: "wiki-meaningful-commit-gate"
-description: "wiki meaningful commit gate"
+description: "Use when wiki meaningful commit gate"
+version: "1.0"
+author: "autoflow-agent"
+license: "CC-BY-4.0"
 pattern_type: skill_nudge
 applies_to:
   module: "packages/cli/run-role.sh"
@@ -22,6 +25,10 @@ created_from:
   prd: "prd_183"
   ticket: "tickets_182"
 created_at: "2026-05-05T23:22:11Z"
+metadata:
+  hermes:
+    tags: []
+    related_skills: []
 ---
 
 # wiki meaningful commit gate

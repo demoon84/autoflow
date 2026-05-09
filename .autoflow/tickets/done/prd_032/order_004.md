@@ -36,4 +36,4 @@
 
 - Promoted by planner-1 at 2026-04-28T14:57:47Z into `tickets/backlog/prd_032.md`.
 - Scope inferred as a narrow desktop Wiki preview-state change because the request says “위키 페이지를 항상 펼쳐있는 UI로 변경” and wiki context identifies the existing hidden-by-default preview flow from `prd_003`.
-- Archived by planner-1 after `tickets/todo/tickets_032.md` was created.
+- Archived by planner-1 after `tickets/todo/Todo-032.md` was created.

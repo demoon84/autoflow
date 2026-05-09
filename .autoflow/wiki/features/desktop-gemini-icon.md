@@ -13,7 +13,7 @@ tags:
 # Desktop Agent App Icons
 
 ## Overview
-The Desktop application displays specialized application icons for each AI agent role (Planner, Worker, 위키봇) to provide quick visual recognition.
+The Desktop application displays specialized application icons for each AI agent role (Planner, Worker, LLM Wiki) to provide quick visual recognition.
 
 ## Behavior
 - **Agent Icons**: Each recognized agent uses a dedicated image asset for its identity card and runner UI.
