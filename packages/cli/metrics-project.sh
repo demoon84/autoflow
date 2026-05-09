@@ -84,13 +84,17 @@ write_snapshot() {
   local autoflow_code_volume_count="${27}"
   local autoflow_token_usage_count="${28}"
   local autoflow_token_report_count="${29}"
-  local completion_rate_percent="${30}"
+  local autoflow_avg_lead_seconds="${30}"
+  local autoflow_avg_active_seconds="${31}"
+  local autoflow_avg_ticks_per_done_ticket="${32}"
+  local autoflow_duration_total_24h_seconds="${33}"
+  local completion_rate_percent="${34}"
   local escaped_project escaped_board
 
   mkdir -p "$metrics_root"
   escaped_project="$(printf '%s' "$project_root" | json_escape)"
   escaped_board="$(printf '%s' "$board_root" | json_escape)"
-  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"completion_rate_percent":%s}\n' \
+  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"autoflow_avg_lead_seconds":%s,"autoflow_avg_active_seconds":%s,"autoflow_avg_ticks_per_done_ticket":%s,"autoflow_duration_total_24h_seconds":%s,"completion_rate_percent":%s}\n' \
     "$timestamp" \
     "$escaped_project" \
     "$escaped_board" \
@@ -118,6 +122,10 @@ write_snapshot() {
     "$autoflow_code_volume_count" \
     "$autoflow_token_usage_count" \
     "$autoflow_token_report_count" \
+    "$autoflow_avg_lead_seconds" \
+    "$autoflow_avg_active_seconds" \
+    "$autoflow_avg_ticks_per_done_ticket" \
+    "$autoflow_duration_total_24h_seconds" \
     "$completion_rate_percent" >> "$snapshot_file"
 }
 
@@ -376,6 +384,201 @@ count_autoflow_token_metrics() {
   esac
 }
 
+sanitize_nonnegative_metric() {
+  local value="$1"
+  awk -v v="$value" 'BEGIN {
+    if (v !~ /^[-+]?[0-9]+([.][0-9]+)?$/ || v != v || v < 0) {
+      print 0
+    } else {
+      printf "%.0f\n", v
+    }
+  }'
+}
+
+sanitize_nonnegative_decimal_metric() {
+  local value="$1"
+  awk -v v="$value" 'BEGIN {
+    if (v !~ /^[-+]?[0-9]+([.][0-9]+)?$/ || v != v || v < 0) {
+      print "0.0"
+    } else {
+      printf "%.1f\n", v
+    }
+  }'
+}
+
+metric_iso_to_epoch() {
+  local value="$1"
+
+  [ -n "$value" ] || return 1
+  date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$value" '+%s' 2>/dev/null \
+    || date -u -d "$value" '+%s' 2>/dev/null
+}
+
+ticket_section_metric_field() {
+  local file="$1"
+  local section="$2"
+  local field="$3"
+
+  awk -v target_section="$section" -v target_field="$field" '
+    $0 ~ "^## " {
+      current = substr($0, 4)
+      sub(/[[:space:]]+$/, "", current)
+      next
+    }
+    current == target_section && index($0, "- " target_field ":") == 1 {
+      value = substr($0, length("- " target_field ":") + 1)
+      sub(/^[[:space:]]+/, "", value)
+      print value
+      exit
+    }
+  ' "$file"
+}
+
+count_duration_total_24h_metric() {
+  local telemetry_runs_file now_epoch
+
+  autoflow_duration_total_24h_seconds=0
+  command -v jq >/dev/null 2>&1 || return 0
+  telemetry_runs_file="$(telemetry_runs_jsonl_path "$project_root")"
+  [ -f "$telemetry_runs_file" ] || return 0
+  now_epoch="$(date -u '+%s')"
+
+  autoflow_duration_total_24h_seconds="$(
+    jq -rs --argjson since "$((now_epoch - 86400))" '
+      reduce .[] as $row (
+        0;
+        if ($row | type) == "object" then
+          (($row.ended_at // $row.started_at // "") | fromdateiso8601? // 0) as $ts
+          | ($row.duration_ms // 0 | tonumber? // 0) as $duration_ms
+          | if ($ts >= $since and $duration_ms >= 0 and $duration_ms < 86400000) then
+              . + $duration_ms
+            else
+              .
+            end
+        else
+          .
+        end
+      )
+      | (. / 1000 | floor)
+    ' "$telemetry_runs_file" 2>/dev/null || printf '0'
+  )"
+  autoflow_duration_total_24h_seconds="$(sanitize_nonnegative_metric "$autoflow_duration_total_24h_seconds")"
+}
+
+count_ticket_time_metrics_from_state_db() {
+  local state_db="$1"
+  local result lead active ticks rows
+
+  [ -f "$state_db" ] || return 1
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  sqlite3 "$state_db" "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ticket_lifecycle'" >/dev/null 2>&1 || return 1
+
+  result="$(
+    sqlite3 -separator $'\t' "$state_db" "
+      SELECT
+        COALESCE(AVG(CASE WHEN lead_seconds IS NOT NULL AND lead_seconds >= 0 THEN lead_seconds END), 0),
+        COALESCE(AVG(CASE WHEN active_seconds IS NOT NULL AND active_seconds >= 0 THEN active_seconds END), 0),
+        COALESCE(AVG(CASE WHEN tick_count IS NOT NULL AND tick_count >= 0 THEN tick_count END), 0),
+        COUNT(*)
+      FROM ticket_lifecycle
+      WHERE status = 'done';
+    " 2>/dev/null || true
+  )"
+  [ -n "$result" ] || return 1
+  IFS=$'\t' read -r lead active ticks rows <<EOF
+$result
+EOF
+  case "$rows" in
+    ''|*[!0-9]*|0) return 1 ;;
+  esac
+
+  autoflow_avg_lead_seconds="$(sanitize_nonnegative_metric "$lead")"
+  autoflow_avg_active_seconds="$(sanitize_nonnegative_metric "$active")"
+  autoflow_avg_ticks_per_done_ticket="$(sanitize_nonnegative_decimal_metric "$ticks")"
+  return 0
+}
+
+count_ticket_time_metrics_from_markdown() {
+  local done_root ticket_file lead_sum active_sum tick_sum lead_count active_count tick_count
+  local active ticks started_epoch updated_epoch started_at updated_at lead
+
+  lead_sum=0
+  active_sum=0
+  tick_sum=0
+  lead_count=0
+  active_count=0
+  tick_count=0
+  done_root="${board_root}/tickets/done"
+  [ -d "$done_root" ] || return 0
+
+  while IFS= read -r ticket_file; do
+    [ -n "$ticket_file" ] || continue
+    active="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Time Used Seconds")"
+    case "$active" in
+      ''|*[!0-9]*) active=0 ;;
+    esac
+    active_sum=$((active_sum + active))
+    active_count=$((active_count + 1))
+
+    ticks="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Tick Count")"
+    case "$ticks" in
+      ''|*[!0-9]*) ticks=0 ;;
+    esac
+    tick_sum=$((tick_sum + ticks))
+    tick_count=$((tick_count + 1))
+
+    started_epoch="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Started Epoch")"
+    updated_epoch="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Updated Epoch")"
+    if [ -z "$updated_epoch" ]; then
+      started_at="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Started At")"
+      updated_at="$(ticket_section_metric_field "$ticket_file" "Goal Runtime" "Updated At")"
+      case "$started_epoch" in
+        ''|*[!0-9]*) started_epoch="$(metric_iso_to_epoch "$started_at" 2>/dev/null || true)" ;;
+      esac
+      updated_epoch="$(metric_iso_to_epoch "$updated_at" 2>/dev/null || true)"
+    fi
+    case "$started_epoch:$updated_epoch" in
+      *[!0-9:]*|:*) ;;
+      *)
+        if [ "$updated_epoch" -ge "$started_epoch" ]; then
+          lead=$((updated_epoch - started_epoch))
+          lead_sum=$((lead_sum + lead))
+          lead_count=$((lead_count + 1))
+        fi
+        ;;
+    esac
+  done <<EOF
+$(find "$done_root" -type f \( -name 'Todo-*.md' -o -name 'tickets_*.md' \) -print 2>/dev/null | sort)
+EOF
+
+  if [ "$lead_count" -gt 0 ]; then
+    autoflow_avg_lead_seconds="$((lead_sum / lead_count))"
+  fi
+  if [ "$active_count" -gt 0 ]; then
+    autoflow_avg_active_seconds="$((active_sum / active_count))"
+  fi
+  if [ "$tick_count" -gt 0 ]; then
+    autoflow_avg_ticks_per_done_ticket="$(awk -v n="$tick_sum" -v d="$tick_count" 'BEGIN { printf "%.1f", n / d }')"
+  fi
+}
+
+count_ticket_time_metrics() {
+  autoflow_avg_lead_seconds=0
+  autoflow_avg_active_seconds=0
+  autoflow_avg_ticks_per_done_ticket="0.0"
+  autoflow_duration_total_24h_seconds=0
+
+  if ! count_ticket_time_metrics_from_state_db "${board_root}/state.db"; then
+    count_ticket_time_metrics_from_markdown
+  fi
+  count_duration_total_24h_metric
+
+  autoflow_avg_lead_seconds="$(sanitize_nonnegative_metric "$autoflow_avg_lead_seconds")"
+  autoflow_avg_active_seconds="$(sanitize_nonnegative_metric "$autoflow_avg_active_seconds")"
+  autoflow_avg_ticks_per_done_ticket="$(sanitize_nonnegative_decimal_metric "$autoflow_avg_ticks_per_done_ticket")"
+  autoflow_duration_total_24h_seconds="$(sanitize_nonnegative_metric "$autoflow_duration_total_24h_seconds")"
+}
+
 load_heavy_metrics_cache() {
   local cache_file="$1"
   local key value
@@ -526,6 +729,7 @@ metrics_heavy_cache_status="unknown"
 metrics_heavy_cache_age_seconds=999999
 metrics_heavy_cache_file=""
 count_heavy_metrics_with_cache
+count_ticket_time_metrics
 
 if [ "$write" = "true" ]; then
   write_snapshot \
@@ -558,6 +762,10 @@ if [ "$write" = "true" ]; then
     "$autoflow_code_volume_count" \
     "$autoflow_token_usage_count" \
     "$autoflow_token_report_count" \
+    "$autoflow_avg_lead_seconds" \
+    "$autoflow_avg_active_seconds" \
+    "$autoflow_avg_ticks_per_done_ticket" \
+    "$autoflow_duration_total_24h_seconds" \
     "$completion_rate_percent"
 fi
 
@@ -606,4 +814,8 @@ printf 'autoflow_code_deletions_count=%s\n' "$autoflow_code_deletions_count"
 printf 'autoflow_code_volume_count=%s\n' "$autoflow_code_volume_count"
 printf 'autoflow_token_usage_count=%s\n' "$autoflow_token_usage_count"
 printf 'autoflow_token_report_count=%s\n' "$autoflow_token_report_count"
+printf 'autoflow_avg_lead_seconds=%s\n' "$autoflow_avg_lead_seconds"
+printf 'autoflow_avg_active_seconds=%s\n' "$autoflow_avg_active_seconds"
+printf 'autoflow_avg_ticks_per_done_ticket=%s\n' "$autoflow_avg_ticks_per_done_ticket"
+printf 'autoflow_duration_total_24h_seconds=%s\n' "$autoflow_duration_total_24h_seconds"
 printf 'completion_rate_percent=%s\n' "$completion_rate_percent"

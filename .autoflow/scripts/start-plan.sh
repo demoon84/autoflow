@@ -204,6 +204,137 @@ select_inbox_order() {
   return 1
 }
 
+# PRD 211 (2026-05-09): retry order (`order_*_retry_*.md`) 전용 selector. retry
+# order 는 이미 backlog 의 PRD 와 묶여 있어 새 PRD 작성을 트리거하지 않고
+# 기존 흐름을 그대로 따른다. 따라서 backlog-first 정책에서 제외하고 별도
+# branch 에서 처리하기 위해 선별한다.
+order_file_is_retry() {
+  case "$(basename "${1:-}")" in
+    order_*_retry_*.md) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+select_inbox_retry_order() {
+  local order_file id
+
+  while IFS= read -r order_file; do
+    [ -n "$order_file" ] || continue
+    order_file_is_retry "$order_file" || continue
+    order_file_is_actionable "$order_file" || continue
+    id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
+    [ -n "$id" ] || continue
+    printf '%s' "$order_file"
+    return 0
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'order_*_retry_*.md')
+
+  return 1
+}
+
+# PRD 211: non-retry inbox order 만 선별. retry 는 별도 branch 에서 처리한다.
+select_inbox_nonretry_order() {
+  local order_file id
+
+  if [ -n "$requested_normalized" ]; then
+    order_file="${BOARD_ROOT}/tickets/inbox/order_${requested_normalized}.md"
+    if order_file_is_actionable "$order_file" && ! order_file_is_retry "$order_file"; then
+      printf '%s' "$order_file"
+      return 0
+    fi
+    return 1
+  fi
+
+  while IFS= read -r order_file; do
+    [ -n "$order_file" ] || continue
+    order_file_is_retry "$order_file" && continue
+    order_file_is_actionable "$order_file" || continue
+    id="$(extract_numeric_id "$order_file" 2>/dev/null || true)"
+    [ -n "$id" ] || continue
+    printf '%s' "$order_file"
+    return 0
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inbox" 'order_*.md')
+
+  return 1
+}
+
+# PRD 211: backlog-first starvation guard. 같은 backlog PRD 가 연속으로
+# 선택만 되고 promote 가 안 되면 (vague-done-when, needs_user_secret,
+# project_already_has_ticket 같은 block 으로) inbox order 가 영원히
+# starve 한다. 같은 spec 이 AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT (기본 3)
+# tick 연속 stuck 이면 그 tick 한정으로 inbox fallback. fire 되면 카운터를
+# 0 으로 reset 해서 다음 라운드에 다시 backlog 우선이 회복된다.
+backlog_first_stuck_state_path() {
+  printf '%s/runners/state/backlog-first-stuck.json' "$BOARD_ROOT"
+}
+
+backlog_first_stuck_count() {
+  local spec_file="$1"
+  local state_file basename count
+  state_file="$(backlog_first_stuck_state_path)"
+  basename="$(basename "$spec_file")"
+  count=0
+  if [ -f "$state_file" ] && command -v jq >/dev/null 2>&1; then
+    count="$(jq -r --arg key "$basename" '.[$key] // 0' "$state_file" 2>/dev/null || printf '0')"
+    case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  fi
+  printf '%s' "$count"
+}
+
+backlog_first_stuck_set() {
+  local spec_file="$1"
+  local new_count="$2"
+  local state_file basename tmp
+  state_file="$(backlog_first_stuck_state_path)"
+  basename="$(basename "$spec_file")"
+  mkdir -p "$(dirname "$state_file")"
+  if ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+  tmp="${state_file}.tmp.$$"
+  if [ -f "$state_file" ]; then
+    if ! jq --arg key "$basename" --argjson v "$new_count" '. + {($key): $v}' "$state_file" > "$tmp" 2>/dev/null; then
+      printf '{"%s": %s}\n' "$basename" "$new_count" > "$tmp"
+    fi
+  else
+    printf '{"%s": %s}\n' "$basename" "$new_count" > "$tmp"
+  fi
+  mv "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp"
+}
+
+backlog_first_stuck_clear() {
+  local spec_file="$1"
+  local state_file basename tmp
+  state_file="$(backlog_first_stuck_state_path)"
+  basename="$(basename "$spec_file")"
+  if [ ! -f "$state_file" ] || ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+  tmp="${state_file}.tmp.$$"
+  if jq --arg key "$basename" 'del(.[$key])' "$state_file" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$state_file" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# Returns 0 if guard fires (fallback to inbox), 1 otherwise. Side effect:
+# bumps the counter for this spec, or resets it on guard fire so the next
+# round starts fresh.
+backlog_first_stuck_check_and_bump() {
+  local spec_file="$1"
+  local limit count
+  limit="${AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT:-3}"
+  case "$limit" in ''|*[!0-9]*) limit=3 ;; esac
+  count="$(backlog_first_stuck_count "$spec_file")"
+  count=$((count + 1))
+  if [ "$count" -ge "$limit" ]; then
+    backlog_first_stuck_clear "$spec_file"
+    return 0
+  fi
+  backlog_first_stuck_set "$spec_file" "$count"
+  return 1
+}
+
 select_order_generated_spec() {
   local spec_file order_ref
 
@@ -822,24 +953,70 @@ if [ -n "$spec_file" ]; then
   promote_spec_to_todo_or_exit "$spec_file"
 fi
 
-# --- Branch 2: quick order inbox -> AI-generated PRD/todo ---------------------
-order_file="$(select_inbox_order || true)"
-if [ -n "$order_file" ]; then
+# --- Branch 2.0: retry inbox order -> AI-generated PRD/todo (same flow) ------
+# PRD 211 (2026-05-09): retry order 는 기존 PRD 와 묶여 있어 backlog-first
+# 정책에서 제외하고 항상 우선 처리한다. 이렇게 해야 backlog 의 같은 PRD 와
+# 자연스럽게 매칭된다.
+retry_order_file="$(select_inbox_retry_order || true)"
+if [ -n "$retry_order_file" ]; then
   printf 'status=ok\n'
-  printf 'source=order-inbox\n'
-  printf 'order=%s\n' "$order_file"
-  printf 'order_id=%s\n' "$(extract_numeric_id "$order_file")"
+  printf 'source=order-inbox-retry\n'
+  printf 'order=%s\n' "$retry_order_file"
+  printf 'order_id=%s\n' "$(extract_numeric_id "$retry_order_file")"
   emit_replan_skipped_metadata "$replan_skipped_file"
   printf 'board_root=%s\n' "$BOARD_ROOT"
   printf 'project_root=%s\n' "$PROJECT_ROOT"
-  printf 'next_action=Promote order %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$order_file")"
+  printf 'next_action=Promote retry order %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$retry_order_file")"
   exit 0
 fi
 
-# --- Branch 3: backlog PRD -> todo ticket -------------------------------------
+# --- Branch 2.5: priority + category policy (PRD 211, 2026-05-09) ------------
+# 같은 priority 안에서 backlog PRD → todo 변환을 새 PRD 작성보다 우선한다.
+# priority 가 다르면 priority enum (rule 20) 이 카테고리(backlog vs inbox)
+# 보다 우선. 같은 backlog PRD 가 AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT 회 연속
+# stuck 이면 그 tick 한정으로 inbox fallback (starvation guard).
+nonretry_order_file="$(select_inbox_nonretry_order || true)"
 spec_file="$(select_populated_spec || true)"
-if [ -n "$spec_file" ]; then
+
+policy_pick=""
+if [ -n "$nonretry_order_file" ] || [ -n "$spec_file" ]; then
+  if [ -z "$nonretry_order_file" ]; then
+    policy_pick="spec"
+  elif [ -z "$spec_file" ]; then
+    policy_pick="order"
+  else
+    order_rank="$(extract_priority_rank "$nonretry_order_file" 2>/dev/null || printf '2')"
+    spec_rank="$(extract_priority_rank "$spec_file" 2>/dev/null || printf '2')"
+    case "$order_rank" in ''|*[!0-9]*) order_rank=2 ;; esac
+    case "$spec_rank" in ''|*[!0-9]*) spec_rank=2 ;; esac
+    if [ "$order_rank" -lt "$spec_rank" ]; then
+      policy_pick="order"
+    elif [ "$spec_rank" -lt "$order_rank" ]; then
+      policy_pick="spec"
+    else
+      if backlog_first_stuck_check_and_bump "$spec_file"; then
+        policy_pick="order"
+      else
+        policy_pick="spec"
+      fi
+    fi
+  fi
+fi
+
+if [ "$policy_pick" = "spec" ] && [ -n "$spec_file" ]; then
   promote_spec_to_todo_or_exit "$spec_file"
+fi
+
+if [ "$policy_pick" = "order" ] && [ -n "$nonretry_order_file" ]; then
+  printf 'status=ok\n'
+  printf 'source=order-inbox\n'
+  printf 'order=%s\n' "$nonretry_order_file"
+  printf 'order_id=%s\n' "$(extract_numeric_id "$nonretry_order_file")"
+  emit_replan_skipped_metadata "$replan_skipped_file"
+  printf 'board_root=%s\n' "$BOARD_ROOT"
+  printf 'project_root=%s\n' "$PROJECT_ROOT"
+  printf 'next_action=Promote order %s per plan-to-ticket-agent.md, then rerun start-plan.\n' "$(board_relative_path "$nonretry_order_file")"
+  exit 0
 fi
 
 # --- Branch 4: legacy plan/ fallback -----------------------------------------

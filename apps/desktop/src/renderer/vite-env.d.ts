@@ -103,6 +103,10 @@ type AutoflowMetricSnapshot = {
   autoflow_code_volume_count: number;
   autoflow_token_usage_count: number;
   autoflow_token_report_count: number;
+  autoflow_avg_lead_seconds: number;
+  autoflow_avg_active_seconds: number;
+  autoflow_avg_ticks_per_done_ticket: number;
+  autoflow_duration_total_24h_seconds: number;
   completion_rate_percent: number;
 };
 

@@ -103,6 +103,7 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 9. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.
 10. After all candidates have tickets, let the runtime archive the plan and PRD.
 11. Check backlog again only after the active plan is finished.
+12. Cross-category priority (PRD 211, 2026-05-09): when the dispatcher must choose between an inbox order and a populated backlog PRD in the same tick, prefer the backlog PRD → todo conversion within the same priority class; let `priority` (`critical` > `high` > `normal` > `low`) override category when they differ. retry orders (`order_*_retry_*.md`) and express orders skip this policy and run in their own branches. Treat repeated backlog stalls (`AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT`, default 3) as the trigger for a one-tick inbox fallback so new orders never starve.
 
 ## Stop Condition
 

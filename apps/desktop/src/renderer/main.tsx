@@ -544,13 +544,35 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
   const metrics = board?.metrics || {};
 
   return {
+    doneTicketCount: statusNumber(metrics, "ticket_done_count"),
     codeFilesChangedCount: statusNumber(metrics, "autoflow_code_files_changed_count"),
     codeInsertionsCount: statusNumber(metrics, "autoflow_code_insertions_count"),
     codeDeletionsCount: statusNumber(metrics, "autoflow_code_deletions_count"),
     codeVolumeCount: statusNumber(metrics, "autoflow_code_volume_count"),
     tokenUsageCount: statusNumber(metrics, "autoflow_token_usage_count"),
-    tokenReportCount: statusNumber(metrics, "autoflow_token_report_count")
+    tokenReportCount: statusNumber(metrics, "autoflow_token_report_count"),
+    avgLeadSeconds: statusNumber(metrics, "autoflow_avg_lead_seconds"),
+    avgActiveSeconds: statusNumber(metrics, "autoflow_avg_active_seconds"),
+    avgTicksPerDoneTicket: statusNumber(metrics, "autoflow_avg_ticks_per_done_ticket"),
+    durationTotal24hSeconds: statusNumber(metrics, "autoflow_duration_total_24h_seconds")
   };
+}
+
+function formatDurationMetric(seconds: number) {
+  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+  const formatter = new Intl.NumberFormat("ko-KR", {
+    maximumFractionDigits: safeSeconds < 60 ? 0 : 1
+  });
+
+  if (safeSeconds < 60) {
+    return `${formatter.format(Math.round(safeSeconds))}초`;
+  }
+
+  if (safeSeconds < 3600) {
+    return `${formatter.format(safeSeconds / 60)}분`;
+  }
+
+  return `${formatter.format(safeSeconds / 3600)}h`;
 }
 
 function formatPercentValue(value: number) {
@@ -4106,6 +4128,10 @@ function currentMetricSnapshot(
     autoflow_code_volume_count: statusNumber(metrics, "autoflow_code_volume_count"),
     autoflow_token_usage_count: statusNumber(metrics, "autoflow_token_usage_count"),
     autoflow_token_report_count: statusNumber(metrics, "autoflow_token_report_count"),
+    autoflow_avg_lead_seconds: statusNumber(metrics, "autoflow_avg_lead_seconds"),
+    autoflow_avg_active_seconds: statusNumber(metrics, "autoflow_avg_active_seconds"),
+    autoflow_avg_ticks_per_done_ticket: statusNumber(metrics, "autoflow_avg_ticks_per_done_ticket"),
+    autoflow_duration_total_24h_seconds: statusNumber(metrics, "autoflow_duration_total_24h_seconds"),
     ...{
       verifier_pass_count: statusNumber(metrics, "verifier_pass_count"),
       verifier_fail_count: statusNumber(metrics, "verifier_fail_count"),
@@ -4372,18 +4398,24 @@ function CompletionTrend({ snapshots }: { snapshots: AutoflowMetricSnapshot[] })
 
 function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
   const {
+    doneTicketCount,
     codeFilesChangedCount,
     codeInsertionsCount,
     codeDeletionsCount,
     codeVolumeCount,
     tokenUsageCount,
-    tokenReportCount
+    tokenReportCount,
+    avgLeadSeconds,
+    avgActiveSeconds,
+    avgTicksPerDoneTicket,
+    durationTotal24hSeconds
   } = getWorkflowMetricCounts(board);
   const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
+  const hasTimeData = avgLeadSeconds > 0 || avgActiveSeconds > 0 || durationTotal24hSeconds > 0;
 
   return (
     <div className="workflow-stat-strip" aria-label="작업 흐름 지표 요약">
-      <div className="workflow-stat-row workflow-stat-row-2">
+      <div className="workflow-stat-row workflow-stat-row-3">
         <div className="workflow-stat-cell">
           <Badge variant="secondary">변경 코드량</Badge>
           <strong>{formatCount(codeVolumeCount)}줄</strong>
@@ -4396,6 +4428,18 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
           <Badge variant="secondary">토큰 사용량</Badge>
           <strong>{formatCount(tokenUsageCount)}</strong>
           <span>실행 로그 {formatCount(tokenReportCount)}개</span>
+        </div>
+        <div
+          className={`workflow-stat-cell${hasTimeData ? "" : " workflow-stat-cell-muted"}`}
+          title={`n=${formatCount(doneTicketCount)}, lead=${formatCount(avgLeadSeconds)}s, active=${formatCount(
+            avgActiveSeconds
+          )}s, ticks=${avgTicksPerDoneTicket.toFixed(1)}, 24h=${formatCount(durationTotal24hSeconds)}s`}
+        >
+          <Badge variant="secondary">처리 시간</Badge>
+          <strong>{formatDurationMetric(avgActiveSeconds)}</strong>
+          <span>
+            lead {formatDurationMetric(avgLeadSeconds)} / 누적 24h {formatDurationMetric(durationTotal24hSeconds)}
+          </span>
         </div>
       </div>
     </div>
