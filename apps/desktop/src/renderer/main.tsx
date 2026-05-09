@@ -6218,7 +6218,7 @@ function LiveTerminalView({
       overviewRuler: { width: 1 },
       theme: {
         background: "#2d323b",
-        foreground: "#cccccc",
+        foreground: "#d6d8de",
         cursor: "#aeafad",
         cursorAccent: "#2d323b",
         selectionBackground: "rgba(255, 255, 255, 0.2)",
@@ -6226,7 +6226,25 @@ function LiveTerminalView({
         scrollbarSliderBackground: "rgba(121, 121, 121, 0.36)",
         scrollbarSliderHoverBackground: "rgba(121, 121, 121, 0.52)",
         scrollbarSliderActiveBackground: "rgba(121, 121, 121, 0.64)",
-        overviewRulerBorder: "#2d323b"
+        overviewRulerBorder: "#2d323b",
+        // 컬러감 — 이전 autoflow palette (vibrant ANSI). vibe-terminal 의
+        // 무채 톤만으로는 log 가 단조로워 사용자가 색 구분 어려움.
+        black: "#3a3f4a",
+        red: "#ef4444",
+        green: "#22c55e",
+        yellow: "#eab308",
+        blue: "#3b82f6",
+        magenta: "#a855f7",
+        cyan: "#06b6d4",
+        white: "#d6d8de",
+        brightBlack: "#6b7280",
+        brightRed: "#f87171",
+        brightGreen: "#4ade80",
+        brightYellow: "#facc15",
+        brightBlue: "#60a5fa",
+        brightMagenta: "#c084fc",
+        brightCyan: "#22d3ee",
+        brightWhite: "#f3f4f6"
       }
     });
     const fitAddon = new FitAddon();
