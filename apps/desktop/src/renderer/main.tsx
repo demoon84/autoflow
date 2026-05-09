@@ -6118,22 +6118,103 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
   return { elapsed: formatRunnerElapsedSeconds(elapsedSec), tokens };
 }
 
-function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
+// PRD-less manual_order_196: stdout log 을 1.5s 마다 폴링해서 byte/s 실시간
+// 신호로 환산. board snapshot 의 latency 보다 짧고, stdout 이 자라는 게 곧
+// AI 가 살아있다는 직접 증거.
+function useLiveStdoutRate(
+  runner: AutoflowRunner,
+  options?: { projectRoot: string; boardDirName: string }
+): { bytesPerSec: number; totalBytes: number } | null {
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const isRunning = stateStatus === "running" && Boolean(runner.pid);
+  const stdoutPath = runner.lastStdoutLog || "";
+  const projectRoot = options?.projectRoot || "";
+  const boardDirName = options?.boardDirName || "";
+
+  const [sample, setSample] = React.useState<{ size: number; ts: number } | null>(null);
+  const [rate, setRate] = React.useState(0);
+  const lastSampleRef = React.useRef<{ size: number; ts: number } | null>(null);
+
+  React.useEffect(() => {
+    if (!isRunning || !stdoutPath || !projectRoot || !boardDirName) return;
+    let cancelled = false;
+    const fetchOnce = async () => {
+      try {
+        const result = await window.autoflow.readBoardFile({
+          projectRoot,
+          boardDirName,
+          filePath: stdoutPath
+        });
+        if (cancelled || !result.ok) return;
+        const now = Date.now();
+        const size = typeof result.size === "number" ? result.size : 0;
+        const prev = lastSampleRef.current;
+        if (prev && now > prev.ts) {
+          const dt = (now - prev.ts) / 1000;
+          const dSize = Math.max(0, size - prev.size);
+          setRate(dt > 0 ? dSize / dt : 0);
+        }
+        lastSampleRef.current = { size, ts: now };
+        setSample({ size, ts: now });
+      } catch {
+        // best-effort polling — swallow read errors
+      }
+    };
+    void fetchOnce();
+    const handle = window.setInterval(fetchOnce, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [isRunning, stdoutPath, projectRoot, boardDirName]);
+
+  if (!isRunning || !sample) return null;
+  return { bytesPerSec: rate, totalBytes: sample.size };
+}
+
+function formatRate(bytesPerSec: number): string {
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return "0 B/s";
+  if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
+  const kb = bytesPerSec / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB/s`;
+  return `${(kb / 1024).toFixed(2)} MB/s`;
+}
+
+function RunnerActivityFooter({
+  runner,
+  options
+}: {
+  runner: AutoflowRunner;
+  options?: { projectRoot: string; boardDirName: string };
+}) {
   const activity = useRunnerActivity(runner);
   // useCountUp 은 항상 호출 (Rules of Hooks). activity 가 null 일 때도 0 으로
   // 안전하게 동작. IPC 가 token 값을 갱신하면 600ms 동안 부드럽게 카운트.
   const animatedTokens = useCountUp(activity?.tokens ?? 0);
+  const liveRate = useLiveStdoutRate(runner, options);
   if (!activity) return null;
+  const rateLabel = liveRate ? formatRate(liveRate.bytesPerSec) : "";
   return (
     <footer
       className="ai-conversation-panel-activity"
       aria-live="polite"
-      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
+      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}${liveRate ? ` · stdout 누적 ${liveRate.totalBytes.toLocaleString()} B` : ""}`}
     >
       <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
       <span>{activity.elapsed}</span>
       <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
       <span>↓ {animatedTokens.toLocaleString()} tokens</span>
+      {rateLabel ? (
+        <>
+          <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
+          <span className="ai-conversation-panel-activity-rate">{rateLabel}</span>
+        </>
+      ) : null}
+      <span className="ai-conversation-panel-activity-thinking" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </span>
     </footer>
   );
 }
@@ -6839,7 +6920,7 @@ function AiProgressRow({
       {showConversation ? (
         <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
       ) : null}
-      <RunnerActivityFooter runner={runner} />
+      <RunnerActivityFooter runner={runner} options={options} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
           className="workflow-pin-layer-panel workflow-pin-layer-default"
