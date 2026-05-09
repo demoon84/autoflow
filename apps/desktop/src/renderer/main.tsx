@@ -6489,11 +6489,6 @@ function RunnerActivityFooter({
           <span className="ai-conversation-panel-activity-rate">{rateLabel}</span>
         </>
       ) : null}
-      <span className="ai-conversation-panel-activity-thinking" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
-      </span>
     </footer>
   );
 }
