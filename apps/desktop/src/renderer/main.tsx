@@ -6321,12 +6321,13 @@ function LiveTerminalView({
 
   return (
     <div
-      ref={hostRef}
       className="live-terminal-view"
       role="log"
       aria-live="polite"
       aria-label={ariaLabel}
-    />
+    >
+      <div ref={hostRef} className="live-terminal-view-host" />
+    </div>
   );
 }
 
