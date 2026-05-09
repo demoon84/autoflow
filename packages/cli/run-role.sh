@@ -4281,6 +4281,54 @@ runner_claude_supports_stream() {
   return 1
 }
 
+runner_codex_json_mode_active() {
+  # AUTOFLOW_CODEX_JSON=0 disables --json streaming (rollback escape hatch).
+  [ "${AUTOFLOW_CODEX_JSON:-1}" != "0" ]
+}
+
+runner_codex_extract_last_message() {
+  # Read codex --json JSONL from $1 and write the last agent_message text into
+  # $2. Scans item.completed events for type=agent_message text.
+  local stdout_file="$1"
+  local dest_file="$2"
+
+  [ -n "$dest_file" ] || return 1
+  [ -f "$stdout_file" ] || return 1
+  [ -s "$stdout_file" ] || return 1
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$stdout_file" "$dest_file" <<'PY' && return 0
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+last_text = None
+try:
+    with open(src, "r", encoding="utf-8", errors="replace") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") == "item.completed":
+                item = obj.get("item") or {}
+                if item.get("type") == "agent_message":
+                    text = item.get("text")
+                    if isinstance(text, str) and text:
+                        last_text = text
+except Exception:
+    pass
+if last_text:
+    with open(dst, "w", encoding="utf-8") as fh:
+        fh.write(last_text)
+    sys.exit(0)
+sys.exit(1)
+PY
+  fi
+  return 1
+}
+
 runner_claude_base_cmd() {
   # Populate the named array variable with the canonical claude invocation.
   # Defaults to stream-json + include-partial-messages so JSONL flushes per
@@ -4480,16 +4528,24 @@ run_default_adapter_command() {
       if [ -n "$reasoning" ]; then
         cmd+=(-c "model_reasoning_effort=\"${reasoning}\"")
       fi
-      # Capture only the AI's final user-facing message into a sidecar file so
-      # the runner can surface it as a clean narrative; the raw transcript
-      # (tool calls / apply_patch diffs / shell command lines) stays in
-      # adapter_stdout for debug-only viewing.
-      if [ -n "${adapter_last_message:-}" ]; then
-        cmd+=(-o "$adapter_last_message")
+      if runner_codex_json_mode_active; then
+        # --json streams JSONL per event (item.completed, turn.completed, …)
+        # so live_stdout.log grows during the tick. PTY wrapper not needed.
+        cmd+=(--json)
+      else
+        # legacy text mode: capture final message via -o sidecar
+        if [ -n "${adapter_last_message:-}" ]; then
+          cmd+=(-o "$adapter_last_message")
+        fi
       fi
       cmd+=(-)
       command_summary="$(command_summary_from_array "${cmd[@]}")"
-      if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v script >/dev/null 2>&1 && [ "${AUTOFLOW_CODEX_DISABLE_PTY:-}" != "1" ]; then
+      if runner_codex_json_mode_active; then
+        run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
+          run_adapter_with_identity "${cmd[@]}" \
+          < "$prompt_file" > "$adapter_stdout" 2> "$adapter_stderr"
+        command_exit=$?
+      elif [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && command -v script >/dev/null 2>&1 && [ "${AUTOFLOW_CODEX_DISABLE_PTY:-}" != "1" ]; then
         codex_wrapper="$(mktemp "${TMPDIR:-/tmp}/autoflow-codex-wrapper.XXXXXX")"
         {
           printf '#!/usr/bin/env bash\n'
@@ -4510,6 +4566,11 @@ run_default_adapter_command() {
         command_exit=$?
       fi
       filter_codex_guard_warnings_in_place "$adapter_stdout"
+      if runner_codex_json_mode_active && [ -n "${adapter_last_message:-}" ] && [ -s "$adapter_stdout" ]; then
+        if ! runner_codex_extract_last_message "$adapter_stdout" "$adapter_last_message"; then
+          cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
+        fi
+      fi
       return "$command_exit"
       ;;
     claude)

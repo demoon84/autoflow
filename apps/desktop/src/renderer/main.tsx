@@ -6715,6 +6715,76 @@ function summarizeClaudeJsonLines(content: string): string {
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
+function summarizeCodexJsonLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return "";
+  }
+  if (!parsed || typeof parsed !== "object") return "";
+  const obj = parsed as Record<string, unknown>;
+  const type = String(obj.type || "");
+
+  if (type === "item.completed") {
+    const item = obj.item && typeof obj.item === "object" ? (obj.item as Record<string, unknown>) : {};
+    const itemType = String(item.type || "");
+    if (itemType === "agent_message") {
+      return typeof item.text === "string" ? item.text : "";
+    }
+    if (itemType === "command_execution") {
+      const cmd = previewText(item.command, 60);
+      const out = previewText(item.aggregated_output, 80);
+      if (out) return `[result] ${out}`;
+      return `[tool] ${cmd}`.trim();
+    }
+    if (itemType === "local_shell_call") {
+      const cmd = previewText(item.command, 60);
+      return `[tool] ${cmd}`.trim();
+    }
+    if (itemType === "local_shell_call_output") {
+      const out = previewText(item.output, 80);
+      return `[result] ${out}`.trim();
+    }
+    return "";
+  }
+
+  if (type === "item.started") {
+    const item = obj.item && typeof obj.item === "object" ? (obj.item as Record<string, unknown>) : {};
+    const itemType = String(item.type || "");
+    if (itemType === "command_execution" || itemType === "local_shell_call") {
+      const cmd = previewText(item.command, 60);
+      return `[tool] ${cmd}`.trim();
+    }
+    return "";
+  }
+
+  if (type === "turn.completed") {
+    return "[done]";
+  }
+
+  return "";
+}
+
+function summarizeCodexJsonLines(content: string): string {
+  if (!content.trim()) return "";
+  const lines = content
+    .split(/\r?\n/)
+    .map(summarizeCodexJsonLine)
+    .filter(Boolean);
+  return lines.length ? `${lines.join("\n")}\n` : "";
+}
+
+function detectAndSummarizeJsonLines(content: string): string {
+  const firstLine = content.trimStart().slice(0, 200);
+  if (firstLine.includes('"thread.started"') || firstLine.includes('"turn.started"') || firstLine.includes('"item.')) {
+    return summarizeCodexJsonLines(content) || content;
+  }
+  return summarizeClaudeJsonLines(content) || content;
+}
+
 function useLiveStdoutText(
   runner: AutoflowRunner,
   options?: { projectRoot: string; boardDirName: string },
@@ -6745,7 +6815,7 @@ function useLiveStdoutText(
         });
         if (cancelled) return;
         const raw = result.ok ? result.content || "" : "";
-        setText(summarizeClaudeJsonLines(raw) || raw);
+        setText(detectAndSummarizeJsonLines(raw));
       } catch {
         // best-effort polling — swallow read errors
       }

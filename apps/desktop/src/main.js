@@ -2272,17 +2272,48 @@ function isClaudeStreamJsonLine(line) {
   return /"type"\s*:\s*"(?:system|assistant|user|stream_event|result)"/.test(trimmed);
 }
 
+function codexStreamJsonUsageFromLine(line) {
+  // Codex `--json` emits one JSON object per line. The final
+  // `{"type":"turn.completed","usage":{...}}` carries the authoritative
+  // cumulative usage for the whole turn.
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return 0;
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return 0;
+  }
+  if (!parsed || typeof parsed !== "object") return 0;
+  if (parsed.type !== "turn.completed") return 0;
+  const usage = parsed.usage;
+  if (!usage || typeof usage !== "object") return 0;
+  const input = positiveIntegerValue(usage.input_tokens);
+  const output = positiveIntegerValue(usage.output_tokens);
+  const cacheRead = positiveIntegerValue(usage.cached_input_tokens);
+  const reasoning = positiveIntegerValue(usage.reasoning_output_tokens);
+  return input + output + cacheRead + reasoning;
+}
+
+function isCodexStreamJsonLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return false;
+  return /"type"\s*:\s*"(?:thread\.started|turn\.started|turn\.completed|item\.started|item\.completed)"/.test(trimmed);
+}
+
 function parseTokenUsageChunk(chunk, prior) {
   const combined = (prior?.tail || "") + chunk;
   const lines = combined.split("\n");
   const newTail = lines.pop() ?? "";
-  // prior.tokens = regex-sum + claudeFinalUsage. We resume the regex sum on
-  // its own track so a newer `result` event simply replaces the prior claude
-  // usage without double-counting on top of the previous regex-sum total.
+  // prior.tokens = regex-sum + claudeFinalUsage + codexFinalUsage. We track
+  // claude and codex final-event usage separately so a newer event replaces
+  // the prior value instead of summing with the regex-sum total.
   const priorClaudeFinalUsage = prior?.claudeFinalUsage ?? 0;
-  let total = (prior?.tokens ?? 0) - priorClaudeFinalUsage;
+  const priorCodexFinalUsage = prior?.codexFinalUsage ?? 0;
+  let total = (prior?.tokens ?? 0) - priorClaudeFinalUsage - priorCodexFinalUsage;
   if (total < 0) total = 0;
   let claudeFinalUsage = priorClaudeFinalUsage;
+  let codexFinalUsage = priorCodexFinalUsage;
   let waiting = prior?.waiting ?? false;
 
   for (const rawLine of lines) {
@@ -2300,6 +2331,14 @@ function parseTokenUsageChunk(chunk, prior) {
     if (isClaudeStreamJsonLine(clean)) {
       // Skip intermediate stream-json events to avoid double-counting partial
       // `usage` fields that already roll up into the final result event.
+      continue;
+    }
+    const codexTurnUsage = codexStreamJsonUsageFromLine(clean);
+    if (codexTurnUsage > 0) {
+      codexFinalUsage = codexTurnUsage;
+      continue;
+    }
+    if (isCodexStreamJsonLine(clean)) {
       continue;
     }
     const lower = clean.toLowerCase();
@@ -2357,7 +2396,7 @@ function parseTokenUsageChunk(chunk, prior) {
     }
   }
 
-  return { tokens: total + claudeFinalUsage, waiting, tail: newTail, claudeFinalUsage };
+  return { tokens: total + claudeFinalUsage + codexFinalUsage, waiting, tail: newTail, claudeFinalUsage, codexFinalUsage };
 }
 
 function timestampFromRunnerLogName(value) {
