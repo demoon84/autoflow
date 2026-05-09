@@ -591,6 +591,88 @@ wiki_query_score_chunks() {
   done < "$candidates"
 }
 
+wiki_query_fts5_db_path() {
+  local board_root="$1"
+  printf '%s/runners/state/wiki-search.db' "$board_root"
+}
+
+wiki_query_fts5_available() {
+  local board_root="$1"
+  local db
+  db="$(wiki_query_fts5_db_path "$board_root")"
+  [ -f "$db" ] || return 1
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  sqlite3 :memory: "CREATE VIRTUAL TABLE t USING fts5(x);" >/dev/null 2>&1 || return 1
+  return 0
+}
+
+wiki_query_fts5_build_match() {
+  local terms_file="$1"
+  local match=""
+  local term tok cleaned
+  while IFS= read -r term; do
+    [ -n "$term" ] || continue
+    for tok in $term; do
+      cleaned="$(printf '%s' "$tok" | tr -d '"\\'\''*:^()[]{}<>')"
+      [ -n "$cleaned" ] || continue
+      if [ -n "$match" ]; then
+        match="$match OR \"$cleaned\""
+      else
+        match="\"$cleaned\""
+      fi
+    done
+  done < "$terms_file"
+  printf '%s' "$match"
+}
+
+wiki_query_score_chunks_fts5() {
+  local board_root="$1"
+  local terms_file="$2"
+  local scores="$3"
+  local limit="$4"
+  local db match_expr fetch listing path cidx cstart cend raw_score
+  local int_score chunk_file body_tmp
+
+  db="$(wiki_query_fts5_db_path "$board_root")"
+  match_expr="$(wiki_query_fts5_build_match "$terms_file")"
+  if [ -z "$match_expr" ]; then
+    return 0
+  fi
+
+  fetch=$((limit * 4))
+  [ "$fetch" -ge 20 ] || fetch=20
+
+  listing="$(autoflow_mktemp)"
+  if ! sqlite3 -separator $'\t' "$db" \
+      "SELECT printf('%.6f', -bm25(wiki_search)), path, chunk_idx, chunk_start_line, chunk_end_line FROM wiki_search WHERE wiki_search MATCH '${match_expr//\'/\'\'}' ORDER BY bm25(wiki_search) LIMIT $fetch;" \
+      > "$listing" 2>/dev/null; then
+    return 1
+  fi
+
+  [ -s "$listing" ] || return 0
+
+  while IFS=$'\t' read -r raw_score path cidx cstart cend; do
+    [ -n "$path" ] || continue
+    [ -n "$cidx" ] || continue
+    int_score="$(awk -v s="$raw_score" 'BEGIN { v = s * 1000000; if (v < 1) v = 1; printf("%d", v) }')"
+    chunk_file="$(autoflow_mktemp)"
+    body_tmp="$(autoflow_mktemp)"
+    if ! sqlite3 "$db" \
+        "SELECT body FROM wiki_search WHERE chunk_idx=$cidx AND path='${path//\'/\'\'}' LIMIT 1;" \
+        > "$body_tmp" 2>/dev/null; then
+      continue
+    fi
+    if [ -s "$body_tmp" ]; then
+      cp "$body_tmp" "$chunk_file"
+    else
+      : > "$chunk_file"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$int_score" "$path" "$cstart" "$cend" "$chunk_file" >> "$scores"
+  done < "$listing"
+
+  return 0
+}
+
 hash_stream() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 | awk '{ print $1 }'
@@ -2097,8 +2179,20 @@ run_query() {
 
   chunk_lines="$(wiki_query_rag_chunk_lines)"
   chunk_overlap="$(wiki_query_rag_chunk_overlap "$chunk_lines")"
+  local rag_backend="chunk_grep"
   if [ "$rag_mode" = "true" ]; then
-    wiki_query_score_chunks "$candidates" "$terms_file" "$scores" "$chunk_lines" "$chunk_overlap"
+    if wiki_query_fts5_available "$board_root"; then
+      if wiki_query_score_chunks_fts5 "$board_root" "$terms_file" "$scores" "$limit"; then
+        rag_backend="fts5_bm25"
+      else
+        rag_backend="chunk_grep"
+        printf 'wiki-fts5: query failed, falling back to chunk grep\n' >&2
+        wiki_query_score_chunks "$candidates" "$terms_file" "$scores" "$chunk_lines" "$chunk_overlap"
+      fi
+    else
+      printf 'wiki-fts5: index unavailable, falling back to chunk grep\n' >&2
+      wiki_query_score_chunks "$candidates" "$terms_file" "$scores" "$chunk_lines" "$chunk_overlap"
+    fi
   else
     while IFS= read -r file; do
       [ -n "$file" ] || continue
@@ -2127,6 +2221,7 @@ run_query() {
   printf 'with_snippets=%s\n' "$with_snippets"
   if [ "$rag_mode" = "true" ]; then
     printf 'retrieval_mode=rag\n'
+    printf 'rag_backend=%s\n' "$rag_backend"
     printf 'rag_chunk_lines=%s\n' "$chunk_lines"
     printf 'rag_chunk_overlap=%s\n' "$chunk_overlap"
   else

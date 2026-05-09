@@ -33,3 +33,11 @@ apps/desktop/build/
 .autoflow/state.db
 .autoflow/state.db-shm
 .autoflow/state.db-wal
+
+# PRD 223 (2026-05-09): wiki RAG sqlite FTS5 + BM25 phase 1 index. Already
+# covered by .autoflow/runners/state/ above; listed explicitly so future
+# refactors that narrow the state/ ignore don't accidentally start tracking
+# the index file.
+.autoflow/runners/state/wiki-search.db
+.autoflow/runners/state/wiki-search.db-shm
+.autoflow/runners/state/wiki-search.db-wal
