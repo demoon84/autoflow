@@ -6516,9 +6516,15 @@ function RunnerActivityFooter({
   const animatedTokens = useCountUp(activity.tokens);
   const liveRate = useLiveStdoutRate(runner, options);
   const rateLabel = liveRate ? formatRate(liveRate.bytesPerSec) : "0 B/s";
+  // PRD 224: running 이 아닐 때 activity footer 를 dimmed 로 표시해 사용자가
+  // "지금 살아 있는지" 신호를 시각적으로 구분할 수 있게 한다. 토큰 누적 값은
+  // stopped 후에도 정보 가치가 있어 숨기지 않고 dim 처리.
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const isRunning = stateStatus === "running" && Boolean(runner.pid);
   return (
     <footer
       className="ai-conversation-panel-activity"
+      data-running={isRunning ? "true" : "false"}
       aria-live="polite"
       title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}${liveRate ? ` · stdout 누적 ${liveRate.totalBytes.toLocaleString()} B` : ""}`}
     >

@@ -3201,6 +3201,10 @@ pre {
   z-index: 1;
 }
 
+.ai-conversation-panel-activity[data-running="false"] {
+  opacity: 0.55;
+}
+
 .ai-conversation-panel-activity-icon {
   width: 12px;
   height: 12px;
