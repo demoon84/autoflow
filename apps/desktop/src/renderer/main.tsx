@@ -6370,7 +6370,7 @@ function RunnerActivityFooter({
       aria-live="polite"
       title={`누적 토큰 ${activity.tokens.toLocaleString()}`}
     >
-      <span>↓ {animatedTokens.toLocaleString()} tokens</span>
+      <span>{animatedTokens.toLocaleString()} tokens</span>
     </footer>
   );
 }
