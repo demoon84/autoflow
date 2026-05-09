@@ -38,20 +38,6 @@ Usage:
   autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy role-pipeline
   autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # legacy
   autoflow run self-improve [project-root] [board-dir-name] [--runner runner-id] [--dry-run]  # trial (disabled by default)
-  autoflow skill create [project-root] [board-dir-name] --from-ticket <ticket-id-or-path> [--name <slug>] [--category <name>] [--pattern-type <type>]
-  autoflow skill list [project-root] [board-dir-name] [--no-archived]
-  autoflow skill view [project-root] [board-dir-name] <name|category/name|skill_NNN>
-  autoflow skill validate [project-root] [board-dir-name] <name|category/name|skill_NNN>
-  autoflow skill archive [project-root] [board-dir-name] <name|category/name>
-  autoflow skill match [project-root] [board-dir-name] --keywords "<text>" [--limit N]
-  autoflow skill update-stats [project-root] [board-dir-name] <name|category/name|skill_NNN> --result pass|fail
-  autoflow skill scan [project-root] [board-dir-name] <skill-file> [--source <text>]
-  autoflow skill import [project-root] [board-dir-name] <agentskills-url-or-file> [--name <slug>] [--category <name>]
-  autoflow skill export [project-root] [board-dir-name] <name|category/name|skill_NNN>
-  autoflow skill cluster-detect [project-root] [board-dir-name] [--threshold-percent N]
-  autoflow skill meta-extract [project-root] [board-dir-name] --cluster <skill,skill,...> [--name <slug>] [--category <name>]
-  autoflow skill apply [project-root] [board-dir-name] --keywords "<text>" [--deterministic]
-  autoflow skill metrics [project-root] [board-dir-name] [--window-days N]
   autoflow wiki update [project-root] [board-dir-name] [--dry-run]
   autoflow wiki lint [project-root] [board-dir-name] [--semantic] [--runner RUNNER_ID]
   autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--synth] [--runner RUNNER_ID]
@@ -88,7 +74,6 @@ Examples:
   autoflow run ticket /path/to/project --runner worker
   autoflow monitor scan /path/to/project
   autoflow run wiki /path/to/project --runner wiki
-  autoflow skill create /path/to/project .autoflow --from-ticket tickets/done/prd_151/tickets_150.md
   autoflow run coordinator /path/to/project --runner coordinator-1   # legacy
   autoflow run self-improve /path/to/project --runner self-improve-1  # trial
   autoflow wiki update /path/to/project
@@ -270,10 +255,6 @@ case "$cmd" in
   run)
     shift || true
     exec "${REPO_ROOT}/packages/cli/run-role.sh" "$@"
-    ;;
-  skill)
-    shift || true
-    exec "${REPO_ROOT}/packages/cli/skill-project.sh" "$@"
     ;;
   wiki)
     shift || true

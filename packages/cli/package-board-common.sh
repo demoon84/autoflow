@@ -245,8 +245,6 @@ template_text|wiki/decisions/README.md|wiki/decisions/README.md
 template_text|wiki/features/README.md|wiki/features/README.md
 template_text|wiki/architecture/README.md|wiki/architecture/README.md
 template_text|wiki/learnings/README.md|wiki/learnings/README.md
-template_text|wiki/skills/README.md|wiki/skills/README.md
-template_text|wiki/skills-local/README.md|wiki/skills-local/README.md
 template_text|state-schema/v1.sql|state-schema/v1.sql
 runtime_executable|common.sh|scripts/common.sh
 runtime_executable|runner-common.sh|scripts/runner-common.sh
@@ -295,8 +293,6 @@ wiki/decisions
 wiki/features
 wiki/architecture
 wiki/learnings
-wiki/skills
-wiki/skills-local
 logs
 logs/hooks
 tickets

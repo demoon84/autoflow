@@ -179,7 +179,11 @@ collect_files() {
 
   : > "$destination"
   if [ -d "$root" ]; then
-    find "$root" -type f -name "$pattern" | sort > "$destination"
+    if sort -V </dev/null >/dev/null 2>&1; then
+      find "$root" -type f -name "$pattern" | sort -rV > "$destination"
+    else
+      find "$root" -type f -name "$pattern" | sort -r > "$destination"
+    fi
   fi
 }
 
@@ -2162,6 +2166,7 @@ run_query() {
     printf 'result.%d.title=%s\n' "$emitted" "$title"
     printf 'result.%d.kind=%s\n' "$emitted" "$kind"
     printf 'result.%d.score=%s\n' "$emitted" "$score"
+
     if [ "$rag_mode" = "true" ]; then
       printf 'result.%d.chunk_start_line=%s\n' "$emitted" "$chunk_start"
       printf 'result.%d.chunk_end_line=%s\n' "$emitted" "$chunk_end"
@@ -2257,8 +2262,8 @@ run_update() {
   reject_files="$(autoflow_mktemp)"
   verifier_logs="$(autoflow_mktemp)"
   handoff_files="$(autoflow_mktemp)"
-  collect_files "${board_root}/tickets/done" 'tickets_[0-9][0-9][0-9].md' "$done_tickets"
-  collect_files "${board_root}/tickets" 'reject_[0-9][0-9][0-9].md' "$reject_files"
+  collect_files "${board_root}/tickets/done" '*[0-9]*.md' "$done_tickets"
+  collect_files "${board_root}/tickets" 'reject*.md' "$reject_files"
   collect_files "${board_root}/logs" '*.md' "$verifier_logs"
   collect_files "${board_root}/conversations" 'spec-handoff.md' "$handoff_files"
 
