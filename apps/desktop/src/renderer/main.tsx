@@ -6480,6 +6480,117 @@ function LiveTerminalView({
   );
 }
 
+// PRD 228: claude --output-format stream-json --include-partial-messages 일 때
+// live_stdout.log 는 JSONL — 사용자에게는 한 줄 요약만 보여주고 raw JSON 은
+// 노출하지 않는다 (memory rule: terminal UI 에는 AI 가 하는 일만).
+function summarizeJsonlLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return "";
+  if (trimmed[0] !== "{") return trimmed;
+  let event: any;
+  try {
+    event = JSON.parse(trimmed);
+  } catch {
+    return "";
+  }
+  const t = event && typeof event === "object" ? event.type : "";
+  if (t === "system") {
+    const subtype = event.subtype || "";
+    if (subtype === "init") {
+      const tools = Array.isArray(event.tools) ? event.tools.length : 0;
+      const model = event.model || "";
+      return `[init] tools=${tools} model=${model}`;
+    }
+    if (subtype === "status") return `[status] ${event.status || ""}`;
+    if (subtype === "post_turn_summary") {
+      const detail = event.status_detail || "";
+      return detail ? `[turn] ${detail}` : "";
+    }
+    return "";
+  }
+  if (t === "assistant") {
+    const msg = event.message || {};
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    const out: string[] = [];
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type === "text" && typeof block.text === "string") {
+        out.push(block.text);
+      } else if (block.type === "tool_use") {
+        const name = block.name || "tool";
+        const input = block.input ? JSON.stringify(block.input) : "";
+        const preview = input.length > 80 ? `${input.slice(0, 80)}...` : input;
+        out.push(`[tool] ${name} ${preview}`);
+      } else if (block.type === "thinking" && typeof block.thinking === "string") {
+        const preview =
+          block.thinking.length > 120 ? `${block.thinking.slice(0, 120)}...` : block.thinking;
+        out.push(`[thinking] ${preview}`);
+      }
+    }
+    return out.filter(Boolean).join("\n");
+  }
+  if (t === "user") {
+    const msg = event.message || {};
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    const out: string[] = [];
+    for (const block of content) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type === "tool_result") {
+        const raw = typeof block.content === "string" ? block.content : JSON.stringify(block.content || "");
+        const preview = raw.length > 100 ? `${raw.slice(0, 100)}...` : raw;
+        out.push(`[result] ${preview}`);
+      }
+    }
+    return out.filter(Boolean).join("\n");
+  }
+  if (t === "stream_event") {
+    const ev = event.event || {};
+    if (ev.type === "content_block_delta") {
+      const delta = ev.delta || {};
+      if (delta.type === "text_delta" && typeof delta.text === "string") return delta.text;
+      if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") return "";
+    }
+    if (ev.type === "content_block_start") {
+      const cb = ev.content_block || {};
+      if (cb.type === "tool_use") return `[tool] ${cb.name || ""} starting`;
+      return "";
+    }
+    return "";
+  }
+  if (t === "result") {
+    const subtype = event.subtype || "";
+    const dur = event.duration_ms ? `${Math.round(event.duration_ms / 1000)}s` : "";
+    const usage = event.usage || {};
+    const tokens =
+      (usage.input_tokens || 0) + (usage.output_tokens || 0)
+        ? `tokens=${(usage.input_tokens || 0) + (usage.output_tokens || 0)}`
+        : "";
+    const result =
+      typeof event.result === "string"
+        ? event.result.length > 80
+          ? `${event.result.slice(0, 80)}...`
+          : event.result
+        : "";
+    const parts = [`[done]`, subtype, dur, tokens, result].filter(Boolean);
+    return parts.join(" ");
+  }
+  if (t === "rate_limit_event") {
+    const info = event.rate_limit_info || {};
+    return `[rate_limit] ${info.status || ""}`;
+  }
+  return "";
+}
+
+function summarizeJsonlText(jsonl: string): string {
+  if (!jsonl) return "";
+  const out: string[] = [];
+  for (const line of jsonl.split("\n")) {
+    const summary = summarizeJsonlLine(line);
+    if (summary) out.push(summary);
+  }
+  return out.join("\n");
+}
+
 function useLiveStdoutText(
   runner: AutoflowRunner,
   options?: { projectRoot: string; boardDirName: string },
@@ -6487,32 +6598,52 @@ function useLiveStdoutText(
 ): string {
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
-  // persistent <runner_id>.log 만 사용. state 의 last_stdout_log 는 tick 시작
-  // 직후 0 byte 인 stale 파일을 가리키는 경우가 잦아 신뢰성 낮음. persistent
-  // log 는 runner loop 가 매 tick 마다 append 하므로 항상 살아 있음.
-  const stdoutPath =
+  // PRD 228: persistent `<runner_id>.log` (event metadata) + active
+  // live_stdout.log (claude stream-json JSONL) 두 stream 을 merge.
+  // persistent 가 항상 살아 있어 base layer 역할, 활성 live_stdout.log 가
+  // 있으면 JSONL 을 사람이 읽는 한 줄 요약으로 변환해 뒤에 붙인다.
+  const persistentPath =
     runner.id && projectRoot && boardDirName
       ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
       : "";
+  const livePath = runner.lastStdoutLog || "";
 
   const [text, setText] = React.useState("");
 
   React.useEffect(() => {
-    if (!stdoutPath || !projectRoot || !boardDirName) {
+    if (!persistentPath || !projectRoot || !boardDirName) {
       setText("");
       return;
     }
     let cancelled = false;
     const fetchOnce = async () => {
       try {
-        const result = await window.autoflow.tailBoardFile({
+        const persistentPromise = window.autoflow.tailBoardFile({
           projectRoot,
           boardDirName,
-          filePath: stdoutPath,
+          filePath: persistentPath,
           maxBytes
         });
-        if (cancelled || !result.ok) return;
-        setText(result.content || "");
+        const livePromise = livePath
+          ? window.autoflow.tailBoardFile({
+              projectRoot,
+              boardDirName,
+              filePath: livePath,
+              maxBytes
+            })
+          : Promise.resolve({ ok: false, content: "" } as any);
+        const [persistentResult, liveResult] = await Promise.all([persistentPromise, livePromise]);
+        if (cancelled) return;
+        const eventLog = persistentResult.ok ? persistentResult.content || "" : "";
+        const rawLive = liveResult.ok ? liveResult.content || "" : "";
+        // JSONL 이면 한 줄 요약, 아니면 raw 그대로 (legacy text 모드 fallback).
+        let liveStream = "";
+        if (rawLive) {
+          const firstLine = rawLive.split("\n", 1)[0]?.trim() || "";
+          liveStream = firstLine.startsWith('{"type":') ? summarizeJsonlText(rawLive) : rawLive;
+        }
+        const merged = liveStream ? `${eventLog.replace(/\n+$/, "")}\n${liveStream}` : eventLog;
+        setText(merged);
       } catch {
         // best-effort polling — swallow read errors
       }
@@ -6523,7 +6654,7 @@ function useLiveStdoutText(
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [stdoutPath, projectRoot, boardDirName, maxBytes]);
+  }, [persistentPath, livePath, projectRoot, boardDirName, maxBytes]);
 
   return text;
 }
