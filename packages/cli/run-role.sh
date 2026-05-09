@@ -1139,12 +1139,23 @@ telemetry_adapter_token_usage() {
   fi
 
   if [ "$adapter_exit" -ne 127 ] && [ $((token_input + token_output)) -le 0 ]; then
-    estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
-    estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
-    [ "$estimated_input" -gt 0 ] || estimated_input=1
-    [ "$estimated_output" -gt 0 ] || estimated_output=1
-    token_input="$estimated_input"
-    token_output="$estimated_output"
+    # When the adapter stdout is JSONL (claude stream-json or codex --json),
+    # the only authoritative token usage is the final result/turn.completed
+    # event. If it never arrived (early termination, partial output), the
+    # `byte_count / 4` heuristic is wildly inaccurate because JSONL byte size
+    # is dominated by event wrappers, not model tokens. Record 0 in that case
+    # so the dashboard does not inflate with phantom estimates.
+    if [ -f "$stdout_file" ] && head -c 1 "$stdout_file" 2>/dev/null | grep -q '^{'; then
+      token_input=0
+      token_output=0
+    else
+      estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
+      estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
+      [ "$estimated_input" -gt 0 ] || estimated_input=1
+      [ "$estimated_output" -gt 0 ] || estimated_output=1
+      token_input="$estimated_input"
+      token_output="$estimated_output"
+    fi
   fi
 
   printf '%s %s\n' "$token_input" "$token_output"

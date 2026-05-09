@@ -1141,12 +1141,17 @@ telemetry_adapter_token_usage() {
   fi
 
   if [ "$adapter_exit" -ne 127 ] && [ $((token_input + token_output)) -le 0 ]; then
-    estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
-    estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
-    [ "$estimated_input" -gt 0 ] || estimated_input=1
-    [ "$estimated_output" -gt 0 ] || estimated_output=1
-    token_input="$estimated_input"
-    token_output="$estimated_output"
+    if [ -f "$stdout_file" ] && head -c 1 "$stdout_file" 2>/dev/null | grep -q '^{'; then
+      token_input=0
+      token_output=0
+    else
+      estimated_input="$(telemetry_estimated_tokens_for_file "$prompt_file")"
+      estimated_output="$(( $(telemetry_estimated_tokens_for_file "$stdout_file") + $(telemetry_estimated_tokens_for_file "$stderr_file") ))"
+      [ "$estimated_input" -gt 0 ] || estimated_input=1
+      [ "$estimated_output" -gt 0 ] || estimated_output=1
+      token_input="$estimated_input"
+      token_output="$estimated_output"
+    fi
   fi
 
   printf '%s %s\n' "$token_input" "$token_output"
