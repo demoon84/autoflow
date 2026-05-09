@@ -519,28 +519,28 @@ count_autoflow_token_metrics() {
                     success: ((.runner_status_24h[$runner_id].success // 0) + 1),
                     failure: (.runner_status_24h[$runner_id].failure // 0),
                     timeout: (.runner_status_24h[$runner_id].timeout // 0),
-                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts elif $row_ts > .runner_status_24h[$runner_id].last_activity then $row_ts else .runner_status_24h[$runner_id].last_activity end)
                   }
                 elif ($result == "failure" or $result == "failed" or $result == "error") then
                   .runner_status_24h[$runner_id] = {
                     success: (.runner_status_24h[$runner_id].success // 0),
                     failure: ((.runner_status_24h[$runner_id].failure // 0) + 1),
                     timeout: (.runner_status_24h[$runner_id].timeout // 0),
-                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts elif $row_ts > .runner_status_24h[$runner_id].last_activity then $row_ts else .runner_status_24h[$runner_id].last_activity end)
                   }
                 elif $result == "timeout" then
                   .runner_status_24h[$runner_id] = {
                     success: (.runner_status_24h[$runner_id].success // 0),
                     failure: (.runner_status_24h[$runner_id].failure // 0),
                     timeout: ((.runner_status_24h[$runner_id].timeout // 0) + 1),
-                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts elif $row_ts > .runner_status_24h[$runner_id].last_activity then $row_ts else .runner_status_24h[$runner_id].last_activity end)
                   }
                 else
                   .runner_status_24h[$runner_id] = {
                     success: (.runner_status_24h[$runner_id].success // 0),
                     failure: (.runner_status_24h[$runner_id].failure // 0),
                     timeout: (.runner_status_24h[$runner_id].timeout // 0),
-                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts else (.runner_status_24h[$runner_id].last_activity | max($row_ts)) end)
+                    last_activity: (if .runner_status_24h[$runner_id].last_activity == null then $row_ts elif $row_ts > .runner_status_24h[$runner_id].last_activity then $row_ts else .runner_status_24h[$runner_id].last_activity end)
                   }
                 end
             else
@@ -571,8 +571,8 @@ count_autoflow_token_metrics() {
   token_result="$(
     printf '%s' "$token_result_json" | jq -r '"\(.usage) \(.reports) \(.usage_1h) \(.usage_24h) \(.input_1h) \(.output_1h) \(.cache_1h) \(.input_24h) \(.output_24h) \(.cache_24h)"'
   )"
-  autoflow_token_usage_count="${token_result%% *}"
-  autoflow_token_report_count="${token_result##* }"
+  autoflow_token_usage_count="$(printf '%s' "$token_result" | awk '{print $1}')"
+  autoflow_token_report_count="$(printf '%s' "$token_result" | awk '{print $2}')"
   autoflow_token_usage_1h_count="$(printf '%s' "$token_result" | awk '{print $3}')"
   autoflow_token_usage_24h_count="$(printf '%s' "$token_result" | awk '{print $4}')"
   autoflow_token_input_1h_count="$(printf '%s' "$token_result" | awk '{print $5}')"
@@ -584,19 +584,16 @@ count_autoflow_token_metrics() {
   autoflow_token_runner_breakdown_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.runner_24h')"
   autoflow_token_model_breakdown_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.model_24h')"
   autoflow_runner_status_24h_json="$(printf '%s' "$token_result_json" | jq -c '
-    to_entries
-    | map({key: .key, value: .value})
-    | from_entries
+    .runner_status_24h // {}
     | with_entries(
         .value |= {
-          success: (.value.success // 0),
-          failure: (.value.failure // 0),
-          timeout: (.value.timeout // 0),
-          last_activity: (.value.last_activity // 0)
+          success: (.success // 0),
+          failure: (.failure // 0),
+          timeout: (.timeout // 0),
+          last_activity: (.last_activity // 0)
         }
       )
-    | @json
-  ')"
+  ' 2>/dev/null || printf '{}')"
   case "$autoflow_token_usage_count" in
     ''|*[!0-9]*) autoflow_token_usage_count=0 ;;
   esac
@@ -1006,8 +1003,24 @@ autoflow_code_files_changed_count=0
 autoflow_code_insertions_count=0
 autoflow_code_deletions_count=0
 autoflow_code_volume_count=0
+autoflow_code_net_delta_count=0
 autoflow_token_usage_count=0
 autoflow_token_report_count=0
+autoflow_token_usage_1h_count=0
+autoflow_token_usage_24h_count=0
+autoflow_token_input_1h_count=0
+autoflow_token_output_1h_count=0
+autoflow_token_cache_1h_count=0
+autoflow_token_input_24h_count=0
+autoflow_token_output_24h_count=0
+autoflow_token_cache_24h_count=0
+autoflow_token_runner_breakdown_24h_json=""
+autoflow_token_model_breakdown_24h_json=""
+autoflow_runner_status_24h_json=""
+autoflow_commit_count_24h=0
+autoflow_commit_auto_count_24h=0
+autoflow_commit_manual_count_24h=0
+autoflow_commit_recent_subjects_json=""
 metrics_heavy_cache_status="unknown"
 metrics_heavy_cache_age_seconds=999999
 metrics_heavy_cache_file=""
