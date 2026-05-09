@@ -6975,6 +6975,10 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (isFailLike) return "reject";
 
+  // worker idle signal must beat the generic adapter_finish=ok heuristic —
+  // an idle tick that found no todo also emits adapter_finish status=ok.
+  if (hasWorkerIdleSignal && !hasActiveTicket) return "todo";
+
   if (/\bcommitted_via_inline_merge\b|event=adapter_finish.*status=ok/.test(stateText)) return "done";
 
   if (hasActiveTicket) {
