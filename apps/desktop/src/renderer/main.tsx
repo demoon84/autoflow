@@ -6702,10 +6702,6 @@ function useLiveStdoutText(
 ): string {
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
-  const logsRoot =
-    runner.id && projectRoot && boardDirName
-      ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
-      : "";
   const activeStdoutPath =
     runner.lastStdoutLog && /_live_stdout\.log$/.test(runner.lastStdoutLog)
       ? runner.lastStdoutLog
@@ -6714,37 +6710,22 @@ function useLiveStdoutText(
   const [text, setText] = React.useState("");
 
   React.useEffect(() => {
-    if (!logsRoot || !projectRoot || !boardDirName) {
+    if (!activeStdoutPath || !projectRoot || !boardDirName) {
       setText("");
       return;
     }
     let cancelled = false;
     const fetchOnce = async () => {
       try {
-        const persistent = await window.autoflow.tailBoardFile({
+        const result = await window.autoflow.tailBoardFile({
           projectRoot,
           boardDirName,
-          filePath: logsRoot,
+          filePath: activeStdoutPath,
           maxBytes
         });
         if (cancelled) return;
-        let merged = persistent.ok ? persistent.content || "" : "";
-        if (activeStdoutPath) {
-          const active = await window.autoflow.tailBoardFile({
-            projectRoot,
-            boardDirName,
-            filePath: activeStdoutPath,
-            maxBytes
-          });
-          if (cancelled) return;
-          if (active.ok && active.content) {
-            const summarized = summarizeClaudeJsonLines(active.content);
-            if (summarized) {
-              merged = `${merged}${merged.endsWith("\n") || !merged ? "" : "\n"}${summarized}`;
-            }
-          }
-        }
-        setText(merged);
+        const raw = result.ok ? result.content || "" : "";
+        setText(summarizeClaudeJsonLines(raw) || raw);
       } catch {
         // best-effort polling — swallow read errors
       }
@@ -6755,7 +6736,7 @@ function useLiveStdoutText(
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [logsRoot, activeStdoutPath, projectRoot, boardDirName, maxBytes]);
+  }, [activeStdoutPath, projectRoot, boardDirName, maxBytes]);
 
   return text;
 }
