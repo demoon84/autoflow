@@ -1,0 +1,119 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-205
+- PRD Key: prd_206
+- Plan Candidate: Plan AI handoff from tickets/backlog/prd_206.md
+- Title: AI Autoflow 그리드 1줄 3칸 고정
+- Priority: normal
+- Stage: done
+- Change Type: code
+- AI: worker
+- Claimed By: worker
+- Execution AI: worker
+- Verifier AI:
+- Last Updated: 2026-05-09T05:02:50Z
+
+## Goal
+
+- 이번 작업의 목표: AI Autoflow 탭(`settings-content-progress`) 의 worker 그리드(`.ai-progress-board`) 를 viewport 폭과 무관하게 항상 1줄 3칸으로 고정한다. 좁은 폭에서 2열/1열로 떨어뜨리던 `.ai-progress-board` 미디어쿼리 분기 3곳을 제거하고, 같은 미디어쿼리 블록의 다른 셀렉터 규칙은 그대로 둔다.
+
+## References
+
+- PRD: tickets/backlog/prd_206.md
+- Feature Spec:
+- Plan Source: plan-ai-direct
+
+## Reference Notes
+
+- Project Note: [[prd_206]]
+- Plan Note:
+- Ticket Note: [[Todo-205]]
+
+## Allowed Paths
+
+- `apps/desktop/src/renderer/styles.css`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205`
+- Branch: autoflow/tickets_205
+- Base Commit: 705da4c2b885e6ccdb9910276351cc946736b9eb
+- Worktree Commit: 
+- Integration Status: already_in_project_root
+
+## Goal Runtime
+- Status: complete
+- Started At: 2026-05-09T04:57:02Z
+- Started Epoch: 1778302622
+- Updated At: 2026-05-09T05:02:51Z
+- Tick Count: 3
+- Time Used Seconds: 349
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: complete
+- Last Progress Fingerprint: 1111242257
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] `apps/desktop/src/renderer/styles.css` 의 `@media (max-width: 1279px)` 블록(line ~4009 ~4048) 안의 `.ai-progress-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }` 규칙이 제거된다. 같은 블록의 다른 셀렉터(`.ai-progress-row-top`, `.ai-progress-actions`, `.ai-progress-config*`, `.ai-progress-current*`)는 그대로 유지된다.
+- [x] `apps/desktop/src/renderer/styles.css` 의 `@media (max-width: 980px)` 블록(line ~6275 ~6403) 안의 `.ai-progress-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }` 규칙이 제거된다. 같은 블록의 `.workspace-layout`, `.dashboard-area`, `.settings-page`, `.settings-nav*`, `.settings-content*`, `.metrics-strip`, `.workflow-stat-*`, `.report-*`, `.ai-progress-row-worker`, `.ai-progress-row-top`, `.ai-progress-track`, `.ai-progress-current*`, `.ai-progress-config-with-agent`, `.settings-content .runner-grid` 규칙은 그대로 유지된다.
+- [x] `apps/desktop/src/renderer/styles.css` 의 `@media (max-width: 720px)` 블록(line ~6405 ~6427) 안의 `.ai-progress-board { grid-template-columns: minmax(0, 1fr); }` 규칙이 제거된다. 같은 블록의 `.ai-progress-row-top`, `.ai-progress-actions`, `.ai-progress-config*` 규칙은 그대로 유지된다.
+- [x] `.ai-progress-board` 베이스 규칙(line ~2383)의 `grid-template-columns: repeat(3, minmax(0, 1fr));` 는 그대로 유지된다. 새로운 미디어쿼리/viewport 단위/`auto-fit` 분기를 추가하지 않는다.
+- [x] `.runner-grid` 관련 미디어쿼리(line ~6255 의 `.runner-grid`, line ~6400 의 `.settings-content .runner-grid`)는 변경하지 않는다 — 이번 작업은 AI Autoflow 탭의 `.ai-progress-board` 만 다룬다.
+- [x] `git diff -- apps/desktop/src/renderer/styles.css` 의 변경이 위 세 미디어쿼리 안의 `.ai-progress-board` 규칙 제거 외 다른 셀렉터에는 닿지 않는다.
+- [x] `npm run desktop:check` from `/Users/demoon2016/Documents/project/autoflow` exits 0.
+
+## Next Action
+- Complete: the inline merge finalizer integrated the AI-merged ticket, archived evidence, and prepared the local completion commit.
+
+## Resume Context
+
+- 현재 상태 요약: Plan AI 가 inbox order `order_184.md` 를 `prd_206` 으로 승격하고 그 자리에서 todo ticket 을 만든 직후.
+- 직전 작업: planner 가 `apps/desktop/src/renderer/styles.css` 안의 `.ai-progress-board` / `.runner-grid` 미디어쿼리 위치를 식별했고, AI Autoflow 탭에 한정해 `.ai-progress-board` 분기 3곳만 제거하면 1줄 3칸 고정이 회복됨을 확인했다.
+- 재개 시 먼저 볼 것: `tickets/backlog/prd_206.md`, `tickets/inbox/order_184.md`, `apps/desktop/src/renderer/styles.css` line 2383, 4010, 6255, 6366, 6400, 6406.
+
+## Notes
+
+- Created by planner (Plan AI) from tickets/inbox/order_184.md at 2026-05-09T04:55:00Z.
+- Order intent: AI Autoflow 화면이 반응형으로 줄어들지 않고 항상 1줄 3칸이어야 함. viewport 가 좁아지면 카드가 그대로 좁아지거나 가로 스크롤이 살아도 무방.
+- Wiki 컨텍스트: `bin/autoflow wiki query` CLI 가 현재 단계에서 인자 파싱 오류로 결과를 내지 못해 wiki 결과는 비어 있다. 대체 컨텍스트로 order 노트의 commit 힌트(`187d97c ai-progress-board grid: 2 → 3 columns`, `436b9ba runner grid: 1 row × 3 columns layout`) 와 `apps/desktop/src/renderer/styles.css` 의 직접 grep 결과를 사용했다.
+- Scope guard: `.runner-grid` 미디어쿼리(line 6255, 6400) 는 AI Autoflow 탭 worker 카드 영역과 별개라 이번 ticket 에서 건드리지 않는다. order 본문도 `settings-content-progress` 영역만 적용하라고 명시.
+- Sanity gate: zero-diff 가 아니어야 하며(.ai-progress-board 분기 3곳 삭제 = 충분한 line 수 변화) Done When 7 항목 모두 [x] 가 돼야 finalizer pass 통과.
+
+- Runtime hydrated worktree dependency at 2026-05-09T04:57:01Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-05-09T04:57:01Z: linked node_modules -> /Users/demoon2016/Documents/project/autoflow/node_modules
+- AI worker prepared todo at 2026-05-09T04:57:00Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205
+- Mini-plan (worker, 2026-05-09): `autoflow wiki query --term "AI Autoflow 그리드 ai-progress-board settings-content-progress styles.css" --rag` 를 실행해 prior context 를 조회한 뒤, `apps/desktop/src/renderer/styles.css` 에서 `.ai-progress-board` base 3열 규칙은 유지하고 `@media (max-width: 1279px)`, `@media (max-width: 980px)`, `@media (max-width: 720px)` 안의 `.ai-progress-board` override 세 블록만 제거한다. `.runner-grid` 와 같은 블록의 다른 selector 는 변경하지 않고, diff 확인 후 `npm run desktop:check` 를 worktree 및 PROJECT_ROOT 병합 후 재실행한다.
+- AI worker prepared resume at 2026-05-09T04:57:27Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205
+- Wiki context pass (worker, 2026-05-09): `autoflow wiki query --term "AI Autoflow 그리드 ai-progress-board settings-content-progress styles.css" --rag` 및 축약 term `ai-progress-board` 조회를 시도했으나 결과 출력 없이 종료/무응답이라 추가 prior finding 은 없었다. 기존 planner note 의 wiki CLI 이슈 기록과 PRD `prd_206` 의 scope guard 를 따랐다.
+- Verification evidence (worktree): `git diff -- apps/desktop/src/renderer/styles.css` 는 `@media (max-width: 1279px)`, `@media (max-width: 980px)`, `@media (max-width: 720px)` 안의 `.ai-progress-board` grid-template override 세 블록 삭제만 포함했다. base `.ai-progress-board` 는 line 2383 에 남고, `.runner-grid` media query 규칙도 유지됐다.
+- Verification evidence (worktree): `npm run desktop:check` from `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205` exited 0 at 2026-05-09; vite build completed with the existing chunk-size warning only.
+- Merge evidence (PROJECT_ROOT): `/Users/demoon2016/Documents/project/autoflow/apps/desktop/src/renderer/styles.css` 에 동일한 세 `.ai-progress-board` override 삭제를 수동 반영했다. 루트 파일에는 선행 dirty 변경이 같은 파일에 있어, finalizer 전 티켓 변경만 커밋되도록 루트 파일을 worktree 결과와 일시적으로 맞춘 뒤 완료 처리하고 선행 dirty 내용을 복원한다.
+- Verification evidence (PROJECT_ROOT): `npm run desktop:check` from `/Users/demoon2016/Documents/project/autoflow` exited 0 at 2026-05-09; vite build completed with the existing chunk-size warning only.
+- Queued without worktree commit at 2026-05-09T05:01:04Z: PROJECT_ROOT already matches the ticket worktree for all Allowed Paths with code changes.
+- Impl AI worker marked verification pass at 2026-05-09T05:01:04Z; runtime finalizer will not perform merge operations.
+- Coordinator post-merge cleanup at 2026-05-09T05:01:05Z: worktree_dirty_already_in_project_root=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205 removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205 deleted_branch=autoflow/tickets_205.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-09T05:01:05Z.
+- Coordinator post-merge cleanup at 2026-05-09T05:02:50Z: worktree_already_absent=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_205 branch_already_absent=autoflow/tickets_205.
+- Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-09T05:02:50Z.
+## Verification
+- Run file: `tickets/done/prd_206/verify_205.md`
+- Log file: `logs/verifier_205_20260509_050251Z_pass.md`
+- Result: passed
+
+## Result
+
+- Summary: AI Autoflow worker grid media-query overrides removed
+- Remaining risk: Project root had pre-existing unrelated dirty changes in the same stylesheet; this ticket isolates only the three `.ai-progress-board` override removals and restores the pre-existing dirty file content after finalization.
