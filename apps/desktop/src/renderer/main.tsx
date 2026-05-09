@@ -6320,6 +6320,12 @@ function liveTerminalThemeFor(mode: "light" | "dark") {
   return mode === "dark" ? LIVE_TERMINAL_THEME_DARK : LIVE_TERMINAL_THEME_LIGHT;
 }
 
+// vibe-terminal appendOutput 패턴: PTY 는 작은 chunk 가 실시간 도착하므로
+// 자연스럽게 타이핑처럼 보임. 우리는 1초 polling 으로 큰 diff 가 한 번에
+// 오므로, 8자씩 16ms 간격 drip 으로 같은 느낌을 시뮬레이션한다.
+const TYPEWRITER_CHARS_PER_TICK = 8;
+const TYPEWRITER_INTERVAL_MS = 16;
+
 function LiveTerminalView({
   text,
   ariaLabel
@@ -6335,6 +6341,9 @@ function LiveTerminalView({
   const pendingChunksRef = React.useRef<string[]>([]);
   const flushRafRef = React.useRef<number | null>(null);
   const writtenLengthRef = React.useRef(0);
+  // typewriter drip refs
+  const typewriterQueueRef = React.useRef<string>("");
+  const typewriterTimerRef = React.useRef<number | null>(null);
   const [terminalThemeMode, setTerminalThemeMode] = React.useState<
     "light" | "dark"
   >(() => readDocumentThemeMode());
@@ -6425,6 +6434,11 @@ function LiveTerminalView({
         cancelAnimationFrame(flushRafRef.current);
         flushRafRef.current = null;
       }
+      if (typewriterTimerRef.current !== null) {
+        window.clearInterval(typewriterTimerRef.current);
+        typewriterTimerRef.current = null;
+      }
+      typewriterQueueRef.current = "";
       pendingChunksRef.current = [];
       terminal.dispose();
       terminalRef.current = null;
@@ -6441,33 +6455,52 @@ function LiveTerminalView({
     terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
   }, [terminalThemeMode]);
 
-  // vibe-terminal scheduleTerminalOutputFlush (renderer.js line 3716) 패턴:
-  // pendingChunks 배열에 push 한 뒤 RAF 안에서 join → terminal.write. 매
-  // text 갱신마다 즉시 write 하지 않고 한 프레임에 모아 흘려 깜빡임 감소.
+  // vibe-terminal appendOutput → scheduleTerminalOutputFlush 패턴 참고.
+  // PTY 는 작은 chunk 가 실시간 도착해 자연스럽게 타이핑처럼 보이지만,
+  // 우리는 1초 polling 으로 큰 diff 가 한 번에 온다. 새 텍스트는
+  // typewriterQueue 에 push 하고 16ms 간격 setInterval 로 8자씩 drip 해
+  // 같은 타이핑 느낌을 만든다. reset(idle→active / 내용 교체) 은 즉시 처리.
   React.useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
     const written = writtenLengthRef.current;
-    if (text.length === written) return;
-    let chunk: string;
-    if (text.length < written || !text.startsWith(text.slice(0, written))) {
+    // reset: 텍스트 축소(idle clear) 또는 내용 완전 교체
+    if (text.length < written || (written > 0 && !text.startsWith(text.slice(0, written)))) {
+      if (typewriterTimerRef.current !== null) {
+        window.clearInterval(typewriterTimerRef.current);
+        typewriterTimerRef.current = null;
+      }
+      typewriterQueueRef.current = "";
+      pendingChunksRef.current = [];
       terminal.reset();
-      chunk = text;
-    } else {
-      chunk = text.slice(written);
+      writtenLengthRef.current = 0;
+      if (!text) return;
+      // reset 후 초기 내용은 즉시 한 번에 쓴다 (역사 재생 불필요)
+      writtenLengthRef.current = text.length;
+      try { terminal.write(colorizeLogChunk(text)); } catch { /* disposed */ }
+      return;
     }
+    // 증분 append: 새 chars 를 typewriter queue 에 추가
+    if (text.length === written) return;
+    const chunk = text.slice(written);
     writtenLengthRef.current = text.length;
     if (!chunk) return;
-    pendingChunksRef.current.push(colorizeLogChunk(chunk));
-    if (flushRafRef.current !== null) return;
-    flushRafRef.current = requestAnimationFrame(() => {
-      flushRafRef.current = null;
+    typewriterQueueRef.current += colorizeLogChunk(chunk);
+    // drip timer 이미 실행 중이면 그대로 계속
+    if (typewriterTimerRef.current !== null) return;
+    typewriterTimerRef.current = window.setInterval(() => {
       const term = terminalRef.current;
-      const buffered = pendingChunksRef.current;
-      pendingChunksRef.current = [];
-      if (!term || buffered.length === 0) return;
-      term.write(buffered.join(""));
-    });
+      const q = typewriterQueueRef.current;
+      if (!term || !q) {
+        if (typewriterTimerRef.current !== null) {
+          window.clearInterval(typewriterTimerRef.current);
+          typewriterTimerRef.current = null;
+        }
+        return;
+      }
+      typewriterQueueRef.current = q.slice(TYPEWRITER_CHARS_PER_TICK);
+      try { term.write(q.slice(0, TYPEWRITER_CHARS_PER_TICK)); } catch { /* disposed */ }
+    }, TYPEWRITER_INTERVAL_MS);
   }, [text]);
 
   return (
