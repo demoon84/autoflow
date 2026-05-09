@@ -3608,7 +3608,39 @@ function highlightLogText(text: string) {
 const TYPING_TAIL_CHARS = 400;
 const TYPING_TICK_MS = 16;
 const TYPING_TARGET_CATCHUP_MS = 1500;
+const TYPING_FLUSH_THRESHOLD_CHARS = 800;
 const conversationStreamTextCache = new Map<string, string>();
+
+function usePrefersReducedMotion() {
+  const getMatch = () =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
+  const [reduced, setReduced] = React.useState<boolean>(getMatch);
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handler = () => setReduced(mq.matches);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, []);
+  return reduced;
+}
+
+function clampToCompleteAnsiBoundary(text: string, length: number) {
+  if (length >= text.length) return length;
+  const escIdx = text.lastIndexOf("\x1B", length - 1);
+  if (escIdx === -1) return length;
+  for (let i = escIdx + 1; i < length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code >= 0x40 && code <= 0x7e) return length;
+  }
+  return escIdx;
+}
 
 function initialConversationDisplayLength(streamId: string, text: string) {
   const cachedText = conversationStreamTextCache.get(streamId) || "";
@@ -3648,11 +3680,12 @@ function ConversationStream({
   text: string;
   streamId?: string;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const ref = React.useRef<HTMLDivElement | null>(null);
   const streamIdRef = React.useRef(streamId);
   const previousTextRef = React.useRef(conversationStreamTextCache.get(streamId) || "");
   const [displayedLength, setDisplayedLength] = React.useState(() =>
-    initialConversationDisplayLength(streamId, text)
+    prefersReducedMotion ? text.length : initialConversationDisplayLength(streamId, text)
   );
 
   React.useEffect(() => {
@@ -3662,7 +3695,9 @@ function ConversationStream({
     if (streamChanged) {
       streamIdRef.current = streamId;
       previousTextRef.current = text;
-      setDisplayedLength(initialConversationDisplayLength(streamId, text));
+      setDisplayedLength(
+        prefersReducedMotion ? text.length : initialConversationDisplayLength(streamId, text)
+      );
       conversationStreamTextCache.set(streamId, text);
       return;
     }
@@ -3671,6 +3706,7 @@ function ConversationStream({
 
     setDisplayedLength((current) => {
       if (!text) return 0;
+      if (prefersReducedMotion) return text.length;
       const clampedCurrent = Math.min(current, text.length);
 
       if (!previous) {
@@ -3682,6 +3718,9 @@ function ConversationStream({
       }
 
       if (text.startsWith(previous)) {
+        if (text.length - clampedCurrent > TYPING_FLUSH_THRESHOLD_CHARS) {
+          return text.length;
+        }
         return clampedCurrent;
       }
 
@@ -3699,11 +3738,21 @@ function ConversationStream({
 
     previousTextRef.current = text;
     conversationStreamTextCache.set(streamId, text);
-  }, [streamId, text]);
+  }, [streamId, text, prefersReducedMotion]);
 
   React.useEffect(() => {
+    if (prefersReducedMotion) {
+      if (displayedLength !== text.length) {
+        setDisplayedLength(text.length);
+      }
+      return;
+    }
     if (displayedLength >= text.length) return;
     const remaining = text.length - displayedLength;
+    if (remaining > TYPING_FLUSH_THRESHOLD_CHARS) {
+      setDisplayedLength(text.length);
+      return;
+    }
     const charsPerTick = Math.max(
       1,
       Math.ceil((remaining * TYPING_TICK_MS) / TYPING_TARGET_CATCHUP_MS)
@@ -3712,9 +3761,10 @@ function ConversationStream({
       setDisplayedLength((current) => Math.min(text.length, current + charsPerTick));
     }, TYPING_TICK_MS);
     return () => window.clearTimeout(id);
-  }, [text, displayedLength]);
+  }, [text, displayedLength, prefersReducedMotion]);
 
-  const visibleText = text.slice(0, displayedLength);
+  const safeDisplayedLength = clampToCompleteAnsiBoundary(text, displayedLength);
+  const visibleText = text.slice(0, safeDisplayedLength);
 
   const html = React.useMemo(() => {
     if (!visibleText) return "";
