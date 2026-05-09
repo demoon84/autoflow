@@ -203,7 +203,7 @@ const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 const settingsNavigation = [
   { key: "progress", label: "AI Autoflow", icon: Workflow },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
-  { key: "knowledge", label: "LLM 위키", icon: BookOpenText },
+  { key: "knowledge", label: "LLM Wiki", icon: BookOpenText },
   { key: "skills", label: "AI 스킬", icon: Brain },
   { key: "snapshot", label: "통계", icon: BarChart3 }
 ] as const;
@@ -4877,7 +4877,7 @@ const ticketKanbanFolderMeta: Record<string, {
   backlog: { label: "Backlog", description: "PRD 대기" },
   inbox: { label: "Order", description: "오더 대기" },
   todo: { label: "TODO", description: "아직 시작 전" },
-  inprogress: { label: "진행 중", description: "워커가 처리중" },
+  inprogress: { label: "진행 중", description: "Worker가 처리중" },
   done: { label: "완료", description: "완료 기록" },
   reject: { label: "반려", description: "재시도/검토 필요" }
 };
@@ -5230,7 +5230,7 @@ function TicketDetailLayer({
         ["ID", item.id || item.displayId],
         ["PRD Key", item.projectKey],
         ["Stage", item.stage || item.statusLabel],
-        ["워커", item.aiLabel],
+        ["Worker", item.aiLabel],
         ["Claimed By", item.claimedByLabel],
         ["Last Updated", item.lastUpdated || formatDate(item.modifiedAt)]
       ].filter(([, value]) => Boolean(value))
@@ -6644,9 +6644,9 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   }
   if (value === "merge-1") return "머지봇";
   if (/^merge-\d+$/.test(value)) return value.replace(/^merge-/, "머지봇-");
-  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "LLM위키" : "LLM위키-1";
-  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "LLM위키-");
-  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "LLM위키-");
+  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "LLM Wiki" : "LLM Wiki-1";
+  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "LLM Wiki-");
+  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "LLM Wiki-");
   if (value === "coordinator-1") return "coordinator";
   return value;
 }
@@ -6663,8 +6663,8 @@ function displayProgressRunnerLabel(runner: AutoflowRunner) {
 function displayProgressRoleLabel(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "Planner";
-  if (role === "ticket-owner" || role === "owner") return "워커";
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM위키";
+  if (role === "ticket-owner" || role === "owner") return "Worker";
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
 
   const metaLabel = displayWorkflowRunnerId(runner.id);
   const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
