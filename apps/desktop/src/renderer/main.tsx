@@ -6487,11 +6487,18 @@ function LiveTerminalView({
       aria-label={ariaLabel}
     >
       <div ref={hostRef} className="live-terminal-view-host" />
-      {!text ? (
-        <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
-          처리할 작업 없습니다.
-        </div>
-      ) : null}
+      {(() => {
+        if (text) return null;
+        const isRunning =
+          (runner?.stateStatus || "").toLowerCase() === "running" &&
+          Boolean(runner?.pid);
+        const message = isRunning ? "AI 응답 대기 중..." : "처리할 작업 없습니다.";
+        return (
+          <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
+            {message}
+          </div>
+        );
+      })()}
       {showQuotaToast && quotaSignal ? (
         <div className="live-terminal-view-quota-toast" role="alert" aria-live="assertive">
           <TriangleAlert className="live-terminal-view-quota-toast-icon" aria-hidden="true" />
