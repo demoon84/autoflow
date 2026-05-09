@@ -5563,7 +5563,7 @@ function TicketBoard({
   );
   const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
   const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
-  const todoPinTitle = `TODO (${todoTickets.length}/${todoFiles.length})`;
+  const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
