@@ -6175,58 +6175,58 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
 // manual_order_196 (2026-05-09): stdout 파일의 마지막 N 바이트를 1초마다
 // 폴링해서 진짜 터미널 뷰처럼 streaming. board snapshot 의 conversationPreview
 // 보다 훨씬 fresh — 사용자가 AI 가 실제로 뱉는 raw stdout 을 본다.
-// manual_order_196 (2026-05-09): vibe-terminal (`document/lab/vibe-terminal`)
-// 패턴 차용 — @xterm/xterm v6 + @xterm/addon-fit. read-only stdout 디스플레이라
-// PTY 입력 forwarding 은 안 함. text prop 이 갱신될 때마다 새로 추가된 부분만
-// `terminal.write` 으로 append (전체 reset 시 ANSI 상태 깨짐).
+// manual_order_196 (2026-05-09): vibe-terminal (`document/lab/vibe-terminal/src/renderer/renderer.js`)
+// 의 패턴 그대로. read-only 라 PTY 입력 forwarding / wheel handler 만 생략.
+// scrollback / debounce / chunk flush / theme 은 vibe 와 동일.
+const LIVE_TERMINAL_SCROLLBACK = 50000;
+const LIVE_TERMINAL_FIT_DEBOUNCE_MS = 50;
+const LIVE_TERMINAL_FONT_FAMILY =
+  '"D2Coding", "Cascadia Mono", "Consolas", "Courier New", monospace';
+const LIVE_TERMINAL_FONT_SIZE = 12;
+
 function LiveTerminalView({
   text,
-  ariaLabel,
-  compact = false
+  ariaLabel
 }: {
   text: string;
   ariaLabel: string;
-  compact?: boolean;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
   const fitAddonRef = React.useRef<FitAddon | null>(null);
+  const fitTimerRef = React.useRef<number | null>(null);
+  const fitRafRef = React.useRef<number | null>(null);
+  const pendingChunksRef = React.useRef<string[]>([]);
+  const flushRafRef = React.useRef<number | null>(null);
   const writtenLengthRef = React.useRef(0);
 
   React.useEffect(() => {
     const host = hostRef.current;
     if (!host || terminalRef.current) return;
+
+    // vibe-terminal renderer.js line 5389~5413 옵션 풀세트.
     const terminal = new XTermTerminal({
       cursorBlink: true,
       convertEol: true,
       disableStdin: true,
       allowProposedApi: false,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-      fontSize: 12,
-      lineHeight: 1.25,
-      scrollback: 4000,
+      fontFamily: LIVE_TERMINAL_FONT_FAMILY,
+      fontSize: LIVE_TERMINAL_FONT_SIZE,
+      lineHeight: 1.2,
+      rescaleOverlappingGlyphs: false,
+      scrollback: LIVE_TERMINAL_SCROLLBACK,
+      overviewRuler: { width: 1 },
       theme: {
-        background: "#1a1d23",
-        foreground: "#d6d8de",
-        cursor: "#9aa0a6",
-        cursorAccent: "#1a1d23",
-        selectionBackground: "rgba(255, 255, 255, 0.18)",
-        black: "#1a1d23",
-        red: "#ef4444",
-        green: "#22c55e",
-        yellow: "#eab308",
-        blue: "#3b82f6",
-        magenta: "#a855f7",
-        cyan: "#06b6d4",
-        white: "#d6d8de",
-        brightBlack: "#6b7280",
-        brightRed: "#f87171",
-        brightGreen: "#4ade80",
-        brightYellow: "#facc15",
-        brightBlue: "#60a5fa",
-        brightMagenta: "#c084fc",
-        brightCyan: "#22d3ee",
-        brightWhite: "#f3f4f6"
+        background: "#2d323b",
+        foreground: "#cccccc",
+        cursor: "#aeafad",
+        cursorAccent: "#2d323b",
+        selectionBackground: "rgba(255, 255, 255, 0.2)",
+        selectionInactiveBackground: "rgba(255, 255, 255, 0.12)",
+        scrollbarSliderBackground: "rgba(121, 121, 121, 0.36)",
+        scrollbarSliderHoverBackground: "rgba(121, 121, 121, 0.52)",
+        scrollbarSliderActiveBackground: "rgba(121, 121, 121, 0.64)",
+        overviewRulerBorder: "#2d323b"
       }
     });
     const fitAddon = new FitAddon();
@@ -6235,23 +6235,54 @@ function LiveTerminalView({
     try {
       fitAddon.fit();
     } catch {
-      // host might not be sized yet; ResizeObserver will refit shortly
+      // host 가 layout 안정 전이면 fit 실패 — ResizeObserver 가 곧 재시도.
     }
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
     writtenLengthRef.current = 0;
 
-    const observer = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-      } catch {
-        // ignore transient resize errors during teardown
+    // vibe-terminal scheduleFitAndResize (renderer.js line 3647) 와 동일
+    // 패턴: 50ms setTimeout debounce → RAF 안에서 fit. layout/padding 변화가
+    // 모두 settled 된 다음 paint 에 fit.
+    const scheduleFit = () => {
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current);
       }
-    });
+      if (fitRafRef.current !== null) {
+        cancelAnimationFrame(fitRafRef.current);
+        fitRafRef.current = null;
+      }
+      fitTimerRef.current = window.setTimeout(() => {
+        fitTimerRef.current = null;
+        fitRafRef.current = requestAnimationFrame(() => {
+          fitRafRef.current = null;
+          try {
+            fitAddonRef.current?.fit();
+          } catch {
+            // ignore transient fit errors
+          }
+        });
+      }, LIVE_TERMINAL_FIT_DEBOUNCE_MS);
+    };
+
+    const observer = new ResizeObserver(scheduleFit);
     observer.observe(host);
 
     return () => {
       observer.disconnect();
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current);
+        fitTimerRef.current = null;
+      }
+      if (fitRafRef.current !== null) {
+        cancelAnimationFrame(fitRafRef.current);
+        fitRafRef.current = null;
+      }
+      if (flushRafRef.current !== null) {
+        cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = null;
+      }
+      pendingChunksRef.current = [];
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -6259,26 +6290,39 @@ function LiveTerminalView({
     };
   }, []);
 
-  // text prop 변화 감지 → 새 chunk 만 write. text 가 더 짧아지면 (로그 회전
-  // 등) 전체 reset. terminal.scrollToBottom 은 write 시 자동 동작.
+  // vibe-terminal scheduleTerminalOutputFlush (renderer.js line 3716) 패턴:
+  // pendingChunks 배열에 push 한 뒤 RAF 안에서 join → terminal.write. 매
+  // text 갱신마다 즉시 write 하지 않고 한 프레임에 모아 흘려 깜빡임 감소.
   React.useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
     const written = writtenLengthRef.current;
     if (text.length === written) return;
+    let chunk: string;
     if (text.length < written || !text.startsWith(text.slice(0, written))) {
       terminal.reset();
-      terminal.write(text);
+      chunk = text;
     } else {
-      terminal.write(text.slice(written));
+      chunk = text.slice(written);
     }
     writtenLengthRef.current = text.length;
+    if (!chunk) return;
+    pendingChunksRef.current.push(chunk);
+    if (flushRafRef.current !== null) return;
+    flushRafRef.current = requestAnimationFrame(() => {
+      flushRafRef.current = null;
+      const term = terminalRef.current;
+      const buffered = pendingChunksRef.current;
+      pendingChunksRef.current = [];
+      if (!term || buffered.length === 0) return;
+      term.write(buffered.join(""));
+    });
   }, [text]);
 
   return (
     <div
       ref={hostRef}
-      className={`live-terminal-view${compact ? " live-terminal-view-empty" : ""}`}
+      className="live-terminal-view"
       role="log"
       aria-live="polite"
       aria-label={ariaLabel}
@@ -7139,11 +7183,7 @@ function AiProgressRow({
         </div>
       ) : null}
       {(runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid) ? (
-        <LiveTerminalView
-          text={liveStdoutText || "\x1b[38;5;245m· AI 응답 대기 중...\x1b[0m"}
-          ariaLabel={`${agentLabel} 라이브 터미널`}
-          compact={!liveStdoutText}
-        />
+        <LiveTerminalView text={liveStdoutText} ariaLabel={`${agentLabel} 라이브 터미널`} />
       ) : showConversation ? (
         <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
       ) : null}
