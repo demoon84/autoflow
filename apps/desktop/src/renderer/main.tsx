@@ -12,6 +12,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardCheck,
+  Asterisk,
   ClipboardList,
   Clock3,
   FolderOpen,
@@ -6356,7 +6357,7 @@ function RunnerActivityFooter({
       aria-live="polite"
       title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}${liveRate ? ` · stdout 누적 ${liveRate.totalBytes.toLocaleString()} B` : ""}`}
     >
-      <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
+      <Asterisk className="ai-conversation-panel-activity-icon" aria-hidden="true" />
       <span>{activity.elapsed}</span>
       <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
       <span>↓ {animatedTokens.toLocaleString()} tokens</span>
