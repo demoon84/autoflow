@@ -4309,7 +4309,7 @@ runner_claude_base_cmd() {
   # installed CLI lacks stream-json support.
   local __dest_var="$1"
   if runner_claude_supports_stream; then
-    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose)"
+    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages)"
   else
     eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)"
   fi
