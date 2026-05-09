@@ -6849,6 +6849,14 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
+  // stopped runner has no live work — slider should reflect idle, not the
+  // last cycle's done/failure pattern stuck in lastResult/lastLogLine.
+  if (status === "stopped" || status === "user_stopped") {
+    if (role === "merge-bot" || role === "merge") return "idle";
+    if (role.includes("wiki")) return "idle";
+    if (role === "planner" || role === "plan") return "idle";
+    return "todo";
+  }
   const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const hasActiveTicket = Boolean(runner.activeTicketId);
   const stateSignalText = [
