@@ -6942,6 +6942,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
     /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
     /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateSignalText);
 
+  // Worker idle preflight signals must stay ahead of done/pass terminal heuristics when no active ticket exists.
   if (role === "merge-bot" || role === "merge") {
     if (isFailLike || /\bmerge[-_]?blocked\b|\b_persistent\b|\bblocked_(?:cherry_pick|rebase|dirty_scope|missing_)/.test(stateText)) return "blocked";
     if (hasActiveTicket) return "merging";
