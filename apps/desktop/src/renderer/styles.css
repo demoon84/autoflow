@@ -3230,13 +3230,17 @@ pre {
 .live-terminal-view {
   position: relative;
   width: 100%;
-  height: 240px;
+  height: 160px;
   margin-top: 10px;
   border: 1px solid #2a2e36;
   border-radius: 8px;
   background: #1a1d23;
   overflow: hidden;
   padding: 6px;
+}
+
+.live-terminal-view-empty {
+  height: 56px;
 }
 
 .live-terminal-view .xterm {

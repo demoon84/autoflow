@@ -6131,10 +6131,12 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
 // `terminal.write` 으로 append (전체 reset 시 ANSI 상태 깨짐).
 function LiveTerminalView({
   text,
-  ariaLabel
+  ariaLabel,
+  compact = false
 }: {
   text: string;
   ariaLabel: string;
+  compact?: boolean;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
@@ -6226,7 +6228,7 @@ function LiveTerminalView({
   return (
     <div
       ref={hostRef}
-      className="live-terminal-view"
+      className={`live-terminal-view${compact ? " live-terminal-view-empty" : ""}`}
       role="log"
       aria-live="polite"
       aria-label={ariaLabel}
@@ -7090,6 +7092,7 @@ function AiProgressRow({
         <LiveTerminalView
           text={liveStdoutText || "\x1b[38;5;245m· AI 응답 대기 중...\x1b[0m"}
           ariaLabel={`${agentLabel} 라이브 터미널`}
+          compact={!liveStdoutText}
         />
       ) : showConversation ? (
         <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
