@@ -6118,6 +6118,23 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
   return { elapsed: formatRunnerElapsedSeconds(elapsedSec), tokens };
 }
 
+function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
+  const activity = useRunnerActivity(runner);
+  if (!activity) return null;
+  return (
+    <footer
+      className="ai-conversation-panel-activity"
+      aria-live="polite"
+      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
+    >
+      <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
+      <span>{activity.elapsed}</span>
+      <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
+      <span>↓ {activity.tokens.toLocaleString()} tokens</span>
+    </footer>
+  );
+}
+
 function AiConversationPanel({
   runner,
   runnerLabel,
@@ -6130,7 +6147,6 @@ function AiConversationPanel({
   text: string;
 }) {
   const panelStatus = aiConversationPanelStatus(runner);
-  const activity = useRunnerActivity(runner);
 
   return (
     <article className="ai-conversation-panel" aria-label={`${runnerLabel} 처리 내용`}>
@@ -6148,18 +6164,7 @@ function AiConversationPanel({
         </span>
       </header>
       <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} streamId={`panel:${runnerLabel}`} />
-      {activity ? (
-        <footer
-          className="ai-conversation-panel-activity"
-          aria-live="polite"
-          title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
-        >
-          <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
-          <span>{activity.elapsed}</span>
-          <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
-          <span>↓ {activity.tokens.toLocaleString()} tokens</span>
-        </footer>
-      ) : null}
+      <RunnerActivityFooter runner={runner} />
     </article>
   );
 }
@@ -6835,7 +6840,10 @@ function AiProgressRow({
         </div>
       ) : null}
       {showConversation ? (
-        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
+        <>
+          <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
+          <RunnerActivityFooter runner={runner} />
+        </>
       ) : null}
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
