@@ -5185,7 +5185,8 @@ function WorkflowPinLayer({
         onClick={() => setLayerOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={layerOpen}
-        aria-label={`${pinTitle} — 클릭하여 세부 내용 보기`}
+        title={pinSubtitle || `${pinTitle} — 클릭하여 세부 내용 보기`}
+        aria-label={pinSubtitle ? `${pinTitle} — ${pinSubtitle} — 클릭하여 세부 내용 보기` : `${pinTitle} — 클릭하여 세부 내용 보기`}
       >
         <span className="workflow-pin-icon">{pinIcon}</span>
         <span className="workflow-pin-body">
@@ -5564,6 +5565,12 @@ function TicketBoard({
   const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
   const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
+  const todoPinSubtitle =
+    todoTickets.length === 0 && inprogressTickets.length > 0
+      ? `새 todo 없음 / 기존 ticket 구현 중 (${inprogressTickets.length}건)`
+      : inprogressTickets.length > 0
+      ? `대기 ${todoTickets.length}건 / 진행중 ${inprogressTickets.length}건`
+      : `대기 ${todoTickets.length}건`;
   const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
@@ -5604,6 +5611,7 @@ function TicketBoard({
                 files={todoFiles}
                 options={options}
                 pinTitle={todoPinTitle}
+                pinSubtitle={todoPinSubtitle}
                 pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
                 variant="default"
                 layerHeading={todoPinTitle}
