@@ -247,6 +247,7 @@ template_text|wiki/architecture/README.md|wiki/architecture/README.md
 template_text|wiki/learnings/README.md|wiki/learnings/README.md
 template_text|wiki/skills/README.md|wiki/skills/README.md
 template_text|wiki/skills-local/README.md|wiki/skills-local/README.md
+template_text|state-schema/v1.sql|state-schema/v1.sql
 runtime_executable|common.sh|scripts/common.sh
 runtime_executable|runner-common.sh|scripts/runner-common.sh
 runtime_executable|board-guard.sh|scripts/board-guard.sh
@@ -267,6 +268,7 @@ runtime_executable|handoff-todo.sh|scripts/handoff-todo.sh
 runtime_executable|start-spec.sh|scripts/start-spec.sh
 runtime_executable|integrate-worktree.sh|scripts/integrate-worktree.sh
 runtime_executable|watch-board.sh|scripts/watch-board.sh
+runtime_executable|state-db.sh|scripts/state-db.sh
 EOF
 }
 
