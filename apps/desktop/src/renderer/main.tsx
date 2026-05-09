@@ -2169,9 +2169,86 @@ function App() {
         command: runner.command || ""
       };
       const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
+      const previousRunnerSnapshot = { ...runner };
+      const previousSavedDraft = runnerSavedDrafts[runner.id];
+      const savedDraft: RunnerDraft = {
+        agent: draft.agent,
+        model: normalized.model,
+        reasoning: normalized.reasoning,
+        mode: "loop",
+        intervalSeconds: "60",
+        enabled: "true",
+        command: draft.command
+      };
+      const rollbackOptimistic = () => {
+        setRunnerDrafts((current) => ({
+          ...current,
+          [runner.id]: {
+            agent: previousRunnerSnapshot.agent || "codex",
+            model: previousRunnerSnapshot.model || "",
+            reasoning: previousRunnerSnapshot.reasoning || "",
+            mode: previousRunnerSnapshot.mode || "loop",
+            intervalSeconds: previousRunnerSnapshot.intervalSeconds || "60",
+            enabled: previousRunnerSnapshot.enabled || "true",
+            command: previousRunnerSnapshot.command || ""
+          }
+        }));
+        setRunnerSavedDrafts((current) => {
+          const next = { ...current };
+          if (previousSavedDraft) {
+            next[runner.id] = previousSavedDraft;
+          } else {
+            delete next[runner.id];
+          }
+          return next;
+        });
+        setBoard((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            runners: current.runners.map((candidate) =>
+              candidate.id === runner.id ? previousRunnerSnapshot : candidate
+            )
+          };
+        });
+      };
+
       selectRunner(runner.id);
-      setRunnerAction(runner.id, restartAfterSave ? "config_applying_restart" : "config_applying");
       setRunnerError("");
+
+      // Optimistic: 사용자 체감 latency 를 0 에 가깝게 만들기 위해 IPC 응답 전에 즉시 새 값 반영.
+      setRunnerDrafts((current) => ({
+        ...current,
+        [runner.id]: savedDraft
+      }));
+      setRunnerSavedDrafts((current) => ({
+        ...current,
+        [runner.id]: savedDraft
+      }));
+      setBoard((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          runners: current.runners.map((candidate) =>
+            candidate.id === runner.id
+              ? {
+                  ...candidate,
+                  agent: savedDraft.agent,
+                  model: savedDraft.model,
+                  reasoning: savedDraft.reasoning,
+                  mode: savedDraft.mode,
+                  intervalSeconds: savedDraft.intervalSeconds,
+                  enabled: savedDraft.enabled,
+                  command: savedDraft.command
+                }
+              : candidate
+          )
+        };
+      });
+
+      // IPC 왕복 동안만 잠금. fingerprint apply 대기 (다음 tick) 는 더 이상 잠그지 않는다.
+      setRunnerAction(runner.id, restartAfterSave ? "config_applying_restart" : "config_applying");
+
       try {
         const result = await window.autoflow.configureRunner({
           runnerId: runner.id,
@@ -2187,97 +2264,38 @@ function App() {
           }
         });
         if (!result.ok) {
+          rollbackOptimistic();
           setRunnerError(result.stderr || result.stdout || "AI 설정 저장에 실패했습니다.");
           setRunnerAction(runner.id, "");
-          await loadBoard();
           return;
         }
 
-        const savedDraft: RunnerDraft = {
-          agent: draft.agent,
-          model: normalized.model,
-          reasoning: normalized.reasoning,
-          mode: "loop",
-          intervalSeconds: "60",
-          enabled: "true",
-          command: draft.command
-        };
-        setRunnerDrafts((current) => ({
-          ...current,
-          [runner.id]: savedDraft
-        }));
-        setRunnerSavedDrafts((current) => ({
-          ...current,
-          [runner.id]: savedDraft
-        }));
-        setBoard((current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            runners: current.runners.map((candidate) =>
-              candidate.id === runner.id
-                ? {
-                    ...candidate,
-                    agent: savedDraft.agent,
-                    model: savedDraft.model,
-                    reasoning: savedDraft.reasoning,
-                    mode: savedDraft.mode,
-                    intervalSeconds: savedDraft.intervalSeconds,
-                    enabled: savedDraft.enabled,
-                    command: savedDraft.command
-                  }
-                : candidate
-            )
-          };
-        });
-        const resultWithEvidence = result as typeof result & { configFingerprint?: string; configUpdatedAt?: string };
-        const savedFingerprint = resultWithEvidence.configFingerprint || outputValue(result.stdout || "", "config_fingerprint");
-        if (!savedFingerprint) {
+        if (!restartAfterSave) {
+          // 새 model/agent 는 다음 runner tick (interval 안) 에 자연스럽게 적용된다.
+          // 자동 재시작 없음. loadBoard 는 다음 polling cycle 에서 흡수하므로 여기서 호출하지 않는다.
           setRunnerAction(runner.id, "");
-          setGlobalToast({
-            severity: "warning",
-            message: `${runner.id} 설정은 저장됐지만 적용 확인 fingerprint 를 읽지 못했습니다.`
-          });
-          void loadBoard();
           return;
         }
-        setRunnerConfigApplyPending((current) => ({
-          ...current,
-          [runner.id]: {
-            fingerprint: savedFingerprint,
-            startedAtMs: Date.now(),
-            timeoutAtMs: Date.now() + runnerConfigApplyTimeoutMs(runner),
-            restartAfterSave
-          }
-        }));
-        if (restartAfterSave) {
-          const restartResult = await window.autoflow.controlRunner({
-            action: "restart",
-            runnerId: runner.id,
-            ...options
-          });
-          if (!restartResult.ok) {
-            setRunnerConfigApplyPending((current) => {
-              const { [runner.id]: _omit, ...rest } = current;
-              return rest;
-            });
-            setRunnerAction(runner.id, "");
-            setRunnerError(restartResult.stderr || restartResult.stdout || "AI 재시작에 실패했습니다.");
-            await loadBoard();
-            return;
-          }
-        }
-        void loadBoard();
-      } catch (error) {
-        setRunnerConfigApplyPending((current) => {
-          const { [runner.id]: _omit, ...rest } = current;
-          return rest;
+
+        // 사용자 명시 "재시작" 흐름은 보존: controlRunner restart IPC 동안만 잠금 유지.
+        const restartResult = await window.autoflow.controlRunner({
+          action: "restart",
+          runnerId: runner.id,
+          ...options
         });
+        if (!restartResult.ok) {
+          setRunnerAction(runner.id, "");
+          setRunnerError(restartResult.stderr || restartResult.stdout || "AI 재시작에 실패했습니다.");
+          return;
+        }
+        setRunnerAction(runner.id, "");
+      } catch (error) {
+        rollbackOptimistic();
         setRunnerAction(runner.id, "");
         setRunnerError(error instanceof Error ? error.message : "AI 설정 저장에 실패했습니다.");
       }
     },
-    [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, selectRunner, setRunnerAction]
+    [installedAgentProfiles, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
   );
 
   const writeMetricsSnapshot = React.useCallback(async () => {
