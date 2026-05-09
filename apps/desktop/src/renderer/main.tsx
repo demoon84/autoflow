@@ -7075,12 +7075,13 @@ function AiProgressRow({
           </div>
         </div>
       ) : null}
-      {showConversation ? (
-        liveStdoutText ? (
-          <LiveTerminalView text={liveStdoutText} ariaLabel={`${agentLabel} 라이브 터미널`} />
-        ) : (
-          <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
-        )
+      {(runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid) ? (
+        <LiveTerminalView
+          text={liveStdoutText || "\x1b[38;5;245m· AI 응답 대기 중...\x1b[0m"}
+          ariaLabel={`${agentLabel} 라이브 터미널`}
+        />
+      ) : showConversation ? (
+        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
       ) : null}
       <RunnerActivityFooter runner={runner} options={options} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
