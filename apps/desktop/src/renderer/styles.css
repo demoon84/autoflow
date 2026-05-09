@@ -3185,6 +3185,39 @@ pre {
   color: color-mix(in srgb, var(--chart-1) 72%, white);
 }
 
+.ai-conversation-panel-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--font-size-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-conversation-panel-activity-icon {
+  width: 12px;
+  height: 12px;
+  color: color-mix(in srgb, var(--chart-3) 80%, var(--muted-foreground));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ai-conversation-panel-activity-icon {
+    animation: ai-activity-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes ai-activity-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.ai-conversation-panel-activity-sep {
+  opacity: 0.5;
+}
+
 .ai-progress-row-top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

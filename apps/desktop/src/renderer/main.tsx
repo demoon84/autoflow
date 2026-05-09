@@ -6082,6 +6082,42 @@ function PageLayout({
   );
 }
 
+function formatRunnerElapsedSeconds(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "0s";
+  const s = Math.floor(totalSeconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return rs > 0 ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
+function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: number } | null {
+  const [nowMs, setNowMs] = React.useState<number>(() => Date.now());
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const isRunning = stateStatus === "running" && Boolean(runner.pid);
+
+  React.useEffect(() => {
+    if (!isRunning) return;
+    const handle = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(handle);
+  }, [isRunning]);
+
+  if (!isRunning) return null;
+
+  const startSource = runner.lastEventAt || runner.lastAdapterChunkAt || runner.startedAt || "";
+  if (!startSource) return null;
+  const startMs = Date.parse(startSource);
+  if (!Number.isFinite(startMs)) return null;
+
+  const elapsedSec = Math.max(0, (nowMs - startMs) / 1000);
+  const tokens = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
+
+  return { elapsed: formatRunnerElapsedSeconds(elapsedSec), tokens };
+}
+
 function AiConversationPanel({
   runner,
   runnerLabel,
@@ -6094,6 +6130,7 @@ function AiConversationPanel({
   text: string;
 }) {
   const panelStatus = aiConversationPanelStatus(runner);
+  const activity = useRunnerActivity(runner);
 
   return (
     <article className="ai-conversation-panel" aria-label={`${runnerLabel} 처리 내용`}>
@@ -6111,6 +6148,18 @@ function AiConversationPanel({
         </span>
       </header>
       <ConversationStream label={`${runnerLabel} 최근 터미널 출력`} text={text} streamId={`panel:${runnerLabel}`} />
+      {activity ? (
+        <footer
+          className="ai-conversation-panel-activity"
+          aria-live="polite"
+          title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
+        >
+          <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
+          <span>{activity.elapsed}</span>
+          <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
+          <span>↓ {activity.tokens.toLocaleString()} tokens</span>
+        </footer>
+      ) : null}
     </article>
   );
 }
