@@ -3237,7 +3237,11 @@ pre {
   border-radius: 8px;
   background: #2d323b;
   overflow: hidden;
-  padding: 6px 8px;
+  /* fit 계산이 outer width 기준이라 padding 두면 글자가 잘림. padding 0 +
+     box-sizing border-box 로 fit 폭과 실제 표시 폭을 맞춘다 (vibe-terminal
+     의 .terminal-host 도 padding 0). */
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .live-terminal-view .xterm {
