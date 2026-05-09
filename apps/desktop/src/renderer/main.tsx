@@ -6935,6 +6935,8 @@ function runnerStageKey(runner: AutoflowRunner): string {
     .join(" ")
     .toLowerCase();
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
+  const hasWorkerIdleSignal =
+    /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
   const isFailLike =
     status === "failed" ||
     /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
@@ -6977,6 +6979,8 @@ function runnerStageKey(runner: AutoflowRunner): string {
     }
     return "inprogress";
   }
+
+  if (hasWorkerIdleSignal) return "todo";
 
   if (/\bdone\b|\bpass\b|\bcomplete\b|adapter_exit_0/.test(stateText)) return "done";
 
