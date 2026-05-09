@@ -6118,9 +6118,53 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
   return { elapsed: formatRunnerElapsedSeconds(elapsedSec), tokens };
 }
 
-// PRD-less manual_order_196: stdout log 을 1.5s 마다 폴링해서 byte/s 실시간
-// 신호로 환산. board snapshot 의 latency 보다 짧고, stdout 이 자라는 게 곧
-// AI 가 살아있다는 직접 증거.
+// manual_order_196 (2026-05-09): stdout 파일의 마지막 N 바이트를 1초마다
+// 폴링해서 진짜 터미널 뷰처럼 streaming. board snapshot 의 conversationPreview
+// 보다 훨씬 fresh — 사용자가 AI 가 실제로 뱉는 raw stdout 을 본다.
+function useLiveStdoutText(
+  runner: AutoflowRunner,
+  options?: { projectRoot: string; boardDirName: string },
+  maxBytes = 16 * 1024
+): string {
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const isRunning = stateStatus === "running" && Boolean(runner.pid);
+  const stdoutPath = runner.lastStdoutLog || "";
+  const projectRoot = options?.projectRoot || "";
+  const boardDirName = options?.boardDirName || "";
+
+  const [text, setText] = React.useState("");
+
+  React.useEffect(() => {
+    if (!isRunning || !stdoutPath || !projectRoot || !boardDirName) {
+      setText("");
+      return;
+    }
+    let cancelled = false;
+    const fetchOnce = async () => {
+      try {
+        const result = await window.autoflow.tailBoardFile({
+          projectRoot,
+          boardDirName,
+          filePath: stdoutPath,
+          maxBytes
+        });
+        if (cancelled || !result.ok) return;
+        setText(result.content || "");
+      } catch {
+        // best-effort polling — swallow read errors
+      }
+    };
+    void fetchOnce();
+    const handle = window.setInterval(fetchOnce, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [isRunning, stdoutPath, projectRoot, boardDirName, maxBytes]);
+
+  return text;
+}
+
 function useLiveStdoutRate(
   runner: AutoflowRunner,
   options?: { projectRoot: string; boardDirName: string }
@@ -6646,7 +6690,9 @@ function AiProgressRow({
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
   const agentLabel = displayProgressRunnerLabel(runner);
   const agentTitle = displayProgressRoleLabel(runner);
-  const conversationText = runnerConversationText(runner);
+  const liveStdoutText = useLiveStdoutText(runner, options);
+  const previewText = runnerConversationText(runner);
+  const conversationText = liveStdoutText || previewText;
   const statusLower = status.toLowerCase();
   const mode = "loop";
   // actionKey holds the action label for THIS runner only ("" when idle).
@@ -6668,7 +6714,7 @@ function AiProgressRow({
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
-  const showConversation = shouldShowConversation(runner);
+  const showConversation = shouldShowConversation(runner) || Boolean(liveStdoutText);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||

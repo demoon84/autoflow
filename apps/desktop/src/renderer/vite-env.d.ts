@@ -262,6 +262,12 @@ interface Window {
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
+    tailBoardFile: (options: {
+      projectRoot: string;
+      boardDirName: string;
+      filePath: string;
+      maxBytes?: number;
+    }) => Promise<AutoflowFileContentResult>;
     deleteInboxOrderFile: (options: {
       projectRoot: string;
       boardDirName: string;

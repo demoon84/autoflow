@@ -4355,6 +4355,99 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  // manual_order_196 (2026-05-09): live stdout tail. Reads the LAST maxBytes
+  // of a board file (default 16KB) so a polling renderer can show a real-time
+  // terminal view of a runner's adapter stdout without stale 196KB head.
+  ipcMain.handle(
+    "autoflow:tailBoardFile",
+    withTimeout(
+      withScopeMemory(async (options = {}) => {
+        const projectRoot = options.projectRoot || "";
+        const filePath = options.filePath || "";
+        const boardDirNameRaw = options.boardDirName || defaultBoardDirName;
+        const maxBytesRaw = Number(options.maxBytes);
+        const maxBytes =
+          Number.isFinite(maxBytesRaw) && maxBytesRaw > 0
+            ? Math.min(Math.floor(maxBytesRaw), 256 * 1024)
+            : 16 * 1024;
+        const empty = {
+          ok: false,
+          filePath: "",
+          name: "",
+          content: "",
+          truncated: false,
+          modifiedAt: "",
+          size: 0,
+          stderr: ""
+        };
+        if (!projectRoot || !filePath) {
+          return { ...empty, stderr: "projectRoot and filePath are required." };
+        }
+        if (!isSafeBoardDirName(boardDirNameRaw)) {
+          return { ...empty, stderr: "Invalid board directory name." };
+        }
+        const boardRoot = path.resolve(projectRoot, boardDirNameRaw);
+        const targetPath = path.resolve(filePath);
+        const relativePath = path.relative(boardRoot, targetPath);
+        if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+          return {
+            ...empty,
+            filePath: targetPath,
+            name: path.basename(targetPath),
+            stderr: "File must be inside the Autoflow board."
+          };
+        }
+        if (!allowedBoardFileExtensions.has(path.extname(targetPath))) {
+          return {
+            ...empty,
+            filePath: targetPath,
+            name: path.basename(targetPath),
+            stderr: "Only markdown, log, and metrics JSONL files can be tailed."
+          };
+        }
+        try {
+          const stat = await fs.stat(targetPath);
+          if (!stat.isFile()) {
+            return {
+              ...empty,
+              filePath: targetPath,
+              name: path.basename(targetPath),
+              modifiedAt: stat.mtime.toISOString(),
+              size: stat.size,
+              stderr: "Path is not a file."
+            };
+          }
+          const startOffset = Math.max(0, stat.size - maxBytes);
+          const bytesToRead = stat.size - startOffset;
+          const buffer = Buffer.alloc(bytesToRead);
+          const handle = await fs.open(targetPath, "r");
+          try {
+            const { bytesRead } = await handle.read(buffer, 0, bytesToRead, startOffset);
+            return {
+              ok: true,
+              filePath: targetPath,
+              name: path.basename(targetPath),
+              content: buffer.subarray(0, bytesRead).toString("utf8"),
+              truncated: startOffset > 0,
+              modifiedAt: stat.mtime.toISOString(),
+              size: stat.size,
+              stderr: ""
+            };
+          } finally {
+            await handle.close();
+          }
+        } catch (error) {
+          return {
+            ...empty,
+            filePath: targetPath,
+            name: path.basename(targetPath),
+            stderr: error && error.message ? String(error.message) : "tail failed"
+          };
+        }
+      }),
+      10000
+    )
+  );
   ipcMain.handle("autoflow:deleteInboxOrderFile", withScopeMemory(deleteInboxOrderFile));
   ipcMain.handle(
     "autoflow:projectExists",
