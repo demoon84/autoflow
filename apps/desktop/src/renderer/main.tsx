@@ -6120,6 +6120,9 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
 
 function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const activity = useRunnerActivity(runner);
+  // useCountUp 은 항상 호출 (Rules of Hooks). activity 가 null 일 때도 0 으로
+  // 안전하게 동작. IPC 가 token 값을 갱신하면 600ms 동안 부드럽게 카운트.
+  const animatedTokens = useCountUp(activity?.tokens ?? 0);
   if (!activity) return null;
   return (
     <footer
@@ -6130,7 +6133,7 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
       <Sparkles className="ai-conversation-panel-activity-icon" aria-hidden="true" />
       <span>{activity.elapsed}</span>
       <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
-      <span>↓ {activity.tokens.toLocaleString()} tokens</span>
+      <span>↓ {animatedTokens.toLocaleString()} tokens</span>
     </footer>
   );
 }
