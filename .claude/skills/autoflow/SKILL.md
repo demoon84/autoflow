@@ -7,6 +7,18 @@ description: Use when the user says "#autoflow", invokes "/autoflow", or wants t
 
 When triggered, act as the Autoflow PRD handoff entry point.
 
+## Lookup Before Drafting
+
+Before drafting any PRD content, surface relevant prior work so the new PRD references and reuses existing decisions instead of contradicting them.
+
+1. Identify 1–3 distinctive keywords from the user's stated goal/scope (feature noun, module name, file path, etc.).
+2. Run, best-effort (any error → treat as "no hits", continue):
+   - `autoflow origin search "<keyword>"` — past PRDs and resulting commits.
+   - `autoflow wiki query --rag --term "<keyword>" --limit 5` — accumulated decisions and skills.
+3. If hits return, briefly summarize them in Korean and ask whether to:
+   (a) extend an existing PRD, (b) split into a new sibling PRD with cross-references, or (c) supersede prior work (note in `Conversation Handoff`).
+4. Then proceed with the conversation phase. Do NOT block PRD drafting on lookup failure.
+
 ## Rules
 
 1. Treat `#autoflow` and `/autoflow` as PRD handoff triggers.

@@ -33,6 +33,7 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
+const allowedSkillActions = new Set(["list", "view", "archive", "history"]);
 // Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
 // case statement. Active: ticket / planner / wiki (with their
 // owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
@@ -240,6 +241,9 @@ const readBoardRunnerListCache = new Map();
 const knownProjectScopes = new Map();
 const lastSelfHealByScope = new Map();
 const selfHealInFlightScopes = new Set();
+// scopeKey → { watchers: FSWatcher[], debounceTimer, lastReason }
+const boardWatchersByScope = new Map();
+const boardWatchDebounceMs = 250;
 const activeChildProcesses = new Set();
 // invocationId → child process. Lets the renderer cancel a long-running
 // CLI call (runRole / controlWiki --synth / installBoard / etc.) by id.
@@ -450,6 +454,144 @@ function projectScopeKey(projectRoot, boardDirName) {
   return `${projectRoot}\0${boardDirName}`;
 }
 
+// Install fs.watch handlers for the directories that should retrigger the
+// renderer's `readBoard` snapshot:
+//   - tickets/* (queue moves: planner / worker / manual)
+//   - runners/state/* (status flips)
+//   - wiki/skills-local/* (skill counter / list changes)
+// Coalesces bursts (e.g. planner moving 6 files in one tick) into a single
+// IPC push debounced by `boardWatchDebounceMs`. Replaces the renderer's
+// 5s polling so the UI no longer reads the entire board every 5 seconds
+// just in case something changed.
+function ensureBoardWatcher(scope) {
+  if (!scope || typeof scope.projectRoot !== "string" || !scope.projectRoot) {
+    return;
+  }
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  const key = projectScopeKey(scope.projectRoot, boardDirName);
+  if (boardWatchersByScope.has(key)) {
+    return;
+  }
+  const boardRoot = path.join(scope.projectRoot, boardDirName);
+  if (!fsSync.existsSync(boardRoot)) {
+    return;
+  }
+
+  const entry = {
+    watchers: [],
+    debounceTimer: null,
+    lastReason: ""
+  };
+  boardWatchersByScope.set(key, entry);
+
+  const broadcast = () => {
+    const reason = entry.lastReason || "fs.watch";
+    entry.lastReason = "";
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try {
+          win.webContents.send("autoflow:boardChange", {
+            projectRoot: scope.projectRoot,
+            boardDirName,
+            reason
+          });
+        } catch {
+          // ignore — renderer may be tearing down
+        }
+      }
+    }
+  };
+
+  const enqueue = (reason) => {
+    entry.lastReason = reason || entry.lastReason || "fs.watch";
+    if (entry.debounceTimer) {
+      clearTimeout(entry.debounceTimer);
+    }
+    entry.debounceTimer = setTimeout(() => {
+      entry.debounceTimer = null;
+      broadcast();
+    }, boardWatchDebounceMs);
+  };
+
+  const watchDir = (relPath, recursive) => {
+    const target = path.join(boardRoot, relPath);
+    if (!fsSync.existsSync(target)) return;
+    try {
+      const watcher = fsSync.watch(
+        target,
+        { persistent: false, recursive: Boolean(recursive) },
+        (_eventType, filename) => {
+          // Filter out tmp/lock noise that doesn't affect the board snapshot.
+          const name = String(filename || "");
+          if (name && (
+            name.endsWith(".tmp") ||
+            name.endsWith(".swp") ||
+            name.startsWith(".#") ||
+            name.endsWith("~")
+          )) {
+            return;
+          }
+          enqueue(`${relPath}/${name || "*"}`);
+        }
+      );
+      watcher.on("error", () => {
+        // Best-effort. fs.watch can throw on some FS edge cases (NFS,
+        // permission, deleted dirs). Drop silently — polling backup remains.
+      });
+      entry.watchers.push(watcher);
+    } catch {
+      // Same as above; do not crash the desktop process.
+    }
+  };
+
+  // recursive: true is supported on macOS + Windows. On Linux the option is
+  // a no-op and only the top-level directory is watched, which is good
+  // enough for the queue folders since we only care about file-level adds
+  // and removes one level deep.
+  watchDir("tickets", true);
+  watchDir("runners/state", false);
+  watchDir("wiki/skills-local", true);
+}
+
+function disposeBoardWatcherForScope(scope) {
+  if (!scope) return;
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  const key = projectScopeKey(scope.projectRoot, boardDirName);
+  const entry = boardWatchersByScope.get(key);
+  if (!entry) return;
+  if (entry.debounceTimer) {
+    clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = null;
+  }
+  for (const watcher of entry.watchers) {
+    try {
+      watcher.close();
+    } catch {
+      // ignore
+    }
+  }
+  boardWatchersByScope.delete(key);
+}
+
+function disposeAllBoardWatchers() {
+  for (const key of [...boardWatchersByScope.keys()]) {
+    const entry = boardWatchersByScope.get(key);
+    if (!entry) continue;
+    if (entry.debounceTimer) {
+      clearTimeout(entry.debounceTimer);
+      entry.debounceTimer = null;
+    }
+    for (const watcher of entry.watchers) {
+      try {
+        watcher.close();
+      } catch {
+        // ignore
+      }
+    }
+    boardWatchersByScope.delete(key);
+  }
+}
+
 function rememberProjectScope(options) {
   if (!options || typeof options.projectRoot !== "string" || !options.projectRoot) {
     return;
@@ -465,6 +607,10 @@ function rememberProjectScope(options) {
     // crash or red-X close. Runs once per scope per session.
     void sweepStaleRunnersForScope(scope).catch(() => 0);
   }
+  // Make sure the fs.watch board listener is alive whenever the renderer
+  // touches a scope. Idempotent — bails immediately if a watcher is already
+  // running for this scope.
+  ensureBoardWatcher(scope);
   const now = Date.now();
   const lastSelfHealAt = lastSelfHealByScope.get(key) || 0;
   const selfHealCooldownElapsed = now - lastSelfHealAt >= selfHealStoppedRunnersCooldownMs;
@@ -1984,7 +2130,9 @@ const tokenComponentMarkers = [
   "output tokens",
   "outputtokens"
 ];
-const telemetryMaxRowTokens = 100000000;
+const defaultTelemetryMaxRowTokens = 100000000;
+const telemetryMaxRowTokens =
+  positiveIntegerValue(process.env.AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS) || defaultTelemetryMaxRowTokens;
 const liveTokenLogCache = new Map();
 
 function escapeRegExp(value) {
@@ -3599,6 +3747,58 @@ function controlWiki(options = {}) {
   return runAutoflowArgs(args, options);
 }
 
+function controlSkill(options = {}) {
+  if (!options.projectRoot) {
+    return Promise.resolve({
+      ok: false,
+      command: "skill",
+      code: -1,
+      stdout: "",
+      stderr: "Project root is required."
+    });
+  }
+
+  const action = options.action || "";
+  if (!allowedSkillActions.has(action)) {
+    return Promise.resolve({
+      ok: false,
+      command: `skill ${action}`,
+      code: -1,
+      stdout: "",
+      stderr: `Unsupported skill action: ${action}`
+    });
+  }
+
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  const args = ["skill", action, options.projectRoot, boardDirName];
+
+  if (action === "list") {
+    if (options.includeArchived === false) {
+      args.push("--no-archived");
+    } else {
+      args.push("--include-archived");
+    }
+  } else if (action === "view" || action === "archive") {
+    const ref = typeof options.ref === "string" ? options.ref.trim() : "";
+    if (!ref) {
+      return Promise.resolve({
+        ok: false,
+        command: `skill ${action}`,
+        code: -1,
+        stdout: "",
+        stderr: "Skill reference (category/name) is required."
+      });
+    }
+    args.push(ref);
+  } else if (action === "history") {
+    const rawLimit = options.limit;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.floor(rawLimit) : 20;
+    args.push("--limit", String(limit));
+  }
+
+  return runAutoflowArgs(args, options);
+}
+
 function writeMetricsSnapshot(options = {}) {
   if (!options.projectRoot) {
     return Promise.resolve({
@@ -4204,6 +4404,7 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:createRunner", withScopeMemory(createRunner));
   ipcMain.handle("autoflow:continueRunnerAuth", withScopeMemory(continueRunnerAuth));
   ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
+  ipcMain.handle("autoflow:controlSkill", withTimeout(withScopeMemory(controlSkill), 30000));
   ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
@@ -4215,6 +4416,38 @@ app.whenReady().then(() => {
       const normalizedRoot = typeof projectRoot === "string" ? projectRoot.trim() : "";
       return { exists: await pathExists(normalizedRoot) };
     }, 5000)
+  );
+  // PRD 10 (2026-05-09): origin ledger search bridge.
+  // Delegates to `autoflow origin <sub> [projectRoot] [boardDirName] ...`.
+  // Returns the raw stdout (key=value or sqlite -column table) plus exit code
+  // so the renderer can parse it. Phase 1 surface; phase 2 will add a panel.
+  ipcMain.handle(
+    "autoflow:origin",
+    withTimeout(withScopeMemory(async (options = {}) => {
+      const projectRoot = options.projectRoot || "";
+      const boardDirName = options.boardDirName || defaultBoardDirName;
+      const sub = typeof options.sub === "string" ? options.sub.trim() : "status";
+      const allowedSubs = new Set(["status", "list", "search", "of-ticket", "of-commit", "sync"]);
+      if (!allowedSubs.has(sub)) {
+        return {
+          ok: false,
+          command: `origin ${sub}`,
+          code: -1,
+          stdout: "",
+          stderr: `Unsupported origin subcommand: ${sub}`
+        };
+      }
+      const args = ["origin", sub];
+      if (projectRoot) {
+        args.push(projectRoot, boardDirName);
+      }
+      if (Array.isArray(options.args)) {
+        for (const arg of options.args) {
+          args.push(String(arg));
+        }
+      }
+      return await runAutoflowArgs(args, {});
+    }), 30000)
   );
   // Cancel a still-running long IPC call by invocationId. No timeout: the
   // call must always be reachable so the user can recover from a hung action.
@@ -4243,6 +4476,7 @@ app.on("before-quit", (event) => {
     clearInterval(memoryCeilingIntervalId);
     memoryCeilingIntervalId = null;
   }
+  disposeAllBoardWatchers();
 
   const shutdownTimeoutMs = 5000;
   const cleanup = shutdownAllRunners().catch(() => 0);
