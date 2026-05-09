@@ -830,7 +830,7 @@ function commandPreviewForRunner(
 
   if (draft.agent === "claude") {
     return [
-      "claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text",
+      "claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose",
       model ? `--model ${shellArg(model)}` : "",
       reasoning ? `--effort ${shellArg(reasoning)}` : "",
       "prompt"
@@ -920,8 +920,10 @@ function runnerIsEnabled(value: string) {
 // `*_stdout.log`, `*_stderr.log`) 은 사용자 view 에서 숨긴다. envelope
 // wrapping 없이 raw tool 호출 / diff / shell 명령이 그대로 들어 있어 필터로
 // 정리할 수 없다. AI 의 narrative 는 같은 tick 의 runner 메인 로그에
-// `narrative_text` envelope 으로 surface 되므로 그쪽으로만 노출한다. 필요하면
-// `.autoflow/runners/logs/` 의 원본 파일을 파일 시스템에서 직접 확인한다.
+// `narrative_text` envelope 으로 surface 되므로 그쪽으로 노출한다. 단,
+// LiveTerminalView 는 active Claude stream-json stdout 만 별도 parser 로
+// 사람이 읽는 한 줄 요약으로 변환해 붙인다. 필요하면 `.autoflow/runners/logs/`
+// 의 원본 파일을 파일 시스템에서 직접 확인한다.
 const RAW_ADAPTER_TRANSCRIPT_FILE = /_(?:live_)?(?:stdout|stderr)\.log$/;
 function isRawAdapterTranscriptFile(filePath: string) {
   return RAW_ADAPTER_TRANSCRIPT_FILE.test(filePath);
@@ -6480,115 +6482,129 @@ function LiveTerminalView({
   );
 }
 
-// PRD 228: claude --output-format stream-json --include-partial-messages 일 때
-// live_stdout.log 는 JSONL — 사용자에게는 한 줄 요약만 보여주고 raw JSON 은
-// 노출하지 않는다 (memory rule: terminal UI 에는 AI 가 하는 일만).
-function summarizeJsonlLine(line: string): string {
-  const trimmed = line.trim();
-  if (!trimmed) return "";
-  if (trimmed[0] !== "{") return trimmed;
-  let event: any;
-  try {
-    event = JSON.parse(trimmed);
-  } catch {
-    return "";
-  }
-  const t = event && typeof event === "object" ? event.type : "";
-  if (t === "system") {
-    const subtype = event.subtype || "";
-    if (subtype === "init") {
-      const tools = Array.isArray(event.tools) ? event.tools.length : 0;
-      const model = event.model || "";
-      return `[init] tools=${tools} model=${model}`;
+function previewText(value: unknown, maxLength = 80): string {
+  let text = "";
+  if (typeof value === "string") {
+    text = value;
+  } else if (value != null) {
+    try {
+      text = JSON.stringify(value);
+    } catch {
+      text = String(value);
     }
-    if (subtype === "status") return `[status] ${event.status || ""}`;
-    if (subtype === "post_turn_summary") {
-      const detail = event.status_detail || "";
-      return detail ? `[turn] ${detail}` : "";
-    }
-    return "";
   }
-  if (t === "assistant") {
-    const msg = event.message || {};
-    const content = Array.isArray(msg.content) ? msg.content : [];
-    const out: string[] = [];
-    for (const block of content) {
-      if (!block || typeof block !== "object") continue;
-      if (block.type === "text" && typeof block.text === "string") {
-        out.push(block.text);
-      } else if (block.type === "tool_use") {
-        const name = block.name || "tool";
-        const input = block.input ? JSON.stringify(block.input) : "";
-        const preview = input.length > 80 ? `${input.slice(0, 80)}...` : input;
-        out.push(`[tool] ${name} ${preview}`);
-      } else if (block.type === "thinking" && typeof block.thinking === "string") {
-        const preview =
-          block.thinking.length > 120 ? `${block.thinking.slice(0, 120)}...` : block.thinking;
-        out.push(`[thinking] ${preview}`);
-      }
-    }
-    return out.filter(Boolean).join("\n");
-  }
-  if (t === "user") {
-    const msg = event.message || {};
-    const content = Array.isArray(msg.content) ? msg.content : [];
-    const out: string[] = [];
-    for (const block of content) {
-      if (!block || typeof block !== "object") continue;
-      if (block.type === "tool_result") {
-        const raw = typeof block.content === "string" ? block.content : JSON.stringify(block.content || "");
-        const preview = raw.length > 100 ? `${raw.slice(0, 100)}...` : raw;
-        out.push(`[result] ${preview}`);
-      }
-    }
-    return out.filter(Boolean).join("\n");
-  }
-  if (t === "stream_event") {
-    const ev = event.event || {};
-    if (ev.type === "content_block_delta") {
-      const delta = ev.delta || {};
-      if (delta.type === "text_delta" && typeof delta.text === "string") return delta.text;
-      if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") return "";
-    }
-    if (ev.type === "content_block_start") {
-      const cb = ev.content_block || {};
-      if (cb.type === "tool_use") return `[tool] ${cb.name || ""} starting`;
-      return "";
-    }
-    return "";
-  }
-  if (t === "result") {
-    const subtype = event.subtype || "";
-    const dur = event.duration_ms ? `${Math.round(event.duration_ms / 1000)}s` : "";
-    const usage = event.usage || {};
-    const tokens =
-      (usage.input_tokens || 0) + (usage.output_tokens || 0)
-        ? `tokens=${(usage.input_tokens || 0) + (usage.output_tokens || 0)}`
-        : "";
-    const result =
-      typeof event.result === "string"
-        ? event.result.length > 80
-          ? `${event.result.slice(0, 80)}...`
-          : event.result
-        : "";
-    const parts = [`[done]`, subtype, dur, tokens, result].filter(Boolean);
-    return parts.join(" ");
-  }
-  if (t === "rate_limit_event") {
-    const info = event.rate_limit_info || {};
-    return `[rate_limit] ${info.status || ""}`;
+  text = text.replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+function contentTextFromBlock(block: unknown): string {
+  if (typeof block === "string") return block;
+  if (!block || typeof block !== "object") return "";
+  const record = block as Record<string, unknown>;
+  if (typeof record.text === "string") return record.text;
+  if (typeof record.content === "string") return record.content;
+  if (Array.isArray(record.content)) {
+    return record.content.map(contentTextFromBlock).filter(Boolean).join("");
   }
   return "";
 }
 
-function summarizeJsonlText(jsonl: string): string {
-  if (!jsonl) return "";
-  const out: string[] = [];
-  for (const line of jsonl.split("\n")) {
-    const summary = summarizeJsonlLine(line);
-    if (summary) out.push(summary);
+function summarizeClaudeContentBlock(block: unknown): string[] {
+  if (!block || typeof block !== "object") return [];
+  const record = block as Record<string, unknown>;
+  const type = String(record.type || "");
+  if (type === "text") {
+    const text = typeof record.text === "string" ? record.text : "";
+    return text ? [text] : [];
   }
-  return out.join("\n");
+  if (type === "tool_use") {
+    const name = typeof record.name === "string" ? record.name : "tool";
+    const input = previewText(record.input, 96);
+    return [`[tool] ${name}${input ? ` ${input}` : ""}`];
+  }
+  if (type === "tool_result") {
+    const content = previewText(contentTextFromBlock(record.content), 80);
+    return [`[result] ${content}`.trim()];
+  }
+  return [];
+}
+
+function summarizeClaudeStreamEvent(obj: Record<string, unknown>): string[] {
+  const event = obj.event && typeof obj.event === "object" ? (obj.event as Record<string, unknown>) : obj;
+  const eventType = String(event.type || "");
+  if (eventType === "message_delta") {
+    const delta = event.delta && typeof event.delta === "object" ? (event.delta as Record<string, unknown>) : {};
+    const text = previewText(delta.text || delta.stop_reason || "", 120);
+    return text ? [text] : [];
+  }
+  if (eventType === "content_block_delta") {
+    const delta = event.delta && typeof event.delta === "object" ? (event.delta as Record<string, unknown>) : {};
+    const text = typeof delta.text === "string" ? delta.text : "";
+    return text ? [text] : [];
+  }
+  return [];
+}
+
+function summarizeClaudeJsonLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return "";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return "";
+  }
+  if (!parsed || typeof parsed !== "object") return "";
+  const obj = parsed as Record<string, unknown>;
+  const type = String(obj.type || "");
+
+  if (type === "system" && obj.subtype === "init") {
+    const tools = Array.isArray(obj.tools) ? obj.tools.length : undefined;
+    const model = typeof obj.model === "string" ? obj.model : "";
+    return `[init] tools=${tools ?? 0}${model ? ` model=${model}` : ""}`;
+  }
+
+  if (type === "assistant" || type === "user") {
+    const message = obj.message && typeof obj.message === "object" ? (obj.message as Record<string, unknown>) : {};
+    const content = Array.isArray(message.content) ? message.content : [];
+    return content.flatMap(summarizeClaudeContentBlock).join("\n");
+  }
+
+  if (type === "stream_event" || type === "message_delta") {
+    return summarizeClaudeStreamEvent(obj).join("\n");
+  }
+
+  if (type === "text") {
+    return typeof obj.text === "string" ? obj.text : "";
+  }
+
+  if (type === "tool_use") {
+    const name = typeof obj.name === "string" ? obj.name : "tool";
+    const input = previewText(obj.input, 96);
+    return `[tool] ${name}${input ? ` ${input}` : ""}`;
+  }
+
+  if (type === "tool_result") {
+    const content = previewText(contentTextFromBlock(obj.content), 80);
+    return `[result] ${content}`.trim();
+  }
+
+  if (type === "result" && obj.subtype === "success") {
+    const result = previewText(obj.result, 120);
+    return `[done] ${result}`.trim();
+  }
+
+  return "";
+}
+
+function summarizeClaudeJsonLines(content: string): string {
+  if (!content.trim()) return "";
+  const lines = content
+    .split(/\r?\n/)
+    .map(summarizeClaudeJsonLine)
+    .filter(Boolean);
+  return lines.length ? `${lines.join("\n")}\n` : "";
 }
 
 function useLiveStdoutText(
@@ -6598,52 +6614,48 @@ function useLiveStdoutText(
 ): string {
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || "";
-  // 어댑터가 실행 중일 때만 스트림을 보여준다. idle/finished 이면 빈 화면.
-  const isActive =
-    (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
-  // PRD 228: persistent `<runner_id>.log` (event metadata) + active
-  // live_stdout.log (claude stream-json JSONL) 두 stream 을 merge.
-  const persistentPath =
+  const logsRoot =
     runner.id && projectRoot && boardDirName
       ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
       : "";
-  const livePath = runner.lastStdoutLog || "";
+  const activeStdoutPath =
+    runner.lastStdoutLog && /_live_stdout\.log$/.test(runner.lastStdoutLog)
+      ? runner.lastStdoutLog
+      : "";
 
   const [text, setText] = React.useState("");
 
   React.useEffect(() => {
-    if (!isActive || !persistentPath || !projectRoot || !boardDirName) {
+    if (!logsRoot || !projectRoot || !boardDirName) {
       setText("");
       return;
     }
     let cancelled = false;
     const fetchOnce = async () => {
       try {
-        const persistentPromise = window.autoflow.tailBoardFile({
+        const persistent = await window.autoflow.tailBoardFile({
           projectRoot,
           boardDirName,
-          filePath: persistentPath,
+          filePath: logsRoot,
           maxBytes
         });
-        const livePromise = livePath
-          ? window.autoflow.tailBoardFile({
-              projectRoot,
-              boardDirName,
-              filePath: livePath,
-              maxBytes
-            })
-          : Promise.resolve({ ok: false, content: "" } as any);
-        const [persistentResult, liveResult] = await Promise.all([persistentPromise, livePromise]);
         if (cancelled) return;
-        const eventLog = persistentResult.ok ? persistentResult.content || "" : "";
-        const rawLive = liveResult.ok ? liveResult.content || "" : "";
-        // JSONL 이면 한 줄 요약, 아니면 raw 그대로 (legacy text 모드 fallback).
-        let liveStream = "";
-        if (rawLive) {
-          const firstLine = rawLive.split("\n", 1)[0]?.trim() || "";
-          liveStream = firstLine.startsWith('{"type":') ? summarizeJsonlText(rawLive) : rawLive;
+        let merged = persistent.ok ? persistent.content || "" : "";
+        if (activeStdoutPath) {
+          const active = await window.autoflow.tailBoardFile({
+            projectRoot,
+            boardDirName,
+            filePath: activeStdoutPath,
+            maxBytes
+          });
+          if (cancelled) return;
+          if (active.ok && active.content) {
+            const summarized = summarizeClaudeJsonLines(active.content);
+            if (summarized) {
+              merged = `${merged}${merged.endsWith("\n") || !merged ? "" : "\n"}${summarized}`;
+            }
+          }
         }
-        const merged = liveStream ? `${eventLog.replace(/\n+$/, "")}\n${liveStream}` : eventLog;
         setText(merged);
       } catch {
         // best-effort polling — swallow read errors
@@ -6655,7 +6667,7 @@ function useLiveStdoutText(
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [isActive, persistentPath, livePath, projectRoot, boardDirName, maxBytes]);
+  }, [logsRoot, activeStdoutPath, projectRoot, boardDirName, maxBytes]);
 
   return text;
 }
@@ -7187,9 +7199,12 @@ function AiProgressRow({
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
   const agentLabel = displayProgressRunnerLabel(runner);
   const agentTitle = displayProgressRoleLabel(runner);
+  const isRunnerActive =
+    (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
   const liveStdoutText = useLiveStdoutText(runner, options);
   const previewText = runnerConversationText(runner);
-  const conversationText = liveStdoutText || previewText;
+  // 종료(idle/stopped) 상태면 터미널을 비운다. 실행 중일 때만 내용 표시.
+  const conversationText = isRunnerActive ? (liveStdoutText || previewText) : "";
   const statusLower = status.toLowerCase();
   const mode = "loop";
   // actionKey holds the action label for THIS runner only ("" when idle).
@@ -7460,7 +7475,7 @@ function AiProgressRow({
           </div>
         </div>
       ) : null}
-      <LiveTerminalView text={liveStdoutText || conversationText} ariaLabel={`${agentLabel} 라이브 터미널`} />
+      <LiveTerminalView text={conversationText} ariaLabel={`${agentLabel} 라이브 터미널`} />
       <RunnerActivityFooter runner={runner} options={options} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
