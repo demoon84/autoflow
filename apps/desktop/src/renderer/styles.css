@@ -2082,16 +2082,16 @@ pre {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   width: auto;
-  min-width: 56px;
+  min-width: 0;
   height: 32px;
   border: 1px solid var(--primary);
   border-radius: 6px;
   background: var(--primary);
   color: var(--primary-foreground);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 9%, transparent);
-  padding: 0 12px;
+  padding: 0 8px;
   font-size: var(--font-size-control-sm);
   font-weight: 500;
   white-space: nowrap;
@@ -2133,8 +2133,8 @@ pre {
 
 .runner-save-dirty-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   background: currentColor;
 }
@@ -3057,6 +3057,9 @@ pre {
 
 .ticket-detail-layer-body {
   padding: 12px 18px 18px;
+  /* Hold the body height during the fetch round-trip so the panel does not
+     pop after content lands a frame or two later. */
+  min-height: 320px;
 }
 
 @media (max-width: 1180px) {
@@ -3183,12 +3186,12 @@ pre {
   justify-content: stretch;
   gap: 3px;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(72px, 0.42fr) !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto !important;
   padding-top: 0;
 }
 
 .ai-progress-config-with-agent {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(112px, 0.52fr) !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto !important;
 }
 
 .ai-progress-config > * {
@@ -3204,10 +3207,11 @@ pre {
 }
 
 .ai-progress-config .runner-save-button {
-  width: 100%;
+  width: auto;
   min-width: 0;
   height: 32px;
   border-radius: 8px;
+  padding: 0 8px;
   font-size: var(--font-size-control-sm);
   font-weight: 650;
 }
@@ -3967,7 +3971,8 @@ pre {
   border: 0;
   margin: 0;
   padding: 0;
-  background: color-mix(in srgb, var(--foreground) 35%, transparent);
+  /* 80% dim. Clickable area remains so backdrop click dismisses. */
+  background: rgba(0, 0, 0, 0.8);
   cursor: pointer;
   pointer-events: auto;
 }
@@ -3977,34 +3982,19 @@ pre {
   pointer-events: none;
 }
 
-@keyframes af-dialog-backdrop-in {
+/* Open animation kept minimal — opacity-only, short, no transform. The previous
+   scale + translateY combo caused a visible double-flicker because
+   content fetch lands a frame or two after open and re-triggered layout. */
+@keyframes af-dialog-content-in {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-@keyframes af-dialog-content-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.af-dialog-root:not([hidden]) .af-dialog-backdrop {
-  animation: af-dialog-backdrop-in 160ms ease-out both;
-}
-
 .af-dialog-root:not([hidden]) .af-dialog-content {
-  animation: af-dialog-content-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
-  transform-origin: center;
-  will-change: transform, opacity;
+  animation: af-dialog-content-in 90ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .af-dialog-root:not([hidden]) .af-dialog-backdrop,
   .af-dialog-root:not([hidden]) .af-dialog-content {
     animation: none;
   }
@@ -4075,9 +4065,7 @@ pre {
 }
 
 .workflow-pin-layer-overlay {
-  background: color-mix(in srgb, var(--background) 92%, var(--foreground));
-  -webkit-backdrop-filter: saturate(115%) blur(2px);
-  backdrop-filter: saturate(115%) blur(2px);
+  /* Inherit the base 20% dim from .af-dialog-backdrop — no extra blur. */
 }
 
 .af-dialog-root:has(.workflow-pin-layer-panel) {
@@ -4166,6 +4154,11 @@ pre {
 
 .workflow-pin-layer-panel {
   width: min(1180px, calc(100vw - 48px));
+  /* Lock the layer to 80% viewport height. Overrides the base
+     .af-dialog-content max-height: min(86vh, 760px) cap so tall screens
+     also get a fixed 80vh layout instead of being clamped to 760px. */
+  height: 80vh;
+  max-height: 80vh;
   background:
     linear-gradient(180deg, var(--card) 0%, color-mix(in srgb, var(--card) 86%, var(--background)) 100%);
 }
@@ -4955,6 +4948,80 @@ pre {
   margin-left: auto;
   font-size: 11px;
   color: var(--muted-foreground);
+}
+
+.skills-panel-history {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.skills-panel-history-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.skills-panel-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.skills-panel-history-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+}
+
+.skills-panel-history-item:hover {
+  background: var(--accent);
+}
+
+.skills-panel-history-ok { color: var(--foreground); }
+.skills-panel-history-warning { color: var(--destructive, #b3261e); }
+.skills-panel-history-skipped { color: var(--muted-foreground); }
+
+.skills-panel-history-ts {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.skills-panel-history-ticket {
+  flex: 0 0 auto;
+  font-weight: 500;
+}
+
+.skills-panel-history-decision {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+
+.skills-panel-history-skill {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skills-panel-history-reason {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
 }
 
 .knowledge-list-pane {
