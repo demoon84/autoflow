@@ -6559,12 +6559,22 @@ function AiProgressRow({
     }
     const boardDir = options.boardDirName || ".autoflow";
     const projectRoot = options.projectRoot.replace(/[\\/]+$/, "");
-    const ticketFile = `${runner.activeTicketId}.md`;
-    const candidatePaths = [
-      `${projectRoot}/${boardDir}/tickets/inprogress/${ticketFile}`,
-      `${projectRoot}/${boardDir}/tickets/todo/${ticketFile}`,
-      `${projectRoot}/${boardDir}/tickets/reject/${ticketFile}`
-    ];
+    const ticketId = runner.activeTicketId;
+    const numericMatch = ticketId.match(/(\d+)/);
+    const ticketFiles = new Set<string>();
+    ticketFiles.add(`${ticketId}.md`);
+    if (numericMatch) {
+      const n = numericMatch[1];
+      ticketFiles.add(`Todo-${n}.md`);
+      ticketFiles.add(`tickets_${n}.md`);
+    }
+    const folders = ["inprogress", "todo"];
+    const candidatePaths: string[] = [];
+    for (const folder of folders) {
+      for (const file of ticketFiles) {
+        candidatePaths.push(`${projectRoot}/${boardDir}/tickets/${folder}/${file}`);
+      }
+    }
     setTicketLoading(true);
     try {
       let lastError = "";
