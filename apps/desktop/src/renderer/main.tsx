@@ -6460,6 +6460,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
   const hasWorkerIdleSignal =
     /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
+  const hasCommittedViaInlineMerge = /\bcommitted_via_inline_merge\b/.test(stateText);
   const isFailLike =
     status === "failed" ||
     /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
@@ -6497,7 +6498,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   // an idle tick that found no todo also emits adapter_finish status=ok.
   if (hasWorkerIdleSignal && !hasActiveTicket) return "todo";
 
-  if (/\bcommitted_via_inline_merge\b|event=adapter_finish.*status=ok/.test(stateText)) return "done";
+  if (hasCommittedViaInlineMerge) return "done";
 
   if (hasActiveTicket) {
     if (/^(done|pass|complete|completed|committed_via_inline_merge)$/.test(activeStage)) return "done";
