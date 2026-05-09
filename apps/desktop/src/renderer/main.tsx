@@ -6148,7 +6148,7 @@ function formatRunnerElapsedSeconds(totalSeconds: number): string {
   return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
 }
 
-function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: number } | null {
+function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: number } {
   const [nowMs, setNowMs] = React.useState<number>(() => Date.now());
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
@@ -6159,15 +6159,15 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
     return () => window.clearInterval(handle);
   }, [isRunning]);
 
-  if (!isRunning) return null;
-
+  const tokens = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
   const startSource = runner.lastEventAt || runner.lastAdapterChunkAt || runner.startedAt || "";
-  if (!startSource) return null;
   const startMs = Date.parse(startSource);
-  if (!Number.isFinite(startMs)) return null;
+  if (!isRunning || !startSource || !Number.isFinite(startMs)) {
+    // stopped 거나 anchor 없으면 elapsed 는 "—" 로 — 토큰 사용량 바는 항상 표시.
+    return { elapsed: "—", tokens };
+  }
 
   const elapsedSec = Math.max(0, (nowMs - startMs) / 1000);
-  const tokens = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
 
   return { elapsed: formatRunnerElapsedSeconds(elapsedSec), tokens };
 }
@@ -6468,12 +6468,10 @@ function RunnerActivityFooter({
   options?: { projectRoot: string; boardDirName: string };
 }) {
   const activity = useRunnerActivity(runner);
-  // useCountUp 은 항상 호출 (Rules of Hooks). activity 가 null 일 때도 0 으로
-  // 안전하게 동작. IPC 가 token 값을 갱신하면 600ms 동안 부드럽게 카운트.
-  const animatedTokens = useCountUp(activity?.tokens ?? 0);
+  // useCountUp 은 IPC 가 token 값을 갱신하면 600ms 동안 부드럽게 카운트.
+  const animatedTokens = useCountUp(activity.tokens);
   const liveRate = useLiveStdoutRate(runner, options);
-  if (!activity) return null;
-  const rateLabel = liveRate ? formatRate(liveRate.bytesPerSec) : "";
+  const rateLabel = liveRate ? formatRate(liveRate.bytesPerSec) : "0 B/s";
   return (
     <footer
       className="ai-conversation-panel-activity"
