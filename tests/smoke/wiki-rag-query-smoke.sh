@@ -50,6 +50,15 @@ More unrelated background.
 Even more unrelated background.
 Final unrelated background.
 WIKI
+cat > "${project_dir}/.autoflow/wiki/features/semantic-target.md" <<'WIKI'
+# Semantic Target
+Architecture decisions in this page are documented here.
+Hybrid retrieval should pick this path for semantic intent.
+WIKI
+cat > "${project_dir}/.autoflow/wiki/features/keyword-page.md" <<'WIKI'
+# Keyword Match
+This page is useful for basic lexical matching.
+WIKI
 
 rag_output="${project_dir}/rag.out"
 file_output="${project_dir}/file.out"
@@ -78,6 +87,56 @@ grep -Fq "result.1.snippet.1.text=# RAG Retrieval Page Intro line before the tar
 require_line "$file_output" "retrieval_mode=file"
 require_line "$file_output" "result.1.path=wiki/features/rag-page.md"
 require_absent "$file_output" "result.1.chunk_start_line="
+
+provider="${project_dir}/wiki-vector-provider.sh"
+cat > "$provider" <<'PY'
+#!/usr/bin/env python3
+import json
+import sys
+
+text = (sys.stdin.read() or "").strip()
+if "semantic" in text or "architecture" in text or "hybrid" in text:
+  print(json.dumps([1.0, 0.0, 0.0, 0.0]))
+elif "keyword" in text:
+  print(json.dumps([0.8, 0.1, 0.1, 0.0]))
+else:
+  print(json.dumps([0.1, 0.2, 0.3, 0.4]))
+PY
+chmod +x "$provider"
+export AUTOFLOW_BOARD_ROOT="${project_dir}/.autoflow"
+export AUTOFLOW_PROJECT_ROOT="$project_dir"
+
+AUTOFLOW_WIKI_FTS_INDEX=on \
+AUTOFLOW_WIKI_VECTOR_INDEX=on \
+AUTOFLOW_WIKI_EMBEDDING_PROVIDER="$provider" \
+AUTOFLOW_WIKI_VECTOR_DIM=4 \
+  /bin/bash "${REPO_ROOT}/.autoflow/scripts/wiki-search-index.sh"
+
+hybrid_output="${project_dir}/rag-hybrid.out"
+AUTOFLOW_WIKI_VECTOR_INDEX=on \
+AUTOFLOW_WIKI_EMBEDDING_PROVIDER="$provider" \
+AUTOFLOW_WIKI_VECTOR_DIM=4 \
+AUTOFLOW_WIKI_RAG_CHUNK_LINES=6 \
+AUTOFLOW_WIKI_RAG_CHUNK_OVERLAP=2 \
+  "${REPO_ROOT}/bin/autoflow" wiki query "$project_dir" .autoflow \
+    --term "architecture" \
+    --rag \
+    --limit 1 > "$hybrid_output"
+
+require_line "$hybrid_output" "rag_backend=hybrid"
+require_line "$hybrid_output" "result.1.path=wiki/features/semantic-target.md"
+grep -Fq "result.1.bm25_score=" "$hybrid_output"
+require_line "$hybrid_output" "result.1.vector_score=1.000000"
+
+fallback_output="${project_dir}/rag-fallback.out"
+AUTOFLOW_WIKI_VECTOR_INDEX=on \
+AUTOFLOW_WIKI_EMBEDDING_PROVIDER="/nonexistent/vector-provider" \
+  "${REPO_ROOT}/bin/autoflow" wiki query "$project_dir" .autoflow \
+    --term "architecture" \
+    --rag \
+    --limit 1 > "$fallback_output"
+
+require_line "$fallback_output" "rag_backend=fts5_bm25"
 
 echo "status=ok"
 echo "project_root=$project_dir"

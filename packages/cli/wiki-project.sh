@@ -39,6 +39,11 @@ Environment:
                                      When set, the assembled ingest prompt is copied to that path.
   AUTOFLOW_WIKI_RAG_CHUNK_LINES      Line count per chunk for `wiki query --rag` (default 32).
   AUTOFLOW_WIKI_RAG_CHUNK_OVERLAP    Overlapping line count between RAG chunks (default 6).
+  AUTOFLOW_WIKI_VECTOR_INDEX         Set to `on` to enable optional wiki vector cache generation / usage for RAG.
+                                     When `on`, `.autoflow/scripts/wiki-search-index.sh`은 vector cache를 갱신하려고 시도합니다.
+  AUTOFLOW_WIKI_EMBEDDING_PROVIDER    Path to vector embedding provider command.
+                                     Provider 는 stdin 으로 문서 텍스트를 받아 JSON 배열 또는 comma-separated float 벡터를 반환해야 합니다.
+  AUTOFLOW_WIKI_VECTOR_DIM           Optional fixed embedding dimension (권장). 미설정 시 길이 검증 없이 사용.
   AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES
                                      Byte cap for the optional retrofit-frontmatter adapter prompt
                                      when --allow-adapter is passed (default 4096). The default
@@ -625,6 +630,30 @@ wiki_query_fts5_build_match() {
   printf '%s' "$match"
 }
 
+wiki_query_vector_index_ready() {
+  local board_root="$1"
+  local db match provider
+  local provider_path
+
+  [ "${AUTOFLOW_WIKI_VECTOR_INDEX:-off}" = "on" ] || return 1
+  [ -n "${AUTOFLOW_WIKI_EMBEDDING_PROVIDER:-}" ] || return 1
+
+  provider="$(printf '%s' "${AUTOFLOW_WIKI_EMBEDDING_PROVIDER}")"
+  provider_path="$(printf '%s' "$provider" | awk '{print $1}')"
+  [ -n "$provider_path" ] || return 1
+  command -v "$provider_path" >/dev/null 2>&1 || return 1
+
+  db="$(wiki_query_fts5_db_path "$board_root")"
+  [ -f "$db" ] || return 1
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+
+  match="$(sqlite3 "$db" "SELECT name FROM sqlite_master WHERE type='table' AND name='wiki_vectors' LIMIT 1;" 2>/dev/null || true)"
+  [ "$match" = "wiki_vectors" ] || return 1
+  match="$(sqlite3 "$db" "SELECT COUNT(*) FROM wiki_vectors LIMIT 1;" 2>/dev/null || true)"
+  [ "$match" -gt 0 ] || return 1
+  return 0
+}
+
 wiki_query_score_chunks_fts5() {
   local board_root="$1"
   local terms_file="$2"
@@ -669,6 +698,162 @@ wiki_query_score_chunks_fts5() {
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$int_score" "$path" "$cstart" "$cend" "$chunk_file" >> "$scores"
   done < "$listing"
+
+  return 0
+}
+
+wiki_query_score_chunks_fts5_hybrid() {
+  local board_root="$1"
+  local terms_file="$2"
+  local scores="$3"
+  local limit="$4"
+  local chunk_lines="$5"
+  local chunk_overlap="$6"
+
+  local db match_expr fetch query_text vector_provider vector_dim
+  db="$(wiki_query_fts5_db_path "$board_root")"
+  match_expr="$(wiki_query_fts5_build_match "$terms_file")"
+  [ -n "$match_expr" ] || return 0
+  [ -n "${AUTOFLOW_WIKI_EMBEDDING_PROVIDER:-}" ] || return 1
+
+  fetch=$((limit * 4))
+  [ "$fetch" -ge 20 ] || fetch=20
+
+  query_text="$(awk 'NF { printf "%s ", $0 }' "$terms_file" 2>/dev/null || true)"
+  query_text="${query_text% }"
+  [ -n "$query_text" ] || return 0
+
+  vector_provider="${AUTOFLOW_WIKI_EMBEDDING_PROVIDER}"
+  vector_dim="${AUTOFLOW_WIKI_VECTOR_DIM:-0}"
+
+  AUTOFLOW_FTS_HYBRID_DB="$db" \
+  AUTOFLOW_FTS_HYBRID_MATCH_EXPR="$match_expr" \
+  AUTOFLOW_FTS_HYBRID_FETCH="$fetch" \
+  AUTOFLOW_WIKI_EMBEDDING_PROVIDER="$vector_provider" \
+  AUTOFLOW_WIKI_VECTOR_DIM="$vector_dim" \
+  AUTOFLOW_WIKI_HYBRID_QUERY_TEXT="$query_text" \
+  AUTOFLOW_WIKI_HYBRID_SCORES_FILE="$scores" \
+  python3 - <<'PY'
+import json
+import math
+import os
+import shlex
+import sqlite3
+import subprocess
+import tempfile
+
+db = os.environ['AUTOFLOW_FTS_HYBRID_DB']
+match_expr = os.environ.get('AUTOFLOW_FTS_HYBRID_MATCH_EXPR', '').strip()
+fetch = int(os.environ.get('AUTOFLOW_FTS_HYBRID_FETCH', '20'))
+query_text = os.environ.get('AUTOFLOW_WIKI_HYBRID_QUERY_TEXT', '').strip()
+provider_cmd = os.environ.get('AUTOFLOW_WIKI_EMBEDDING_PROVIDER', '').strip()
+expected_dim = int(os.environ.get('AUTOFLOW_WIKI_VECTOR_DIM', '0') or 0)
+scores_file = os.environ.get('AUTOFLOW_WIKI_HYBRID_SCORES_FILE')
+if not scores_file:
+    raise SystemExit(1)
+
+def parse_vector(raw):
+    raw = raw.strip()
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+        if isinstance(value, dict):
+            return []
+        if isinstance(value, list):
+            return [float(x) for x in value]
+    except Exception:
+        pass
+
+    parts = [p for p in raw.replace('\n', ' ').replace('|', ' ').split(',') if p.strip()]
+    try:
+        return [float(p.strip()) for p in parts]
+    except Exception:
+        return []
+
+def cosine(a, b):
+    if not a or not b:
+        return 0.0
+    n = min(len(a), len(b))
+    if n == 0:
+        return 0.0
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for i in range(n):
+        dot += a[i] * b[i]
+        na += a[i] * a[i]
+        nb += b[i] * b[i]
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    return dot / (math.sqrt(na) * math.sqrt(nb))
+
+def embed_text(payload):
+    if not provider_cmd:
+        return []
+    proc = subprocess.run(
+        shlex.split(provider_cmd),
+        input=payload.encode('utf-8'),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return []
+    vec = parse_vector(proc.stdout.decode('utf-8', errors='replace'))
+    if expected_dim and len(vec) != expected_dim:
+        return []
+    return vec
+
+query_vector = embed_text(query_text)
+if not query_vector:
+    raise SystemExit(0)
+
+conn = sqlite3.connect(db)
+cur = conn.cursor()
+cur.execute(
+    "SELECT printf('%.6f', -bm25(wiki_search)), path, chunk_idx, chunk_start_line, chunk_end_line, body "
+    "FROM wiki_search WHERE wiki_search MATCH ? ORDER BY bm25(wiki_search) LIMIT ?;",
+    (match_expr, fetch),
+)
+rows = cur.fetchall()
+if not rows:
+    conn.close()
+    raise SystemExit(0)
+
+scored = []
+for raw_bm25, path, cidx, cstart, cend, body in rows:
+    vec_raw = cur.execute(
+        "SELECT embedding, vector_dim FROM wiki_vectors WHERE path=? AND chunk_idx=?;",
+        (path, cidx),
+    ).fetchone()
+    chunk_sim = 0.0
+    if vec_raw:
+        chunk_vec = parse_vector(vec_raw[0] or '')
+        if vec_raw[1] and expected_dim and len(chunk_vec) != vec_raw[1]:
+            chunk_vec = []
+        chunk_sim = cosine(chunk_vec, query_vector)
+
+    bm25_score = float(raw_bm25 or 0)
+    vector_score = chunk_sim
+    hybrid_score = (vector_score * 1000000.0) + bm25_score
+
+    fd, chunk_file = tempfile.mkstemp(prefix="autoflow-wiki-rag-", suffix=".chunk")
+    os.close(fd)
+    with open(chunk_file, 'w', encoding='utf-8') as chunk_out:
+        chunk_out.write(body or '')
+    scored.append((hybrid_score, path, cstart, cend, chunk_file, bm25_score, vector_score))
+
+scored.sort(key=lambda item: item[0], reverse=True)
+with open(scores_file, 'a', encoding='utf-8') as out:
+    for hybrid_score, path, cstart, cend, chunk_file, bm25_score, vector_score in scored:
+        int_score = int(hybrid_score)
+        if int_score < 1:
+            int_score = 1
+        out.write(f"{int_score}\t{path}\t{cstart}\t{cend}\t{chunk_file}\t{bm25_score:.6f}\t{vector_score:.6f}\n")
+
+conn.close()
+PY
 
   return 0
 }
@@ -2244,7 +2429,9 @@ run_query() {
   local rag_backend="chunk_grep"
   if [ "$rag_mode" = "true" ]; then
     if wiki_query_fts5_available "$board_root"; then
-      if wiki_query_score_chunks_fts5 "$board_root" "$terms_file" "$scores" "$limit"; then
+      if wiki_query_vector_index_ready "$board_root" && wiki_query_score_chunks_fts5_hybrid "$board_root" "$terms_file" "$scores" "$limit" "$chunk_lines" "$chunk_overlap"; then
+        rag_backend="hybrid"
+      elif wiki_query_score_chunks_fts5 "$board_root" "$terms_file" "$scores" "$limit"; then
         rag_backend="fts5_bm25"
       else
         rag_backend="chunk_grep"
@@ -2308,7 +2495,7 @@ run_query() {
     return 0
   fi
 
-  while IFS=$'\t' read -r score file chunk_start chunk_end chunk_file; do
+  while IFS=$'\t' read -r score file chunk_start chunk_end chunk_file bm25_score vector_score; do
     [ -n "$file" ] || continue
     emitted=$((emitted + 1))
     [ "$emitted" -le "$limit" ] || break
@@ -2323,6 +2510,10 @@ run_query() {
     printf 'result.%d.title=%s\n' "$emitted" "$title"
     printf 'result.%d.kind=%s\n' "$emitted" "$kind"
     printf 'result.%d.score=%s\n' "$emitted" "$score"
+    if [ "$rag_mode" = "true" ] && [ "$rag_backend" = "hybrid" ]; then
+      printf 'result.%d.bm25_score=%s\n' "$emitted" "${bm25_score:-0}"
+      printf 'result.%d.vector_score=%s\n' "$emitted" "${vector_score:-0}"
+    fi
 
     if [ "$rag_mode" = "true" ]; then
       printf 'result.%d.chunk_start_line=%s\n' "$emitted" "$chunk_start"
@@ -2333,6 +2524,10 @@ run_query() {
       printf 'title=%s\n' "$title"
       printf 'kind=%s\n' "$kind"
       printf 'score=%s\n' "$score"
+      if [ "$rag_mode" = "true" ] && [ "$rag_backend" = "hybrid" ]; then
+        printf 'bm25_score=%s\n' "${bm25_score:-0}"
+        printf 'vector_score=%s\n' "${vector_score:-0}"
+      fi
       if [ "$rag_mode" = "true" ]; then
         printf 'chunk_start_line=%s\n' "$chunk_start"
         printf 'chunk_end_line=%s\n' "$chunk_end"
