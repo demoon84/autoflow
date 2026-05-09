@@ -1015,6 +1015,15 @@ telemetry_extract_token_components_from_logs() {
       return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"usage(metadata)?"[[:space:]]*:/
     }
 
+    function is_claude_intermediate_stream_event(value, lower_value) {
+      # claude stream-json emits a `usage` field on every assistant / user /
+      # stream_event message and a final cumulative one on the result event.
+      # Only the result event holds authoritative per-turn totals — summing the
+      # intermediates would multi-count by 10x+.
+      lower_value = tolower(value)
+      return lower_value ~ /^[[:space:]]*\{/ && lower_value ~ /"type"[[:space:]]*:[[:space:]]*"(assistant|user|stream_event|system)"/
+    }
+
     {
       line = $0
       gsub(/\r$/, "", line)
@@ -1027,6 +1036,10 @@ telemetry_extract_token_components_from_logs() {
           next
         }
         pending_total = 0
+      }
+
+      if (is_claude_intermediate_stream_event(line)) {
+        next
       }
 
       if (is_trusted_usage_json(line)) {

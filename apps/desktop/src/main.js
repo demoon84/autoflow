@@ -2468,14 +2468,15 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
       }
 
       let startOffset = 0;
-      let prior = { tokens: 0, waiting: false, tail: "", claudeFinalUsage: 0 };
+      let prior = { tokens: 0, waiting: false, tail: "", claudeFinalUsage: 0, codexFinalUsage: 0 };
       if (cached && cached.size > 0 && cached.size <= stat.size) {
         startOffset = cached.size;
         prior = {
           tokens: cached.tokens,
           waiting: cached.waiting,
           tail: cached.tail,
-          claudeFinalUsage: cached.claudeFinalUsage || 0
+          claudeFinalUsage: cached.claudeFinalUsage || 0,
+          codexFinalUsage: cached.codexFinalUsage || 0
         };
       }
 
@@ -2502,7 +2503,8 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
         tokens: result.tokens,
         waiting: result.waiting,
         tail: result.tail,
-        claudeFinalUsage: result.claudeFinalUsage
+        claudeFinalUsage: result.claudeFinalUsage,
+        codexFinalUsage: result.codexFinalUsage
       });
 
       totals.set(runnerId, (totals.get(runnerId) || 0) + result.tokens);
