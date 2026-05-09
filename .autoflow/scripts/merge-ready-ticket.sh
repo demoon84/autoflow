@@ -31,7 +31,7 @@ resolve_ready_ticket_file() {
 
   if [ -z "$ref" ]; then
     if [ -d "${BOARD_ROOT}/tickets/ready-to-merge" ]; then
-      candidate="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'tickets_*.md' || true)"
+      candidate="$(lowest_matching_file "${BOARD_ROOT}/tickets/ready-to-merge" 'Todo-*.md' 'tickets_*.md' || true)"
       [ -n "$candidate" ] && printf '%s' "$candidate" && return 0
     fi
     while IFS= read -r candidate; do
@@ -43,7 +43,7 @@ resolve_ready_ticket_file() {
           return 0
           ;;
       esac
-    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+    done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
     return 1
   fi
 
@@ -212,6 +212,31 @@ ticket_path_has_dirty_project_root_conflict() {
   fi
 
   project_root_path_matches_worktree "$ticket_file" "$repo_rel_path" && return 1
+  return 0
+}
+
+cleanup_worktree_dirty_matches_project_root() {
+  local ticket_file="$1"
+  local worktree_path="$2"
+  local dirty_path allowed_path matched
+
+  while IFS= read -r dirty_path; do
+    [ -n "$dirty_path" ] || continue
+    matched=0
+    while IFS= read -r allowed_path; do
+      [ -n "$allowed_path" ] || continue
+      allowed_path="${allowed_path#./}"
+      case "$dirty_path" in
+        "$allowed_path"|"$allowed_path"/*)
+          matched=1
+          project_root_path_matches_worktree "$ticket_file" "$allowed_path" || return 1
+          break
+          ;;
+      esac
+    done < <(extract_ticket_allowed_paths "$ticket_file")
+    [ "$matched" -eq 1 ] || return 1
+  done < <(git -C "$worktree_path" status --porcelain --untracked-files=all 2>/dev/null | sed 's/^...//')
+
   return 0
 }
 
@@ -455,6 +480,11 @@ stage_ticket_commit_scope() {
   stage_git_path_if_present "$git_root" "$ticket_file"
   if [ -n "$ticket_id" ]; then
     for lifecycle_path in \
+      "${board_abs_root}/tickets/todo/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/inprogress/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/verifier/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/ready-to-merge/Todo-${ticket_id}.md" \
+      "${board_abs_root}/tickets/merge-blocked/Todo-${ticket_id}.md" \
       "${board_abs_root}/tickets/todo/tickets_${ticket_id}.md" \
       "${board_abs_root}/tickets/inprogress/tickets_${ticket_id}.md" \
       "${board_abs_root}/tickets/verifier/tickets_${ticket_id}.md" \
@@ -556,7 +586,7 @@ cleanup_completed_ticket_worktree() {
   local ticket_file="$1"
   local ticket_id="$2"
   local cleanup_git_root cleanup_worktree_path cleanup_branch cleanup_default_branch
-  local branch part seen_branches cleanup_summary
+  local branch part seen_branches cleanup_summary op_reason cleanup_failed_count
   local -a cleanup_status_parts=()
   local -a cleanup_failed_parts=()
   local -a cleanup_log_parts=()
@@ -566,19 +596,41 @@ cleanup_completed_ticket_worktree() {
   cleanup_branch="$(strip_markdown_code_ticks "$(ticket_worktree_field "$ticket_file" "Branch")")"
   cleanup_default_branch="autoflow/tickets_${ticket_id}"
 
-  if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ] && [ -d "$cleanup_worktree_path" ]; then
-    cleanup_summary="$(cleanup_worktree_bound_processes "$cleanup_worktree_path" 2>/dev/null || true)"
-    if [ -n "$cleanup_summary" ]; then
-      cleanup_log_parts+=("$cleanup_summary")
-      while IFS= read -r part; do
-        [ -n "$part" ] || continue
-        cleanup_status_parts+=("$part")
-      done <<< "$cleanup_summary"
-    fi
-    if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
-      cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
+  if [ -n "$cleanup_git_root" ] && [ -n "$cleanup_worktree_path" ]; then
+    if git -C "$cleanup_git_root" worktree list --porcelain |
+      awk -v target="$cleanup_worktree_path" '$1 == "worktree" && $2 == target { found = 1 } END { exit(found ? 0 : 1) }'; then
+      cleanup_failed_count="${#cleanup_failed_parts[@]}"
+      if [ ! -d "$cleanup_worktree_path" ]; then
+        cleanup_status_parts+=("worktree_already_absent=${cleanup_worktree_path}")
+      elif op_reason="$(git_operation_in_progress_reason "$cleanup_worktree_path" 2>/dev/null)"; then
+        cleanup_failed_parts+=("worktree_unfinished=${cleanup_worktree_path}:${op_reason}")
+      elif git -C "$cleanup_worktree_path" status --porcelain --untracked-files=all 2>/dev/null | grep -q .; then
+        if cleanup_worktree_dirty_matches_project_root "$ticket_file" "$cleanup_worktree_path"; then
+          cleanup_status_parts+=("worktree_dirty_already_in_project_root=${cleanup_worktree_path}")
+        else
+          cleanup_failed_parts+=("worktree_dirty=${cleanup_worktree_path}")
+        fi
+      else
+        cleanup_summary="$(cleanup_worktree_bound_processes "$cleanup_worktree_path" 2>/dev/null || true)"
+        if [ -n "$cleanup_summary" ]; then
+          cleanup_log_parts+=("$cleanup_summary")
+          while IFS= read -r part; do
+            [ -n "$part" ] || continue
+            cleanup_status_parts+=("$part")
+          done <<< "$cleanup_summary"
+        fi
+      fi
+      if [ "${#cleanup_failed_parts[@]}" -eq "$cleanup_failed_count" ]; then
+        if git -C "$cleanup_git_root" worktree remove --force "$cleanup_worktree_path" >/dev/null 2>&1; then
+          cleanup_status_parts+=("removed_worktree=${cleanup_worktree_path}")
+        else
+          cleanup_failed_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
+        fi
+      fi
+    elif [ -d "$cleanup_worktree_path" ]; then
+      cleanup_status_parts+=("worktree_already_unregistered=${cleanup_worktree_path}")
     else
-      cleanup_failed_parts+=("worktree_remove_failed=${cleanup_worktree_path}")
+      cleanup_status_parts+=("worktree_already_absent=${cleanup_worktree_path}")
     fi
   fi
 
@@ -593,12 +645,15 @@ cleanup_completed_ticket_worktree() {
       *" $branch "*) continue ;;
     esac
     seen_branches="${seen_branches} ${branch}"
-    if [ -n "$cleanup_git_root" ] && git -C "$cleanup_git_root" rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
+    [ -n "$cleanup_git_root" ] || continue
+    if git -C "$cleanup_git_root" rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null 2>&1; then
       if git -C "$cleanup_git_root" branch -D "$branch" >/dev/null 2>&1; then
         cleanup_status_parts+=("deleted_branch=${branch}")
       else
         cleanup_failed_parts+=("branch_delete_failed=${branch}")
       fi
+    else
+      cleanup_status_parts+=("branch_already_absent=${branch}")
     fi
   done
 
@@ -771,7 +826,11 @@ if [ "$ticket_file" != "$done_target" ]; then
   mv "$ticket_file" "$done_target"
   ticket_file="$done_target"
 fi
-log_output="$("${BOARD_ROOT}/scripts/write-verifier-log.sh" "$ticket_file" "$run_file" pass)"
+# Verifier role was removed in the 2026-05-07 refactor (CLAUDE.md / AGENTS.md
+# topology note); the worker finalizer's shell sanity gate replaces the old
+# verifier role and write-verifier-log.sh no longer ships. The previous call
+# stalled mid-finalize on every worker pass and forced manual completion.
+log_output=""
 wiki_output="$(wiki_ai_owned_notice)"
 # Wiki baseline and synthesis are intentionally deferred to wiki. This
 # finalizer is a merge/evidence/commit tool; it must not rewrite wiki pages
