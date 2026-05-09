@@ -1,6 +1,9 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import AnsiToHtml from "ansi-to-html";
+import { Terminal as XTermTerminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 import {
   Activity,
   Archive,
@@ -6121,6 +6124,115 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
 // manual_order_196 (2026-05-09): stdout 파일의 마지막 N 바이트를 1초마다
 // 폴링해서 진짜 터미널 뷰처럼 streaming. board snapshot 의 conversationPreview
 // 보다 훨씬 fresh — 사용자가 AI 가 실제로 뱉는 raw stdout 을 본다.
+// manual_order_196 (2026-05-09): vibe-terminal (`document/lab/vibe-terminal`)
+// 패턴 차용 — @xterm/xterm v6 + @xterm/addon-fit. read-only stdout 디스플레이라
+// PTY 입력 forwarding 은 안 함. text prop 이 갱신될 때마다 새로 추가된 부분만
+// `terminal.write` 으로 append (전체 reset 시 ANSI 상태 깨짐).
+function LiveTerminalView({
+  text,
+  ariaLabel
+}: {
+  text: string;
+  ariaLabel: string;
+}) {
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const terminalRef = React.useRef<XTermTerminal | null>(null);
+  const fitAddonRef = React.useRef<FitAddon | null>(null);
+  const writtenLengthRef = React.useRef(0);
+
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host || terminalRef.current) return;
+    const terminal = new XTermTerminal({
+      cursorBlink: true,
+      convertEol: true,
+      disableStdin: true,
+      allowProposedApi: false,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSize: 12,
+      lineHeight: 1.25,
+      scrollback: 4000,
+      theme: {
+        background: "#1a1d23",
+        foreground: "#d6d8de",
+        cursor: "#9aa0a6",
+        cursorAccent: "#1a1d23",
+        selectionBackground: "rgba(255, 255, 255, 0.18)",
+        black: "#1a1d23",
+        red: "#ef4444",
+        green: "#22c55e",
+        yellow: "#eab308",
+        blue: "#3b82f6",
+        magenta: "#a855f7",
+        cyan: "#06b6d4",
+        white: "#d6d8de",
+        brightBlack: "#6b7280",
+        brightRed: "#f87171",
+        brightGreen: "#4ade80",
+        brightYellow: "#facc15",
+        brightBlue: "#60a5fa",
+        brightMagenta: "#c084fc",
+        brightCyan: "#22d3ee",
+        brightWhite: "#f3f4f6"
+      }
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(host);
+    try {
+      fitAddon.fit();
+    } catch {
+      // host might not be sized yet; ResizeObserver will refit shortly
+    }
+    terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
+    writtenLengthRef.current = 0;
+
+    const observer = new ResizeObserver(() => {
+      try {
+        fitAddon.fit();
+      } catch {
+        // ignore transient resize errors during teardown
+      }
+    });
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+      terminal.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+      writtenLengthRef.current = 0;
+    };
+  }, []);
+
+  // text prop 변화 감지 → 새 chunk 만 write. text 가 더 짧아지면 (로그 회전
+  // 등) 전체 reset. terminal.scrollToBottom 은 write 시 자동 동작.
+  React.useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    const written = writtenLengthRef.current;
+    if (text.length === written) return;
+    if (text.length < written || !text.startsWith(text.slice(0, written))) {
+      terminal.reset();
+      terminal.write(text);
+    } else {
+      terminal.write(text.slice(written));
+    }
+    writtenLengthRef.current = text.length;
+  }, [text]);
+
+  return (
+    <div
+      ref={hostRef}
+      className="live-terminal-view"
+      role="log"
+      aria-live="polite"
+      aria-label={ariaLabel}
+    />
+  );
+}
+
 function useLiveStdoutText(
   runner: AutoflowRunner,
   options?: { projectRoot: string; boardDirName: string },
@@ -6964,7 +7076,11 @@ function AiProgressRow({
         </div>
       ) : null}
       {showConversation ? (
-        <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
+        liveStdoutText ? (
+          <LiveTerminalView text={liveStdoutText} ariaLabel={`${agentLabel} 라이브 터미널`} />
+        ) : (
+          <ConversationStream label={`${agentLabel} 최근 터미널 출력`} text={conversationText} streamId={`progress:${runner.id}`} />
+        )
       ) : null}
       <RunnerActivityFooter runner={runner} options={options} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>

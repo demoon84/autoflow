@@ -3227,6 +3227,27 @@ pre {
   font-weight: 500;
 }
 
+.live-terminal-view {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  margin-top: 10px;
+  border: 1px solid #2a2e36;
+  border-radius: 8px;
+  background: #1a1d23;
+  overflow: hidden;
+  padding: 6px;
+}
+
+.live-terminal-view .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+.live-terminal-view .xterm .xterm-viewport {
+  background: #1a1d23 !important;
+}
+
 .ai-conversation-panel-activity-thinking {
   display: inline-flex;
   align-items: center;
