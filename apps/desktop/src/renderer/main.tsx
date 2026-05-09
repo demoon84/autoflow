@@ -4178,8 +4178,8 @@ const ticketWorkspaceTabs: Array<{
   label: string;
   description: string;
 }> = [
-  { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
   { key: "inbox", label: "Order", description: "빠른 오더 intake" },
+  { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
   { key: "issued", label: "Ticket", description: "발급된 작업 티켓" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
