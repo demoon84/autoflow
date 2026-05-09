@@ -6755,10 +6755,8 @@ function RunnerActivityFooter({
       className="ai-conversation-panel-activity"
       data-running={isRunning ? "true" : "false"}
       aria-live="polite"
-      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
+      title={`누적 토큰 ${activity.tokens.toLocaleString()}`}
     >
-      <span>{activity.elapsed}</span>
-      <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
       <span>↓ {animatedTokens.toLocaleString()} tokens</span>
     </footer>
   );
