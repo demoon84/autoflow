@@ -7194,9 +7194,9 @@ function AiProgressRow({
   const isRunnerActive =
     (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
   const liveStdoutText = useLiveStdoutText(runner, options);
-  const previewText = runnerConversationText(runner);
-  // 종료(idle/stopped) 상태면 터미널을 비운다. 실행 중일 때만 내용 표시.
-  const conversationText = isRunnerActive ? (liveStdoutText || previewText) : "";
+  // 실행 중일 때만 live stdout 표시. previewText fallback 없음 —
+  // previewText 가 먼저 쓰이면 writtenLengthRef 가 오염돼 typewriter 가 깨진다.
+  const conversationText = isRunnerActive ? liveStdoutText : "";
   const statusLower = status.toLowerCase();
   const mode = "loop";
   // actionKey holds the action label for THIS runner only ("" when idle).
@@ -7218,7 +7218,7 @@ function AiProgressRow({
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
-  const showConversation = shouldShowConversation(runner) || Boolean(liveStdoutText);
+  const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
