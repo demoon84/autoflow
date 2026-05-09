@@ -6760,69 +6760,6 @@ function useLiveStdoutText(
   return text;
 }
 
-function useLiveStdoutRate(
-  runner: AutoflowRunner,
-  options?: { projectRoot: string; boardDirName: string }
-): { bytesPerSec: number; totalBytes: number } | null {
-  const stateStatus = (runner.stateStatus || "").toLowerCase();
-  const isRunning = stateStatus === "running" && Boolean(runner.pid);
-  const projectRoot = options?.projectRoot || "";
-  const boardDirName = options?.boardDirName || "";
-  const persistentLog =
-    runner.id && projectRoot && boardDirName
-      ? `${projectRoot.replace(/[\\/]+$/, "")}/${boardDirName}/runners/logs/${runner.id}.log`
-      : "";
-  const stdoutPath = runner.lastStdoutLog || persistentLog;
-
-  const [sample, setSample] = React.useState<{ size: number; ts: number } | null>(null);
-  const [rate, setRate] = React.useState(0);
-  const lastSampleRef = React.useRef<{ size: number; ts: number } | null>(null);
-
-  React.useEffect(() => {
-    if (!isRunning || !stdoutPath || !projectRoot || !boardDirName) return;
-    let cancelled = false;
-    const fetchOnce = async () => {
-      try {
-        const result = await window.autoflow.readBoardFile({
-          projectRoot,
-          boardDirName,
-          filePath: stdoutPath
-        });
-        if (cancelled || !result.ok) return;
-        const now = Date.now();
-        const size = typeof result.size === "number" ? result.size : 0;
-        const prev = lastSampleRef.current;
-        if (prev && now > prev.ts) {
-          const dt = (now - prev.ts) / 1000;
-          const dSize = Math.max(0, size - prev.size);
-          setRate(dt > 0 ? dSize / dt : 0);
-        }
-        lastSampleRef.current = { size, ts: now };
-        setSample({ size, ts: now });
-      } catch {
-        // best-effort polling — swallow read errors
-      }
-    };
-    void fetchOnce();
-    const handle = window.setInterval(fetchOnce, 1500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(handle);
-    };
-  }, [isRunning, stdoutPath, projectRoot, boardDirName]);
-
-  if (!isRunning || !sample) return null;
-  return { bytesPerSec: rate, totalBytes: sample.size };
-}
-
-function formatRate(bytesPerSec: number): string {
-  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return "0 B/s";
-  if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
-  const kb = bytesPerSec / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB/s`;
-  return `${(kb / 1024).toFixed(2)} MB/s`;
-}
-
 function RunnerActivityFooter({
   runner
 }: {
