@@ -6326,12 +6326,39 @@ function liveTerminalThemeFor(mode: "light" | "dark") {
 const TYPEWRITER_CHARS_PER_TICK = 8;
 const TYPEWRITER_INTERVAL_MS = 16;
 
+const RUNNER_QUOTA_KEYWORD_PATTERN =
+  /\b(?:usage limit|rate limit|quota exceeded|too many requests|resource_exhausted|model_capacity_exhausted)\b/i;
+
+function extractRunnerQuotaRetryAfter(text: string): string {
+  const tryAgainMatch = text.match(/try again at\s+([^\n.]+)/i);
+  if (tryAgainMatch?.[1]) return tryAgainMatch[1].trim();
+  const resetMatch = text.match(/quota[\s\S]{0,80}?reset[\s\S]{0,40}?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)/i);
+  return resetMatch?.[1]?.trim() || "";
+}
+
+function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string) {
+  if (!runner) return null;
+  const lastResult = (runner.lastResult || "").toLowerCase();
+  const hasLastResultSignal = lastResult === "quota_limited";
+  const hasStdoutSignal = RUNNER_QUOTA_KEYWORD_PATTERN.test(text);
+  if (!hasLastResultSignal && !hasStdoutSignal) return null;
+
+  return {
+    fingerprint: `quota:${runner.id}:${hasLastResultSignal ? lastResult : "stdout"}`,
+    retryAfter: extractRunnerQuotaRetryAfter(text)
+  };
+}
+
 function LiveTerminalView({
   text,
-  ariaLabel
+  ariaLabel,
+  runner,
+  agentLabel
 }: {
   text: string;
   ariaLabel: string;
+  runner?: AutoflowRunner;
+  agentLabel?: string;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
@@ -6347,6 +6374,11 @@ function LiveTerminalView({
   const [terminalThemeMode, setTerminalThemeMode] = React.useState<
     "light" | "dark"
   >(() => readDocumentThemeMode());
+  const [dismissedQuotaFingerprint, setDismissedQuotaFingerprint] = React.useState("");
+  const quotaSignal = runnerQuotaToastSignal(runner, text);
+  const showQuotaToast =
+    Boolean(quotaSignal) && quotaSignal?.fingerprint !== dismissedQuotaFingerprint;
+  const quotaAgentLabel = agentLabel || runner?.agent || runner?.id || "AI";
 
   // prd_225: <html data-theme="..."> 변화를 구독해 xterm theme 도 즉시 swap.
   // 사용자가 헤더 토글을 누르면 documentElement.dataset.theme 가 바뀌므로
@@ -6511,6 +6543,29 @@ function LiveTerminalView({
       aria-label={ariaLabel}
     >
       <div ref={hostRef} className="live-terminal-view-host" />
+      {showQuotaToast && quotaSignal ? (
+        <div className="live-terminal-view-quota-toast" role="alert" aria-live="assertive">
+          <TriangleAlert className="live-terminal-view-quota-toast-icon" aria-hidden="true" />
+          <div className="live-terminal-view-quota-toast-copy">
+            <strong>토큰 한도 도달</strong>
+            <span>
+              {quotaAgentLabel}의 사용 한도를 초과했습니다.
+              {quotaSignal.retryAfter ? ` ${quotaSignal.retryAfter}에 재개 가능.` : ""}
+              {" "}다른 모델로 임시 swap 하거나 한도 회복을 기다려주세요.
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="live-terminal-view-quota-toast-close"
+            aria-label="토큰 한도 안내 닫기"
+            onClick={() => setDismissedQuotaFingerprint(quotaSignal.fingerprint)}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -6769,20 +6824,12 @@ function formatRate(bytesPerSec: number): string {
 }
 
 function RunnerActivityFooter({
-  runner,
-  options
+  runner
 }: {
   runner: AutoflowRunner;
-  options?: { projectRoot: string; boardDirName: string };
 }) {
   const activity = useRunnerActivity(runner);
-  // useCountUp 은 IPC 가 token 값을 갱신하면 600ms 동안 부드럽게 카운트.
   const animatedTokens = useCountUp(activity.tokens);
-  const liveRate = useLiveStdoutRate(runner, options);
-  const rateLabel = liveRate ? formatRate(liveRate.bytesPerSec) : "0 B/s";
-  // PRD 224: running 이 아닐 때 activity footer 를 dimmed 로 표시해 사용자가
-  // "지금 살아 있는지" 신호를 시각적으로 구분할 수 있게 한다. 토큰 누적 값은
-  // stopped 후에도 정보 가치가 있어 숨기지 않고 dim 처리.
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
   return (
@@ -6790,17 +6837,11 @@ function RunnerActivityFooter({
       className="ai-conversation-panel-activity"
       data-running={isRunning ? "true" : "false"}
       aria-live="polite"
-      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}${liveRate ? ` · stdout 누적 ${liveRate.totalBytes.toLocaleString()} B` : ""}`}
+      title={`마지막 이벤트로부터 ${activity.elapsed} 경과 · 누적 토큰 ${activity.tokens.toLocaleString()}`}
     >
       <span>{activity.elapsed}</span>
       <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
       <span>↓ {animatedTokens.toLocaleString()} tokens</span>
-      {rateLabel ? (
-        <>
-          <span className="ai-conversation-panel-activity-sep" aria-hidden="true">·</span>
-          <span className="ai-conversation-panel-activity-rate">{rateLabel}</span>
-        </>
-      ) : null}
     </footer>
   );
 }
@@ -7508,8 +7549,13 @@ function AiProgressRow({
           </div>
         </div>
       ) : null}
-      <LiveTerminalView text={conversationText} ariaLabel={`${agentLabel} 라이브 터미널`} />
-      <RunnerActivityFooter runner={runner} options={options} />
+      <LiveTerminalView
+        text={conversationText}
+        ariaLabel={`${agentLabel} 라이브 터미널`}
+        runner={runner}
+        agentLabel={agentLabel}
+      />
+      <RunnerActivityFooter runner={runner} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
           className="workflow-pin-layer-panel workflow-pin-layer-default"
