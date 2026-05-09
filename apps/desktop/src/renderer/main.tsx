@@ -6175,7 +6175,51 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
 // manual_order_196 (2026-05-09): stdout 파일의 마지막 N 바이트를 1초마다
 // 폴링해서 진짜 터미널 뷰처럼 streaming. board snapshot 의 conversationPreview
 // 보다 훨씬 fresh — 사용자가 AI 가 실제로 뱉는 raw stdout 을 본다.
-// manual_order_196 (2026-05-09): vibe-terminal (`document/lab/vibe-terminal/src/renderer/renderer.js`)
+// manual_order_196 (2026-05-09): runner stdout 이 ANSI escape 없는 plain
+// key=value text 라 xterm theme palette 가 적용될 색 자체가 없다. 기존
+// ConversationStream 의 LOG_TOKEN_REGEX (line ~3548) 를 그대로 재사용해
+// 토큰 종류별로 ANSI escape 로 wrap 한다. xterm 이 그 escape 를 해석해 색을
+// 입혀 ConversationStream 시절의 컬러감을 회복.
+const LOG_TOKEN_ANSI: Record<string, string> = {
+  ts: "\x1b[36m", // cyan
+  date: "\x1b[36m",
+  time: "\x1b[36m",
+  path: "\x1b[34m", // blue
+  key: "\x1b[35m", // magenta
+  str: "\x1b[32m", // green
+  good: "\x1b[92m", // bright green
+  bad: "\x1b[31m", // red
+  warn: "\x1b[33m", // yellow
+  active: "\x1b[36m",
+  num: "\x1b[33m"
+};
+
+function colorizeLogChunk(chunk: string): string {
+  if (!chunk) return "";
+  let out = "";
+  let lastIndex = 0;
+  LOG_TOKEN_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = LOG_TOKEN_REGEX.exec(chunk)) !== null) {
+    if (match.index > lastIndex) {
+      out += chunk.slice(lastIndex, match.index);
+    }
+    const groups = match.groups || {};
+    let prefix = "";
+    for (const key of Object.keys(LOG_TOKEN_ANSI)) {
+      if (groups[key]) {
+        prefix = LOG_TOKEN_ANSI[key];
+        break;
+      }
+    }
+    out += prefix ? `${prefix}${match[0]}\x1b[0m` : match[0];
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < chunk.length) out += chunk.slice(lastIndex);
+  return out;
+}
+
+// vibe-terminal (`document/lab/vibe-terminal/src/renderer/renderer.js`)
 // 의 패턴 그대로. read-only 라 PTY 입력 forwarding / wheel handler 만 생략.
 // scrollback / debounce / chunk flush / theme 은 vibe 와 동일.
 const LIVE_TERMINAL_SCROLLBACK = 50000;
@@ -6325,7 +6369,7 @@ function LiveTerminalView({
     }
     writtenLengthRef.current = text.length;
     if (!chunk) return;
-    pendingChunksRef.current.push(chunk);
+    pendingChunksRef.current.push(colorizeLogChunk(chunk));
     if (flushRafRef.current !== null) return;
     flushRafRef.current = requestAnimationFrame(() => {
       flushRafRef.current = null;
