@@ -3639,21 +3639,6 @@ Role boundary:
 ${role_boundary_line}
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.
-
-Token budget (HARD — minimize 토큰 누수):
-- Take the **fewest** tool turns that still complete the task. Aim for ≤ 8
-  tool calls per tick. Idle ticks should make 0 tool calls when possible.
-- Never \`cat\` whole files larger than ~200 lines. Use \`head -n\`,
-  \`tail -n\`, \`sed -n 'L1,L2p'\`, or \`grep -nF\` to fetch only the slice
-  you need; reference larger context by \`path:line-range\`.
-- For wiki RAG, default to \`--limit 5\` and 1–2 distinctive terms. Do not
-  re-issue similar queries; one focused query is enough.
-- Do not re-read the agent instruction file or AGENTS.md within a tick — it
-  is already summarized in this prompt. Re-read only when the role changed.
-- When in doubt, write a one-line plan and stop, instead of exploring more.
-- Ground rule: a planner / wiki tick that ends with no board change must
-  cost ≪ 5,000 input tokens. A worker tick on a small ticket should cost
-  ≪ 100,000 input tokens. Cumulative input across turns counts.
 EOF
 }
 
@@ -4471,20 +4456,6 @@ adapter_session_resolve() {
   ADAPTER_SESSION_IS_NEW=1
 }
 
-# Backward-compatible wrappers (return UUID via stdout for callers that
-# already use $(...) — IS_NEW is unreliable from these wrappers).
-adapter_session_id_for_claude() {
-  adapter_session_resolve "claude"
-  printf '%s' "$ADAPTER_SESSION_ID"
-}
-adapter_session_id_for_codex() {
-  adapter_session_resolve "codex"
-  printf '%s' "$ADAPTER_SESSION_ID"
-}
-adapter_session_id_for_gemini() {
-  adapter_session_resolve "gemini"
-  printf '%s' "$ADAPTER_SESSION_ID"
-}
 
 adapter_session_persist() {
   # Persist session id to a dedicated file so it survives runner_write_state
@@ -4740,29 +4711,14 @@ run_default_adapter_command() {
           cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
         fi
       fi
-      # Capture codex thread_id for next tick session continuity. Look for the
-      # first '{"type":"thread.started","thread_id":"<uuid>"}' line in stdout
-      # and persist if we don't have one yet.
-      runner_append_log "$runner_id" "session_persist_attempt" \
-        "agent=codex" \
-        "command_exit=${command_exit}" \
-        "json_mode=$(runner_codex_json_mode_active && echo true || echo false)" \
-        "had_sid=$([ -n "${_codex_sid:-}" ] && echo true || echo false)" \
-        "stdout_size=$([ -f "$adapter_stdout" ] && wc -c < "$adapter_stdout" || echo 0)" \
-        2>/dev/null || true
+      # Capture codex thread_id for next tick session continuity. First call
+      # ends with `{"type":"thread.started","thread_id":"<uuid>"}` in stdout;
+      # we save that uuid so the next tick uses `codex exec resume <id>`.
       if [ "$command_exit" -eq 0 ] && runner_codex_json_mode_active && [ -z "${_codex_sid:-}" ] && [ -s "$adapter_stdout" ]; then
         local _new_codex_tid
         _new_codex_tid="$(grep -m1 '"type":"thread.started"' "$adapter_stdout" 2>/dev/null | sed -nE 's/.*"thread_id":"([^"]+)".*/\1/p')"
-        runner_append_log "$runner_id" "session_persist_extract" \
-          "agent=codex" \
-          "thread_id=${_new_codex_tid:-NONE}" \
-          2>/dev/null || true
         if [ -n "$_new_codex_tid" ]; then
           adapter_session_persist "codex" "$_new_codex_tid"
-          runner_append_log "$runner_id" "session_persist_done" \
-            "agent=codex" \
-            "thread_id=${_new_codex_tid}" \
-            2>/dev/null || true
         fi
       fi
       return "$command_exit"
