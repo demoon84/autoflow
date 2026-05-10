@@ -3487,33 +3487,16 @@ role_boundary_for_current_role() {
 }
 
 emit_required_flow() {
-  # Emit the full Required-flow numbered list in order. Items 1, 2, 4, 5, 6,
-  # 9, 10, 11 are always emitted. Items 3 and 7 are role-gated so they only
-  # ship for the roles that actually need them.
-  printf '%s\n' "1. The role instruction and AGENTS.md are already inlined above — DO NOT cat or re-read those files. Read only the current board state files referenced by your task (the active ticket / order / PRD)."
-  printf '%s\n' "2. Execute exactly one safe ${public_role} turn. Autoflow is AI-led: shell scripts are deterministic tools for claim/state/finalization, not replacement workers or hidden decision makers."
-  case "$public_role" in
-    planner|ticket|todo)
-      printf '%s\n' "3. Wiki RAG is OPTIONAL, not required. Only run 'autoflow wiki query --rag --limit 5' when the active ticket explicitly cannot be resolved without prior context. Skip wiki query when the answer is already in the inlined instructions or in the ticket body."
-      ;;
-  esac
-  printf '%s\n' "4. Treat wiki results as context and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
-  printf '%s\n' "5. Cite relevant wiki/ticket findings in the plan, ticket Notes, or Resume Context when they shape the work."
-  printf '%s\n' "6. Use runtime scripts as tools when claiming or preparing board state if a runtime script is defined; inspect their key=value output before choosing the next action."
-  case "$public_role" in
-    ticket)
-      printf '%s\n' "7. The AI owns implementation, verification judgment, and merge judgment end to end. Scripts are tools for claim/state/finalization only: do not let a script be the actor that verifies, rebases, cherry-picks, resolves conflicts, or decides pass. The AI must run and inspect verification commands, manually integrate verified changes into PROJECT_ROOT, resolve conflicts when needed, and only then use finish-ticket-owner as the final bookkeeping/log/wiki/local-commit tool."
-      ;;
-    planner)
-      printf '%s\n' "7. After AI-authored recovery edits, run 'autoflow guard' or 'scripts/board-guard.sh' and repair any guard errors before creating more work. Treat guard warnings as orchestration evidence: record leftover/dirty worktree cleanup candidates in Recovery State, Next Action, or Resume Context, but do not delete or reset worktrees yourself. Do not manage runner or OS processes: no kill/pkill, no runner start/stop/restart, no background process cleanup. If recovery evidence and decision are unchanged, do not append duplicate Notes or rewrite Last Recovery At; leave the ticket idempotently blocked and report the unchanged blocker."
-      ;;
-    coordinator)
-      printf '%s\n' "7. Do not invoke autoflow runners start/restart or autoflow run coordinator from inside this adapter turn. Execute the Runtime script directly once, inspect its output, report the next safe action, and summarize any wiki maintenance result surfaced by the finalizer runtime."
-      ;;
-  esac
-  printf '%s\n' "9. Keep durable progress in board files, runner logs, ticket Notes, Result, and Resume Context."
-  printf '%s\n' "10. Do not rely on this prompt as future context."
-  printf '%s\n' "11. Never git push."
+  # Autoflow 는 AI-led 다. prompt 가 LLM 에게 단계별 행동을 시키지 않는다.
+  # 시스템 원칙(role instruction + AGENTS.md)은 이미 inline 으로 주어졌고,
+  # 절대 금지 사항(invariants)만 짧게 명시한다. 어떤 도구를 언제 어떻게 쓸지는
+  # LLM 이 판단한다.
+  printf '%s\n' "Hard invariants (must hold; everything else is up to you):"
+  printf '%s\n' "- Never \`git push\`."
+  printf '%s\n' "- Never modify files outside the ticket Allowed Paths (or the active worktree)."
+  printf '%s\n' "- Do not start, stop, kill, or restart Autoflow runners or OS processes."
+  printf '%s\n' "- Keep durable progress in board files (ticket Notes, Result, Resume Context); chat history is not future context."
+  printf '%s\n' "- The role instruction and AGENTS.md above are already authoritative — do not re-read them."
 }
 
 emit_planner_recovery_action_contract() {
