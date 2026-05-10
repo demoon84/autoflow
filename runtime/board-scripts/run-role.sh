@@ -991,7 +991,7 @@ telemetry_extract_token_components_from_logs() {
       }
       # OpenAI codex: cached_input_tokens is a SUBSET of input_tokens.
       # reasoning_output_tokens is a SUBSET of output_tokens. Skip these to
-      # avoid double-counting. Claude's cache_creation_input_tokens and
+      # avoid double-counting. Claude cache_creation_input_tokens and
       # cache_read_input_tokens are distinct billable categories so they keep
       # summing.
       if (lower_key == "cached_input_tokens" || lower_key == "cached_input_token" || lower_key == "reasoning_output_tokens" || lower_key == "reasoning_output_token") {
