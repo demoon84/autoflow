@@ -3593,18 +3593,30 @@ ${required_flow_block}
 EOF
 
   # 핵심 지침을 prompt 에 inline 으로 fold — LLM 이 agent.md / AGENTS.md /
-  # CLAUDE.md 를 매 호출마다 cat 하지 않게 한다. prompt cache 친화적이고 매
-  # 호출 비용이 30턴 → 1~3턴으로 줄어든다.
-  if [ -f "$instruction_file" ]; then
-    printf -- '--- Inline role instruction (do NOT cat the file again; this content is authoritative) ---\n'
-    cat "$instruction_file"
-    printf -- '--- end of role instruction ---\n\n'
-  fi
-  local _autoflow_root_agents="${project_root}/AGENTS.md"
-  if [ -f "$_autoflow_root_agents" ]; then
-    printf -- '--- Inline AGENTS.md (do NOT re-read) ---\n'
-    cat "$_autoflow_root_agents"
-    printf -- '--- end of AGENTS.md ---\n\n'
+  # CLAUDE.md 를 매 호출마다 cat 하지 않게 한다. 첫 호출(새 session)에만
+  # inline; --resume 으로 이어가는 후속 호출에는 inline 안 함 (이미 세션
+  # 히스토리에 들어있음). 이거 안 하면 매 tick 같은 내용 새 user message 로
+  # 재전송 → cache miss + 풀 가격.
+  local _runner_already_has_session=0
+  for _agent_field in claude codex gemini; do
+    _existing_sid="$(runner_state_field "$runner_id" "adapter_${_agent_field}_session_id" 2>/dev/null || true)"
+    if [ -n "$_existing_sid" ] && printf '%s' "$_existing_sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+      _runner_already_has_session=1
+      break
+    fi
+  done
+  if [ "$_runner_already_has_session" = "0" ]; then
+    if [ -f "$instruction_file" ]; then
+      printf -- '--- Inline role instruction (do NOT cat the file again; this content is authoritative) ---\n'
+      cat "$instruction_file"
+      printf -- '--- end of role instruction ---\n\n'
+    fi
+    local _autoflow_root_agents="${project_root}/AGENTS.md"
+    if [ -f "$_autoflow_root_agents" ]; then
+      printf -- '--- Inline AGENTS.md (do NOT re-read) ---\n'
+      cat "$_autoflow_root_agents"
+      printf -- '--- end of AGENTS.md ---\n\n'
+    fi
   fi
 
   if [ -n "$planner_context_block" ]; then
