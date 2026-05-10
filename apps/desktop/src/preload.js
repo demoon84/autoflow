@@ -69,5 +69,13 @@ contextBridge.exposeInMainWorld("autoflow", {
     };
     ipcRenderer.on("autoflow:runnerPtyStatus", listener);
     return () => ipcRenderer.removeListener("autoflow:runnerPtyStatus", listener);
+  },
+  onRunnerTokenUpdate: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try { handler(payload); } catch {}
+    };
+    ipcRenderer.on("autoflow:runnerTokenUpdate", listener);
+    return () => ipcRenderer.removeListener("autoflow:runnerTokenUpdate", listener);
   }
 });
