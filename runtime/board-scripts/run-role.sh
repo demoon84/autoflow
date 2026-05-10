@@ -5166,6 +5166,44 @@ runner_budget_existing_preflight_circuit_or_exit() {
   local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
   local last_result last_event_at quota_cooldown quota_until_epoch quota_until_iso
 
+count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
+  previous_count="$(telemetry_positive_integer_or_zero "$previous_count")"
+  if [ "$previous_result" = "$reason" ]; then
+    next_count=$((previous_count + 1))
+  else
+    next_count=1
+  fi
+
+  threshold="$(runner_preflight_skip_threshold)"
+  cooldown_seconds="$(runner_preflight_skip_cooldown_seconds)"
+  now_epoch="$(telemetry_timestamp_to_epoch "$timestamp" || true)"
+  [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+  until_epoch=$((now_epoch + cooldown_seconds))
+  until_iso="$(runner_epoch_to_iso "$until_epoch")"
+
+  printf 'preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_result=%s\n' "$reason"
+  printf 'consecutive_preflight_skip_count=%s\n' "$next_count"
+  printf 'last_preflight_skip_at=%s\n' "$timestamp"
+  printf 'preflight_skip_circuit_breaker_threshold=%s\n' "$threshold"
+  printf 'preflight_skip_circuit_breaker_cooldown_seconds=%s\n' "$cooldown_seconds"
+  printf 'preflight_skip_circuit_breaker_until=%s\n' "$until_iso"
+  if [ "$next_count" -ge "$threshold" ]; then
+    printf 'preflight_skip_circuit_breaker_tripped=true\n'
+  else
+    printf 'preflight_skip_circuit_breaker_tripped=false\n'
+  fi
+}
+
+runner_budget_existing_preflight_circuit_or_exit() {
+  local prompt_file="$1"
+  local autocommit_before_status="$2"
+  local adapter_stdout_path="$3"
+  local adapter_stderr_path="$4"
+  local adapter_last_message_path="${5:-}"
+  local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
+  local last_result last_event_at quota_cooldown quota_until_epoch quota_until_iso
+
   # Quota cooldown: claude / codex quota_limited 이후 1.5분마다 무한 재시도
   # 차단. AUTOFLOW_QUOTA_COOLDOWN_SECONDS (default 1800) 동안 adapter skip.
   last_result="$(runner_state_field "$runner_id" "last_result" 2>/dev/null || true)"
@@ -5981,7 +6019,16 @@ case "$agent" in
       "last_stdout_log=${adapter_stdout}" \
       "last_stderr_log=${adapter_stderr}" \
       "consecutive_timeout_count=${preserved_consecutive_timeouts}" \
-      "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
+      "consecutive_failure_count=$(
+        if [ "$adapter_exit" -eq 0 ] && [ "$runner_status" != "stopped" ]; then
+          printf '0'
+        else
+          prev_failures="$(runner_adapter_preserved_state_value "consecutive_failure_count")"
+          case "$prev_failures" in ''|*[!0-9]*) prev_failures=0 ;; esac
+          printf '%s' "$((prev_failures + 1))"
+        fi
+      )" \
+            "consecutive_preflight_skip_count=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_count")" \
       "consecutive_preflight_skip_result=$(runner_adapter_preserved_state_value "consecutive_preflight_skip_result")" \
       "last_preflight_skip_at=$(runner_adapter_preserved_state_value "last_preflight_skip_at")"
     runner_append_log "$runner_id" "adapter_start" \
