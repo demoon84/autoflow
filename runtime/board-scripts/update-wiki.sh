@@ -332,6 +332,148 @@ EOF
 EOF
 }
 
+wiki_ttl_check() {
+  local dry_run="${1:-false}"
+  local ttl_days="${AUTOFLOW_WIKI_TTL_DAYS:-30}"
+  local do_archive="${AUTOFLOW_WIKI_TTL_ARCHIVE:-0}"
+  local learnings_dir="${BOARD_ROOT}/wiki/learnings"
+  local archive_dir="${BOARD_ROOT}/wiki/_archive/learnings"
+  local now_epoch checked=0 stale_count=0 archived_count=0 marked_count=0
+  local file file_epoch age_days stale_header
+
+  if [ ! -d "$learnings_dir" ]; then
+    printf 'ttl_status=skipped\nttl_reason=learnings_dir_missing\n'
+    return 0
+  fi
+
+  now_epoch="$(date +%s)"
+
+  while IFS= read -r file; do
+    [ -f "$file" ] || continue
+    [ "$(basename "$file")" != "README.md" ] || continue
+    [ "$(basename "$file")" != "index.md" ] || continue
+
+    checked=$((checked + 1))
+    if file_epoch="$(stat -f '%m' "$file" 2>/dev/null)"; then
+      : # macOS
+    elif file_epoch="$(stat -c '%Y' "$file" 2>/dev/null)"; then
+      : # Linux
+    else
+      continue
+    fi
+    age_days=$(( (now_epoch - file_epoch) / 86400 ))
+    [ "$age_days" -ge "$ttl_days" ] || continue
+
+    stale_count=$((stale_count + 1))
+
+    if [ "$dry_run" = "true" ]; then
+      printf 'ttl_stale.%s=%s\n' "$stale_count" "$(relative_to_board "$file")"
+      continue
+    fi
+
+    if [ "$do_archive" = "1" ]; then
+      mkdir -p "$archive_dir"
+      mv "$file" "${archive_dir}/$(basename "$file")"
+      archived_count=$((archived_count + 1))
+    else
+      stale_header="## Status: stale"
+      if ! grep -q "^## Status:" "$file" 2>/dev/null; then
+        local tmp
+        tmp="$(autoflow_mktemp)"
+        { printf '%s\n\n' "$stale_header"; cat "$file"; } > "$tmp"
+        mv "$tmp" "$file"
+        marked_count=$((marked_count + 1))
+      fi
+    fi
+  done < <(find "$learnings_dir" -maxdepth 1 -type f -name '*.md' | sort)
+
+  printf 'ttl_status=ok\n'
+  printf 'ttl_days=%s\n' "$ttl_days"
+  printf 'ttl_checked=%s\n' "$checked"
+  printf 'ttl_stale=%s\n' "$stale_count"
+  printf 'ttl_archived=%s\n' "$archived_count"
+  printf 'ttl_marked=%s\n' "$marked_count"
+}
+
+wiki_pattern_synthesis() {
+  local dry_run="${1:-false}"
+  local threshold="${AUTOFLOW_WIKI_PATTERN_THRESHOLD:-3}"
+  local learnings_dir="${BOARD_ROOT}/wiki/learnings"
+  local tmp_counts synthesized=0
+
+  tmp_counts="$(autoflow_mktemp)"
+
+  # Collect failure_class from retry orders and done ticket files
+  {
+    find "${BOARD_ROOT}/tickets/inbox" -maxdepth 1 -name 'order_*_retry_*.md' -type f 2>/dev/null | sort
+    find "${BOARD_ROOT}/tickets/done" -maxdepth 2 -name 'order_*_retry_*.md' -type f 2>/dev/null | sort
+  } | while IFS= read -r f; do
+    grep -m1 '^failure_class:' "$f" 2>/dev/null | sed 's/^failure_class:[[:space:]]*//'
+  done | sort | uniq -c | sort -rn > "$tmp_counts"
+
+  if [ ! -s "$tmp_counts" ]; then
+    printf 'pattern_status=ok\npattern_synthesized=0\npattern_reason=no_failure_class_data\n'
+    rm -f "$tmp_counts"
+    return 0
+  fi
+
+  mkdir -p "$learnings_dir"
+
+  while read -r count class; do
+    [ -n "$class" ] || continue
+    [ "$count" -ge "$threshold" ] || continue
+
+    local slug draft_file
+    slug="pattern-$(printf '%s' "$class" | tr '_A-Z' '-a-z' | tr -cs 'a-z0-9-' '-' | sed 's/--*/-/g; s/^-//; s/-$//')"
+    draft_file="${learnings_dir}/${slug}.md"
+
+    if [ "$dry_run" = "true" ]; then
+      synthesized=$((synthesized + 1))
+      printf 'pattern_draft.%s=%s (count=%s)\n' "$synthesized" "$slug" "$count"
+      continue
+    fi
+
+    if [ ! -f "$draft_file" ]; then
+      cat > "$draft_file" <<EOF
+# 패턴: ${class}
+
+> **Draft** — Wiki AI 자동 생성 (발생 횟수: ${count}). 내용을 검토하고 구체적인 Cause / Fix 를 보완하세요.
+
+## Symptom
+
+\`failure_class=${class}\` 가 done 티켓 retry order 에서 **${count}회** 이상 발생했습니다.
+구체적인 오류 메시지나 exit code 를 여기에 추가하세요.
+
+## Cause
+
+이 패턴의 근본 원인을 작성하세요.
+
+- 원인: (티켓 파일 경로 또는 commit hash 를 인용하세요)
+
+## Fix
+
+재발 방지 또는 해결 절차를 작성하세요.
+
+\`\`\`bash
+# 수정 절차 예시
+\`\`\`
+
+## Verification
+
+- Command: \`<검증 명령어>\`
+- Pass: exits 0
+- Fail indicator: exits 1, failure_class=${class}
+EOF
+      synthesized=$((synthesized + 1))
+    fi
+  done < "$tmp_counts"
+
+  rm -f "$tmp_counts"
+  printf 'pattern_status=ok\n'
+  printf 'pattern_threshold=%s\n' "$threshold"
+  printf 'pattern_synthesized=%s\n' "$synthesized"
+}
+
 update_wiki() {
   local dry_run="$1"
   local wiki_root="${BOARD_ROOT}/wiki"
@@ -354,7 +496,7 @@ update_wiki() {
   reject_files="$(autoflow_mktemp)"
   verifier_logs="$(autoflow_mktemp)"
   handoff_files="$(autoflow_mktemp)"
-  collect_files "${BOARD_ROOT}/tickets/done" 'tickets_[0-9][0-9][0-9].md' "$done_tickets"
+  collect_files "${BOARD_ROOT}/tickets/done" 'Todo-[0-9][0-9][0-9].md' "$done_tickets"
   collect_files "${BOARD_ROOT}/tickets" 'reject_[0-9][0-9][0-9].md' "$reject_files"
   collect_files "${BOARD_ROOT}/logs" '*.md' "$verifier_logs"
   collect_files "${BOARD_ROOT}/conversations" 'spec-handoff.md' "$handoff_files"
@@ -466,6 +608,9 @@ update_wiki() {
     idx="$((idx + 1))"
     printf 'updated_file.%s=%s\n' "$idx" "$changed_file"
   done < "$changed_files_list"
+
+  wiki_ttl_check "$dry_run"
+  wiki_pattern_synthesis "$dry_run"
 }
 
 dry_run="false"
