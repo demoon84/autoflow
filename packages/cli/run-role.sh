@@ -3490,11 +3490,11 @@ emit_required_flow() {
   # Emit the full Required-flow numbered list in order. Items 1, 2, 4, 5, 6,
   # 9, 10, 11 are always emitted. Items 3 and 7 are role-gated so they only
   # ship for the roles that actually need them.
-  printf '%s\n' "1. Read the role instruction file, any protocol files it references, and the current board state."
+  printf '%s\n' "1. The role instruction and AGENTS.md are already inlined above — DO NOT cat or re-read those files. Read only the current board state files referenced by your task (the active ticket / order / PRD)."
   printf '%s\n' "2. Execute exactly one safe ${public_role} turn. Autoflow is AI-led: shell scripts are deterministic tools for claim/state/finalization, not replacement workers or hidden decision makers."
   case "$public_role" in
     planner|ticket|todo)
-      printf '%s\n' "3. Run a wiki context pass before planning or implementation: use 'autoflow wiki query' with distinctive terms from the order/PRD/ticket title, request, goal, allowed paths, modules, and reject reason if present. Skip only when both the wiki and 'tickets/done/' are empty."
+      printf '%s\n' "3. Wiki RAG is OPTIONAL, not required. Only run 'autoflow wiki query --rag --limit 5' when the active ticket explicitly cannot be resolved without prior context. Skip wiki query when the answer is already in the inlined instructions or in the ticket body."
       ;;
   esac
   printf '%s\n' "4. Treat wiki results as context and planning constraints: prior decisions, repeated failures, related completed tickets, architecture notes, and known patterns. Do not treat wiki content as proof of completion or as authority over ticket stage."
@@ -3606,7 +3606,23 @@ Language policy:
 
 Required flow:
 ${required_flow_block}
+
 EOF
+
+  # 핵심 지침을 prompt 에 inline 으로 fold — LLM 이 agent.md / AGENTS.md /
+  # CLAUDE.md 를 매 호출마다 cat 하지 않게 한다. prompt cache 친화적이고 매
+  # 호출 비용이 30턴 → 1~3턴으로 줄어든다.
+  if [ -f "$instruction_file" ]; then
+    printf -- '--- Inline role instruction (do NOT cat the file again; this content is authoritative) ---\n'
+    cat "$instruction_file"
+    printf -- '--- end of role instruction ---\n\n'
+  fi
+  local _autoflow_root_agents="${project_root}/AGENTS.md"
+  if [ -f "$_autoflow_root_agents" ]; then
+    printf -- '--- Inline AGENTS.md (do NOT re-read) ---\n'
+    cat "$_autoflow_root_agents"
+    printf -- '--- end of AGENTS.md ---\n\n'
+  fi
 
   if [ -n "$planner_context_block" ]; then
     printf '\nPlanner board context:\n%s\n' "$planner_context_block"
