@@ -5140,6 +5140,36 @@ runner_budget_existing_preflight_circuit_or_exit() {
   local adapter_stderr_path="$4"
   local adapter_last_message_path="${5:-}"
   local count result last_skip_at threshold cooldown_seconds now_iso now_epoch last_epoch until_epoch until_iso
+  local last_result last_event_at quota_cooldown quota_until_epoch quota_until_iso
+
+  # Quota cooldown: claude / codex 가 quota_limited 로 끝나면 무한 재시도가 1.5분
+  # 마다 1M+ tokens 을 헛수고시킴. 마지막 quota_limited 이후 cooldown 동안 어떤
+  # adapter 호출도 즉시 skip → idle.
+  last_result="$(runner_state_field "$runner_id" "last_result" 2>/dev/null || true)"
+  if [ "$last_result" = "quota_limited" ]; then
+    last_event_at="$(runner_state_field "$runner_id" "last_event_at" 2>/dev/null || true)"
+    quota_cooldown="${AUTOFLOW_QUOTA_COOLDOWN_SECONDS:-1800}"
+    case "$quota_cooldown" in ''|*[!0-9]*) quota_cooldown=1800 ;; esac
+    if [ -n "$last_event_at" ]; then
+      now_iso="$(runner_now_iso)"
+      now_epoch="$(telemetry_timestamp_to_epoch "$now_iso" || true)"
+      [ -n "$now_epoch" ] || now_epoch="$(date -u +%s)"
+      last_epoch="$(telemetry_timestamp_to_epoch "$last_event_at" || true)"
+      [ -n "$last_epoch" ] || last_epoch=0
+      quota_until_epoch=$((last_epoch + quota_cooldown))
+      if [ "$now_epoch" -lt "$quota_until_epoch" ]; then
+        quota_until_iso="$(runner_epoch_to_iso "$quota_until_epoch")"
+        runner_budget_append_skip_log_and_state \
+          "quota_cooldown_active" \
+          "$prompt_file" "$autocommit_before_status" "$adapter_stdout_path" "$adapter_stderr_path" "$adapter_last_message_path" \
+          "last_result=${last_result}" \
+          "last_event_at=${last_event_at}" \
+          "quota_cooldown_seconds=${quota_cooldown}" \
+          "quota_cooldown_until=${quota_until_iso}"
+        exit 0
+      fi
+    fi
+  fi
 
   count="$(runner_state_field "$runner_id" "consecutive_preflight_skip_count" 2>/dev/null || true)"
   count="$(telemetry_positive_integer_or_zero "$count")"
