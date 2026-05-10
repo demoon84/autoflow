@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, screen, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
@@ -577,6 +578,86 @@ function reapPreviousPtySessionPids() {
 //   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
 
+// Per-runner safety-poll state: idle detection + queue fingerprint cache.
+//   runnerId -> { lastWakeAt: number (ms epoch), queueFingerprint: string }
+const wakePollState = new Map();
+
+// Safety poller handles per scope key — prevents duplicate setIntervals.
+const wakeSafetyPollers = new Map();
+
+// Return true if the role has actionable work in its queue directories.
+function queueHasPendingWork(role, boardRoot) {
+  try {
+    const check = (dir, pattern) => {
+      const full = path.join(boardRoot, dir);
+      if (!fsSync.existsSync(full)) return false;
+      return fsSync.readdirSync(full).some((f) => pattern.test(f));
+    };
+    if (role === "planner") {
+      return (
+        check("tickets/inbox", /^order_.*\.md$/) ||
+        check("tickets/backlog", /^prd_.*\.md$/)
+      );
+    }
+    if (role === "ticket-owner") {
+      return (
+        check("tickets/inprogress", /^Todo-\d+\.md$/) ||
+        check("tickets/todo", /^Todo-\d+\.md$/)
+      );
+    }
+    if (role === "wiki-maintainer") {
+      return check("tickets/done", /\.md$/);
+    }
+  } catch {
+    // best-effort; return true to avoid suppressing wakes on errors
+    return true;
+  }
+  return false;
+}
+
+// Compute a 12-char SHA256 fingerprint of queue file names + mtimes for a role.
+function computeQueueFingerprint(role, boardRoot) {
+  const dirs = [];
+  if (role === "planner") {
+    dirs.push("tickets/inbox", "tickets/backlog");
+  } else if (role === "ticket-owner") {
+    dirs.push("tickets/inprogress", "tickets/todo");
+  } else if (role === "wiki-maintainer") {
+    dirs.push("tickets/done");
+  }
+  const parts = [];
+  for (const dir of dirs) {
+    const full = path.join(boardRoot, dir);
+    if (!fsSync.existsSync(full)) continue;
+    try {
+      for (const f of fsSync.readdirSync(full).sort()) {
+        try {
+          const st = fsSync.statSync(path.join(full, f));
+          parts.push(`${dir}/${f}:${st.mtimeMs}`);
+        } catch {}
+      }
+    } catch {}
+  }
+  return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 12);
+}
+
+// Append a JSONL entry to the wake-poll log (best-effort, non-blocking).
+function appendWakePollLog(boardRoot, entry) {
+  try {
+    const logDir = path.join(boardRoot, "runners", "logs");
+    fsSync.mkdirSync(logDir, { recursive: true });
+    const line = JSON.stringify({ ...entry, at: new Date().toISOString() }) + "\n";
+    fsSync.appendFileSync(path.join(logDir, "wake-poll.log"), line, "utf8");
+  } catch {}
+}
+
+// Record that a wake was just sent to a runner (resets idle clock).
+function updateWakeActivity(runnerId) {
+  const s = wakePollState.get(runnerId) || {};
+  s.lastWakeAt = Date.now();
+  wakePollState.set(runnerId, s);
+}
+
 // Map a board-relative change path to the role that owns it.
 //   tickets/inbox/  / tickets/backlog/  -> planner
 //   tickets/todo/                       -> ticket-owner
@@ -805,6 +886,7 @@ function ensureBoardWatcher(scope) {
     }
     // PTY runner wake — push a short '[wake]' prompt to runners whose role
     // owns the changed path. Skips if no PTY runner of that role is running.
+    // Gate: only wake roles that actually have pending work in their queue.
     try {
       const mgr = globalThis.__autoflowPtyManager;
       if (!mgr) return;
@@ -814,8 +896,10 @@ function ensureBoardWatcher(scope) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
         if (!targetRoles.has(meta.role)) continue;
+        if (!queueHasPendingWork(meta.role, boardRoot)) continue;
         const paste = meta.agent === "claude" ? "bracketed" : "plain";
         mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
+        updateWakeActivity(rid);
       }
     } catch {
       // wake is best-effort; log churn would dwarf any real signal
@@ -871,6 +955,72 @@ function ensureBoardWatcher(scope) {
   watchDir("tickets", true);
   watchDir("runners/state", false);
   watchDir("wiki/skills-local", true);
+
+  ensureWakeSafetyPoller(scope);
+}
+
+// Safety poll: fires a wake to idle runners when queue work is present and
+// either the fingerprint changed or a stall threshold is reached.
+// Env knobs:
+//   AUTOFLOW_WAKE_POLL_INTERVAL_SEC    — poll tick interval (default 60 s)
+//   AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC   — seconds without a wake → idle (default 30 s)
+//   AUTOFLOW_WAKE_STALL_THRESHOLD_SEC  — seconds without any wake → forced wake (default 1800 s)
+function ensureWakeSafetyPoller(scope) {
+  if (!scope || typeof scope.projectRoot !== "string") return;
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  const key = `${scope.projectRoot}::${boardDirName}`;
+  if (wakeSafetyPollers.has(key)) return;
+
+  const pollIntervalMs = Number(process.env.AUTOFLOW_WAKE_POLL_INTERVAL_SEC || 60) * 1000;
+  const idleThresholdMs = Number(process.env.AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC || 30) * 1000;
+  const stallThresholdMs = Number(process.env.AUTOFLOW_WAKE_STALL_THRESHOLD_SEC || 1800) * 1000;
+  const boardRoot = path.join(scope.projectRoot, boardDirName);
+
+  const timerId = setInterval(() => {
+    try {
+      const mgr = globalThis.__autoflowPtyManager;
+      if (!mgr) return;
+      const now = Date.now();
+      for (const [rid, meta] of ptyRunnerMeta.entries()) {
+        if (meta.projectRoot !== scope.projectRoot) continue;
+        if (meta.boardDirName !== boardDirName) continue;
+        if (!queueHasPendingWork(meta.role, boardRoot)) continue;
+
+        const s = wakePollState.get(rid) || {};
+        const lastWake = s.lastWakeAt || 0;
+        const idleSec = (now - lastWake) / 1000;
+        const isIdle = (now - lastWake) >= idleThresholdMs;
+        if (!isIdle) continue;
+
+        const fp = computeQueueFingerprint(meta.role, boardRoot);
+        const fpChanged = fp !== s.queueFingerprint;
+        const isStall = (now - lastWake) >= stallThresholdMs;
+        if (!fpChanged && !isStall) continue;
+
+        const reason = isStall ? "safety-poll-stall" : "safety-poll-queue-change";
+        const paste = meta.agent === "claude" ? "bracketed" : "plain";
+        try {
+          mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
+        } catch {}
+        updateWakeActivity(rid);
+        const ps = wakePollState.get(rid) || {};
+        ps.queueFingerprint = fp;
+        wakePollState.set(rid, ps);
+
+        appendWakePollLog(boardRoot, {
+          runner: rid,
+          role: meta.role,
+          reason,
+          queue_pending: true,
+          fingerprint_changed: fpChanged,
+          idle_seconds: Math.round(idleSec),
+          stall: isStall
+        });
+      }
+    } catch {}
+  }, pollIntervalMs);
+
+  wakeSafetyPollers.set(key, timerId);
 }
 
 function disposeBoardWatcherForScope(scope) {
