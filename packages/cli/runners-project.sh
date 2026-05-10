@@ -3201,7 +3201,7 @@ list_runners() {
           fi
           pid="$(runner_effective_state_pid "$state_status" "$mode" "$pid")"
           state_status="$effective_state_status"
-          if [ "$state_status" != "running" ]; then
+          if [ "$state_status" != "running" ] && [ "$state_status" != "blocked" ]; then
             active_item=""
             active_ticket_id=""
             active_ticket_title=""

@@ -405,6 +405,39 @@ prepare_ticket_owner_context() {
 
   pre_stage="$(ticket_stage "$ticket_file")"
   if [ "$pre_stage" = "blocked" ]; then
+    cleanup_integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
+    cleanup_last_event="$(trim_spaces "$(ticket_goal_field "$ticket_file" "Last Event")")"
+    if [ "$cleanup_integration_status" = "blocked_post_merge_cleanup" ] || [ "$cleanup_last_event" = "post_merge_cleanup_failed" ]; then
+      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+      sync_runner_active_state "$ticket_file" "blocked"
+      printf 'status=idle\n'
+      printf 'reason=post_merge_cleanup_blocked_preserved\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf 'next_action=Cleanup-only blocked ticket left in board for user/wiki review; no retry order generated.\n'
+      printf 'board_root=%s\n' "$BOARD_ROOT"
+      printf 'project_root=%s\n' "$PROJECT_ROOT"
+      exit 0
+    fi
+    recovery_status="$(awk '/^## Recovery State$/{f=1;next} /^## /{f=0} f && /^- Status:/{sub(/^- Status:[[:space:]]*/,"");sub(/[[:space:]]*$/,"");print;exit}' "$ticket_file")"
+    recovery_class="$(awk '/^## Recovery State$/{f=1;next} /^## /{f=0} f && /^- Failure Class:/{sub(/^- Failure Class:[[:space:]]*/,"");sub(/[[:space:]]*$/,"");print;exit}' "$ticket_file")"
+    if [ -n "$recovery_status" ] || [ -n "$recovery_class" ]; then
+      set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "blocked" "$(board_relative_path "$ticket_file")"
+      sync_runner_active_state "$ticket_file" "blocked"
+      state_file="${BOARD_ROOT}/runners/state/${worker_id}.state"
+      if [ -f "$state_file" ]; then
+        for kv in "active_recovery_reason=recovery_state_blocked" "active_recovery_status=${recovery_status}" "active_recovery_failure_class=${recovery_class}"; do
+          k="${kv%%=*}"
+          if grep -q "^${k}=" "$state_file"; then
+            perl -0pi -e "s/^${k}=.*\$/${kv}/m" "$state_file"
+          else
+            printf '%s\n' "$kv" >> "$state_file"
+          fi
+        done
+      fi
+      printf 'status=blocked\nrunner_status=blocked\nruntime_status=blocked\nactive_item=%s\nticket=%s\nticket_id=%s\nreason=ticket_stage_blocked\nactive_recovery_reason=recovery_state_blocked\nboard_root=%s\nproject_root=%s\nnext_action=Recovery State already marks ticket blocked; not auto-failing.\n' "$ticket_file" "$ticket_file" "$ticket_id" "$BOARD_ROOT" "$PROJECT_ROOT"
+      exit 0
+    fi
     if auto_recover_blocked_ticket "$ticket_file"; then
       recovery_attempted=true
     else
