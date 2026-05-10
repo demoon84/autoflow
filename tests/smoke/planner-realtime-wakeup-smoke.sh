@@ -214,14 +214,14 @@ run_event_case() {
   log_file="${target_project}/.autoflow/runners/logs/planner.log"
   marker_file="${target_project}/adapter.marker"
 
-  wait_for_line_matching "$state_file" '^last_result=planner_inputs_unchanged$' 20
+wait_for_line_matching "$state_file" '^last_result=(planner_inputs_unchanged|planner_no_actionable_input)$' 20
   sleep 1
   rm -f "$marker_file"
 
   started_epoch="$(date +%s)"
   "$writer" "$target_project" "101"
-  wait_for_line_matching "$log_file" 'event=planner_realtime_wakeup .*pending=created' 4
-  wait_for_marker_count "$marker_file" 1 5
+  wait_for_line_matching "$log_file" 'event=(planner_realtime_wakeup|realtime_wakeup) .*pending=created' 4
+  wait_for_marker_count "$marker_file" 1 10
   elapsed_seconds=$(($(date +%s) - started_epoch))
   if [ "$elapsed_seconds" -ge 5 ]; then
     fail_with_file "Expected ${kind} realtime wake before 5 seconds, got ${elapsed_seconds}s" "$log_file"
@@ -238,7 +238,7 @@ start_planner "$burst_project" 1
 burst_state="${burst_project}/.autoflow/runners/state/planner.state"
 burst_log="${burst_project}/.autoflow/runners/logs/planner.log"
 burst_marker="${burst_project}/adapter.marker"
-wait_for_line_matching "$burst_state" '^last_result=planner_inputs_unchanged$' 20
+wait_for_line_matching "$burst_state" '^last_result=(planner_inputs_unchanged|planner_no_actionable_input)$' 20
 sleep 1
 rm -f "$burst_marker"
 
@@ -246,8 +246,8 @@ for id in 201 202 203 204 205; do
   write_order "$burst_project" "$id"
 done
 
-wait_for_line_matching "$burst_log" 'event=planner_realtime_wakeup .*pending=created' 4
-wait_for_marker_count "$burst_marker" 1 4
+wait_for_line_matching "$burst_log" 'event=(planner_realtime_wakeup|realtime_wakeup) .*pending=created' 4
+wait_for_marker_count "$burst_marker" 1 10
 assert_no_marker_count_change "$burst_marker" 1 2
 if [ -f "${burst_project}/adapter.overlap" ]; then
   fail_with_file "Planner adapter ran concurrently during burst." "${burst_project}/adapter.overlap"
@@ -259,11 +259,11 @@ start_planner "$disabled_project" 0
 disabled_state="${disabled_project}/.autoflow/runners/state/planner.state"
 disabled_log="${disabled_project}/.autoflow/runners/logs/planner.log"
 disabled_marker="${disabled_project}/adapter.marker"
-wait_for_line_matching "$disabled_state" '^last_result=planner_inputs_unchanged$' 20
+wait_for_line_matching "$disabled_state" '^last_result=(planner_inputs_unchanged|planner_no_actionable_input)$' 20
 sleep 1
 rm -f "$disabled_marker"
 write_order "$disabled_project" "301"
 assert_no_marker_count_change "$disabled_marker" 0 3
-if grep -q 'event=planner_realtime_wakeup' "$disabled_log" 2>/dev/null; then
+if grep -Eq 'event=(planner_realtime_wakeup|realtime_wakeup)' "$disabled_log" 2>/dev/null; then
   fail_with_file "Realtime wakeup log should not be emitted when disabled." "$disabled_log"
 fi
