@@ -1,35 +1,16 @@
-[default]
-daily_token_quota = 100000000
+# Autoflow budget guard policy
+#
+# 24h 윈도우 안에서 누적 토큰이 daily_token_quota 를 넘으면 모든 adapter
+# 호출을 skip 하고 idle 로 떨어뜨려 비용 폭주를 차단한다.
+#
+# 임계값 안내:
+#   2,000,000  = 보수적 (개발 중에는 권장)
+#   10,000,000 = 정상 운영 (PRD 흐름 1~5건/일)
+#   100,000,000 = 대규모 (다수 PRD 동시 처리)
+
+daily_token_quota = 5000000
 token_quota_window_seconds = 86400
-minimum_interval_seconds = 0
-prompt_byte_cap = 1048576
-timeout_circuit_breaker_threshold = 3
-timeout_circuit_breaker_cooldown_seconds = 300
 
-[planner]
-daily_token_quota = 100000000
-minimum_interval_seconds = 0
-prompt_byte_cap = 1048576
-timeout_circuit_breaker_threshold = 3
-timeout_circuit_breaker_cooldown_seconds = 300
-
-[worker]
-daily_token_quota = 100000000
-minimum_interval_seconds = 0
-prompt_byte_cap = 1048576
-timeout_circuit_breaker_threshold = 3
-timeout_circuit_breaker_cooldown_seconds = 300
-
-[verifier]
-daily_token_quota = 100000000
-minimum_interval_seconds = 0
-prompt_byte_cap = 1048576
-timeout_circuit_breaker_threshold = 3
-timeout_circuit_breaker_cooldown_seconds = 300
-
-[wiki]
-daily_token_quota = 100000000
-minimum_interval_seconds = 0
-prompt_byte_cap = 1048576
-timeout_circuit_breaker_threshold = 3
-timeout_circuit_breaker_cooldown_seconds = 300
+# preflight idle 이 N tick 연속이면 cooldown 동안 adapter 호출 skip
+preflight_skip_circuit_breaker_threshold = 3
+preflight_skip_circuit_breaker_cooldown_seconds = 1800

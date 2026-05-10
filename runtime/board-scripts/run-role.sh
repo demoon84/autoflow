@@ -3832,7 +3832,7 @@ run_custom_adapter_command() {
 
   prepare_adapter_cli_env
   command_summary="$command_value"
-  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 300)"
   adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
   run_with_timeout "$adapter_timeout_seconds" "$adapter_kill_after_seconds" \
     adapter_run_in_cwd "$adapter_working_root" \
@@ -4396,9 +4396,9 @@ runner_claude_base_cmd() {
   # installed CLI lacks stream-json support.
   local __dest_var="$1"
   if runner_claude_supports_stream; then
-    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose)"
+    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")"
   else
-    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text)"
+    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")"
   fi
 }
 
@@ -4574,7 +4574,7 @@ run_default_adapter_command() {
 
   # adapter 호출 timeout. ECONNRESET 등으로 인한 무한 hang 을 끊기 위해 외부 watchdog 으로 강제 종료.
   # 0 또는 unset 으로 두면 watchdog 비활성 (이전 동작 그대로).
-  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+  adapter_timeout_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 300)"
   adapter_kill_after_seconds="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
 
   case "$agent" in
@@ -6170,7 +6170,7 @@ case "$agent" in
     else
       consecutive_timeout_count="$prev_consecutive_timeouts"
     fi
-    adapter_timeout_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 1200)"
+    adapter_timeout_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_SECONDS" 300)"
     adapter_kill_after_seconds_for_log="$(runner_resolve_int_env "AUTOFLOW_AGENT_KILL_AFTER_SECONDS" 30)"
     adapter_timeout_fallback_threshold="$(runner_resolve_int_env "AUTOFLOW_AGENT_TIMEOUT_FALLBACK_THRESHOLD" 3)"
     finished_active_item="$(runner_adapter_state_value "active_item")"
