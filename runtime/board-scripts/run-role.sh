@@ -4399,9 +4399,9 @@ runner_claude_base_cmd() {
   local __dest_var="$1"
   local base
   if runner_claude_supports_stream; then
-    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")
+    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-5.00}")
   else
-    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")
+    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-5.00}")
   fi
   if [ -n "${ADAPTER_SESSION_ID:-}" ]; then
     if [ "${ADAPTER_SESSION_IS_NEW:-0}" = "1" ]; then
