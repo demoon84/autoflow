@@ -6519,7 +6519,7 @@ const LIVE_TERMINAL_SCROLLBACK = 50000;
 const LIVE_TERMINAL_FIT_DEBOUNCE_MS = 50;
 const LIVE_TERMINAL_FONT_FAMILY =
   '"D2Coding", "Cascadia Mono", "Consolas", "Courier New", monospace';
-const LIVE_TERMINAL_FONT_SIZE = 12;
+const LIVE_TERMINAL_FONT_SIZE = 10;
 
 // prd_225 (2026-05-09): xterm theme 을 라이트/다크 카드 톤에 정렬한다.
 // LOG_TOKEN_ANSI 는 ANSI palette index (\x1b[36m = cyan 등) 만 쓰므로 같은
