@@ -95,6 +95,35 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 
 `--dry-run` prints the proposed frontmatter and `retrofit.<n>.status=dry_run` without writing. `--page wiki/features/example.md` limits the operation to one board-relative page. `--allow-adapter` is an explicit opt-in escape hatch for fallback-title polish only; `AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES` caps that per-page prompt at 4096 bytes by default.
 
+## Synthesis depth requirement
+
+Every page you generate or materially update during a `wiki query --rag --synth`
+pass **must cover the following seven perspectives**.  A one-liner summary or a
+bullet list of "what was done" is not acceptable as a standalone page.  If a
+perspective genuinely does not apply, write one sentence explaining why rather
+than silently omitting the section.
+
+1. **Decision Rationale** — why this approach was chosen over alternatives, with
+   citation to the source ticket.
+2. **Implementation Patterns** — the concrete approach with at least one code
+   snippet, config excerpt, or command sequence annotated with its file path.
+3. **Hidden Contracts and Gotchas** — invariants, ordering constraints,
+   environment assumptions, and known failure modes not visible from the ticket
+   title alone.
+4. **Cross-reference Narrative** — how this feature or decision connects to
+   related pages, expressed as `[[wikilink]]` references with a brief reason.
+5. **Affected Paths and Anchors** — repo-relative file paths and the specific
+   functions, classes, or config keys changed.
+6. **Verification Results and Regression Guards** — the verification command,
+   its outcome, and what must not regress in future changes.
+7. **Future Considerations** — known limitations, follow-up work, or conditions
+   under which the decision should be revisited.
+
+Pages that miss two or more of these perspectives will be flagged as
+`lint_shallow_page.*` on the next `autoflow wiki lint` run.  Do not backfill
+existing pages retroactively; apply this standard only to new or materially
+updated pages in the current tick.
+
 ## Rules
 
 1. Preserve human-authored content outside managed sections.
@@ -102,7 +131,9 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 3. Summarize decisions and reusable lessons, not every line of implementation.
 4. Do not mark work done based on wiki content.
 5. Do not edit tickets to fit the wiki.
-6. Keep entries short and searchable.
+6. Keep entries deep enough to be useful: a page that only restates what the
+   ticket title says provides no value.  Apply the seven-perspectives standard
+   above.
 7. Converge to the same output when the same done ticket / handoff inputs are processed again.
 8. Write wiki files only through `$AUTOFLOW_CLI wiki ...` or under `$AUTOFLOW_BOARD_ROOT/wiki/` and `$AUTOFLOW_BOARD_ROOT/wiki-raw/`; never write sibling project-root paths such as `wiki/log.md`.
 
