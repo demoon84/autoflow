@@ -3625,6 +3625,21 @@ Role boundary:
 ${role_boundary_line}
 When there is no actionable work, leave the runner and board in an idle state
 with a concise explanation.
+
+Token budget (HARD — minimize 토큰 누수):
+- Take the **fewest** tool turns that still complete the task. Aim for ≤ 8
+  tool calls per tick. Idle ticks should make 0 tool calls when possible.
+- Never \`cat\` whole files larger than ~200 lines. Use \`head -n\`,
+  \`tail -n\`, \`sed -n 'L1,L2p'\`, or \`grep -nF\` to fetch only the slice
+  you need; reference larger context by \`path:line-range\`.
+- For wiki RAG, default to \`--limit 5\` and 1–2 distinctive terms. Do not
+  re-issue similar queries; one focused query is enough.
+- Do not re-read the agent instruction file or AGENTS.md within a tick — it
+  is already summarized in this prompt. Re-read only when the role changed.
+- When in doubt, write a one-line plan and stop, instead of exploring more.
+- Ground rule: a planner / wiki tick that ends with no board change must
+  cost ≪ 5,000 input tokens. A worker tick on a small ticket should cost
+  ≪ 100,000 input tokens. Cumulative input across turns counts.
 EOF
 }
 
