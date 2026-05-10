@@ -3599,10 +3599,13 @@ EOF
   # 재전송 → cache miss + 풀 가격.
   local _runner_already_has_session=0
   for _agent_field in claude codex gemini; do
-    _existing_sid="$(runner_state_field "$runner_id" "adapter_${_agent_field}_session_id" 2>/dev/null || true)"
-    if [ -n "$_existing_sid" ] && printf '%s' "$_existing_sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
-      _runner_already_has_session=1
-      break
+    _sid_file="$(adapter_session_id_file "$_agent_field")"
+    if [ -f "$_sid_file" ]; then
+      _existing_sid="$(cat "$_sid_file" 2>/dev/null | head -1 | tr -d '[:space:]')"
+      if [ -n "$_existing_sid" ] && printf '%s' "$_existing_sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+        _runner_already_has_session=1
+        break
+      fi
     fi
   done
   if [ "$_runner_already_has_session" = "0" ]; then
@@ -4425,6 +4428,20 @@ runner_claude_base_cmd() {
   eval "${__dest_var}=(\"\${base[@]}\")"
 }
 
+# Session id storage uses a dedicated file per runner/agent so it survives
+# the heavy runner_write_state rewrites that happen each tick. Path:
+#   .autoflow/runners/state/<runner>.<agent>-session-id
+adapter_session_id_file() {
+  local _agent="$1"
+  local _state_path
+  _state_path="$(runner_state_path "$runner_id" 2>/dev/null || true)"
+  if [ -z "$_state_path" ]; then
+    printf '%s/.autoflow/runners/state/%s.%s-session-id' "$project_root" "$runner_id" "$_agent"
+    return
+  fi
+  printf '%s/%s.%s-session-id' "$(dirname "$_state_path")" "$runner_id" "$_agent"
+}
+
 # Resolve session id + is-new flag for the current runner / agent.
 # Sets globals (NOT via $(...) — subshell env vars don't propagate back):
 #   ADAPTER_SESSION_ID — UUID for this conversation
@@ -4432,13 +4449,16 @@ runner_claude_base_cmd() {
 # Caller invokes as `adapter_session_resolve <agent>` then reads the globals.
 adapter_session_resolve() {
   local _agent="$1"
-  local field="adapter_${_agent}_session_id"
+  local sid_file
+  sid_file="$(adapter_session_id_file "$_agent")"
   local sid
-  sid="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
-  if [ -n "$sid" ] && printf '%s' "$sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
-    ADAPTER_SESSION_ID="$sid"
-    ADAPTER_SESSION_IS_NEW=0
-    return 0
+  if [ -f "$sid_file" ]; then
+    sid="$(cat "$sid_file" 2>/dev/null | head -1 | tr -d '[:space:]')"
+    if [ -n "$sid" ] && printf '%s' "$sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+      ADAPTER_SESSION_ID="$sid"
+      ADAPTER_SESSION_IS_NEW=0
+      return 0
+    fi
   fi
   if command -v uuidgen >/dev/null 2>&1; then
     sid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -4467,12 +4487,14 @@ adapter_session_id_for_gemini() {
 }
 
 adapter_session_persist() {
-  # Persist session id after first successful spawn so the next tick reuses it.
-  # Caller invokes after adapter exit when ADAPTER_SESSION_IS_NEW was 1.
+  # Persist session id to a dedicated file so it survives runner_write_state
+  # full rewrites each tick.
   local _agent="$1"
   local sid="$2"
   [ -n "$sid" ] || return 0
-  runner_replace_state_field_preserving "$runner_id" "adapter_${_agent}_session_id" "$sid" || true
+  local sid_file
+  sid_file="$(adapter_session_id_file "$_agent")"
+  printf '%s\n' "$sid" > "$sid_file" 2>/dev/null || true
 }
 
 runner_claude_extract_last_message() {
@@ -4657,12 +4679,17 @@ run_default_adapter_command() {
       # `codex exec resume <id>` so codex doesn't re-process the system prompt.
       # First call uses fresh `codex exec` and we capture the thread_id from
       # the `{"type":"thread.started"}` event in stdout, persist for next tick.
-      local _codex_sid
-      _codex_sid="$(runner_state_field "$runner_id" "adapter_codex_session_id" 2>/dev/null || true)"
+      local _codex_sid_file _codex_sid
+      _codex_sid_file="$(adapter_session_id_file "codex")"
+      _codex_sid=""
+      if [ -f "$_codex_sid_file" ]; then
+        _codex_sid="$(cat "$_codex_sid_file" 2>/dev/null | head -1 | tr -d '[:space:]')"
+      fi
       if [ -n "$_codex_sid" ] && printf '%s' "$_codex_sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
         cmd=(codex exec resume "$_codex_sid" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
       else
         cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
+        _codex_sid=""
       fi
       if [ -n "$model" ]; then
         cmd+=(-m "$model")
@@ -4716,11 +4743,26 @@ run_default_adapter_command() {
       # Capture codex thread_id for next tick session continuity. Look for the
       # first '{"type":"thread.started","thread_id":"<uuid>"}' line in stdout
       # and persist if we don't have one yet.
-      if [ "$command_exit" -eq 0 ] && runner_codex_json_mode_active && [ -z "$_codex_sid" ] && [ -s "$adapter_stdout" ]; then
+      runner_append_log "$runner_id" "session_persist_attempt" \
+        "agent=codex" \
+        "command_exit=${command_exit}" \
+        "json_mode=$(runner_codex_json_mode_active && echo true || echo false)" \
+        "had_sid=$([ -n "${_codex_sid:-}" ] && echo true || echo false)" \
+        "stdout_size=$([ -f "$adapter_stdout" ] && wc -c < "$adapter_stdout" || echo 0)" \
+        2>/dev/null || true
+      if [ "$command_exit" -eq 0 ] && runner_codex_json_mode_active && [ -z "${_codex_sid:-}" ] && [ -s "$adapter_stdout" ]; then
         local _new_codex_tid
         _new_codex_tid="$(grep -m1 '"type":"thread.started"' "$adapter_stdout" 2>/dev/null | sed -nE 's/.*"thread_id":"([^"]+)".*/\1/p')"
+        runner_append_log "$runner_id" "session_persist_extract" \
+          "agent=codex" \
+          "thread_id=${_new_codex_tid:-NONE}" \
+          2>/dev/null || true
         if [ -n "$_new_codex_tid" ]; then
           adapter_session_persist "codex" "$_new_codex_tid"
+          runner_append_log "$runner_id" "session_persist_done" \
+            "agent=codex" \
+            "thread_id=${_new_codex_tid}" \
+            2>/dev/null || true
         fi
       fi
       return "$command_exit"
