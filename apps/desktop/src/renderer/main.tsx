@@ -6649,6 +6649,7 @@ function LivePtyView({
   runnerId: string;
   ariaLabel: string;
 }) {
+  const LIVE_TERMINAL_SCROLLBAR_WIDTH_PX = 4;
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
   const fitAddonRef = React.useRef<FitAddon | null>(null);
@@ -6658,6 +6659,32 @@ function LivePtyView({
   const [terminalThemeMode, setTerminalThemeMode] = React.useState<
     "light" | "dark"
   >(() => readDocumentThemeMode());
+  const syncPtyColsWithTerminal = React.useCallback(() => {
+    if (!runnerId) return;
+    const term = terminalRef.current;
+    if (!term || term.cols <= 0 || term.rows <= 0) return;
+    const resizeFn = (window.autoflow as any).runnerPtyResize;
+    if (typeof resizeFn !== "function") return;
+    void resizeFn({
+      runnerId,
+      cols: term.cols,
+      rows: term.rows
+    });
+  }, [runnerId]);
+  const fitAndResize = React.useCallback(() => {
+    const host = hostRef.current;
+    const fit = fitAddonRef.current;
+    const terminal = terminalRef.current;
+    if (!host || !fit || !terminal) return;
+    const prevPaddingRight = host.style.paddingRight;
+    host.style.paddingRight = `${LIVE_TERMINAL_SCROLLBAR_WIDTH_PX}px`;
+    try {
+      fit.fit();
+      syncPtyColsWithTerminal();
+    } finally {
+      host.style.paddingRight = prevPaddingRight;
+    }
+  }, [syncPtyColsWithTerminal]);
 
   // Mount xterm once.
   React.useEffect(() => {
@@ -6680,9 +6707,9 @@ function LivePtyView({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host);
-    fit.fit();
     terminalRef.current = terminal;
     fitAddonRef.current = fit;
+    fitAndResize();
     return () => {
       try { terminal.dispose(); } catch {}
       terminalRef.current = null;
@@ -6690,7 +6717,7 @@ function LivePtyView({
     };
     // Theme handled separately below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fitAndResize]);
 
   // Theme observer (light/dark swap on data-theme change)
   React.useEffect(() => {
@@ -6720,12 +6747,12 @@ function LivePtyView({
       }
       fitTimerRef.current = window.setTimeout(() => {
         fitTimerRef.current = null;
-        try { fitAddonRef.current?.fit(); } catch {}
+        try { fitAndResize(); } catch {}
       }, LIVE_TERMINAL_FIT_DEBOUNCE_MS);
     });
     observer.observe(host);
     return () => observer.disconnect();
-  }, []);
+  }, [fitAndResize]);
 
   // Subscribe to PTY bytes for this runner. Buffer + RAF flush so multiple
   // chunks within a frame coalesce into a single xterm.write() call.

@@ -3268,6 +3268,14 @@ pre {
 .live-terminal-view .xterm {
   width: 100%;
   height: 100%;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  box-sizing: border-box;
+}
+
+.live-terminal-view .xterm .xterm-screen {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 .live-terminal-view .xterm .xterm-viewport {
