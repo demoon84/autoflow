@@ -4425,30 +4425,19 @@ runner_claude_base_cmd() {
   eval "${__dest_var}=(\"\${base[@]}\")"
 }
 
-# Read saved session UUID for the current runner / agent. Generates a new one
-# on first call and exports ADAPTER_SESSION_IS_NEW=1 so the caller can pick the
-# right CLI flag (--session-id vs --resume). Persists the UUID to runner state
-# so the next tick reuses it instead of re-injecting the full system prompt.
-adapter_session_id_for_claude() {
-  adapter_session_id_for_agent "claude"
-}
-
-adapter_session_id_for_codex() {
-  adapter_session_id_for_agent "codex"
-}
-
-adapter_session_id_for_gemini() {
-  adapter_session_id_for_agent "gemini"
-}
-
-adapter_session_id_for_agent() {
+# Resolve session id + is-new flag for the current runner / agent.
+# Sets globals (NOT via $(...) — subshell env vars don't propagate back):
+#   ADAPTER_SESSION_ID — UUID for this conversation
+#   ADAPTER_SESSION_IS_NEW — "1" first time, "0" for resume
+# Caller invokes as `adapter_session_resolve <agent>` then reads the globals.
+adapter_session_resolve() {
   local _agent="$1"
   local field="adapter_${_agent}_session_id"
   local sid
   sid="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
   if [ -n "$sid" ] && printf '%s' "$sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+    ADAPTER_SESSION_ID="$sid"
     ADAPTER_SESSION_IS_NEW=0
-    printf '%s' "$sid"
     return 0
   fi
   if command -v uuidgen >/dev/null 2>&1; then
@@ -4458,8 +4447,23 @@ adapter_session_id_for_agent() {
   else
     sid="$(date -u +%s)-$RANDOM-$$-${_agent}"
   fi
+  ADAPTER_SESSION_ID="$sid"
   ADAPTER_SESSION_IS_NEW=1
-  printf '%s' "$sid"
+}
+
+# Backward-compatible wrappers (return UUID via stdout for callers that
+# already use $(...) — IS_NEW is unreliable from these wrappers).
+adapter_session_id_for_claude() {
+  adapter_session_resolve "claude"
+  printf '%s' "$ADAPTER_SESSION_ID"
+}
+adapter_session_id_for_codex() {
+  adapter_session_resolve "codex"
+  printf '%s' "$ADAPTER_SESSION_ID"
+}
+adapter_session_id_for_gemini() {
+  adapter_session_resolve "gemini"
+  printf '%s' "$ADAPTER_SESSION_ID"
 }
 
 adapter_session_persist() {
@@ -4724,7 +4728,7 @@ run_default_adapter_command() {
     claude)
       ensure_agent_on_path claude || return 127
       prompt_text="$(cat "$prompt_file")"
-      ADAPTER_SESSION_ID="$(adapter_session_id_for_claude)"
+      adapter_session_resolve "claude"
       runner_claude_base_cmd cmd
       if [ -n "$model" ]; then
         cmd+=(--model "$(normalize_claude_model_alias "$model")")
@@ -4784,7 +4788,7 @@ run_default_adapter_command() {
     gemini)
       ensure_agent_on_path gemini || return 127
       prompt_text="$(cat "$prompt_file")"
-      ADAPTER_SESSION_ID="$(adapter_session_id_for_gemini)"
+      adapter_session_resolve "gemini"
       local _gemini_is_new="${ADAPTER_SESSION_IS_NEW:-1}"
       cmd=(gemini --skip-trust --approval-mode yolo)
       if [ "$_gemini_is_new" = "1" ]; then
