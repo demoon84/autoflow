@@ -6489,10 +6489,14 @@ function LiveTerminalView({
       <div ref={hostRef} className="live-terminal-view-host" />
       {(() => {
         if (text) return null;
-        const isRunning =
-          (runner?.stateStatus || "").toLowerCase() === "running" &&
-          Boolean(runner?.pid);
-        const message = isRunning ? "AI 응답 대기 중..." : "처리할 작업 없습니다.";
+        const status = (runner?.stateStatus || "").toLowerCase();
+        const isRunning = status === "running" && Boolean(runner?.pid);
+        const isStopped = status === "stopped" || status === "user_stopped" || status === "failed";
+        const message = isRunning
+          ? "AI 응답 대기 중..."
+          : isStopped
+          ? "중지됨 — ▶ 버튼으로 시작"
+          : "처리할 작업 없습니다.";
         return (
           <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
             {message}
