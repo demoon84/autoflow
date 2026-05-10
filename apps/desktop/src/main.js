@@ -2462,17 +2462,33 @@ async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
     return totals;
   }
 
+  // Pick only the freshest live_stdout per runner. Older leftover files for
+  // completed ticks already wrote their token counts into telemetry/runs.jsonl;
+  // counting them here on top of telemetry would double-count (the bug user
+  // saw as "stop/start makes worker tokens balloon"). Only the currently
+  // active tick's stdout has tokens not yet reflected in telemetry.
+  const newestByRunner = new Map();
+  for (const name of entries) {
+    const match = runnerLiveLogNamePattern.exec(name);
+    if (!match) continue;
+    const runnerId = match[1];
+    if (!activeStartTimes.has(runnerId)) continue;
+    const activeStartedAtMs = activeStartTimes.get(runnerId);
+    const logStartedAtMs = timestampFromRunnerLogName(match[2]);
+    if (activeStartedAtMs > 0 && logStartedAtMs > 0 && logStartedAtMs < activeStartedAtMs) continue;
+    const prev = newestByRunner.get(runnerId);
+    if (!prev || logStartedAtMs > prev.ts) {
+      newestByRunner.set(runnerId, { name, ts: logStartedAtMs });
+    }
+  }
+
   const seenPaths = new Set();
 
   await Promise.all(
-    entries.map(async (name) => {
+    Array.from(newestByRunner.entries()).map(async ([runnerId, picked]) => {
+      const name = picked.name;
       const match = runnerLiveLogNamePattern.exec(name);
       if (!match) return;
-      const runnerId = match[1];
-      const activeStartedAtMs = activeStartTimes.get(runnerId);
-      if (activeStartedAtMs === undefined) return;
-      const logStartedAtMs = timestampFromRunnerLogName(match[2]);
-      if (activeStartedAtMs > 0 && logStartedAtMs > 0 && logStartedAtMs < activeStartedAtMs) return;
       const filePath = path.join(logsDir, name);
 
       let stat;
