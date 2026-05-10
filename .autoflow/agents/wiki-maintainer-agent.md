@@ -95,32 +95,47 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 
 `--dry-run` prints the proposed frontmatter and `retrofit.<n>.status=dry_run` without writing. `--page wiki/features/example.md` limits the operation to one board-relative page. `--allow-adapter` is an explicit opt-in escape hatch for fallback-title polish only; `AUTOFLOW_WIKI_RETROFIT_PROMPT_BYTES` caps that per-page prompt at 4096 bytes by default.
 
-## Synthesis depth requirement
+## Page Structure Requirement — 4-Stage Format (prd_272)
 
-Every page you generate or materially update during a `wiki query --rag --synth`
-pass **must cover the following seven perspectives**.  A one-liner summary or a
-bullet list of "what was done" is not acceptable as a standalone page.  If a
-perspective genuinely does not apply, write one sentence explaining why rather
-than silently omitting the section.
+Every page you generate or materially update must use the **4-stage format**
+defined in `rules/wiki/page-template.md`. The four required stages are:
 
-1. **Decision Rationale** — why this approach was chosen over alternatives, with
-   citation to the source ticket.
-2. **Implementation Patterns** — the concrete approach with at least one code
-   snippet, config excerpt, or command sequence annotated with its file path.
-3. **Hidden Contracts and Gotchas** — invariants, ordering constraints,
-   environment assumptions, and known failure modes not visible from the ticket
-   title alone.
-4. **Cross-reference Narrative** — how this feature or decision connects to
-   related pages, expressed as `[[wikilink]]` references with a brief reason.
-5. **Affected Paths and Anchors** — repo-relative file paths and the specific
-   functions, classes, or config keys changed.
-6. **Verification Results and Regression Guards** — the verification command,
-   its outcome, and what must not regress in future changes.
-7. **Future Considerations** — known limitations, follow-up work, or conditions
-   under which the decision should be revisited.
+1. **Symptom** — what is observed when the problem occurs (error message, exit
+   code, log line). Do not substitute a purpose statement.
+2. **Cause** — root cause with code-path citation (`path/to/file.ts:N` or
+   commit hash). Never dump raw PRD or ticket body here.
+3. **Fix** — step-by-step resolution with at least one runnable command or
+   code snippet, annotated with its file path.
+4. **Verification** — exact command, pass criteria, and fail indicator.
 
-Pages that miss two or more of these perspectives will be flagged as
-`lint_shallow_page.*` on the next `autoflow wiki lint` run.  Do not backfill
+**PRD / ticket auto-dump prohibition**: pages must never reproduce verbatim
+PRD goals, ticket body, or Done When lists. Derive the Symptom / Cause / Fix /
+Verification from the completed work evidence — a direct copy adds no value and
+inflates RAG noise. Violations are flagged by `autoflow wiki lint --semantic` as
+`lint_shallow_page.raw_dump`.
+
+**Pattern recurrence synthesis rule**: when the same failure pattern (same
+`lint_shallow_page.*` key, same `citation_gap.*` path, or same `stale_reference.*`
+target) recurs **3 or more times** across distinct done tickets or lint runs,
+Wiki AI **must** create or update a dedicated synthesis page under
+`wiki/learnings/<pattern-slug>.md` or `wiki/answers/<pattern-slug>.md`. The
+page covers the recurring Symptom → Cause → Fix → Verification for that
+pattern and is saved with `--save-as <pattern-slug>`. The recurrence counter
+is tracked in `runners/state/<runner_id>.pattern-recurrence.json`; a counter
+that reaches 3 triggers synthesis on the current tick even when the debounce
+minimum has not been met.
+
+Optional depth perspectives (apply to new or materially updated pages):
+
+- **Hidden Contracts and Gotchas** — invariants and known failure modes not
+  visible from the ticket title. If none, write one sentence to that effect.
+- **Cross-reference Narrative** — `[[wikilink]]` links with a brief reason.
+- **Affected Paths and Anchors** — repo-relative file paths and specific
+  functions / config keys changed.
+- **Future Considerations** — known limitations or follow-up work.
+
+Pages that lack two or more required 4-stage sections will be flagged as
+`lint_shallow_page.*` on the next `autoflow wiki lint` run. Do not backfill
 existing pages retroactively; apply this standard only to new or materially
 updated pages in the current tick.
 
