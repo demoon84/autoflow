@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { PtyRunnerManager } = require("./main/runner-pty-manager");
 
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
@@ -486,6 +487,272 @@ function markDesktopSessionClean(reason) {
   });
 }
 
+// PTY spawn PID registry — records every shell PID we spawn during this
+// desktop session so a subsequent crash leaves us a precise list to reap on
+// next boot. Lives in userData (same dir as desktop-session-state.json) so it
+// survives process death.
+function ptySessionPidsPath() {
+  return path.join(app.getPath("userData"), "active-pty-pids.json");
+}
+
+function readPtySessionPids() {
+  const data = readJsonFileSync(ptySessionPidsPath());
+  if (!data || !Array.isArray(data.pids)) return [];
+  return data.pids.filter((entry) => entry && Number.isInteger(entry.pid) && entry.pid > 0);
+}
+
+function writePtySessionPids(pids) {
+  writeJsonFileSync(ptySessionPidsPath(), {
+    pids,
+    updatedAt: new Date().toISOString().replace(/\.\d+Z$/, "Z")
+  });
+}
+
+function addPtySessionPid(entry) {
+  if (!entry || !Number.isInteger(entry.pid) || entry.pid <= 0) return;
+  const current = readPtySessionPids().filter((e) => e.pid !== entry.pid);
+  current.push({
+    pid: entry.pid,
+    runnerId: String(entry.runnerId || ""),
+    role: String(entry.role || ""),
+    agent: String(entry.agent || ""),
+    spawnedAt: entry.spawnedAt || new Date().toISOString().replace(/\.\d+Z$/, "Z")
+  });
+  writePtySessionPids(current);
+}
+
+function removePtySessionPid(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  const remaining = readPtySessionPids().filter((e) => e.pid !== pid);
+  writePtySessionPids(remaining);
+}
+
+function clearPtySessionPids() {
+  writePtySessionPids([]);
+}
+
+// Startup reaper for PTY-side survivors. Reads the precise PID list written
+// during the previous desktop session and kills any that are still alive.
+// More targeted than the ps-based legacy reaper — covers the case where the
+// desktop crashed while node-pty children were still attached.
+function reapPreviousPtySessionPids() {
+  if (process.platform === "win32") return 0;
+  const survivors = readPtySessionPids();
+  if (survivors.length === 0) return 0;
+  let killed = 0;
+  console.log(`[startup-reaper] previous session left ${survivors.length} PTY pid(s)`);
+  for (const { pid, runnerId, agent } of survivors) {
+    try { process.kill(pid, 0); } catch {
+      // already dead — skip
+      continue;
+    }
+    console.log(`[startup-reaper]   killing pty pid=${pid} runnerId=${runnerId} agent=${agent}`);
+    try { process.kill(-pid, "SIGTERM"); } catch {}
+    try { process.kill(pid, "SIGTERM"); } catch {}
+    killed += 1;
+  }
+  if (killed > 0) {
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline) {
+      const stillAlive = survivors.filter(({ pid }) => {
+        try { process.kill(pid, 0); return true; } catch { return false; }
+      });
+      if (stillAlive.length === 0) break;
+      const waitUntil = Date.now() + 100;
+      while (Date.now() < waitUntil) {}
+    }
+    for (const { pid } of survivors) {
+      try { process.kill(pid, 0); } catch { continue; }
+      try { process.kill(-pid, "SIGKILL"); } catch {}
+      try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+  }
+  // Always clear — entries are stale at this point regardless of kill outcome.
+  clearPtySessionPids();
+  return killed;
+}
+
+// Per-runner metadata captured at spawn time so fs.watch can route wake
+// prompts and main can update the runner state file on lifecycle events.
+//   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
+const ptyRunnerMeta = new Map();
+
+// Map a board-relative change path to the role that owns it.
+//   tickets/inbox/  / tickets/backlog/  -> planner
+//   tickets/todo/                       -> ticket-owner
+//   tickets/done/   / wiki/             -> wiki-maintainer
+function rolesForBoardChange(relPath) {
+  const p = String(relPath || "");
+  if (!p) return [];
+  if (p.startsWith("tickets/inbox/") || p.startsWith("tickets/backlog/") || p.startsWith("tickets/reject/")) {
+    return ["planner"];
+  }
+  if (p.startsWith("tickets/todo/") || p.startsWith("tickets/inprogress/")) {
+    return ["ticket-owner"];
+  }
+  if (p.startsWith("tickets/done/") || p.startsWith("wiki/")) {
+    return ["wiki-maintainer"];
+  }
+  return [];
+}
+
+// Persist a minimal state file so the renderer's existing UI (slider /
+// badges / activity card) keeps working even though the legacy
+// runners-project.sh path is no longer the source of truth.
+async function writePtyRunnerStateFile(runnerId, fields) {
+  try {
+    const meta = ptyRunnerMeta.get(runnerId);
+    if (!meta) return;
+    const stateDir = path.join(meta.projectRoot, meta.boardDirName, "runners", "state");
+    await fs.mkdir(stateDir, { recursive: true });
+    const statePath = path.join(stateDir, `${runnerId}.state`);
+    let existing = "";
+    try { existing = await fs.readFile(statePath, "utf8"); } catch {}
+    const lines = new Map();
+    for (const line of existing.split(/\r?\n/)) {
+      const eq = line.indexOf("=");
+      if (eq <= 0) continue;
+      lines.set(line.slice(0, eq), line.slice(eq + 1));
+    }
+    for (const [k, v] of Object.entries(fields || {})) {
+      if (v === undefined || v === null) continue;
+      lines.set(k, String(v));
+    }
+    lines.set("updated_at", new Date().toISOString());
+    const out = Array.from(lines.entries())
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+    await fs.writeFile(statePath, `${out}\n`, "utf8");
+  } catch (err) {
+    // best-effort; UI can fall back to other signals
+  }
+}
+
+// Build the literal shell command to type into a PTY shell so the agent CLI
+// runs in interactive (long-lived) mode. The user will see this exactly as
+// if they typed it themselves. Disable destructive prompts via per-CLI flags
+// so the agent can act without blocking on (y/n) prompts.
+function buildAgentCliCommand(agent, model, reasoning) {
+  const parts = [];
+  switch (String(agent || "").toLowerCase()) {
+    case "claude": {
+      parts.push("claude", "--dangerously-skip-permissions",
+        "--permission-mode", "bypassPermissions");
+      if (model) parts.push("--model", model);
+      if (reasoning) parts.push("--effort", reasoning);
+      break;
+    }
+    case "codex": {
+      // Modern codex CLI no longer accepts --skip-git-repo-check; it errors
+      // out and dumps to the shell, leaking the initial prompt as raw text.
+      // The remaining flags suffice (sandbox bypass + approval bypass).
+      parts.push("codex", "--dangerously-bypass-approvals-and-sandbox");
+      if (model) parts.push("-m", model);
+      if (reasoning) parts.push("-c", `model_reasoning_effort="${reasoning}"`);
+      break;
+    }
+    case "gemini": {
+      parts.push("gemini", "--skip-trust", "--approval-mode", "yolo");
+      if (model) parts.push("--model", model);
+      break;
+    }
+    default:
+      return "";
+  }
+  // Quote args containing spaces / quotes to keep the typed shell command sane.
+  return parts
+    .map((p) => (/[ \t"'$`\\]/.test(p) ? `'${p.replace(/'/g, "'\\''")}'` : p))
+    .join(" ");
+}
+
+// Initial prompt sent once after the agent CLI is up. Keep it tiny — the
+// agent reads role instructions / AGENTS.md via its own tools (one-time
+// per session), so we don't inline them here. fs.watch wakes will push
+// short follow-up prompts when new orders/tickets arrive.
+function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }) {
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const ticketsRoot = path.join(boardRoot, "tickets");
+  const wikiRoot = path.join(boardRoot, "wiki");
+  const roleInstruction = (() => {
+    switch (role) {
+      case "planner":
+      case "plan":
+        return path.join(boardRoot, "agents", "plan-to-ticket-agent.md");
+      case "ticket-owner":
+      case "ticket":
+      case "owner":
+        return path.join(boardRoot, "agents", "ticket-owner-agent.md");
+      case "wiki-maintainer":
+      case "wiki":
+        return path.join(boardRoot, "agents", "wiki-maintainer-agent.md");
+      default:
+        return path.join(boardRoot, "agents", "coordinator-agent.md");
+    }
+  })();
+  // Role-specific "what to scan FIRST" so the runner picks up pre-existing
+  // pending work instead of idling until a fresh fs.watch event.
+  const startupScan = (() => {
+    switch (role) {
+      case "planner":
+      case "plan":
+        return [
+          `Startup scan (do this BEFORE waiting for any [wake] message):`,
+          `  1. List ${path.join(ticketsRoot, "inbox")} — process every order_*.md (oldest first, priority-aware).`,
+          `  2. List ${path.join(ticketsRoot, "backlog")} — promote populated PRDs to todo tickets per the cross-category rule.`,
+          `  3. Only after both queues are drained should you idle and wait for [wake] events.`
+        ].join("\n");
+      case "ticket-owner":
+      case "ticket":
+      case "owner":
+        return [
+          `Startup scan (do this BEFORE waiting for any [wake] message):`,
+          `  1. List ${path.join(ticketsRoot, "inprogress")} — if a Todo-*.md is parked there for this worker, resume it (worktree may already exist).`,
+          `  2. List ${path.join(ticketsRoot, "todo")} — claim the highest-priority Todo-*.md and run the full atomic cycle (worktree → edit → verify → master merge → worktree delete).`,
+          `  3. Only after the todo queue is empty should you idle and wait for [wake] events.`
+        ].join("\n");
+      case "wiki-maintainer":
+      case "wiki":
+        return [
+          `Startup scan (do this BEFORE waiting for any [wake] message):`,
+          `  1. Compare ${path.join(ticketsRoot, "done")} and ${wikiRoot} against the wiki baseline manifest.`,
+          `  2. If new done tickets or material wiki source changes are pending, run the wiki update / synth flow per the wiki agent contract.`,
+          `  3. Only after the baseline is current should you idle and wait for [wake] events.`
+        ].join("\n");
+      default:
+        return [
+          `Startup scan (do this BEFORE waiting for any [wake] message):`,
+          `  - List ${ticketsRoot} subfolders and pick up anything pending for this role.`
+        ].join("\n");
+    }
+  })();
+  const projectAgents = path.join(projectRoot, "AGENTS.md");
+  return [
+    `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    ``,
+    `Your VERY FIRST action — before any planning, scanning, or other tool`,
+    `calls — must be to Read both of these files in full so you load your role`,
+    `contract and the project rules:`,
+    `  - ${roleInstruction}`,
+    `  - ${projectAgents}`,
+    `Do not skip this. Do not summarize from memory. Do not start the startup`,
+    `scan until both Read calls have completed.`,
+    ``,
+    startupScan,
+    ``,
+    `After the startup scan, begin your normal autoflow loop for this role.`,
+    `When new files appear in the board (orders, tickets, etc.), I will push a`,
+    `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
+    `re-scan the relevant queue, not as the only signal — keep working as long`,
+    `as anything is pending.`,
+    ``,
+    `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
+    `record durable progress in board files; do not re-read the role/AGENTS files`,
+    `again within this session.`
+  ].join("\n");
+}
+
 function projectScopeKey(projectRoot, boardDirName) {
   return `${projectRoot}\0${boardDirName}`;
 }
@@ -535,6 +802,23 @@ function ensureBoardWatcher(scope) {
           // ignore — renderer may be tearing down
         }
       }
+    }
+    // PTY runner wake — push a short '[wake]' prompt to runners whose role
+    // owns the changed path. Skips if no PTY runner of that role is running.
+    try {
+      const mgr = globalThis.__autoflowPtyManager;
+      if (!mgr) return;
+      const targetRoles = new Set(rolesForBoardChange(reason));
+      if (targetRoles.size === 0) return;
+      for (const [rid, meta] of ptyRunnerMeta.entries()) {
+        if (meta.projectRoot !== scope.projectRoot) continue;
+        if (meta.boardDirName !== boardDirName) continue;
+        if (!targetRoles.has(meta.role)) continue;
+        const paste = meta.agent === "claude" ? "bracketed" : "plain";
+        mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
+      }
+    } catch {
+      // wake is best-effort; log churn would dwarf any real signal
     }
   };
 
@@ -4179,6 +4463,77 @@ function commandLooksLikeAutoflowRunner(command) {
   return false;
 }
 
+// OS-wide orphan reaper. Runs in whenReady BEFORE IPC handlers so any legacy
+// `runners-project.sh loop-worker` / `run-role.sh` daemons left over from a
+// previous desktop session (crash, force-quit, kernel sleep) are killed
+// before the new session starts spawning. This is independent of the
+// scope-aware sweep below, which only fires after the renderer has loaded a
+// project — too late if the user mashes ▶ during boot.
+function reapOrphanLegacyRunnerDaemons() {
+  if (process.platform === "win32") return 0;
+  let killed = 0;
+  try {
+    const { spawnSync } = require("node:child_process");
+    const result = spawnSync("ps", ["-eo", "pid=,ppid=,command="], {
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    if (result.status !== 0 || !result.stdout) return 0;
+    const lines = result.stdout.toString().split("\n");
+    const orphans = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const match = trimmed.match(/^(\d+)\s+(\d+)\s+(.*)$/);
+      if (!match) continue;
+      const pid = Number.parseInt(match[1], 10);
+      const ppid = Number.parseInt(match[2], 10);
+      const command = match[3] || "";
+      if (!Number.isInteger(pid) || pid <= 0) continue;
+      // Only orphans (parent already dead → re-parented to launchd/init).
+      if (ppid !== 1) continue;
+      // Only legacy autoflow loop drivers; do not touch arbitrary processes.
+      if (
+        !command.includes("runners-project.sh") &&
+        !command.includes("run-role.sh") &&
+        !command.includes("start-plan.sh") &&
+        !command.includes("start-ticket-owner.sh")
+      ) {
+        continue;
+      }
+      orphans.push({ pid, command });
+    }
+    if (orphans.length === 0) return 0;
+    console.log(`[startup-reaper] found ${orphans.length} orphan legacy runner daemon(s)`);
+    for (const { pid, command } of orphans) {
+      console.log(`[startup-reaper]   killing pid=${pid} cmd=${command.slice(0, 100)}`);
+      // Process-group kill first (clean up any lingering claude/codex/gemini
+      // children that legacy spawned), then targeted PID kill as fallback.
+      try { process.kill(-pid, "SIGTERM"); } catch {}
+      try { process.kill(pid, "SIGTERM"); } catch {}
+      killed += 1;
+    }
+    // Brief grace period, then SIGKILL stragglers.
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline) {
+      const stillAlive = orphans.filter(({ pid }) => {
+        try { process.kill(pid, 0); return true; } catch { return false; }
+      });
+      if (stillAlive.length === 0) break;
+      // busy-wait (small ms) — runs only at startup, on a single batch
+      const waitUntil = Date.now() + 100;
+      while (Date.now() < waitUntil) {}
+    }
+    for (const { pid } of orphans) {
+      try { process.kill(pid, 0); } catch { continue; }
+      try { process.kill(-pid, "SIGKILL"); } catch {}
+      try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+  } catch (err) {
+    console.warn("[startup-reaper] failed:", err && err.message ? err.message : err);
+  }
+  return killed;
+}
+
 // Startup-time sweep: any state.state with status=running but PID dead OR
 // PID alive with PPID=1 (parent crashed → orphaned to launchd) gets cleaned.
 // Same goal as forceKillSurvivingRunners but applies on app start, not quit,
@@ -4347,24 +4702,17 @@ function shouldSelfHealStoppedRunner(runner, stateValues) {
   );
 }
 
-async function selfHealStoppedRunnersForScope(scope) {
-  if (runnerShutdownInProgress) return;
-  const result = await listRunnersCachedOrRefresh(scope);
-  if (runnerShutdownInProgress) return;
-  if (!result.ok) return;
-
-  await Promise.all(
-    result.runners.map(async (runner) => {
-      const stateValues = await readRunnerStateValues(runner.statePath);
-      if (!shouldSelfHealStoppedRunner(runner, stateValues)) return;
-      await controlRunner({
-        projectRoot: scope.projectRoot,
-        boardDirName: scope.boardDirName,
-        action: "start",
-        runnerId: runner.id
-      });
-    })
-  );
+async function selfHealStoppedRunnersForScope(_scope) {
+  // Disabled in PTY mode (vibe-terminal pattern). The legacy `controlRunner
+  // start` path spawns `autoflow runners start <id>` → `runners-project.sh
+  // loop-worker`, which is the long-poll adapter loop. Auto-resurrecting it
+  // here means every time the user opens a project, hidden legacy daemons
+  // come back even though the user never asked. Explicit ▶ in the UI now
+  // routes to runnerPtySpawn, so leaving this no-op forces all runner starts
+  // to be user-initiated. To re-enable an auto-restart story under PTY,
+  // rewrite this to call ptyManager.start with the runner's resolved config
+  // instead of legacy controlRunner.
+  return;
 }
 
 async function shutdownRunnersForScope(scope) {
@@ -4501,6 +4849,40 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
+  // First action: kill any orphan PTY children from the previous session
+  // (precise — uses our recorded PID list) and any orphan legacy runner
+  // daemons (heuristic — ps -ef pattern match). Must run BEFORE IPC handlers
+  // register so the user cannot race a ▶ click against still-living zombies.
+  try {
+    const ptyReaped = reapPreviousPtySessionPids();
+    if (ptyReaped > 0) {
+      console.log(`[startup-reaper] reaped ${ptyReaped} orphan PTY pid(s) from previous session`);
+    }
+  } catch {}
+  try {
+    const reaped = reapOrphanLegacyRunnerDaemons();
+    if (reaped > 0) {
+      console.log(`[startup-reaper] reaped ${reaped} orphan legacy runner daemon(s)`);
+    }
+  } catch {}
+  // Also drop any *.loop.lock dirs left by killed daemons so the next spawn
+  // can acquire its lock cleanly. Best-effort; missing dirs are fine.
+  try {
+    const projectRoot = repoRoot;
+    const stateDir = path.join(projectRoot, defaultBoardDirName, "runners", "state");
+    if (fsSync.existsSync(stateDir)) {
+      for (const name of fsSync.readdirSync(stateDir)) {
+        if (!name.endsWith(".loop.lock")) continue;
+        const lockDir = path.join(stateDir, name);
+        try {
+          for (const child of fsSync.readdirSync(lockDir)) {
+            try { fsSync.unlinkSync(path.join(lockDir, child)); } catch {}
+          }
+          fsSync.rmdirSync(lockDir);
+        } catch {}
+      }
+    }
+  } catch {}
   markDesktopSessionStarted();
   setupMacOsDockIcon();
 
@@ -4681,6 +5063,184 @@ app.whenReady().then(() => {
     cancelInvocation(invocationId)
   );
 
+  // ----- PTY runner manager (vibe-terminal pattern) -----
+  // One pty.spawn() per runner. Renderer subscribes via push events
+  //   autoflow:runnerPtyBytes  { runnerId, data }   — main → renderer
+  //   autoflow:runnerPtyStatus { runnerId, status, pid?, exitCode?, signal? }
+  // Renderer-callable commands (read-only stdin per project policy):
+  //   autoflow:runnerPtyStart   { runnerId, command, cwd, cols?, rows?, env? }
+  //   autoflow:runnerPtyStop    { runnerId, force? }
+  //   autoflow:runnerPtySnapshot { runnerId } → string  (replay buffer)
+  //   autoflow:runnerPtyList     → [{ id, status, pid, ... }]
+  // writePrompt() is intentionally NOT exposed to the renderer — only main
+  // process callers (fs.watch handler, runner controller) push prompts.
+  globalThis.__autoflowPtyManager = globalThis.__autoflowPtyManager || new PtyRunnerManager();
+  const ptyManager = globalThis.__autoflowPtyManager;
+  const broadcastPty = (channel, payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        try { win.webContents.send(channel, payload); } catch {}
+      }
+    }
+  };
+  ptyManager.on("bytes", ({ runnerId, data }) => {
+    broadcastPty("autoflow:runnerPtyBytes", { runnerId, data });
+  });
+  ptyManager.on("status", (payload) => {
+    broadcastPty("autoflow:runnerPtyStatus", payload);
+    // Mirror status into runner state file so legacy UI bindings keep working.
+    const fields = {
+      status: payload.status === "running" ? "running" : "stopped",
+      pid: payload.status === "running" ? String(payload.pid || "") : "",
+      last_event_at: new Date().toISOString()
+    };
+    if (payload.status === "stopped") {
+      fields.last_result = payload.signal
+        ? `signal_${payload.signal}`
+        : (typeof payload.exitCode === "number" ? `exit_${payload.exitCode}` : "user_stopped");
+    }
+    void writePtyRunnerStateFile(payload.runnerId, fields);
+    if (payload.status === "stopped") {
+      ptyRunnerMeta.delete(payload.runnerId);
+      // Drop from precise reaper registry — PID is dead.
+      if (Number.isInteger(payload.pid) && payload.pid > 0) {
+        try { removePtySessionPid(payload.pid); } catch {}
+      }
+    }
+  });
+  ptyManager.on("error", ({ runnerId, error }) => {
+    broadcastPty("autoflow:runnerPtyStatus", {
+      runnerId,
+      status: "errored",
+      error: String(error && error.message ? error.message : error)
+    });
+  });
+
+  ipcMain.handle("autoflow:runnerPtyStart", (_event, opts = {}) => {
+    if (!ptyManager.isAvailable()) {
+      return { ok: false, error: "node-pty unavailable (rebuild required)" };
+    }
+    try {
+      const runner = ptyManager.start(opts.runnerId, {
+        command: opts.command,
+        cwd: opts.cwd,
+        cols: opts.cols,
+        rows: opts.rows,
+        env: opts.env,
+        shell: opts.shell
+      });
+      return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Higher-level "spawn runner in PTY mode" — renderer passes runner config
+  // (agent / model / reasoning / role / projectRoot / boardDirName), main
+  // builds the CLI command and the initial prompt, then writes the prompt to
+  // stdin after the CLI is ready. This replaces the legacy run-role.sh path
+  // for runners that should use long-lived process + LLM-driven loop.
+  ipcMain.handle("autoflow:runnerPtySpawn", async (_event, opts = {}) => {
+    console.log("[autoflow:runnerPtySpawn] called", opts);
+    if (!ptyManager.isAvailable()) {
+      console.warn("[autoflow:runnerPtySpawn] node-pty unavailable");
+      return { ok: false, error: "node-pty unavailable (rebuild required)" };
+    }
+    const runnerId = String(opts.runnerId || "");
+    const role = String(opts.role || "ticket-owner");
+    const agent = String(opts.agent || "claude").toLowerCase();
+    const model = String(opts.model || "");
+    const reasoning = String(opts.reasoning || "");
+    const projectRoot = String(opts.projectRoot || "");
+    const boardDirName = String(opts.boardDirName || ".autoflow");
+    if (!runnerId || !projectRoot) {
+      return { ok: false, error: "runnerId and projectRoot required" };
+    }
+    const command = buildAgentCliCommand(agent, model, reasoning);
+    if (!command) {
+      return { ok: false, error: `unsupported agent: ${agent}` };
+    }
+    try {
+      const runner = ptyManager.start(runnerId, {
+        command,
+        cwd: projectRoot,
+        cols: Number.isFinite(opts.cols) ? opts.cols : 120,
+        rows: Number.isFinite(opts.rows) ? opts.rows : 30
+      });
+      const startedAt = new Date().toISOString();
+      ptyRunnerMeta.set(runnerId, {
+        role,
+        agent,
+        projectRoot,
+        boardDirName,
+        startedAt
+      });
+      // Initial state — UI immediately reflects "running"
+      void writePtyRunnerStateFile(runnerId, {
+        id: runnerId,
+        status: "running",
+        role,
+        agent,
+        model,
+        reasoning,
+        mode: "pty",
+        pid: String(runner.pid || ""),
+        started_at: startedAt,
+        last_event_at: startedAt,
+        last_result: ""
+      });
+      // Record PID in precise reaper registry so a desktop crash next time
+      // leaves the next session a clean kill list.
+      try {
+        addPtySessionPid({ pid: runner.pid, runnerId, role, agent, spawnedAt: startedAt });
+      } catch {}
+      // Wait for the agent CLI to load its TUI before pushing the initial
+      // prompt. Different CLIs take different times to be ready for input:
+      //   - claude: ~2s for welcome banner
+      //   - codex: ~3s for TUI mount
+      //   - gemini: ~5s — TUI box renders fast but input handler isn't
+      //     attached until later; writes before then are silently dropped.
+      // Use the conservative max so all three reliably accept the first
+      // prompt. Empirically 3.5s was too short for gemini.
+      const PROMPT_INJECT_DELAY_MS = 6000;
+      const initialPrompt = buildInitialPrompt({
+        role,
+        agent,
+        runnerId,
+        projectRoot,
+        boardDirName
+      });
+      setTimeout(() => {
+        const paste = agent === "claude" ? "bracketed" : "plain";
+        const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+        console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
+      }, PROMPT_INJECT_DELAY_MS);
+      // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
+      // whether the TUI accepted it (text in input box / model response /
+      // mojibake / nothing).
+      setTimeout(() => {
+        try {
+          const snap = ptyManager.snapshot(runnerId) || "";
+          console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
+        } catch (err) {
+          console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
+        }
+      }, PROMPT_INJECT_DELAY_MS + 2500);
+      return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+  ipcMain.handle("autoflow:runnerPtyStop", (_event, opts = {}) => {
+    return { ok: ptyManager.stop(opts.runnerId, { force: !!opts.force }) };
+  });
+  ipcMain.handle("autoflow:runnerPtySnapshot", (_event, opts = {}) => {
+    return { snapshot: ptyManager.snapshot(opts.runnerId) };
+  });
+  ipcMain.handle("autoflow:runnerPtyList", () => {
+    return { runners: ptyManager.list() };
+  });
+
   createWindow();
   startMemoryCeilingMonitor();
 
@@ -4691,36 +5251,48 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", (event) => {
-  if (appQuitInProgress || runnerShutdownInProgress) {
-    return;
-  }
-  event.preventDefault();
-  appQuitInProgress = true;
-
+// Quit-time cleanup — vibe-terminal pattern: synchronous PTY kill, no
+// event.preventDefault, no async race. node-pty's IPty.kill() is synchronous
+// (sends SIGKILL immediately) so we can hang the entire teardown off the
+// before-quit / will-quit ticks and let Electron quit naturally afterwards.
+// The previous implementation called preventDefault() and then awaited an
+// async shutdownAllRunners() race; if anything in that chain hung, the app
+// would refuse to close.
+let appShutdownCleanupRun = false;
+function runShutdownCleanupSync(reason) {
+  if (appShutdownCleanupRun) return;
+  appShutdownCleanupRun = true;
   if (memoryCeilingIntervalId) {
-    clearInterval(memoryCeilingIntervalId);
+    try { clearInterval(memoryCeilingIntervalId); } catch {}
     memoryCeilingIntervalId = null;
   }
-  disposeAllBoardWatchers();
+  // 1. Kill our PTY children (zsh + claude/codex/gemini). Synchronous.
+  try {
+    if (globalThis.__autoflowPtyManager) {
+      globalThis.__autoflowPtyManager.shutdown();
+    }
+  } catch {}
+  // 2. Stop fs.watch listeners.
+  try { disposeAllBoardWatchers(); } catch {}
+  // 3. Drop the precise PTY PID registry — children are dead.
+  try { clearPtySessionPids(); } catch {}
+  // 4. Mark this session as cleanly shut down so next-boot reaper does not
+  //    over-probe.
+  try { markDesktopSessionClean(reason || "quit"); } catch {}
+}
 
-  const shutdownTimeoutMs = 5000;
-  const cleanup = shutdownAllRunners().catch(() => 0);
-  const timeout = new Promise((resolve) => setTimeout(resolve, shutdownTimeoutMs));
-  Promise.race([cleanup, timeout]).finally(async () => {
-    try {
-      await forceKillSurvivingRunners();
-    } catch {}
-    markDesktopSessionClean("runner_stop_policy");
-    app.exit(0);
-  });
+app.on("before-quit", () => {
+  runShutdownCleanupSync("before-quit");
 });
 
-// Force quit on all-windows-closed (including macOS) so before-quit runs
-// shutdownAllRunners / forceKillSurvivingRunners. The macOS dock-keep
-// convention is intentionally dropped — leaving the app idle in the dock
-// while runners stay spawned causes orphan/zombie process drift after
-// crashes or background unloads.
+app.on("will-quit", () => {
+  runShutdownCleanupSync("will-quit");
+});
+
+// Force quit on all-windows-closed (including macOS) so before-quit fires
+// our synchronous PTY teardown. The macOS dock-keep convention is intentionally
+// dropped — leaving the app idle in the dock while PTY children stay spawned
+// causes orphan/zombie process drift after crashes or background unloads.
 app.on("window-all-closed", () => {
   app.quit();
 });

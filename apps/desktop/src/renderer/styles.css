@@ -3272,22 +3272,62 @@ pre {
 
 .live-terminal-view .xterm .xterm-viewport {
   background: var(--card) !important;
+  scrollbar-width: thin;
 }
 
 [data-theme="dark"] .live-terminal-view .xterm .xterm-viewport {
   background: #2d323b !important;
 }
 
-.live-terminal-view-idle-placeholder {
+/* Slim scrollbar — xterm v6 ships VS Code's scrollable-element which sets
+   verticalScrollbarSize=10 inline (NOT a webkit native scrollbar, so the
+   ::-webkit-scrollbar rules never matched). Override with the actual class
+   chain + !important to force narrower width. */
+.live-terminal-view .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  width: 4px !important;
+}
+.live-terminal-view .xterm .xterm-scrollable-element > .scrollbar.horizontal {
+  height: 4px !important;
+}
+.live-terminal-view .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  width: 4px !important;
+  border-radius: 2px;
+}
+.live-terminal-view .xterm .xterm-scrollable-element > .scrollbar.horizontal > .slider {
+  height: 4px !important;
+  width: auto !important;
+}
+
+.live-terminal-view-status-badge {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  color: var(--muted-foreground);
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
   pointer-events: none;
   user-select: none;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+}
+
+.live-terminal-view-status-badge--active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+
+.live-terminal-view-status-badge--muted {
+  background: transparent;
+  color: var(--muted-foreground);
+  border-color: transparent;
+}
+
+.live-terminal-view-status-badge--above-quota {
+  bottom: 68px;
 }
 
 .live-terminal-view-quota-toast {

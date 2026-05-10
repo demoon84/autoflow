@@ -249,6 +249,13 @@ Before creating a ticket, check:
 
 Do not create a duplicate for the same goal or same plan source. A retry order gets a new file under `tickets/inbox/` with `retry_count` incremented.
 
+## Retry Order Retention Policy
+
+- Retry artifacts are evidence for failure history and must be preserved, not deleted, once created.
+- Files matching `done/<prd>/order_*_retry_*.md` should remain in `tickets/done/<prd>/` until a planner/owner decision removes them.
+- If a retry is reissued, create a fresh `tickets/inbox/order_<id>_retry_<N>_<ts>.md` file with updated metadata and keep the previous order in the done archive path for audit.
+- Do not delete retry files from done as part of cleanup unless a higher-priority runbook explicitly mandates retention reset.
+
 ## Completion Standard
 
 A ticket may move to done only when:

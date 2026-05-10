@@ -42,5 +42,32 @@ contextBridge.exposeInMainWorld("autoflow", {
     };
     ipcRenderer.on("autoflow:boardChange", listener);
     return () => ipcRenderer.removeListener("autoflow:boardChange", listener);
+  },
+  // ----- PTY runner manager (vibe-terminal pattern) -----
+  // Read-only — renderer cannot push stdin (project policy: user input
+  // disabled in LiveTerminalView). Renderer only:
+  //   1) start / stop the runner
+  //   2) subscribe to bytes / status events
+  //   3) request the replay buffer when re-mounting xterm
+  runnerPtyStart: (options) => ipcRenderer.invoke("autoflow:runnerPtyStart", options),
+  runnerPtySpawn: (options) => ipcRenderer.invoke("autoflow:runnerPtySpawn", options),
+  runnerPtyStop: (options) => ipcRenderer.invoke("autoflow:runnerPtyStop", options),
+  runnerPtySnapshot: (options) => ipcRenderer.invoke("autoflow:runnerPtySnapshot", options),
+  runnerPtyList: () => ipcRenderer.invoke("autoflow:runnerPtyList"),
+  onRunnerPtyBytes: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try { handler(payload); } catch {}
+    };
+    ipcRenderer.on("autoflow:runnerPtyBytes", listener);
+    return () => ipcRenderer.removeListener("autoflow:runnerPtyBytes", listener);
+  },
+  onRunnerPtyStatus: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, payload) => {
+      try { handler(payload); } catch {}
+    };
+    ipcRenderer.on("autoflow:runnerPtyStatus", listener);
+    return () => ipcRenderer.removeListener("autoflow:runnerPtyStatus", listener);
   }
 });

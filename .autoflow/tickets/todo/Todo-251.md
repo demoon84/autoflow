@@ -2,41 +2,41 @@
 
 ## Ticket
 
-- ID: Todo-222
-- PRD Key: prd_223
-- Plan Candidate: Plan AI handoff from tickets/done/prd_223/prd_223.md
-- Title: wiki RAG sqlite FTS5 + BM25 phase 1 도입
-- Priority: normal
-- Change Type: code
+- ID: Todo-251
+- PRD Key: prd_246
+- Plan Candidate: Plan AI handoff from tickets/done/prd_246/prd_246.md
+- Title: fs.watch runner wakeup smoke verification
+- Priority: low
+- Change Type: docs
 - Stage: todo
 - AI:
 - Claimed By:
 - Execution AI:
 - Verifier AI:
-- Last Updated: 2026-05-09T07:07:49Z
+- Last Updated: 2026-05-10T08:37:25Z
 
 ## Goal
 
-- 이번 작업의 목표: `autoflow wiki query --rag` 가 chunk grep + 점수합산이 아니라 sqlite FTS5 의 MATCH + bm25() ranking 으로 동작하도록 phase 1 만 좁게 도입한다. order/autoflow skill 의 "Lookup Before Saving" 흐름에서 자주 0 hit 으로 떨어지는 query (예: "skill removal", "ticket-owner reject", "express order") 가 BM25 키워드 매칭으로 의미 있는 결과를 반환하게 만든다. vector embedding / hybrid re-rank 는 본 PRD 범위 밖이며 별도 후속 order/PRD 로 다룬다.
+- 이번 작업의 목표: Implement the approved spec for prd_246.
 
 ## References
 
-- PRD: tickets/done/prd_223/prd_223.md
+- PRD: tickets/done/prd_246/prd_246.md
 - Feature Spec:
 - Plan Source: plan-ai-direct
 
 ## Reference Notes
 
-- Project Note: [[prd_223]]
+- Project Note: [[prd_246]]
 - Plan Note:
-- Ticket Note: [[Todo-222]]
+- Ticket Note: [[Todo-251]]
 
 ## Allowed Paths
 
-- `.autoflow/scripts/wiki-search-index.sh`
-- `packages/cli/wiki-project.sh`
-- `.gitignore`
-- `AGENTS.md`
+- `.autoflow/scripts/watch-board.sh`
+- `packages/cli/runners-project.sh`
+- `tests/smoke/planner-realtime-wakeup-smoke.sh`
+- `tests/smoke/runner-tick-backoff-smoke.sh`
 
 ## Worktree
 
@@ -75,8 +75,9 @@
 
 ## Done When
 
-- [ ] Implementation stays inside Allowed Paths
-- [ ] Verification evidence is recorded before done/reject
+- [ ] `bash tests/smoke/planner-realtime-wakeup-smoke.sh`가 성공(`exit 0`)한다.
+- [ ] `bash tests/smoke/runner-tick-backoff-smoke.sh`가 성공(`exit 0`)한다.
+- [ ] `order_test_fswatch_1778390423.md`는 PRD 처리 소스(`Conversation Handoff Source`)와 일치하고, planner 실행 로그에서 fs.watch 기반 wakeup 처리 흔적을 확인할 수 있다.
 
 ## Next Action
 
@@ -90,11 +91,11 @@
 
 ## Notes
 
-- Created by planner (Plan AI) from tickets/done/prd_223/prd_223.md at 2026-05-09T07:07:49Z.
+- Created by 019e1107-331c-7bb0-8157-6037a0de44e1 (Plan AI) from tickets/done/prd_246/prd_246.md at 2026-05-10T08:37:25Z.
 
 ## Verification
 
-- Command: `cd /Users/demoon2016/Documents/project/autoflow && AUTOFLOW_WIKI_FTS_INDEX=on bash .autoflow/scripts/wiki-search-index.sh && bin/autoflow wiki query --rag --term "skill removal" --limit 3 . .autoflow`
+- Command: `bash tests/smoke/planner-realtime-wakeup-smoke.sh && bash tests/smoke/runner-tick-backoff-smoke.sh`
 - Run file:
 - Log file:
 - Result: pending

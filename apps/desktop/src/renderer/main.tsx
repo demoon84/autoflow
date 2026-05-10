@@ -2078,12 +2078,37 @@ function App() {
           }
         }
 
-        const result = await window.autoflow.controlRunner({
-          action,
-          runnerId,
-          ...(forceStop ? { force: true } : {}),
-          ...options
-        });
+        // PTY mode (vibe-terminal pattern): ▶/■ map to long-lived PTY
+        // process management. The legacy run-role.sh polling loop is no
+        // longer used for runners — autoflow:runnerPtySpawn replaces it.
+        let result: { ok: boolean; stderr?: string; stdout?: string };
+        if (action === "start") {
+          const spawnRes = await (window.autoflow as any).runnerPtySpawn({
+            runnerId,
+            role: runner?.role || "ticket-owner",
+            agent: runner?.agent || "claude",
+            model: runner?.model || "",
+            reasoning: runner?.reasoning || "",
+            projectRoot: options.projectRoot,
+            boardDirName: options.boardDirName
+          });
+          result = { ok: !!spawnRes?.ok, stderr: spawnRes?.error || "", stdout: "" };
+        } else if (action === "stop") {
+          const stopRes = await (window.autoflow as any).runnerPtyStop({
+            runnerId,
+            force: forceStop
+          });
+          result = { ok: !!stopRes?.ok, stderr: "", stdout: "" };
+        } else {
+          // restart / other actions fall through to legacy controlRunner
+          // until PTY-mode equivalents are added.
+          result = await window.autoflow.controlRunner({
+            action,
+            runnerId,
+            ...(forceStop ? { force: true } : {}),
+            ...options
+          });
+        }
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 작업에 실패했습니다.");
           await loadBoard();
@@ -6614,6 +6639,159 @@ function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string
   };
 }
 
+// Direct PTY byte stream → xterm. No file polling, no JSON summarization.
+// Subscribes to main-process IPC channel and writes raw bytes (with ANSI
+// escape codes) straight into xterm — same as vibe-terminal.
+function LivePtyView({
+  runnerId,
+  ariaLabel
+}: {
+  runnerId: string;
+  ariaLabel: string;
+}) {
+  const hostRef = React.useRef<HTMLDivElement | null>(null);
+  const terminalRef = React.useRef<XTermTerminal | null>(null);
+  const fitAddonRef = React.useRef<FitAddon | null>(null);
+  const fitTimerRef = React.useRef<number | null>(null);
+  const pendingChunksRef = React.useRef<string[]>([]);
+  const flushRafRef = React.useRef<number | null>(null);
+  const [terminalThemeMode, setTerminalThemeMode] = React.useState<
+    "light" | "dark"
+  >(() => readDocumentThemeMode());
+
+  // Mount xterm once.
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host || terminalRef.current) return;
+    const terminal = new XTermTerminal({
+      cursorBlink: false,
+      cursorStyle: "bar",
+      cursorInactiveStyle: "none",
+      convertEol: true,
+      disableStdin: true,
+      allowProposedApi: false,
+      fontFamily: LIVE_TERMINAL_FONT_FAMILY,
+      fontSize: LIVE_TERMINAL_FONT_SIZE,
+      lineHeight: 1.2,
+      rescaleOverlappingGlyphs: false,
+      scrollback: LIVE_TERMINAL_SCROLLBACK,
+      theme: liveTerminalThemeFor(terminalThemeMode)
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(host);
+    fit.fit();
+    terminalRef.current = terminal;
+    fitAddonRef.current = fit;
+    return () => {
+      try { terminal.dispose(); } catch {}
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+    // Theme handled separately below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Theme observer (light/dark swap on data-theme change)
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const apply = () => setTerminalThemeMode(readDocumentThemeMode());
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
+    return () => observer.disconnect();
+  }, []);
+  React.useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
+  }, [terminalThemeMode]);
+
+  // Resize on host element changes (debounced fit).
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const observer = new ResizeObserver(() => {
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current);
+      }
+      fitTimerRef.current = window.setTimeout(() => {
+        fitTimerRef.current = null;
+        try { fitAddonRef.current?.fit(); } catch {}
+      }, LIVE_TERMINAL_FIT_DEBOUNCE_MS);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
+  // Subscribe to PTY bytes for this runner. Buffer + RAF flush so multiple
+  // chunks within a frame coalesce into a single xterm.write() call.
+  React.useEffect(() => {
+    if (!runnerId) return;
+    let unsubscribe: undefined | (() => void);
+    let cancelled = false;
+
+    const flushPending = () => {
+      flushRafRef.current = null;
+      const term = terminalRef.current;
+      const chunks = pendingChunksRef.current;
+      if (!term || chunks.length === 0) return;
+      const merged = chunks.join("");
+      pendingChunksRef.current = [];
+      try { term.write(merged); } catch {}
+    };
+
+    const writeChunk = (data: string) => {
+      if (!data) return;
+      pendingChunksRef.current.push(data);
+      if (flushRafRef.current !== null) return;
+      flushRafRef.current = window.requestAnimationFrame(flushPending);
+    };
+
+    // Replay buffered bytes from main on subscribe so the terminal shows
+    // history when the renderer mounts mid-session.
+    void (async () => {
+      try {
+        const res = await (window.autoflow as any).runnerPtySnapshot({ runnerId });
+        if (cancelled) return;
+        if (res && typeof res.snapshot === "string" && res.snapshot) {
+          writeChunk(res.snapshot);
+        }
+      } catch {}
+    })();
+
+    unsubscribe = (window.autoflow as any).onRunnerPtyBytes((payload: any) => {
+      if (!payload || payload.runnerId !== runnerId) return;
+      writeChunk(String(payload.data || ""));
+    });
+
+    return () => {
+      cancelled = true;
+      if (flushRafRef.current !== null) {
+        window.cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = null;
+      }
+      pendingChunksRef.current = [];
+      try { unsubscribe?.(); } catch {}
+      try { terminalRef.current?.reset(); } catch {}
+    };
+  }, [runnerId]);
+
+  return (
+    <div
+      className="live-terminal-view"
+      role="log"
+      aria-live="polite"
+      aria-label={ariaLabel}
+    >
+      <div ref={hostRef} className="live-terminal-view-host" />
+    </div>
+  );
+}
+
 function LiveTerminalView({
   text,
   ariaLabel,
@@ -6813,23 +6991,26 @@ function LiveTerminalView({
         if (text) return null;
         const status = (runner?.stateStatus || "").toLowerCase();
         const isStopped = status === "stopped" || status === "user_stopped" || status === "failed";
-        if (isStopped) {
-          return (
-            <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
-              AI를 시작해 주세요.
-            </div>
-          );
-        }
-        // 슬라이더 stage 가 idle (todo / idle) 이면 작업 자체가 없는 상태.
-        // 활성 stage (planning / inprogress / syncing / done / merging) 일 때만
-        // 'AI 응답 대기 중' 으로 표시 — runner LOOP 가 도는 것과 AI 호출이 진행
-        // 중인 것은 다르다.
         const idleStages = new Set(["todo", "idle"]);
         const stage = (stageKey || "").toLowerCase();
         const isIdle = idleStages.has(stage) || !stage;
-        const message = isIdle ? "처리할 작업이 없습니다." : "AI 응답 대기 중 입니다.";
+        let message: string;
+        let tone: string;
+        if (isStopped) {
+          message = "AI를 시작해 주세요.";
+          tone = "muted";
+        } else if (isIdle) {
+          message = "처리할 작업이 없습니다.";
+          tone = "default";
+        } else {
+          message = "AI 응답 대기 중 입니다.";
+          tone = "active";
+        }
         return (
-          <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
+          <div
+            className={`live-terminal-view-status-badge live-terminal-view-status-badge--${tone}${showQuotaToast ? " live-terminal-view-status-badge--above-quota" : ""}`}
+            aria-hidden="true"
+          >
             {message}
           </div>
         );
@@ -7845,12 +8026,9 @@ function AiProgressRow({
           </div>
         </div>
       ) : null}
-      <LiveTerminalView
-        text={conversationText}
+      <LivePtyView
+        runnerId={runner.id}
         ariaLabel={`${agentLabel} 라이브 터미널`}
-        runner={runner}
-        agentLabel={agentLabel}
-        stageKey={currentKey}
       />
       <RunnerActivityFooter runner={runner} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>

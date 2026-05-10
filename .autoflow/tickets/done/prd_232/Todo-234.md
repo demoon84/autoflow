@@ -95,6 +95,7 @@
 - Impl AI worker marked verification pass at 2026-05-09T12:32:25Z; runtime finalizer will not perform merge operations.
 - Coordinator post-merge cleanup at 2026-05-09T12:32:26Z: worktree_dirty_already_in_project_root=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_234 removed_worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_234 deleted_branch=autoflow/tickets_234.
 - Inline merge finalizer (worker worker) finalized this verified ticket at 2026-05-09T12:32:26Z.
+- Planner guard warning at 2026-05-09T12:33:29Z: leftover worktree candidate `autoflow/tickets_222` remains at `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_222` with no board ticket. No board error in this turn; treat as separate cleanup candidate outside `prd_232`.
 ## Verification
 - Result: passed by worker at 2026-05-09T12:32:25Z
 - Log file: pending AI merge finalization
