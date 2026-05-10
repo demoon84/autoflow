@@ -2627,17 +2627,40 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
 
 async function enrichRunnerTerminalPreviews(runners, boardRoot) {
   const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot, runners);
+  // Find the freshest live_stdout.log per runner so the renderer can tail the
+  // active tick even when the state file's last_stdout_log was not written.
+  const logsDir = path.join(boardRoot, "runners", "logs");
+  const liveStdoutByRunner = new Map();
+  try {
+    const entries = await fs.readdir(logsDir);
+    for (const name of entries) {
+      const m = runnerLiveLogNamePattern.exec(name);
+      if (!m) continue;
+      const rid = m[1];
+      const ts = timestampFromRunnerLogName(m[2]);
+      const prev = liveStdoutByRunner.get(rid);
+      if (!prev || ts > prev.ts) {
+        liveStdoutByRunner.set(rid, { name, ts });
+      }
+    }
+  } catch {}
   return Promise.all(
     runners.map(async (runner) => {
       const conversationPreview = await runnerConversationPreview(runner, boardRoot);
       const quotaInfo = await runnerQuotaInfo({ ...runner, conversationPreview }, boardRoot);
       const authInfo = await runnerAuthInfo({ ...runner, conversationPreview }, boardRoot);
+      let lastStdoutLog = runner.lastStdoutLog || "";
+      if (!lastStdoutLog) {
+        const fresh = liveStdoutByRunner.get(runner.id);
+        if (fresh) lastStdoutLog = path.join(logsDir, fresh.name);
+      }
       return {
         ...runner,
         ...quotaInfo,
         ...authInfo,
         conversationPreview,
-        tokenUsage: tokenUsageByRunner.get(runner.id) || 0
+        tokenUsage: tokenUsageByRunner.get(runner.id) || 0,
+        lastStdoutLog
       };
     })
   );
