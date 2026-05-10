@@ -5689,6 +5689,171 @@ pre {
   margin-top: 10px;
 }
 
+.report-chart-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.report-chart-title {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.report-stacked-bars {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  align-items: end;
+  gap: 4px;
+  height: 88px;
+}
+
+.report-stacked-bar-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.report-stacked-bar-track {
+  position: relative;
+  width: 100%;
+  height: 70px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--muted);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.report-stacked-bar-fill {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 2px;
+}
+
+.report-stacked-seg-add {
+  display: block;
+  width: 100%;
+  background: var(--accent);
+}
+
+.report-stacked-seg-del {
+  display: block;
+  width: 100%;
+  background: hsl(0, 70%, 55%);
+}
+
+.report-daily-count-fill {
+  background: var(--accent);
+}
+
+.report-stacked-bar-label {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.report-hourly-bars {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 64px;
+  overflow-x: auto;
+}
+
+.report-hourly-bar-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  flex: 1 0 14px;
+  min-width: 14px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.report-hourly-bar-track {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: var(--muted);
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.report-hourly-bar-fill {
+  width: 100%;
+  background: var(--accent);
+  min-height: 1px;
+}
+
+.report-hourly-bar-col em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--muted-foreground);
+}
+
+.report-timeline-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report-timeline-row {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.report-timeline-label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-timeline-cells {
+  display: grid;
+  grid-template-columns: repeat(25, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.report-timeline-cell {
+  display: block;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+
+.report-timeline-cell-empty {
+  background: var(--muted);
+}
+
+.report-timeline-cell-ok {
+  background: hsl(140, 60%, 45%);
+}
+
+.report-timeline-cell-warn {
+  background: hsl(40, 80%, 55%);
+}
+
+.report-timeline-cell-fail {
+  background: hsl(0, 70%, 55%);
+}
+
 .report-split-track {
   display: flex;
   width: 100%;

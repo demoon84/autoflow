@@ -624,6 +624,27 @@ function parseMetricJsonStringList(value: string) {
   }
 }
 
+function parseMetricJsonArray(value: string): Array<Record<string, unknown>> {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  } catch {
+    return [];
+  }
+}
+
+function safeNumber(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
 function formatUnixDate(value: number | string) {
   const safe = Number(value);
   if (!Number.isFinite(safe) || safe <= 0) {
@@ -4057,6 +4078,245 @@ function ReportSplitBars({
   );
 }
 
+function ReportStackedDailyBars({
+  title,
+  data
+}: {
+  title: string;
+  data: Array<{ date: string; insertions: number; deletions: number }>;
+}) {
+  const items = data.filter((entry) => entry && typeof entry.date === "string");
+  if (!items.length) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+  const totals = items.map((entry) => Math.max(safeNumber(entry.insertions) + safeNumber(entry.deletions), 0));
+  const maxTotal = Math.max(...totals, 1);
+  const allZero = totals.every((value) => value <= 0);
+
+  return (
+    <div className="report-chart-block" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      {allZero ? (
+        <div className="report-fallback">최근 14일 추가/삭제 라인이 없습니다</div>
+      ) : (
+        <div className="report-stacked-bars">
+          {items.map((entry) => {
+            const ins = Math.max(safeNumber(entry.insertions), 0);
+            const del = Math.max(safeNumber(entry.deletions), 0);
+            const total = ins + del;
+            const heightPct = (total / maxTotal) * 100;
+            const insPct = total > 0 ? (ins / total) * 100 : 0;
+            const delPct = total > 0 ? (del / total) * 100 : 0;
+            const md = entry.date.slice(5);
+            return (
+              <div key={entry.date} className="report-stacked-bar-col" title={`${entry.date} +${ins} / -${del}`}>
+                <div className="report-stacked-bar-track">
+                  <div className="report-stacked-bar-fill" style={{ height: `${heightPct.toFixed(2)}%` }}>
+                    <span className="report-stacked-seg-add" style={{ height: `${insPct.toFixed(2)}%` }} />
+                    <span className="report-stacked-seg-del" style={{ height: `${delPct.toFixed(2)}%` }} />
+                  </div>
+                </div>
+                <em className="report-stacked-bar-label">{md}</em>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportHourlyAreaTrend({
+  title,
+  data
+}: {
+  title: string;
+  data: Array<{ hour: number; input: number; output: number; cache: number }>;
+}) {
+  const items = data
+    .map((entry) => ({
+      hour: safeNumber(entry?.hour),
+      total: Math.max(safeNumber(entry?.input) + safeNumber(entry?.output) + safeNumber(entry?.cache), 0)
+    }))
+    .filter((entry) => entry.hour > 0)
+    .sort((a, b) => a.hour - b.hour);
+
+  if (!items.length) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+  const max = Math.max(...items.map((entry) => entry.total), 1);
+
+  return (
+    <div className="report-chart-block" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      <div className="report-hourly-bars">
+        {items.map((entry) => {
+          const heightPct = (entry.total / max) * 100;
+          const dt = new Date(entry.hour * 1000);
+          const hh = String(dt.getHours()).padStart(2, "0");
+          return (
+            <div key={entry.hour} className="report-hourly-bar-col" title={`${hh}시 ${formatCount(entry.total)} 토큰`}>
+              <div className="report-hourly-bar-track">
+                <div className="report-hourly-bar-fill" style={{ height: `${heightPct.toFixed(2)}%` }} />
+              </div>
+              <em>{hh}</em>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportRunnerTimeline({
+  title,
+  data,
+  runners
+}: {
+  title: string;
+  data: Array<{ hour: number; runner_id: string; success: number; failure: number; timeout: number }>;
+  runners: Array<{ id: string; label: string }>;
+}) {
+  if (!runners.length || !data.length) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const startHour = Math.floor((now - 86400) / 3600) * 3600;
+  const buckets: number[] = [];
+  for (let h = startHour; h <= now; h += 3600) {
+    buckets.push(h);
+  }
+  const cellMap = new Map<string, { success: number; failure: number; timeout: number }>();
+  data.forEach((entry) => {
+    const hour = safeNumber(entry?.hour);
+    const runnerId = String(entry?.runner_id || "");
+    if (!hour || !runnerId) return;
+    const key = `${hour}|${runnerId}`;
+    cellMap.set(key, {
+      success: safeNumber(entry.success),
+      failure: safeNumber(entry.failure),
+      timeout: safeNumber(entry.timeout)
+    });
+  });
+
+  return (
+    <div className="report-chart-block" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      <div className="report-timeline-grid">
+        {runners.map((runner) => (
+          <div key={runner.id} className="report-timeline-row">
+            <span className="report-timeline-label">{runner.label}</span>
+            <div className="report-timeline-cells">
+              {buckets.map((hour) => {
+                const cell = cellMap.get(`${hour}|${runner.id}`);
+                let cls = "report-timeline-cell-empty";
+                let title2 = `${new Date(hour * 1000).getHours()}시 데이터 없음`;
+                if (cell) {
+                  const total = cell.success + cell.failure + cell.timeout;
+                  if (total > 0) {
+                    if (cell.failure > 0 || cell.timeout > 0) {
+                      cls = cell.success >= cell.failure + cell.timeout ? "report-timeline-cell-warn" : "report-timeline-cell-fail";
+                    } else {
+                      cls = "report-timeline-cell-ok";
+                    }
+                    title2 = `${new Date(hour * 1000).getHours()}시 성공 ${cell.success} / 실패 ${cell.failure} / timeout ${cell.timeout}`;
+                  }
+                }
+                return <span key={hour} className={`report-timeline-cell ${cls}`} title={title2} />;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportSimpleBars({
+  title,
+  items,
+  unit
+}: {
+  title: string;
+  items: Array<{ label: string; value: number }>;
+  unit?: string;
+}) {
+  const filtered = items.filter((item) => Number.isFinite(item.value) && item.value > 0);
+  if (!filtered.length) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+  const max = Math.max(...filtered.map((item) => item.value), 1);
+
+  return (
+    <div className="report-chart-block" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      <div className="report-split-layout">
+        {filtered.map((item) => {
+          const ratio = (item.value / max) * 100;
+          return (
+            <div key={item.label} className="report-bar-row">
+              <div className="report-bar-row-label">
+                <span>{item.label}</span>
+                <strong>
+                  {item.value % 1 === 0 ? formatCount(item.value) : item.value.toFixed(1)}
+                  {unit ? ` ${unit}` : ""}
+                </strong>
+              </div>
+              <div className="report-split-track">
+                <span style={{ width: `${ratio.toFixed(2)}%`, backgroundColor: "var(--accent)" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportDailyCountBars({
+  title,
+  data
+}: {
+  title: string;
+  data: Array<{ date: string; count: number }>;
+}) {
+  const items = data.filter((entry) => entry && typeof entry.date === "string");
+  if (!items.length) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+  const counts = items.map((entry) => Math.max(safeNumber(entry.count), 0));
+  const max = Math.max(...counts, 1);
+  const allZero = counts.every((value) => value <= 0);
+
+  return (
+    <div className="report-chart-block" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      {allZero ? (
+        <div className="report-fallback">최근 14일 커밋이 없습니다</div>
+      ) : (
+        <div className="report-stacked-bars">
+          {items.map((entry) => {
+            const count = Math.max(safeNumber(entry.count), 0);
+            const heightPct = (count / max) * 100;
+            const md = entry.date.slice(5);
+            return (
+              <div key={entry.date} className="report-stacked-bar-col" title={`${entry.date} ${count}개 커밋`}>
+                <div className="report-stacked-bar-track">
+                  <div
+                    className="report-stacked-bar-fill report-daily-count-fill"
+                    style={{ height: `${heightPct.toFixed(2)}%` }}
+                  />
+                </div>
+                <em className="report-stacked-bar-label">{md}</em>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
   const {
     doneTicketCount,
@@ -4144,6 +4404,44 @@ function ReportingDashboard({
   const runnerEnabled = statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0);
   const commitSubjects = parseMetricJsonStringList(statusValue(metrics, "autoflow_commit_recent_subjects_json", "[]"));
   const codeTrendPoints = metricHistoryPoints(metricHistory, "autoflow_code_volume_count", 7);
+  const codeDailyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_code_daily_buckets_14d_json", "[]"))
+    .map((entry) => ({
+      date: String(entry.date || ""),
+      insertions: safeNumber(entry.insertions),
+      deletions: safeNumber(entry.deletions)
+    }))
+    .filter((entry) => entry.date);
+  const codeDirBreakdownObj = parseMetricJsonObject(statusValue(metrics, "autoflow_code_dir_breakdown_json", "{}"));
+  const codeDirItems = Object.entries(codeDirBreakdownObj)
+    .map(([label, raw]) => {
+      const obj = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
+      return {
+        label,
+        value: safeNumber(obj.insertions) + safeNumber(obj.deletions)
+      };
+    })
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+  const commitDailyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_commit_daily_buckets_14d_json", "[]"))
+    .map((entry) => ({ date: String(entry.date || ""), count: safeNumber(entry.count) }))
+    .filter((entry) => entry.date);
+  const tokenHourlyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_token_hourly_24h_json", "[]"))
+    .map((entry) => ({
+      hour: safeNumber(entry.hour),
+      input: safeNumber(entry.input),
+      output: safeNumber(entry.output),
+      cache: safeNumber(entry.cache)
+    }));
+  const runnerTickTimeline = parseMetricJsonArray(statusValue(metrics, "autoflow_runner_tick_timeline_24h_json", "[]"))
+    .map((entry) => ({
+      hour: safeNumber(entry.hour),
+      runner_id: String(entry.runner_id || ""),
+      success: safeNumber(entry.success),
+      failure: safeNumber(entry.failure),
+      timeout: safeNumber(entry.timeout)
+    }));
+  const runnerAvgTickSecondsObj = parseMetricJsonObject(statusValue(metrics, "autoflow_runner_avg_tick_seconds_json", "{}"));
   const runnerStatus24hMap = parseMetricJsonObject(statusValue(metrics, "autoflow_runner_status_24h_json", "{}"));
   const runnerBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}")));
   const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
@@ -4239,6 +4537,12 @@ function ReportingDashboard({
             </div>
           </div>
           <MetricTrend points={codeTrendPoints} yLabel="최근 7일 변경량 추세" />
+          <ReportStackedDailyBars title="최근 14일 추가/삭제 라인" data={codeDailyBuckets} />
+          {codeDirItems.length ? (
+            <ReportSplitBars title="디렉터리별 변경량 분포" items={codeDirItems} />
+          ) : (
+            <div className="report-fallback">디렉터리별 변경량이 없습니다</div>
+          )}
         </ReportMetricCard>
         <ReportMetricCard
           label="토큰 사용량"
@@ -4294,6 +4598,7 @@ function ReportingDashboard({
               ) : null}
               <ReportSplitBars title="러너별 24h 토큰" items={runnerBreakdown} />
               {modelBreakdown.length ? <ReportSplitBars title="모델별 24h 토큰" items={modelBreakdown} /> : null}
+              <ReportHourlyAreaTrend title="최근 24시간 시간별 토큰 추세" data={tokenHourlyBuckets} />
             </>
           ) : (
             <div className="report-fallback">러너 실행 로그가 없어 분해 데이터가 없습니다</div>
@@ -4323,6 +4628,21 @@ function ReportingDashboard({
             ))}
             {!hasRunnerData ? <div className="report-fallback">최근 24h 러너 상태가 없습니다</div> : null}
           </div>
+          <ReportRunnerTimeline
+            title="최근 24시간 tick 결과 timeline"
+            data={runnerTickTimeline}
+            runners={runnerRows.map((row) => ({ id: row.id, label: row.label }))}
+          />
+          <ReportSimpleBars
+            title="러너별 평균 tick 시간"
+            items={runnerRows
+              .map((row) => ({
+                label: row.label,
+                value: safeNumber((runnerAvgTickSecondsObj[row.id] as number | string | undefined) ?? 0)
+              }))
+              .filter((item) => item.value > 0)}
+            unit="초"
+          />
         </ReportMetricCard>
         <ReportMetricCard
           label="완료 커밋"
@@ -4366,6 +4686,14 @@ function ReportingDashboard({
           ) : (
             <div className="report-fallback">완료 커밋 데이터가 없습니다</div>
           )}
+          <ReportDailyCountBars title="최근 14일 일자별 커밋 수" data={commitDailyBuckets} />
+          <ReportSplitBars
+            title="자동 / 수동 작성자 분포 (24h)"
+            items={[
+              { label: "Autoflow 자동", value: commitAuto24hCount },
+              { label: "사용자 수동", value: commitManual24hCount }
+            ].filter((item) => item.value > 0)}
+          />
         </ReportMetricCard>
       </div>
     </div>

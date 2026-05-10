@@ -147,6 +147,12 @@ const metricSnapshotKeys = [
   "autoflow_commit_auto_count_24h",
   "autoflow_commit_manual_count_24h",
   "autoflow_commit_recent_subjects_json",
+  "autoflow_code_daily_buckets_14d_json",
+  "autoflow_code_dir_breakdown_json",
+  "autoflow_commit_daily_buckets_14d_json",
+  "autoflow_token_hourly_24h_json",
+  "autoflow_runner_tick_timeline_24h_json",
+  "autoflow_runner_avg_tick_seconds_json",
   "completion_rate_percent"
 ];
 
@@ -155,6 +161,12 @@ const metricSnapshotStringKeys = new Set([
   "autoflow_token_model_breakdown_24h_json",
   "autoflow_runner_status_24h_json",
   "autoflow_commit_recent_subjects_json",
+  "autoflow_code_daily_buckets_14d_json",
+  "autoflow_code_dir_breakdown_json",
+  "autoflow_commit_daily_buckets_14d_json",
+  "autoflow_token_hourly_24h_json",
+  "autoflow_runner_tick_timeline_24h_json",
+  "autoflow_runner_avg_tick_seconds_json",
   "project_root",
   "board_root"
 ]);

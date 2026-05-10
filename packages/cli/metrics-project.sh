@@ -105,11 +105,19 @@ write_snapshot() {
   local autoflow_commit_auto_count_24h="${48}"
   local autoflow_commit_manual_count_24h="${49}"
   local autoflow_commit_recent_subjects_json="${50}"
+  local autoflow_code_daily_buckets_14d_json="${51}"
+  local autoflow_code_dir_breakdown_json="${52}"
+  local autoflow_commit_daily_buckets_14d_json="${53}"
+  local autoflow_token_hourly_24h_json="${54}"
+  local autoflow_runner_tick_timeline_24h_json="${55}"
+  local autoflow_runner_avg_tick_seconds_json="${56}"
   local escaped_project escaped_board
   local escaped_runner_breakdown
   local escaped_model_breakdown
   local escaped_runner_status
   local escaped_commit_subjects
+  local escaped_code_daily escaped_code_dir escaped_commit_daily
+  local escaped_token_hourly escaped_runner_timeline escaped_runner_avg
 
   mkdir -p "$metrics_root"
   escaped_project="$(printf '%s' "$project_root" | json_escape)"
@@ -118,7 +126,13 @@ write_snapshot() {
   escaped_model_breakdown="$(printf '%s' "$autoflow_token_model_breakdown_24h_json" | json_escape)"
   escaped_runner_status="$(printf '%s' "$autoflow_runner_status_24h_json" | json_escape)"
   escaped_commit_subjects="$(printf '%s' "$autoflow_commit_recent_subjects_json" | json_escape)"
-  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_code_net_delta_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"autoflow_token_usage_1h_count":%s,"autoflow_token_usage_24h_count":%s,"autoflow_token_input_1h_count":%s,"autoflow_token_output_1h_count":%s,"autoflow_token_cache_1h_count":%s,"autoflow_token_input_24h_count":%s,"autoflow_token_output_24h_count":%s,"autoflow_token_cache_24h_count":%s,"autoflow_token_runner_breakdown_24h_json":"%s","autoflow_token_model_breakdown_24h_json":"%s","autoflow_runner_status_24h_json":"%s","autoflow_commit_count_24h":%s,"autoflow_commit_auto_count_24h":%s,"autoflow_commit_manual_count_24h":%s,"autoflow_commit_recent_subjects_json":"%s","autoflow_avg_lead_seconds":%s,"autoflow_avg_active_seconds":%s,"autoflow_avg_ticks_per_done_ticket":%s,"autoflow_duration_total_24h_seconds":%s,"completion_rate_percent":%s}\n' \
+  escaped_code_daily="$(printf '%s' "$autoflow_code_daily_buckets_14d_json" | json_escape)"
+  escaped_code_dir="$(printf '%s' "$autoflow_code_dir_breakdown_json" | json_escape)"
+  escaped_commit_daily="$(printf '%s' "$autoflow_commit_daily_buckets_14d_json" | json_escape)"
+  escaped_token_hourly="$(printf '%s' "$autoflow_token_hourly_24h_json" | json_escape)"
+  escaped_runner_timeline="$(printf '%s' "$autoflow_runner_tick_timeline_24h_json" | json_escape)"
+  escaped_runner_avg="$(printf '%s' "$autoflow_runner_avg_tick_seconds_json" | json_escape)"
+  printf '{"timestamp":"%s","project_root":"%s","board_root":"%s","spec_total":%s,"ticket_total":%s,"ticket_done_count":%s,"active_ticket_count":%s,"reject_count":%s,"handoff_count":%s,"runner_total_count":%s,"runner_running_count":%s,"runner_idle_count":%s,"runner_stopped_count":%s,"runner_blocked_count":%s,"runner_enabled_count":%s,"runner_disabled_count":%s,"runner_invalid_config_count":%s,"runner_artifact_ok_count":%s,"runner_artifact_warning_count":%s,"runner_artifact_not_applicable_count":%s,"autoflow_commit_count":%s,"autoflow_code_files_changed_count":%s,"autoflow_code_insertions_count":%s,"autoflow_code_deletions_count":%s,"autoflow_code_volume_count":%s,"autoflow_code_net_delta_count":%s,"autoflow_token_usage_count":%s,"autoflow_token_report_count":%s,"autoflow_token_usage_1h_count":%s,"autoflow_token_usage_24h_count":%s,"autoflow_token_input_1h_count":%s,"autoflow_token_output_1h_count":%s,"autoflow_token_cache_1h_count":%s,"autoflow_token_input_24h_count":%s,"autoflow_token_output_24h_count":%s,"autoflow_token_cache_24h_count":%s,"autoflow_token_runner_breakdown_24h_json":"%s","autoflow_token_model_breakdown_24h_json":"%s","autoflow_runner_status_24h_json":"%s","autoflow_commit_count_24h":%s,"autoflow_commit_auto_count_24h":%s,"autoflow_commit_manual_count_24h":%s,"autoflow_commit_recent_subjects_json":"%s","autoflow_code_daily_buckets_14d_json":"%s","autoflow_code_dir_breakdown_json":"%s","autoflow_commit_daily_buckets_14d_json":"%s","autoflow_token_hourly_24h_json":"%s","autoflow_runner_tick_timeline_24h_json":"%s","autoflow_runner_avg_tick_seconds_json":"%s","autoflow_avg_lead_seconds":%s,"autoflow_avg_active_seconds":%s,"autoflow_avg_ticks_per_done_ticket":%s,"autoflow_duration_total_24h_seconds":%s,"completion_rate_percent":%s}\n' \
     "$timestamp" \
     "$escaped_project" \
     "$escaped_board" \
@@ -162,6 +176,12 @@ write_snapshot() {
     "$autoflow_commit_auto_count_24h" \
     "$autoflow_commit_manual_count_24h" \
     "$escaped_commit_subjects" \
+    "$escaped_code_daily" \
+    "$escaped_code_dir" \
+    "$escaped_commit_daily" \
+    "$escaped_token_hourly" \
+    "$escaped_runner_timeline" \
+    "$escaped_runner_avg" \
     "$autoflow_avg_lead_seconds" \
     "$autoflow_avg_active_seconds" \
     "$autoflow_avg_ticks_per_done_ticket" \
@@ -324,12 +344,13 @@ count_autoflow_commit_metrics() {
   local git_root done_ticket_paths
   local commit_lines commit_hash commit_epoch commit_subject
   local commit_subjects
-  local now_epoch one_day_ago
+  local now_epoch one_day_ago fourteen_days_ago
   local board_root_relative
   local added removed file_path
   local numstat_stream in_commit
   local i=0
   local -a commit_hash_arr
+  local commit_meta_tsv numstat_tsv agg_output
 
   autoflow_commit_count=0
   autoflow_commit_count_24h=0
@@ -341,6 +362,9 @@ count_autoflow_commit_metrics() {
   autoflow_code_deletions_count=0
   autoflow_code_volume_count=0
   autoflow_code_net_delta_count=0
+  autoflow_code_daily_buckets_14d_json='[]'
+  autoflow_code_dir_breakdown_json='{}'
+  autoflow_commit_daily_buckets_14d_json='[]'
 
   git_root="$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || true)"
   [ -n "$git_root" ] || return 0
@@ -357,9 +381,18 @@ count_autoflow_commit_metrics() {
 
   autoflow_commit_count="$(printf '%s\n' "$commit_lines" | awk 'NF && $1 != "- " { count += 1 } END { print count + 0 }')"
   commit_subjects=""
+  commit_meta_tsv=""
+  numstat_tsv=""
+  if command -v python3 >/dev/null 2>&1; then
+    commit_meta_tsv="$(mktemp 2>/dev/null || true)"
+    numstat_tsv="$(mktemp 2>/dev/null || true)"
+  fi
   while IFS='|' read -r commit_hash commit_epoch commit_subject; do
     [ -n "$commit_hash" ] || continue
     commit_hash_arr+=("$commit_hash")
+    if [ -n "$commit_meta_tsv" ] && [ -f "$commit_meta_tsv" ]; then
+      printf '%s\t%s\n' "$commit_hash" "$commit_epoch" >> "$commit_meta_tsv"
+    fi
 
     case "$commit_epoch" in
       ''|*[!0-9]*) commit_epoch=0 ;;
@@ -419,12 +452,90 @@ EOF
     if [ "$removed" != "-" ]; then
       autoflow_code_deletions_count=$((autoflow_code_deletions_count + removed))
     fi
+    if [ -n "$numstat_tsv" ] && [ -f "$numstat_tsv" ]; then
+      printf '%s\t%s\t%s\t%s\n' "$commit_hash" "$added" "$removed" "$file_path" >> "$numstat_tsv"
+    fi
   done <<EOF
 $numstat_stream
 EOF
 
   autoflow_code_volume_count=$((autoflow_code_insertions_count + autoflow_code_deletions_count))
   autoflow_code_net_delta_count=$((autoflow_code_insertions_count - autoflow_code_deletions_count))
+
+  if [ -n "$commit_meta_tsv" ] && [ -n "$numstat_tsv" ] \
+      && [ -f "$commit_meta_tsv" ] && [ -f "$numstat_tsv" ] && [ -s "$commit_meta_tsv" ]; then
+    agg_output="$(python3 - "$commit_meta_tsv" "$numstat_tsv" <<'PY' 2>/dev/null || true
+import sys, json, datetime, collections
+meta_path, numstat_path = sys.argv[1], sys.argv[2]
+epoch = {}
+with open(meta_path) as f:
+    for line in f:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 2 and parts[0]:
+            try:
+                epoch[parts[0]] = int(parts[1])
+            except ValueError:
+                pass
+
+now_dt = datetime.datetime.now(datetime.timezone.utc)
+fourteen_days_ago = int(now_dt.timestamp()) - 14 * 86400
+bucket_dates = []
+for i in range(13, -1, -1):
+    bucket_dates.append((now_dt - datetime.timedelta(days=i)).strftime("%Y-%m-%d"))
+
+code_daily = {d: {"date": d, "insertions": 0, "deletions": 0} for d in bucket_dates}
+commit_daily_set = collections.defaultdict(set)
+dir_breakdown = collections.defaultdict(lambda: {"insertions": 0, "deletions": 0, "files": 0})
+
+with open(numstat_path) as f:
+    for line in f:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) < 4:
+            continue
+        h, added_s, removed_s, path = parts[0], parts[1], parts[2], parts[3]
+        if not path:
+            continue
+        e = epoch.get(h)
+        if e is None:
+            continue
+        try:
+            added = 0 if added_s == "-" else int(added_s)
+            removed = 0 if removed_s == "-" else int(removed_s)
+        except ValueError:
+            continue
+        if e >= fourteen_days_ago:
+            d = datetime.datetime.fromtimestamp(e, tz=datetime.timezone.utc).strftime("%Y-%m-%d")
+            if d in code_daily:
+                code_daily[d]["insertions"] += added
+                code_daily[d]["deletions"] += removed
+                commit_daily_set[d].add(h)
+        top = path.split("/", 1)[0] if "/" in path else path
+        if top:
+            dir_breakdown[top]["insertions"] += added
+            dir_breakdown[top]["deletions"] += removed
+            dir_breakdown[top]["files"] += 1
+
+code_daily_arr = [code_daily[d] for d in bucket_dates]
+commit_daily_arr = [{"date": d, "count": len(commit_daily_set.get(d, set()))} for d in bucket_dates]
+dir_sorted = sorted(dir_breakdown.items(), key=lambda kv: kv[1]["insertions"] + kv[1]["deletions"], reverse=True)[:8]
+dir_obj = {k: v for k, v in dir_sorted}
+
+print(json.dumps(code_daily_arr, separators=(",", ":")))
+print(json.dumps(dir_obj, separators=(",", ":")))
+print(json.dumps(commit_daily_arr, separators=(",", ":")))
+PY
+)"
+    if [ -n "$agg_output" ]; then
+      autoflow_code_daily_buckets_14d_json="$(printf '%s' "$agg_output" | sed -n '1p')"
+      autoflow_code_dir_breakdown_json="$(printf '%s' "$agg_output" | sed -n '2p')"
+      autoflow_commit_daily_buckets_14d_json="$(printf '%s' "$agg_output" | sed -n '3p')"
+      [ -n "$autoflow_code_daily_buckets_14d_json" ] || autoflow_code_daily_buckets_14d_json='[]'
+      [ -n "$autoflow_code_dir_breakdown_json" ] || autoflow_code_dir_breakdown_json='{}'
+      [ -n "$autoflow_commit_daily_buckets_14d_json" ] || autoflow_commit_daily_buckets_14d_json='[]'
+    fi
+  fi
+  [ -z "$commit_meta_tsv" ] || rm -f "$commit_meta_tsv"
+  [ -z "$numstat_tsv" ] || rm -f "$numstat_tsv"
 }
 
 count_autoflow_token_metrics() {
@@ -445,6 +556,9 @@ count_autoflow_token_metrics() {
   autoflow_token_runner_breakdown_24h_json='{}'
   autoflow_token_model_breakdown_24h_json='{}'
   autoflow_runner_status_24h_json='{}'
+  autoflow_token_hourly_24h_json='[]'
+  autoflow_runner_tick_timeline_24h_json='[]'
+  autoflow_runner_avg_tick_seconds_json='{}'
 
   command -v jq >/dev/null 2>&1 || return 0
   telemetry_runs_file="$(telemetry_runs_jsonl_path "$project_root")"
@@ -464,9 +578,11 @@ count_autoflow_token_metrics() {
   now_epoch="$(date -u +%s)"
   max_token_epoch=$((now_epoch - max_data_age_seconds))
   one_hour_ago=$((now_epoch - 3600))
+  local twenty_four_hours_ago
+  twenty_four_hours_ago=$((now_epoch - 86400))
 
   token_result_json="$(
-    jq -rs --argjson max_row_tokens "$max_row_tokens" --argjson max_token_epoch "$max_token_epoch" --argjson one_hour_ago "$one_hour_ago" '
+    jq -rs --argjson max_row_tokens "$max_row_tokens" --argjson max_token_epoch "$max_token_epoch" --argjson one_hour_ago "$one_hour_ago" --argjson twenty_four_hours_ago "$twenty_four_hours_ago" '
       reduce .[] as $row (
         {
           usage: 0,
@@ -481,7 +597,10 @@ count_autoflow_token_metrics() {
           cache_24h: 0,
           runner_24h: {},
           model_24h: {},
-          runner_status_24h: {}
+          runner_status_24h: {},
+          hourly_24h: {},
+          runner_timeline_24h: {},
+          runner_duration_24h: {}
         };
         if ($row | type) == "object" then
           ($row.token_input // 0 | tonumber? // 0) as $input
@@ -546,6 +665,36 @@ count_autoflow_token_metrics() {
             else
               .
             end
+          | (($row.duration_ms // 0 | tonumber? // 0) / 1000) as $duration_s
+          | (($row_ts | tonumber? // 0) / 3600 | floor * 3600) as $hour_epoch
+          | ($hour_epoch | tostring) as $hour_key
+          | if $row_ts >= $twenty_four_hours_ago then
+              .runner_duration_24h[$runner_id] = (
+                (.runner_duration_24h[$runner_id] // {sum:0, count:0})
+                | .sum = (.sum + (if $duration_s > 0 and $duration_s < 86400 then $duration_s else 0 end))
+                | .count = (.count + (if $duration_s > 0 and $duration_s < 86400 then 1 else 0 end))
+              )
+              | (($hour_key + "|" + $runner_id)) as $tk
+              | .runner_timeline_24h[$tk] = (
+                  (.runner_timeline_24h[$tk] // {hour:$hour_epoch, runner_id:$runner_id, success:0, failure:0, timeout:0})
+                  | if $result == "success" then .success = (.success + 1)
+                    elif ($result == "failure" or $result == "failed" or $result == "error") then .failure = (.failure + 1)
+                    elif $result == "timeout" then .timeout = (.timeout + 1)
+                    else . end
+                )
+              | if (($row | has("token_input") or has("token_output") or has("token_cache_input"))
+                  and ($input < $max_row_tokens)
+                  and ($output < $max_row_tokens)
+                  and ($cache < $max_row_tokens)
+                  and ($total < $max_row_tokens)) then
+                  .hourly_24h[$hour_key] = (
+                    (.hourly_24h[$hour_key] // {hour:$hour_epoch, input:0, output:0, cache:0})
+                    | .input = (.input + $input)
+                    | .output = (.output + $output)
+                    | .cache = (.cache + $cache)
+                  )
+                else . end
+            else . end
         else
           .
         end
@@ -563,7 +712,10 @@ count_autoflow_token_metrics() {
           cache_24h: .cache_24h,
           runner_24h: .runner_24h,
           model_24h: .model_24h,
-          runner_status_24h: .runner_status_24h
+          runner_status_24h: .runner_status_24h,
+          hourly_24h_arr: (.hourly_24h | to_entries | map(.value) | sort_by(.hour)),
+          runner_timeline_24h_arr: (.runner_timeline_24h | to_entries | map(.value) | sort_by(.hour, .runner_id)),
+          runner_avg_tick_seconds: (.runner_duration_24h | with_entries(.value = (if .value.count > 0 then (.value.sum / .value.count) else 0 end)))
         }
       | @json
     ' "$telemetry_runs_file" 2>/dev/null || printf '{}'
@@ -627,6 +779,12 @@ count_autoflow_token_metrics() {
   [ -n "$autoflow_token_runner_breakdown_24h_json" ] || autoflow_token_runner_breakdown_24h_json='{}'
   [ -n "$autoflow_token_model_breakdown_24h_json" ] || autoflow_token_model_breakdown_24h_json='{}'
   [ -n "$autoflow_runner_status_24h_json" ] || autoflow_runner_status_24h_json='{}'
+  autoflow_token_hourly_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.hourly_24h_arr // []' 2>/dev/null || printf '[]')"
+  autoflow_runner_tick_timeline_24h_json="$(printf '%s' "$token_result_json" | jq -cr '.runner_timeline_24h_arr // []' 2>/dev/null || printf '[]')"
+  autoflow_runner_avg_tick_seconds_json="$(printf '%s' "$token_result_json" | jq -cr '.runner_avg_tick_seconds // {}' 2>/dev/null || printf '{}')"
+  [ -n "$autoflow_token_hourly_24h_json" ] || autoflow_token_hourly_24h_json='[]'
+  [ -n "$autoflow_runner_tick_timeline_24h_json" ] || autoflow_runner_tick_timeline_24h_json='[]'
+  [ -n "$autoflow_runner_avg_tick_seconds_json" ] || autoflow_runner_avg_tick_seconds_json='{}'
 }
 
 sanitize_nonnegative_metric() {
@@ -837,7 +995,7 @@ load_heavy_metrics_cache() {
         esac
         printf -v "$key" '%s' "$value"
         ;;
-      autoflow_token_runner_breakdown_24h_json|autoflow_token_model_breakdown_24h_json|autoflow_runner_status_24h_json|autoflow_commit_recent_subjects_json)
+      autoflow_token_runner_breakdown_24h_json|autoflow_token_model_breakdown_24h_json|autoflow_runner_status_24h_json|autoflow_commit_recent_subjects_json|autoflow_code_daily_buckets_14d_json|autoflow_code_dir_breakdown_json|autoflow_commit_daily_buckets_14d_json|autoflow_token_hourly_24h_json|autoflow_runner_tick_timeline_24h_json|autoflow_runner_avg_tick_seconds_json)
         printf -v "$key" '%s' "$value"
         ;;
     esac
@@ -874,6 +1032,12 @@ write_heavy_metrics_cache() {
     printf 'autoflow_commit_auto_count_24h=%s\n' "$autoflow_commit_auto_count_24h"
     printf 'autoflow_commit_manual_count_24h=%s\n' "$autoflow_commit_manual_count_24h"
     printf 'autoflow_commit_recent_subjects_json=%s\n' "$autoflow_commit_recent_subjects_json"
+    printf 'autoflow_code_daily_buckets_14d_json=%s\n' "$autoflow_code_daily_buckets_14d_json"
+    printf 'autoflow_code_dir_breakdown_json=%s\n' "$autoflow_code_dir_breakdown_json"
+    printf 'autoflow_commit_daily_buckets_14d_json=%s\n' "$autoflow_commit_daily_buckets_14d_json"
+    printf 'autoflow_token_hourly_24h_json=%s\n' "$autoflow_token_hourly_24h_json"
+    printf 'autoflow_runner_tick_timeline_24h_json=%s\n' "$autoflow_runner_tick_timeline_24h_json"
+    printf 'autoflow_runner_avg_tick_seconds_json=%s\n' "$autoflow_runner_avg_tick_seconds_json"
   } > "$tmp_file"
   mv "$tmp_file" "$cache_file"
 }
@@ -935,6 +1099,12 @@ count_heavy_metrics_with_cache() {
   autoflow_commit_auto_count_24h=0
   autoflow_commit_manual_count_24h=0
   autoflow_commit_recent_subjects_json='[]'
+  autoflow_code_daily_buckets_14d_json='[]'
+  autoflow_code_dir_breakdown_json='{}'
+  autoflow_commit_daily_buckets_14d_json='[]'
+  autoflow_token_hourly_24h_json='[]'
+  autoflow_runner_tick_timeline_24h_json='[]'
+  autoflow_runner_avg_tick_seconds_json='{}'
   [ "$lock_acquired" = "true" ] && autoflow_release_lock "$lock_dir"
 }
 
@@ -1021,6 +1191,12 @@ autoflow_commit_count_24h=0
 autoflow_commit_auto_count_24h=0
 autoflow_commit_manual_count_24h=0
 autoflow_commit_recent_subjects_json=""
+autoflow_code_daily_buckets_14d_json=""
+autoflow_code_dir_breakdown_json=""
+autoflow_commit_daily_buckets_14d_json=""
+autoflow_token_hourly_24h_json=""
+autoflow_runner_tick_timeline_24h_json=""
+autoflow_runner_avg_tick_seconds_json=""
 metrics_heavy_cache_status="unknown"
 metrics_heavy_cache_age_seconds=999999
 metrics_heavy_cache_file=""
@@ -1074,6 +1250,12 @@ if [ "$write" = "true" ]; then
     "$autoflow_commit_auto_count_24h" \
     "$autoflow_commit_manual_count_24h" \
     "$autoflow_commit_recent_subjects_json" \
+    "$autoflow_code_daily_buckets_14d_json" \
+    "$autoflow_code_dir_breakdown_json" \
+    "$autoflow_commit_daily_buckets_14d_json" \
+    "$autoflow_token_hourly_24h_json" \
+    "$autoflow_runner_tick_timeline_24h_json" \
+    "$autoflow_runner_avg_tick_seconds_json" \
     "$autoflow_avg_lead_seconds" \
     "$autoflow_avg_active_seconds" \
     "$autoflow_avg_ticks_per_done_ticket" \
@@ -1142,6 +1324,12 @@ printf 'autoflow_commit_count_24h=%s\n' "$autoflow_commit_count_24h"
 printf 'autoflow_commit_auto_count_24h=%s\n' "$autoflow_commit_auto_count_24h"
 printf 'autoflow_commit_manual_count_24h=%s\n' "$autoflow_commit_manual_count_24h"
 printf 'autoflow_commit_recent_subjects_json=%s\n' "$autoflow_commit_recent_subjects_json"
+printf 'autoflow_code_daily_buckets_14d_json=%s\n' "$autoflow_code_daily_buckets_14d_json"
+printf 'autoflow_code_dir_breakdown_json=%s\n' "$autoflow_code_dir_breakdown_json"
+printf 'autoflow_commit_daily_buckets_14d_json=%s\n' "$autoflow_commit_daily_buckets_14d_json"
+printf 'autoflow_token_hourly_24h_json=%s\n' "$autoflow_token_hourly_24h_json"
+printf 'autoflow_runner_tick_timeline_24h_json=%s\n' "$autoflow_runner_tick_timeline_24h_json"
+printf 'autoflow_runner_avg_tick_seconds_json=%s\n' "$autoflow_runner_avg_tick_seconds_json"
 printf 'autoflow_avg_lead_seconds=%s\n' "$autoflow_avg_lead_seconds"
 printf 'autoflow_avg_active_seconds=%s\n' "$autoflow_avg_active_seconds"
 printf 'autoflow_avg_ticks_per_done_ticket=%s\n' "$autoflow_avg_ticks_per_done_ticket"
