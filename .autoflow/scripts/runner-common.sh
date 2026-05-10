@@ -137,6 +137,66 @@ runner_pid_is_running() {
   return 1
 }
 
+ticket_owner_lock_pid() {
+  printf '%s' "${AUTOFLOW_TICKET_OWNER_PID:-$$}"
+}
+
+ticket_owner_lock_value() {
+  local runner_id="${1:-$(owner_id)}"
+  local runner_pid="${2:-$(ticket_owner_lock_pid)}"
+  local spawned_at="${3:-$(now_iso 2>/dev/null || runner_now_iso)}"
+
+  printf '%s:%s:%s' "$runner_id" "$runner_pid" "$spawned_at"
+}
+
+ticket_owner_lock_parse() {
+  local raw="${1:-}"
+
+  if [[ "$raw" =~ ^(.+):([0-9]+):([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$ ]]; then
+    printf 'runner_id=%s\n' "${BASH_REMATCH[1]}"
+    printf 'pid=%s\n' "${BASH_REMATCH[2]}"
+    printf 'spawned_at=%s\n' "${BASH_REMATCH[3]}"
+    return 0
+  fi
+
+  return 1
+}
+
+ticket_owner_claim_decision() {
+  local raw="${1:-}"
+  local current_runner="${2:-$(owner_id)}"
+  local current_pid="${3:-$(ticket_owner_lock_pid)}"
+  local parsed runner_id="" claimed_pid="" spawned_at="" decision=""
+
+  if [ -z "$raw" ]; then
+    decision="unclaimed"
+  elif parsed="$(ticket_owner_lock_parse "$raw" 2>/dev/null)"; then
+    runner_id="$(printf '%s\n' "$parsed" | awk -F= '$1=="runner_id"{sub(/^[^=]*=/,""); print; exit}')"
+    claimed_pid="$(printf '%s\n' "$parsed" | awk -F= '$1=="pid"{sub(/^[^=]*=/,""); print; exit}')"
+    spawned_at="$(printf '%s\n' "$parsed" | awk -F= '$1=="spawned_at"{sub(/^[^=]*=/,""); print; exit}')"
+    if worker_id_matches_field "$runner_id" "$current_runner"; then
+      if [ "$claimed_pid" = "$current_pid" ]; then
+        decision="owned_same_pid"
+      else
+        decision="takeover_same_runner"
+      fi
+    elif runner_pid_is_running "$claimed_pid"; then
+      decision="blocked_other_runner_alive"
+    else
+      decision="takeover_stale_pid"
+    fi
+  elif worker_id_matches_field "$raw" "$current_runner"; then
+    decision="owned_legacy"
+  else
+    decision="takeover_legacy"
+  fi
+
+  printf 'decision=%s\n' "$decision"
+  printf 'runner_id=%s\n' "$runner_id"
+  printf 'pid=%s\n' "$claimed_pid"
+  printf 'spawned_at=%s\n' "$spawned_at"
+}
+
 runner_effective_state_status() {
   local status="${1:-}"
   local mode="${2:-}"

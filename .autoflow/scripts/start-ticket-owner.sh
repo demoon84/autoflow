@@ -3,11 +3,13 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "$0")" && pwd)/common.sh"
+source "$(cd "$(dirname "$0")" && pwd)/runner-common.sh"
 
 ensure_expected_role "ticket-owner"
 
 worker_id="$(owner_id)"
 display_id="$(display_worker_id "$worker_id")"
+owner_pid="$(ticket_owner_lock_pid)"
 requested_id="${1:-}"
 requested_normalized=""
 if [ -n "$requested_id" ]; then
@@ -18,6 +20,10 @@ if [ -n "$requested_id" ]; then
 fi
 
 set_thread_context_record "ticket-owner" "$worker_id" "" "" ""
+
+# Claimed By uses a runner-id:runner-pid:spawned-at-iso token so the same
+# runner-id can safely take over after a PTY restart while a different alive
+# runner still blocks claim.
 
 # PRD 5 (2026-05-09): optional multi-worker path conflict guard.
 # Returns 0 (conflict) when candidate's Allowed Paths overlap any inprogress
@@ -69,44 +75,72 @@ find_next_dispatchable_todo() {
 }
 
 ticket_owned_by_worker() {
-  local file="$1"
-  local owner claimed_by execution_owner verifier_owner
+  local decision
 
-  owner="$(ticket_scalar_field "$file" "AI")"
-  claimed_by="$(ticket_scalar_field "$file" "Claimed By")"
-  execution_owner="$(ticket_scalar_field "$file" "Execution AI")"
-
-  worker_id_matches_field "$owner" "$worker_id" ||
-    worker_id_matches_field "$claimed_by" "$worker_id" ||
-    worker_id_matches_field "$execution_owner" "$worker_id"
+  decision="$(ticket_claim_decision_kind "$1")"
+  case "$decision" in
+    owned_same_pid|owned_legacy|takeover_same_runner|takeover_stale_pid|takeover_legacy)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 ticket_claimed_by_other_worker() {
-  local file="$1"
-  local field value
-
-  for field in "AI" "Claimed By" "Execution AI"; do
-    value="$(ticket_scalar_field "$file" "$field")"
-    [ -n "$value" ] || continue
-    worker_id_matches_field "$value" "$worker_id" && return 1
-    return 0
-  done
-
-  return 1
+  [ "$(ticket_claim_decision_kind "$1")" = "blocked_other_runner_alive" ]
 }
 
 ticket_claim_owner() {
+  ticket_claim_status_value "$1" "value"
+}
+
+ticket_claim_status() {
   local file="$1"
-  local field value
+  local field value output
 
   for field in "Claimed By" "Execution AI" "AI"; do
     value="$(ticket_scalar_field "$file" "$field")"
     [ -n "$value" ] || continue
-    printf '%s' "$value"
+    output="$(ticket_owner_claim_decision "$value" "$worker_id" "$owner_pid")"
+    printf 'field=%s\n' "$field"
+    printf 'value=%s\n' "$value"
+    printf '%s\n' "$output"
     return 0
   done
 
-  return 1
+  printf 'field=\n'
+  printf 'value=\n'
+  ticket_owner_claim_decision "" "$worker_id" "$owner_pid"
+}
+
+ticket_claim_status_value() {
+  local file="$1"
+  local key="$2"
+
+  ticket_claim_status "$file" | awk -F= -v key="$key" '
+    $1 == key {
+      sub(/^[^=]*=/, "", $0)
+      print
+      exit
+    }
+  '
+}
+
+ticket_claim_decision_kind() {
+  ticket_claim_status_value "$1" "decision"
+}
+
+ticket_claim_is_takeover() {
+  case "$(ticket_claim_decision_kind "$1")" in
+    takeover_same_runner|takeover_stale_pid|takeover_legacy)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 ticket_owner_self_refresh_dirty_path() {
@@ -182,7 +216,7 @@ ticket_referenced_by_runner_state() {
   local ticket_file="$1"
   local ticket_id rel_path state_file active_id active_path
 
-  ticket_id="Todo-20 20 12 61 79 80 81 701 33 98 100 204 250 395 398 399 400extract_numeric_id "$ticket_file")"
+  ticket_id="Todo-$(extract_numeric_id "$ticket_file")"
   rel_path="$(board_relative_path "$ticket_file")"
 
   while IFS= read -r state_file; do
@@ -312,6 +346,28 @@ sync_runner_active_state() {
   mv "$temp_file" "$state_path"
 }
 
+announce_runner_stage() {
+  local stage="$1"
+  local ticket_file="$2"
+  local runner_id
+  local script_path
+  local ticket_id
+
+  [ -n "$stage" ] || stage="inprogress"
+  [ -n "$ticket_file" ] || return 0
+  runner_id="${RUNNER_ID:-$worker_id}"
+  script_path="${BOARD_ROOT}/scripts/runner-stage.js"
+
+  if [ ! -x "$script_path" ]; then
+    return 0
+  fi
+
+  ticket_id="$(extract_numeric_id "$ticket_file")"
+  ticket_id="Todo-${ticket_id}"
+
+  node "$script_path" "$stage" --runner "$runner_id" --ticket "$ticket_id" >/dev/null 2>&1 || true
+}
+
 auto_resume_finish_pass_or_continue() {
   local ticket_file="$1"
   local recovery_output
@@ -327,14 +383,15 @@ block_missing_worktree_after_setup() {
   local ticket_id="$2"
   local timestamp="$3"
   local worktree_output="$4"
-  local worktree_path display_evidence
+  local worktree_path display_evidence owner_lock_value
 
   worktree_path="$(ticket_worktree_path_from_file "$ticket_file")"
   display_evidence="worktree_status=ready but path is missing or not a git worktree: ${worktree_path:-empty}"
+  owner_lock_value="$(ticket_owner_lock_value "$worker_id" "$owner_pid" "$timestamp")"
 
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$owner_lock_value"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_recovery_missing_worktree"
@@ -384,11 +441,12 @@ prepare_ticket_owner_context() {
   local ticket_id timestamp worktree_output implementation_root worktree_evidence
   local project_key project_note ticket_note stage done_target
   local pre_stage recovery_attempted=false shared_blockers blockers_summary blocked_next_action blocked_reason
-  local shared_head_blockers shared_head_summary integration_status merge_continuation=false next_action_line verification_block
+  local shared_head_blockers shared_head_summary integration_status merge_continuation=false next_action_line verification_block owner_lock_value
   local dirty_project_root_paths dirty_project_root_summary dirty_path
 
   ticket_id="$(extract_numeric_id "$ticket_file")"
   timestamp="$(now_iso)"
+  owner_lock_value="$(ticket_owner_lock_value "$worker_id" "$owner_pid" "$timestamp")"
 
   if ticket_claimed_by_other_worker "$ticket_file"; then
     set_thread_context_record "ticket-owner" "$worker_id" "" "" ""
@@ -521,7 +579,7 @@ prepare_ticket_owner_context() {
     fi
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "blocked"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
-    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$owner_lock_value"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_scalar_field_in_section "$ticket_file" "## Worktree" "Integration Status" "blocked_worktree_setup_failed"
@@ -618,7 +676,7 @@ prepare_ticket_owner_context() {
 
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "$stage"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
-  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$display_id"
+  replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$owner_lock_value"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
   replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
   replace_section_block "$ticket_file" "Verification" "$verification_block"
@@ -626,8 +684,20 @@ prepare_ticket_owner_context() {
   append_note_replacing "$ticket_file" \
     "AI ${display_id} prepared ${source_kind} at ${timestamp}; worktree=${implementation_root}" \
     "AI ${display_id} prepared ${source_kind}"
+  if ticket_claim_is_takeover "$ticket_file"; then
+    append_note_replacing "$ticket_file" \
+      "stale lock takeover by ${worker_id}:${owner_pid} at ${timestamp}" \
+      "stale lock takeover by ${worker_id}:"
+  fi
   set_thread_context_record "ticket-owner" "$worker_id" "$ticket_id" "$stage" "$(board_relative_path "$ticket_file")"
   sync_runner_active_state "$ticket_file" "$stage"
+  announce_stage="$stage"
+  case "$source_kind" in
+    requested-ticket|todo|adopted-inprogress)
+      announce_stage="inprogress"
+      ;;
+  esac
+  announce_runner_stage "$announce_stage" "$ticket_file"
   ticket_goal_activate "$ticket_file" "$source_kind"
 
   printf 'ticket=%s\n' "$ticket_file"

@@ -21,6 +21,7 @@ outcome="$2"
 message="${3:-}"
 worker_id="$(owner_id)"
 display_id="$(display_worker_id "$worker_id")"
+owner_pid="$(ticket_owner_lock_pid)"
 timestamp="$(now_iso)"
 
 case "$outcome" in
@@ -228,6 +229,9 @@ route_to_inbox_retry() {
   } > "$_retry_inbox_path" 2>/dev/null || _retry_inbox_path=""
 
   if [ -f "$ticket_file" ]; then
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     rm -f "$ticket_file"
   fi
   ticket_goal_block "$ticket_file" "failed" 2>/dev/null || true
@@ -849,6 +853,7 @@ case "$outcome" in
     # contains the AI-merged result; it must not rebase or cherry-pick.
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "ready_to_merge"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "AI" "$display_id"
+    replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" "$(ticket_owner_lock_value "$worker_id" "$owner_pid" "$timestamp")"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" "$display_id"
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
     replace_section_block "$ticket_file" "Next Action" "- Next: ticket-owner AI manually integrates verified worktree changes into PROJECT_ROOT if needed, reruns verification, then reruns finish. The runtime finalizer only archives/logs/commits an already AI-merged result."
@@ -885,6 +890,15 @@ case "$outcome" in
     fi
 
     if [ "$inline_merge_exit" -eq 0 ] && [ "$inline_merge_status" = "done" ]; then
+      if [ -f "$ticket_file" ]; then
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
+        replace_scalar_field_in_section "$ticket_file" "## Ticket" "Last Updated" "$timestamp"
+      fi
+      runner_id="${RUNNER_ID:-$worker_id}"
+      if [ -x "${BOARD_ROOT}/scripts/runner-stage.js" ]; then
+        node "${BOARD_ROOT}/scripts/runner-stage.js" idle --runner "$runner_id" >/dev/null 2>&1 || true
+      fi
       printf 'status=done\n'
     elif [ "$inline_merge_status" = "needs_ai_merge" ]; then
       replace_scalar_field_in_section "$ticket_file" "## Ticket" "Stage" "merging"
