@@ -6487,22 +6487,6 @@ function LiveTerminalView({
       aria-label={ariaLabel}
     >
       <div ref={hostRef} className="live-terminal-view-host" />
-      {(() => {
-        if (text) return null;
-        const status = (runner?.stateStatus || "").toLowerCase();
-        const isRunning = status === "running" && Boolean(runner?.pid);
-        const isStopped = status === "stopped" || status === "user_stopped" || status === "failed";
-        const message = isRunning
-          ? "AI 응답 대기 중..."
-          : isStopped
-          ? "중지됨 — ▶ 버튼으로 시작"
-          : "처리할 작업 없습니다.";
-        return (
-          <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
-            {message}
-          </div>
-        );
-      })()}
       {showQuotaToast && quotaSignal ? (
         <div className="live-terminal-view-quota-toast" role="alert" aria-live="assertive">
           <TriangleAlert className="live-terminal-view-quota-toast-icon" aria-hidden="true" />
