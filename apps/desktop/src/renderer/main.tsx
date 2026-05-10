@@ -6761,52 +6761,44 @@ function LiveTerminalView({
     terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
   }, [terminalThemeMode]);
 
-  // vibe-terminal appendOutput → scheduleTerminalOutputFlush 패턴 참고.
-  // PTY 는 작은 chunk 가 실시간 도착해 자연스럽게 타이핑처럼 보이지만,
-  // 우리는 1초 polling 으로 큰 diff 가 한 번에 온다. 새 텍스트는
-  // typewriterQueue 에 push 하고 16ms 간격 setInterval 로 8자씩 drip 해
-  // 같은 타이핑 느낌을 만든다. reset(idle→active / 내용 교체) 은 즉시 처리.
+  // vibe-terminal pattern: 새 chunk 를 pendingChunksRef 에 push 하고
+  // requestAnimationFrame 으로 한 frame 안에 모인 chunk 를 한 번 write 한다.
+  // typewriter drip 제거 — 60FPS RAF 가 자연스러운 streaming 느낌. drip 은
+  // 인공 지연이라 오히려 stutter 만 만든다.
   React.useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
     const written = writtenLengthRef.current;
     // reset: 텍스트 축소(idle clear) 또는 내용 완전 교체
     if (text.length < written || (written > 0 && !text.startsWith(text.slice(0, written)))) {
-      if (typewriterTimerRef.current !== null) {
-        window.clearInterval(typewriterTimerRef.current);
-        typewriterTimerRef.current = null;
+      if (flushRafRef.current !== null) {
+        window.cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = null;
       }
-      typewriterQueueRef.current = "";
       pendingChunksRef.current = [];
       terminal.reset();
       writtenLengthRef.current = 0;
       if (!text) return;
-      // reset 후 초기 내용은 즉시 한 번에 쓴다 (역사 재생 불필요)
       writtenLengthRef.current = text.length;
       try { terminal.write(colorizeLogChunk(text)); } catch { /* disposed */ }
       return;
     }
-    // 증분 append: 새 chars 를 typewriter queue 에 추가
+    // 증분 append: 새 chars 를 pendingChunks 에 push, RAF 로 batch flush
     if (text.length === written) return;
     const chunk = text.slice(written);
     writtenLengthRef.current = text.length;
     if (!chunk) return;
-    typewriterQueueRef.current += colorizeLogChunk(chunk);
-    // drip timer 이미 실행 중이면 그대로 계속
-    if (typewriterTimerRef.current !== null) return;
-    typewriterTimerRef.current = window.setInterval(() => {
+    pendingChunksRef.current.push(colorizeLogChunk(chunk));
+    if (flushRafRef.current !== null) return; // 이미 frame 예약됨
+    flushRafRef.current = window.requestAnimationFrame(() => {
+      flushRafRef.current = null;
       const term = terminalRef.current;
-      const q = typewriterQueueRef.current;
-      if (!term || !q) {
-        if (typewriterTimerRef.current !== null) {
-          window.clearInterval(typewriterTimerRef.current);
-          typewriterTimerRef.current = null;
-        }
-        return;
-      }
-      typewriterQueueRef.current = q.slice(TYPEWRITER_CHARS_PER_TICK);
-      try { term.write(q.slice(0, TYPEWRITER_CHARS_PER_TICK)); } catch { /* disposed */ }
-    }, TYPEWRITER_INTERVAL_MS);
+      const chunks = pendingChunksRef.current;
+      if (!term || chunks.length === 0) return;
+      const merged = chunks.join("");
+      pendingChunksRef.current = [];
+      try { term.write(merged); } catch { /* disposed */ }
+    });
   }, [text]);
 
   return (
@@ -7098,7 +7090,10 @@ function useLiveStdoutText(
       }
     };
     void fetchOnce();
-    const handle = window.setInterval(fetchOnce, 1000);
+    // vibe-terminal 은 PTY data 이벤트 (event-driven) 라 즉시 stream. file
+    // polling 이라 진정한 event-driven 은 아니지만 150ms 간격이면 perceived
+    // latency 가 1 frame 수준이라 stutter 안 느껴진다.
+    const handle = window.setInterval(fetchOnce, 150);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
