@@ -4429,6 +4429,9 @@ function ReportingDashboard({
   const runnerEnabled = statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0);
   const commitSubjects = parseMetricJsonStringList(statusValue(metrics, "autoflow_commit_recent_subjects_json", "[]"));
   const codeTrendPoints = metricHistoryPoints(metricHistory, "autoflow_code_volume_count", 7);
+  const tokenTrendPoints = metricHistoryPoints(metricHistory, "autoflow_token_usage_count", 7);
+  const runnerTrendPoints = metricHistoryPoints(metricHistory, "runner_running_count", 7);
+  const commitTrendPoints = metricHistoryPoints(metricHistory, "autoflow_commit_count", 14);
   const codeDailyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_code_daily_buckets_14d_json", "[]"))
     .map((entry) => ({
       date: String(entry.date || ""),
@@ -4624,6 +4627,7 @@ function ReportingDashboard({
               <ReportSplitBars title="러너별 24h 토큰" items={runnerBreakdown} />
               {modelBreakdown.length ? <ReportSplitBars title="모델별 24h 토큰" items={modelBreakdown} /> : null}
               <ReportHourlyAreaTrend title="최근 24시간 시간별 토큰 추세" data={tokenHourlyBuckets} />
+              <MetricTrend points={tokenTrendPoints} yLabel="최근 7일 토큰 사용량 추세" />
             </>
           ) : (
             <div className="report-fallback">러너 실행 로그가 없어 분해 데이터가 없습니다</div>
@@ -4668,6 +4672,7 @@ function ReportingDashboard({
               .filter((item) => item.value > 0)}
             unit="초"
           />
+          <MetricTrend points={runnerTrendPoints} yLabel="최근 7일 활성 러너 수 추세" />
         </ReportMetricCard>
         <ReportMetricCard
           label="완료 커밋"
@@ -4711,6 +4716,7 @@ function ReportingDashboard({
           ) : (
             <div className="report-fallback">완료 커밋 데이터가 없습니다</div>
           )}
+          <MetricTrend points={commitTrendPoints} yLabel="최근 14일 커밋 수 추세" />
           <ReportDailyCountBars title="최근 14일 일자별 커밋 수" data={commitDailyBuckets} />
           <ReportSplitBars
             title="자동 / 수동 작성자 분포 (24h)"
