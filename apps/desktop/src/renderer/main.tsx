@@ -6792,6 +6792,8 @@ function LivePtyView({
   );
 }
 
+const LIVE_TERMINAL_IDLE_STAGES = new Set(["todo", "idle"]);
+
 function LiveTerminalView({
   text,
   ariaLabel,
@@ -6991,9 +6993,8 @@ function LiveTerminalView({
         if (text) return null;
         const status = (runner?.stateStatus || "").toLowerCase();
         const isStopped = status === "stopped" || status === "user_stopped" || status === "failed";
-        const idleStages = new Set(["todo", "idle"]);
         const stage = (stageKey || "").toLowerCase();
-        const isIdle = idleStages.has(stage) || !stage;
+        const isIdle = LIVE_TERMINAL_IDLE_STAGES.has(stage) || !stage;
         let message: string;
         let tone: string;
         if (isStopped) {
