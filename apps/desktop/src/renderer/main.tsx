@@ -7770,8 +7770,9 @@ function AiProgressRow({
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
   const stageCount = Math.max(1, flowStages.length);
   const progressStepCount = Math.max(1, stageCount - 1);
-  const progressFillPercent = stageIndex > 0 ? (stageIndex / progressStepCount) * 100 : 0;
-  const progressScale = String(Math.max(0, Math.min(1, progressFillPercent / 100)));
+  const progressScale = String(
+    Math.max(0, Math.min(1, (stageIndex > 0 ? (stageIndex / progressStepCount) * 100 : 0) / 100))
+  );
   const status = runner.stateStatus || "idle";
   const role = (runner.role || "").toLowerCase();
   const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";

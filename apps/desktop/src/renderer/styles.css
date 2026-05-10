@@ -3951,28 +3951,17 @@ pre {
 
 .ai-progress-track::before,
 .ai-progress-track::after {
-  display: block;
-  position: absolute;
-  top: 20px;
-  left: var(--progress-track-line-inset);
-  right: var(--progress-track-line-inset);
-  height: 3px;
-  border-radius: 999px;
-  content: "";
+  display: none;
+  content: none;
 }
 
 .ai-progress-track::before {
-  background: var(--border);
 }
 
 .ai-progress-track::after {
-  transform: scaleX(var(--progress-scale));
-  transform-origin: left center;
-  background: var(--primary);
 }
 
 .ai-progress-track-reject::after {
-  background: var(--destructive);
 }
 
 .ai-progress-step {
