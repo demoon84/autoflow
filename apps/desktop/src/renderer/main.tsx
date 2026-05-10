@@ -6290,12 +6290,14 @@ function LiveTerminalView({
   text,
   ariaLabel,
   runner,
-  agentLabel
+  agentLabel,
+  stageKey
 }: {
   text: string;
   ariaLabel: string;
   runner?: AutoflowRunner;
   agentLabel?: string;
+  stageKey?: string;
 }) {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const terminalRef = React.useRef<XTermTerminal | null>(null);
@@ -6490,13 +6492,22 @@ function LiveTerminalView({
       {(() => {
         if (text) return null;
         const status = (runner?.stateStatus || "").toLowerCase();
-        const isRunning = status === "running" && Boolean(runner?.pid);
         const isStopped = status === "stopped" || status === "user_stopped" || status === "failed";
-        const message = isRunning
-          ? "AI 응답 대기 중 입니다."
-          : isStopped
-          ? "AI를 시작해 주세요."
-          : "처리할 작업이 없습니다.";
+        if (isStopped) {
+          return (
+            <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
+              AI를 시작해 주세요.
+            </div>
+          );
+        }
+        // 슬라이더 stage 가 idle (todo / idle) 이면 작업 자체가 없는 상태.
+        // 활성 stage (planning / inprogress / syncing / done / merging) 일 때만
+        // 'AI 응답 대기 중' 으로 표시 — runner LOOP 가 도는 것과 AI 호출이 진행
+        // 중인 것은 다르다.
+        const idleStages = new Set(["todo", "idle"]);
+        const stage = (stageKey || "").toLowerCase();
+        const isIdle = idleStages.has(stage) || !stage;
+        const message = isIdle ? "처리할 작업이 없습니다." : "AI 응답 대기 중 입니다.";
         return (
           <div className="live-terminal-view-idle-placeholder" aria-hidden="true">
             {message}
@@ -7516,6 +7527,7 @@ function AiProgressRow({
         ariaLabel={`${agentLabel} 라이브 터미널`}
         runner={runner}
         agentLabel={agentLabel}
+        stageKey={currentKey}
       />
       <RunnerActivityFooter runner={runner} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
