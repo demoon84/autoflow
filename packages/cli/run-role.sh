@@ -4390,16 +4390,73 @@ PY
 
 runner_claude_base_cmd() {
   # Populate the named array variable with the canonical claude invocation.
-  # Defaults to stream-json + include-partial-messages so JSONL flushes per
-  # event into stdout (live_stdout grows during the tick instead of at the
-  # end). Falls back to legacy text mode when AUTOFLOW_CLAUDE_STREAM=0 or the
-  # installed CLI lacks stream-json support.
+  # Adds session continuity via env: caller must set
+  #   ADAPTER_SESSION_ID — the UUID for this conversation
+  #   ADAPTER_SESSION_IS_NEW — "1" first time, "0" for resume
+  # First call uses --session-id <uuid>, subsequent uses --resume <uuid>. This
+  # avoids re-injecting the system prompt + agent.md + AGENTS.md every tick;
+  # claude bills cached prefix at cache-input rates instead of full input.
   local __dest_var="$1"
+  local base
   if runner_claude_supports_stream; then
-    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")"
+    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format stream-json --include-partial-messages --verbose --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")
   else
-    eval "${__dest_var}=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")"
+    base=(claude -p --dangerously-skip-permissions --permission-mode bypassPermissions --output-format text --max-budget-usd "${AUTOFLOW_CLAUDE_MAX_BUDGET_USD:-0.50}")
   fi
+  if [ -n "${ADAPTER_SESSION_ID:-}" ]; then
+    if [ "${ADAPTER_SESSION_IS_NEW:-0}" = "1" ]; then
+      base+=(--session-id "$ADAPTER_SESSION_ID")
+    else
+      base+=(--resume "$ADAPTER_SESSION_ID")
+    fi
+  fi
+  eval "${__dest_var}=(\"\${base[@]}\")"
+}
+
+# Read saved session UUID for the current runner / agent. Generates a new one
+# on first call and exports ADAPTER_SESSION_IS_NEW=1 so the caller can pick the
+# right CLI flag (--session-id vs --resume). Persists the UUID to runner state
+# so the next tick reuses it instead of re-injecting the full system prompt.
+adapter_session_id_for_claude() {
+  adapter_session_id_for_agent "claude"
+}
+
+adapter_session_id_for_codex() {
+  adapter_session_id_for_agent "codex"
+}
+
+adapter_session_id_for_gemini() {
+  adapter_session_id_for_agent "gemini"
+}
+
+adapter_session_id_for_agent() {
+  local _agent="$1"
+  local field="adapter_${_agent}_session_id"
+  local sid
+  sid="$(runner_state_field "$runner_id" "$field" 2>/dev/null || true)"
+  if [ -n "$sid" ] && printf '%s' "$sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+    ADAPTER_SESSION_IS_NEW=0
+    printf '%s' "$sid"
+    return 0
+  fi
+  if command -v uuidgen >/dev/null 2>&1; then
+    sid="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    sid="$(cat /proc/sys/kernel/random/uuid)"
+  else
+    sid="$(date -u +%s)-$RANDOM-$$-${_agent}"
+  fi
+  ADAPTER_SESSION_IS_NEW=1
+  printf '%s' "$sid"
+}
+
+adapter_session_persist() {
+  # Persist session id after first successful spawn so the next tick reuses it.
+  # Caller invokes after adapter exit when ADAPTER_SESSION_IS_NEW was 1.
+  local _agent="$1"
+  local sid="$2"
+  [ -n "$sid" ] || return 0
+  runner_replace_state_field_preserving "$runner_id" "adapter_${_agent}_session_id" "$sid" || true
 }
 
 runner_claude_extract_last_message() {
@@ -4580,7 +4637,17 @@ run_default_adapter_command() {
   case "$agent" in
     codex)
       ensure_agent_on_path codex || return 127
-      cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
+      # Session continuity: if we have a saved codex thread/session id, use
+      # `codex exec resume <id>` so codex doesn't re-process the system prompt.
+      # First call uses fresh `codex exec` and we capture the thread_id from
+      # the `{"type":"thread.started"}` event in stdout, persist for next tick.
+      local _codex_sid
+      _codex_sid="$(runner_state_field "$runner_id" "adapter_codex_session_id" 2>/dev/null || true)"
+      if [ -n "$_codex_sid" ] && printf '%s' "$_codex_sid" | grep -qE '^[0-9a-fA-F-]{8,}$'; then
+        cmd=(codex exec resume "$_codex_sid" --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
+      else
+        cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$adapter_working_root")
+      fi
       if [ -n "$model" ]; then
         cmd+=(-m "$model")
       fi
@@ -4630,11 +4697,22 @@ run_default_adapter_command() {
           cp "$adapter_stdout" "$adapter_last_message" 2>/dev/null || true
         fi
       fi
+      # Capture codex thread_id for next tick session continuity. Look for the
+      # first '{"type":"thread.started","thread_id":"<uuid>"}' line in stdout
+      # and persist if we don't have one yet.
+      if [ "$command_exit" -eq 0 ] && runner_codex_json_mode_active && [ -z "$_codex_sid" ] && [ -s "$adapter_stdout" ]; then
+        local _new_codex_tid
+        _new_codex_tid="$(grep -m1 '"type":"thread.started"' "$adapter_stdout" 2>/dev/null | sed -nE 's/.*"thread_id":"([^"]+)".*/\1/p')"
+        if [ -n "$_new_codex_tid" ]; then
+          adapter_session_persist "codex" "$_new_codex_tid"
+        fi
+      fi
       return "$command_exit"
       ;;
     claude)
       ensure_agent_on_path claude || return 127
       prompt_text="$(cat "$prompt_file")"
+      ADAPTER_SESSION_ID="$(adapter_session_id_for_claude)"
       runner_claude_base_cmd cmd
       if [ -n "$model" ]; then
         cmd+=(--model "$(normalize_claude_model_alias "$model")")
@@ -4648,6 +4726,12 @@ run_default_adapter_command() {
         adapter_run_in_cwd "$adapter_working_root" run_adapter_with_identity "${cmd[@]}" \
         > "$adapter_stdout" 2> "$adapter_stderr"
       command_exit=$?
+      # Persist session id so next tick reuses it via --resume (no re-inject)
+      if [ "${ADAPTER_SESSION_IS_NEW:-0}" = "1" ] && [ "$command_exit" -eq 0 ]; then
+        adapter_session_persist "claude" "$ADAPTER_SESSION_ID"
+      fi
+      ADAPTER_SESSION_ID=""
+      ADAPTER_SESSION_IS_NEW=""
       # stream-json 모드에서는 stdout 이 JSONL (system/init, assistant,
       # stream_event, result ...) 이므로 narrative sidecar 에는 마지막 result
       # 이벤트의 result 필드 (또는 assistant text concat fallback) 만 추출해
@@ -4688,13 +4772,26 @@ run_default_adapter_command() {
     gemini)
       ensure_agent_on_path gemini || return 127
       prompt_text="$(cat "$prompt_file")"
-      cmd=(gemini --skip-trust --approval-mode yolo --prompt "$prompt_text")
+      ADAPTER_SESSION_ID="$(adapter_session_id_for_gemini)"
+      local _gemini_is_new="${ADAPTER_SESSION_IS_NEW:-1}"
+      cmd=(gemini --skip-trust --approval-mode yolo)
+      if [ "$_gemini_is_new" = "1" ]; then
+        cmd+=(--session-id "$ADAPTER_SESSION_ID")
+      else
+        cmd+=(--resume "$ADAPTER_SESSION_ID")
+      fi
+      cmd+=(--prompt "$prompt_text")
       if [ -n "$model" ]; then
         cmd+=(--model "$model")
       fi
       command_summary="$(command_summary_from_array "${cmd[@]:0:4}") prompt"
       run_gemini_adapter_command "$adapter_timeout_seconds" "$adapter_kill_after_seconds"
       command_exit=$?
+      if [ "$_gemini_is_new" = "1" ] && [ "$command_exit" -eq 0 ]; then
+        adapter_session_persist "gemini" "$ADAPTER_SESSION_ID"
+      fi
+      ADAPTER_SESSION_ID=""
+      ADAPTER_SESSION_IS_NEW=""
       if [ "$command_exit" -eq 0 ]; then
         append_gemini_token_marker "$prompt_file" "$adapter_stdout" "$adapter_stderr"
       fi
