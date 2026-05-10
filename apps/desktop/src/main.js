@@ -2313,11 +2313,12 @@ function codexStreamJsonUsageFromLine(line) {
   if (parsed.type !== "turn.completed") return 0;
   const usage = parsed.usage;
   if (!usage || typeof usage !== "object") return 0;
+  // OpenAI codex API: cached_input_tokens is a SUBSET of input_tokens
+  // (cache-hit portion of the same input). Adding both double-counts.
+  // reasoning_output_tokens is a subset of output_tokens.
   const input = positiveIntegerValue(usage.input_tokens);
   const output = positiveIntegerValue(usage.output_tokens);
-  const cacheRead = positiveIntegerValue(usage.cached_input_tokens);
-  const reasoning = positiveIntegerValue(usage.reasoning_output_tokens);
-  return input + output + cacheRead + reasoning;
+  return input + output;
 }
 
 function isCodexStreamJsonLine(line) {

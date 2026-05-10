@@ -987,6 +987,14 @@ telemetry_extract_token_components_from_logs() {
       if (value <= 0) {
         return
       }
+      # OpenAI codex: cached_input_tokens is a SUBSET of input_tokens (cache-hit
+      # portion). Same for reasoning_output_tokens (subset of output_tokens).
+      # Skip subset keys to avoid double-counting. Claude has separate
+      # cache_creation_input_tokens / cache_read_input_tokens which ARE billable
+      # categories distinct from input_tokens, so keep summing those.
+      if (lower_key == "cached_input_tokens" || lower_key == "cached_input_token" || lower_key == "reasoning_output_tokens" || lower_key == "reasoning_output_token") {
+        return
+      }
       if (lower_key ~ /total/) {
         total += value
       } else if (lower_key ~ /(prompt|input|cache|cached)/) {
