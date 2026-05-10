@@ -2,7 +2,7 @@
 
 ## Ticket
 
-- ID: Todo-255
+- ID: Todo-255b
 - PRD Key: prd_251
 - Plan Candidate: claude PTY token watcher 구현 및 UI 갱신
 - Title: claude PTY token watcher 구현 및 UI 갱신
