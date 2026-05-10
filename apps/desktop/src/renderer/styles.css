@@ -3615,6 +3615,23 @@ pre {
   font: inherit;
 }
 
+.runner-cycle-result-badge {
+  animation: runner-cycle-result-fadeout 7s ease-out forwards;
+  animation-delay: 3s;
+}
+
+@keyframes runner-cycle-result-fadeout {
+  0% { opacity: 1; }
+  80% { opacity: 0.4; }
+  100% { opacity: 0; pointer-events: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runner-cycle-result-badge {
+    animation: none;
+  }
+}
+
 .ai-progress-conversation pre .log-token-ts {
   color: #6b7280;
 }

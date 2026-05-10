@@ -93,6 +93,33 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 14. If criteria fail, command is missing, or recovery requires planner orchestration, finish fail with an observable reason and updated `Recovery State`.
 15. Leave enough context for another owner to resume from board files.
 
+## Active Reporting Tools (push-based, every turn)
+
+The runner UI and orchestration depend on three .js tools that you must call
+yourself — there is no automatic background polling that derives this state.
+All three exit 0 even on failure (1원칙) so they never block your main work.
+
+1. **runner-stage.js** — push current stage to runner state.
+   Call after each phase transition:
+     `node .autoflow/scripts/runner-stage.js inprogress --runner <runner-id> --ticket <Todo-NNN>`
+     `node .autoflow/scripts/runner-stage.js merging  --runner <runner-id> --ticket <Todo-NNN>`
+     `node .autoflow/scripts/runner-stage.js idle     --runner <runner-id>`
+   Stages: inprogress / merging / idle (worker).
+
+2. **runner-wake.js** — pull pending wake events from the queue.
+   Call at the start of every turn (before scanning queues):
+     `node .autoflow/scripts/runner-wake.js poll --runner <runner-id>`
+   Returns a JSON array of `{reason, kind, at}`. An empty array means nothing
+   new — proceed with your normal scan. Past wakes are auto-marked consumed
+   so you won't see them again.
+
+3. **runner-tokens.js** — push your own token usage at end of turn.
+   Read your TUI status bar (e.g. claude shows "↑ 3.0k tokens") and call:
+     `node .autoflow/scripts/runner-tokens.js report \
+        --runner <runner-id> --tick-id <unique-string> \
+        --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`
+   The tick-id deduplicates accidental double reports.
+
 ## Boundaries
 
 - Do not create legacy plans unless requested.

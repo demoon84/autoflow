@@ -150,3 +150,9 @@ updated pages in the current tick.
 9. Leave a concise summary of updated pages.
 10. Wiki AI owns the skill curator lifecycle for `.autoflow/wiki/skills-local/`: idle wiki ticks may run `autoflow skill curator-run <project-root> <board-dir-name> --idle`, and explicit checks may run `autoflow skill curator-status`. The curator must use auxiliary-client bookkeeping only (`auxiliary_client=true`, `main_prompt_cache_touched=false`) and must not inject skill content into the main planner/worker prompt cache path.
 11. Curator lifecycle applies only to agent-created `skills-local/` folder-unit skills. Human-curated `.autoflow/wiki/skills/` content is skipped, `pinned: true` skills bypass every stale/archive transition, 30-day unused skills become `state: stale`, and 90-day unused skills move under `skills-local/.archive/` without deletion.
+
+## Active Stage Keys
+
+Runner stage keys for the wiki role (used by `runner-stage.js`):
+- `syncing` — wiki 갱신 작업 진행 중 (update-wiki 실행 / synthesis 중)
+- `idle` — 대기 중 (debounce 미충족 또는 변경 없음)

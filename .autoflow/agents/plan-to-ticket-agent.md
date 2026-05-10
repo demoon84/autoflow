@@ -105,6 +105,13 @@ You never call `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-o
 11. Check backlog again only after the active plan is finished.
 12. Cross-category priority (PRD 211, 2026-05-09): when the dispatcher must choose between an inbox order and a populated backlog PRD in the same tick, prefer the backlog PRD → todo conversion within the same priority class; let `priority` (`critical` > `high` > `normal` > `low`) override category when they differ. retry orders (`order_*_retry_*.md`) and express orders skip this policy and run in their own branches. Treat repeated backlog stalls (`AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT`, default 3) as the trigger for a one-tick inbox fallback so new orders never starve.
 
+## Active Stage Keys
+
+Runner stage keys for the planner role (used by `runner-stage.js`):
+- `planning` — PRD 분해, order 처리, 재계획 중
+- `generating-todo` — backlog PRD → todo ticket 변환 완료 직전/직후
+- `idle` — 대기 중 (no actionable input)
+
 ## Stop Condition
 
 This agent does not stop its own heartbeat. It reports idle, leaves the next safe action explicit, and stays ready for the next wake-up.

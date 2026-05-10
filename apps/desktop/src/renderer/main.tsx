@@ -127,10 +127,9 @@ function FullPageLoading({
 }
 
 const ownerFlowStages = [
-  { key: "todo", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
-  { key: "inprogress", label: "구현", meta: "mini-plan / 구현 / 검증 / 머지 통합", icon: Activity, tone: "flow-inprogress" },
-  { key: "done", label: "완료", meta: "통과", icon: CheckCircle2, tone: "flow-done" },
-  { key: "reject", label: "반려", meta: "재계획 필요", icon: TriangleAlert, tone: "flow-reject" }
+  { key: "idle", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
+  { key: "inprogress", label: "구현", meta: "mini-plan / 구현 / 검증", icon: Activity, tone: "flow-inprogress" },
+  { key: "merging", label: "머지", meta: "통합 준비", icon: CheckCircle2, tone: "flow-done" }
 ] as const;
 
 const mergeBotFlowStages = [
@@ -142,16 +141,13 @@ const mergeBotFlowStages = [
 
 const wikiBotFlowStages = [
   { key: "idle", label: "대기", meta: "다음 동기화 대기", icon: Layers3, tone: "flow-todo" },
-  { key: "syncing", label: "동기화", meta: "Wiki 갱신", icon: Activity, tone: "flow-inprogress" },
-  { key: "done", label: "완료", meta: "갱신 완료", icon: CheckCircle2, tone: "flow-done" },
-  { key: "blocked", label: "오류", meta: "어댑터 오류", icon: TriangleAlert, tone: "flow-reject" }
+  { key: "syncing", label: "작성중", meta: "Wiki 갱신", icon: Activity, tone: "flow-inprogress" }
 ] as const;
 
 const plannerFlowStages = [
   { key: "idle", label: "대기", meta: "backlog/reject 감시", icon: Layers3, tone: "flow-todo" },
   { key: "planning", label: "계획", meta: "PRD 분해 / 재계획", icon: ClipboardList, tone: "flow-plan" },
-  { key: "done", label: "완료", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" },
-  { key: "blocked", label: "정체", meta: "PRD 누락 등", icon: TriangleAlert, tone: "flow-reject" }
+  { key: "generating-todo", label: "티켓생성", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" }
 ] as const;
 
 type FlowStageDef = {
@@ -7373,22 +7369,30 @@ function AiConversationPanel({
   );
 }
 
+function stageIsTerminal(key: string, stages: readonly FlowStageDef[]): boolean {
+  const last = stages[stages.length - 1];
+  return Boolean(last && last.key === key);
+}
+
 function flowStepState(
   stepKey: string,
   currentKey: string,
   stages: readonly FlowStageDef[] = ownerFlowStages
 ) {
-  const terminalKeys = new Set(["reject", "blocked"]);
+  const terminalKeys = new Set(["reject", "blocked", "done", "failed"]);
   if (terminalKeys.has(currentKey)) {
-    if (terminalKeys.has(stepKey)) {
+    if (terminalKeys.has(stepKey) || stageIsTerminal(stepKey, stages)) {
       return "active";
     }
 
-    return stepKey === "done" ? "idle" : "complete";
+    return "complete";
   }
 
   const currentIndex = stages.findIndex((stage) => stage.key === currentKey);
   const stepIndex = stages.findIndex((stage) => stage.key === stepKey);
+  if (currentIndex < 0) {
+    return "complete";
+  }
 
   if (terminalKeys.has(stepKey) || stepIndex > currentIndex) {
     return "idle";
@@ -7409,16 +7413,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
-  // stopped runner has no live work — slider should reflect idle, not the
-  // last cycle's done/failure pattern stuck in lastResult/lastLogLine.
-  if (status === "stopped" || status === "user_stopped") {
-    if (role === "merge-bot" || role === "merge") return "idle";
-    if (role.includes("wiki")) return "idle";
-    if (role === "planner" || role === "plan") return "idle";
-    return "todo";
-  }
-  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
-  const hasActiveTicket = Boolean(runner.activeTicketId);
+  const runnerActiveTicket = Boolean(runner.activeTicketId);
   const stateSignalText = [
     runner.activeItem,
     runner.activeRecoveryReason,
@@ -7429,9 +7424,24 @@ function runnerStageKey(runner: AutoflowRunner): string {
   ]
     .join(" ")
     .toLowerCase();
+  const cycleResult = runnerCycleResult(runner);
+
+  // 종료 신호(done/blocked/failed/reject)는 slider의 단계가 아니라 별도 사이드 배지로 표시한다.
+  if (cycleResult) {
+    return "idle";
+  }
+
+  // stopped runner has no live work — slider should reflect idle, not the
+  // last cycle's done/failure pattern stuck in lastResult/lastLogLine.
+  if (status === "stopped" || status === "user_stopped") {
+    if (role === "merge-bot" || role === "merge") return "idle";
+    if (role.includes("wiki")) return "idle";
+    if (role === "planner" || role === "plan") return "idle";
+    return "idle";
+  }
+  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
-  const hasWorkerIdleSignal =
-    /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
+  const hasWorkerIdleSignal = /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
   const hasCommittedViaInlineMerge = /\bcommitted_via_inline_merge\b/.test(stateText);
   const isFailLike =
     status === "failed" ||
@@ -7441,15 +7451,15 @@ function runnerStageKey(runner: AutoflowRunner): string {
   // Worker idle preflight signals must stay ahead of done/pass terminal heuristics when no active ticket exists.
   if (role === "merge-bot" || role === "merge") {
     if (isFailLike || /\bmerge[-_]?blocked\b|\b_persistent\b|\bblocked_(?:cherry_pick|rebase|dirty_scope|missing_)/.test(stateText)) return "blocked";
-    if (hasActiveTicket) return "merging";
+    if (runnerActiveTicket) return "merging";
     if (/event=post_merge_cleanup|\bstatus=done\b|\bintegrated\b/.test(stateText)) return "done";
     return "idle";
   }
 
   if (role.includes("wiki")) {
-    if (isFailLike) return "blocked";
-    if (status === "running" && (hasActiveTicket || /event=adapter_start|\bstatus=running\b/.test(stateText))) return "syncing";
-    if (/event=adapter_finish.*status=ok|\bwiki_(?:updated|sync_ok)\b/.test(stateText)) return "done";
+    if (isFailLike) return "idle";
+    if (status === "running" && (runnerActiveTicket || /event=adapter_start|\bstatus=running\b/.test(stateText))) return "syncing";
+    if (/event=adapter_finish.*status=ok|\bwiki_(?:updated|sync_ok)\b/.test(stateText)) return "syncing";
     return "idle";
   }
 
@@ -7458,9 +7468,10 @@ function runnerStageKey(runner: AutoflowRunner): string {
       /\bno_actionable_plan_input\b|\bidle_wait_for_backlog_or_reject\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
     if (isFailLike) return "blocked";
     if (/^(stalled|blocked|repairing|requeued|needs_user)$/.test(activeRecoveryStatus)) return "planning";
-    if (hasPlannerIdleSignal && !hasActiveTicket && !runner.activeItem) return "idle";
-    if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "done";
-    if (status === "running" && (hasActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
+    if (hasPlannerIdleSignal && !runnerActiveTicket && !runner.activeItem) return "idle";
+    if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "generating-todo";
+    if (status === "running" && (runnerActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
+    if (runnerActiveTicket) return "generating-todo";
     return "idle";
   }
 
@@ -7468,24 +7479,57 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   // worker idle signal must beat the generic adapter_finish=ok heuristic —
   // an idle tick that found no todo also emits adapter_finish status=ok.
-  if (hasWorkerIdleSignal && !hasActiveTicket) return "todo";
+  if (hasWorkerIdleSignal && !runnerActiveTicket) return "idle";
 
   if (hasCommittedViaInlineMerge) return "done";
 
-  if (hasActiveTicket) {
-    if (/^(done|pass|complete|completed|committed_via_inline_merge)$/.test(activeStage)) return "done";
-    if (/^(blocked|merge_blocked|merge-blocked|rejected|reject)$/.test(activeStage)) return "reject";
+  if (runnerActiveTicket) {
+    if (/^(merging)$/.test(activeStage)) return "merging";
     if (/^(executing|claimed|inprogress|ready_to_merge|ready-to-merge|review|merging)$/.test(activeStage)) {
       return "inprogress";
     }
     return "inprogress";
   }
 
-  if (hasWorkerIdleSignal) return "todo";
+  if (hasWorkerIdleSignal) return "idle";
 
   if (/\bdone\b|\bpass\b|\bcomplete\b/.test(stateText)) return "done";
 
-  return "todo";
+  return "idle";
+}
+
+function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject" | "" {
+  const status = (runner.stateStatus || "").toLowerCase();
+  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  const lastResult = (runner.lastResult || "").toLowerCase();
+  const stateSignalText = [
+    runner.activeItem,
+    runner.activeRecoveryReason,
+    activeRecoveryStatus,
+    runner.activeRecoveryFailureClass,
+    lastResult,
+    runner.lastLogLine,
+    runner.lastLogLine
+  ].join(" ").toLowerCase();
+
+  if (/\bfailed\b|\bfail\b|\badapter_exit_[1-9]\b|\berror\b/.test(stateSignalText) || status === "failed") {
+    return "reject";
+  }
+
+  if (/\bblocked\b|\bneeds_user\b/.test(stateSignalText) || status === "blocked") {
+    return "blocked";
+  }
+
+  if (/\bdone\b|\bpass\b|\bcomplete\b|\bcompleted\b|\bcommitted_via_inline_merge\b/.test(stateSignalText)) {
+    return "done";
+  }
+
+  if (/\b(reject|rejected)\b/.test(stateSignalText) || /\b(rejected|reject)\b/.test(activeStage)) {
+    return "reject";
+  }
+
+  return "";
 }
 
 type RunnerDelaySeverity = "waiting" | "suspect" | "stuck";
@@ -7773,6 +7817,7 @@ function AiProgressRow({
   const progressScale = String(
     Math.max(0, Math.min(1, (stageIndex > 0 ? (stageIndex / progressStepCount) * 100 : 0) / 100))
   );
+  const cycleResult = runnerCycleResult(runner);
   const status = runner.stateStatus || "idle";
   const role = (runner.role || "").toLowerCase();
   const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
@@ -8000,6 +8045,17 @@ function AiProgressRow({
             title={delayStage.title}
           >
             {delayStage.label}
+          </Badge>
+        ) : null}
+        {cycleResult ? (
+          <Badge
+            key={cycleResult}
+            variant={cycleResult === "done" ? "secondary" : "destructive"}
+            className={`runner-cycle-result-badge runner-cycle-result-${cycleResult}`}
+            role="status"
+            aria-live="polite"
+          >
+            {cycleResult === "done" ? "완료" : cycleResult === "blocked" ? "막힘" : "반려"}
           </Badge>
         ) : null}
         {runner.activeTicketId ? (
