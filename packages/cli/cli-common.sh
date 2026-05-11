@@ -342,6 +342,31 @@ telemetry_failures_jsonl_path() {
   printf '%s/failures.jsonl' "$(telemetry_root_path "$project_root")"
 }
 
+# Write a single failure event to failures.jsonl for post-mortem queries.
+# Callers: run-role.sh adapter_finish when exit_code != 0.
+# Args: --project-root --runner --exit-code --consecutive-count [--reason]
+telemetry_write_failure_event() {
+  local project_root="" runner_id="" exit_code="" consecutive_count=0 reason=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --project-root) project_root="$2"; shift 2 ;;
+      --runner)       runner_id="$2";    shift 2 ;;
+      --exit-code)    exit_code="$2";    shift 2 ;;
+      --consecutive-count) consecutive_count="$2"; shift 2 ;;
+      --reason)       reason="$2";       shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "$project_root" ] && [ -n "$runner_id" ] && [ -n "$exit_code" ] || return 0
+  local failures_path
+  failures_path="$(telemetry_failures_jsonl_path "$project_root")"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true)"
+  printf '{"ts":"%s","runner":"%s","exit_code":%s,"consecutive_count":%s,"reason":"%s"}\n' \
+    "$ts" "$runner_id" "$exit_code" "$consecutive_count" "$reason" \
+    >> "$failures_path" 2>/dev/null || true
+}
+
 telemetry_archive_path() {
   local project_root="$1"
   local month="$2"
