@@ -728,8 +728,9 @@ record_watcher_state_check() {
   printf 'watcher.pid_file=%s\n' "$pid_file" >> "$check_output"
 
   if [ ! -f "$pid_file" ]; then
-    record_check "watcher_pid" "not_running"
-    printf 'watcher.status=not_running\n' >> "$check_output"
+    # PTY mode has no watch-board daemon; absence of pid file is normal.
+    record_check "watcher_pid" "ok"
+    printf 'watcher.status=not_present\n' >> "$check_output"
     return
   fi
 
