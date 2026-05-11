@@ -171,3 +171,16 @@ updated pages in the current tick.
 Runner stage keys for the wiki role (used by `runner-stage.js`):
 - `syncing` — wiki 갱신 작업 진행 중 (update-wiki 실행 / synthesis 중)
 - `idle` — 대기 중 (debounce 미충족 또는 변경 없음)
+
+## Active Reporting Tools (push-based, every turn)
+
+All three exit 0 on failure (1원칙) — never block your main work.
+
+1. **runner-wake.js poll** — start of turn:
+   `node .autoflow/scripts/runner-wake.js poll --runner <runner-id>`
+2. **runner-stage.js** — on stage transition:
+   `node .autoflow/scripts/runner-stage.js syncing --runner <runner-id>`
+   `node .autoflow/scripts/runner-stage.js idle --runner <runner-id>`
+3. **runner-tokens.js report** — end of turn (read your TUI token line):
+   `node .autoflow/scripts/runner-tokens.js report --runner <runner-id> --tick-id <unique-string> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`
+   Format tick-id as `<runner-id>-<unix-epoch-sec>-<random4>`.

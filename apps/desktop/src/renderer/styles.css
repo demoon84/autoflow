@@ -3866,6 +3866,17 @@ pre {
   min-width: 0;
 }
 
+/* Stage badge sitting next to the "실행 중" status badge (e.g. "구현",
+   "계획", "작성중"). Outline variant to distinguish from the filled status
+   badge while staying same height. */
+.ai-progress-stage-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  letter-spacing: 0;
+  border-radius: 999px;
+}
+
 .ai-agent-app-icon {
   display: inline-grid;
   place-items: center;
@@ -3964,6 +3975,11 @@ pre {
   min-width: 0;
   overflow: visible;
   padding-top: 14px;
+  /* Center the dot row with side margins so they don't span the full card
+     width. ~80% with auto margin gives a comfortable inset on both sides. */
+  width: 80%;
+  max-width: 480px;
+  margin: 0 auto;
 }
 
 .ai-progress-track::before,

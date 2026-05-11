@@ -112,6 +112,20 @@ Runner stage keys for the planner role (used by `runner-stage.js`):
 - `generating-todo` — backlog PRD → todo ticket 변환 완료 직전/직후
 - `idle` — 대기 중 (no actionable input)
 
+## Active Reporting Tools (push-based, every turn)
+
+All three exit 0 on failure (1원칙) — never block your main work.
+
+1. **runner-wake.js poll** — start of turn:
+   `node .autoflow/scripts/runner-wake.js poll --runner <runner-id>`
+2. **runner-stage.js** — on stage transition:
+   `node .autoflow/scripts/runner-stage.js planning --runner <runner-id>`
+   `node .autoflow/scripts/runner-stage.js generating-todo --runner <runner-id>`
+   `node .autoflow/scripts/runner-stage.js idle --runner <runner-id>`
+3. **runner-tokens.js report** — end of turn (read your TUI token line):
+   `node .autoflow/scripts/runner-tokens.js report --runner <runner-id> --tick-id <unique-string> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`
+   Format tick-id as `<runner-id>-<unix-epoch-sec>-<random4>`.
+
 ## Stop Condition
 
 This agent does not stop its own heartbeat. It reports idle, leaves the next safe action explicit, and stays ready for the next wake-up.

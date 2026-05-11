@@ -44,3 +44,7 @@ apps/desktop/build/
 .autoflow/runners/state/wiki-search.db
 .autoflow/runners/state/wiki-search.db-shm
 .autoflow/runners/state/wiki-search.db-wal
+
+# Auto-rotated backups (kept locally only)
+/.autoflow/metrics/*.before-reset.*
+/.autoflow/metrics/*.before-reset.*Z

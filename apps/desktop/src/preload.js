@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("autoflow", {
   runnerPtyStart: (options) => ipcRenderer.invoke("autoflow:runnerPtyStart", options),
   runnerPtySpawn: (options) => ipcRenderer.invoke("autoflow:runnerPtySpawn", options),
   runnerPtyStop: (options) => ipcRenderer.invoke("autoflow:runnerPtyStop", options),
+  runnerPtyResize: (options) => ipcRenderer.invoke("autoflow:runnerPtyResize", options),
   runnerPtySnapshot: (options) => ipcRenderer.invoke("autoflow:runnerPtySnapshot", options),
   runnerPtyList: () => ipcRenderer.invoke("autoflow:runnerPtyList"),
   onRunnerPtyBytes: (handler) => {

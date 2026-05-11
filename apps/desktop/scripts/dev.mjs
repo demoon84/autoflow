@@ -78,16 +78,28 @@ function scheduleElectronRestart(filePath) {
 }
 
 const mainProcessFiles = new Set(["main.js", "preload.js"]);
-const mainProcessWatchers = [
-  watch(path.join(desktopRoot, "src"), { persistent: true }, (_eventType, filename) => {
-    const changedFile = filename ? filename.toString() : "";
-    if (!mainProcessFiles.has(changedFile)) {
-      return;
-    }
+// Auto-restart on main.js / preload.js changes is convenient for renderer
+// hot-reload, but extremely disruptive when PTY runners are running — the
+// worker AI sometimes edits PROJECT_ROOT/main.js (instead of its worktree)
+// during ticket work, which triggers electron.kill() and ends up killing
+// the very worker that made the edit. Set AUTOFLOW_DESKTOP_AUTO_RESTART=0
+// to disable auto-restart and require an explicit Cmd+R / restart.
+const AUTO_RESTART_ENABLED = process.env.AUTOFLOW_DESKTOP_AUTO_RESTART !== "0";
+const mainProcessWatchers = AUTO_RESTART_ENABLED
+  ? [
+      watch(path.join(desktopRoot, "src"), { persistent: true }, (_eventType, filename) => {
+        const changedFile = filename ? filename.toString() : "";
+        if (!mainProcessFiles.has(changedFile)) {
+          return;
+        }
 
-    scheduleElectronRestart(path.join(desktopRoot, "src", changedFile));
-  })
-];
+        scheduleElectronRestart(path.join(desktopRoot, "src", changedFile));
+      })
+    ]
+  : [];
+if (!AUTO_RESTART_ENABLED) {
+  console.log("[desktop dev] AUTOFLOW_DESKTOP_AUTO_RESTART=0 — main.js/preload.js auto-restart disabled. Use Cmd+R or kill the dev process to restart.");
+}
 
 startElectron();
 
