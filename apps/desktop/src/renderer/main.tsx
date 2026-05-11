@@ -4379,9 +4379,6 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
         >
           <Badge variant="secondary">평균 처리 시간</Badge>
           <strong>{formatDurationMetric(avgActiveSeconds)}</strong>
-          <span>
-            평균 대기시간 {formatDurationMetric(avgLeadSeconds)} / 최근 24시간 누적 처리 {formatDurationMetric(durationTotal24hSeconds)}
-          </span>
         </div>
       </div>
     </div>
@@ -7996,28 +7993,9 @@ function AiProgressRow({
           </div>
         ) : null}
       </div>
-      {!hideProgressTrack ? (
-        <div
-          className={`ai-progress-track ${currentKey === "reject" || currentKey === "blocked" ? "ai-progress-track-reject" : ""}`}
-          style={{ "--progress-scale": progressScale, "--stage-count": String(flowStages.length) } as React.CSSProperties}
-          aria-label={`${agentLabel} 현재 단계 ${stage.label}`}
-        >
-          {flowStages.map((step, index) => {
-            const stepState = flowStepState(step.key, currentKey, flowStages);
-            const stepPosition = flowStages.length > 1 ? (index / (flowStages.length - 1)) * 100 : 0;
-            return (
-              <div
-                key={step.key}
-                className={`ai-progress-step ai-progress-step-${stepState}`}
-                style={{ "--step-position": stepPosition } as React.CSSProperties}
-              >
-                <span className={`ai-progress-dot ${step.tone}`} aria-hidden="true" />
-                <span>{step.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {/* Dot/track row removed — current stage is now shown inline next to
+          the agent title via `.ai-progress-agent-stage`. The agentTitle area
+          is the single source of truth for "what is this runner doing". */}
 
       <div className="ai-progress-current">
         <Badge
@@ -8026,6 +8004,28 @@ function AiProgressRow({
         >
           {isBlocked ? "막힘" : displayStatus(status)}
         </Badge>
+        {stage?.label ? (
+          <Badge
+            variant="outline"
+            className="ai-progress-stage-badge"
+            aria-label={`현재 단계: ${stage.label}`}
+          >
+            {stage.label}
+          </Badge>
+        ) : null}
+        {runner.activeTicketId ? (
+          <Button
+            variant="ghost"
+            type="button"
+            className="ai-progress-active-ticket-button"
+            onClick={openTicketDialog}
+            title={`${displayActiveTicketBadge(runner.activeTicketId)} 티켓 보기`}
+          >
+            <Badge variant="outline" className="ai-progress-active-ticket">
+              {displayActiveTicketBadge(runner.activeTicketId)}
+            </Badge>
+          </Button>
+        ) : null}
         {isApplyingConfig ? (
           <Badge variant="outline" className="ai-progress-config-pending-badge">
             적용 대기
@@ -8037,7 +8037,11 @@ function AiProgressRow({
             <span>{transitionLabel}</span>
           </Badge>
         ) : null}
-        {detailText ? <p title={detailText}>{detailText}</p> : null}
+        {/* Hide detailText when it just echoes the active ticket id — the
+            ticket badge next to the status badge is already showing it. */}
+        {detailText && detailText !== displayActiveTicketBadge(runner.activeTicketId) ? (
+          <p title={detailText}>{detailText}</p>
+        ) : null}
         {delayStage ? (
           <Badge
             variant={delayStage.badgeVariant}
@@ -8057,19 +8061,6 @@ function AiProgressRow({
           >
             {cycleResult === "done" ? "완료" : cycleResult === "blocked" ? "막힘" : "반려"}
           </Badge>
-        ) : null}
-        {runner.activeTicketId ? (
-          <Button
-            variant="ghost"
-            type="button"
-            className="ai-progress-active-ticket-button"
-            onClick={openTicketDialog}
-            title={`${displayActiveTicketBadge(runner.activeTicketId)} 티켓 보기`}
-          >
-            <Badge variant="outline" className="ai-progress-active-ticket">
-              {displayActiveTicketBadge(runner.activeTicketId)}
-            </Badge>
-          </Button>
         ) : null}
       </div>
       {canConfigure ? (

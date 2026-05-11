@@ -371,12 +371,19 @@ count_autoflow_commit_metrics() {
   [ -d "${board_root}/tickets/done" ] || return 0
 
   board_root_relative="${board_root#${git_root}/}"
-  done_ticket_paths="$(find "${board_root}/tickets/done" -type f \( -name 'Todo-*.md' -o -name 'tickets_*.md' -o -name 'prd_*.md' \) -print | sort)"
-  [ -n "$done_ticket_paths" ] || return 0
+  # Read paths into an array so each path becomes its own pathspec arg.
+  # Quoting the joined string as one arg made git treat the entire blob as a
+  # single pathspec (which never matched), leaving every code volume metric
+  # stuck at 0 even when 500+ done tickets had real commits.
+  done_paths_arr=()
+  while IFS= read -r _line; do
+    [ -n "$_line" ] && done_paths_arr+=("$_line")
+  done < <(find "${board_root}/tickets/done" -type f \( -name 'Todo-*.md' -o -name 'tickets_*.md' -o -name 'prd_*.md' \) -print | sort)
+  [ "${#done_paths_arr[@]}" -gt 0 ] || return 0
 
   now_epoch="$(date -u +%s)"
   one_day_ago="$((now_epoch - 86400))"
-  commit_lines="$(git -C "$git_root" log --format='%H|%at|%s' -- "$done_ticket_paths" 2>/dev/null || true)"
+  commit_lines="$(git -C "$git_root" log --format='%H|%at|%s' -- "${done_paths_arr[@]}" 2>/dev/null || true)"
   [ -n "$commit_lines" ] || return 0
 
   autoflow_commit_count="$(printf '%s\n' "$commit_lines" | awk 'NF && $1 != "- " { count += 1 } END { print count + 0 }')"

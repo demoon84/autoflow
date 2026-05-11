@@ -3389,6 +3389,33 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
     totals.set(runnerId, (totals.get(runnerId) || 0) + count);
   }
 
+  // LLM-reported override — when a runner pushes its own usage via
+  // `runner-tokens.js report`, its state file's `cumulative_tokens` is the
+  // authoritative monotonic counter across turns. Use it as the total so the
+  // per-runner card footer reflects the LLM's own numbers instead of an empty
+  // telemetry roll-up.
+  const stateDir = path.join(boardRoot, "runners", "state");
+  for (const runner of runners) {
+    const rid = runner && runner.id;
+    if (!rid) continue;
+    try {
+      const raw = await fs.readFile(path.join(stateDir, `${rid}.state`), "utf8");
+      let tokenSource = "";
+      let cumulative = 0;
+      for (const line of raw.split(/\r?\n/)) {
+        const eq = line.indexOf("=");
+        if (eq <= 0) continue;
+        const key = line.slice(0, eq);
+        const val = line.slice(eq + 1);
+        if (key === "token_source") tokenSource = val.trim();
+        else if (key === "cumulative_tokens") cumulative = Number.parseInt(val, 10) || 0;
+      }
+      if (tokenSource === "llm_reported" && cumulative > 0) {
+        totals.set(rid, cumulative);
+      }
+    } catch {}
+  }
+
   return totals;
 }
 
@@ -4064,6 +4091,36 @@ async function readBoard({ projectRoot, boardDirName }) {
     orderBy: "mtime"
   });
 
+  // LLM-reported token override for dashboard metrics — sum each runner's
+  // state cumulative_tokens when token_source=llm_reported, then override the
+  // autoflow CLI's autoflow_token_usage_count so the top stats bar reflects
+  // the LLM's own numbers (telemetry/log aggregator won't see them otherwise).
+  const parsedMetrics = metricsResult ? parseKeyValueOutput(metricsResult.stdout) : {};
+  try {
+    const stateDir = path.join(boardRoot, "runners", "state");
+    let llmTotal = 0;
+    for (const runner of (runnersResult?.runners || [])) {
+      if (!runner?.id) continue;
+      try {
+        const raw = await fs.readFile(path.join(stateDir, `${runner.id}.state`), "utf8");
+        let src = "", cum = 0;
+        for (const line of raw.split(/\r?\n/)) {
+          const eq = line.indexOf("=");
+          if (eq <= 0) continue;
+          if (line.slice(0, eq) === "token_source") src = line.slice(eq + 1).trim();
+          else if (line.slice(0, eq) === "cumulative_tokens") cum = Number.parseInt(line.slice(eq + 1), 10) || 0;
+        }
+        if (src === "llm_reported" && cum > 0) llmTotal += cum;
+      } catch {}
+    }
+    if (llmTotal > 0) {
+      const prev = Number.parseInt(parsedMetrics.autoflow_token_usage_count, 10) || 0;
+      if (llmTotal > prev) {
+        parsedMetrics.autoflow_token_usage_count = String(llmTotal);
+      }
+    }
+  } catch {}
+
   return {
     repoRoot,
     boardRoot,
@@ -4076,7 +4133,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     statusResult,
     doctor: doctorResult ? parseKeyValueOutput(doctorResult.stdout) : {},
     doctorResult,
-    metrics: metricsResult ? parseKeyValueOutput(metricsResult.stdout) : {},
+    metrics: parsedMetrics,
     metricsResult,
     stopHook: stopHookResult ? parseKeyValueOutput(stopHookResult.stdout) : {},
     stopHookResult,
