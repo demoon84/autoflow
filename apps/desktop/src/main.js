@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
@@ -577,6 +577,176 @@ function reapPreviousPtySessionPids() {
 // prompts and main can update the runner state file on lifecycle events.
 //   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
+// runnerId -> live claude session-log watcher state
+const ptyRunnerTokenWatchers = new Map();
+
+function claudeProjectsDirForProjectRoot(projectRoot) {
+  const home = os.homedir();
+  const projectKey = path.resolve(projectRoot).replace(/[\\/]/g, "-");
+  return path.join(home, ".claude", "projects", projectKey);
+}
+
+function extractClaudeUsageTotalFromJsonLine(line) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed.startsWith("{")) return { increment: 0, lastTurn: 0 };
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { increment: 0, lastTurn: 0 };
+  }
+  const usage = parsed?.usage;
+  if (!usage || typeof usage !== "object") return { increment: 0, lastTurn: 0 };
+  const input = positiveIntegerValue(usage.input_tokens);
+  const output = positiveIntegerValue(usage.output_tokens);
+  const cacheRead = positiveIntegerValue(usage.cache_read_input_tokens);
+  const cacheCreate = positiveIntegerValue(usage.cache_creation_input_tokens);
+  const total = input + output + cacheRead + cacheCreate;
+  if (total <= 0) return { increment: 0, lastTurn: 0 };
+  if (parsed?.type === "result" || parsed?.type === "message_delta") {
+    return { increment: total, lastTurn: total };
+  }
+  return { increment: total, lastTurn: 0 };
+}
+
+async function createClaudeTokenWatcher({ runnerId, projectRoot, boardDirName, broadcastPty }) {
+  const sessionsDir = claudeProjectsDirForProjectRoot(projectRoot);
+  let entries = [];
+  try {
+    entries = await fs.readdir(sessionsDir, { withFileTypes: true });
+  } catch {
+    // No claude project session dir yet: start empty and retry on poll.
+  }
+
+  const offsets = new Map();
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+    const fp = path.join(sessionsDir, entry.name);
+    try {
+      const stat = await fs.stat(fp);
+      offsets.set(fp, stat.size);
+    } catch {}
+  }
+
+  const state = {
+    runnerId,
+    projectRoot,
+    boardDirName,
+    sessionsDir,
+    offsets,
+    tails: new Map(),
+    cumulativeTokens: 0,
+    lastTurnTokens: 0,
+    timer: null,
+    disposed: false
+  };
+
+  const publish = async () => {
+    // Precedence: if the runner is actively reporting tokens via
+    // `runner-tokens.js report` (token_source=llm_reported), the LLM's own
+    // counts are authoritative — don't clobber them with session-log derived
+    // values. Only update last_event_at so liveness stays fresh.
+    let existingSource = "";
+    try {
+      const meta = ptyRunnerMeta.get(runnerId);
+      if (meta) {
+        const statePath = path.join(meta.projectRoot, meta.boardDirName, "runners", "state", `${runnerId}.state`);
+        const raw = await fs.readFile(statePath, "utf8").catch(() => "");
+        const m = raw.match(/(?:^|\n)token_source=([^\n]*)/);
+        if (m) existingSource = m[1].trim();
+      }
+    } catch {}
+    const llmReporting = existingSource === "llm_reported";
+    const fields = llmReporting
+      ? { last_event_at: new Date().toISOString() }
+      : {
+          cumulative_tokens: String(state.cumulativeTokens),
+          last_turn_tokens: String(state.lastTurnTokens),
+          token_source: "session_log",
+          last_token_usage_source: "session_log",
+          last_event_at: new Date().toISOString()
+        };
+    await writePtyRunnerStateFile(runnerId, fields);
+    broadcastPty("autoflow:runnerTokenUpdate", {
+      runnerId,
+      cumulativeTokens: llmReporting ? undefined : state.cumulativeTokens,
+      lastTurnTokens: llmReporting ? undefined : state.lastTurnTokens,
+      tokenSource: llmReporting ? "llm_reported" : "session_log"
+    });
+  };
+
+  const poll = async () => {
+    if (state.disposed) return;
+    let sessionEntries = [];
+    try {
+      sessionEntries = await fs.readdir(state.sessionsDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of sessionEntries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const filePath = path.join(state.sessionsDir, entry.name);
+      let stat;
+      try {
+        stat = await fs.stat(filePath);
+      } catch {
+        continue;
+      }
+      const prevOffset = state.offsets.get(filePath) ?? 0;
+      const startOffset = Math.max(0, Math.min(prevOffset, stat.size));
+      const readLength = stat.size - startOffset;
+      if (readLength <= 0) continue;
+      let chunk = "";
+      let handle;
+      try {
+        handle = await fs.open(filePath, "r");
+        const buffer = Buffer.allocUnsafe(readLength);
+        await handle.read(buffer, 0, readLength, startOffset);
+        chunk = buffer.toString("utf8");
+      } catch {
+        continue;
+      } finally {
+        if (handle) await handle.close().catch(() => {});
+      }
+      state.offsets.set(filePath, stat.size);
+      const combined = (state.tails.get(filePath) || "") + chunk;
+      const lines = combined.split("\n");
+      state.tails.set(filePath, lines.pop() || "");
+      for (const line of lines) {
+        const usage = extractClaudeUsageTotalFromJsonLine(line);
+        if (usage.increment > 0) {
+          state.cumulativeTokens += usage.increment;
+        }
+        if (usage.lastTurn > 0) {
+          state.lastTurnTokens = usage.lastTurn;
+        }
+      }
+    }
+    await publish();
+  };
+
+  // Race fix: do NOT publish at watcher-creation time. The spawn flow writes
+  // the runner's identity fields (id/status/mode/pid/role/agent) AFTER this
+  // watcher is created, so an immediate publish() would create a state file
+  // with only token fields and leave it partial until subsequent merges. By
+  // delaying the first publish, we let the spawn's writePtyRunnerStateFile
+  // land first. defensive merge in writePtyRunnerStateFile is the safety
+  // net for any remaining races.
+  setTimeout(() => { void publish(); }, 2000);
+  state.timer = setInterval(() => {
+    void poll();
+  }, 1200);
+  if (state.timer && typeof state.timer.unref === "function") {
+    state.timer.unref();
+  }
+  return {
+    dispose: () => {
+      if (state.disposed) return;
+      state.disposed = true;
+      if (state.timer) clearInterval(state.timer);
+    }
+  };
+}
 
 // Per-runner safety-poll state: idle detection + queue fingerprint cache.
 //   runnerId -> { lastWakeAt: number (ms epoch), queueFingerprint: string }
@@ -695,6 +865,24 @@ async function writePtyRunnerStateFile(runnerId, fields) {
       if (eq <= 0) continue;
       lines.set(line.slice(0, eq), line.slice(eq + 1));
     }
+    // Defensive merge — when the existing file is missing the core spawn
+    // identity fields (race against token watcher's first publish, sleep/wake
+    // wipes, manual edits) inject what we know from ptyRunnerMeta so the UI
+    // never reports a live PTY runner as stopped just because the state file
+    // is partial. PTY-level liveness is the truth source — state file just
+    // mirrors it for the renderer.
+    const ptyMgr = globalThis.__autoflowPtyManager;
+    const ptyRunner = ptyMgr ? ptyMgr.get(runnerId) : null;
+    const isPtyAlive = ptyRunner && ptyRunner.status === "running";
+    if (isPtyAlive) {
+      if (!lines.has("id")) lines.set("id", runnerId);
+      if (!lines.has("role") && meta.role) lines.set("role", meta.role);
+      if (!lines.has("agent") && meta.agent) lines.set("agent", meta.agent);
+      if (!lines.has("mode")) lines.set("mode", "pty");
+      if (!lines.has("status")) lines.set("status", "running");
+      if (!lines.has("pid") && ptyRunner.pid) lines.set("pid", String(ptyRunner.pid));
+      if (!lines.has("started_at") && meta.startedAt) lines.set("started_at", meta.startedAt);
+    }
     for (const [k, v] of Object.entries(fields || {})) {
       if (v === undefined || v === null) continue;
       lines.set(k, String(v));
@@ -786,10 +974,14 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
       case "ticket":
       case "owner":
         return [
-          `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. List ${path.join(ticketsRoot, "inprogress")} — if a Todo-*.md is parked there for this worker, resume it (worktree may already exist).`,
-          `  2. List ${path.join(ticketsRoot, "todo")} — claim the highest-priority Todo-*.md and run the full atomic cycle (worktree → edit → verify → master merge → worktree delete).`,
-          `  3. Only after the todo queue is empty should you idle and wait for [wake] events.`
+          `Atomic rule: at most ONE active ticket at any moment.`,
+          `Worktree cwd lock: after start-ticket-owner returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
+          `Startup scan order:`,
+          `  1. inprogress/ first — resume the single Todo-*.md if present (mv extras back to todo/ if 2+).`,
+          `  2. Only when inprogress is empty, claim one highest-priority Todo-*.md from todo/.`,
+          `  3. Run the full atomic close-out per the agent contract (see "Mandatory Close-Out" in ticket-owner-agent.md).`,
+          `  4. After each phase, also call \`node .autoflow/scripts/runner-stage.js <stage>\` to keep runner state active_stage/ticket_id in sync.`,
+          `  5. Loop back to step 1. Idle only when both inprogress/ and todo/ are empty.`
         ].join("\n");
       case "wiki-maintainer":
       case "wiki":
@@ -830,7 +1022,14 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     ``,
     `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
     `record durable progress in board files; do not re-read the role/AGENTS files`,
-    `again within this session.`
+    `again within this session.`,
+    ``,
+    `Active reporting (every turn — required):`,
+    `  - Start of turn: \`node .autoflow/scripts/runner-wake.js poll --runner ${runnerId}\``,
+    `  - On stage change: \`node .autoflow/scripts/runner-stage.js <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
+    `  - End of turn: \`node .autoflow/scripts/runner-tokens.js report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
+    `Use the tokens shown in your TUI status line. Format tick-id as`,
+    `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
   ].join("\n");
 }
 
@@ -884,14 +1083,21 @@ function ensureBoardWatcher(scope) {
         }
       }
     }
-    // PTY runner wake — push a short '[wake]' prompt to runners whose role
-    // owns the changed path. Skips if no PTY runner of that role is running.
+    // PTY runner wake — dual signal:
+    //   1) Push `[wake] <path>` text into the PTY (immediate visual cue,
+    //      kept for backward compatibility / human readability).
+    //   2) Append the same event into the runner's wake queue file via
+    //      runner-wake.ts emit. The LLM polls this queue at turn boundaries
+    //      so wakes that arrive during paste/thinking aren't lost.
     // Gate: only wake roles that actually have pending work in their queue.
     try {
       const mgr = globalThis.__autoflowPtyManager;
       if (!mgr) return;
       const targetRoles = new Set(rolesForBoardChange(reason));
       if (targetRoles.size === 0) return;
+      const wakeScript = path.join(scope.projectRoot, boardDirName, "scripts", "runner-wake.ts");
+      const tsxBin = path.join(scope.projectRoot, "node_modules", ".bin", "tsx");
+      const wakeOk = fsSync.existsSync(wakeScript) && fsSync.existsSync(tsxBin);
       for (const [rid, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
@@ -900,6 +1106,15 @@ function ensureBoardWatcher(scope) {
         const paste = meta.agent === "claude" ? "bracketed" : "plain";
         mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
         updateWakeActivity(rid);
+        if (wakeOk) {
+          try {
+            require("node:child_process").spawn(
+              tsxBin,
+              [wakeScript, "emit", "--runner", rid, "--reason", String(reason), "--kind", "fs.watch"],
+              { stdio: "ignore", detached: true }
+            ).unref();
+          } catch {}
+        }
       }
     } catch {
       // wake is best-effort; log churn would dwarf any real signal
@@ -3820,12 +4035,80 @@ async function listRunners(options = {}) {
   const parsed = parseRunnerListOutput(result.stdout);
   const boardRoot = path.join(options.projectRoot, boardDirName);
   const runners = await enrichRunnerTerminalPreviews(parsed.runners, boardRoot);
+  await enrichRunnerActiveTicketFromFs(runners, boardRoot);
 
   return {
     ...result,
     values: parsed.values,
     runners
   };
+}
+
+// PTY-mode runners do not write `active_ticket_id` / `active_ticket_title`
+// into the state file (legacy run-role.sh used to). Derive the active ticket
+// directly from the filesystem so the UI's "처리 중인 티켓" badge keeps
+// working under PTY mode.
+//   ticket-owner    → first Todo-*.md in tickets/inprogress/
+//   planner         → first order_*.md in tickets/inbox/, else first prd_*.md in tickets/backlog/
+//   wiki-maintainer → leave blank (no per-ticket active item)
+async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
+  if (!Array.isArray(runners) || runners.length === 0) return;
+  const ticketsRoot = path.join(boardRoot, "tickets");
+  const readFirstMatch = async (dir, prefix) => {
+    try {
+      const entries = await fs.readdir(dir);
+      return entries.filter((n) => n.startsWith(prefix) && n.endsWith(".md")).sort()[0] || "";
+    } catch { return ""; }
+  };
+  const readTitle = async (filePath) => {
+    if (!filePath) return "";
+    try {
+      const text = await fs.readFile(filePath, "utf8");
+      const m = text.match(/^- Title:\s*(.+)$/m);
+      return m ? m[1].trim() : "";
+    } catch { return ""; }
+  };
+  for (const runner of runners) {
+    if ((runner.mode || "") !== "pty") continue;
+    // PTY mode never updates active_ticket_id from inside the runner — the
+    // legacy run-role.sh that did so is gone. Whatever value is in the state
+    // file is whatever the FIRST claim wrote, and it stays stale forever as
+    // tickets cycle through. Always re-derive from the filesystem so the UI
+    // mirrors the inprogress / inbox folders, not stale state.
+    if (runner.role === "ticket-owner") {
+      const file = await readFirstMatch(path.join(ticketsRoot, "inprogress"), "Todo-");
+      if (file) {
+        const id = file.replace(/\.md$/, "");
+        runner.activeTicketId = id;
+        runner.activeTicketTitle = await readTitle(path.join(ticketsRoot, "inprogress", file));
+        runner.activeItem = id;
+        runner.activeStage = "inprogress";
+      } else {
+        runner.activeTicketId = "";
+        runner.activeTicketTitle = "";
+        runner.activeItem = "";
+        runner.activeStage = "";
+      }
+    } else if (runner.role === "planner") {
+      const inbox = await readFirstMatch(path.join(ticketsRoot, "inbox"), "order_");
+      const backlog = inbox ? "" : await readFirstMatch(path.join(ticketsRoot, "backlog"), "prd_");
+      const file = inbox || backlog;
+      if (file) {
+        const id = file.replace(/\.md$/, "");
+        runner.activeTicketId = id;
+        runner.activeTicketTitle = await readTitle(
+          path.join(ticketsRoot, inbox ? "inbox" : "backlog", file)
+        );
+        runner.activeItem = id;
+        runner.activeStage = "planning";
+      } else {
+        runner.activeTicketId = "";
+        runner.activeTicketTitle = "";
+        runner.activeItem = "";
+        runner.activeStage = "";
+      }
+    }
+  }
 }
 
 function readBoardRunnerListCacheKey(options = {}) {
@@ -4998,6 +5281,32 @@ app.on("second-instance", () => {
   }
 });
 
+// Rewrite all state files for currently-alive PTY runners with identity
+// fields restored from PtyRunnerManager + ptyRunnerMeta. Used by:
+//   - state self-heal interval
+//   - powerMonitor.resume after sleep
+//   - any time UI shows a live runner as stopped
+async function selfHealPtyRunnerStates() {
+  try {
+    const mgr = globalThis.__autoflowPtyManager;
+    if (!mgr) return 0;
+    const live = mgr.list().filter((r) => r.status === "running");
+    let healed = 0;
+    for (const runner of live) {
+      const meta = ptyRunnerMeta.get(runner.id);
+      if (!meta) continue;
+      // writePtyRunnerStateFile applies the defensive merge for missing
+      // identity fields automatically. Triggering it with no fields is the
+      // simplest way to top up partial state files.
+      await writePtyRunnerStateFile(runner.id, {});
+      healed += 1;
+    }
+    return healed;
+  } catch {
+    return 0;
+  }
+}
+
 app.whenReady().then(() => {
   // First action: kill any orphan PTY children from the previous session
   // (precise — uses our recorded PID list) and any orphan legacy runner
@@ -5009,6 +5318,33 @@ app.whenReady().then(() => {
       console.log(`[startup-reaper] reaped ${ptyReaped} orphan PTY pid(s) from previous session`);
     }
   } catch {}
+
+  // powerMonitor: when the system sleeps, PTYs are suspended (not killed) so
+  // we just preserve current state. On resume, re-run self-heal in case the
+  // OS or watchdogs broke any state file during the suspend window.
+  try {
+    powerMonitor.on("suspend", () => {
+      console.log("[powerMonitor] suspend — preserving last PTY state");
+    });
+    powerMonitor.on("resume", () => {
+      console.log("[powerMonitor] resume — verifying PTY children + state files");
+      void selfHealPtyRunnerStates().then((n) => {
+        if (n > 0) console.log(`[powerMonitor] resume: self-healed ${n} PTY state file(s)`);
+      });
+    });
+  } catch (err) {
+    console.warn("[powerMonitor] hook registration failed:", err && err.message);
+  }
+
+  // Periodic state self-heal — recovers from token watcher race wipes,
+  // worker AI mistakes editing state files, etc. Default 5 minutes; tunable
+  // via AUTOFLOW_STATE_SELFHEAL_MIN.
+  const selfHealMin = parseInt(process.env.AUTOFLOW_STATE_SELFHEAL_MIN || "5", 10);
+  if (selfHealMin > 0) {
+    setInterval(() => {
+      void selfHealPtyRunnerStates();
+    }, selfHealMin * 60 * 1000);
+  }
   try {
     const reaped = reapOrphanLegacyRunnerDaemons();
     if (reaped > 0) {
@@ -5251,6 +5587,11 @@ app.whenReady().then(() => {
     }
     void writePtyRunnerStateFile(payload.runnerId, fields);
     if (payload.status === "stopped") {
+      const tokenWatcher = ptyRunnerTokenWatchers.get(payload.runnerId);
+      if (tokenWatcher) {
+        try { tokenWatcher.dispose(); } catch {}
+        ptyRunnerTokenWatchers.delete(payload.runnerId);
+      }
       ptyRunnerMeta.delete(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
@@ -5315,7 +5656,18 @@ app.whenReady().then(() => {
         command,
         cwd: projectRoot,
         cols: Number.isFinite(opts.cols) ? opts.cols : 120,
-        rows: Number.isFinite(opts.rows) ? opts.rows : 30
+        rows: Number.isFinite(opts.rows) ? opts.rows : 30,
+        env: {
+          // Pin the autoflow-side stable runner id so common.sh `owner_id()`
+          // picks this instead of codex's per-session UUID. Without this,
+          // every PTY restart issues a fresh UUID, ticket ownership locks
+          // become stale, and start-ticket-owner.sh refuses to claim until
+          // a janitor pass clears the lock.
+          AUTOFLOW_WORKER_ID: runnerId,
+          AUTOFLOW_RUNNER_ID: runnerId,
+          RUNNER_ID: runnerId,
+          AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
+        }
       });
       const startedAt = new Date().toISOString();
       ptyRunnerMeta.set(runnerId, {
@@ -5339,6 +5691,19 @@ app.whenReady().then(() => {
         last_event_at: startedAt,
         last_result: ""
       });
+      if (agent === "claude") {
+        try {
+          const watcher = await createClaudeTokenWatcher({
+            runnerId,
+            projectRoot,
+            boardDirName,
+            broadcastPty
+          });
+          if (watcher) {
+            ptyRunnerTokenWatchers.set(runnerId, watcher);
+          }
+        } catch {}
+      }
       // Record PID in precise reaper registry so a desktop crash next time
       // leaves the next session a clean kill list.
       try {
@@ -5351,8 +5716,16 @@ app.whenReady().then(() => {
       //   - gemini: ~5s — TUI box renders fast but input handler isn't
       //     attached until later; writes before then are silently dropped.
       // Use the conservative max so all three reliably accept the first
-      // prompt. Empirically 3.5s was too short for gemini.
-      const PROMPT_INJECT_DELAY_MS = 6000;
+      // prompt. Empirically:
+      //   - claude: ready in ~2s
+      //   - codex:  ready in ~3s
+      //   - gemini: TUI mount fast but input handler attaches later (~6s).
+      //     Below that, the prompt write returns ok=true but the chars get
+      //     swallowed before the input box accepts focus, so the PTY sits
+      //     idle forever with empty input box.
+      // Use agent-specific delay so we wait long enough for gemini without
+      // making claude / codex lazy.
+      const PROMPT_INJECT_DELAY_MS = agent === "gemini" ? 10000 : 6000;
       const initialPrompt = buildInitialPrompt({
         role,
         agent,
@@ -5382,7 +5755,16 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle("autoflow:runnerPtyStop", (_event, opts = {}) => {
+    const tokenWatcher = ptyRunnerTokenWatchers.get(opts.runnerId);
+    if (tokenWatcher) {
+      try { tokenWatcher.dispose(); } catch {}
+      ptyRunnerTokenWatchers.delete(opts.runnerId);
+    }
     return { ok: ptyManager.stop(opts.runnerId, { force: !!opts.force }) };
+  });
+  ipcMain.handle("autoflow:runnerPtyResize", (_event, opts = {}) => {
+    const ok = ptyManager.resize(opts.runnerId, opts.cols, opts.rows);
+    return { ok };
   });
   ipcMain.handle("autoflow:runnerPtySnapshot", (_event, opts = {}) => {
     return { snapshot: ptyManager.snapshot(opts.runnerId) };
@@ -5393,6 +5775,81 @@ app.whenReady().then(() => {
 
   createWindow();
   startMemoryCeilingMonitor();
+
+  // Auto-spawn runners on startup when AUTOFLOW_AUTO_SPAWN_RUNNERS=1.
+  // Reads runners/config.local.toml (or config.toml as fallback) for the
+  // enabled runner list, then drives the same code path as a UI ▶ click.
+  // Useful when the renderer hasn't loaded yet or after a hard restart
+  // where stuck PTYs were force-killed.
+  if (process.env.AUTOFLOW_AUTO_SPAWN_RUNNERS === "1") {
+    setTimeout(async () => {
+      try {
+        const projectRoot = repoRoot;
+        const boardDirName = defaultBoardDirName;
+        const configPath = (() => {
+          const local = path.join(projectRoot, boardDirName, "runners", "config.local.toml");
+          const base = path.join(projectRoot, boardDirName, "runners", "config.toml");
+          return fsSync.existsSync(local) ? local : base;
+        })();
+        const text = fsSync.readFileSync(configPath, "utf8");
+        // Minimal TOML scrape for [[runners]] blocks. We only need id /
+        // agent / model / reasoning / role / enabled per block.
+        const blocks = text.split(/\[\[runners\]\]/).slice(1);
+        for (const blk of blocks) {
+          const grab = (k) => {
+            const m = blk.match(new RegExp(`^${k}\\s*=\\s*"?([^"\\n]+)"?`, "m"));
+            return m ? m[1].trim() : "";
+          };
+          const enabled = grab("enabled");
+          if (enabled !== "true") continue;
+          const runnerId = grab("id");
+          const agent = grab("agent") || "claude";
+          const model = grab("model") || "";
+          const reasoning = grab("reasoning") || "";
+          if (!runnerId) continue;
+          const role = runnerId === "worker"
+            ? "ticket-owner"
+            : (runnerId === "wiki" ? "wiki-maintainer" : "planner");
+          if (ptyManager.list().some((r) => r.id === runnerId && r.status === "running")) {
+            console.log(`[auto-spawn] ${runnerId} already running; skip`);
+            continue;
+          }
+          const command = buildAgentCliCommand(agent, model, reasoning);
+          if (!command) continue;
+          const startedAt = new Date().toISOString();
+          const runner = ptyManager.start(runnerId, {
+            command,
+            cwd: projectRoot,
+            cols: 120,
+            rows: 30,
+            env: {
+              AUTOFLOW_WORKER_ID: runnerId,
+              AUTOFLOW_RUNNER_ID: runnerId,
+              RUNNER_ID: runnerId,
+              AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
+            }
+          });
+          ptyRunnerMeta.set(runnerId, { role, agent, projectRoot, boardDirName, startedAt });
+          await writePtyRunnerStateFile(runnerId, {
+            id: runnerId, status: "running", role, agent, model, reasoning,
+            mode: "pty", pid: String(runner.pid || ""), started_at: startedAt,
+            last_event_at: startedAt
+          });
+          try { addPtySessionPid({ pid: runner.pid, runnerId, role, agent, spawnedAt: startedAt }); } catch {}
+          const initialPrompt = buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName });
+          const promptDelay = agent === "gemini" ? 10000 : 6000;
+          setTimeout(() => {
+            const paste = agent === "claude" ? "bracketed" : "plain";
+            ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+          }, promptDelay);
+          console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      } catch (err) {
+        console.warn("[auto-spawn] failed:", err && err.message);
+      }
+    }, 1500);
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
