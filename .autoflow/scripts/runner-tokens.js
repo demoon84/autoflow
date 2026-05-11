@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // e2e-token-test: order_272
+// context-reset-e2e: order_286
 // Thin wrapper — delegates to runner-tokens.ts via tsx so agent.md `.js`
 // references stay valid while the implementation is TypeScript.
 const path = require("node:path");
