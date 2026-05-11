@@ -795,6 +795,41 @@ case "$outcome" in
       fi
     fi
 
+    # ③ Allowed Paths cross-check (PRD_276): at least one changed file that
+    # is NOT a board metadata path must match an Allowed Path. This prevents
+    # the false-pass pattern where only the ticket markdown ([x] checkboxes)
+    # was modified while no product code was changed.
+    # Metadata paths always exempt: tickets/inprogress/Todo-*.md,
+    # tickets/done/*/Todo-*.md. Skipped for Change Type=docs/cleanup.
+    if [ -z "$sanity_failed" ] && \
+       [ "$sanity_change_type" != "docs" ] && \
+       [ "$sanity_change_type" != "cleanup" ] && \
+       [ -n "$sanity_target" ] && [ -n "$sanity_base" ]; then
+      sanity_ap_ok=0
+      sanity_ap_names="$(cd "$sanity_target" && git diff --name-only "${sanity_base}..HEAD" 2>/dev/null || true)"
+      [ -n "$sanity_ap_names" ] || sanity_ap_names="$(cd "$sanity_target" && git diff --name-only 2>/dev/null || true)"
+      if [ -n "$sanity_ap_names" ]; then
+        # Strip board metadata paths; only product-code changes count
+        sanity_ap_product="$(printf '%s\n' "$sanity_ap_names" \
+          | grep -v '^\.autoflow/tickets/inprogress/Todo-' \
+          | grep -v '^\.autoflow/tickets/done/' \
+          || true)"
+        if [ -n "$sanity_ap_product" ]; then
+          while IFS= read -r ap; do
+            [ -n "$ap" ] || continue
+            if printf '%s\n' "$sanity_ap_product" | grep -qF "$ap"; then
+              sanity_ap_ok=1
+              break
+            fi
+          done < <(extract_ticket_allowed_paths "$ticket_file")
+        fi
+      fi
+      if [ "$sanity_ap_ok" -eq 0 ]; then
+        sanity_failed="allowed_paths_no_diff"
+        sanity_detail="no changed product file matches an Allowed Path (board metadata edits excluded); ensure real code changes exist within Allowed Paths (change_type=${sanity_change_type})"
+      fi
+    fi
+
     if [ -n "$sanity_failed" ]; then
       append_note "$ticket_file" "Shell sanity gate refused pass at ${timestamp}: ${sanity_failed}; ${sanity_detail}"
       route_to_inbox_retry "shell_sanity_gate_${sanity_failed}" "$sanity_detail"
