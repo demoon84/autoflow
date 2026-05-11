@@ -213,6 +213,34 @@ class PtyRunnerManager extends EventEmitter {
     return true;
   }
 
+  // Inject a context-reset slash command into the runner's PTY input.
+  // mode='compact' (default): summarise and compress context in-place.
+  // mode='clear': discard context entirely (escalation path).
+  // Agent mapping:
+  //   claude  compact→/compact  clear→/clear
+  //   codex   compact→/compact  clear→/new
+  //   gemini  compact→/compress clear→/chat new
+  // Slash commands are single-line, so no bracketed-paste envelope.
+  injectContextReset(runnerId, mode = "compact") {
+    const runner = this.runners.get(runnerId);
+    if (!runner || runner.status !== STATUS.RUNNING) return false;
+    const cmd = String(runner.command || "").trimStart().toLowerCase();
+    let slashCmd;
+    if (cmd.startsWith("gemini")) {
+      slashCmd = mode === "clear" ? "/chat new" : "/compress";
+    } else if (cmd.startsWith("codex")) {
+      slashCmd = mode === "clear" ? "/new" : "/compact";
+    } else {
+      // claude (default)
+      slashCmd = mode === "clear" ? "/clear" : "/compact";
+    }
+    // Plain text + carriage return. No bracketed-paste — slash commands must
+    // not be wrapped in \e[200~...\e[201~ or they render as literal text.
+    runner.stdinQueue.push(`${slashCmd}\r`);
+    this._drainStdin(runner);
+    return true;
+  }
+
   _drainStdin(runner) {
     if (runner.stdinDraining) return;
     runner.stdinDraining = true;

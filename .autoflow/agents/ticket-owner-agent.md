@@ -126,3 +126,4 @@ All three exit 0 even on failure (1원칙) so they never block your main work.
 - Do not process multiple tickets in one owner context.
 - Do not edit unrelated files.
 - Do not push.
+- After each ticket pass, the desktop app automatically injects `/compact` (or `/clear` when cumulative_tokens ≥ `AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD`, default 100 k) followed by `[wake] fresh-start`; do not manually trigger a context reset between tickets.

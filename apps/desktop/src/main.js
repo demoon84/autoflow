@@ -821,6 +821,82 @@ function appendWakePollLog(boardRoot, entry) {
   } catch {}
 }
 
+// Append a key-value event line to <runner>.log (matches shell runner_append_log format).
+function appendRunnerLog(boardRoot, runnerId, fields) {
+  try {
+    const logDir = path.join(boardRoot, "runners", "logs");
+    fsSync.mkdirSync(logDir, { recursive: true });
+    const ts = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    const kv = Object.entries(fields || {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" ");
+    fsSync.appendFileSync(
+      path.join(logDir, `${runnerId}.log`),
+      `timestamp=${ts} ${kv}\n`,
+      "utf8"
+    );
+  } catch {}
+}
+
+// Inject a context reset slash command into a PTY runner after ticket pass.
+// Reads cumulative_tokens from the runner state file to decide compact vs clear.
+// Env knobs:
+//   AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS   (default 1 = enabled)
+//   AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD   (default 100000)
+//   AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK  (default 1)
+function scheduleContextReset(runnerId, meta) {
+  const enabled = (process.env.AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS ?? "1") !== "0";
+  if (!enabled) return;
+  const threshold = Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD || "100000", 10);
+  const respawnFallback = (process.env.AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK ?? "1") !== "0";
+  const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
+  // Delay so the LLM's current turn can finish printing before we inject.
+  setTimeout(() => {
+    const mgr = globalThis.__autoflowPtyManager;
+    if (!mgr) return;
+    const runner = mgr.get(runnerId);
+    if (!runner || runner.status !== "running") return;
+    // Read cumulative_tokens from state file to decide mode.
+    let cumulativeTokens = 0;
+    try {
+      const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
+      const raw = fsSync.readFileSync(statePath, "utf8");
+      const m = raw.match(/(?:^|\n)cumulative_tokens=(\d+)/);
+      if (m) cumulativeTokens = Number.parseInt(m[1], 10) || 0;
+    } catch {}
+    const mode = cumulativeTokens >= threshold ? "clear" : "compact";
+    const injected = mgr.injectContextReset(runnerId, mode);
+    if (!injected) return;
+    appendRunnerLog(boardRoot, runnerId, {
+      event: "context_reset",
+      runner_id: runnerId,
+      mode,
+      trigger: "ticket_pass",
+      cumulative_before: cumulativeTokens,
+      threshold,
+    });
+    // Follow up with [wake] fresh-start so the LLM knows to pick up next work.
+    const paste = (meta.agent || "").toLowerCase() === "claude" ? "bracketed" : "plain";
+    setTimeout(() => {
+      if (mgr.get(runnerId)?.status !== "running") return;
+      mgr.writePrompt(runnerId, "[wake] fresh-start", { paste });
+      updateWakeActivity(runnerId);
+    }, 2000);
+    // Respawn fallback: if PTY shows no output 30 s after inject, respawn.
+    if (respawnFallback) {
+      const beforeData = runner.lastDataAt;
+      setTimeout(() => {
+        const r = mgr.get(runnerId);
+        if (!r || r.status !== "running") return;
+        if (r.lastDataAt === beforeData) {
+          // No data since inject — respawn so the agent isn't stuck.
+          mgr.stop(runnerId, { force: false });
+        }
+      }, 30000);
+    }
+  }, 3000);
+}
+
 // Record that a wake was just sent to a runner (resets idle clock).
 function updateWakeActivity(runnerId) {
   const s = wakePollState.get(runnerId) || {};
@@ -1114,6 +1190,19 @@ function ensureBoardWatcher(scope) {
               { stdio: "ignore", detached: true }
             ).unref();
           } catch {}
+        }
+      }
+      // Context reset after ticket pass: when a done/*/Todo-*.md appears,
+      // the ticket-owner just finished a pass. Schedule compact/clear inject.
+      if (
+        reason.startsWith("tickets/done/") &&
+        /\/Todo-\d+\.md$/.test(reason)
+      ) {
+        for (const [rid, meta] of ptyRunnerMeta.entries()) {
+          if (meta.projectRoot !== scope.projectRoot) continue;
+          if (meta.boardDirName !== boardDirName) continue;
+          if (meta.role !== "ticket-owner") continue;
+          scheduleContextReset(rid, meta);
         }
       }
     } catch {
