@@ -45,6 +45,12 @@ apps/desktop/build/
 .autoflow/runners/state/wiki-search.db-shm
 .autoflow/runners/state/wiki-search.db-wal
 
+# PRD 229 (2026-05-09/2026-05-12): wiki RAG vector index — sentence-transformers
+# model cache and python3 venv. Already covered by .autoflow/runners/state/ above;
+# listed explicitly so future refactors that narrow state/ don't accidentally
+# start tracking the ~80MB model files.
+.autoflow/runners/state/wiki-embed-models/
+
 # Auto-rotated backups (kept locally only)
 /.autoflow/metrics/*.before-reset.*
 /.autoflow/metrics/*.before-reset.*Z
