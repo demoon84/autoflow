@@ -70,6 +70,18 @@ enabled = true
 realtime_enabled = true
 command = ""
 
+# Meta-Runner — self-diagnostics (opt-in, default off).
+# Reads telemetry/state/logs every 5 min and emits hints for timeout, stall, etc.
+# Activate by setting AUTOFLOW_META_RUNNER_ENABLED=1 in env.
+#
+# [[runners]]
+# id = "meta"
+# role = "meta-runner"
+# agent = "none"          # runs via node directly, no LLM
+# mode = "loop"
+# interval_seconds = 300  # 5 min
+# enabled = false         # flip to true after setting AUTOFLOW_META_RUNNER_ENABLED=1
+
 # Notification channels — fired on needs_user / blocked threshold events.
 # Secrets (webhook_url) go in .autoflow/.local/secrets.json (gitignored).
 # Uncomment and fill in to activate a channel.
