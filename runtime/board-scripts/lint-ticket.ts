@@ -27,11 +27,19 @@ function extractChecklist(heading: string): string[] {
   const lines = text.split(/\r?\n/);
   const out: string[] = [];
   let inSection = false;
+  // Match the heading at any depth (## / ### / ####) — PRDs use ### for
+  // "Global Acceptance Criteria" while tickets use ## for "Done When".
+  // Section ends at any next heading of the same-or-higher level.
   const enterRe = new RegExp(`^#{2,}\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`);
   for (const line of lines) {
     if (enterRe.test(line)) { inSection = true; continue; }
     if (/^#{1,6}\s+/.test(line) && inSection) { inSection = false; continue; }
     if (!inSection) continue;
+    // Accept either checkbox form (`- [ ]` / `- [x]`) OR a plain bullet
+    // (`- text`) with at least one non-empty character — PRD authors often
+    // use plain bullets for acceptance criteria. Skip empty bullets and
+    // placeholders ("...", "TBD"). This makes lint friendlier without
+    // losing the vague-term / concrete-signal heuristics that follow.
     if (/^\s*-\s*\[[ xX]\]\s*\S/.test(line)) { out.push(line); continue; }
     const bulletMatch = line.match(/^\s*-\s+(.+?)\s*$/);
     if (!bulletMatch) continue;
