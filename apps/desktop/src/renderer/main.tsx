@@ -6684,6 +6684,51 @@ function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string
   };
 }
 
+const SPINNER_GLYPH_CHAR_CLASS = "[\\u23F8\\u23F9\\u23FA\\u23FB\\u25CF\\u25CB\\u25D0-\\u25D7\\u2022\\u00B7\\u22EF\\u2026\\u2191\\u2193\\u2728\\u2733\\u2734\\u2736\\u2737\\u2738\\u2739\\u273A\\u273B\\u273C\\u273D\\u25EC\\u25EF\\u25C9\\u25CE\\u25E6\\u29BF\\u23FA\\u23F8\\u23F9\\u2B24\\u2B22\\u25C7\\u25C6\\u23F7\\u2807\\u2820-\\u28FF]";
+const SPINNER_ARTIFACT_LINE = new RegExp(
+  "^[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]*(?:still\\s+)?(?:thinking|Cultivating|Photosynthesizing|Pondering|Ruminating|Brewing|Churning|cooking|Marinating|Creating|loading|Processing)?[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]*$",
+  "i"
+);
+const SPINNER_THINKING_PHRASE = /(?:\w*…\s*\d*\s*thinking|still\s+thinking|thinking\s+with\s+(?:medium|high|low)\s+effort)/i;
+const SPINNER_ONLY_GLYPHS_DIGITS = new RegExp("^[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]+$");
+
+function isSpinnerArtifact(line: string): boolean {
+  const plain = line.replace(/\x1B\[[0-9;?]*m/g, "").trim();
+  if (!plain) return false;
+  if (SPINNER_THINKING_PHRASE.test(plain)) return true;
+  if (SPINNER_ONLY_GLYPHS_DIGITS.test(plain)) return true;
+  return false;
+}
+
+function sanitizePtyChunkForNarrowTerm(input: string): string {
+  if (!input) return input;
+  let out = input.replace(/\r\n/g, "\n");
+  out = out.replace(/\x1B\[[0-?]*[ -/]*[ABCDEFGHJKSTfsuhl]/g, "");
+  out = out.replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
+  const lines = out.split("\n").map((line) => {
+    if (line.indexOf("\r") === -1) return line;
+    const parts = line.split("\r");
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (parts[i] !== "") return parts[i];
+    }
+    return "";
+  });
+  const filtered: string[] = [];
+  let blankRun = 0;
+  for (const line of lines) {
+    if (isSpinnerArtifact(line)) continue;
+    if (line.trim() === "") {
+      blankRun++;
+      if (blankRun > 1) continue;
+      filtered.push(line);
+    } else {
+      blankRun = 0;
+      filtered.push(line);
+    }
+  }
+  return filtered.join("\r\n");
+}
+
 // Direct PTY byte stream → xterm. No file polling, no JSON summarization.
 // Subscribes to main-process IPC channel and writes raw bytes (with ANSI
 // escape codes) straight into xterm — same as vibe-terminal.
@@ -6811,7 +6856,7 @@ function LivePtyView({
       const term = terminalRef.current;
       const chunks = pendingChunksRef.current;
       if (!term || chunks.length === 0) return;
-      const merged = chunks.join("");
+      const merged = sanitizePtyChunkForNarrowTerm(chunks.join(""));
       pendingChunksRef.current = [];
       try { term.write(merged); } catch {}
     };
