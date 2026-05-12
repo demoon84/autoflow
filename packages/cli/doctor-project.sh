@@ -796,6 +796,108 @@ record_conversation_handoff_check() {
   fi
 }
 
+runtime_script_companion_pairs() {
+  cat <<'EOF'
+start-ticket-owner.sh|start-ticket-owner.js,start-ticket-owner.legacy.sh
+finish-ticket-owner.sh|finish-ticket-owner.js,finish-ticket-owner.legacy.sh
+merge-ready-ticket.sh|merge-ready-ticket.js,merge-ready-ticket.ts,merge-ready-ticket.legacy.sh
+handoff-todo.sh|handoff-todo.js,handoff-todo.legacy.sh
+start-plan.sh|start-plan.ts,start-plan.legacy.sh
+integrate-worktree.sh|integrate-worktree.ts
+lint-ticket.sh|lint-ticket.ts
+path-conflict-check.sh|path-conflict-check.ts
+runner-stage.js|runner-stage.ts
+runner-wake.js|runner-wake.ts
+runner-tokens.js|runner-tokens.ts
+state-db.sh|state-db.ts
+EOF
+}
+
+runtime_script_inventory_groups() {
+  cat <<'EOF'
+1|small_support|board-guard.ts,board-utils.ts,integrate-worktree.sh,integrate-worktree.ts,lint-ticket.sh,lint-ticket.ts,path-conflict-check.sh,path-conflict-check.ts,runner-stage.js,runner-stage.ts,runner-wake.js,runner-wake.ts,runner-tokens.js,runner-tokens.ts,state-db.sh,state-db.ts,start-verifier.ts,meta-runner.ts,notify-user.ts,promote-order-to-ticket.ts,planner-janitor.ts,wiki-embed.ts,wiki-query.ts,wiki-search-index.sh
+2|planner|start-plan.sh,start-plan.ts,start-plan.legacy.sh
+3|ticket_owner_finalizer|start-ticket-owner.sh,start-ticket-owner.js,start-ticket-owner.legacy.sh,verify-ticket-owner.sh,finish-ticket-owner.sh,finish-ticket-owner.js,finish-ticket-owner.legacy.sh,merge-ready-ticket.sh,merge-ready-ticket.js,merge-ready-ticket.ts,merge-ready-ticket.legacy.sh,handoff-todo.sh,handoff-todo.js,handoff-todo.legacy.sh
+4|packages_cli_large_shell|packages/cli/package-board-common.sh,packages/cli/doctor-project.sh
+EOF
+}
+
+record_runtime_script_companion_checks() {
+  local pair_line wrapper companions missing_any missing_count
+  local companion companion_path group_line group_index group_label group_files
+  local group_total group_present group_missing group_missing_summary group_path
+
+  missing_any=0
+  missing_count=0
+
+  while IFS= read -r pair_line; do
+    [ -n "$pair_line" ] || continue
+    wrapper="${pair_line%%|*}"
+    companions="${pair_line#*|}"
+
+    if [ ! -f "${board_root}/scripts/${wrapper}" ]; then
+      continue
+    fi
+
+    OLD_IFS="$IFS"
+    IFS=','
+    for companion in $companions; do
+      companion_path="${board_root}/scripts/${companion}"
+      if [ -f "$companion_path" ]; then
+        printf 'doctor.runtime_script_companion.%s=%s\n' "$wrapper" "$companion" >> "$check_output"
+        continue
+      fi
+
+      missing_any=1
+      missing_count=$((missing_count + 1))
+      record_error "runtime script companion is missing: ${board_root}/scripts/${companion} (required by ${wrapper})"
+    done
+    IFS="$OLD_IFS"
+  done < <(runtime_script_companion_pairs)
+
+  printf 'doctor.runtime_script_companion_missing_count=%s\n' "$missing_count" >> "$check_output"
+  if [ "$missing_any" -eq 0 ]; then
+    record_check "runtime_script_companions" "ok"
+  else
+    record_check "runtime_script_companions" "error"
+  fi
+
+  while IFS='|' read -r group_index group_label group_files; do
+    [ -n "$group_index" ] || continue
+    group_total=0
+    group_present=0
+    group_missing=0
+    group_missing_summary=""
+
+    OLD_IFS="$IFS"
+    IFS=','
+    for companion in $group_files; do
+      group_total=$((group_total + 1))
+      case "$companion" in
+        packages/*)
+          group_path="${project_root}/${companion}"
+          ;;
+        *)
+          group_path="${board_root}/scripts/${companion}"
+          ;;
+      esac
+
+      if [ -e "$group_path" ]; then
+        group_present=$((group_present + 1))
+      else
+        group_missing=$((group_missing + 1))
+        group_missing_summary="$(append_csv_value "$group_missing_summary" "$companion")"
+      fi
+    done
+    IFS="$OLD_IFS"
+
+    printf 'doctor.typescript_migration.%s.label=%s\n' "$group_index" "$group_label" >> "$check_output"
+    printf 'doctor.typescript_migration.%s.total=%s\n' "$group_index" "$group_total" >> "$check_output"
+    printf 'doctor.typescript_migration.%s.present=%s\n' "$group_index" "$group_present" >> "$check_output"
+    printf 'doctor.typescript_migration.%s.missing=%s\n' "$group_index" "$group_missing_summary" >> "$check_output"
+  done < <(runtime_script_inventory_groups)
+}
+
 if [ -d "$board_root" ]; then
   record_check "board_root_exists" "ok"
 else
@@ -853,15 +955,25 @@ if [ -d "$board_root" ]; then
 
   for required_nested_dir in \
     "tickets/backlog" \
-    "logs/hooks" \
-    "automations/state" \
-    "automations/state/threads"
+    "automations/state"
   do
     if [ -d "${board_root}/${required_nested_dir}" ]; then
       record_check "dir_$(printf '%s' "$required_nested_dir" | tr '/.-' '___')" "ok"
     else
       record_check "dir_$(printf '%s' "$required_nested_dir" | tr '/.-' '___')" "error"
       record_error "required nested board directory is missing: ${board_root}/${required_nested_dir}"
+    fi
+  done
+
+  for optional_nested_dir in \
+    "logs/hooks" \
+    "automations/state/threads"
+  do
+    if [ -d "${board_root}/${optional_nested_dir}" ]; then
+      record_check "dir_$(printf '%s' "$optional_nested_dir" | tr '/.-' '___')" "ok"
+    else
+      record_check "dir_$(printf '%s' "$optional_nested_dir" | tr '/.-' '___')" "warning"
+      record_warning "optional nested board directory is missing: ${board_root}/${optional_nested_dir}"
     fi
   done
 
@@ -1014,6 +1126,8 @@ if [ -d "$board_root" ]; then
       record_error "runtime script is not executable: ${board_root}/scripts/${runtime_file}"
     fi
   done
+
+  record_runtime_script_companion_checks
 
   if [ -f "${board_root}/.project-root" ]; then
     marker_value="$(project_root_marker_value "$board_root")"
