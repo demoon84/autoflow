@@ -6398,8 +6398,11 @@ case "$agent" in
         if [ "$adapter_exit" -eq 0 ] && [ "$runner_status" != "stopped" ]; then
           printf '0'
         else
+          prev_failures=""
           prev_failures="$(runner_adapter_preserved_state_value "consecutive_failure_count")"
-          case "$prev_failures" in ''|*[!0-9]*) prev_failures=0 ;; esac
+          if [ -z "${prev_failures}" ] || [ -n "${prev_failures//[0-9]/}" ]; then
+            prev_failures=0
+          fi
           printf '%s' "$((prev_failures + 1))"
         fi
       )" \
