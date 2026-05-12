@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# integrate-worktree.sh — thin wrapper around integrate-worktree.ts (TypeScript via tsx).
-# Legacy bash implementation removed after TS migration.
+# path-conflict-check.sh — thin wrapper around path-conflict-check.ts (TypeScript via tsx).
+# Legacy bash version preserved as path-conflict-check.legacy.sh.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
@@ -8,4 +8,4 @@ TSX="${PROJECT_ROOT}/node_modules/.bin/tsx"
 if [ ! -x "$TSX" ]; then
   TSX="npx --yes tsx"
 fi
-exec $TSX "$SCRIPT_DIR/integrate-worktree.ts" "$@"
+exec $TSX "$SCRIPT_DIR/path-conflict-check.ts" "$@"
