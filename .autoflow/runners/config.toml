@@ -59,6 +59,18 @@ realtime_enabled = true
 command = ""
 
 [[runners]]
+id = "worker-2"
+role = "ticket-owner"
+agent = "codex"
+model = "gpt-5.3-codex-spark"
+reasoning = "low"
+mode = "loop"
+interval_seconds = 1800
+enabled = true
+realtime_enabled = true
+command = ""
+
+[[runners]]
 id = "wiki"
 role = "wiki-maintainer"
 agent = "gemini"

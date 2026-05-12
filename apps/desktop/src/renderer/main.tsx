@@ -7666,9 +7666,9 @@ function isMachineRunnerLog(value: string) {
 
 function canonicalWorkflowRunnerRole(value: string) {
   const normalized = (value || "").toLowerCase();
-  if (/^(owner|worker|ai)-/.test(normalized)) return "ticket-owner";
-  if (/^(planner|plan)-/.test(normalized)) return "planner";
-  if (/^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki-maintainer";
+  if (normalized === "worker" || /^(owner|worker|ai)-/.test(normalized)) return "ticket-owner";
+  if (normalized === "planner" || /^(planner|plan)-/.test(normalized)) return "planner";
+  if (normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki-maintainer";
   return "";
 }
 
@@ -7699,6 +7699,7 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (!value) return value;
   const role = canonicalWorkflowRunnerRole(value);
   const singleton = workflowRoleIsSingleton(runners, role);
+  if (value === "worker") return singleton ? "worker" : "worker-1";
   if (/^owner-/.test(value)) return singleton ? "worker" : value.replace(/^owner-/, "worker-");
   if (/^worker-/.test(value)) return singleton ? "worker" : value;
   if (/^ai-/i.test(value)) return singleton ? "worker" : value.replace(/^ai-/i, "worker-");
