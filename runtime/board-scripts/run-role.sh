@@ -4042,7 +4042,7 @@ runner_file_has_adapter_auth_required() {
 
   for file in "$@"; do
     [ -f "$file" ] || continue
-    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|When using Gemini API, you must specify the GEMINI_API_KEY' "$file"; then
+    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|Please set an Auth method|Manual authorization is required|When using Gemini API, you must specify the GEMINI_API_KEY|GEMINI_API_KEY.*(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)|Error authenticating:.*listen EPERM' "$file"; then
       return 0
     fi
   done
@@ -6398,8 +6398,11 @@ case "$agent" in
         if [ "$adapter_exit" -eq 0 ] && [ "$runner_status" != "stopped" ]; then
           printf '0'
         else
+          prev_failures=""
           prev_failures="$(runner_adapter_preserved_state_value "consecutive_failure_count")"
-          case "$prev_failures" in ''|*[!0-9]*) prev_failures=0 ;; esac
+          if [ -z "${prev_failures}" ] || [ -n "${prev_failures//[0-9]/}" ]; then
+            prev_failures=0
+          fi
           printf '%s' "$((prev_failures + 1))"
         fi
       )" \

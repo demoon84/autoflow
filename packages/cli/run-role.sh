@@ -4042,7 +4042,7 @@ runner_file_has_adapter_auth_required() {
 
   for file in "$@"; do
     [ -f "$file" ] || continue
-    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|When using Gemini API, you must specify the GEMINI_API_KEY' "$file"; then
+    if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|Please set an Auth method|Manual authorization is required|When using Gemini API, you must specify the GEMINI_API_KEY|GEMINI_API_KEY.*(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)|Error authenticating:.*listen EPERM' "$file"; then
       return 0
     fi
   done

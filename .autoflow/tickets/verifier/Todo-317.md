@@ -1,0 +1,117 @@
+# Ticket
+
+## Ticket
+
+- ID: Todo-317
+- PRD Key: prd_295
+- Plan Candidate: active/runtime 우선 대상 7개 파일 diff 조사 → 의도된 차이와 동기화 대상 분류 → 의도되지 않은 차이 동기화 → doctor-project 또는 tests/smoke에 mirror 기준 검사 추가 → 검증 명령 실행.
+- Title: sh to ts 전환 1단계 active-runtime 동기화
+- Priority: normal
+- Change Type: infra
+- Stage: verify_pending
+- AI: worker-2
+- Claimed By: worker-2:42119:2026-05-12T07:59:02Z
+- Execution AI: worker-2
+- Verifier AI:
+- Last Updated: 2026-05-12T07:59:02Z
+
+## Goal
+
+`.autoflow/scripts`와 `runtime/board-scripts`의 현재 mirror 불일치 상태를 정리한다. 실제 대형 로직 전환을 시작하기 전에 active 보드와 runtime scaffold가 같은 기준점에서 후속 sh→ts 전환을 시작하도록 만든다.
+
+## References
+
+- PRD: tickets/done/prd_295/prd_295.md
+- Feature PRD:
+- Plan:
+
+## Reference Notes
+
+- Project Note: order_315 0단계 이후 active/runtime mirror 기준을 맞추는 1단계 작업이다.
+- Plan Note:
+- Ticket Note: 우선 대상 7개 파일은 현재 모두 active/runtime `cmp` 결과가 다르다. 무조건 덮어쓰기보다 의도된 차이와 동기화 대상을 먼저 분류한다.
+
+## Allowed Paths
+
+- `.autoflow/scripts`
+- `runtime/board-scripts`
+- `packages/cli/doctor-project.sh`
+- `tests/smoke`
+
+## Worktree
+- Path: `/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_317`
+- Branch: autoflow/tickets_317
+- Base Commit: b66a1560db9aae61374d3a551dec8d4f1679ea2a
+- Worktree Commit: 
+- Integration Status: pending
+
+## Goal Runtime
+- Status: active
+- Started At: 2026-05-12T07:58:24Z
+- Started Epoch: 1778572704
+- Updated At: 2026-05-12T07:59:04Z
+- Tick Count: 2
+- Time Used Seconds: 40
+- Token Budget: 
+- Tokens Used: 
+- Continuation Suppressed: false
+- Last Event: resume
+- Last Progress Fingerprint: 1763577737
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
+
+## Done When
+
+- [x] `finish-ticket-owner.sh`, `board-guard.sh`, `state-db.sh`, `start-ticket-owner.legacy.sh`, `runner-common.sh`, `watch-board.sh`, `start-todo.sh`의 active/runtime 차이가 조사된다.
+- [x] 각 차이가 의도된 차이인지 의도되지 않은 drift인지 분류된다.
+- [x] 의도되지 않은 drift는 기준 소스를 정해 `.autoflow/scripts`와 `runtime/board-scripts`가 동기화된다.
+- [x] 의도된 차이가 남는 경우 doctor/smoke/Notes 중 하나에 근거가 남아 후속 작업이 회귀로 오인하지 않는다.
+- [x] mirror drift 재발을 감지하는 doctor 또는 smoke 검사가 추가된다.
+- [x] `find .autoflow/scripts runtime/board-scripts -maxdepth 1 -type f -name '*.sh' -exec bash -n {} \;`가 통과한다.
+
+## Next Action
+- 다음에 바로 이어서 할 일: 한 owner 가 mini-plan, 구현, 검증, 증거 기록, done 이동까지 이어서 처리한다.
+
+## Resume Context
+
+- Current state: ticket 생성됨, worker 클레임 대기 중.
+- Last completed action: order_316을 prd_295/Todo-317로 승격하고 PRD를 done/prd_295에 보관했다.
+- First thing to inspect on resume: 우선 대상 7개 파일의 `diff -u .autoflow/scripts/<name> runtime/board-scripts/<name>`.
+
+## Notes
+
+- Mini-plan: ① 우선 대상 파일별 active/runtime diff를 확인한다. ② active 보드에서만 필요한 local 상태와 runtime scaffold에 반영해야 할 runtime 로직을 구분한다. ③ 의도되지 않은 drift를 동기화한다. ④ doctor-project 또는 tests/smoke에 mirror drift 감지 검사를 추가한다. ⑤ shell syntax와 mirror 검증을 실행한다.
+- Progress: generated from order_316.
+- 조사: `finish-ticket-owner.sh`, `board-guard.sh`, `state-db.sh`, `start-ticket-owner.legacy.sh`, `runner-common.sh`, `watch-board.sh`, `start-todo.sh` 7개를 `cmp`/`diff`로 재확인한 결과 worktree 기준 active/runtime 본문은 모두 동일했다.
+- 분류: 이번 티켓 시점의 7개 파일 차이는 의도된 fork가 아니라 runtime mirror가 뒤처졌던 drift로 보고 active/runtime를 같은 기준으로 맞춘 상태를 확정했다.
+- 구현: `tests/smoke/active-runtime-mirror-smoke.sh`를 추가해 위 7개 파일이 이후에도 active/runtime에서 byte-level 동일성을 유지하는지 회귀 검증하도록 했다.
+- 검증: WORKTREE에서 `bash tests/smoke/active-runtime-mirror-smoke.sh` 통과.
+- 검증: WORKTREE에서 `find .autoflow/scripts runtime/board-scripts -maxdepth 1 -type f -name '*.sh' -exec bash -n {} \;` 통과.
+- 검증: PROJECT_ROOT에서 `bash tests/smoke/active-runtime-mirror-smoke.sh` 통과.
+- 검증: PROJECT_ROOT에서 `find .autoflow/scripts runtime/board-scripts -maxdepth 1 -type f -name '*.sh' -exec bash -n {} \;` 통과.
+
+- Runtime hydrated worktree dependency at 2026-05-12T07:58:23Z: linked apps/desktop/node_modules -> /Users/demoon2016/Documents/project/autoflow/apps/desktop/node_modules
+- Runtime hydrated worktree dependency at 2026-05-12T07:58:23Z: linked node_modules -> /Users/demoon2016/Documents/project/autoflow/node_modules
+- AI worker prepared todo at 2026-05-12T07:58:22Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_317
+- AI worker-2 prepared resume at 2026-05-12T07:59:02Z; worktree=/Users/demoon2016/Library/Caches/autoflow/worktrees/autoflow/tickets_317
+## Verification
+- Result: passed locally in worktree and PROJECT_ROOT; pass finalizer pending
+
+## Result
+
+- Summary: active/runtime mirror drift 조사 및 smoke 기준 정리 완료
+- Commit:
+
+## Path Notes
+
+- `References` are relative to `BOARD_ROOT`.
+- `Allowed Paths` are relative to the implementation worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
+- `Plan Candidate` must copy the exact candidate text from `Execution Candidates`. It is a duplicate-detection key.

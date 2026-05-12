@@ -435,6 +435,7 @@ runner_config_field() {
 runner_write_state() {
   local runner_id="$1"
   local state_path temp_file pair key value
+  local valid_state=1
   shift || true
 
   runner_validate_id "$runner_id" || {
@@ -448,22 +449,33 @@ runner_write_state() {
   # back to copy+unlink and is not atomic if the process is killed mid-write).
   temp_file="$(mktemp "${state_path}.XXXXXX")"
 
-  {
+  if ! {
     printf 'id=%s\n' "$runner_id"
     printf 'updated_at=%s\n' "$(runner_now_iso)"
     for pair in "$@"; do
       key="${pair%%=*}"
       value="${pair#*=}"
       runner_validate_key "$key" || {
-        rm -f "$temp_file"
         echo "Invalid runner state key: ${key}" >&2
-        return 1
+        valid_state=0
+        break
       }
       printf '%s=%s\n' "$key" "$value"
     done
-  } > "$temp_file"
+  } > "$temp_file"; then
+    rm -f "$temp_file"
+    return 1
+  fi
 
-  mv "$temp_file" "$state_path"
+  if [ "$valid_state" -ne 1 ]; then
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  if ! mv "$temp_file" "$state_path"; then
+    rm -f "$temp_file"
+    return 1
+  fi
 }
 
 runner_state_field() {

@@ -79,8 +79,8 @@ route_file_stream() {
       {
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'prd_*.md' 2>/dev/null
-        find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
-        find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'Todo-*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'Todo-*.md' 2>/dev/null
       } | sort
       ;;
     plan)
@@ -89,14 +89,14 @@ route_file_stream() {
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'project_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/backlog" -maxdepth 1 -type f -name 'prd_*.md' 2>/dev/null
         find "${BOARD_ROOT}/tickets/reject" -maxdepth 1 -type f -name 'reject_*.md' 2>/dev/null
-        find "${BOARD_ROOT}/tickets/done" -type f -name 'tickets_*.md' 2>/dev/null
+        find "${BOARD_ROOT}/tickets/done" -type f -name 'Todo-*.md' 2>/dev/null
       } | sort
       ;;
     todo)
-      find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null | sort
+      find "${BOARD_ROOT}/tickets/todo" -maxdepth 1 -type f -name 'Todo-*.md' 2>/dev/null | sort
       ;;
     verifier)
-      find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'tickets_*.md' 2>/dev/null | sort
+      find "${BOARD_ROOT}/tickets/verifier" -maxdepth 1 -type f -name 'Todo-*.md' 2>/dev/null | sort
       ;;
   esac
 }

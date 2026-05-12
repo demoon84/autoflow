@@ -7575,66 +7575,6 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
   return "";
 }
 
-type RunnerDelaySeverity = "waiting" | "stuck";
-
-type RunnerDelayStage = {
-  severity: RunnerDelaySeverity;
-  label: string;
-  badgeVariant: "secondary" | "outline" | "destructive";
-  className: string;
-  title: string;
-};
-
-const RUNNER_ADAPTER_TIMEOUT_SECONDS = 1200;
-
-function parsePositiveSeconds(value: string | number | undefined, fallback: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function formatRunnerDelayAge(seconds: number) {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  if (safeSeconds < 60) return `${safeSeconds}초`;
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainder = safeSeconds % 60;
-  return remainder ? `${minutes}분 ${remainder}초` : `${minutes}분`;
-}
-
-function runnerDelayStage(runner: AutoflowRunner): RunnerDelayStage | null {
-  if ((runner.stateStatus || "").toLowerCase() !== "running") return null;
-  const eventTimes = [runner.lastEventAt, runner.lastAdapterChunkAt]
-    .map((value) => (value ? new Date(value).getTime() : Number.NaN))
-    .filter((value) => !Number.isNaN(value));
-  if (eventTimes.length === 0) return null;
-  const freshestEventTime = Math.max(...eventTimes);
-  const ageSec = (Date.now() - freshestEventTime) / 1000;
-  const stuckThresholdSec = RUNNER_ADAPTER_TIMEOUT_SECONDS;
-  const ageLabel = formatRunnerDelayAge(ageSec);
-  const timeoutLabel = formatRunnerDelayAge(RUNNER_ADAPTER_TIMEOUT_SECONDS);
-
-  if (ageSec >= stuckThresholdSec) {
-    return {
-      severity: "stuck",
-      label: "멈춤 가능",
-      badgeVariant: "destructive",
-      className: "ai-progress-delay-badge ai-progress-delay-badge-stuck",
-      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 동안 새 신호가 없습니다. 정상 worker/planner 호출도 5~10분 걸릴 수 있지만, 기본 adapter timeout ${timeoutLabel} 기준을 넘어 멈춤 가능성이 큽니다.`
-    };
-  }
-
-  if ((runner.activeStage || "").toLowerCase() === "adapter_running") {
-    return {
-      severity: "waiting",
-      label: "LLM 응답 대기 중",
-      badgeVariant: "secondary",
-      className: "ai-progress-delay-badge ai-progress-delay-badge-waiting",
-      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 경과했습니다. LLM 호출 중이며 정상 worker/planner 호출은 5~10분 걸릴 수 있습니다. 기본 adapter timeout ${timeoutLabel} 기준으로 아직 정상 대기 범위입니다.`
-    };
-  }
-
-  return null;
-}
-
 function runnerProgressDetail(runner: AutoflowRunner) {
   // Recovery reason / failure_class strings (e.g. "recovery_state_blocked",
   // "dirty_root") are no longer surfaced — single-flow fail handling routes
@@ -7875,7 +7815,6 @@ function AiProgressRow({
   const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
   const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
   const detail = runnerProgressDetail(runner);
-  const delayStage = runnerDelayStage(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
   const ticketSummary = activeTicketSummary(runner);
@@ -8098,15 +8037,6 @@ function AiProgressRow({
             ticket badge next to the status badge is already showing it. */}
         {detailText && detailText !== displayActiveTicketBadge(runner.activeTicketId) ? (
           <p title={detailText}>{detailText}</p>
-        ) : null}
-        {delayStage ? (
-          <Badge
-            variant={delayStage.badgeVariant}
-            className={delayStage.className}
-            title={delayStage.title}
-          >
-            {delayStage.label}
-          </Badge>
         ) : null}
         {cycleResult ? (
           <Badge

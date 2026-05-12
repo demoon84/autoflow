@@ -268,6 +268,50 @@ runtime_executable|integrate-worktree.sh|scripts/integrate-worktree.sh
 runtime_executable|watch-board.sh|scripts/watch-board.sh
 runtime_executable|state-db.sh|scripts/state-db.sh
 EOF
+  managed_runtime_companion_asset_entries
+}
+
+managed_runtime_companion_asset_entries() {
+  cat <<'EOF'
+runtime_file|board-guard.ts|scripts/board-guard.ts
+runtime_file|board-utils.ts|scripts/board-utils.ts
+runtime_executable|curator-run.sh|scripts/curator-run.sh
+runtime_executable|draft-pr.sh|scripts/draft-pr.sh
+runtime_file|finish-ticket-owner.js|scripts/finish-ticket-owner.js
+runtime_executable|finish-ticket-owner.legacy.sh|scripts/finish-ticket-owner.legacy.sh
+runtime_file|handoff-todo.js|scripts/handoff-todo.js
+runtime_executable|handoff-todo.legacy.sh|scripts/handoff-todo.legacy.sh
+runtime_file|integrate-worktree.ts|scripts/integrate-worktree.ts
+runtime_executable|lint-ticket.sh|scripts/lint-ticket.sh
+runtime_file|lint-ticket.ts|scripts/lint-ticket.ts
+runtime_file|merge-ready-ticket.js|scripts/merge-ready-ticket.js
+runtime_executable|merge-ready-ticket.legacy.sh|scripts/merge-ready-ticket.legacy.sh
+runtime_file|merge-ready-ticket.ts|scripts/merge-ready-ticket.ts
+runtime_file|meta-runner.ts|scripts/meta-runner.ts
+runtime_file|notify-user.ts|scripts/notify-user.ts
+runtime_executable|origin-cli.sh|scripts/origin-cli.sh
+runtime_file|origin-extractor.py|scripts/origin-extractor.py
+runtime_executable|path-conflict-check.sh|scripts/path-conflict-check.sh
+runtime_file|path-conflict-check.ts|scripts/path-conflict-check.ts
+runtime_file|planner-janitor.ts|scripts/planner-janitor.ts
+runtime_file|promote-order-to-ticket.ts|scripts/promote-order-to-ticket.ts
+runtime_file|runner-stage.js|scripts/runner-stage.js
+runtime_file|runner-stage.ts|scripts/runner-stage.ts
+runtime_file|runner-tokens.js|scripts/runner-tokens.js
+runtime_file|runner-tokens.ts|scripts/runner-tokens.ts
+runtime_file|runner-wake.js|scripts/runner-wake.js
+runtime_file|runner-wake.ts|scripts/runner-wake.ts
+runtime_executable|start-plan.legacy.sh|scripts/start-plan.legacy.sh
+runtime_file|start-plan.ts|scripts/start-plan.ts
+runtime_file|start-ticket-owner.js|scripts/start-ticket-owner.js
+runtime_executable|start-ticket-owner.legacy.sh|scripts/start-ticket-owner.legacy.sh
+runtime_file|start-verifier.ts|scripts/start-verifier.ts
+runtime_file|state-db.ts|scripts/state-db.ts
+runtime_file|tsconfig.json|scripts/tsconfig.json
+runtime_file|wiki-embed.ts|scripts/wiki-embed.ts
+runtime_file|wiki-query.ts|scripts/wiki-query.ts
+runtime_executable|wiki-search-index.sh|scripts/wiki-search-index.sh
+EOF
 }
 
 managed_board_directory_entries() {
@@ -371,7 +415,7 @@ build_asset_temp_file() {
       source_file="${SOURCE_REPO_ROOT}/${source_rel}"
       cp "$source_file" "$temp_file"
       ;;
-    runtime_executable)
+    runtime_file|runtime_executable)
       source_file="${RUNTIME_SCRIPTS_ROOT}/${source_rel}"
       cp "$source_file" "$temp_file"
       ;;

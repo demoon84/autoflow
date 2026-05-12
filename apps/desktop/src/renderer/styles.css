@@ -3747,21 +3747,6 @@ pre {
   background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
-.ai-progress-current .ai-progress-delay-badge {
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.ai-progress-current .ai-progress-delay-badge-waiting {
-  border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
-  color: color-mix(in srgb, var(--primary) 86%, var(--foreground));
-  background: color-mix(in srgb, var(--primary) 8%, var(--card));
-}
-
-.ai-progress-current .ai-progress-delay-badge-stuck {
-  border-color: color-mix(in srgb, var(--destructive) 62%, var(--border));
-}
-
 .ai-progress-current .ai-progress-active-ticket {
   flex-shrink: 0;
   padding: 0 10px;
@@ -3801,10 +3786,6 @@ pre {
   box-shadow:
     0 0 0 2px var(--card),
     0 0 0 4px color-mix(in srgb, var(--ring) 72%, transparent);
-}
-
-.ai-progress-current .ai-progress-delay-badge ~ .ai-progress-active-ticket-button {
-  margin-left: 8px;
 }
 
 .ai-ticket-dialog-subtitle {

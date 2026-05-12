@@ -1064,6 +1064,13 @@ run_wiki_adapter_prompt() {
       cmd=(gemini --skip-trust --approval-mode auto_edit --prompt "$(cat "$prompt_file")")
       [ -z "$model" ] || cmd+=(--model "$model")
       AUTOFLOW_PROJECT_ROOT="$project_root" AUTOFLOW_BOARD_ROOT="$board_root" "${cmd[@]}" > "$stdout_file" 2> "$stderr_file"
+      adapter_exit=$?
+      if grep -Eiq 'Opening authentication page in your browser|Attempting to open authentication page in your browser|Authentication consent could not be obtained|Failed to sign in|Please set an Auth method|Manual authorization is required|When using Gemini API, you must specify the GEMINI_API_KEY|GEMINI_API_KEY.*(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)|Error authenticating:.*listen EPERM' "$stdout_file" "$stderr_file" 2>/dev/null; then
+        printf '\nautoflow_adapter_error=gemini_auth_required\n' >> "$stderr_file"
+        printf 'autoflow_adapter_hint=run gemini interactively to authenticate, or provide GEMINI_API_KEY/GOOGLE_API_KEY for non-interactive wiki synthesis\n' >> "$stderr_file"
+        return 125
+      fi
+      return "$adapter_exit"
       ;;
     *)
       return 127

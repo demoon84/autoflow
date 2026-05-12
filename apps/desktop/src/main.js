@@ -93,6 +93,8 @@ const runnerAuthNeededPatterns = [
   /\bplease set an auth method\b/i,
   /\bmanual authorization is required\b/i,
   /\binvalid auth method selected\b/i,
+  /Error authenticating:.*listen EPERM/i,
+  /\blisten EPERM\b.*\b0\.0\.0\.0\b/i,
   /\badapter_auth_required\b/i,
   /Opening authentication page in your browser/i,
   /Attempting to open authentication page in your browser/i,
