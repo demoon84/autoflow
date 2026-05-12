@@ -35,6 +35,9 @@ Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 11. Fallback: write the same order-format note directly under `.autoflow/tickets/inbox/`; the first non-empty line must be `# Autoflow Order`, include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
 12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
 13. After saving, tell the user the inbox path and that `planner` or `autoflow run planner` will promote it into a generated PRD and todo ticket when safe.
+14. **Status 값은 `ready` 한 가지만 허용**. Express order 만 `Express: true` 를 추가로 둔다. `needs-user-decision`, `blocked-on-*`, `draft` 같은 비표준 값은 절대 박지 말 것. Planner 가 이 값들을 모르므로 inbox dead-letter 가 되어 영원히 promote 되지 않는다.
+15. **사용자 추가 결정이 필요한 발행은 금지**. 사용자가 결정(provider 선택, 정책 가부 등)을 내려야만 의미가 확정되는 항목은 order 로 저장하지 말고 채팅에서 결정이 끝날 때까지 대기한다. 결정이 끝난 뒤 `Status: ready` 인 완전한 order 한 장으로 저장한다.
+16. **의존 표기는 본문 Notes 에만**. 다른 order/PRD/ticket 에 의존하면 Notes 섹션에 "선행 order_NNN 머지 후 promote" 같은 자연어 노트를 둔다. `Status` 또는 `Priority` 같은 parser 필드에 의존을 인코딩하지 않는다 (planner 가 이해 못 함). Planner 가 알아서 우선순위를 조정한다.
 
 ## Express Mode
 

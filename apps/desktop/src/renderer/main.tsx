@@ -8384,6 +8384,35 @@ function WikiList({
 //  - 그 외 prose 라인은 KEEP.
 const NARRATIVE_KEEP_ENVELOPES = new Set<string>(["narrative_text"]);
 
+// Collapse interactive-CLI carriage-return overwrites and strip ANSI escape
+// sequences before line-splitting. Claude Code 의 "✻ Photosynthesizing… with
+// medium effort 5s" 같은 스피너는 `\r` 로 같은 자리를 덮어쓰는 방식이라 진짜
+// 터미널이면 한 줄만 갱신되지만, 로그 파일이나 plain 텍스트 뷰는 `\r` 을
+// 줄바꿈으로 인식 못 해 모든 프레임이 한 줄에 떡진 채로 누적된다.
+// 1) CRLF 는 LF 로 정규화 (실제 줄은 보존)
+// 2) 줄 안의 고립 `\r` 은 "줄 머리로 돌아가서 덮어쓰기" 의미이므로 마지막
+//    `\r` 뒤 fragment 만 남긴다 (스피너 마지막 프레임만 살아남음)
+// 3) CSI / OSC ANSI escape 시퀀스 (`\x1b[2K`, `\x1b[K`, `\x1b[1G`, 컬러 등)
+//    제거. live xterm 뷰가 아닌 plain 요약 뷰는 시각적 의미가 없다.
+function normalizeRunnerLogForSplit(input: string): string {
+  if (!input) return input;
+  const crlfNormalized = input.replace(/\r\n/g, "\n");
+  const collapsed = crlfNormalized
+    .split("\n")
+    .map((line) => {
+      if (line.indexOf("\r") === -1) return line;
+      const parts = line.split("\r");
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (parts[i] !== "") return parts[i];
+      }
+      return "";
+    })
+    .join("\n");
+  return collapsed
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
 function summarizeRunnerLogForUserView(rawContent: string): { content: string; hidLines: number } {
   if (!rawContent) {
     return { content: rawContent, hidLines: 0 };
@@ -8391,7 +8420,7 @@ function summarizeRunnerLogForUserView(rawContent: string): { content: string; h
   const ENVELOPE_BEGIN = /^([a-z_][a-z0-9_.]*)_begin$/;
   const ENVELOPE_END = /^([a-z_][a-z0-9_.]*)_end$/;
   const PROTOCOL_KV = /^[a-z_][a-z0-9_.]*=/;
-  const lines = rawContent.split(/\r?\n/);
+  const lines = normalizeRunnerLogForSplit(rawContent).split("\n");
   const out: string[] = [];
   const envelopeStack: string[] = [];
   let hid = 0;
