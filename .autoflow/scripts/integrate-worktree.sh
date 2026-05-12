@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# integrate-worktree.sh — thin wrapper around integrate-worktree.ts.
+# integrate-worktree.sh — thin wrapper around integrate-worktree.ts (TypeScript via tsx).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
