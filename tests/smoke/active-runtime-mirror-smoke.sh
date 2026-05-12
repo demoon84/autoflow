@@ -19,18 +19,21 @@ assert_same() {
 }
 
 mirror_files=(
+  "finish-ticket-owner.js"
   "finish-ticket-owner.sh"
-  "board-guard.sh"
-  "state-db.sh"
+  "handoff-todo.js"
+  "board-guard.js"
+  "state-db.js"
+  "tsx-script-runner.js"
   "start-ticket-owner.legacy.sh"
   "runner-common.sh"
   "watch-board.sh"
   "start-todo.sh"
-  "lint-ticket.sh"
+  "lint-ticket.js"
   "lint-ticket.ts"
-  "path-conflict-check.sh"
+  "path-conflict-check.js"
   "path-conflict-check.ts"
-  "integrate-worktree.sh"
+  "integrate-worktree.js"
   "integrate-worktree.ts"
 )
 

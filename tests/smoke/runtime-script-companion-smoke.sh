@@ -48,10 +48,14 @@ test -f "${project_dir}/.autoflow/scripts/start-ticket-owner.js"
 test -f "${project_dir}/.autoflow/scripts/start-ticket-owner.legacy.sh"
 test -f "${project_dir}/.autoflow/scripts/finish-ticket-owner.js"
 test -f "${project_dir}/.autoflow/scripts/finish-ticket-owner.legacy.sh"
+test -f "${project_dir}/.autoflow/scripts/handoff-todo.js"
+test -f "${project_dir}/.autoflow/scripts/handoff-todo.legacy.sh"
 test -f "${project_dir}/.autoflow/scripts/merge-ready-ticket.ts"
 test -f "${project_dir}/.autoflow/scripts/runner-stage.ts"
 test -f "${project_dir}/.autoflow/scripts/runner-wake.ts"
 test -f "${project_dir}/.autoflow/scripts/runner-tokens.ts"
+test -f "${project_dir}/.autoflow/scripts/runner-tool.js"
+test -f "${project_dir}/.autoflow/scripts/runner-tool.ts"
 test -f "${project_dir}/.autoflow/scripts/state-db.ts"
 
 doctor_ok_output="${project_dir}/doctor-ok.out"
@@ -68,6 +72,12 @@ rm -f "${project_dir}/.autoflow/scripts/start-ticket-owner.js"
 "${REPO_ROOT}/bin/autoflow" doctor "$project_dir" >"$doctor_missing_output" || true
 require_line "$doctor_missing_output" "check.runtime_script_companions=error"
 require_pattern "$doctor_missing_output" '^error\.[0-9]+=runtime script companion is missing: .*/\.autoflow/scripts/start-ticket-owner\.js \(required by start-ticket-owner\.sh\)$'
+
+if grep -Fq "Delegates all logic to handoff-todo.legacy.sh" "${project_dir}/.autoflow/scripts/handoff-todo.js"; then
+  echo "handoff-todo.js should be the primary implementation, not a legacy-only delegate." >&2
+  exit 1
+fi
+require_pattern "${project_dir}/.autoflow/scripts/handoff-todo.js" "AUTOFLOW_HANDOFF_TODO_LEGACY"
 
 echo "status=ok"
 echo "project_root=$project_dir"

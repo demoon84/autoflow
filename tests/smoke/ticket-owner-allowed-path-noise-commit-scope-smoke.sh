@@ -91,11 +91,15 @@ git -C "$project_dir" commit -m "baseline" >/dev/null
 
 write_spec >/dev/null
 
+plan_output="$(mktemp)"
 start_output="$(mktemp)"
 integrate_output="$(mktemp)"
 finish_output="$(mktemp)"
-merge_output="$(mktemp)"
-trap 'rm -f "$start_output" "$integrate_output" "$finish_output" "$merge_output"; cleanup' EXIT
+trap 'rm -f "$plan_output" "$start_output" "$integrate_output" "$finish_output"; cleanup' EXIT
+
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=plan AUTOFLOW_WORKER_ID=planner-smoke ./scripts/start-plan.sh >"$plan_output"
+require_line "$plan_output" "status=ok"
+require_line "$plan_output" "source=backlog-to-todo"
 
 run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/start-ticket-owner.sh >"$start_output"
 require_line "$start_output" "status=ok"
@@ -105,21 +109,17 @@ require_line "$start_output" "worktree_status=ready"
 worktree_path="$(awk -F= '$1 == "worktree_path" { print $2; exit }' "$start_output")"
 printf 'ticket update\n' >"${worktree_path}/target.txt"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/integrate-worktree.sh tickets/inprogress/tickets_001.md >"$integrate_output"
-require_line "$integrate_output" "status=integrated"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/integrate-worktree.js tickets/inprogress/tickets_001.md >"$integrate_output"
+require_line "$integrate_output" "status=needs_ai_merge"
 
+printf 'ticket update\n' >"${project_dir}/target.txt"
 printf 'unrelated root edit\n' >"${project_dir}/other-allowed.txt"
+perl -0pi -e 's/- \[ \]/- [x]/g' "${project_dir}/.autoflow/tickets/inprogress/tickets_001.md"
 
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker ./scripts/finish-ticket-owner.sh 001 pass "keep allowed-path root noise out of commit" >"$finish_output"
-require_line "$finish_output" "status=ready_to_merge"
+run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=ticket-owner AUTOFLOW_WORKER_ID=worker AUTOFLOW_SKIP_VERIFIER=1 ./scripts/finish-ticket-owner.sh 001 pass "keep allowed-path root noise out of commit" >"$finish_output"
+require_line "$finish_output" "status=done"
 require_line "$finish_output" "outcome=pass"
-require_line "$finish_output" "status=already_integrated"
-require_line "$finish_output" "commit_status=not_committed_waiting_for_merge_bot"
-
-run_temp_runtime "${project_dir}/.autoflow" AUTOFLOW_ROLE=merge AUTOFLOW_WORKER_ID=merge-1 ./scripts/merge-ready-ticket.sh 001 >"$merge_output"
-require_line "$merge_output" "status=done"
-require_line "$merge_output" "outcome=pass"
-require_line "$merge_output" "commit_status=committed"
+require_line "$finish_output" "commit_status=committed_via_inline_merge"
 
 grep -Fqx 'ticket update' "${project_dir}/target.txt"
 grep -Fqx 'unrelated root edit' "${project_dir}/other-allowed.txt"

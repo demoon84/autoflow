@@ -18,6 +18,10 @@ const { EventEmitter } = require("events");
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
+const {
+  enhanceNodePtySpawnError,
+  fixNodePtySpawnHelperPermissions
+} = require("./node-pty-permissions");
 
 let pty;
 try {
@@ -116,13 +120,25 @@ class PtyRunnerManager extends EventEmitter {
     const env = buildShellEnv(opts.env);
     const command = String(opts.command || "").trim();
 
-    const client = pty.spawn(shell, [], {
-      name: "xterm-256color",
-      cwd,
-      cols,
-      rows,
-      env
+    const permissionFix = fixNodePtySpawnHelperPermissions({
+      log: (message) => console.log(`[node-pty] ${message}`)
     });
+    if (permissionFix.errors.length) {
+      console.warn("[node-pty] spawn-helper permission repair warning", permissionFix.errors);
+    }
+
+    let client;
+    try {
+      client = pty.spawn(shell, [], {
+        name: "xterm-256color",
+        cwd,
+        cols,
+        rows,
+        env
+      });
+    } catch (err) {
+      throw enhanceNodePtySpawnError(err);
+    }
 
     const runner = {
       id: runnerId,

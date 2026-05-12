@@ -5,7 +5,7 @@
 -- Existing markdown/jsonl write paths remain untouched.
 --
 -- Phase 1 (this scaffold): sqlite holds a periodically refreshed *snapshot*
--- of the markdown/state files. `state-db.sh sync` rebuilds the snapshot;
+-- of the markdown/state files. `state-db.js sync` rebuilds the snapshot;
 -- `autoflow doctor` consumes it to report drift.
 -- Phase 2 (future): write-time dual-write so that markdown/jsonl and sqlite
 -- both record every event, with sqlite eventually becoming primary.

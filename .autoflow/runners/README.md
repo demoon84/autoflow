@@ -18,7 +18,7 @@ Modes:
 
 - `one-shot`: run once.
 - `loop`: run repeatedly until stopped.
-- `watch`: legacy file-watch (DEPRECATED) — react to file-watch events. The supported execution path is `loop` mode with the heartbeat-driven 3-runner topology.
+- `watch`: legacy file-watch (DEPRECATED) — react to file-watch events. The supported execution path is `loop` mode with the heartbeat-driven 4-runner topology.
 
 Rules:
 
@@ -29,5 +29,6 @@ Rules:
 - In `loop` mode, `last_result` should preserve the most recent meaningful runtime or adapter result such as `ticket_stage_blocked`, `planner_recovery_inputs_unchanged`, or `adapter_exit_0`. The loop wrapper may only use `loop_waiting_exit_N` when there is no more specific result, or when the child process exits non-zero.
 - `runners list` may derive a display `last_result` from recent runner log events when an older loop worker has only written `loop_waiting_exit_0`.
 - Logs and artifacts should be copied to `runners/logs/`.
-- The 3-runner topology (planner + worker + wiki) is the default. `wiki` (role=`wiki-maintainer`) is the wiki AI adapter; the older coordinator-as-wiki-bot fallback was removed in db8cc57. A coordinator runner remains reachable as legacy backwards-compat only.
+- The 4-runner topology (planner + worker + verifier + wiki) is the default. `wiki` (role=`wiki-maintainer`) is the wiki AI adapter. A coordinator runner remains reachable as legacy backwards-compat only.
+- Runners are LLM-backed decision-makers. Runner tools are small deterministic commands those runners call for one safe board action.
 - Never push from a runner.

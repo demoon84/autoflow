@@ -81,7 +81,7 @@ todo_conflicts_with_other_inprogress() {
 
   local script_dir conflict_script other_file owner_field
   script_dir="$(cd "$(dirname "$0")" && pwd)"
-  conflict_script="${script_dir}/path-conflict-check.sh"
+  conflict_script="${script_dir}/path-conflict-check.js"
   [ -x "$conflict_script" ] || return 1
 
   while IFS= read -r other_file; do

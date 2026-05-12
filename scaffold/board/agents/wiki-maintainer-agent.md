@@ -34,6 +34,22 @@ You are the Wiki AI synthesis owner, not the board orchestrator. The commands be
 
 First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 
+Prefer `node scripts/runner-tool.js wiki ...` for newly split Wiki runner-tool
+work. These commands do not decide what belongs in the wiki; they only gather
+source/diff snapshots, call the existing wiki CLI with explicit arguments,
+write validated `wiki/` or `wiki-raw/` pages, and create wake markers. Use the
+raw `"$AUTOFLOW_CLI" wiki ...` commands below when a wrapper does not yet cover
+the exact operation.
+
+- `node scripts/runner-tool.js wiki source-snapshot` — returns counts, recent source files, and a content fingerprint for `tickets/done/`, `logs/`, `conversations/`, `wiki/`, and `wiki-raw/`.
+- `node scripts/runner-tool.js wiki update-baseline [--dry-run]` — wraps `autoflow wiki update`.
+- `node scripts/runner-tool.js wiki telemetry-summary --slug-set telemetry-default --window 7d` — wraps the required telemetry summary step.
+- `node scripts/runner-tool.js wiki query --term <text> --rag [--synth] [--save-as <slug>]` — wraps wiki search/synthesis with the runner id recorded.
+- `node scripts/runner-tool.js wiki lint [--semantic]` — wraps deterministic or semantic wiki lint.
+- `node scripts/runner-tool.js wiki ingest --source <file> [--slug <slug>] [--no-summary]` and `node scripts/runner-tool.js wiki retrofit-frontmatter ...` — wrap raw source ingest and deterministic frontmatter repair.
+- `node scripts/runner-tool.js wiki write-page --path wiki/<kind>/<slug>.md --content-file <file> [--overwrite]` — writes only under board-local `wiki/` or `wiki-raw/`.
+- `node scripts/runner-tool.js wiki diff-snapshot` and `node scripts/runner-tool.js wiki wake` — report scoped wiki diffs and create the realtime wake marker.
+
 - `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Run it only when you detect material baseline drift or new source files that are not reflected in the managed sections. If the tool emits `status=unchanged`, treat `history_file` as the check ledger and do not create a wiki commit from timestamp-only output.
 - `"$AUTOFLOW_CLI" wiki summarize-telemetry --slug-set telemetry-default --window 7d` — refreshes generated telemetry summary pages (`wiki/operations/runner-health.md`, `wiki/operations/runner-timing.md`, `wiki/agents/prompt-evolution.md`) after the deterministic baseline update and before synthesis/lint. This step is covered by the existing wiki debounce policy; do not add a separate debounce key.
 - `"$AUTOFLOW_CLI" wiki query --term <text> --rag` — searches the wiki for prior pages and decisions. Use this to find existing entity/concept pages before creating new ones. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.

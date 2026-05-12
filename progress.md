@@ -1,3 +1,58 @@
+# Worker Stop Investigation Progress
+
+- 2026-05-12 — Started worker stop investigation using systematic debugging and file-based planning. Checked existing dirty diff summary and prior session catchup; no fix attempted yet.
+- 2026-05-12 — Read Autoflow board contracts, runner config/state, live processes, ticket files, worktree diff, doctor, guard, and metrics. Evidence points to board/config/state corruption and duplicate worker ownership rather than a dead OS process.
+
+---
+
+# Planner Runner Tools Progress
+
+- 2026-05-12 — Started Planner runner-tool MVP after user defined the terms: planner/worker/verifier/wiki are runners; runner tools are small buttons those runners call. Added scoped plan and findings without reverting existing dirty work.
+- 2026-05-12 — Added `runner-tool.{js,ts}` for Planner queue snapshots, id reservations, PRD/ticket writes, archive moves, recovery updates, and guard. Mirrored it into the current `.autoflow/scripts/` board and packaged runtime mapping.
+- 2026-05-12 — Updated current/scaffold docs to define the 4 runners and runner-tool boundary, and changed Planner instructions to prefer `runner-tool.js planner ...` for new small board operations while keeping `start-plan.*` as compatibility.
+- 2026-05-12 — Verification passed: `planner-runner-tool-smoke.sh`, `runtime-script-companion-smoke.sh`, wrapper syntax checks, current-board queue snapshot, and targeted `git diff --check`. `npx tsc` could not run because TypeScript is not installed in the root package.
+
+---
+
+# Worker Runner Tools Progress
+
+- 2026-05-12 — Started Worker runner-tool MVP using the same runner/runner-tool boundary as Planner: Worker decides; runner-tool performs narrow board, worktree, evidence, and mechanical check operations.
+- 2026-05-12 — Added Worker commands to `runner-tool.ts`: active lookup, todo snapshot, explicit claim, worktree ensure/status, stage/context updates, verification record, Done When check, diff check, and finish wrappers. Mirrored the tool into `.autoflow/scripts/`.
+- 2026-05-12 — Updated current/scaffold Worker instructions so new Worker flow starts with `runner-tool.js worker active-get/todo-snapshot/claim/worktree-ensure`, while legacy `start-ticket-owner.*` remains compatibility.
+- 2026-05-12 — Verification passed: `worker-runner-tool-smoke.sh`, existing Planner runner-tool smoke, runtime companion smoke, Node wrapper checks, tsx command checks, current-board worker snapshot, and targeted whitespace/diff checks.
+- 2026-05-12 — Fixed `replaceScalarFieldInSection` so newly recorded Worker evidence fields are inserted inside the intended markdown section instead of drifting to file end; reran the same verification bundle successfully.
+
+---
+
+# Verifier Runner Tools Progress
+
+- 2026-05-12 — Started Verifier runner-tool MVP. Boundary: Verifier AI judges semantic alignment; runner-tool only gathers evidence and records/routes the decision.
+- 2026-05-12 — Added Verifier commands to `runner-tool.ts`: queue snapshot, evidence bundle, decision record, finish pass/fail wrappers, and realtime wake marker.
+- 2026-05-12 — Updated Verifier agent docs and scaffold packaging so new boards include `agents/verifier-agent.md` and use `runner-tool.js verifier ...` for semantic-review support.
+- 2026-05-12 — Added `verifier-runner-tool-smoke.sh` covering queue snapshot, evidence diff bundle, semantic decision logging, verifier-ok marker, latency log, and realtime wake marker.
+- 2026-05-12 — Verification passed: Verifier/Worker/Planner runner-tool smoke tests, runtime companion smoke, Node wrapper checks, tsx help, current-board verifier snapshot, targeted `git diff --check`, and whitespace check.
+
+---
+
+# Wiki Runner Tools Progress
+
+- 2026-05-12 — Started Wiki runner-tool MVP. Boundary: Wiki AI decides what knowledge to maintain; runner-tool only snapshots sources, calls deterministic wiki CLI commands, writes validated board-local wiki pages, reports diffs, and creates wake markers.
+- 2026-05-12 — Added Wiki commands to `runner-tool.ts`: source snapshot, baseline update wrapper, telemetry summary wrapper, query/lint/ingest/frontmatter wrappers, page write, diff snapshot, and realtime wake marker.
+- 2026-05-12 — Updated current/scaffold Wiki docs so new Wiki flow can prefer `runner-tool.js wiki ...` while retaining raw `autoflow wiki ...` commands for uncovered compatibility cases.
+- 2026-05-12 — Added `wiki-runner-tool-smoke.sh` covering source snapshot, dry-run update wrapper, telemetry wrapper, validated page write, deterministic query/lint wrappers, diff snapshot, and wake marker.
+- 2026-05-12 — Verification passed: Wiki/Verifier/Worker/Planner runner-tool smoke tests, runtime companion smoke, Node wrapper checks, tsx help for runtime/current board scripts, current-board wiki source/diff snapshots, targeted `git diff --check`, and whitespace check.
+
+---
+
+# Shell To TS Migration Progress
+
+- 2026-05-12 — Started sh retirement plan after user requested converting or deleting existing sh. Chose sequential path: remove already-converted small support wrappers first, then lifecycle finalizers, then large CLI shell.
+- 2026-05-12 — Confirmed first deletion group: `board-guard`, `integrate-worktree`, `lint-ticket`, `path-conflict-check`, `state-db`. Direct `.ts` execution is not portable here, so small `.js` wrappers are needed before deleting `.sh`.
+- 2026-05-12 — Completed phase 1: added TS runner `.js` wrappers, deleted the five small support `.sh` wrappers from runtime and dogfood board, updated packaging/doctor/CLI/docs/tests to `.js`, fixed recovery protocol enum drift, and verified wrapper syntax plus targeted smoke tests.
+- 2026-05-12 — Hardened the shared TS wrapper so installed-board executions infer `AUTOFLOW_BOARD_ROOT` / `AUTOFLOW_PROJECT_ROOT`; updated the allowed-path noise smoke to the current Planner → Worker → verifier-skip inline-merge contract and verified it passes.
+
+---
+
 # Progress
 
 - 2026-04-29 — Started wiki runner token-efficiency implementation after reviewing live runner memory/process state and token metrics. Added a focused plan section and recorded findings that wiki semantic lint and per-tick adapter startup are the main optimization targets.

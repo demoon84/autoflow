@@ -2,7 +2,7 @@
 /*
  * integrate-worktree.ts — stage + commit ticket worktree changes for
  * AI-led merge into PROJECT_ROOT.
- * See integrate-worktree.sh / .js for full doc; CLI/output unchanged.
+ * See integrate-worktree.js for full doc; CLI/output unchanged.
  */
 
 import * as fs from "node:fs";

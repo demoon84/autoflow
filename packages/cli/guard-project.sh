@@ -40,9 +40,9 @@ if [ ! -d "$board_root" ]; then
   exit 1
 fi
 
-guard_script="${board_root}/scripts/board-guard.sh"
+guard_script="${board_root}/scripts/board-guard.js"
 if [ ! -x "$guard_script" ]; then
-  guard_script="$(runtime_scripts_root)/board-guard.sh"
+  guard_script="$(runtime_scripts_root)/board-guard.js"
 fi
 
 AUTOFLOW_BOARD_ROOT="$board_root" \

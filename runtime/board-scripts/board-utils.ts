@@ -145,7 +145,7 @@ export function replaceScalarFieldInSection(
   const sectionRe = new RegExp(
     `^## ${reEscape(sectionTitle.replace(/^## /, ""))}\\b`
   );
-  const fieldRe = new RegExp(`^(- ${reEscape(fieldName)}\\s*:\\s*).*$`);
+  const fieldRe = new RegExp(`^(- ${reEscape(fieldName)}\\s*:)[\\t ]*.*$`);
   let inSection = false;
   let sectionStart = -1;
   let replaced = false;
@@ -165,13 +165,20 @@ export function replaceScalarFieldInSection(
     }
     if (!inSection) continue;
     if (fieldRe.test(lines[i])) {
-      lines[i] = lines[i].replace(fieldRe, `$1${newValue}`);
+      lines[i] = lines[i].replace(fieldRe, `$1 ${newValue}`);
       replaced = true;
       break;
     }
   }
   if (!replaced && sectionStart >= 0) {
-    lines.push(`- ${fieldName}: ${newValue}`);
+    let insertAt = lines.length;
+    for (let i = sectionStart + 1; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) {
+        insertAt = i;
+        break;
+      }
+    }
+    lines.splice(insertAt, 0, `- ${fieldName}: ${newValue}`);
     replaced = true;
   }
   if (!replaced) {

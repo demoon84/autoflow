@@ -2,7 +2,7 @@
 /*
  * path-conflict-check.ts — Allowed Paths overlap detector.
  *
- * Drop-in replacement for path-conflict-check.sh / .js. Same CLI / same
+ * Drop-in replacement for path-conflict-check.js. Same CLI / same
  * output / same exit codes. Wired into multi-worker dispatch (PRD 5).
  *
  * Usage: tsx path-conflict-check.ts <ticket-a.md> <ticket-b.md>

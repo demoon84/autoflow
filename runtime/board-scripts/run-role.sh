@@ -3510,7 +3510,7 @@ Planner recovery action contract:
 - Read protocols/board-orchestration.md and protocols/recovery.md before editing ticket markdown.
 - Update the ticket markdown first: Recovery State, Next Action, Resume Context, and Notes must describe the chosen recovery decision.
 - If no safe board-only repair exists, set Recovery State Status to needs_user with an explicit Failure Class and Owner Resume Instruction.
-- After markdown repair, run autoflow guard or scripts/board-guard.sh and fix guard errors before creating new work.
+- After markdown repair, run autoflow guard or scripts/board-guard.js and fix guard errors before creating new work.
 - Do not call start-ticket-owner, verify-ticket-owner, finish-ticket-owner, merge-ready-ticket, runner start/stop/restart, kill/pkill, or git worktree cleanup.
 EOF
 }

@@ -1,3 +1,196 @@
+# Task Plan: Worker Stop Investigation
+
+## Goal
+워커가 계속 멈추는 현재 원인을 증거 기반으로 파악하고, 재현 가능한 로그/상태 근거와 다음 조치를 정리한다.
+
+## Scope
+- `.autoflow/` 보드 계약, runner 상태, 최근 로그, ticket 상태, worktree 상태를 조사한다.
+- 원인 확인 전에는 코드 수정이나 runner 재시작을 하지 않는다.
+- 기존 dirty worktree 변경은 사용자/이전 작업의 증거로 취급하고 되돌리지 않는다.
+
+## Phases
+- [x] 디버깅/계획 스킬과 기존 계획 파일 상태 확인.
+- [x] AGENTS read order에 맞춰 Autoflow 보드 계약 확인.
+- [x] worker runner 상태와 최근 로그 수집.
+- [x] 현재 ticket/worktree/git 상태와 멈춤 이벤트 연결.
+- [x] 근본 원인 가설을 세우고 최소 검증.
+- [x] 사용자에게 원인과 안전한 다음 조치 보고.
+
+## Verification
+- [x] 관련 runner state/log/ticket 파일에서 같은 원인을 교차 확인.
+- [x] 필요 시 `autoflow` 상태/metrics/doctor 명령으로 현재 상태 확인.
+
+## Risks
+- 현재 worktree가 이미 dirty하므로 멈춤 원인과 unrelated dirty 변경을 구분해야 한다.
+- 자동 runner가 동시에 파일을 갱신할 수 있으므로 로그 타임스탬프와 state를 함께 본다.
+
+---
+
+# Task Plan: Planner Runner Tools MVP
+
+## Goal
+Planner 러너가 큰 shell 주도 흐름에 덜 의존하도록, Codex/Claude가 직접 판단하고 호출할 수 있는 작은 TypeScript 러너 도구 MVP를 추가한다.
+
+## Scope
+- Planner 러너 도구의 개념을 문서화한다: `planner`, `worker`, `verifier`, `wiki`는 러너이고, 러너 도구는 러너가 호출하는 작은 실행 버튼이다.
+- Planner 1차 도구는 보드 무결성이 필요한 기능으로 제한한다: queue snapshot, id reservation, PRD/ticket write, archive, recovery update, guard wrapper.
+- 기존 대형 `start-plan.*` 흐름을 즉시 제거하지 않고 compatibility 경로로 남긴다.
+- 기존 dirty worktree 변경은 되돌리지 않는다.
+
+## Phases
+- [x] 기존 Planner 계약과 현재 TS 스크립트 구조 확인.
+- [x] Planner runner-tool CLI 설계 및 구현.
+- [x] 문서에 러너/러너 도구 관계와 Planner 도구 목록 반영.
+- [x] 최소 smoke/usage 검증 추가.
+- [x] 관련 검증 명령 실행.
+
+## Verification
+- [x] Runner tool help/queue snapshot command 실행.
+- [x] 가능한 경우 임시 보드에서 write/archive 기능 smoke 검증.
+- [x] TypeScript 또는 Node syntax check.
+- [x] Targeted `git diff --check`.
+
+## Risks
+- 현재 worktree가 이미 dirty하므로 새 파일/문서 수정 범위를 좁게 유지해야 한다.
+- 기존 `start-plan.*`이 아직 실제 runner 경로이므로 새 도구는 먼저 additive로 넣어야 한다.
+
+---
+
+# Task Plan: Worker Runner Tools MVP
+
+## Goal
+Worker 러너가 Codex/Claude 판단을 중심으로 티켓을 claim, worktree 준비, evidence 기록, 기계적 점검까지 작은 TypeScript 러너 도구로 수행하게 만든다.
+
+## Scope
+- Worker 러너 도구는 `active-get`, `todo-snapshot`, `claim`, `worktree-ensure/status`, `stage/context-update`, `verification-record`, `done-when-check`, `diff-check`, `finish-pass/fail`로 제한한다.
+- Worker 도구는 티켓 선택, 구현 방법, semantic verification, pass/fail 판단을 하지 않는다.
+- 기존 `start-ticket-owner.*`, `verify-ticket-owner.*`, `finish-ticket-owner.*`는 compatibility macro/finalizer 로 남긴다.
+- 기존 dirty worktree 변경은 되돌리지 않는다.
+
+## Phases
+- [x] 기존 Worker 계약과 worktree/claim 흐름 확인.
+- [x] `runner-tool.ts`에 Worker 명령 추가.
+- [x] Worker runner-tool 문서와 current/scaffold 보드 계약 반영.
+- [x] Worker runner-tool smoke test 추가.
+- [x] 관련 검증 명령 실행.
+
+## Verification
+- [x] `worker-runner-tool-smoke.sh`
+- [x] 기존 `planner-runner-tool-smoke.sh`
+- [x] runtime companion smoke
+- [x] Node/tsx syntax or command checks
+- [x] Targeted `git diff --check`
+
+## Risks
+- `finish-ticket-owner.*`는 여전히 큰 finalizer 이므로 Worker tool은 wrapper로만 노출하고 pass/fail 판단은 AI가 유지해야 한다.
+- Worktree 생성은 git 상태와 로컬 캐시에 민감하므로 smoke test는 `AUTOFLOW_WORKTREE_ROOT`를 임시 폴더로 고정한다.
+
+---
+
+# Task Plan: Verifier Runner Tools MVP
+
+## Goal
+Verifier 러너가 semantic diff 검토는 직접 판단하고, 증거 수집과 pass/fail 라우팅만 작은 TypeScript 러너 도구로 수행하게 만든다.
+
+## Scope
+- Verifier 러너 도구는 `queue-snapshot`, `evidence`, `decision-record`, `finish-pass`, `finish-fail`, `wake`로 제한한다.
+- Verifier 도구는 diff가 Goal/Done When에 맞는지 의미 판단하지 않는다.
+- pass/fail finalizer 호출은 wrapper로만 제공하고, 판단 이유는 Verifier AI가 명시한다.
+- 기존 dirty worktree 변경은 되돌리지 않는다.
+
+## Phases
+- [x] 기존 Verifier 계약과 finish hook 흐름 확인.
+- [x] `runner-tool.ts`에 Verifier 명령 추가.
+- [x] Verifier runner-tool 문서와 scaffold packaging 반영.
+- [x] Verifier runner-tool smoke test 추가.
+- [x] 관련 검증 명령 실행.
+
+## Verification
+- [x] `verifier-runner-tool-smoke.sh`
+- [x] 기존 Planner/Worker runner-tool smoke
+- [x] runtime companion smoke
+- [x] Node/tsx syntax or command checks
+- [x] Targeted `git diff --check`
+
+## Risks
+- `finish-pass`는 기존 finalizer를 재호출하므로 smoke에서는 destructive routing 대신 evidence/decision-record 중심으로 검증한다.
+- Verifier evidence patch는 커질 수 있으므로 기본 patch byte cap을 둔다.
+
+---
+
+# Task Plan: Wiki Runner Tools MVP
+
+## Goal
+Wiki 러너가 지식 정리 판단은 직접 하고, 소스 스냅샷·기존 wiki CLI 호출·검증된 wiki 파일 쓰기·diff/wake 확인만 작은 TypeScript 러너 도구로 수행하게 만든다.
+
+## Scope
+- Wiki 러너 도구는 `source-snapshot`, `update-baseline`, `telemetry-summary`, `query`, `lint`, `ingest`, `retrofit-frontmatter`, `write-page`, `diff-snapshot`, `wake`로 제한한다.
+- Wiki 도구는 어떤 내용을 위키에 남길지, 어떤 페이지를 합성할지, semantic lint 결과를 어떻게 해석할지 결정하지 않는다.
+- 기존 `autoflow wiki ...` CLI는 compatibility/runtime implementation으로 유지하고 runner-tool은 안전한 wrapper와 board-local write validator 역할만 한다.
+- 기존 dirty worktree 변경은 되돌리지 않는다.
+
+## Phases
+- [x] 기존 Wiki 계약과 wiki CLI 흐름 확인.
+- [x] `runner-tool.ts`에 Wiki 명령 추가.
+- [x] Wiki runner-tool 문서와 current/scaffold 보드 계약 반영.
+- [x] Wiki runner-tool smoke test 추가.
+- [x] 관련 검증 명령 실행.
+
+## Verification
+- [x] `wiki-runner-tool-smoke.sh`
+- [x] 기존 Planner/Worker/Verifier runner-tool smoke
+- [x] runtime companion smoke
+- [x] Node/tsx syntax or command checks
+- [x] Targeted `git diff --check`
+
+## Risks
+- Wiki CLI 일부 명령은 adapter를 부를 수 있으므로 smoke는 deterministic `query --rag`, `lint`, `update --dry-run` 중심으로 검증한다.
+- `.autoflow/wiki/`는 보통 gitignored라 diff smoke는 temp repo에서 필요한 파일만 `git add -f`로 staged 상태를 만든다.
+
+---
+
+# Task Plan: Shell To TS Migration
+
+## Goal
+기존 runner/runtime shell 사용을 순서대로 줄인다. 이미 TS/JS 본체가 있는 도구는 `.sh` wrapper를 삭제하고, 아직 shell 본체인 핵심 finalizer/CLI는 이후 단계에서 기능 단위로 TS 전환한다.
+
+## Scope
+- 1단계는 small support runtime만 다룬다: `board-guard`, `integrate-worktree`, `lint-ticket`, `path-conflict-check`, `state-db`.
+- 1단계에서 `start-plan.ts` / `start-ticket-owner.js` / `finish-ticket-owner.sh` 본문은 건드리지 않는다. 현재 보드에 별도 dirty 변경과 active ticket이 있기 때문이다.
+- `.sh` 삭제 전 호출부를 `.js` 또는 `.ts` 기반 실행으로 바꾼다.
+- 기존 dirty worktree 변경은 되돌리지 않는다.
+
+## Phases
+- [x] 전환 대상 sh 목록과 기존 TS/JS 대체물 확인.
+- [x] small support TS 실행용 JS wrapper 추가.
+- [x] 패키징/doctor/CLI 호출부를 small support `.js` 기준으로 전환.
+- [x] small support `.sh` wrapper 삭제 및 current board mirror 반영.
+- [x] smoke/문법 검증 실행.
+- [x] 다음 단계 대상(`finish-ticket-owner`, `verify-ticket-owner`, `update-wiki`) 세부 계획 갱신.
+
+## Next Migration Order
+- [ ] `finish-ticket-owner.sh`: pass/fail finalizer를 기능 단위로 쪼개서 TS 모듈화. 가장 중요하지만 위험도가 높으므로 sanity gate, verifier handoff, retry inbox 발행, commit/PR draft 생성을 분리해서 진행한다.
+- [ ] `verify-ticket-owner.sh`: verifier runner 계약과 evidence 기록을 TS runner tool로 이동한다. `finish-ticket-owner`와 연결되므로 두 번째 순서가 안전하다.
+- [ ] `update-wiki.sh`: Wiki runner가 직접 호출하는 wiki update 도구를 TS로 이동한다. wiki commit/content gate는 유지한다.
+- [ ] legacy lifecycle shell(`start-plan.legacy.sh`, `start-ticket-owner.legacy.sh`, `start-todo.sh`) 삭제 후보를 재검토한다. 현재 active board 호환성이 남아 있으므로 즉시 삭제하지 않는다.
+- [ ] large CLI shell(`run-role.sh`, `runners-project.sh`, `wiki-project.sh`, `doctor-project.sh`)은 마지막 단계에서 adapter/run-loop API를 안정화한 뒤 쪼갠다.
+
+## Verification
+- [x] `runtime-script-companion-smoke.sh`
+- [x] `active-runtime-mirror-smoke.sh`
+- [x] `board-guard-smoke.sh`
+- [x] `board-guard-recovery-protocol-sync-smoke.sh`
+- [x] `ticket-owner-allowed-path-noise-commit-scope-smoke.sh`
+- [x] `ticket-owner-smoke.sh`
+- [x] `node --check` for new JS wrappers
+- [x] targeted `git diff --check`
+
+## Risks
+- TS 파일 shebang은 `tsx` 전역 설치에 의존할 수 있으므로 `.js` wrapper가 local `node_modules/.bin/tsx` 또는 `npx tsx`를 선택해야 한다.
+- lifecycle/finalizer smoke에는 아직 다른 `.sh` 런타임이 남아 있으므로 다음 단계도 기능 단위로 쪼개서 진행한다.
+
+---
+
 # Task Plan: Electron Codex Flow Visualizer
 
 ## Goal

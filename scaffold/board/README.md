@@ -43,6 +43,34 @@ Legacy role-pipeline mode (`#plan`, `#todo`) remains available for compatibility
 - `wiki/`: derived project knowledge.
 - `logs/`: completion logs and hook dispatch logs.
 
+## Runners And Runner Tools
+
+Autoflow uses four default **runners**:
+
+- `planner`: turns inbox orders, retry orders, and backlog PRDs into worker-ready todo tickets.
+- `worker`: claims one todo ticket, implements it, verifies locally, and prepares the AI-led merge.
+- `verifier`: checks the finished diff against the ticket title, goal, and Done When items.
+- `wiki`: turns completed work and decisions into derived wiki knowledge.
+
+Codex, Claude, Gemini, or another agent may power a runner. A runner is the
+decision-maker. A **runner tool** is only a small button the runner calls to
+perform one safe action, such as taking a queue snapshot, reserving an id,
+writing a validated ticket, moving an item, recording recovery state, or
+running the board guard.
+
+Current split tools live behind `scripts/runner-tool.js`:
+
+- `planner ...`: queue snapshot, id reservation, validated PRD/ticket writes, archive moves, recovery updates, and guard.
+- `worker ...`: active ticket lookup, todo snapshots, explicit ticket claim, worktree ensure/status, stage/context updates, verification evidence recording, Done When checks, diff checks, and finish wrappers.
+- `verifier ...`: verifier queue snapshots, semantic-review evidence bundles, decision logs, verifier-ok markers, verifier wake markers, and finalizer wrappers.
+- `wiki ...`: source snapshots, deterministic wiki update/query/lint/telemetry wrappers, ingest/frontmatter wrappers, validated wiki page writes, wiki diff snapshots, and wiki wake markers.
+
+Runner tools must not choose scope, draft `Done When`, decide pass/fail, or
+decide what belongs in the wiki. They also must not drive the whole workflow.
+Large script-driven flows such as `start-plan.*` and `start-ticket-owner.*`
+remain compatibility wrappers while their behavior is split into smaller
+TypeScript runner tools.
+
 ## Trigger Summary
 
 - Claude `/autoflow`: PRD handoff only.
@@ -94,7 +122,7 @@ Ticket Owner work should be narrow and durable:
 - Edit only `Allowed Paths`.
 - Update `Notes`, `Resume Context`, `Verification`, and `Result` as durable state.
 - Follow `Recovery State` planner instructions when present, and update it when blocked or recovered.
-- Use runtime scripts for claim, verification, finish, and context cleanup.
+- Prefer `scripts/runner-tool.js worker ...` for claim, worktree setup, status snapshots, evidence recording, and mechanical checks. Use legacy runtime scripts only where the small tool has not yet replaced the macro.
 - On pass, the AI owner merges verified changes into `PROJECT_ROOT` itself, resolves conflicts itself, reruns needed verification, and then uses finish/finalization scripts only as bookkeeping tools.
 - Do not push.
 

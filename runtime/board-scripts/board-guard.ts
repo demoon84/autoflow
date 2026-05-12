@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /*
  * board-guard.ts — Autoflow board invariant validator.
- * See board-guard.sh / .js for full doc; CLI/output unchanged.
+ * See board-guard.js for full doc; CLI/output unchanged.
  */
 
 import * as fs from "node:fs";

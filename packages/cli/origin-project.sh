@@ -56,7 +56,7 @@ esac
 project_root="$(resolve_project_root_or_die "$target_root")"
 board_root="$(board_root_path "$project_root" "$board_dir_name")"
 origin_cli="${board_root}/scripts/origin-cli.sh"
-state_db_script="${board_root}/scripts/state-db.sh"
+state_db_script="${board_root}/scripts/state-db.js"
 
 if [ "$sub" = "sync" ]; then
   exec env AUTOFLOW_BOARD_ROOT="$board_root" \

@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /*
  * lint-ticket.ts — Done When / Global Acceptance Criteria vagueness linter.
- * See lint-ticket.sh / .js for full doc; CLI/output unchanged.
+ * See lint-ticket.js for full doc; CLI/output unchanged.
  */
 
 import * as fs from "node:fs";

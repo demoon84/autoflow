@@ -7,6 +7,17 @@ const os = require("node:os");
 const path = require("node:path");
 const { PtyRunnerManager } = require("./main/runner-pty-manager");
 
+function ignoreBrokenPipe(stream) {
+  if (!stream || typeof stream.on !== "function") return;
+  stream.on("error", (error) => {
+    if (error && error.code === "EPIPE") return;
+    throw error;
+  });
+}
+
+ignoreBrokenPipe(process.stdout);
+ignoreBrokenPipe(process.stderr);
+
 const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../../..");
 const scaffoldManifestPath = path.join(repoRoot, "scaffold", "manifest.toml");
 const desktopRoot = path.resolve(__dirname, "..");

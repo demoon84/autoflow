@@ -8,7 +8,7 @@
 #   of-ticket <id>      — chain that produced the given ticket
 #   of-commit <hash>    — chain whose commit_hash matches (full or prefix)
 #
-# Reads .autoflow/state.db. Make sure to run `state-db.sh origin-sync` first
+# Reads .autoflow/state.db. Make sure to run `state-db.js origin-sync` first
 # (or rely on a future autoflow runner that calls it on tick).
 
 set -euo pipefail
@@ -20,7 +20,7 @@ shift || true
 
 state_db="${BOARD_ROOT}/state.db"
 if [ ! -f "$state_db" ]; then
-  echo "state.db not found. Run state-db.sh init && state-db.sh origin-sync first." >&2
+  echo "state.db not found. Run state-db.js init && state-db.js origin-sync first." >&2
   exit 2
 fi
 

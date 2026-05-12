@@ -36,6 +36,16 @@ extract_guard_array() {
       while ($body =~ /([A-Za-z0-9_-]+)/g) {
         print "$1\n";
       }
+    } elsif ($array_name eq "valid_statuses" && /validStatuses\s*=\s*new Set\(\[(.*?)\]\)/s) {
+      my $body = $1;
+      while ($body =~ /"([^"]+)"/g) {
+        print "$1\n";
+      }
+    } elsif ($array_name eq "valid_failure_classes" && /validFailureClasses\s*=\s*new Set\(\[(.*?)\]\)/s) {
+      my $body = $1;
+      while ($body =~ /"([^"]+)"/g) {
+        print "$1\n";
+      }
     }
   ' "$array_name" "$file" | sort
 }
@@ -66,10 +76,10 @@ extract_protocol_list "${REPO_ROOT}/.autoflow/protocols/recovery.md" '## Failure
 extract_protocol_list "${REPO_ROOT}/scaffold/board/protocols/recovery.md" '`Status` values:' > "$scaffold_statuses"
 extract_protocol_list "${REPO_ROOT}/scaffold/board/protocols/recovery.md" '## Failure Classes' > "$scaffold_classes"
 
-extract_guard_array "${REPO_ROOT}/runtime/board-scripts/board-guard.sh" 'valid_statuses' > "$runtime_statuses"
-extract_guard_array "${REPO_ROOT}/runtime/board-scripts/board-guard.sh" 'valid_failure_classes' > "$runtime_classes"
-extract_guard_array "${REPO_ROOT}/.autoflow/scripts/board-guard.sh" 'valid_statuses' > "$board_statuses"
-extract_guard_array "${REPO_ROOT}/.autoflow/scripts/board-guard.sh" 'valid_failure_classes' > "$board_classes"
+extract_guard_array "${REPO_ROOT}/runtime/board-scripts/board-guard.ts" 'valid_statuses' > "$runtime_statuses"
+extract_guard_array "${REPO_ROOT}/runtime/board-scripts/board-guard.ts" 'valid_failure_classes' > "$runtime_classes"
+extract_guard_array "${REPO_ROOT}/.autoflow/scripts/board-guard.ts" 'valid_statuses' > "$board_statuses"
+extract_guard_array "${REPO_ROOT}/.autoflow/scripts/board-guard.ts" 'valid_failure_classes' > "$board_classes"
 
 assert_same_file "$protocol_statuses" "$scaffold_statuses" "protocol status scaffold copy"
 assert_same_file "$protocol_classes" "$scaffold_classes" "protocol failure-class scaffold copy"

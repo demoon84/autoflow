@@ -64,19 +64,19 @@ iteration_fingerprint_enabled() {
   esac
 }
 
-# Wraps lint-ticket.sh invocation. Captures exit code without tripping set -e
+# Wraps lint-ticket.js invocation. Captures exit code without tripping set -e
 # and prints lint output keys to stdout via the caller's printf chain. Returns
 # the lint exit code (0=ok|warn, 1=block).
 #
 # Fix (PRD 211 follow-up, 2026-05-09): the previous `set +e` / `set -e` toggle
 # leaked the inner `set -e` back to the caller scope when the lint blocked, so
-# `lint-ticket.sh` returning 1 killed the planner runner with exit 1 before
+# `lint-ticket.js` returning 1 killed the planner runner with exit 1 before
 # `promote_spec_to_todo_or_exit` could emit `source=vague-done-when`. Use the
 # `cmd || rc=$?` pattern which captures the rc without tripping set -e and
 # without manipulating the script-wide set state.
 run_lint_ticket() {
   local target="$1"
-  local lint_script="${SCRIPT_DIR}/lint-ticket.sh"
+  local lint_script="${SCRIPT_DIR}/lint-ticket.js"
   local rc
 
   [ -x "$lint_script" ] || return 0

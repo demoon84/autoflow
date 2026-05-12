@@ -4,13 +4,14 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 
 ## Reference Model
 
-Default 3-runner topology (planner + worker + wiki):
+Default 4-runner topology (planner + worker + verifier + wiki):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner` (Planner AI): converts quick orders, populated backlog PRDs, and reject records into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,reject,done}/` for markdown-only orchestration. Owns order promotion, reject auto-replan up to `AUTOFLOW_REJECT_MAX_RETRIES`, and `Recovery State` decisions.
+- `planner` (Planner runner): converts quick orders, retry orders, and populated backlog PRDs into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,done}/` for markdown-only orchestration. Owns order promotion and `Recovery State` decisions.
 - `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
+- `verifier` (Verifier runner): reads verifier-lane tickets, compares the diff against the ticket title, goal, and Done When items, and records pass/fail semantics without implementing code.
 - `wiki` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
-- The three runners write to disjoint paths so concurrent ticks never produce merge conflicts.
+- The four runners write to disjoint paths so concurrent ticks avoid merge conflicts.
 
 Legacy role-pipeline model (compatibility only — DEPRECATED):
 
@@ -121,7 +122,7 @@ fallback):
 
 Board stage is authoritative. The chat transcript is not.
 
-Planner AI is the board orchestrator. Ticket-owner AI is the executor for one ticket. Runtime scripts are safety-kernel tools for claim/state/evidence/finalization; they must not be the actor that plans recovery, implements, verifies, rebases, cherry-picks, resolves conflicts, or merges product code.
+Planner, worker, verifier, and wiki are runners. A runner is the LLM-backed decision-maker. Runner tools are small deterministic commands the runner calls for one safe action. Runtime scripts and runner tools must not be the actor that plans recovery, implements, verifies, rebases, cherry-picks, resolves conflicts, merges product code, or updates wiki meaning by themselves.
 
 Wiki baseline updates follow the same AI-first rule. The Wiki AI inspects inputs first and calls `autoflow wiki update` as a deterministic tool only when a baseline refresh is warranted. The tool must not rewrite committed wiki pages for check timestamps alone; check metadata is recorded in `runners/state/wiki-baseline.history`.
 
@@ -131,7 +132,7 @@ Protocol files under `protocols/` define the AI-first workflow:
 - `recovery.md`: stalled/blocked/requeue classification and evidence rules.
 - `owner-contract.md`: owner execution contract and planner instruction handling.
 
-Use `autoflow guard` or `scripts/board-guard.sh` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
+Use `autoflow guard` or `scripts/board-guard.js` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
 
 ## Context Lifecycle
 

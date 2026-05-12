@@ -3,9 +3,26 @@ import { watch } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import nodePtyPermissions from "../src/main/node-pty-permissions.js";
+
+function ignoreBrokenPipe(stream) {
+  if (!stream || typeof stream.on !== "function") return;
+  stream.on("error", (error) => {
+    if (error && error.code === "EPIPE") return;
+    throw error;
+  });
+}
+
+ignoreBrokenPipe(process.stdout);
+ignoreBrokenPipe(process.stderr);
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const electronBin = path.join(desktopRoot, "node_modules", ".bin", "electron");
+const { fixNodePtySpawnHelperPermissions } = nodePtyPermissions;
+
+fixNodePtySpawnHelperPermissions({
+  log: (message) => console.log(`[desktop dev] ${message}`)
+});
 
 const server = await createServer({
   configFile: path.join(desktopRoot, "vite.config.ts"),

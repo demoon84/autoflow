@@ -69,7 +69,7 @@ When the runner wakes planner for `active_recovery_reason`, the tick is a board-
 - Update the affected ticket's `Recovery State`, `Next Action`, `Resume Context`, and `Notes` so the next owner turn has an explicit instruction.
 - Keep the edit idempotent when the evidence and planner decision are unchanged.
 - If no safe board-only repair exists, set `Recovery State` status to `needs_user`, choose an explicit failure class, and park the ticket with an owner resume instruction.
-- Run `autoflow guard` or `scripts/board-guard.sh` after the markdown repair and fix guard errors before creating any new plan or ticket work.
+- Run `autoflow guard` or `scripts/board-guard.js` after the markdown repair and fix guard errors before creating any new plan or ticket work.
 - Do not call owner/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
 
 ## State Source
@@ -97,7 +97,7 @@ Use shell or CLI helpers only for operations where atomicity matters:
 - move files between state folders,
 - create, prune, or inspect git worktrees,
 - validate board invariants,
-- run `autoflow guard` / `scripts/board-guard.sh` after markdown recovery edits,
+- run `autoflow guard` / `scripts/board-guard.js` after markdown recovery edits,
 - finalize pass/reject logs,
 - refresh deterministic wiki baseline,
 - create local pass commits.
@@ -115,7 +115,7 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 | `finish-ticket-owner.*` | Move pass/fail bookkeeping forward, archive evidence, call deterministic finalizers, and create local completion commits after AI merge. | Decide pass/fail, integrate verified changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before pass. |
 | `merge-ready-ticket.*` | Validate that AI-merged product state matches ticket/worktree expectations, refresh deterministic wiki baseline, and refuse unsafe merge states. | Perform rebases, cherry-picks, conflict resolution, and product-file merge decisions. |
 | `update-wiki.*` | Refresh deterministic wiki baseline pages from done/reject board evidence. | Synthesize semantic wiki knowledge; this belongs to `wiki`, not inline owner finalization. |
-| `autoflow guard` / `scripts/board-guard.sh` | Validate board invariants after AI-authored markdown edits. | Interpret guard output and repair ticket markdown before creating more work. |
+| `autoflow guard` / `scripts/board-guard.js` | Validate board invariants after AI-authored markdown edits. | Interpret guard output and repair ticket markdown before creating more work. |
 
 If a helper reports `blocked`, `needs_ai_merge`, `warning`, or `error`, do not route around it with another shell step. Preserve the evidence in board markdown and let the responsible AI role choose the next safe action.
 

@@ -803,20 +803,22 @@ finish-ticket-owner.sh|finish-ticket-owner.js,finish-ticket-owner.legacy.sh
 merge-ready-ticket.sh|merge-ready-ticket.js,merge-ready-ticket.ts,merge-ready-ticket.legacy.sh
 handoff-todo.sh|handoff-todo.js,handoff-todo.legacy.sh
 start-plan.sh|start-plan.ts,start-plan.legacy.sh
-integrate-worktree.sh|integrate-worktree.ts
-lint-ticket.sh|lint-ticket.ts
-path-conflict-check.sh|path-conflict-check.ts
+board-guard.js|board-guard.ts,tsx-script-runner.js
+integrate-worktree.js|integrate-worktree.ts,tsx-script-runner.js
+lint-ticket.js|lint-ticket.ts,tsx-script-runner.js
+path-conflict-check.js|path-conflict-check.ts,tsx-script-runner.js
 runner-stage.js|runner-stage.ts
 runner-wake.js|runner-wake.ts
 runner-tokens.js|runner-tokens.ts
-state-db.sh|state-db.ts
+runner-tool.js|runner-tool.ts
+state-db.js|state-db.ts,tsx-script-runner.js
 EOF
 }
 
 runtime_script_inventory_groups() {
   cat <<'EOF'
-1|small_support|board-guard.ts,board-utils.ts,integrate-worktree.sh,integrate-worktree.ts,lint-ticket.sh,lint-ticket.ts,path-conflict-check.sh,path-conflict-check.ts,runner-stage.js,runner-stage.ts,runner-wake.js,runner-wake.ts,runner-tokens.js,runner-tokens.ts,state-db.sh,state-db.ts,start-verifier.ts,meta-runner.ts,notify-user.ts,promote-order-to-ticket.ts,planner-janitor.ts,wiki-embed.ts,wiki-query.ts,wiki-search-index.sh
-2|planner|start-plan.sh,start-plan.ts,start-plan.legacy.sh
+1|small_support|board-guard.js,board-guard.ts,board-utils.ts,integrate-worktree.js,integrate-worktree.ts,lint-ticket.js,lint-ticket.ts,path-conflict-check.js,path-conflict-check.ts,runner-stage.js,runner-stage.ts,runner-wake.js,runner-wake.ts,runner-tokens.js,runner-tokens.ts,runner-tool.js,runner-tool.ts,state-db.js,state-db.ts,start-verifier.ts,meta-runner.ts,notify-user.ts,promote-order-to-ticket.ts,planner-janitor.ts,tsx-script-runner.js,wiki-embed.ts,wiki-query.ts,wiki-search-index.sh
+2|planner|start-plan.sh,start-plan.ts,start-plan.legacy.sh,runner-tool.js,runner-tool.ts
 3|ticket_owner_finalizer|start-ticket-owner.sh,start-ticket-owner.js,start-ticket-owner.legacy.sh,verify-ticket-owner.sh,finish-ticket-owner.sh,finish-ticket-owner.js,finish-ticket-owner.legacy.sh,merge-ready-ticket.sh,merge-ready-ticket.js,merge-ready-ticket.ts,merge-ready-ticket.legacy.sh,handoff-todo.sh,handoff-todo.js,handoff-todo.legacy.sh
 4|packages_cli_large_shell|packages/cli/package-board-common.sh,packages/cli/doctor-project.sh
 EOF
@@ -1110,7 +1112,7 @@ if [ -d "$board_root" ]; then
     record_warning "adapter scaffold is missing or incomplete; run autoflow upgrade to add agents/adapters docs"
   fi
 
-  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh merge-ready-ticket.sh update-wiki.sh start-plan.sh start-todo.sh handoff-todo.sh start-spec.sh integrate-worktree.sh; do
+  for runtime_file in common.sh runner-common.sh check-stop.sh file-watch-common.sh install-stop-hook.sh run-hook.sh watch-board.sh set-thread-context.sh clear-thread-context.sh start-ticket-owner.sh verify-ticket-owner.sh finish-ticket-owner.sh merge-ready-ticket.sh update-wiki.sh start-plan.sh start-todo.sh handoff-todo.sh start-spec.sh board-guard.js integrate-worktree.js lint-ticket.js path-conflict-check.js state-db.js tsx-script-runner.js; do
     if [ -f "${board_root}/scripts/${runtime_file}" ]; then
       record_check "script_${runtime_file}" "ok"
     else
@@ -1451,10 +1453,10 @@ doctor_runner_state_summary
 doctor_fingerprint_summary
 
 # PRD 7 (2026-05-09): if .autoflow/state.db exists, surface its drift summary.
-# The DB is opt-in (rebuilt on demand by `state-db.sh sync`), so absence is
+# The DB is opt-in (rebuilt on demand by `state-db.js sync`), so absence is
 # normal and not a failure.
 state_db_path="${board_root}/state.db"
-state_db_script="${board_root}/scripts/state-db.sh"
+state_db_script="${board_root}/scripts/state-db.js"
 if [ -f "$state_db_path" ] && [ -x "$state_db_script" ]; then
   AUTOFLOW_BOARD_ROOT="$board_root" "$state_db_script" drift-summary 2>/dev/null \
     | awk '{ print "state_db." $0 }'

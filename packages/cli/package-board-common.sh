@@ -197,6 +197,7 @@ template_text|agents/plan-to-ticket-agent.md|agents/plan-to-ticket-agent.md
 template_text|agents/todo-queue-agent.md|agents/todo-queue-agent.md
 template_text|agents/spec-author-agent.md|agents/spec-author-agent.md
 template_text|agents/ticket-owner-agent.md|agents/ticket-owner-agent.md
+template_text|agents/verifier-agent.md|agents/verifier-agent.md
 template_text|agents/merge-bot-agent.md|agents/merge-bot-agent.md
 template_text|agents/wiki-maintainer-agent.md|agents/wiki-maintainer-agent.md
 template_text|protocols/board-orchestration.md|protocols/board-orchestration.md
@@ -248,7 +249,6 @@ template_text|wiki/learnings/README.md|wiki/learnings/README.md
 template_text|state-schema/v1.sql|state-schema/v1.sql
 runtime_executable|common.sh|scripts/common.sh
 runtime_executable|runner-common.sh|scripts/runner-common.sh
-runtime_executable|board-guard.sh|scripts/board-guard.sh
 runtime_executable|check-stop.sh|scripts/check-stop.sh
 runtime_executable|file-watch-common.sh|scripts/file-watch-common.sh
 runtime_executable|install-stop-hook.sh|scripts/install-stop-hook.sh
@@ -264,15 +264,14 @@ runtime_executable|start-plan.sh|scripts/start-plan.sh
 runtime_executable|start-todo.sh|scripts/start-todo.sh
 runtime_executable|handoff-todo.sh|scripts/handoff-todo.sh
 runtime_executable|start-spec.sh|scripts/start-spec.sh
-runtime_executable|integrate-worktree.sh|scripts/integrate-worktree.sh
 runtime_executable|watch-board.sh|scripts/watch-board.sh
-runtime_executable|state-db.sh|scripts/state-db.sh
 EOF
   managed_runtime_companion_asset_entries
 }
 
 managed_runtime_companion_asset_entries() {
   cat <<'EOF'
+runtime_executable|board-guard.js|scripts/board-guard.js
 runtime_file|board-guard.ts|scripts/board-guard.ts
 runtime_file|board-utils.ts|scripts/board-utils.ts
 runtime_executable|curator-run.sh|scripts/curator-run.sh
@@ -281,8 +280,9 @@ runtime_file|finish-ticket-owner.js|scripts/finish-ticket-owner.js
 runtime_executable|finish-ticket-owner.legacy.sh|scripts/finish-ticket-owner.legacy.sh
 runtime_file|handoff-todo.js|scripts/handoff-todo.js
 runtime_executable|handoff-todo.legacy.sh|scripts/handoff-todo.legacy.sh
+runtime_executable|integrate-worktree.js|scripts/integrate-worktree.js
 runtime_file|integrate-worktree.ts|scripts/integrate-worktree.ts
-runtime_executable|lint-ticket.sh|scripts/lint-ticket.sh
+runtime_executable|lint-ticket.js|scripts/lint-ticket.js
 runtime_file|lint-ticket.ts|scripts/lint-ticket.ts
 runtime_file|merge-ready-ticket.js|scripts/merge-ready-ticket.js
 runtime_executable|merge-ready-ticket.legacy.sh|scripts/merge-ready-ticket.legacy.sh
@@ -291,7 +291,7 @@ runtime_file|meta-runner.ts|scripts/meta-runner.ts
 runtime_file|notify-user.ts|scripts/notify-user.ts
 runtime_executable|origin-cli.sh|scripts/origin-cli.sh
 runtime_file|origin-extractor.py|scripts/origin-extractor.py
-runtime_executable|path-conflict-check.sh|scripts/path-conflict-check.sh
+runtime_executable|path-conflict-check.js|scripts/path-conflict-check.js
 runtime_file|path-conflict-check.ts|scripts/path-conflict-check.ts
 runtime_file|planner-janitor.ts|scripts/planner-janitor.ts
 runtime_file|promote-order-to-ticket.ts|scripts/promote-order-to-ticket.ts
@@ -299,6 +299,8 @@ runtime_file|runner-stage.js|scripts/runner-stage.js
 runtime_file|runner-stage.ts|scripts/runner-stage.ts
 runtime_file|runner-tokens.js|scripts/runner-tokens.js
 runtime_file|runner-tokens.ts|scripts/runner-tokens.ts
+runtime_file|runner-tool.js|scripts/runner-tool.js
+runtime_file|runner-tool.ts|scripts/runner-tool.ts
 runtime_file|runner-wake.js|scripts/runner-wake.js
 runtime_file|runner-wake.ts|scripts/runner-wake.ts
 runtime_executable|start-plan.legacy.sh|scripts/start-plan.legacy.sh
@@ -306,8 +308,10 @@ runtime_file|start-plan.ts|scripts/start-plan.ts
 runtime_file|start-ticket-owner.js|scripts/start-ticket-owner.js
 runtime_executable|start-ticket-owner.legacy.sh|scripts/start-ticket-owner.legacy.sh
 runtime_file|start-verifier.ts|scripts/start-verifier.ts
+runtime_executable|state-db.js|scripts/state-db.js
 runtime_file|state-db.ts|scripts/state-db.ts
 runtime_file|tsconfig.json|scripts/tsconfig.json
+runtime_executable|tsx-script-runner.js|scripts/tsx-script-runner.js
 runtime_file|wiki-embed.ts|scripts/wiki-embed.ts
 runtime_file|wiki-query.ts|scripts/wiki-query.ts
 runtime_executable|wiki-search-index.sh|scripts/wiki-search-index.sh

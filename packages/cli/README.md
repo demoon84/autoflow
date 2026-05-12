@@ -49,7 +49,7 @@
 - `start-todo.sh`
 - `handoff-todo.sh`
 - `start-verifier.sh`
-- `integrate-worktree.sh`
+- `integrate-worktree.js`
 - `write-verifier-log.sh`
 - `watch-board.sh`
 
@@ -152,7 +152,7 @@
   - `AUTOFLOW_ROLE=verifier` 이면 자기 verifier 티켓을 우선 선택한다.
   - `AUTOFLOW_BACKGROUND=1` 이면 자기 검증 티켓이 없을 때 `status=idle` 로 끝난다.
 
-- `integrate-worktree.sh`
+- `integrate-worktree.js`
   - legacy verifier pass 경로에서만 실행한다.
   - ticket worktree 의 `Allowed Paths` 변경을 스냅샷 커밋한 뒤 `needs_ai_merge` 를 반환한다. AI 가 직접 중앙 `PROJECT_ROOT` 병합과 충돌 해결을 해야 한다.
   - rebase, cherry-pick, conflict resolution, product-code merge 는 수행하지 않는다.
@@ -171,13 +171,13 @@
 - `run-hook.sh` (DEPRECATED — legacy script-driven trigger path)
   - Bash/macOS/Linux 쪽 file-watch watcher 가 route별 one-shot hook 을 dispatch 할 때 쓰는 단발 실행기다.
   - 현재 기본값은 `ticket` route 가 `codex exec` 로 Ticket Owner prompt 를 실행하고, legacy `plan` / `todo` / `verifier` route 는 설정을 켰을 때만 동작한다.
-  - 3-runner topology (planner + worker + wiki) 가 정식 경로이고, run-hook 은 `watch-bg` 사용자를 위한 backwards compatibility 만 유지한다.
+  - 4-runner topology (planner + worker + verifier + wiki) 가 정식 경로이고, run-hook 은 `watch-bg` 사용자를 위한 backwards compatibility 만 유지한다.
 
 - `watch-board.sh` (DEPRECATED — legacy script-driven loop)
   - Bash/macOS/Linux 에서 쓰는 polling watcher 다.
   - 기본값으로 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 를 `ticket` route 로 감시한다. legacy route 를 켜면 `tickets/reject/`, `tickets/done/` 하위 프로젝트 폴더도 plan route 로 감시한다.
   - 같은 감시 경로를 0.25초 간격으로 스캔해 변화를 감지하고 debounce 후 `run-hook.sh` 를 실행한다.
-  - 로그는 `logs/hooks/` 를 쓰며, minute heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다. 정식 경로는 3-runner heartbeat AI runner 다.
+  - 로그는 `logs/hooks/` 를 쓰며, minute heartbeat 가 외부 사유로 끊기는 환경의 보조 수단으로만 둔다. 정식 경로는 4-runner heartbeat AI runner 다.
 
 ## Bootstrap Script
 

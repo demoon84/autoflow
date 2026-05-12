@@ -58,13 +58,14 @@ At the start of work, read in this order:
 
 - Use the matching `scripts/*.sh` entrypoint for runtime commands.
 - When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.sh` script in `scripts/`.
+- `planner`, `worker`, `verifier`, and `wiki` are runners. A runner tool is a small command the runner calls for one safe board operation; for new Planner work prefer `scripts/runner-tool.js planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.js worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.js verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.js wiki ...` over adding behavior to a large script.
 
 ## Core Rules
 
 1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Planner AI.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
-4. The default execution path is Planner AI plus Ticket Owner Mode: `planner` promotes order/backlog/reject inputs into todo work and writes `Recovery State` repair instructions, then `worker` / Desktop Owner / `scripts/start-ticket-owner.*` implements the resulting ticket. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
+4. The default execution path uses four runners: `planner` promotes order/backlog/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
@@ -172,7 +173,7 @@ Purpose: convert quick orders, populated specs, and reject reasons into todo tic
 Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
-- Use `scripts/start-plan.*`.
+- Use `scripts/runner-tool.js planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `scripts/start-plan.*` only for compatibility branches that have not yet been split into runner tools.
 - Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or rejects.
 - Generate todo ticket bodies from `Execution Candidates`.

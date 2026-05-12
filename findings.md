@@ -1,3 +1,32 @@
+# Worker Stop Investigation Findings
+
+- 2026-05-12 조사 시작. `git diff --stat` 기준 기존 dirty 변경이 많다: `.autoflow/scripts/start-plan.ts`, ticket 이동/삭제, desktop package/dev script, `runner-pty-manager.js` 등이 포함된다. 이 변경은 되돌리지 않고 증거로만 취급한다.
+- Planning session catchup은 이전 세션이 worktree cleanup/dev process 종료를 했다고 보고했지만, worker stop의 직접 원인인지는 아직 미확인이다.
+- `.autoflow/runners/config.local.toml` 기준 실제 실행 config는 `worker`와 `worker-2` 두 ticket-owner runner를 동시에 enabled로 둔다. AGENTS/계약의 “동시에 살아 있는 worktree 0 또는 1개” 기본 운영과 충돌한다.
+- `worker.state`와 `worker-2.state`가 모두 `active_ticket_id=Todo-319`, `active_stage=inprogress`를 가리킨다. process는 죽지 않았다: `ps` 기준 두 zsh/codex 프로세스 모두 살아 있다.
+- 현재 보드에는 `Todo-319`가 `.autoflow/tickets/inprogress/Todo-319.md`와 `.autoflow/tickets/verifier/Todo-319.md`에 동시에 존재한다. `./bin/autoflow guard . .autoflow`가 `duplicate_ticket_ids` error로 동일하게 보고했다.
+- `Todo-319` ticket 본문은 Done When이 모두 `[x]`이고 Verification passed로 기록됐지만 `Next Action`은 여전히 `finish-ticket-owner.sh pass`다. 즉 구현/검증 이후 finalizer/merge 단계로 넘어가다 멈춘 상태다.
+- `tickets_319` worktree에는 `.autoflow/scripts/start-plan.ts`, `runtime/board-scripts/start-plan.ts` 두 파일의 uncommitted diff가 있다. PROJECT_ROOT에는 같은 결과가 완전히 반영되지 않았다: worktree의 두 파일 hash는 동일하지만 PROJECT_ROOT의 두 파일 hash는 서로 다르고 worktree hash와도 다르다.
+- `.autoflow/scripts/start-ticket-owner.legacy.sh`와 runtime mirror의 `sync_runner_active_state()` 안 `ticket_id` 대입 라인이 깨져 있다: `ticket_id="Todo-20 20 ... 400extract_numeric_id "$ticket_file")"`. `bash -n`은 통과하지만 active state 갱신 시 잘못된 ticket id를 쓸 수 있는 데이터 손상이다.
+- `Todo-319`의 `Claimed By` lock은 `worker-2:43594:2026-05-12T10:56:13Z`인데 pid 43594는 현재 존재하지 않는다. PTY shell pid는 `worker-2=4291`로 살아 있다. 즉 lock이 장기 실행 PTY pid가 아니라 짧게 끝나는 helper/script pid를 기록하고 있어, 다른 worker가 stale lock으로 판단해 같은 ticket을 takeover할 수 있다.
+- Desktop PTY spawn env는 `AUTOFLOW_WORKER_ID`, `AUTOFLOW_RUNNER_ID`, `RUNNER_ID`만 넣고 `AUTOFLOW_TICKET_OWNER_PID`를 넣지 않는다. `runner-common.sh`는 없으면 `$$`를 lock pid로 쓰므로 PTY 모드에서 ownership liveness가 짧은 script pid에 묶인다.
+- PTY start 시 `writePtyRunnerStateFile()`는 기존 state file을 merge하고 active ticket fields를 명시적으로 비우지 않는다. 그래서 `worker`가 11:21에 새 PTY로 시작됐는데도 예전 `active_ticket_id=Todo-319`가 남아 CLI `runners list`에서 두 worker가 같은 ticket을 잡은 것처럼 보인다.
+- `./bin/autoflow doctor . .autoflow`는 runner pid는 모두 살아 있다고 보며, `verifier` role을 unsupported role warning으로 보고한다. 또한 detailed active-ticket traversal은 lock busy로 일부 생략됐다.
+
+---
+
+# Planner Runner Tools Findings
+
+- 2026-05-12 방향 정리: 앞으로 `planner`, `worker`, `verifier`, `wiki`는 러너라고 부른다. 러너는 Codex/Claude 같은 실행 능력이 있는 LLM 주체이며, 러너 도구는 러너가 호출하는 작고 안전한 보드 조작 버튼이다.
+- Codex/Claude 러너는 파일 읽기, `rg` 검색, 의미 판단, `Allowed Paths`/`Done When` 작성이 가능하므로 이 영역을 별도 도구가 대신 판단하면 안 된다.
+- Planner 러너 도구의 적합한 책임은 번호 충돌 방지, queue snapshot, 템플릿/필수 섹션 검증, 안전한 파일 쓰기/이동, `Recovery State` 갱신, guard wrapper처럼 보드 무결성이 걸린 일이다.
+- 기존 `.autoflow/agents/plan-to-ticket-agent.md`는 아직 `scripts/start-plan.*`를 첫 단계로 부르는 계약을 갖고 있다. 새 TS 도구는 먼저 additive MVP로 두고, 큰 script-driven 흐름은 compatibility wrapper로 점진 축소하는 편이 안전하다.
+- Implemented MVP command surface: `scripts/runner-tool.js planner queue-snapshot`, `reserve-id`, `write-prd`, `write-ticket`, `item-archive`, `recovery-update`, and `guard`. The commands return JSON and do not draft scope or choose work.
+- While testing `recovery-update`, `board-utils.ts` showed a formatting bug: replacing an empty scalar field produced `- Evidence:value`. The shared helper now normalizes replaced fields to `- Field: value`.
+- `planner guard` must pass explicit `PROJECT_ROOT` / `AUTOFLOW_BOARD_ROOT` to `board-guard`; otherwise a board-local invocation can resolve `.autoflow/.autoflow` as the board root.
+
+---
+
 # Findings
 
 ## Wiki Runner Token Efficiency Findings
@@ -24,6 +53,40 @@
 - `runtime/board-scripts/run-role.sh` contains a similar prompt for packaged/generated runtime script copies, but it is currently older than `packages/cli/run-role.sh`.
 - `packages/cli/wiki-project.sh` has separate adapter prompts for `wiki query --synth` and `wiki lint --semantic`; these produce key=value output and should keep exact machine-readable keys while making any natural-language values Korean.
 - Legacy hook and heartbeat paths also generate prompts (`run-hook.sh` and `automations/templates/*heartbeat*.toml`). They need the same language rule for consistency when those compatibility routes are used.
+
+## Worker Runner Tools Findings
+
+- User direction: Worker must be LLM-led like Planner. Codex/Claude are capable coding agents, so runner tools should expose precise operations rather than pretend the tool is the agent.
+- Existing Worker contract still pointed at `start-ticket-owner.*` as the first macro. That macro combines queue selection, claim, worktree setup, recovery, and context writing, which is too large for the new boundary.
+- Small Worker tools should cover deterministic surfaces only: active ticket lookup, todo snapshot/conflict hints, explicit claim, worktree creation/status, durable context updates, verification evidence recording, Done When/diff mechanical checks, and finalizer wrappers.
+- Worker tools must not implement code, choose which todo to claim, infer scope, judge semantic correctness, decide pass/fail, or merge conflicts.
+- Worktree creation can be split safely because it already has deterministic inputs: ticket id, git root, base commit, branch name, worktree root, and recorded Worktree fields.
+- Smoke coverage should force `AUTOFLOW_WORKTREE_ROOT` into a temp directory so worktree tests do not leave global cache state.
+
+## Verifier Runner Tools Findings
+
+- Verifier should stay smaller than Worker: it does not implement or merge, it only reviews whether the finished diff semantically matches Title/Goal/Done When/Acceptance Probe.
+- Existing Verifier contract already has deterministic side effects: queue scan, diff extraction, verifier-ok marker, latency log, wake marker, and finalizer re-entry. These are good runner-tool targets.
+- The semantic decision cannot be a tool result because only the LLM can compare intent, diff meaning, and checklist truthfulness. The tool should output evidence and require an explicit `--decision` / `--reason`.
+- `finish-ticket-owner.*` expects verifier bypass through `AUTOFLOW_SKIP_VERIFIER=1` or `runners/state/verifier-ok-<id>.marker`; Verifier pass tooling should set both before finalizer re-entry.
+- Smoke testing should avoid destructive pass/fail finalization and instead verify queue snapshot, evidence extraction, decision logging, pass marker creation, and wake marker creation.
+
+## Wiki Runner Tools Findings
+
+- Wiki runner-tool should be a wrapper layer around existing deterministic wiki CLI operations, not a new knowledge synthesizer.
+- Wiki AI remains responsible for deciding whether source changes deserve baseline refresh, focused page synthesis, raw ingest, or semantic lint triage.
+- Safe Wiki tool surfaces are source/diff snapshots, explicit `autoflow wiki update/query/lint/summarize-telemetry/ingest/retrofit-frontmatter` calls, validated board-local `wiki/` and `wiki-raw/` writes, and realtime wake markers.
+- `write-page` must reject absolute paths, `..`, project-root `wiki/`, and non-markdown targets so Wiki AI cannot accidentally write outside `$AUTOFLOW_BOARD_ROOT`.
+- `.autoflow/wiki/` is intentionally gitignored in normal boards, so diff tooling should report scoped status when files are tracked/staged but smoke tests need `git add -f` for wiki page fixtures.
+
+## Shell To TS Migration Findings
+
+- Small support wrappers with existing TS bodies are the safest first deletion group: `board-guard`, `integrate-worktree`, `lint-ticket`, `path-conflict-check`, and `state-db`.
+- Directly executing `.ts` is not reliable in this repo because some files are non-executable and `#!/usr/bin/env tsx` requires a global `tsx`; a Node `.js` wrapper should choose local `node_modules/.bin/tsx` or fallback to `npx tsx`.
+- `packages/cli/guard-project.sh`, `packages/cli/origin-project.sh`, `packages/cli/doctor-project.sh`, packaging, and related smoke tests now reference the small support `.js` wrappers instead of `.sh`.
+- The TS wrapper must infer `AUTOFLOW_BOARD_ROOT` when executed from an installed board's `scripts/` directory or from the board root itself; otherwise TS helpers resolve paths like `.autoflow/.autoflow`.
+- `board-guard-recovery-protocol-sync-smoke.sh` now reads enum values from `board-guard.ts`; this exposed missing `resolved`, `dirty_root_cleared`, and `dirty_project_root_conflict` entries in `protocols/recovery.md`, which were added to dogfood and scaffold docs.
+- Core lifecycle shell remains risky: `finish-ticket-owner.sh` is still the durable finalizer, while current board has dirty `start-plan.ts` work tied to active tickets. These should be later phases, not mixed into small support deletion.
 
 ---
 

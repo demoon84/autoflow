@@ -6,6 +6,7 @@
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
+    "postinstall": "node scripts/fix-node-pty-permissions.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:bundle": "npm run build && electron .",
     "build": "vite build",

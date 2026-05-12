@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /*
  * state-db.ts — Autoflow sqlite state ledger (PRD 7 scaffold).
- * See state-db.sh / .js for full doc; CLI/output unchanged.
+ * See state-db.js for full doc; CLI/output unchanged.
  */
 
 import * as fs from "node:fs";
