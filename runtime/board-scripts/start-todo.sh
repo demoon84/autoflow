@@ -36,7 +36,7 @@ find_owned_inprogress() {
       printf '%s' "$file"
       return 0
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/inprogress" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }
@@ -82,7 +82,7 @@ claim_one() {
       printf '%s' "$target_file"
       return 0
     fi
-  done < <(list_matching_files "${BOARD_ROOT}/tickets/todo" 'tickets_*.md')
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md')
 
   return 1
 }
