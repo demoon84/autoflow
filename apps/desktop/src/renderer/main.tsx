@@ -7575,7 +7575,7 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
   return "";
 }
 
-type RunnerDelaySeverity = "waiting" | "suspect" | "stuck";
+type RunnerDelaySeverity = "waiting" | "stuck";
 
 type RunnerDelayStage = {
   severity: RunnerDelaySeverity;
@@ -7585,7 +7585,6 @@ type RunnerDelayStage = {
   title: string;
 };
 
-const DEFAULT_RUNNER_DELAY_SUSPECT_SECONDS = 600;
 const RUNNER_ADAPTER_TIMEOUT_SECONDS = 1200;
 
 function parsePositiveSeconds(value: string | number | undefined, fallback: number) {
@@ -7609,14 +7608,9 @@ function runnerDelayStage(runner: AutoflowRunner): RunnerDelayStage | null {
   if (eventTimes.length === 0) return null;
   const freshestEventTime = Math.max(...eventTimes);
   const ageSec = (Date.now() - freshestEventTime) / 1000;
-  const suspectThresholdSec = parsePositiveSeconds(
-    runner.heartbeatStaleThresholdSeconds,
-    DEFAULT_RUNNER_DELAY_SUSPECT_SECONDS
-  );
-  const stuckThresholdSec = Math.max(RUNNER_ADAPTER_TIMEOUT_SECONDS, suspectThresholdSec);
+  const stuckThresholdSec = RUNNER_ADAPTER_TIMEOUT_SECONDS;
   const ageLabel = formatRunnerDelayAge(ageSec);
   const timeoutLabel = formatRunnerDelayAge(RUNNER_ADAPTER_TIMEOUT_SECONDS);
-  const timeoutRemainingLabel = formatRunnerDelayAge(Math.max(0, RUNNER_ADAPTER_TIMEOUT_SECONDS - ageSec));
 
   if (ageSec >= stuckThresholdSec) {
     return {
@@ -7625,16 +7619,6 @@ function runnerDelayStage(runner: AutoflowRunner): RunnerDelayStage | null {
       badgeVariant: "destructive",
       className: "ai-progress-delay-badge ai-progress-delay-badge-stuck",
       title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 동안 새 신호가 없습니다. 정상 worker/planner 호출도 5~10분 걸릴 수 있지만, 기본 adapter timeout ${timeoutLabel} 기준을 넘어 멈춤 가능성이 큽니다.`
-    };
-  }
-
-  if (ageSec >= suspectThresholdSec) {
-    return {
-      severity: "suspect",
-      label: "응답 지연 의심",
-      badgeVariant: "outline",
-      className: "ai-progress-delay-badge ai-progress-delay-badge-suspect",
-      title: `최근 heartbeat/chunk 신호 기준 ${ageLabel} 동안 새 신호가 없습니다. 정상 worker/planner 호출은 5~10분 걸릴 수 있어 즉시 실패로 보지 않으며, 기본 adapter timeout ${timeoutLabel}까지 약 ${timeoutRemainingLabel} 남았습니다.`
     };
   }
 

@@ -3758,12 +3758,6 @@ pre {
   background: color-mix(in srgb, var(--primary) 8%, var(--card));
 }
 
-.ai-progress-current .ai-progress-delay-badge-suspect {
-  border-color: color-mix(in srgb, #ca8a04 48%, var(--border));
-  color: #92400e;
-  background: color-mix(in srgb, #f59e0b 12%, var(--card));
-}
-
 .ai-progress-current .ai-progress-delay-badge-stuck {
   border-color: color-mix(in srgb, var(--destructive) 62%, var(--border));
 }
