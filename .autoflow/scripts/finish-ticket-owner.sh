@@ -851,6 +851,45 @@ case "$outcome" in
     fi
     # ── end shell sanity gate ───────────────────────────────────────────────
 
+    # ── Verifier hook (PRD_287, 2026-05-12) ────────────────────────────────
+    # After sanity gate passes, delegate semantic verification to the Verifier
+    # AI unless explicitly bypassed. The verifier checks that the diff matches
+    # the ticket Title/Goal and Done When items are genuinely fulfilled.
+    # Bypass: AUTOFLOW_SKIP_VERIFIER=1 (set by verifier itself on re-entry)
+    #         or runners/state/verifier-ok-<ticket-id>.marker exists.
+    _verifier_enabled="${AUTOFLOW_VERIFIER_ENABLED:-1}"
+    _verifier_skip="${AUTOFLOW_SKIP_VERIFIER:-0}"
+    _verifier_ok_marker="${BOARD_ROOT}/runners/state/verifier-ok-${ticket_id}.marker"
+    if [ "$_verifier_enabled" = "1" ] && [ "$_verifier_skip" != "1" ] && [ ! -f "$_verifier_ok_marker" ]; then
+      # Create tickets/verifier/ staging area and copy ticket there.
+      _verifier_dir="${BOARD_ROOT}/tickets/verifier"
+      mkdir -p "$_verifier_dir"
+      _verifier_ticket="${_verifier_dir}/Todo-${ticket_id}.md"
+      cp "$ticket_file" "$_verifier_ticket"
+      replace_scalar_field_in_section "$_verifier_ticket" "## Ticket" "Stage" "verify_pending"
+
+      # Trigger verifier runner wake via realtime marker.
+      _verifier_wakeup_marker="${BOARD_ROOT}/runners/state/verifier.verifier-realtime-wakeup.pending"
+      mkdir -p "${BOARD_ROOT}/runners/state"
+      printf 'triggered_at=%s\nticket_id=%s\n' "$timestamp" "$ticket_id" > "$_verifier_wakeup_marker"
+
+      # Also try the TypeScript wakeup helper (best-effort).
+      _start_verifier="${BOARD_ROOT}/scripts/start-verifier.ts"
+      if [ -f "$_start_verifier" ] && command -v npx >/dev/null 2>&1; then
+        BOARD_ROOT="$BOARD_ROOT" npx tsx "$_start_verifier" >/dev/null 2>&1 || true
+      fi
+
+      printf 'status=verify_pending\n'
+      printf 'ticket=%s\n' "$ticket_file"
+      printf 'ticket_id=%s\n' "$ticket_id"
+      printf 'verifier_ticket=%s\n' "$_verifier_ticket"
+      printf 'next_action=Verifier AI will inspect tickets/verifier/Todo-%s.md and either call finish-ticket-owner.sh pass (AUTOFLOW_SKIP_VERIFIER=1) or fail with verifier_semantic_mismatch.\n' "$ticket_id"
+      exit 0
+    fi
+    # Clean up ok-marker if it was used for bypass.
+    rm -f "$_verifier_ok_marker" 2>/dev/null || true
+    # ── end verifier hook ───────────────────────────────────────────────────
+
     # PRD 8 (2026-05-09): best-effort project verify-post hook. Runs after
     # the sanity gate passes but before merge prep / commit. Non-fatal: any
     # failure prints to stderr and continues.

@@ -71,6 +71,18 @@ realtime_enabled = true
 command = ""
 
 [[runners]]
+id = "verifier"
+role = "verifier"
+agent = "claude"
+model = "claude-haiku-4-5-20251001"
+reasoning = ""
+mode = "loop"
+interval_seconds = 300
+enabled = true
+realtime_enabled = true
+command = ""
+
+[[runners]]
 id = "wiki"
 role = "wiki-maintainer"
 agent = "gemini"
