@@ -1043,7 +1043,7 @@ pre {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  gap: 20px;
+  gap: var(--workflow-grid-gap);
   padding: 0;
 }
 
@@ -1243,7 +1243,7 @@ pre {
   min-width: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, white);
   background: color-mix(in srgb, var(--card) 92%, transparent);
-  padding: 0 30px;
+  padding: 0 var(--workflow-grid-gap);
   backdrop-filter: blur(16px);
 }
 
@@ -1257,7 +1257,7 @@ pre {
 .settings-content-body {
   display: grid;
   align-content: start;
-  gap: 28px;
+  gap: var(--workflow-grid-gap);
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
@@ -1265,7 +1265,7 @@ pre {
   background:
     linear-gradient(180deg, var(--card) 0%, var(--background) 100%),
     var(--background);
-  padding: 28px 30px 30px;
+  padding: var(--workflow-grid-gap);
 }
 
 .settings-content-progress .settings-content-body {
@@ -6505,8 +6505,8 @@ pre {
 
   .settings-content-header,
   .settings-content-body {
-    padding-right: 30px;
-    padding-left: 30px;
+    padding-right: var(--workflow-grid-gap);
+    padding-left: var(--workflow-grid-gap);
   }
 
   .metrics-strip {
@@ -6592,12 +6592,12 @@ pre {
   }
 
   .settings-content-header {
-    padding-right: 20px;
-    padding-left: 20px;
+    padding-right: var(--workflow-grid-gap);
+    padding-left: var(--workflow-grid-gap);
   }
 
   .settings-content-body {
-    padding: 24px 20px 30px;
+    padding: var(--workflow-grid-gap);
   }
 
   .metrics-strip {
