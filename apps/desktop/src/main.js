@@ -4264,13 +4264,63 @@ async function listRunners(options = {}) {
   };
 }
 
-// PTY-mode runners do not write `active_ticket_id` / `active_ticket_title`
-// into the state file (legacy run-role.sh used to). Derive the active ticket
-// directly from the filesystem so the UI's "처리 중인 티켓" badge keeps
-// working under PTY mode.
+// Some runner paths still leave stale `active_ticket_id` / `active_ticket_title`
+// in state files when ownership shifts between workers. Re-derive the active
+// ticket from the board so the UI reflects the current inprogress/backlog
+// source of truth instead of stale runner state.
 //   ticket-owner    → first Todo-*.md in tickets/inprogress/
 //   planner         → first order_*.md in tickets/inbox/, else first prd_*.md in tickets/backlog/
 //   wiki-maintainer → leave blank (no per-ticket active item)
+function canonicalTicketOwnerId(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes(":")) {
+    return canonicalTicketOwnerId(normalized.split(":")[0]);
+  }
+  if (normalized === "ticket-owner" || normalized === "ticket" || normalized === "owner") return "worker";
+  if (/^owner-\d+$/.test(normalized)) return normalized.replace(/^owner-/, "worker-");
+  if (/^ai-\d+$/i.test(normalized)) return normalized.replace(/^ai-/i, "worker-");
+  return normalized;
+}
+
+function runnerOwnershipKeys(runner) {
+  const keys = new Set();
+  const normalizedId = canonicalTicketOwnerId(runner?.id || "");
+  const role = String(runner?.role || "").trim().toLowerCase();
+  if (normalizedId) keys.add(normalizedId);
+  if (role === "ticket-owner" || role === "ticket" || role === "owner") {
+    keys.add("worker");
+    if (normalizedId.startsWith("worker-")) {
+      const suffix = normalizedId.replace(/^worker-/, "");
+      keys.add(`owner-${suffix}`);
+      keys.add(`ai-${suffix}`);
+    }
+  }
+  return keys;
+}
+
+function isTicketOwnerRunner(runner) {
+  const role = String(runner?.role || "").trim().toLowerCase();
+  if (role === "ticket-owner" || role === "ticket" || role === "owner") {
+    return true;
+  }
+  const normalizedId = canonicalTicketOwnerId(runner?.id || "");
+  return normalizedId === "worker" || /^worker-\d+$/.test(normalizedId);
+}
+
+function runnerOwnsTicketFromMeta(runner, ticketMeta) {
+  const runnerKeys = runnerOwnershipKeys(runner);
+  if (runnerKeys.size === 0) return false;
+  const ticketKeys = [
+    ticketMeta?.claimedBy,
+    ticketMeta?.executionAi,
+    ticketMeta?.ai
+  ]
+    .map((value) => canonicalTicketOwnerId(value))
+    .filter(Boolean);
+  return ticketKeys.some((value) => runnerKeys.has(value));
+}
+
 async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
   if (!Array.isArray(runners) || runners.length === 0) return;
   const ticketsRoot = path.join(boardRoot, "tickets");
@@ -4288,21 +4338,56 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
       return m ? m[1].trim() : "";
     } catch { return ""; }
   };
+  const readTicketMeta = async (filePath) => {
+    if (!filePath) return null;
+    try {
+      const text = await fs.readFile(filePath, "utf8");
+      const readScalar = (label) => {
+        const match = text.match(new RegExp(`^- ${label}:\\s*(.+)$`, "m"));
+        return match ? match[1].trim() : "";
+      };
+      return {
+        title: readScalar("Title"),
+        ai: readScalar("AI"),
+        executionAi: readScalar("Execution AI"),
+        claimedBy: readScalar("Claimed By")
+      };
+    } catch {
+      return null;
+    }
+  };
   for (const runner of runners) {
-    if ((runner.mode || "") !== "pty") continue;
-    // PTY mode never updates active_ticket_id from inside the runner — the
-    // legacy run-role.sh that did so is gone. Whatever value is in the state
-    // file is whatever the FIRST claim wrote, and it stays stale forever as
-    // tickets cycle through. Always re-derive from the filesystem so the UI
-    // mirrors the inprogress / inbox folders, not stale state.
-    if (runner.role === "ticket-owner") {
+    if (isTicketOwnerRunner(runner)) {
       const file = await readFirstMatch(path.join(ticketsRoot, "inprogress"), "Todo-");
       if (file) {
         const id = file.replace(/\.md$/, "");
-        runner.activeTicketId = id;
-        runner.activeTicketTitle = await readTitle(path.join(ticketsRoot, "inprogress", file));
-        runner.activeItem = id;
-        runner.activeStage = "inprogress";
+        const ticketPath = path.join(ticketsRoot, "inprogress", file);
+        const ticketMeta = await readTicketMeta(ticketPath);
+        const hasLiveOwnershipState = runners.some((candidate) => {
+          if (!isTicketOwnerRunner(candidate)) return false;
+          if ((candidate.activeTicketId || "") !== id) return false;
+          const stage = String(candidate.activeStage || "").trim().toLowerCase();
+          return Boolean(stage) && stage !== "idle";
+        });
+        const anyRunnerMetaMatches = runners.some(
+          (candidate) => isTicketOwnerRunner(candidate) && runnerOwnsTicketFromMeta(candidate, ticketMeta)
+        );
+        const runnerStateMatches = (runner.activeTicketId || "") === id && (runner.activeStage || "").toLowerCase() !== "idle";
+        const runnerMetaMatches = runnerOwnsTicketFromMeta(runner, ticketMeta);
+        const shouldAssign = runnerMetaMatches || (!anyRunnerMetaMatches && runnerStateMatches);
+        if (shouldAssign) {
+          runner.activeTicketId = id;
+          runner.activeTicketTitle = ticketMeta?.title || await readTitle(ticketPath);
+          runner.activeItem = id;
+          if (!runner.activeStage || runner.activeStage.toLowerCase() === "idle") {
+            runner.activeStage = "inprogress";
+          }
+        } else if (anyRunnerMetaMatches || hasLiveOwnershipState || runner.activeTicketId === id) {
+          runner.activeTicketId = "";
+          runner.activeTicketTitle = "";
+          runner.activeItem = "";
+          runner.activeStage = "";
+        }
       } else {
         runner.activeTicketId = "";
         runner.activeTicketTitle = "";

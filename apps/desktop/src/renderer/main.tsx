@@ -247,6 +247,12 @@ type RunnerWithConfigEvidence = AutoflowRunner & {
   configUpdatedAt?: string;
 };
 
+type WorkflowBoardOptions = {
+  projectRoot: string;
+  boardDirName: string;
+  allRunners?: AutoflowRunner[];
+};
+
 type InstalledAgentProfiles = AutoflowInstalledAgentProfiles;
 
 type DisplayLog = AutoflowFilePreview & {
@@ -5433,7 +5439,7 @@ function TicketWorkspaceKanbanView({
   onRequestRefresh
 }: {
   files: AutoflowFilePreview[];
-  options?: { projectRoot: string; boardDirName: string };
+  options?: WorkflowBoardOptions;
   runners?: AutoflowRunner[];
   defaultFolders?: readonly string[];
   ariaLabel?: string;
@@ -5879,7 +5885,7 @@ function WorkflowPinLayer({
   showWhenEmpty = false
 }: {
   files: WorkflowFileEntry[];
-  options?: { projectRoot: string; boardDirName: string };
+  options?: WorkflowBoardOptions;
   pinTitle: string;
   pinSubtitle?: string;
   pinIcon: React.ReactNode;
@@ -6150,7 +6156,7 @@ function TicketKanban({
   onRequestRefresh
 }: {
   board: AutoflowBoardSnapshot | null;
-  options?: { projectRoot: string; boardDirName: string };
+  options?: WorkflowBoardOptions;
   onActionToast?: (severity: AlertSeverity, message: string) => void;
   onRequestRefresh?: () => Promise<void> | void;
 }) {
@@ -6251,7 +6257,7 @@ function TicketBoard({
   installedAgentProfiles?: InstalledAgentProfiles;
   selectedPath: string;
   onSelect: (filePath: string) => void;
-  options?: { projectRoot: string; boardDirName: string };
+  options?: WorkflowBoardOptions;
   // Per-runner action tracker (key=runner.id, value=action label such as
   // "starting"/"stopping_pending"/"run"/"dry-run"/"config"). Empty/missing means
   // that runner's row is idle and its buttons are interactable.
@@ -6411,7 +6417,7 @@ function TicketBoard({
                 runner={runner}
                 onSelect={onSelect}
                 installedAgentProfiles={installedAgentProfiles}
-                options={options}
+                options={options ? { ...options, allRunners: runners } : undefined}
                 actionKey={actionKeys[runner.id] || ""}
                 draft={drafts[runner.id]}
                 savedDraft={savedDrafts[runner.id]}
@@ -7304,7 +7310,7 @@ function detectAndSummarizeJsonLines(content: string): string {
 
 function useLiveStdoutText(
   runner: AutoflowRunner,
-  options?: { projectRoot: string; boardDirName: string },
+  options?: WorkflowBoardOptions,
   maxBytes = 16 * 1024
 ): string {
   const projectRoot = options?.projectRoot || "";
@@ -7715,10 +7721,13 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (!value) return value;
   const role = canonicalWorkflowRunnerRole(value);
   const singleton = workflowRoleIsSingleton(runners, role);
-  if (value === "worker") return singleton ? "worker" : "worker-1";
-  if (/^owner-/.test(value)) return singleton ? "worker" : value.replace(/^owner-/, "worker-");
-  if (/^worker-/.test(value)) return singleton ? "worker" : value;
-  if (/^ai-/i.test(value)) return singleton ? "worker" : value.replace(/^ai-/i, "worker-");
+  const workerAliasMatch = value.match(/^(?:owner|worker|ai)-(\d+)$/i);
+  if (value === "worker") return "worker";
+  if (singleton && role === "ticket-owner") return "worker";
+  if (workerAliasMatch) {
+    const suffix = workerAliasMatch[1];
+    return suffix === "1" ? "worker" : `worker-${suffix}`;
+  }
   if (/^planner-\d+$/.test(value) || /^plan-\d+$/.test(value)) {
     return singleton ? "planner" : value.replace(/^plan-/, "planner-");
   }
@@ -7731,6 +7740,11 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   return value;
 }
 
+function titleCaseWorkflowRunnerId(value: string) {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function isCoordinatorRole(value: string) {
   return ["coordinator", "coord", "doctor", "diagnose"].includes((value || "").toLowerCase());
 }
@@ -7740,14 +7754,16 @@ function displayProgressRunnerLabel(runner: AutoflowRunner) {
   return isCoordinatorRole(runner.role) ? `${agent}(coordinator)` : agent;
 }
 
-function displayProgressRoleLabel(runner: AutoflowRunner) {
+function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunner[]) {
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "Planner";
-  if (role === "ticket-owner" || role === "owner") return "Worker";
+  if (role === "ticket-owner" || role === "owner" || role === "ticket") {
+    return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
+  }
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
   if (role === "verifier") return "Verifier";
 
-  const metaLabel = displayWorkflowRunnerId(runner.id);
+  const metaLabel = displayWorkflowRunnerId(runner.id, runners);
   const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
   return metaLabel ? `${agentName}(${metaLabel})` : agentName;
 }
@@ -7849,7 +7865,7 @@ function AiProgressRow({
   runner: AutoflowRunner;
   onSelect: (filePath: string) => void;
   installedAgentProfiles?: InstalledAgentProfiles;
-  options?: { projectRoot: string; boardDirName: string };
+  options?: WorkflowBoardOptions;
   actionKey?: string;
   draft?: RunnerDraft;
   savedDraft?: RunnerDraft;
@@ -7881,7 +7897,7 @@ function AiProgressRow({
   const ticketSummary = activeTicketSummary(runner);
   const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
   const agentLabel = displayProgressRunnerLabel(runner);
-  const agentTitle = displayProgressRoleLabel(runner);
+  const agentTitle = displayProgressRoleLabel(runner, options?.allRunners);
   const isRunnerActive =
     (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
   const liveStdoutText = useLiveStdoutText(runner, options);
