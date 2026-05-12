@@ -1368,6 +1368,7 @@ pre {
 
 .settings-content-progress .ai-progress-board {
   min-height: 0;
+  overflow: hidden;
   padding-right: 2px;
 }
 
@@ -2421,6 +2422,11 @@ pre {
 
 .ai-progress-row > * + * {
   margin-top: 12px;
+}
+
+.ai-progress-row > .ai-conversation-panel-activity {
+  margin-top: auto;
+  background: color-mix(in srgb, var(--card) 90%, var(--background));
 }
 
 .ai-progress-board {
@@ -3838,6 +3844,7 @@ pre {
 .ai-progress-agent {
   display: block;
   min-width: 0;
+  margin-top: auto;
 }
 
 .ai-progress-agent-title {
