@@ -1021,11 +1021,12 @@ case "$outcome" in
       printf 'inline_merge=done; log written; wiki deferred to Wiki AI\n'
       printf '%s\n' "$inline_merge_output" | awk '/^cleanup_status=/ || /^cleanup_detail=/ || /^wiki\.status=/ || /^wiki\.next_action=/'
 
-      # PRD 6 (2026-05-09): write a PR body draft for the user. This never
-      # pushes or calls gh. The user runs `gh pr create --body-file ...` after
-      # pushing the branch themselves.
+      # PRD 6 (2026-05-09): write a PR body draft. With AUTOFLOW_AUTO_PUSH_AFTER_VERIFY=branch_only
+      # this script will also push the feature branch and create a draft PR automatically.
+      # master/main push is always blocked. Default is off (no push).
       draft_dir="${BOARD_ROOT}/runners/state/pr-drafts"
       draft_script="$(cd "$(dirname "$0")" && pwd)/draft-pr.sh"
+      draft_file=""
       if [ -x "$draft_script" ] && [ -n "$ticket_id" ]; then
         mkdir -p "$draft_dir" 2>/dev/null || true
         draft_file="${draft_dir}/${ticket_id}.md"
@@ -1034,8 +1035,49 @@ case "$outcome" in
           printf 'pr_draft=%s\n' "$draft_file"
         else
           rm -f "$draft_file" 2>/dev/null || true
+          draft_file=""
           printf 'pr_draft=draft_failed\n'
         fi
+      fi
+
+      # PRD_289: AUTOFLOW_AUTO_PUSH_AFTER_VERIFY=branch_only opt-in push.
+      # Pushes the ticket feature branch to origin and creates a draft PR.
+      # master/main is always blocked regardless of mode setting.
+      _auto_push_mode="${AUTOFLOW_AUTO_PUSH_AFTER_VERIFY:-off}"
+      if [ "$_auto_push_mode" = "branch_only" ]; then
+        _wt_branch="$(ticket_worktree_field "$ticket_file" "Branch" 2>/dev/null | tr -d '`' | xargs 2>/dev/null || true)"
+        if [ -z "$_wt_branch" ]; then
+          _wt_path="$(ticket_worktree_path_from_file "$ticket_file" 2>/dev/null || true)"
+          [ -d "$_wt_path" ] && _wt_branch="$(git -C "$_wt_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+        fi
+        case "${_wt_branch:-}" in
+          master|main|"")
+            printf 'auto_push=blocked_master_or_empty branch=%s\n' "${_wt_branch:-empty}"
+            ;;
+          *)
+            _push_rc=0
+            git push origin "$_wt_branch" 2>/dev/null || _push_rc=$?
+            if [ "$_push_rc" -eq 0 ]; then
+              printf 'auto_push=pushed branch=%s\n' "$_wt_branch"
+              if command -v gh >/dev/null 2>&1; then
+                _pr_title="$(awk '/^## Ticket/{f=1;next}/^## /{f=0}f && /^- Title:/{sub(/^- Title:[[:space:]]*/,"");print;exit}' "$ticket_file" 2>/dev/null || echo "ticket $ticket_id")"
+                if [ -n "$draft_file" ] && [ -f "$draft_file" ]; then
+                  gh pr create --draft --head "$_wt_branch" --title "$_pr_title" --body-file "$draft_file" >/dev/null 2>&1 \
+                    && printf 'auto_push=pr_created\n' \
+                    || printf 'auto_push=pr_create_failed_skip\n'
+                else
+                  gh pr create --draft --head "$_wt_branch" --title "$_pr_title" >/dev/null 2>&1 \
+                    && printf 'auto_push=pr_created\n' \
+                    || printf 'auto_push=pr_create_failed_skip\n'
+                fi
+              else
+                printf 'auto_push=gh_not_found_skip\n'
+              fi
+            else
+              printf 'auto_push=push_failed_skip rc=%d\n' "$_push_rc"
+            fi
+            ;;
+        esac
       fi
     elif [ -n "$inline_merge_output" ]; then
       printf 'inline_merge.output_begin\n%s\ninline_merge.output_end\n' "$inline_merge_output"
