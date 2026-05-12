@@ -7754,11 +7754,24 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
 
 function progressBoardRunnerOrder(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
+  const runnerId = (runner.id || "").toLowerCase();
   const idRole = canonicalWorkflowRunnerRole(runner.id);
+  if (runnerId === "worker") return 1;
+  if (runnerId === "verifier") return 2;
+  if (/^worker-\d+$/.test(runnerId)) return 3;
+  if (
+    runnerId === "wiki" ||
+    runnerId === "wiki-maintainer" ||
+    /^wiki-\d+$/.test(runnerId) ||
+    /^wiki-maintainer-\d+$/.test(runnerId)
+  ) {
+    return 4;
+  }
   if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
-  if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 1;
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 2;
-  return 3;
+  if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 5;
+  if (role === "verifier") return 6;
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 7;
+  return 8;
 }
 
 function sortProgressBoardRunners(runners: AutoflowRunner[]) {
