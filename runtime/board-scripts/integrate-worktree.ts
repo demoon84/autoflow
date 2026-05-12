@@ -2,7 +2,7 @@
 /*
  * integrate-worktree.ts — stage + commit ticket worktree changes for
  * AI-led merge into PROJECT_ROOT.
- * See integrate-worktree.sh for CLI/output contract.
+ * See integrate-worktree.sh / .js for full doc; CLI/output unchanged.
  */
 
 import * as fs from "node:fs";
@@ -12,7 +12,7 @@ import * as utils from "./board-utils";
 
 const ticketArg = process.argv[2];
 if (!ticketArg) {
-  process.stderr.write("Usage: integrate-worktree.ts <ticket-file>\n");
+  process.stderr.write(`Usage: integrate-worktree.ts <ticket-file>\n`);
   process.exit(1);
 }
 
@@ -70,7 +70,7 @@ const allowedPaths = utils.extractTicketAllowedPaths(ticketFile);
 if (allowedPaths.length === 0) {
   utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Integration Status", "blocked_missing_allowed_paths");
   utils.appendNote(ticketFile, `Worktree integration blocked at ${timestamp}: Allowed Paths was empty.`);
-  process.stderr.write("Allowed Paths is empty; refusing to stage the whole worktree implicitly.\n");
+  process.stderr.write(`Allowed Paths is empty; refusing to stage the whole worktree implicitly.\n`);
   process.exit(1);
 }
 

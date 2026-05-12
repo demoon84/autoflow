@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # path-conflict-check.sh — thin wrapper around path-conflict-check.ts (TypeScript via tsx).
+# Legacy bash version preserved as path-conflict-check.legacy.sh.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # lint-ticket.sh — thin wrapper around lint-ticket.ts (TypeScript via tsx).
+# Legacy bash version preserved as lint-ticket.legacy.sh.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"

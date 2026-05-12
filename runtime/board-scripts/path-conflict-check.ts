@@ -1,14 +1,23 @@
 #!/usr/bin/env tsx
 /*
  * path-conflict-check.ts — Allowed Paths overlap detector.
- * See path-conflict-check.sh for CLI/output contract.
+ *
+ * Drop-in replacement for path-conflict-check.sh / .js. Same CLI / same
+ * output / same exit codes. Wired into multi-worker dispatch (PRD 5).
+ *
+ * Usage: tsx path-conflict-check.ts <ticket-a.md> <ticket-b.md>
+ *
+ * Exit:
+ *   0  no overlap
+ *   1  overlap (stdout lists "a <-> b" pairs)
+ *   2  usage / argument error
  */
 
 import * as fs from "node:fs";
 
 const argv = process.argv.slice(2);
 if (argv.length !== 2) {
-  process.stderr.write("Usage: tsx path-conflict-check.ts <ticket-a.md> <ticket-b.md>\n");
+  process.stderr.write(`Usage: tsx path-conflict-check.ts <ticket-a.md> <ticket-b.md>\n`);
   process.exit(2);
 }
 const [a, b] = argv;
@@ -55,7 +64,7 @@ const aPaths = concretePaths(a);
 const bPaths = concretePaths(b);
 
 if (aPaths.length === 0 || bPaths.length === 0) {
-  process.stdout.write("unresolvable: at least one ticket has no concrete Allowed Paths\n");
+  process.stdout.write(`unresolvable: at least one ticket has no concrete Allowed Paths\n`);
   process.exit(1);
 }
 
