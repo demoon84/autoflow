@@ -3510,22 +3510,24 @@ pre {
 .ai-progress-config .runner-select {
   width: 100%;
   min-width: 0;
-  height: 32px;
-  border-radius: 8px;
+  height: 26px;
+  border-radius: 6px;
   font-size: var(--font-size-runner-card-meta);
 }
 
 .ai-progress-config .runner-save-button {
   width: auto;
   min-width: 0;
-  height: 32px;
-  border-radius: 8px;
+  height: 26px;
+  border-radius: 6px;
   padding: 0 8px;
   font-size: var(--font-size-runner-card-meta);
   font-weight: 650;
 }
 
 .ai-progress-row .af-badge {
+  height: 20px;
+  padding: 0 6px;
   font-size: var(--font-size-runner-card-meta);
 }
 
@@ -3533,13 +3535,13 @@ pre {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, white);
   border-radius: 12px;
   background: color-mix(in srgb, var(--muted) 42%, var(--card));
-  padding: 8px 10px;
+  padding: 6px 10px;
   overflow: hidden;
 }
 
@@ -3850,7 +3852,7 @@ pre {
 .ai-progress-agent-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
   max-width: 100%;
 }
@@ -3867,7 +3869,7 @@ pre {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  column-gap: 10px;
+  column-gap: 6px;
   row-gap: 2px;
   min-width: 0;
   max-width: 100%;
