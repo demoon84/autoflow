@@ -42,17 +42,27 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 0
 fi
 
-DB_PATH="${BOARD_ROOT}/runners/state/wiki-search.db"
+DB_PATH="${AUTOFLOW_FTS_DB_PATH:-${BOARD_ROOT}/runners/state/wiki-search.db}"
 mkdir -p "$(dirname "$DB_PATH")"
 
-WIKI_ROOT="${BOARD_ROOT}/wiki"
-TICKETS_DONE="${BOARD_ROOT}/tickets/done"
+WIKI_ROOT="${AUTOFLOW_FTS_WIKI_OVERRIDE:-${BOARD_ROOT}/wiki}"
+TICKETS_DONE="${AUTOFLOW_FTS_DONE_OVERRIDE:-${BOARD_ROOT}/tickets/done}"
 
 CHUNK_LEN="${AUTOFLOW_WIKI_FTS_CHUNK_CHARS:-1024}"
 CHUNK_OVERLAP="${AUTOFLOW_WIKI_FTS_CHUNK_OVERLAP:-128}"
 VECTOR_INDEX_ENABLE="${AUTOFLOW_WIKI_VECTOR_INDEX:-off}"
-VECTOR_PROVIDER="${AUTOFLOW_WIKI_EMBEDDING_PROVIDER:-}"
 VECTOR_DIM="${AUTOFLOW_WIKI_VECTOR_DIM:-0}"
+
+# Auto-detect embedding provider: if AUTOFLOW_WIKI_VECTOR_INDEX=on and no provider
+# is set, use wiki-embed.ts (sentence-transformers all-MiniLM-L6-v2, 384-dim).
+if [ "$VECTOR_INDEX_ENABLE" = "on" ] && [ -z "${AUTOFLOW_WIKI_EMBEDDING_PROVIDER:-}" ]; then
+  _embed_ts="${SCRIPT_DIR}/wiki-embed.ts"
+  if [ -f "$_embed_ts" ] && command -v npx >/dev/null 2>&1; then
+    AUTOFLOW_WIKI_EMBEDDING_PROVIDER="npx tsx ${_embed_ts}"
+    VECTOR_DIM=384
+  fi
+fi
+VECTOR_PROVIDER="${AUTOFLOW_WIKI_EMBEDDING_PROVIDER:-}"
 
 export AUTOFLOW_FTS_DB="$DB_PATH"
 export AUTOFLOW_FTS_WIKI="$WIKI_ROOT"
@@ -101,7 +111,7 @@ def generate_embedding(payload, provider_cmd, expected_dim):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            timeout=30,
+            timeout=90,
         )
     except Exception:
         return None
@@ -113,6 +123,47 @@ def generate_embedding(payload, provider_cmd, expected_dim):
     if expected_dim and len(vector) != expected_dim:
         return None
     return vector
+
+
+def generate_embeddings_batch(texts, provider_cmd, expected_dim):
+    """Batch embed multiple texts in a single provider call (--batch mode).
+    Returns list of vectors (or None for failures). Falls back to per-text calls."""
+    if not provider_cmd or not texts:
+        return [None] * len(texts)
+    args = shlex.split(provider_cmd) + ['--batch']
+    try:
+        timeout = max(90, len(texts) * 10)
+        proc = subprocess.run(
+            args,
+            input=json.dumps(texts).encode('utf-8'),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+        )
+    except Exception:
+        return [None] * len(texts)
+    if proc.returncode != 0:
+        return [None] * len(texts)
+    raw = proc.stdout.decode('utf-8', errors='replace').strip()
+    if not raw:
+        return [None] * len(texts)
+    try:
+        vecs = json.loads(raw)
+        if not isinstance(vecs, list):
+            return [None] * len(texts)
+        result = []
+        for v in vecs:
+            if isinstance(v, list) and (not expected_dim or len(v) == expected_dim):
+                result.append([float(x) for x in v])
+            else:
+                result.append(None)
+        # Pad if provider returned fewer results
+        while len(result) < len(texts):
+            result.append(None)
+        return result
+    except Exception:
+        return [None] * len(texts)
 
 
 def first_title(text):
@@ -223,6 +274,22 @@ cur.executescript(
     );
     """
 )
+# Schema migration: if wiki_vectors lacks vector_hash/embedding columns (old schema),
+# drop and recreate to match current spec. Existing vectors are re-generated on next run.
+cur.execute("PRAGMA table_info(wiki_vectors)")
+vec_cols = {row[1] for row in cur.fetchall()}
+if vec_cols and ('vector_hash' not in vec_cols or 'embedding' not in vec_cols):
+    cur.executescript("""
+        DROP TABLE wiki_vectors;
+        CREATE TABLE wiki_vectors (
+          path TEXT NOT NULL,
+          chunk_idx INTEGER NOT NULL,
+          vector_dim INTEGER NOT NULL,
+          vector_hash TEXT NOT NULL,
+          embedding TEXT NOT NULL,
+          PRIMARY KEY (path, chunk_idx)
+        );
+    """)
 conn.commit()
 
 inserted_chunks = 0
@@ -261,7 +328,15 @@ for path in collect_files((wiki_root, done_root)):
 
     title = first_title(text)
     chunks = list(chunkify(text, chunk_len, chunk_overlap))
-    for cidx, sline, eline, body in chunks:
+
+    # Batch embed all chunks of this file in one provider call
+    batch_vectors = []
+    if vector_provider_ready and chunks:
+        batch_vectors = generate_embeddings_batch(
+            [body for _, _, _, body in chunks], vector_provider, vector_dim
+        )
+
+    for i, (cidx, sline, eline, body) in enumerate(chunks):
         chunk_hash = hashlib.sha256(body.encode('utf-8')).hexdigest()[:16]
         cur.execute(
             "INSERT INTO wiki_search(path, chunk_idx, chunk_start_line, chunk_end_line, content_hash, title, body) VALUES(?,?,?,?,?,?,?)",
@@ -270,7 +345,7 @@ for path in collect_files((wiki_root, done_root)):
         inserted_chunks += 1
 
         if vector_provider_ready:
-            vector = generate_embedding(body, vector_provider, vector_dim)
+            vector = batch_vectors[i] if i < len(batch_vectors) else None
             if vector:
                 vector_chunks += 1
                 vdim = len(vector)
