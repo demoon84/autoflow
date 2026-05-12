@@ -69,3 +69,21 @@ interval_seconds = 1800
 enabled = true
 realtime_enabled = true
 command = ""
+
+# Notification channels — fired on needs_user / blocked threshold events.
+# Secrets (webhook_url) go in .autoflow/.local/secrets.json (gitignored).
+# Uncomment and fill in to activate a channel.
+#
+# [[notifications]]
+# type = "osascript"   # macOS system notification (no URL needed)
+# enabled = true
+#
+# [[notifications]]
+# type = "slack"
+# enabled = false
+# webhook_url = "https://hooks.slack.com/services/..."
+#
+# [[notifications]]
+# type = "webhook"
+# enabled = false
+# webhook_url = "https://your-webhook-endpoint/..."

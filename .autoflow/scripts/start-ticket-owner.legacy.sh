@@ -508,6 +508,26 @@ prepare_ticket_owner_context() {
 
   pre_stage="$(ticket_stage "$ticket_file")"
   if [ "$pre_stage" = "blocked" ]; then
+    # Fire blocked-threshold notification (best-effort; never blocks flow).
+    _blocked_threshold="${AUTOFLOW_NOTIFY_BLOCKED_THRESHOLD_SEC:-1800}"
+    _notify_script="${BOARD_ROOT}/scripts/notify-user.ts"
+    _tsx_bin="$(cd "${PROJECT_ROOT:-$BOARD_ROOT/..}" && node -e "process.stdout.write(require.resolve('.bin/tsx'))" 2>/dev/null || true)"
+    if [ -f "$_notify_script" ] && [ -n "$_tsx_bin" ] && [ -x "$_tsx_bin" ]; then
+      _last_updated="$(awk '/^## Ticket$/{f=1;next} /^## /{f=0} f && /^- Last Updated:/{sub(/^- Last Updated:[[:space:]]*/,"");sub(/[[:space:]]*$/,"");print;exit}' "$ticket_file" 2>/dev/null || true)"
+      _blocked_since="$(date -j -f "%Y-%m-%d" "${_last_updated:-1970-01-01}" +%s 2>/dev/null || date -d "${_last_updated:-1970-01-01}" +%s 2>/dev/null || echo 0)"
+      _now_epoch="$(date +%s)"
+      _elapsed=$(( _now_epoch - _blocked_since ))
+      if [ "$_elapsed" -ge "$_blocked_threshold" ]; then
+        _blocked_title="$(awk '/^## Ticket$/{f=1;next} /^## /{f=0} f && /^- Title:/{sub(/^- Title:[[:space:]]*/,"");sub(/[[:space:]]*$/,"");print;exit}' "$ticket_file" 2>/dev/null || true)"
+        "$_tsx_bin" "$_notify_script" \
+          --event blocked \
+          --ticket "$ticket_id" \
+          --title "Autoflow blocked: ${_blocked_title:-ticket ${ticket_id}}" \
+          --message "Ticket blocked for ${_elapsed}s (threshold ${_blocked_threshold}s). Board: ${BOARD_ROOT}" \
+          2>/dev/null || true
+      fi
+    fi
+    unset _blocked_threshold _notify_script _tsx_bin _last_updated _blocked_since _now_epoch _elapsed _blocked_title
     cleanup_integration_status="$(trim_spaces "$(ticket_worktree_field "$ticket_file" "Integration Status")")"
     cleanup_last_event="$(trim_spaces "$(ticket_goal_field "$ticket_file" "Last Event")")"
     if [ "$cleanup_integration_status" = "blocked_post_merge_cleanup" ] || [ "$cleanup_last_event" = "post_merge_cleanup_failed" ]; then

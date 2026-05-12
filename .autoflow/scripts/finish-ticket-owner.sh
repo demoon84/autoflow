@@ -228,6 +228,20 @@ route_to_inbox_retry() {
     fi
   } > "$_retry_inbox_path" 2>/dev/null || _retry_inbox_path=""
 
+  # Fire user notification on needs_user (best-effort; never blocks flow).
+  if [ "$_retry_decision" = "needs_user" ]; then
+    _notify_script="${BOARD_ROOT}/scripts/notify-user.ts"
+    _tsx_bin="$(cd "${PROJECT_ROOT:-$BOARD_ROOT/..}" && node -e "process.stdout.write(require.resolve('.bin/tsx'))" 2>/dev/null || true)"
+    if [ -f "$_notify_script" ] && [ -n "$_tsx_bin" ] && [ -x "$_tsx_bin" ]; then
+      "$_tsx_bin" "$_notify_script" \
+        --event needs_user \
+        --ticket "$ticket_id" \
+        --title "Autoflow needs_user: ${_retry_title:-ticket ${ticket_id}}" \
+        --message "Same failure reached retry_max (${_retry_max}). Failure: ${_failure_class}. Board: ${BOARD_ROOT}" \
+        2>/dev/null || true
+    fi
+  fi
+
   if [ -f "$ticket_file" ]; then
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Claimed By" ""
     replace_scalar_field_in_section "$ticket_file" "## Ticket" "Execution AI" ""
