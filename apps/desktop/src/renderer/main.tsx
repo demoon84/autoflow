@@ -58,6 +58,7 @@ import {
 import { cn } from "@/lib/utils";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
+import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
 
@@ -4385,10 +4386,30 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
   );
 }
 
+function computeArrivalMetrics(board: AutoflowBoardSnapshot | null): ArrivalMetrics {
+  const inboxFiles = board?.tickets?.inbox ?? [];
+  const retryFiles = inboxFiles.filter((f) => /order_.*_retry_.*\.md$/i.test(f.name));
+  // Count retries grouped by origin ticket id (extracted from filename)
+  const ticketRetryCounts = new Map<string, number>();
+  for (const f of retryFiles) {
+    const m = f.name.match(/^order_(\d+)_retry_/);
+    const key = m ? m[1] : f.name;
+    ticketRetryCounts.set(key, (ticketRetryCounts.get(key) ?? 0) + 1);
+  }
+  const maxRepeat = ticketRetryCounts.size ? Math.max(...ticketRetryCounts.values()) : 0;
+  return {
+    uniqueFingerprintCount: ticketRetryCounts.size,
+    maxFingerprintRepeat: maxRepeat,
+    timeoutRatio: 0,
+    avgPassMinutes: 0,
+    retryOrderCount: retryFiles.length,
+  };
+}
+
 function ReportingDashboard({
   board,
   lastUpdated,
-  ticketTotal
+  ticketTotal,
 }: {
   board: AutoflowBoardSnapshot | null;
   lastUpdated: string;
@@ -4528,8 +4549,11 @@ function ReportingDashboard({
     `${formatCount(runnerRunning)}개 실행 / ${formatCount(runnerBlocked)}개 막힘` +
     (runnerNeedUser > 0 ? ` / ${formatCount(runnerNeedUser)}개 needs_user` : "");
 
+  const arrivalMetrics = React.useMemo(() => computeArrivalMetrics(board), [board]);
+
   return (
     <div className="report-dashboard" aria-label={`통계 카드 ${totalTickets}개 · 마지막 업데이트 ${lastUpdatedLabel}`}>
+      <ArrivalGauge metrics={arrivalMetrics} className="mb-3" />
       <div className="report-metric-grid report-metric-grid-primary" aria-label="핵심 보드 상태 요약">
         <ReportMetricCard
           label="코드 영향"

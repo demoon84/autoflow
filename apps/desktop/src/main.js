@@ -5630,6 +5630,10 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  // ArrivalGauge (PRD_285, 2026-05-12): the renderer computes arrival metrics
+  // directly from the board snapshot's tickets.inbox array (retry order filenames).
+  // No extra IPC handler is needed; readBoard already delivers the inbox file list.
+  // board-watcher fires on every tickets/ change so the gauge refreshes in real time.
   // manual_order_196 (2026-05-09): live stdout tail. Reads the LAST maxBytes
   // of a board file (default 16KB) so a polling renderer can show a real-time
   // terminal view of a runner's adapter stdout without stale 196KB head.
