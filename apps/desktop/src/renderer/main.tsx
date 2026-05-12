@@ -3442,6 +3442,7 @@ function RunnerConsole({
       runner.role === "plan" ||
       runner.role === "wiki-maintainer" ||
       runner.role === "wiki" ||
+      runner.role === "verifier" ||
       (isCoordinatorRole(runner.role) && runnerIsEnabled(runner.enabled))
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
@@ -6403,23 +6404,38 @@ function TicketBoard({
             <span>왼쪽 아래 설치 버튼을 눌러 이 프로젝트에 Autoflow 보드를 먼저 설치해 주세요.</span>
           </div>
         ) : runners.length ? (
-          runners.map((runner) => (
-            <AiProgressRow
-              key={runner.id}
-              runner={runner}
-              onSelect={onSelect}
-              installedAgentProfiles={installedAgentProfiles}
-              options={options}
-              actionKey={actionKeys[runner.id] || ""}
-              draft={drafts[runner.id]}
-              savedDraft={savedDrafts[runner.id]}
-              onSelectRunner={onSelectRunner}
-              onControl={onControl}
-              onRunnerAuthChoice={onRunnerAuthChoice}
-              onDraftChange={onDraftChange}
-              onConfigure={onConfigure}
-            />
-          ))
+          <>
+            {runners.map((runner) => (
+              <AiProgressRow
+                key={runner.id}
+                runner={runner}
+                onSelect={onSelect}
+                installedAgentProfiles={installedAgentProfiles}
+                options={options}
+                actionKey={actionKeys[runner.id] || ""}
+                draft={drafts[runner.id]}
+                savedDraft={savedDrafts[runner.id]}
+                onSelectRunner={onSelectRunner}
+                onControl={onControl}
+                onRunnerAuthChoice={onRunnerAuthChoice}
+                onDraftChange={onDraftChange}
+                onConfigure={onConfigure}
+              />
+            ))}
+            {!runners.some((r) => r.role === "verifier") && (
+              <article
+                className="ai-progress-row ai-progress-row-placeholder ai-progress-row-placeholder-verifier"
+                data-runner-role="verifier"
+                data-runner-id="verifier"
+                aria-label="Verifier 자리 (대기 중)"
+              >
+                <div className="ai-progress-row-placeholder-body">
+                  <strong>Verifier</strong>
+                  <span>config.local.toml에 verifier 블록을 추가하면 활성화됩니다.</span>
+                </div>
+              </article>
+            )}
+          </>
         ) : (
           <div className="ai-progress-empty">
             <span>runner 설정이 추가되면 진행 상태가 여기에 표시됩니다.</span>
@@ -7729,6 +7745,7 @@ function displayProgressRoleLabel(runner: AutoflowRunner) {
   if (role === "planner" || role === "plan") return "Planner";
   if (role === "ticket-owner" || role === "owner") return "Worker";
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
+  if (role === "verifier") return "Verifier";
 
   const metaLabel = displayWorkflowRunnerId(runner.id);
   const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
@@ -7887,7 +7904,8 @@ function AiProgressRow({
     runner.role === "ticket-owner" ||
     runner.role === "owner" ||
     runner.role === "planner" ||
-    runner.role === "plan";
+    runner.role === "plan" ||
+    runner.role === "verifier";
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
@@ -7948,6 +7966,7 @@ function AiProgressRow({
   return (
     <article
       data-runner-role={runner.role}
+      data-runner-id={runner.id}
       className={`ai-progress-row ai-progress-${currentKey}${isWorkerProgressRow ? " ai-progress-row-worker" : ""}${
         hideProgressTrack ? " ai-progress-row-no-track" : ""
       }`}
