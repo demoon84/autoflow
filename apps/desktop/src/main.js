@@ -838,12 +838,51 @@ function appendRunnerLog(boardRoot, runnerId, fields) {
   } catch {}
 }
 
+// Generate (or refresh) a sticky-context.md file from the current inprogress
+// ticket. Extracts Allowed Paths, Done When, and Acceptance Probe sections.
+// Written to .autoflow/runners/state/<runnerId>-sticky-context.md.
+// Env knob: AUTOFLOW_CONTEXT_RESET_STICKY (default 1 = enabled)
+function generateStickyContext(boardRoot, runnerId, ticketPath) {
+  const stickyEnabled = (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
+  if (!stickyEnabled) return;
+  try {
+    const raw = fsSync.readFileSync(ticketPath, "utf8");
+    const sections = {};
+    const sectionRe = /^## (.+)$/gm;
+    let match;
+    const positions = [];
+    while ((match = sectionRe.exec(raw)) !== null) {
+      positions.push({ name: match[1].trim(), start: match.index + match[0].length });
+    }
+    for (let i = 0; i < positions.length; i++) {
+      const end = i + 1 < positions.length ? positions[i + 1].start - positions[i + 1].name.length - 4 : raw.length;
+      sections[positions[i].name] = raw.slice(positions[i].start, end).trim();
+    }
+    const parts = [];
+    const ticketId = path.basename(ticketPath, ".md");
+    parts.push(`# Sticky Context — ${ticketId}`);
+    parts.push(`# (auto-generated at claim — re-injected after /compact or /clear)`);
+    parts.push("");
+    for (const key of ["Allowed Paths", "Done When", "Acceptance Probe"]) {
+      if (sections[key]) {
+        parts.push(`## ${key}`);
+        parts.push(sections[key]);
+        parts.push("");
+      }
+    }
+    const outPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
+    fsSync.mkdirSync(path.dirname(outPath), { recursive: true });
+    fsSync.writeFileSync(outPath, parts.join("\n"), "utf8");
+  } catch {}
+}
+
 // Inject a context reset slash command into a PTY runner after ticket pass.
 // Reads cumulative_tokens from the runner state file to decide compact vs clear.
 // Env knobs:
 //   AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS   (default 1 = enabled)
 //   AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD   (default 100000)
 //   AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK  (default 1)
+//   AUTOFLOW_CONTEXT_RESET_STICKY            (default 1 = inject sticky prelude after reset)
 function scheduleContextReset(runnerId, meta) {
   const enabled = (process.env.AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS ?? "1") !== "0";
   if (!enabled) return;
@@ -881,6 +920,25 @@ function scheduleContextReset(runnerId, meta) {
       if (mgr.get(runnerId)?.status !== "running") return;
       mgr.writePrompt(runnerId, "[wake] fresh-start", { paste });
       updateWakeActivity(runnerId);
+      // Inject sticky prelude so Allowed Paths / Done When survive /compact or /clear.
+      const stickyEnabled = (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
+      if (stickyEnabled) {
+        try {
+          const stickyPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
+          const stickyContent = fsSync.readFileSync(stickyPath, "utf8").trim();
+          if (stickyContent) {
+            setTimeout(() => {
+              if (mgr.get(runnerId)?.status !== "running") return;
+              mgr.writePrompt(runnerId, `[sticky-context]\n${stickyContent}`, { paste });
+            }, 1000);
+            appendRunnerLog(boardRoot, runnerId, {
+              event: "context_reset_sticky_inject",
+              runner_id: runnerId,
+              sticky_path: stickyPath,
+            });
+          }
+        } catch {}
+      }
     }, 2000);
     // Respawn fallback: if PTY shows no output 30 s after inject, respawn.
     if (respawnFallback) {
@@ -1190,6 +1248,22 @@ function ensureBoardWatcher(scope) {
               { stdio: "ignore", detached: true }
             ).unref();
           } catch {}
+        }
+      }
+      // Sticky context generation: when a Todo-*.md appears in inprogress/,
+      // the ticket-owner just claimed it. Write sticky-context.md with the
+      // ticket's Allowed Paths / Done When / Acceptance Probe.
+      if (
+        reason.startsWith("tickets/inprogress/") &&
+        /Todo-\d+\.md$/.test(reason)
+      ) {
+        const ticketFile = path.basename(reason);
+        const ticketPath = path.join(boardRoot, "tickets", "inprogress", ticketFile);
+        for (const [rid, meta] of ptyRunnerMeta.entries()) {
+          if (meta.projectRoot !== scope.projectRoot) continue;
+          if (meta.boardDirName !== boardDirName) continue;
+          if (meta.role !== "ticket-owner") continue;
+          generateStickyContext(boardRoot, rid, ticketPath);
         }
       }
       // Context reset after ticket pass: when a done/*/Todo-*.md appears,
