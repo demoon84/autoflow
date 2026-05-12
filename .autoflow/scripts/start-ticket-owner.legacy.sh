@@ -25,15 +25,58 @@ set_thread_context_record "ticket-owner" "$worker_id" "" "" ""
 # runner-id can safely take over after a PTY restart while a different alive
 # runner still blocks claim.
 
-# PRD 5 (2026-05-09): optional multi-worker path conflict guard.
+# PRD_279 (2026-05-12): dispatcher race window protection.
+# acquire_dispatch_lock uses mkdir atomicity — only one process can create the
+# dir at a time. The PID file holds $$ (parent PID in bash subshells) so the
+# lock is tied to the outer process even when called from $() substitution.
+# Stale locks (dead holder + >30 s old) are auto-reclaimed.
+acquire_dispatch_lock() {
+  local lock_dir="${BOARD_ROOT}/runners/state/dispatch.lock"
+  local pid_file="${lock_dir}/pid"
+  local held_pid lock_mtime now_epoch stale_threshold=30
+
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s\n' "$$" > "$pid_file"
+    return 0
+  fi
+
+  held_pid="$(cat "$pid_file" 2>/dev/null || true)"
+  if autoflow_pid_is_running "${held_pid:-}"; then
+    return 1
+  fi
+
+  now_epoch="$(date +%s)"
+  lock_mtime="$(stat -f%m "$lock_dir" 2>/dev/null || stat -c%Y "$lock_dir" 2>/dev/null || echo 0)"
+  if [ $((now_epoch - lock_mtime)) -lt $stale_threshold ]; then
+    return 1
+  fi
+
+  rm -rf "$lock_dir" 2>/dev/null || true
+  if mkdir "$lock_dir" 2>/dev/null; then
+    printf '%s\n' "$$" > "$pid_file"
+    return 0
+  fi
+
+  return 1
+}
+
+# Release only when we own the lock (PID check prevents removing another
+# worker's lock if we lost a mkdir race during stale reclaim).
+release_dispatch_lock() {
+  local lock_dir="${BOARD_ROOT}/runners/state/dispatch.lock"
+  local held_pid
+  held_pid="$(cat "${lock_dir}/pid" 2>/dev/null || true)"
+  [ "${held_pid:-}" = "$$" ] && rm -rf "$lock_dir" 2>/dev/null || true
+}
+
+# PRD 5 (2026-05-09): multi-worker path conflict guard — default on.
 # Returns 0 (conflict) when candidate's Allowed Paths overlap any inprogress
-# ticket owned by a different worker. Returns 1 otherwise. No-op when
-# AUTOFLOW_PATH_CONFLICT_CHECK is unset/off, so single-worker default is fast.
+# ticket owned by a different worker. Returns 1 otherwise. Disable explicitly
+# with AUTOFLOW_PATH_CONFLICT_CHECK=off (or 0/false/no).
 todo_conflicts_with_other_inprogress() {
   local candidate="$1"
-  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-}" in
-    on|1|true|yes) ;;
-    *) return 1 ;;
+  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-on}" in
+    off|0|false|no) return 1 ;;
   esac
 
   local script_dir conflict_script other_file owner_field
@@ -57,21 +100,23 @@ todo_conflicts_with_other_inprogress() {
 }
 
 find_next_dispatchable_todo() {
-  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-}" in
-    on|1|true|yes)
-      local candidate
-      while IFS= read -r candidate; do
-        [ -n "$candidate" ] || continue
-        todo_conflicts_with_other_inprogress "$candidate" && continue
-        printf '%s' "$candidate"
-        return 0
-      done < <(list_matching_files "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md')
-      return 1
-      ;;
-    *)
+  acquire_dispatch_lock || return 1
+
+  case "${AUTOFLOW_PATH_CONFLICT_CHECK:-on}" in
+    off|0|false|no)
       lowest_matching_file "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md'
+      return
       ;;
   esac
+
+  local candidate
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    todo_conflicts_with_other_inprogress "$candidate" && continue
+    printf '%s' "$candidate"
+    return 0
+  done < <(list_matching_files "${BOARD_ROOT}/tickets/todo" 'Todo-*.md' 'tickets_*.md')
+  return 1
 }
 
 ticket_owned_by_worker() {
@@ -768,14 +813,14 @@ if [ -n "$requested_normalized" ]; then
     exit 0
   fi
 else
-  # PRD 5 (2026-05-09): when AUTOFLOW_PATH_CONFLICT_CHECK is on, walk the todo
-  # queue in order and skip candidates whose Allowed Paths overlap any
-  # inprogress ticket owned by a different worker. Default (off) keeps the
-  # single-worker fast path: lowest_matching_file returns the first todo and
-  # claim proceeds.
+  # PRD 5 (2026-05-09) / PRD_279 (2026-05-12): walk the todo queue with
+  # path-conflict filtering (default on). find_next_dispatchable_todo holds the
+  # dispatch.lock through the claim so two workers cannot pick the same ticket.
+  # release_dispatch_lock is called after mv completes (or when none found).
   next_ticket="$(find_next_dispatchable_todo || true)"
   if [ -n "$next_ticket" ]; then
     claimed_ticket="$(claim_existing_ticket "$next_ticket" || true)"
+    release_dispatch_lock
     if [ -z "$claimed_ticket" ]; then
       fail_or_idle "Ticket is already claimed by another owner." "ticket_claim_conflict"
     fi
@@ -783,6 +828,7 @@ else
     prepare_ticket_owner_context "$claimed_ticket" "todo"
     exit 0
   fi
+  release_dispatch_lock
 
   legacy_verifier_ticket="$(lowest_matching_file "${BOARD_ROOT}/tickets/verifier" 'Todo-*.md' 'tickets_*.md' || true)"
   if [ -n "$legacy_verifier_ticket" ]; then
