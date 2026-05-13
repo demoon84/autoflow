@@ -14,7 +14,7 @@ planner_workers = ["planner"]
 wiki_workers = ["wiki"]
 
 # Legacy role-pipeline workers. Keep these empty for the default
-# 3-runner topology. Populate only if you intentionally opt into the
+# 4-runner topology. Populate only if you intentionally opt into the
 # legacy planner/todo/verifier or merge-bot pipeline.
 todo_workers = []
 verifier_workers = []
@@ -43,5 +43,5 @@ idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-up
 ownership_rule = "Every live worker id should be unique. Impl AI (worker) owns one active ticket end-to-end."
 thread_binding_rule = "One conversation per worker: fill every [thread_ids] entry with a unique Codex thread id. Shared mode: leave [thread_ids] empty and set target_thread_id only."
 trigger_rule = "All three heartbeats should keep running until the user explicitly says stop."
-wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.sh or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."
-legacy_rule = "merge_workers, todo_workers, and verifier_workers are kept for role-pipeline compatibility; the 3-runner topology leaves all three empty because Impl AI absorbs todo claim, verification, and inline merge."
+wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.ts or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."
+legacy_rule = "merge_workers and todo_workers are kept for role-pipeline compatibility; the 4-runner topology uses the verifier runner for semantic review and keeps legacy todo/merge workers empty."

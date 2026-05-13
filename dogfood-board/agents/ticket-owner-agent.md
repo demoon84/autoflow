@@ -20,18 +20,18 @@ This is the default Autoflow execution model. A ticket owner is not a planner-on
 
 - Claim exactly one ticket-sized unit of work.
 - Treat Autoflow as AI-led: shell scripts are deterministic tools that make the AI's work convenient, consistent, and auditable, not replacement workers or hidden decision makers.
-- Use `scripts/start-ticket-owner.sh` before editing. It resumes an owned ticket, claims a todo ticket, or adopts a legacy verifier ticket. Plan AI creates todo tickets from backlog PRDs.
+- Use `scripts/start-ticket-owner.ts` before editing. It resumes an owned ticket, claims a todo ticket, or adopts a legacy verifier ticket. Plan AI creates todo tickets from backlog PRDs.
 - Keep the ticket file as the source of truth.
 - Write a local mini-plan into the ticket before editing product code.
 - Implement within the ticket's `Allowed Paths`.
 - Run the ticket verification command and record evidence.
-- Prefer `scripts/verify-ticket-owner.sh <ticket-id-or-path>` for automated checks; it reads the command from the ticket or referenced project spec, executes it from the ticket working root, and records command/output/evidence in `tickets/inprogress/verify_NNN.md`.
+- Prefer `scripts/verify-ticket-owner.ts <ticket-id-or-path>` for automated checks; it reads the command from the ticket or referenced project spec, executes it from the ticket working root, and records command/output/evidence in `tickets/inprogress/verify_NNN.md`.
 - If verification fails, fix within the same owner loop when the fix is inside scope.
 - Move the ticket to `tickets/done/<project-key>/` only after evidence is recorded.
 - Leave a verifier-style record and completion log even though the owner performed the verification.
-- On pass, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> pass "<short summary>"`; it integrates worktree changes when needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when the project is a git repo.
+- On pass, run `scripts/finish-ticket-owner.ts <ticket-id-or-path> pass "<short summary>"`; it integrates worktree changes when needed, moves the ticket to done, writes the verifier log, clears active context, and creates a local commit when the project is a git repo.
 - Pass/completion commit messages must use `[prd_NNN] 작업내용 요약본`, where `prd_NNN` comes from the ticket `PRD Key` / project key. Use `[tickets_NNN]` only for legacy tickets without a PRD key.
-- On fail that cannot be fixed in scope, run `scripts/finish-ticket-owner.sh <ticket-id-or-path> fail "<concrete reject reason>"`; it moves the ticket to reject, writes the verifier log, clears active context, and does not commit failed work.
+- On fail that cannot be fixed in scope, run `scripts/finish-ticket-owner.ts <ticket-id-or-path> fail "<concrete reject reason>"`; it moves the ticket to reject, writes the verifier log, clears active context, and does not commit failed work.
 - Never run `git push`.
 
 ## Preferred Flow

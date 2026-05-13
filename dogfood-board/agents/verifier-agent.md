@@ -13,7 +13,7 @@
 
 ## Inputs
 
-- `scripts/start-verifier.sh` 출력
+- `scripts/start-verifier.ts` 출력
   - `status=ok` 이면 `verify`, `ticket_id`, `ticket_title`, `run`, `working_root`, `integration_command` 경로 제공
   - `status=resume` 이면 이 대화창/worker 가 이미 맡은 verifier 티켓을 계속 검증
   - `status=blocked` / `reason=conversation_already_has_active_verification` 이면 이 대화창의 active verification 을 먼저 끝내고, 다른 verifier 티켓은 새 Codex 대화창에서 처리
@@ -33,7 +33,7 @@
 
 ## Rules
 
-1. 검증 명령은 `start-verifier.sh` 가 출력한 `working_root` 에서 실행한다. 티켓 `Worktree.Path` 가 있으면 그 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 다.
+1. 검증 명령은 `start-verifier.ts` 가 출력한 `working_root` 에서 실행한다. 티켓 `Worktree.Path` 가 있으면 그 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 다.
 2. spec 의 `Global Acceptance Criteria` 가 verifier checklist 의 우선 근거다.
 3. 브라우저 확인이 필요해도 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
 4. 현재 tick 에서 Codex 브라우저 도구 / Claude browser tool 탭을 직접 열었다면, 사용자가 유지하라고 한 경우를 제외하고 **반드시 같은 tick 안에서 닫고 끝낸다**. 열어두고 다음 tick 으로 넘기지 않는다.
@@ -55,7 +55,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 ## Recommended Procedure (매 heartbeat tick)
 
 1. 현재 스레드의 verifier heartbeat 가 살아 있는지 확인한다. 없으면 1분 heartbeat 로 생성 또는 재개한다.
-2. `scripts/start-verifier.sh` 실행.
+2. `scripts/start-verifier.ts` 실행.
    - `status=idle` → 현재 wake-up 만 종료.
    - `status=ok` → `verify`, `run`, `ticket_id`, `ticket_title`, `routing_pass`, `routing_fail` 확보.
    - `status=resume` → 기존 active verifier 티켓의 `verify`, `run`, `ticket_id`, `routing_pass`, `routing_fail` 확보 후 이어서 검증.
@@ -76,7 +76,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 - `worktree_path` 가 비어 있지 않으면 먼저 `integration_command` 를 실행해 티켓 worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 가져온다. 이 단계는 commit 하지 않는다.
 - `mv tickets/verifier/tickets_NNN.md tickets/done/<project-key>/tickets_NNN.md`
 - 티켓 `Stage = done`, `Result.Summary` 갱신
-- `scripts/write-verifier-log.sh tickets/done/<project-key>/tickets_NNN.md tickets/inprogress/verify_NNN.md pass` 실행 후 검증 기록은 `tickets/done/<project-key>/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
+- `finish-ticket-owner.ts` finalization records the completion log, archives verification evidence, and clears active runtime context.
 - `cd PROJECT_ROOT && git add . && git commit -m "[prd_NNN] 작업내용 요약본"`
    - **절대 `git push` 하지 않는다.**
 8. **Fail 인 경우** (`routing_fail` 힌트 따라):
@@ -91,7 +91,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
      ```
    - `mv tickets/verifier/tickets_NNN.md tickets/reject/reject_NNN.md`
    - 티켓 `Stage = rejected`, `Result.Summary` 갱신 ("reject: <요약>")
-- `scripts/write-verifier-log.sh tickets/reject/reject_NNN.md tickets/inprogress/verify_NNN.md fail` 실행 후 검증 기록은 `tickets/reject/verify_NNN.md` 로 같이 이동되고, 생성된 로그 경로까지 티켓 `Verification` 블록에 반영된다. 이 스크립트가 active runtime context 를 비운다
+- `finish-ticket-owner.ts` finalization records the completion log, archives verification evidence, and clears active runtime context.
    - worktree 는 삭제하지 않는다. reject 재계획이나 사람이 실패 원인을 확인할 때 참고할 수 있게 남긴다.
 9. 브라우저나 탭을 열었다면 pass / fail 처리 전에 정리 상태를 확인한다. 사용자가 유지하라고 하지 않았다면 열린 탭/페이지를 닫고 나서 현재 tick 을 마친다.
 10. git commit 은 pass 경로에서만. fail 경로에서는 commit 하지 않는다 (working tree 는 남지만 커밋 시점 판단은 다음 재계획 사이클에서).
@@ -107,7 +107,7 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 ## Boundaries
 
 - 코드 수정 금지 — fix 는 todo worker 의 영역. verifier 는 결과 기록만.
-- worktree 코드 통합은 pass 경로에서 `scripts/integrate-worktree.sh` 로만 수행한다. verifier 가 직접 소스 파일을 수정하지 않는다.
+- worktree 코드 통합은 pass 경로에서 `scripts/integrate-worktree.ts` 로만 수행한다. verifier 가 직접 소스 파일을 수정하지 않는다.
 - 새 티켓 생성 금지 (planner 영역).
 - spec / plan 수정 금지.
 - git push 절대 금지.
@@ -122,4 +122,4 @@ heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 veri
 
 - tick 중에는 `start-verifier.*` 가 active ticket context 를 잡아도 된다.
 - tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 verifier 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
-- pass / fail 완료 시에는 `write-verifier-log.*` 도 active context 를 비운다.
+- pass / fail 완료 시에는 `finish-ticket-owner.ts` finalization 이 active context 를 비운다.

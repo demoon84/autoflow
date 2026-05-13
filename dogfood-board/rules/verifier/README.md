@@ -24,7 +24,7 @@
 
 주의:
 
-- 실제 검증 명령은 `start-verifier.sh` 가 출력한 `working_root` 에서 실행한다. ticket worktree 가 있으면 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 가 fallback 이다.
+- 실제 검증 명령은 `start-verifier.ts` 가 출력한 `working_root` 에서 실행한다. ticket worktree 가 있으면 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 가 fallback 이다.
 - 검증 기록 파일은 시작 시 `BOARD_ROOT/tickets/inprogress/verify_*.md` 로 만들고, 완료 후에는 pass 면 `tickets/done/<project-key>/verify_*.md`, fail 면 `tickets/reject/verify_*.md` 로 정리한다.
 - verifier 가 pass / fail 판정을 끝내면 `BOARD_ROOT/logs/` 에 completion log 를 남긴다.
 - 검증 기록과 completion log 에도 `## Reference Notes` 를 남겨 `project / plan / ticket / verify` note 가 이어지게 한다.

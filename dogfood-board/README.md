@@ -23,19 +23,19 @@ Autoflow 보드는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이
 ## First Use
 
 1. `#af` 또는 `#autoflow` 로 사용자와 대화해 내용을 정리하고, 저장이 확정되면 `tickets/backlog/project_{NNN}.md` 에 남긴다. Desktop/CLI handoff 저장을 켜면 같은 승인 내용을 `conversations/project_{NNN}/spec-handoff.md` 에도 보관한다.
-2. 원하면 `scripts/install-stop-hook.sh install` 을 한 번 실행한다. 그러면 현재 보드 `check-stop.sh` 가 Codex Stop hook 에 연결되어, Ticket Owner 또는 legacy role work 가 남아 있으면 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 훅은 heartbeat / watcher 를 대체하지 않고 보완한다.
+2. 원하면 `scripts/install-stop-hook.ts install` 을 한 번 실행한다. 그러면 현재 보드 `check-stop.ts` 가 Codex Stop hook 에 연결되어, Ticket Owner 또는 legacy role work 가 남아 있으면 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 훅은 heartbeat / watcher 를 대체하지 않고 보완한다.
 3. `autoflow run ticket` 으로 `worker` runner 를 깨운다. 이 runner 는 한 티켓의 local plan, implementation, verification, evidence, done/reject 이동까지 한 번에 책임진다.
 4. 검증 실패가 티켓 scope 안에서 고칠 수 있으면 같은 owner loop 안에서 수정하고 다시 검증한다. scope 밖이면 `reject` 기록으로 남긴다.
 5. 기존 `#plan`, `#todo`, `#veri` role-pipeline 흐름은 호환 경로로만 유지한다.
 6. 위 heartbeat 는 사용자가 명시적으로 "멈춰"라고 하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기다.
-7. heartbeat 대신 파일 변화에 더 빨리 반응시키고 싶다면 watcher 를 같이 둔다. `scripts/watch-board.sh` 를 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보낸다. legacy role-pipeline route 를 켜면 `tickets/reject/`, `tickets/done/` 하위 프로젝트 폴더도 함께 감시한다. hook 실행 기록은 `logs/hooks/` 에 남는다.
+7. heartbeat 대신 파일 변화에 더 빨리 반응시키고 싶다면 watcher 를 같이 둔다. `scripts/watch-board.ts` 를 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보낸다. legacy role-pipeline route 를 켜면 `tickets/reject/`, `tickets/done/` 하위 프로젝트 폴더도 함께 감시한다. hook 실행 기록은 `logs/hooks/` 에 남는다.
 
 직접 heartbeat 세트를 관리하고 싶다면 생성된 `automations/heartbeat-set.toml` 을 수정한 뒤 `autoflow render-heartbeats` 를 실행하면 된다. 결과는 `automations/rendered/<set-name>/` 아래에 생긴다.
 
 보드 루트에서 아래처럼 watcher 를 직접 띄울 수 있다. 이 방식은 디버깅용 foreground 실행이다.
 
 ```bash
-./scripts/watch-board.sh
+./scripts/watch-board.ts
 ```
 
 창 없는 운영은 설치 CLI 쪽에서 아래처럼 실행한다.
@@ -77,28 +77,27 @@ Autoflow 보드는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이
 
 생성된 보드에는 아래 runtime 훅과 helper 가 들어 있다.
 
-- `common.sh`
-- `runner-common.sh`
-- `check-stop.sh`
-- `file-watch-common.sh`
-- `install-stop-hook.sh`
-- `run-hook.sh`
-- `watch-board.sh`
-- `set-thread-context.sh`
-- `clear-thread-context.sh`
-- `start-spec.sh`
-- `start-ticket-owner.sh`
-- `verify-ticket-owner.sh`
-- `finish-ticket-owner.sh`
-- `start-plan.sh`
-- `start-todo.sh`
-- `handoff-todo.sh`
-- `start-verifier.sh`
-- `integrate-worktree.sh`
-- `write-verifier-log.sh`
+- `common.ts`
+- `runner-common.ts`
+- `check-stop.ts`
+- `file-watch-common.ts`
+- `install-stop-hook.ts`
+- `run-hook.ts`
+- `watch-board.ts`
+- `set-thread-context.ts`
+- `clear-thread-context.ts`
+- `start-spec.ts`
+- `start-ticket-owner.ts`
+- `verify-ticket-owner.ts`
+- `finish-ticket-owner.ts`
+- `start-plan.ts`
+- `start-todo.ts`
+- `handoff-todo.ts`
+- `start-verifier.ts`
+- `integrate-worktree.ts`
 
-`install-stop-hook.sh` 는 현재 보드 `check-stop.sh` 를 Codex Stop hook manifest (`~/.codex/hooks.json`) 에 설치 / 제거 / 상태 확인하는 helper 다. 이미 있던 다른 Stop hook 은 유지하고, 현재 보드 command 만 idempotent 하게 추가 / 제거한다.
-`run-hook.sh` / `watch-board.sh` 는 file-watch 쪽 one-shot dispatcher 와 watcher 다.
+`install-stop-hook.ts` 는 현재 보드 `check-stop.ts` 를 Codex Stop hook manifest (`~/.codex/hooks.json`) 에 설치 / 제거 / 상태 확인하는 helper 다. 이미 있던 다른 Stop hook 은 유지하고, 현재 보드 command 만 idempotent 하게 추가 / 제거한다.
+`run-hook.ts` / `watch-board.ts` 는 file-watch 쪽 one-shot dispatcher 와 watcher 다.
 
 기본 실행 역할은 아래처럼 둔다.
 
@@ -137,7 +136,7 @@ legacy role-pipeline 이 필요할 때만 아래 역할을 켠다.
   - 완료 시 `logs/` 아래 completion log 를 남긴다.
   - `git push` 는 절대 금지다.
 
-- `watch-board.sh`
+- `watch-board.ts`
   - 장기 실행 watcher 다.
   - `automations/file-watch.psd1` (legacy) 설정을 읽고 route 별 hook 을 dispatch 한다.
   - 기본값은 backlog / todo / verifier 변경을 `ticket` route 로 dispatch 한다.
@@ -163,6 +162,6 @@ legacy role-pipeline 이 필요할 때만 아래 역할을 켠다.
 - `runners/` 는 로컬 프로세스 상태만 담으며 ticket stage 를 대체하지 않는다.
 - 완료 판정은 `tickets/` 와 verifier 기록으로 한다. `wiki/` 는 이해를 돕는 파생 문서다.
 - local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 다음 단계이며, 현재 board lifecycle 의 기본값은 `#af` / `#autoflow` handoff 뒤 `autoflow run ticket` 으로 이어지는 ticket-owner 흐름이다.
-- 검증 명령은 기본적으로 `verify-ticket-owner.sh` 가 출력한 `working_root` 에서 실행한다. legacy verifier mode 에서는 `start-verifier.sh` 가 같은 역할을 한다. 티켓 worktree 가 있으면 worktree 가 우선이고, 없으면 호스트 프로젝트 루트다.
+- 검증 명령은 기본적으로 `verify-ticket-owner.ts` 가 출력한 `working_root` 에서 실행한다. legacy verifier mode 에서는 `start-verifier.ts` 가 같은 역할을 한다. 티켓 worktree 가 있으면 worktree 가 우선이고, 없으면 호스트 프로젝트 루트다.
 - 자동화는 사용자가 멈추라고 하기 전까지 계속 살아 있어야 한다.
 - board stage 가 authoritative 다. 기본 흐름에서는 Ticket Owner 가 pass / fail 을 판정하고, legacy role-pipeline 에서는 verifier 만 판정한다.

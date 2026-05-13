@@ -24,7 +24,7 @@ Ticket Owner Mode is the default execution model for a single ticket's lifecycle
 
 ## Outputs
 
-- Updated `tickets/inprogress/tickets_NNN.md` (verification evidence lives directly in the `## Verification` section).
+- Updated `tickets/inprogress/Todo-NNN.md` (verification evidence lives directly in the `## Verification` section).
 - Updated `Recovery State` when the owner resolves, hits, or reports a blocker.
 - A verified, AI-merged ticket finalized under `tickets/done/<project-key>/` after pass.
 - On fail the ticket body is embedded in `tickets/inbox/order_<id>_retry_<N>_<ts>.md` and the inprogress markdown is removed. Retry order is the only retry signal — no separate `tickets/reject/` queue.

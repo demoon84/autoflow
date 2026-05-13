@@ -1,98 +1,106 @@
 #!/usr/bin/env npx tsx
-/**
+/*
  * merge-ready-ticket.ts
  *
- * TypeScript entry point for the Autoflow worktree-to-main merge flow.
- * Performs a pre-flight Integration Status check (needs_ai_merge detection)
- * then delegates full merge orchestration to merge-ready-ticket.legacy.sh.
- *
- * needs_ai_merge conditions (checked pre-flight):
- *   - Worktree Integration Status already set to needs_ai_merge
- *   - Unresolved merge conflicts in worktree
+ * Cross-platform merge finalization shim. The durable finalization logic lives
+ * in finish-ticket-owner.ts; this command preserves the historical manual
+ * merge entrypoint without delegating to shell.
  */
 
-import { spawnSync, execFileSync } from "node:child_process";
+import * as fs from "node:fs";
 import * as path from "node:path";
-import { readFileSafe, resolveBoardRoot, ticketWorktreeField } from "./board-utils.js";
+import { spawnSync } from "node:child_process";
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
-const legacyScript = path.join(scriptDir, "merge-ready-ticket.legacy.sh");
-
-// ─── Pre-flight: needs_ai_merge detection ────────────────────────────
-
-function checkNeedsAiMerge(ticketFile: string): string | null {
-  if (!ticketFile) return null;
-  const content = readFileSafe(ticketFile);
-  if (!content) return null;
-
-  // Check current Integration Status
-  const integStatus = ticketWorktreeField(ticketFile, "Integration Status");
-  if (integStatus === "needs_ai_merge") {
-    return `Integration Status already set to needs_ai_merge`;
-  }
-
-  // Check for conflict markers in worktree
-  const worktreePath = ticketWorktreeField(ticketFile, "Path").replace(/`/g, "").trim();
-  if (worktreePath) {
-    try {
-      execFileSync("git", ["diff", "--check"], {
-        cwd: worktreePath,
-        stdio: ["ignore", "pipe", "pipe"],
-        encoding: "utf8",
-      });
-    } catch {
-      return `Conflict markers detected in worktree at ${worktreePath}`;
-    }
-  }
-
-  return null;
-}
-
-function resolveTicketFile(arg: string): string {
-  if (!arg) return "";
-  if (arg.endsWith(".md")) return arg;
-  const boardRoot = resolveBoardRoot();
-  const num = arg.replace(/^Todo-/i, "");
-  return path.join(boardRoot, "tickets", "inprogress", `Todo-${num}.md`);
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────
+const scriptDir = path.dirname(path.resolve(process.argv[1] || __filename));
+const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(scriptDir, ".."));
+const projectRoot = path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || path.join(boardRoot, ".."));
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  process.stdout.write(
-    "merge-ready-ticket.ts — Autoflow worktree merge pre-flight (TS).\n" +
-    "Usage: npx tsx merge-ready-ticket.ts [ticket-id-or-path]\n" +
-    "Checks needs_ai_merge conditions then delegates to merge-ready-ticket.legacy.sh.\n"
-  );
+  process.stdout.write("Usage: merge-ready-ticket.ts <ticket-id-or-path>\n");
   process.exit(0);
 }
 
-// Pre-flight: emit warning if needs_ai_merge detected (non-blocking)
-const ticketArg = process.argv[2] ?? "";
-if (ticketArg) {
-  try {
-    const ticketFile = resolveTicketFile(ticketArg);
-    const reason = checkNeedsAiMerge(ticketFile);
-    if (reason) {
-      process.stderr.write(
-        `[merge-ready-ticket] pre-flight: needs_ai_merge detected — ${reason}\n` +
-        `[merge-ready-ticket] delegating to legacy script which will handle the merge routing\n`
-      );
-    }
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[merge-ready-ticket] pre-flight skipped: ${msg}\n`);
-  }
+const ticketRef = process.argv[2] || "";
+if (!ticketRef) {
+  process.stderr.write("Usage: merge-ready-ticket.ts <ticket-id-or-path>\n");
+  process.exit(1);
 }
 
-const result = spawnSync("bash", [legacyScript, ...process.argv.slice(2)], {
+const ticketFile = resolveTicketFile(ticketRef);
+const summary = ticketFile ? scalar(ticketFile, "Result", "Summary") || "merge ready ticket" : "merge ready ticket";
+const finishTs = path.join(scriptDir, "finish-ticket-owner.ts");
+const runner = tsxCommand();
+const result = spawnSync(runner.command, [...runner.args, finishTs, ticketRef, "pass", summary], {
+  cwd: boardRoot,
+  env: {
+    ...process.env,
+    AUTOFLOW_BOARD_ROOT: boardRoot,
+    AUTOFLOW_PROJECT_ROOT: projectRoot,
+    BOARD_ROOT: boardRoot,
+    PROJECT_ROOT: projectRoot,
+    AUTOFLOW_ROLE: "merge",
+    AUTOFLOW_SKIP_VERIFIER: "1",
+  },
   stdio: "inherit",
-  env: process.env,
 });
 
 if (result.error) {
   process.stderr.write(`[merge-ready-ticket] exec error: ${result.error.message}\n`);
   process.exit(1);
 }
-
 process.exit(typeof result.status === "number" ? result.status : 1);
+
+function tsxCommand(): { command: string; args: string[] } {
+  const local = path.join(projectRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
+  if (fs.existsSync(local)) return { command: local, args: [] };
+  return { command: process.platform === "win32" ? "npx.cmd" : "npx", args: ["tsx"] };
+}
+
+function resolveTicketFile(ref: string): string {
+  const normalized = ref.replace(/^[.][/]/, "");
+  if (path.isAbsolute(normalized) && fs.existsSync(normalized)) return normalized;
+  if (normalized.includes("/")) {
+    const candidate = path.join(boardRoot, normalized);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  const id = normalizeId(ref);
+  for (const state of ["ready-to-merge", "inprogress", "verifier", "todo"]) {
+    for (const name of [`Todo-${id}.md`, `tickets_${id}.md`]) {
+      const candidate = path.join(boardRoot, "tickets", state, name);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return "";
+}
+
+function scalar(file: string, section: string, field: string): string {
+  const content = read(file);
+  const lines = content.split(/\r?\n/);
+  const sectionRe = new RegExp(`^## ${escapeRe(section)}\\b`);
+  const fieldRe = new RegExp(`^- ${escapeRe(field)}\\s*:\\s*(.*)$`);
+  let inSection = false;
+  for (const line of lines) {
+    if (sectionRe.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (/^## /.test(line) && inSection) inSection = false;
+    if (!inSection) continue;
+    const match = line.match(fieldRe);
+    if (match) return match[1].replace(/^`+|`+$/g, "").trim();
+  }
+  return "";
+}
+
+function normalizeId(value: string): string {
+  const match = value.match(/(\d+)/);
+  return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
+}
+
+function read(file: string): string {
+  try { return fs.readFileSync(file, "utf8"); } catch { return ""; }
+}
+
+function escapeRe(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

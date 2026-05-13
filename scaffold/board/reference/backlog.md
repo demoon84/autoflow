@@ -11,7 +11,7 @@
 
 - Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#autoflow`) may create or update one `prd_NNN.md` only after explicit user approval.
 - Plan AI may create a generated `prd_NNN.md` from `tickets/inbox/order_*.md` when the order request is clear enough to make scope, Allowed Paths, Done When, and Verification concrete.
-- Plan AI consumes populated PRDs by archiving them under `tickets/done/<project-key>/` and emitting concrete `tickets/todo/tickets_NNN.md` work.
+- Plan AI consumes populated PRDs by archiving them under `tickets/done/<project-key>/` and emitting concrete `tickets/todo/Todo-NNN.md` work.
 - Impl AI / Ticket Owner does not claim backlog PRDs directly; it only claims todo tickets produced by Plan AI.
 - Legacy `#plan` compatibility uses the same backlog-to-todo handoff path.
 - A consumed PRD moves to `tickets/done/<project-key>/`.

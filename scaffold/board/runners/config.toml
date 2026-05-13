@@ -1,14 +1,15 @@
 # Autoflow runner configuration.
 #
-# Default 3-runner topology (refactor 2026-05-07):
+# Default 4-runner topology:
 #   planner : Planner AI — promotes tickets/inbox/ orders + tickets/backlog/
 #               PRDs into tickets/todo/ work. Worker fail re-emits inbox retry
 #               orders that planner re-plans like any other order — there is
 #               no separate reject queue.
-#   worker  : Impl AI — todo claim → worktree create → code edit → finalizer
-#               sanity gate (git diff ≥ 1 + every Done When item checked) →
-#               master merge → worktree delete. Atomic cycle, single live
-#               worktree at a time.
+#   worker  : Impl AI — todo claim → worktree create → code edit → local
+#               verification evidence → finalizer mechanical gate. Single
+#               live worktree at a time.
+#   verifier: Verifier AI — semantic review of finished diff vs Title/Goal/
+#               Done When before done routing.
 #   wiki    : Wiki AI — refreshes wiki/ when tickets/done/ or wiki/ source
 #               changes. Path-disjoint from planner/worker.
 #
@@ -41,6 +42,17 @@ model = ""
 reasoning = "low"
 mode = "loop"
 interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "verifier"
+role = "verifier"
+agent = "codex"
+model = ""
+reasoning = "low"
+mode = "loop"
+interval_seconds = 300
 enabled = true
 command = ""
 

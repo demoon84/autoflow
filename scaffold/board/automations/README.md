@@ -17,7 +17,7 @@ Legacy role-pipeline model (compatibility only — DEPRECATED):
 
 - `#plan`: planner heartbeat (Plan AI runner replaces this).
 - `#todo`: todo implementation heartbeat (Impl AI claims todo directly).
-- `#veri`: verifier heartbeat (Impl AI runs AI-led verification inline).
+- `#veri`: legacy verifier heartbeat. The active `verifier` runner replaces this in the default topology.
 
 ## Trigger Contract
 
@@ -89,10 +89,10 @@ The stop hook supplements heartbeats. It does not replace them.
 
 ## File Watch Mode (DEPRECATED legacy script-driven trigger)
 
-File-watch hooks (`watch-board.sh` → `run-hook.sh`) can dispatch work
+File-watch hooks (`watch-board.ts` → `run-hook.ts`) can dispatch work
 when board files change. **This is the legacy script-driven trigger
 pattern**; the supported execution model is the heartbeat-driven
-3-runner topology where AI runners read board state each minute and
+4-runner topology where AI runners read board state each minute and
 call scripts as tools. Use file-watch only as a backwards-compat
 fallback for environments where the minute heartbeat is unreliable.
 
@@ -157,9 +157,10 @@ Default (all sizes):
 
 - one Planner AI (`planner`),
 - one Impl AI (`worker`),
+- one Verifier AI (`verifier`),
 - one Wiki AI (`wiki`).
 
-The three are path-disjoint and tick on the same 1-minute heartbeat without conflicting. Scale only after profiling shows the pipeline is starved — running multiple Impl AI instances increases worktree base drift / Allowed Paths conflicts and is intentionally serialized to one Impl AI in the default config. Legacy role-pipeline (`#plan`, `#todo`, `#veri`, `coordinator`, `merge-bot`) and the file-watcher are kept reachable for backwards compatibility but are not part of the default topology.
+The runners are path-disjoint and tick on heartbeat/realtime wakeups without conflicting. Scale only after profiling shows the pipeline is starved — running multiple Impl AI instances increases worktree base drift / Allowed Paths conflicts and is intentionally serialized to one Impl AI in the default config. Legacy role-pipeline (`#plan`, `#todo`, `#veri`, `coordinator`, `merge-bot`) and the file-watcher are kept reachable for backwards compatibility but are not part of the default topology.
 
 ## Thread Coordination Rules
 

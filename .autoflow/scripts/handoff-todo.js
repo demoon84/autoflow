@@ -9,16 +9,14 @@
  * but this compatibility command still needs deterministic behavior for older
  * boards and smoke tests.
  *
- * Fallback: handoff-todo.legacy.sh remains available, but is only used when
- * AUTOFLOW_HANDOFF_TODO_LEGACY=1 is explicitly set.
+ * The legacy shell fallback was removed after the Node implementation became
+ * the single owner of this deprecated compatibility path.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 
 const scriptDir = __dirname;
-const legacyScript = path.join(scriptDir, 'handoff-todo.legacy.sh');
 
 function nowIso() {
   return new Date().toISOString().replace(/\.\d+Z$/, 'Z');
@@ -249,22 +247,6 @@ function resolveTicket(requested) {
 function failOrIdle(message, reason) {
   process.stdout.write(`status=idle\nreason=${reason}\nmessage=${message}\nboard_root=${boardRoot()}\nproject_root=${projectRoot()}\n`);
   process.exit(0);
-}
-
-function runLegacy() {
-  const result = spawnSync('bash', [legacyScript, ...process.argv.slice(2)], {
-    stdio: 'inherit',
-    env: process.env,
-  });
-  if (result.error) {
-    process.stderr.write(`[handoff-todo] exec error: ${result.error.message}\n`);
-    process.exit(1);
-  }
-  process.exit(typeof result.status === 'number' ? result.status : 1);
-}
-
-if (process.env.AUTOFLOW_HANDOFF_TODO_LEGACY === '1') {
-  runLegacy();
 }
 
 if ((process.env.AUTOFLOW_ROLE || '') !== 'todo') {

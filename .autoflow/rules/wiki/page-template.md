@@ -25,7 +25,7 @@ Wiki AI 가 생성하거나 실질 수정하는 모든 페이지는 아래 4단 
 예시:
 ```
 shell_sanity_gate_zero_diff — git diff <base>..HEAD line count = 0
-finish-ticket-owner.sh pass 차단됨
+finish-ticket-owner.ts pass 차단됨
 ```
 
 ## Cause  *(required)*
@@ -33,7 +33,7 @@ finish-ticket-owner.sh pass 차단됨
 왜 이 현상이 발생하는지 근본 원인을 설명한다.
 코드 경로나 설계 제약을 명시하고 citations 규칙을 적용한다.
 
-- 원인: … (`path/to/script.sh:42`)
+- 원인: … (`path/to/script.ts:42`)
 - 설계 의도: … (`tickets/done/<key>/Todo-NNN.md`)
 
 ## Fix  *(required)*
@@ -84,7 +84,7 @@ git diff <base>..HEAD | wc -l   # 0이면 실제 코드 변경 필요
 
 ```
 path/to/file.ts       — MyClass.doThing() 수정
-packages/cli/foo.sh   — run_xyz() 추가, lines 100-140
+packages/cli/foo.ts   — run_xyz() 추가, lines 100-140
 ```
 
 ## Future Considerations  *(if applicable)*

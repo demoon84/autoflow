@@ -5,7 +5,7 @@
  * Primary TypeScript implementation for the Autoflow Planner AI runner.
  * It preserves the legacy start-plan key=value contract while moving the
  * express, retry, inbox, backlog, priority, and backlog-first orchestration
- * out of start-plan.legacy.sh.
+ * out of start-plan.ts.
  */
 
 import * as fs from "node:fs";
@@ -13,7 +13,7 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import * as utils from "./board-utils";
 
-const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = path.dirname(path.resolve(process.argv[1] || __filename));
 const BOARD_ROOT = utils.resolveBoardRoot();
 const PROJECT_ROOT = utils.resolveProjectRoot();
 const requestedArg = process.argv[2] ?? "";
@@ -432,7 +432,7 @@ ${doneWhen}
 ## Resume Context
 
 - 현재 상태 요약: Express order ${orderId} 가 PRD 없이 todo 로 직접 승격된 직후.
-- 직전 작업: scripts/start-plan.sh 의 express 분기가 order 파일을 읽어 todo 를 생성했다.
+- 직전 작업: scripts/start-plan.ts 의 express 분기가 order 파일을 읽어 todo 를 생성했다.
 - 재개 시 먼저 볼 것: Order, Goal, Allowed Paths, Done When.
 
 ## Notes
@@ -634,7 +634,7 @@ ${doneWhen}
 ## Resume Context
 
 - 현재 상태 요약: Plan AI 가 backlog PRD 에서 todo 티켓을 생성한 직후.
-- 직전 작업: scripts/start-plan.sh 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
+- 직전 작업: scripts/start-plan.ts 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
 - 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When.
 
 ## Notes

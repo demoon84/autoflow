@@ -1,22 +1,23 @@
-# Autoflow runner configuration — 3-runner topology.
+# Autoflow runner configuration — 4-runner topology.
 #
 #   planner : Planner AI — order/PRD intake, todo creation.
 #               Watches tickets/{inbox,backlog}.
-#   worker  : Impl AI — claims todo, creates worktree, edits code, runs the
-#               verify command, calls finish-ticket-owner.sh pass. The
-#               finalizer's shell sanity gate (zero-diff + verify command
-#               re-run) blocks false pass mechanically. worktree → master
-#               merge → worktree delete is one atomic cycle inside the
-#               worker tick, so at most one worktree is ever alive.
+#   worker  : Impl AI — claims todo, creates worktree, edits code, runs and
+#               records local verification, and calls finish-ticket-owner.ts.
+#               The finalizer's shell sanity gate blocks false pass
+#               mechanically, then verifier handles semantic review.
+#   verifier: Verifier AI — reviews finished diffs against Title/Goal/Done
+#               When and routes pass/fail through runner-tool finalizer
+#               wrappers.
 #   wiki    : Wiki AI — watches tickets/done + wiki/ for source change,
 #               refreshes .autoflow/wiki/. .gitignore excludes
 #               .autoflow/wiki/ (except curated skills/), so wiki never
 #               creates a master commit and never causes dirty PROJECT_ROOT.
 #
-# monitor / verifier runners were removed 2026-05-07. The worker finalizer's
-# shell sanity gate replaces the old verifier role; runner liveness signals
-# come from the OS supervisor and planner's safety heartbeat instead of a
-# dedicated monitor loop.
+# monitor was removed 2026-05-07. verifier was reintroduced 2026-05-12 with
+# narrow semantic-review scope. Runner liveness signals come from the OS
+# supervisor and planner's safety heartbeat instead of a dedicated monitor
+# loop.
 #
 # Realtime (event-driven) wakeup: when AUTOFLOW_RUNNER_REALTIME_ENABLED=1
 # (or per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1), the loop sleep is broken

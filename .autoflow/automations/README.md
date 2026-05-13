@@ -4,20 +4,20 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 
 ## Reference Model
 
-Default topology (planner + worker + verifier + wiki):
+Default 4-runner topology (planner + worker + verifier + wiki):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
 - `planner` (Planner runner): converts quick orders, retry orders, and populated backlog PRDs into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,done}/` for markdown-only orchestration. Owns order promotion and `Recovery State` decisions.
 - `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
 - `verifier` (Verifier runner): reads verifier-lane tickets, compares the diff against the ticket title, goal, and Done When items, and records pass/fail semantics without implementing code.
-- `wiki` (Wiki runner): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
-- The runners write to disjoint paths so concurrent ticks avoid merge conflicts.
+- `wiki` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
+- The four runners write to disjoint paths so concurrent ticks avoid merge conflicts.
 
 Legacy role-pipeline model (compatibility only — DEPRECATED):
 
 - `#plan`: planner heartbeat (Plan AI runner replaces this).
 - `#todo`: todo implementation heartbeat (Impl AI claims todo directly).
-- `#veri`: verifier heartbeat (Impl AI runs AI-led verification inline).
+- `#veri`: legacy verifier heartbeat. The active `verifier` runner replaces this in the default topology.
 
 ## Trigger Contract
 
@@ -32,7 +32,7 @@ Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#aut
 
 Order skill handoff (`/order`, `$order`, `#order`) and `autoflow order create`:
 
-- Save only a quick order under `tickets/inbox/orderNNN.md`.
+- Save only a quick order under `tickets/inbox/order_*.md`.
 - Preserve the original request and optional hints.
 - Do not create PRDs, tickets, code, verification records, commits, or pushes.
 - Plan AI promotes clear orders into generated PRDs and todo tickets.
@@ -89,10 +89,10 @@ The stop hook supplements heartbeats. It does not replace them.
 
 ## File Watch Mode (DEPRECATED legacy script-driven trigger)
 
-File-watch hooks (`watch-board.sh` → `run-hook.sh`) can dispatch work
+File-watch hooks (`watch-board.ts` -> `run-hook.ts`) can dispatch work
 when board files change. **This is the legacy script-driven trigger
 pattern**; the supported execution model is the heartbeat-driven
-3-runner topology where AI runners read board state each minute and
+4-runner topology where AI runners read board state each minute and
 call scripts as tools. Use file-watch only as a backwards-compat
 fallback for environments where the 1-minute heartbeat is unreliable.
 
@@ -157,7 +157,7 @@ Default (all sizes):
 
 - one Planner AI (`planner`),
 - one Impl AI (`worker`),
-- one Monitor AI (`monitor`),
+- one Verifier AI (`verifier`),
 - one Wiki AI (`wiki`).
 
 The runners are path-disjoint and tick on heartbeat/realtime wakeups without conflicting. Scale only after profiling shows the pipeline is starved — running multiple Impl AI instances increases worktree base drift / Allowed Paths conflicts and is intentionally serialized to one Impl AI in the default config. Legacy role-pipeline (`#plan`, `#todo`, `#veri`, `coordinator`, `merge-bot`) and the file-watcher are kept reachable for backwards compatibility but are not part of the default topology.

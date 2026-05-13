@@ -10,7 +10,7 @@ Worker id: {{WORKER_ID}}
 
 Loop (run every wake-up):
 
-1. Set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=plan`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `autoflow/scripts/start-plan.sh`.
+1. Set `AUTOFLOW_BACKGROUND=1`, `AUTOFLOW_ROLE=plan`, `AUTOFLOW_WORKER_ID={{WORKER_ID}}`, then run `autoflow/scripts/start-plan.ts`.
 2. Read the output.
 3. If `status=resume`: this Codex conversation already has one active plan. Continue only the returned active `plan=...` / `tickets/inprogress/plan_NNN.md`; do not draft or claim another plan in this wake-up.
 4. If `status=blocked` and `reason=conversation_already_has_active_plan`: finish this wake-up without touching another plan. Use a separate Codex conversation for parallel planning.

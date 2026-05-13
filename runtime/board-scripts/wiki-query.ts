@@ -3,7 +3,7 @@
  * wiki-query.ts — Autoflow wiki RAG query wrapper with hybrid scoring.
  *
  * Sets up AUTOFLOW_WIKI_EMBEDDING_PROVIDER → wiki-embed.ts, AUTOFLOW_WIKI_VECTOR_DIM=384,
- * then delegates to autoflow wiki query (wiki-project.sh). Emits rag_backend=hybrid
+ * then delegates to autoflow wiki query. Emits rag_backend=hybrid
  * when vector index and embedding provider are both ready; BM25 fallback otherwise.
  *
  * Usage:
@@ -29,7 +29,7 @@ const PROJECT_ROOT = process.env.PROJECT_ROOT
   || process.env.AUTOFLOW_PROJECT_ROOT
   || path.resolve(BOARD_ROOT, "..");
 
-const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = path.dirname(path.resolve(process.argv[1] || __filename));
 const EMBED_SCRIPT = path.join(SCRIPT_DIR, "wiki-embed.ts");
 
 const VECTOR_DIM = 384;
@@ -75,12 +75,12 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 
 const args = process.argv.slice(2);
 
-// Find autoflow CLI
+// Find autoflow CLI. No shell fallback: package CLI is TypeScript-only.
 const autoflowBin = (() => {
+  const repoBin = path.join(PROJECT_ROOT, "bin", "autoflow");
+  if (fs.existsSync(repoBin)) return repoBin;
   const local = path.join(PROJECT_ROOT, "node_modules", ".bin", "autoflow");
   if (fs.existsSync(local)) return local;
-  const localPkg = path.join(PROJECT_ROOT, "packages", "cli", "wiki-project.sh");
-  if (fs.existsSync(localPkg)) return null; // use shell directly
   return "autoflow";
 })();
 
@@ -94,24 +94,14 @@ if (embedProvider) {
   env.AUTOFLOW_WIKI_EMBEDDING_PROVIDER = embedProvider;
 }
 
-let result: ReturnType<typeof spawnSync>;
-
-if (autoflowBin) {
-  result = spawnSync(autoflowBin, ["wiki", "query", ...args], {
+const result = path.isAbsolute(autoflowBin)
+  ? spawnSync(process.execPath, [autoflowBin, "wiki", "query", PROJECT_ROOT, ".autoflow", ...args], {
     stdio: "inherit",
     env,
-  });
-} else {
-  // Fallback: call wiki-project.sh directly
-  const wikiScript = path.join(PROJECT_ROOT, "packages", "cli", "wiki-project.sh");
-  if (!fs.existsSync(wikiScript)) {
-    process.stderr.write("[wiki-query] autoflow CLI and wiki-project.sh not found.\n");
-    process.exit(0);
-  }
-  result = spawnSync("bash", [wikiScript, "query", PROJECT_ROOT, ".autoflow", ...args], {
-    stdio: "inherit",
-    env,
-  });
-}
+  })
+  : spawnSync(autoflowBin, ["wiki", "query", PROJECT_ROOT, ".autoflow", ...args], {
+  stdio: "inherit",
+  env,
+});
 
 process.exit(result.status ?? 0);

@@ -19,8 +19,8 @@ const BOARD_ROOT = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.B
 const PROJECT_ROOT = path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || DEFAULT_PROJECT_ROOT);
 const TICKETS_ROOT = path.join(BOARD_ROOT, "tickets");
 
-type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
-interface JsonObject { [key: string]: JsonValue | undefined; }
+type JsonValue = unknown;
+type JsonObject = Record<string, unknown>;
 
 interface QueueItem {
   kind: string;
@@ -634,8 +634,7 @@ function cmdWorkerFinish(outcome: "pass" | "fail"): void {
   const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
   const message = outcome === "pass" ? getArg("--summary") : getArg("--reason");
   if (!message) fail(2, `worker finish-${outcome} requires --${outcome === "pass" ? "summary" : "reason"}`);
-  const finishJs = path.join(SCRIPT_DIR, "finish-ticket-owner.js");
-  const finishSh = path.join(SCRIPT_DIR, "finish-ticket-owner.sh");
+  const finishTs = path.join(SCRIPT_DIR, "finish-ticket-owner.ts");
   const finishEnv = {
     ...process.env,
     PROJECT_ROOT,
@@ -645,9 +644,7 @@ function cmdWorkerFinish(outcome: "pass" | "fail"): void {
     AUTOFLOW_ROLE: "ticket-owner",
     AUTOFLOW_WORKER_ID: currentRunnerId("worker"),
   };
-  const result = fs.existsSync(finishJs)
-    ? spawnSync("node", [finishJs, boardRel(ticket), outcome, message], { encoding: "utf8", env: finishEnv })
-    : spawnSync(finishSh, [boardRel(ticket), outcome, message], { encoding: "utf8", env: finishEnv });
+  const result = spawnTsScript(finishTs, [boardRel(ticket), outcome, message], finishEnv);
   ok({
     tool: `worker.finish-${outcome}`,
     path: boardRel(ticket),
@@ -706,8 +703,7 @@ function cmdVerifierFinish(outcome: "pass" | "fail"): void {
   const decisionReason = outcome === "pass" ? message : `verifier_semantic_mismatch: ${message}`;
   const record = recordVerifierDecision(ticket, outcome, decisionReason, outcome === "pass");
   const ticketId = idFromPath(ticket);
-  const finishJs = path.join(SCRIPT_DIR, "finish-ticket-owner.js");
-  const finishSh = path.join(SCRIPT_DIR, "finish-ticket-owner.sh");
+  const finishTs = path.join(SCRIPT_DIR, "finish-ticket-owner.ts");
   const finishEnv = {
     ...process.env,
     PROJECT_ROOT,
@@ -718,9 +714,7 @@ function cmdVerifierFinish(outcome: "pass" | "fail"): void {
     AUTOFLOW_WORKER_ID: currentRunnerId("verifier"),
     AUTOFLOW_SKIP_VERIFIER: outcome === "pass" ? "1" : process.env.AUTOFLOW_SKIP_VERIFIER || "0",
   };
-  const result = fs.existsSync(finishJs)
-    ? spawnSync("node", [finishJs, `Todo-${ticketId}`, outcome, decisionReason], { encoding: "utf8", env: finishEnv })
-    : spawnSync(finishSh, [`Todo-${ticketId}`, outcome, decisionReason], { encoding: "utf8", env: finishEnv });
+  const result = spawnTsScript(finishTs, [`Todo-${ticketId}`, outcome, decisionReason], finishEnv);
   if (result.status === 0) {
     try { fs.unlinkSync(ticket); } catch {}
   }
@@ -1605,6 +1599,13 @@ function git(gitArgs: string[], cwd: string): GitRunResult {
     stdout: result.stdout || "",
     stderr: result.stderr || "",
   };
+}
+
+function spawnTsScript(scriptPath: string, scriptArgs: string[], env: NodeJS.ProcessEnv): ReturnType<typeof spawnSync> {
+  const localTsx = path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
+  const command = fs.existsSync(localTsx) ? localTsx : (process.platform === "win32" ? "npx.cmd" : "npx");
+  const args = fs.existsSync(localTsx) ? [scriptPath, ...scriptArgs] : ["tsx", scriptPath, ...scriptArgs];
+  return spawnSync(command, args, { encoding: "utf8", env });
 }
 
 function wikiSourceGroups(): Record<string, string[]> {

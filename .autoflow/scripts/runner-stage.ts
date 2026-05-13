@@ -3,10 +3,6 @@
 import * as fs from "fs";
 import * as path from "path";
 
-
-// Cross-mode (ESM + CJS via tsx) script-dir resolver: process.argv[1]
-// is the path to the .ts file currently executing in either runtime.
-const SCRIPT_DIR_HERE = require("node:path").dirname(process.argv[1] || "");
 type Stage = "inprogress" | "merging" | "idle" | string;
 
 const args = process.argv.slice(2);
@@ -43,7 +39,7 @@ for (let i = 0; i < args.length; i += 1) {
   }
 }
 
-const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(SCRIPT_DIR_HERE, ".."));
+const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(__dirname, ".."));
 const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
 
 const readText = (filePath: string): string => {

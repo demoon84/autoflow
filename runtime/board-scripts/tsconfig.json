@@ -16,5 +16,5 @@
     "types": ["node"]
   },
   "include": ["./*.ts", "./*.js"],
-  "exclude": ["node_modules", "*.legacy.sh"]
+  "exclude": ["node_modules"]
 }

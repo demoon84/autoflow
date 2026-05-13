@@ -13,7 +13,7 @@ spec handoff 채팅 명령은 `#af` 와 `#autoflow` 두 개만 둔다. 대화창
 ## Inputs
 
 - 사용자 의도 (이 대화)
-- `scripts/start-spec.sh` 출력 (spec 번호, 저장 대상 경로, 템플릿 경로)
+- `scripts/start-spec.ts` 출력 (spec 번호, 저장 대상 경로, 템플릿 경로)
 - 기존 프로젝트 컨텍스트:
   - 호스트 루트 `AGENTS.md` (있으면)
   - 기존 `tickets/backlog/*.md` (중복 확인용)
@@ -27,7 +27,7 @@ spec handoff 채팅 명령은 `#af` 와 `#autoflow` 두 개만 둔다. 대화창
 
 ## Rules
 
-1. `scripts/start-spec.sh` 를 실행해 대상 경로 (`spec_file`, `spec_id`, `spec_template`) 를 확인한다. 스크립트는 사용자 확정 전에는 파일을 만들지 않는다.
+1. `scripts/start-spec.ts` 를 실행해 대상 경로 (`spec_file`, `spec_id`, `spec_template`) 를 확인한다. 스크립트는 사용자 확정 전에는 파일을 만들지 않는다.
    - `status=resume` 이면 이 대화창에 이미 active spec 이 있다는 뜻이다. 새 spec 번호를 잡지 말고 반환된 `spec_file` 초안을 계속 정리한다.
    - `status=blocked` / `reason=conversation_already_has_active_spec` 이면 다른 spec 은 새 Codex 대화창에서 시작한다.
 2. **자유 대화로 정보를 모은다.** 매 턴마다 PRD 템플릿을 통째로 출력하지 말고, 짧은 질문 / 결정 요약 위주로 대화 폭을 좁힌다. 전체 spec 초안 (fenced markdown 블록 전문) 은 사용자가 명시적인 draft 트리거를 줄 때만 출력한다. draft 트리거 예: `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, `show draft` 등 명확히 동등한 표현.
@@ -55,7 +55,7 @@ spec handoff 채팅 명령은 `#af` 와 `#autoflow` 두 개만 둔다. 대화창
 
 ## Recommended Procedure
 
-1. `scripts/start-spec.sh` 실행. `spec_file`, `spec_is_placeholder`, `spec_id` 확인.
+1. `scripts/start-spec.ts` 실행. `spec_file`, `spec_is_placeholder`, `spec_id` 확인.
    - 같은 대화창에서 이미 spec 작성 중이면 `status=resume` 으로 같은 `project_NNN.md` 슬롯을 반환한다. Codex 대화창 하나는 한 번에 spec 하나만 작성한다.
 2. 호스트 루트 `AGENTS.md` 와 기존 `tickets/backlog/*.md` 훑어서 제약/중복 파악.
 3. 사용자에게 부족한 정보 질문 (Goal, In/Out Scope, 관련 파일·모듈, 완료 기준, 검증 방법). **짧은 질문 + 결정 요약** 위주로 진행하고, 전체 PRD 템플릿은 draft 트리거 전까지 출력하지 않는다.

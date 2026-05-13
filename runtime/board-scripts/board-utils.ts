@@ -1,6 +1,6 @@
 /*
  * board-utils.ts — Common helpers for autoflow board scripts (Phase 1+ JS
- * migration). Mirrors the most-used functions in `.autoflow/scripts/common.sh`
+ * migration). Mirrors the most-used functions in `.autoflow/scripts/common.ts`
  * with stable JS APIs. New .ts scripts in this dir should import from this
  * module instead of reimplementing parsers / state writers per file.
  *
@@ -30,12 +30,14 @@ export function stripMarkdownCodeTicks(s: unknown): string {
 export function resolveProjectRoot(): string {
   if (process.env.PROJECT_ROOT) return path.resolve(process.env.PROJECT_ROOT);
   if (process.env.AUTOFLOW_PROJECT_ROOT) return path.resolve(process.env.AUTOFLOW_PROJECT_ROOT);
-  return process.cwd();
+  const cwd = process.cwd();
+  return path.basename(cwd) === ".autoflow" ? path.dirname(cwd) : cwd;
 }
 
 export function resolveBoardRoot(): string {
   if (process.env.AUTOFLOW_BOARD_ROOT) return path.resolve(process.env.AUTOFLOW_BOARD_ROOT);
   if (process.env.BOARD_ROOT) return path.resolve(process.env.BOARD_ROOT);
+  if (path.basename(process.cwd()) === ".autoflow") return process.cwd();
   return path.join(resolveProjectRoot(), ".autoflow");
 }
 

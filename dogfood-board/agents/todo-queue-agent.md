@@ -10,7 +10,7 @@
 
 ## Inputs
 
-- `scripts/start-todo.sh` 출력 (`implementation_root`, `worktree_path`, `worktree_branch` 포함 가능)
+- `scripts/start-todo.ts` 출력 (`implementation_root`, `worktree_path`, `worktree_branch` 포함 가능)
 - 대상 티켓 파일 (`tickets/todo/*` 또는 이미 `tickets/inprogress/`)
 - 참조된 spec / plan 문서 (`tickets/backlog/project_*.md`, `tickets/done/*/project_*.md`, `tickets/plan/plan_*.md`, `tickets/done/*/plan_*.md`)
 - Allowed Paths 로 지정된 실제 제품 파일들
@@ -24,7 +24,7 @@
 ## Rules
 
 1. **claim 과 구현은 한 worker 가 담당.** 별도 execution worker 없음.
-2. 구현은 티켓 `## Worktree.Path` 또는 `start-todo.sh` 의 `implementation_root` 에서 진행한다. 중앙 `PROJECT_ROOT` 는 보드 source of truth 와 최종 통합 커밋용으로 유지한다.
+2. 구현은 티켓 `## Worktree.Path` 또는 `start-todo.ts` 의 `implementation_root` 에서 진행한다. 중앙 `PROJECT_ROOT` 는 보드 source of truth 와 최종 통합 커밋용으로 유지한다.
 3. 항상 `Allowed Paths` 범위 밖을 수정하지 않는다. 필요하면 ticket 에 blocker 로 기록하고 멈춘다.
 4. 구현이 한 heartbeat tick 에 끝나지 않아도 된다. `Resume Context` 와 `Notes` 에 진행 상태를 남기면 다음 heartbeat 가 이어서 재개한다. tick 이 끝날 때는 active ticket context 를 비워 다음 tick 이 보드 파일에서 다시 읽게 한다.
 5. 구현이 완료됐다고 판단되면:
@@ -46,11 +46,11 @@ heartbeat 또는 수동으로 `#todo`. 수동 트리거라면 **먼저 1분 todo
 1. 현재 스레드의 todo heartbeat 가 살아 있는지 확인한다. 없으면 1분 heartbeat 로 생성 또는 재개한다.
 2. 현재 worker 에 배정된 `tickets/inprogress/` 티켓이 있는지 확인.
 3. 있으면: 그 티켓의 `Worktree` / `Resume Context` / `Next Action` / `Notes` 를 읽고 **구현을 이어서 한다**. `Worktree.Path` 를 작업 루트로 열고, 그 안에서 `Allowed Paths` 범위 파일을 수정한다.
-   - 현재 ticket 을 재개하는 순간 `scripts/set-thread-context.sh todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다.
+   - 현재 ticket 을 재개하는 순간 `scripts/set-thread-context.ts todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다.
 - 완료되면 `Notes` 에 최종 로그, `Result → Summary` 를 채운다.
-- verifier 로 넘길 때는 `scripts/handoff-todo.sh <ticket-id-or-path>` 를 실행한다. 이 런타임이 티켓 이동과 active ticket context 초기화를 함께 처리한다.
+- verifier 로 넘길 때는 `scripts/handoff-todo.ts <ticket-id-or-path>` 를 실행한다. 이 런타임이 티켓 이동과 active ticket context 초기화를 함께 처리한다.
    - 완료 아니면 진행 로그를 `Resume Context` / `Notes` 에 남기고 tick 종료. Stop hook 이 active ticket context 를 비워 다음 tick 의 토큰 사용을 줄인다.
-4. 없으면: `scripts/start-todo.sh` 실행. 새 티켓 claim 시도.
+4. 없으면: `scripts/start-todo.ts` 실행. 새 티켓 claim 시도.
    - `status=idle` / `reason=no_todo_ticket` → idle 종료.
    - `status=resume` → 이미 이 worker 가 가진 `tickets/inprogress/` 티켓을 반환한 것. 새 claim 없이 그 티켓을 이어서 구현.
    - `status=ok` → `implementation_root` 를 작업 루트로 사용해 새로 claim 된 티켓을 읽고 **바로 첫 구현 단계 진행** (가능한 범위까지). 못 끝내면 다음 tick 에 이어서.

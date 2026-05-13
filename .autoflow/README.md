@@ -52,21 +52,14 @@ Autoflow uses four default **runners**:
 - `verifier`: checks the finished diff against the ticket title, goal, and Done When items.
 - `wiki`: turns completed work and decisions into derived wiki knowledge.
 
-Codex, Claude, Gemini, or another agent may power a runner. A runner is the
-decision-maker. A **runner tool** is only a small button the runner calls to
-perform one safe action, such as taking a queue snapshot, reserving an id,
-writing a validated ticket, moving an item, recording recovery state, or
-running the board guard.
+The canonical responsibility boundary is `reference/runner-tool-contract.md`.
+Short version: a runner is the LLM-backed decision-maker; a runner tool is a
+small deterministic command the runner calls for one explicit action. Runner
+tools must not choose scope, draft `Done When`, decide pass/fail, resolve merge
+strategy, decide wiki meaning, or drive the whole workflow.
 
-Current split tools live behind `scripts/runner-tool.js`:
-
-- `planner ...`: queue snapshot, id reservation, validated PRD/ticket writes, archive moves, recovery updates, and guard.
-- `worker ...`: active ticket lookup, todo snapshots, explicit ticket claim, worktree ensure/status, stage/context updates, verification evidence recording, Done When checks, diff checks, and finish wrappers.
-- `verifier ...`: verifier queue snapshots, semantic-review evidence bundles, decision logs, verifier-ok markers, verifier wake markers, and finalizer wrappers.
-- `wiki ...`: source snapshots, deterministic wiki update/query/lint/telemetry wrappers, ingest/frontmatter wrappers, validated wiki page writes, wiki diff snapshots, and wiki wake markers.
-
-Runner tools must not choose scope, draft `Done When`, decide pass/fail, or
-decide what belongs in the wiki. They also must not drive the whole workflow.
+Current split tools live behind `scripts/runner-tool.js`; run
+`autoflow tool list` for the installed tool catalog and contract summary.
 Large script-driven flows such as `start-plan.*` and `start-ticket-owner.*`
 remain compatibility wrappers while their behavior is split into smaller
 TypeScript runner tools.
@@ -82,7 +75,7 @@ TypeScript runner tools.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop Owner runner: default Impl AI execution from the UI.
-- `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not part of default 3-runner topology).
+- `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not part of default 4-runner topology).
 - `#plan`: legacy planner heartbeat (Plan AI runner replaces this).
 - `#todo`: legacy todo heartbeat (Impl AI claims todo directly).
 
@@ -150,7 +143,7 @@ Use the wiki to summarize:
 
 ## Coordinator Rules (DEPRECATED)
 
-Coordinator is no longer a default runner in the 3-runner topology. Its responsibilities have been split: Impl AI (`worker`) runs AI-led verification and merge inline via `verify-ticket-owner.*` + `finish-ticket-owner.*` (which calls `merge-ready-ticket.*` as a non-merging finalizer); Wiki AI (`wiki`) owns material wiki baseline refresh plus AI synthesis. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
+Coordinator is no longer a default runner in the 4-runner topology. Its responsibilities have been split: Impl AI (`worker`) owns implementation and local verification evidence, Verifier AI (`verifier`) owns semantic diff review, and Wiki AI (`wiki`) owns material wiki baseline refresh plus AI synthesis. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
 
 If you do run a legacy coordinator, the historical contract still applies: it diagnoses board health (shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, board scaffold issues) and may produce evidence for a next action. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code; product-code repair and merge are Impl AI's responsibility. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
 

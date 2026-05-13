@@ -3,11 +3,11 @@
 This directory is the state board inside `BOARD_ROOT`.
 
 - `todo/`: tickets that are ready but not started.
-- `inprogress/`: claimed `tickets_*.md` files and active verification notes. Legacy planner `plan_*.md` files also use this state while generating tickets.
+- `inprogress/`: claimed `Todo-*.md` files and active verification notes. Legacy planner `plan_*.md` files also use this state while generating tickets.
 - `ready-to-merge/`: legacy/compatibility state for Ticket Owner Mode tickets that passed owner verification and wait for finalization.
 - `merge-blocked/`: legacy/compatibility state for ready tickets that need ticket-specific AI repair.
 - `verifier/`: legacy tickets that finished implementation and wait for verification. Ticket Owner Mode may also resume compatible tickets from this state.
-- `done/`: tickets that passed verification and were committed locally (`done/<project-key>/tickets_NNN.md`).
+- `done/`: tickets that passed verification and were committed locally (`done/<project-key>/Todo-NNN.md`).
 - `reject/`: tickets that failed verification and include `## Reject Reason`.
 - `verify_NNN.md`: a verification evidence file created under `inprogress/` and moved beside the final ticket.
 - `inbox/`: quick order intake files that Plan AI may promote into generated PRDs and todo tickets.
@@ -16,19 +16,20 @@ This directory is the state board inside `BOARD_ROOT`.
 - `inprogress/plan_*.md`: legacy plans currently being consumed into tickets.
 - `../logs/`: owner / verifier completion logs (`verifier_<ticket-id>_<timestamp>_<outcome>.md`).
 
-Every `tickets_*.md` file under `inprogress/` should carry these owner fields:
+Every `Todo-*.md` file under `inprogress/` should carry these owner fields:
 
 - `Claimed By`
 - `Execution Owner`
 - `Verifier Owner`
 
-Ticket filenames use `tickets_NNN.md`, for example `tickets_001.md`, `tickets_014.md`, or `tickets_120.md`.
+Ticket filenames use `Todo-NNN.md`, for example `Todo-001.md`, `Todo-014.md`, or `Todo-120.md`.
 
 ## Runner Terms
 
 The default actors are four **runners**: `planner`, `worker`, `verifier`, and
 `wiki`. A runner is the LLM-backed decision-maker. A **runner tool** is a small
 deterministic command the runner calls to mutate or inspect the board safely.
+The canonical boundary is `reference/runner-tool-contract.md`.
 
 For Planner work, prefer `scripts/runner-tool.js planner ...` for additive
 small actions such as `queue-snapshot`, `reserve-id`, `write-prd`,
@@ -42,10 +43,10 @@ Default Ticket Owner flow:
 
 ```text
 tickets/backlog/prd_001.md
-  -> tickets/inprogress/tickets_001.md
+  -> tickets/inprogress/Todo-001.md
   -> tickets/inprogress/verify_001.md
   -> AI-led merge into PROJECT_ROOT
-  -> tickets/done/prd_001/tickets_001.md
+  -> tickets/done/prd_001/Todo-001.md
   -> tickets/done/prd_001/prd_001.md
    -> tickets/reject/reject_001.md
 ```
@@ -56,10 +57,10 @@ Legacy role-pipeline flow:
 tickets/backlog/prd_001.md
   -> tickets/plan/plan_001.md
   -> tickets/inprogress/plan_001.md
-  -> tickets/todo/tickets_001.md
-  -> tickets/inprogress/tickets_001.md
-  -> tickets/verifier/tickets_001.md
-  -> tickets/done/prd_001/tickets_001.md
+  -> tickets/todo/Todo-001.md
+  -> tickets/inprogress/Todo-001.md
+  -> tickets/verifier/Todo-001.md
+  -> tickets/done/prd_001/Todo-001.md
   -> tickets/done/prd_001/prd_001.md
   -> tickets/done/prd_001/plan_001.md
    -> tickets/reject/reject_001.md
@@ -76,7 +77,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Contains ready work that has not started.
   - Requires clear `Goal`, `References`, `Allowed Paths`, and `Done When`.
   - If a file is in `todo/`, treat it as implementation work even when the title or acceptance criteria mention review or verification.
-  - Ticket Owner Mode or legacy `start-todo.sh` claims one file by moving it to `inprogress/`.
+  - Ticket Owner Mode or legacy `start-todo.ts` claims one file by moving it to `inprogress/`.
 - `inprogress/`
   - `tickets_*.md` files are claimed by Ticket Owner Mode or by a legacy todo worker.
   - Legacy `plan_*.md` files mean the planner is generating tickets from a plan.
@@ -98,7 +99,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Repair the ticket worktree/branch as AI owner work, then rerun finish/finalization.
 - `verifier/`
   - Contains legacy tickets waiting for verification. Ticket Owner Mode may resume compatible existing tickets here.
-  - Legacy verifier heartbeat claims one ticket and runs verification from the `working_root` returned by `start-verifier.sh`.
+  - Legacy verifier heartbeat claims one ticket and runs verification from the `working_root` returned by `start-verifier.ts`.
   - One agent conversation should actively verify one ticket at a time.
   - On pass, legacy verifier behavior must also treat scripts as tools: prepare evidence/snapshots, then leave product-code merge and conflict resolution to AI-led work.
 - `done/`

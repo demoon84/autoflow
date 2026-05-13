@@ -15,7 +15,7 @@ Merge Bot does not decide pass/fail verification and does not merge product code
 ## Inputs
 
 - `scripts/merge-ready-ticket.*` output.
-- The lowest-numbered `tickets/ready-to-merge/tickets_NNN.md`, unless a ticket id/path was provided.
+- The lowest-numbered `tickets/ready-to-merge/Todo-NNN.md`, unless a ticket id/path was provided.
 - The matching `tickets/ready-to-merge/verify_NNN.md` evidence file.
 
 ## Outputs

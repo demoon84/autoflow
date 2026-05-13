@@ -30,6 +30,7 @@ Ticket filenames use `Todo-NNN.md`, for example `Todo-001.md`, `Todo-014.md`, or
 The default actors are four **runners**: `planner`, `worker`, `verifier`, and
 `wiki`. A runner is the LLM-backed decision-maker. A **runner tool** is a small
 deterministic command the runner calls to mutate or inspect the board safely.
+The canonical boundary is `reference/runner-tool-contract.md`.
 
 For Planner work, prefer `scripts/runner-tool.js planner ...` for additive
 small actions such as `queue-snapshot`, `reserve-id`, `write-prd`,
@@ -77,7 +78,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Contains ready work that has not started.
   - Requires clear `Goal`, `References`, `Allowed Paths`, and `Done When`.
   - If a file is in `todo/`, treat it as implementation work even when the title or acceptance criteria mention review or verification.
-  - Ticket Owner Mode or legacy `start-todo.sh` claims one file by moving it to `inprogress/`.
+  - Ticket Owner Mode or legacy `start-todo.ts` claims one file by moving it to `inprogress/`.
 - `inprogress/`
   - `Todo-*.md` files are claimed by Ticket Owner Mode or by a legacy todo worker.
   - Legacy `plan_*.md` files mean the planner is generating tickets from a plan.
@@ -99,7 +100,7 @@ Verification evidence (`verify_NNN.md`) starts in `tickets/inprogress/`. In Tick
   - Repair the ticket worktree/branch as AI owner work, then rerun finish/finalization.
 - `verifier/`
   - Contains legacy tickets waiting for verification. Ticket Owner Mode may resume compatible existing tickets here.
-  - Legacy verifier heartbeat claims one ticket and runs verification from the `working_root` returned by `start-verifier.sh`.
+  - Legacy verifier heartbeat claims one ticket and runs verification from the `working_root` returned by `start-verifier.ts`.
   - One agent conversation should actively verify one ticket at a time.
   - On pass, legacy verifier behavior must also treat scripts as tools: prepare evidence/snapshots, then leave product-code merge and conflict resolution to AI-led work.
 - `done/`

@@ -2,14 +2,17 @@
 
 ## Ticket
 
-- ID: tickets_NNN
+- ID: Todo-NNN
 - PRD Key: prd_NNN
 - Plan Candidate:
 - Title:
+- Priority: normal
+- Change Type: code
 - Stage: todo
 - AI:
 - Claimed By:
 - Execution AI:
+- Verifier AI:
 - Last Updated:
 
 ## Goal
@@ -102,6 +105,6 @@
 - `References` are relative to `BOARD_ROOT`.
 - `Allowed Paths` are relative to the implementation worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
 - `Worktree` is filled during claim when a worktree is available.
-- `Reference Notes` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[tickets_001]]`.
+- `Reference Notes` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[Todo-001]]`.
 - `Plan Candidate` must copy the exact candidate text from `Execution Candidates`. It is a duplicate-detection key.
 - Human-readable ticket prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

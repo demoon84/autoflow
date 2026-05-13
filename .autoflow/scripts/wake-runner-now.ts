@@ -36,7 +36,7 @@ const runnerId = argv[0];
 const reasonIdx = argv.indexOf("--reason");
 const reason = reasonIdx >= 0 ? argv[reasonIdx + 1] || "manual-poke" : "manual-poke";
 
-const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const scriptDir = path.dirname(path.resolve(process.argv[1] || __filename));
 const boardRoot = process.env.AUTOFLOW_BOARD_ROOT || path.resolve(scriptDir, "..");
 
 // role 별 watch 대상 dir (desktop main.js 의 queueHasPendingWork 와 일치)

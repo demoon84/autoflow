@@ -40,7 +40,7 @@ legacy role-pipeline 흐름:
 tickets/backlog/project_001.md              (사용자가 #af 로 채움)
   → tickets/plan/plan_001.md             (planner heartbeat 가 도출 후 Candidates 채움)
   → tickets/inprogress/plan_001.md  (planner 가 ticket 생성 작업을 점유)
-  → tickets/todo/tickets_001.md        (start-plan.sh 가 Candidate 당 티켓 생성)
+  → tickets/todo/tickets_001.md        (start-plan.ts 가 Candidate 당 티켓 생성)
   → tickets/inprogress/tickets_001.md   (todo worker 가 claim + 구현)
   → tickets/verifier/tickets_001.md  (구현 완료 후 verifier 로 mv)
   → tickets/done/project_001/tickets_001.md  (pass: git commit + mv)
@@ -60,20 +60,20 @@ tickets/backlog/project_001.md              (사용자가 #af 로 채움)
   - 아직 시작하지 않은 작업
   - Goal, References, Allowed Paths, Done When 이 채워져 있어야 함
   - 제목 / Goal / Done When 문구가 검증처럼 보여도 파일이 `todo/` 에 있으면 현재 owner 가 구현 대상으로 처리
-  - 기본 Ticket Owner 또는 legacy `start-todo.sh` 가 여기서 한 개를 `inprogress/` 로 점유 이동
+  - 기본 Ticket Owner 또는 legacy `start-todo.ts` 가 여기서 한 개를 `inprogress/` 로 점유 이동
 - `inprogress/`
   - `tickets_*.md` 는 Ticket Owner 또는 legacy todo worker 가 claim 해 현재 구현 / 검증 중인 상태다.
   - legacy `plan_*.md` 는 planner 가 ticket 생성 작업을 점유한 상태다.
   - Codex 대화 하나는 한 번에 `tickets_*.md` 하나만 활성 처리한다. 같은 owner 가 이미 가진 `inprogress` 티켓이 있으면 새 claim 대신 그 티켓을 재개한다.
   - legacy planner 대화 하나는 한 번에 `plan_*.md` 하나만 활성 처리한다. 같은 대화가 이미 가진 active plan 이 있으면 새 plan 대신 그 plan 을 재개한다.
   - `tickets_*.md` 에는 `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Owner`, `Worktree`, `Last Updated`, `Next Action`, `Resume Context` 필수
-  - git 저장소에서는 Ticket Owner 또는 legacy `start-todo.sh` 가 티켓별 worktree 를 만들고 owner 는 그 worktree 에서 구현한다.
+  - git 저장소에서는 Ticket Owner 또는 legacy `start-todo.ts` 가 티켓별 worktree 를 만들고 owner 는 그 worktree 에서 구현한다.
   - worker runtime context 는 역할 문맥과 현재 ticket 문맥을 따로 가진다. 기능 단위 작업 완료 시 전체 context 삭제 대신 active ticket 문맥만 비우고, 다음 tick 은 reference notes / References / Resume Context 를 다시 읽는다.
   - blocker 가 있으면 여기에 남김 (todo 로 되돌리지 않음)
   - 기본 Ticket Owner 는 구현과 검증을 같은 티켓에서 이어가고, legacy todo 는 구현 완료 시 `Notes`, `Result.Summary` 를 갱신한 뒤 `scripts/handoff-todo.*` 로 파일을 `verifier/` 로 넘긴다.
 - `verifier/`
   - legacy 구현 완료, 검증 대기. 기본 Ticket Owner 도 여기 있는 기존 티켓을 이어받을 수 있다.
-  - legacy verifier heartbeat 는 여기서 한 개씩 집어 `start-verifier.sh` 가 출력한 `working_root` 에서 검증 명령 실행
+  - legacy verifier heartbeat 는 여기서 한 개씩 집어 `start-verifier.ts` 가 출력한 `working_root` 에서 검증 명령 실행
   - Codex 대화 하나는 한 번에 verifier 티켓 하나만 활성 처리한다. 같은 worker 가 이미 맡은 verifier 티켓이 있으면 새 티켓 대신 그 티켓을 재개한다.
   - pass 시 owner / verifier runtime 이 ticket worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 무커밋 통합한 뒤 board 변경과 함께 local commit
 - `done/`

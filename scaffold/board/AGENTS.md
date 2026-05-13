@@ -5,15 +5,16 @@ The default execution model is **Ticket Owner Mode**: one runner owns one ticket
 
 ## Canonical Flow
 
-Default 3-runner flow (refactor 2026-05-07):
+Default 4-runner flow:
 
 ```text
 PROJECT_ROOT
   -> .autoflow/tickets/inbox/order_NNN.md             (사용자 /order 또는 worker fail retry)
   -> .autoflow/tickets/backlog/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
-  -> .autoflow/tickets/todo/tickets_NNN.md            (Planner 가 발급)
-  -> .autoflow/tickets/inprogress/tickets_NNN.md      (Worker active, worktree 1 개)
-  -> .autoflow/tickets/done/<project-key>/tickets_NNN.md (성공만 모임)
+  -> .autoflow/tickets/todo/Todo-NNN.md               (Planner 가 발급)
+  -> .autoflow/tickets/inprogress/Todo-NNN.md         (Worker active, worktree 1 개)
+  -> .autoflow/tickets/verifier/Todo-NNN.md           (Verifier semantic review)
+  -> .autoflow/tickets/done/<project-key>/Todo-NNN.md (성공만 모임)
 ```
 
 Worker fail 시 ticket 본문은 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 되고 inprogress markdown 은 `rm`. 별도 reject 큐 없음.
@@ -34,7 +35,7 @@ Directory meanings:
 - `logs/`: completion logs and hook dispatch logs.
 - `wiki/`: generated and human-maintained project knowledge derived from completed work.
 
-Removed (refactor 2026-05-07): `tickets/reject/`, `tickets/verifier/`, `tickets/check/`, `tickets/plan/`, `tickets/ready-to-merge/`, `tickets/merge-blocked/`. Verification evidence now lives directly in the ticket markdown's `## Verification` section.
+Removed (refactor 2026-05-07): `tickets/reject/` fail routing and `tickets/check/` monitor ledger. `tickets/verifier/` was reintroduced for semantic review in the 4-runner topology. Verification evidence lives directly in the ticket markdown's `## Verification` section.
 
 ## Read Order
 
@@ -47,7 +48,8 @@ At the start of work, read in this order:
 5. `reference/plan.md`
 6. `automations/README.md`
 7. `reference/tickets-board.md`
-8. Role-specific files:
+8. `reference/runner-tool-contract.md`
+9. Role-specific files:
    - PRD handoff: `agents/spec-author-agent.md`
    - default execution (Impl AI): `agents/ticket-owner-agent.md`
    - orchestration (Planner AI): `agents/plan-to-ticket-agent.md`
@@ -56,9 +58,9 @@ At the start of work, read in this order:
 
 ## Runtime Command Convention
 
-- Use the matching `scripts/*.sh` entrypoint for runtime commands.
-- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.sh` script in `scripts/`.
-- `planner`, `worker`, `verifier`, and `wiki` are runners. A runner tool is a small command the runner calls for one safe board operation; for new Planner work prefer `scripts/runner-tool.js planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.js worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.js verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.js wiki ...` over adding behavior to a large script.
+- Use the matching `scripts/*.ts` entrypoint for runtime commands.
+- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.ts` script in `scripts/`.
+- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.js planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.js worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.js verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.js wiki ...` over adding behavior to a large script.
 
 ## Core Rules
 
@@ -66,7 +68,7 @@ At the start of work, read in this order:
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
 4. The default execution path uses four runners: `planner` promotes order/backlog/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
-5. A Ticket Owner runner claims or creates one `tickets_NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and finishes with ready-to-merge or reject.
+5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/fail finalization. The verifier runner owns semantic review when the ticket enters the verifier lane.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
@@ -75,14 +77,14 @@ At the start of work, read in this order:
 11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's shell sanity gate (git diff ≥ 1 + every Done When `[x]`) blocks false pass mechanically.
 12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
-14. There must not be two copies of the same `tickets_NNN.md` in different state folders.
-15. `tickets/inprogress/tickets_NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
+14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
+15. `tickets/inprogress/Todo-NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
 16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
 17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
 18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
 19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
-20. Ticket filenames use `tickets_001.md`. New IDs are max existing ID + 1.
-21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` prepares a worktree snapshot and queues `tickets/ready-to-merge/`; coordinator/merge runtime is the single `PROJECT_ROOT` writer and commits code plus board changes locally.
+20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
+21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` runs only after the AI-owned implementation and required verification/merge preparation have happened; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
@@ -197,21 +199,19 @@ Do:
 
 Do not push.
 
-### 6. Legacy Verification Mode (removed 2026-05-07)
+### 6. Verifier Mode
 
-The standalone verifier role and `#veri` trigger were retired. Verification is now inline inside the worker's atomic cycle: `finish-ticket-owner.sh pass` runs the shell sanity gate (git diff ≥ 1 + every Done When `[x]`), and false pass is mechanically blocked.
+The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/fail through `scripts/runner-tool.js verifier ...`. Legacy `#veri` remains compatibility-only.
 
 ### 7. Coordinator Mode
 
-Purpose: explain board/runtime health, blocked work, process one ready-to-merge ticket when present, and maintain derived wiki knowledge.
+Purpose: explain legacy board/runtime health and blocked work when explicitly enabled.
 
 Do:
 
 - Outside a coordinator adapter turn, run or resume `autoflow runners start coordinator-1` to keep the long-lived coordinator alive.
 - Inside a coordinator adapter turn, do not start, restart, or run the coordinator recursively. Execute the provided runtime script directly once.
 - Inspect shared Allowed Path blockers, dirty root overlap, worktree health, runner state, and scaffold checks.
-- If `tickets/ready-to-merge/` has a ticket, use the merge runtime for exactly one ready ticket.
-- After merge or during explicit wiki turns, update derived wiki pages from authoritative done tickets, verification records, logs, and conversation handoffs.
 - Recommend the smallest safe next action.
 
 Do not implement, requeue, reset, hand-edit merge results, or push.

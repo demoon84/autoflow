@@ -1,7 +1,7 @@
 # Todo Queue Agent — DEPRECATED (legacy role-pipeline)
 
-> **DEPRECATED:** Todo Queue is no longer a default runner in the 3-runner
-> topology (planner + worker + wiki). Impl AI (`worker`) claims
+> **DEPRECATED:** Todo Queue is no longer a default runner in the 4-runner
+> topology (planner + worker + verifier + wiki). Impl AI (`worker`) claims
 > directly from `tickets/todo/`, implements, verifies, and merges in one
 > flow. This file is kept for backwards compatibility with users still on
 > `#todo` or the legacy role-pipeline.
@@ -14,8 +14,8 @@ Use Ticket Owner Mode by default unless the user explicitly asks for legacy role
 
 ## Inputs
 
-- `tickets/todo/tickets_NNN.md`.
-- Owned `tickets/inprogress/tickets_NNN.md`.
+- `tickets/todo/Todo-NNN.md`.
+- Owned `tickets/inprogress/Todo-NNN.md`.
 - Referenced PRDs and plans.
 - `scripts/start-todo.*` output.
 

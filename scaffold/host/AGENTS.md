@@ -40,7 +40,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
 11. ticket owner 또는 verifier 는 `{{BOARD_DIR}}/` 보드, 프로젝트 루트, ticket worktree 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
 12. `tickets/` 는 실행 원장이고, 향후 `wiki/` 는 완료된 작업과 의사결정을 정리하는 파생 지식 지도다. wiki 문서만으로 done/pass 를 판단하지 않는다.
 13. local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 별도 단계로 추가한다. 기본 자동화는 Claude `/autoflow` 또는 Codex `$autoflow` skill handoff 뒤, 또는 Claude `/order` / Codex `$order` / `#order` quick order handoff 뒤 `autoflow run planner` 와 `autoflow run ticket` 또는 Owner runner 로 이어진다. `#autoflow` 는 호환 alias 로 유지한다. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거로 유지한다.
-13a. `{{BOARD_DIR}}/wiki/skills/` learned-skill registry 는 managed wiki baseline과 별도다. `finish-ticket-owner.sh` 의 pass 경로는 `autoflow skill create ... --from-ticket <ticket>`을 best-effort로 호출할 수 있지만, `AUTOFLOW_SKILL_AUTO_EXTRACT=off` 이거나 skill 추출 실패가 발생해도 ticket pass/finalization을 실패로 바꾸면 안 된다.
+13a. `{{BOARD_DIR}}/wiki/skills/` learned-skill registry 는 managed wiki baseline과 별도다. `finish-ticket-owner.ts` 의 pass 경로는 `autoflow skill create ... --from-ticket <ticket>`을 best-effort로 호출할 수 있지만, `AUTOFLOW_SKILL_AUTO_EXTRACT=off` 이거나 skill 추출 실패가 발생해도 ticket pass/finalization을 실패로 바꾸면 안 된다.
 13b. Skill registry 는 dual-storage 구조다 (Hermes Phase 1, `prd_162`). 사람이 작성·검토한 배포 skill 은 `{{BOARD_DIR}}/wiki/skills/<category>/<name>/SKILL.md` 에, agent 가 ticket 완료에서 자동 추출한 skill 은 `{{BOARD_DIR}}/wiki/skills-local/<category>/<name>/SKILL.md` 에 둔다. 자동 archive 는 `{{BOARD_DIR}}/wiki/skills-local/.archive/...` 로 옮기며 절대 삭제하지 않는다. frontmatter 표준은 `name(≤64)`, `description(≤1024)`, `pattern_type`, `applies_to.{module,keywords}`, `pinned`, `created_from.{prd,ticket}`, `created_at` 이며 본문 ≤100KB / 단일 파일 ≤1MiB cap 을 따른다. `pinned: true` 인 skill 은 어떤 자동 lifecycle transition 에서도 우회된다. 통계 sidecar `{{BOARD_DIR}}/wiki/skills-local/.usage.json` 은 atomic write 로 갱신되고, 깨진 sidecar 도 best-effort 회복으로 CLI 흐름을 막지 않는다. 레거시 flat `skill_NNN.md` 는 `category=legacy` 로 표시한다.
 13c. Skill Curator / auto-extraction 은 Wiki AI 소유 background lifecycle 이다. `autoflow skill curator-run <project-root> <board-dir-name> --once|--idle` 는 `AUTOFLOW_CURATOR_ENABLED=0` 일 때 skip 하고, 기본 7일 주기(`AUTOFLOW_CURATOR_INTERVAL_HOURS=168`)로 `skills-local/` 만 점검한다. 30일 unused 는 `state: stale`, 90일 unused 는 `.archive/` 이동, `pinned: true` 는 모든 transition 우회다. Trigger wrapper `autoflow skill auto-extract --from-ticket ... --pattern-type ...` 는 `ticket_completion`, `reject_turnaround`, `blocked_recovery`, `orchestration_cleanup`, `skill_nudge` 를 보존하며 실패해도 planner/worker 흐름을 막지 않는다. Curator/auto-extraction 은 auxiliary client bookkeeping 으로만 실행하고 main session prompt cache 를 만지지 않는다.
 14. heartbeat / runner tick 이 종료될 때는 현재 공정률을 표기한다. 가능하면 `autoflow metrics` 또는 보드의 spec/ticket 집계를 기준으로 한 percent 를 tick 의 마지막 대화/로그 요약에 남긴다.
@@ -73,7 +73,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
 
 - `#todo`
-  - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 todo claim + 구현은 Impl AI(`worker`) 가 `start-ticket-owner.sh` 로 직접 처리하므로 새 작업에서는 사용 권장하지 않는다.
+  - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 todo claim + 구현은 Impl AI(`worker`) 가 `start-ticket-owner.ts` 로 직접 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 todo heartbeat 를 1분 주기로 생성 또는 재개한다.
   - 처리할 `{{BOARD_DIR}}/tickets/todo/` 가 있으면 `inprogress/` 로 옮기고 티켓별 worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현까지 진행한다.
   - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태가 `{{BOARD_DIR}}/tickets/todo/` 또는 `{{BOARD_DIR}}/tickets/inprogress/` 이면 legacy todo worker 가 구현을 계속 진행한다.
@@ -81,7 +81,7 @@ Autoflow 는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
 
 - `#veri`
-  - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 검증은 Impl AI(`worker`) 가 `verify-ticket-owner.sh` + `finish-ticket-owner.sh` 로 inline AI-led verification 을 수행하므로 새 작업에서는 사용 권장하지 않는다.
+  - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 검증은 Impl AI(`worker`) 가 `verify-ticket-owner.ts` + `finish-ticket-owner.ts` 로 inline AI-led verification 을 수행하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 verifier heartbeat 를 1분 주기로 생성 또는 재개한다.
   - 처리할 `{{BOARD_DIR}}/tickets/verifier/` 가 있으면 `working_root` 에서 검증하고, pass 면 worktree 변경을 중앙 프로젝트 루트에 무커밋 통합한 뒤 `done/<project-key>/` + local commit, fail 면 이유를 적어 `reject/` 로 이동한다.
   - 브라우저 확인이 필요해도 먼저 비브라우저 확인을 우선하고, Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 쓰며 열린 탭은 같은 턴에서 닫는다.
