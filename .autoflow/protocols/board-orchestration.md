@@ -6,7 +6,7 @@ Planner AI is the board orchestrator. It owns the meaning of board state, not ju
 
 The shell runtime is a safety kernel. It may claim files, create worktrees, validate state, refresh deterministic wiki pages, and create local commits after pass. It must not be the workflow brain.
 
-Use `autoflow tool list` as the canonical catalog when you need a stable inventory of planner/worker/wiki entrypoints and helper contracts; the catalog is descriptive, and the AI still owns workflow decisions.
+Use `autoflow tool list` as the canonical catalog when you need a stable inventory of planner/worker/verifier/wiki entrypoints and helper contracts; the catalog is descriptive, and the AI still owns workflow decisions.
 
 ## Orchestrator Responsibilities
 
@@ -26,8 +26,8 @@ Planner AI may rewrite, split, requeue, or annotate ticket markdown when the cha
 On each planner tick:
 
 1. Run the normal plan preflight script if configured.
-2. Inspect actionable inbox/backlog/reject work.
-3. Inspect health of active and todo tickets before creating more work when there is evidence of runner stall, stale worktree metadata, repeated reject, or blocked owner state.
+2. Inspect actionable inbox/retry/backlog work.
+3. Inspect health of active and todo tickets before creating more work when there is evidence of runner stall, stale worktree metadata, repeated retry, or blocked owner state.
 4. Use wiki query for repeated failures, related done tickets, or architectural constraints.
 5. Choose exactly one safe board action for the tick.
 
@@ -69,7 +69,7 @@ When the runner wakes planner for `active_recovery_reason`, the tick is a board-
 - Update the affected ticket's `Recovery State`, `Next Action`, `Resume Context`, and `Notes` so the next owner turn has an explicit instruction.
 - Keep the edit idempotent when the evidence and planner decision are unchanged.
 - If no safe board-only repair exists, set `Recovery State` status to `needs_user`, choose an explicit failure class, and park the ticket with an owner resume instruction.
-- Run `autoflow guard` or `scripts/board-guard.js` after the markdown repair and fix guard errors before creating any new plan or ticket work.
+- Run `autoflow guard` or `scripts/board-guard.ts` after the markdown repair and fix guard errors before creating any new plan or ticket work.
 - Do not call owner/finalizer helpers, start or stop runners, kill processes, or clean git worktrees from the planner turn.
 
 ## State Source
@@ -97,7 +97,7 @@ Use shell or CLI helpers only for operations where atomicity matters:
 - move files between state folders,
 - create, prune, or inspect git worktrees,
 - validate board invariants,
-- run `autoflow guard` / `scripts/board-guard.js` after markdown recovery edits,
+- run `autoflow guard` / `scripts/board-guard.ts` after markdown recovery edits,
 - finalize pass/reject logs,
 - refresh deterministic wiki baseline,
 - create local pass commits.
@@ -108,14 +108,14 @@ The helper output is evidence. Planner AI still decides the recovery meaning and
 
 | Helper or command | Safety-kernel responsibility | AI-owned decision |
 | --- | --- | --- |
-| `start-plan.*` | Atomically promote clear inbox/backlog inputs (including worker-fail retry orders) into generated PRD/todo files, expose idle signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
-| `start-ticket-owner.*` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
+| `start-plan.ts` | Atomically promote clear inbox/backlog inputs (including worker-fail retry orders) into generated PRD/todo files, expose idle signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
+| `start-ticket-owner.ts` | Claim or resume exactly one ticket, create/inspect its worktree, and block unsafe worktree states. | Write the mini-plan, choose implementation approach, and decide whether blocked evidence requires owner repair, planner re-orchestration, or user input. |
 | `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
-| `verify-ticket-owner.*` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
-| `finish-ticket-owner.*` | Move pass/fail bookkeeping forward, archive evidence, call deterministic finalizers, and create local completion commits after AI merge. | Decide pass/fail, integrate verified changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before pass. |
-| `merge-ready-ticket.*` | Validate that AI-merged product state matches ticket/worktree expectations, refresh deterministic wiki baseline, and refuse unsafe merge states. | Perform rebases, cherry-picks, conflict resolution, and product-file merge decisions. |
-| `update-wiki.*` | Refresh deterministic wiki baseline pages from done/reject board evidence. | Synthesize semantic wiki knowledge; this belongs to `wiki`, not inline owner finalization. |
-| `autoflow guard` / `scripts/board-guard.js` | Validate board invariants after AI-authored markdown edits. | Interpret guard output and repair ticket markdown before creating more work. |
+| `verify-ticket-owner.ts` | Record verification evidence when the AI has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
+| `finish-ticket-owner.ts` | Move pass/fail bookkeeping forward, archive evidence, call deterministic finalizers, and create local completion commits after AI merge. | Decide pass/fail, integrate verified changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before pass. |
+| `merge-ready-ticket.ts` | Validate that AI-merged product state matches ticket/worktree expectations and refuse unsafe merge states. | Perform rebases, cherry-picks, conflict resolution, and product-file merge decisions. |
+| `update-wiki.ts` | Refresh deterministic wiki baseline pages from done/log/retry board evidence. | Synthesize semantic wiki knowledge; this belongs to `wiki`, not inline owner finalization. |
+| `autoflow guard` / `scripts/board-guard.ts` | Validate board invariants after AI-authored markdown edits. | Interpret guard output and repair ticket markdown before creating more work. |
 
 If a helper reports `blocked`, `needs_ai_merge`, `warning`, or `error`, do not route around it with another shell step. Preserve the evidence in board markdown and let the responsible AI role choose the next safe action.
 

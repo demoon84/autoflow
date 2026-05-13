@@ -74,9 +74,10 @@ Removed (2026-05-07, re-introduced 2026-05-12 PRD_287): the `monitor` runner was
 - 우산 env: `AUTOFLOW_RUNNER_REALTIME_ENABLED=1` 이면 planner / worker / wiki 3개 모두 event-driven 모드.
 - 개별 env: `AUTOFLOW_PLANNER_REALTIME_ENABLED=1`, `AUTOFLOW_TICKET_REALTIME_ENABLED=1` (worker), `AUTOFLOW_WIKI_REALTIME_ENABLED=1` 으로 role 별 활성도 가능.
 - Runner 별 watch 폴더:
-  - planner: `tickets/inbox/order_*.md`, `tickets/backlog/prd_*.md`, `tickets/reject/reject_*.md`
+  - planner: `tickets/inbox/order_*.md`, `tickets/inbox/order_*_retry_*.md`, `tickets/backlog/prd_*.md`
   - worker (ticket): `tickets/todo/Todo-*.md`
-  - wiki: `tickets/done/*.md`, `wiki/*.md` (기존 wiki debounce 정책 유지)
+  - verifier: `tickets/verifier/Todo-*.md`
+  - wiki: `tickets/done/*.md`, `tickets/inbox/order_*_retry_*.md`, `wiki/*.md` (기존 wiki debounce 정책 유지)
 - 동작: loop sleep 도중 watch 폴더 변경을 감지하면 기존 `interval_seconds` 만료 전에 다음 tick 으로 깨어남. 변경은 `.autoflow/runners/state/<runner>.<public_role>-realtime-wakeup.pending` marker 1개로 병합되며 loop 는 단일 child 실행 경로를 유지한다.
 - 직전 전체 input fingerprint 와 같으면 기존 idle skip (`planner_inputs_unchanged`, `ticket_inputs_unchanged`) 이 adapter LLM 호출을 생략한다.
 - **권장 운영**: realtime 모드에서는 `interval_seconds` 를 safety heartbeat 로 재정의 (기본 1800s = 30분 권장). adapter timeout 회복은 heartbeat 로 보장된다.
@@ -117,7 +118,7 @@ Removed (2026-05-07, re-introduced 2026-05-12 PRD_287): the `monitor` runner was
   - 현재 스레드에서 명시적으로 호출하면 planner heartbeat 를 1분 주기로 생성 또는 재개한다.
   - actionable order 또는 populated PRD 가 있으면 계속 처리해 generated PRD / plan 을 작성하고, start-plan 런타임으로 `.autoflow/tickets/todo/` 티켓을 만든다.
   - 실제 ticket 생성이 끝난 PRD 와 plan 은 `.autoflow/tickets/done/<project-key>/` 로 이동한다.
-  - `.autoflow/tickets/reject/reject_NNN.md` 도 계속 감시해 reject reason 을 plan 에 반영하고 새 todo 로 다시 보낸 뒤, 해당 reject 기록은 `.autoflow/tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
+  - worker/verifier fail 로 생성된 `.autoflow/tickets/inbox/order_*_retry_*.md` 도 일반 order 처럼 처리한다. `retry_decision=needs_user` 인 파일은 inbox 에 그대로 두고 사용자 결정을 기다린다.
   - 현재 plan 이 ticketed 가 됐거나 worker 가 `.autoflow/tickets/done/<project-key>/` 으로 넘긴 뒤에도 backlog 에 다음 populated PRD 가 남아 있으면 계속 다음 plan 으로 이어간다.
   - 특정 티켓이 `needs_user` 여도 planner 는 증거를 남기고 다른 actionable backlog/todo 흐름을 계속 살린다.
   - 사용자가 멈추라고 하기 전까지 자동화는 계속 살아 있어야 한다.
@@ -126,5 +127,5 @@ Removed (2026-05-07, re-introduced 2026-05-12 PRD_287): the `monitor` runner was
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 todo claim + 구현 + 검증 + 머지는 Impl AI(`worker`) 가 atomic 하게 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 todo heartbeat 를 1분 주기로 생성 또는 재개한다.
   - 처리할 `.autoflow/tickets/todo/` 가 있으면 `inprogress/` 로 옮기고 티켓별 worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현 / 검증 / 머지까지 진행한다.
-  - 작업이 끝나면 `done/<project-key>/` 로 이동하고 local commit 한다. fail 인 경우 `reject/` 로 이동.
+  - 작업이 끝나면 `done/<project-key>/` 로 이동하고 local commit 한다. fail 인 경우 전체 ticket body 를 inbox retry order 로 재발행한다.
   - 막힌 사유가 생겨도 owner 는 ticket 에 증거와 다음 safe action 을 남기고, 런너 자체는 사용자가 멈추기 전까지 계속 살아 있어야 한다.

@@ -22,7 +22,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - `autoflow run coordinator <project-root> <board-dir-name> --runner <shell-runner>` one-shot output only when explicitly testing the shell runtime outside the coordinator adapter.
 - `autoflow doctor <project-root> <board-dir-name>` output.
 - `tickets/inprogress/`, `tickets/ready-to-merge/`, and `tickets/merge-blocked/`.
-- `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
+- `tickets/done/<project-key>/`, `tickets/inbox/order_*_retry_*.md`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
 - `runners/config.toml`, `runners/state/*.state`, and `runners/logs/`.
 - Ticket `Allowed Paths`, `Worktree`, `Next Action`, `Notes`, `Result`, and `Resume Context` sections.
 - Recent runtime logs when the coordinator output references them.

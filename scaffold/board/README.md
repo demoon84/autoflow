@@ -1,7 +1,7 @@
 # Autoflow Board
 
 This directory is a local AI work harness installed inside a host project.
-It lets Codex, Claude Code, OpenCode, Gemini CLI, and shell runners share one file-based source of truth.
+It lets Codex, Claude Code, OpenCode, Gemini CLI, and local runners share one file-based source of truth.
 
 The chat window can start work, but the board owns work state.
 
@@ -9,17 +9,17 @@ The chat window can start work, but the board owns work state.
 
 Use Ticket Owner Mode by default:
 
-1. User starts PRD handoff with Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`. For small changes, the user may instead drop a quick memo with Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`.
+1. User starts PRD handoff with Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`. For small changes, the user may instead drop a quick order with Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`.
 2. The agent gathers requirements in lightweight chat with short questions and decision recaps.
 3. If the scope is too large for one safe handoff, the agent proposes a short PRD split map before drafting.
 4. The agent renders a full PRD draft, or multiple PRD drafts from an accepted split map, only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
 5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
 6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
-7. The planner runner acts as Planner AI: it promotes memo/backlog/reject work and repairs ticket markdown when owner work stalls or breaks.
+7. The planner runner acts as Planner AI: it promotes order/retry/backlog work and repairs ticket markdown when owner work stalls or breaks.
 8. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
 9. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
 10. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
-11. The finalization runtime validates the AI-merged result via the shell sanity gate, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
+11. The finalization runtime validates the AI-merged result via the mechanical sanity gate, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
 12. Wiki AI refreshes derived knowledge later when source change weight crosses the debounce threshold.
 13. Failed work embeds the entire ticket body inside `tickets/inbox/order_<id>_retry_<N>_<ts>.md` (under `## Original Ticket`) and removes the inprogress ticket. The planner re-plans it like any other inbox order. Same fingerprint reaching `retry_max` flips `retry_decision=needs_user` so the order parks in inbox until the user redirects. `done/<key>/` only contains successful tickets.
 
@@ -58,9 +58,9 @@ small deterministic command the runner calls for one explicit action. Runner
 tools must not choose scope, draft `Done When`, decide pass/fail, resolve merge
 strategy, decide wiki meaning, or drive the whole workflow.
 
-Current split tools live behind `scripts/runner-tool.js`; run
+Current split tools live behind `scripts/runner-tool.ts`; run
 `autoflow tool list` for the installed tool catalog and contract summary.
-Large script-driven flows such as `start-plan.*` and `start-ticket-owner.*`
+Large script-driven flows such as `start-plan.ts` and `start-ticket-owner.ts`
 remain compatibility wrappers while their behavior is split into smaller
 TypeScript runner tools.
 
@@ -69,9 +69,9 @@ TypeScript runner tools.
 - Claude `/autoflow`: PRD handoff only.
 - Codex `$autoflow`: PRD handoff only.
 - `#autoflow`: compatibility alias for PRD handoff only.
-- Claude `/order`, Codex `$order`, `#order`, or `autoflow memo create`: quick memo intake only.
-- `autoflow runners start planner`: Planner AI loop runner — backlog/reject → todo plus markdown recovery for stalled/blocked work.
-- `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/reject. Default Ticket Owner execution.
+- Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`: quick order intake only.
+- `autoflow runners start planner`: Planner AI loop runner — order/retry/backlog → todo plus markdown recovery for stalled/blocked work.
+- `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/inbox-retry. Default Ticket Owner execution.
 - `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop Owner runner: default Impl AI execution from the UI.
@@ -86,7 +86,7 @@ Spec handoff never starts implementation.
 The agent must:
 
 1. Read `agents/spec-author-agent.md`.
-2. Reserve or resume a spec slot with `scripts/start-spec.*` when available.
+2. Reserve or resume a spec slot with `scripts/start-spec.ts` when available.
 3. Gather missing goal, scope, allowed paths, acceptance criteria, and verification details through short questions and decision recaps.
 4. If the scope is large, propose a lightweight PRD split map with boundaries, dependency order, and verification focus.
 5. Do not show the complete PRD draft until the user gives an explicit draft trigger (`초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, `show draft`, or equivalent).
@@ -94,17 +94,17 @@ The agent must:
 7. Save only after separate explicit user approval. The draft trigger is not save approval.
 8. Save only to `tickets/backlog/` and optional `conversations/` archive. Split PRDs must be separate backlog files with sibling references in `Conversation Handoff` or `Notes`.
 
-## Memo Intake Rules
+## Order Intake Rules
 
-Quick memo intake never starts implementation.
+Quick order intake never starts implementation.
 
 The agent must:
 
-1. Preserve the user's original request in `tickets/inbox/memo_NNN.md`.
+1. Preserve the user's original request in `tickets/inbox/order_NNN.md`.
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
-4. Let Planner AI promote the memo into a generated PRD and todo ticket when safe.
-5. Treat memo requests as directives and infer the safest narrow implementation scope; only unsafe memos should be blocked.
+4. Let Planner AI promote the order into a generated PRD and todo ticket when safe.
+5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe orders should be blocked.
 
 ## Ticket Owner Rules
 
@@ -115,7 +115,7 @@ Ticket Owner work should be narrow and durable:
 - Edit only `Allowed Paths`.
 - Update `Notes`, `Resume Context`, `Verification`, and `Result` as durable state.
 - Follow `Recovery State` planner instructions when present, and update it when blocked or recovered.
-- Prefer `scripts/runner-tool.js worker ...` for claim, worktree setup, status snapshots, evidence recording, and mechanical checks. Use legacy runtime scripts only where the small tool has not yet replaced the macro.
+- Prefer `scripts/runner-tool.ts worker ...` for claim, worktree setup, status snapshots, evidence recording, and mechanical checks. Use legacy runtime scripts only where the small tool has not yet replaced the macro.
 - On pass, the AI owner merges verified changes into `PROJECT_ROOT` itself, resolves conflicts itself, reruns needed verification, and then uses finish/finalization scripts only as bookkeeping tools.
 - Do not push.
 

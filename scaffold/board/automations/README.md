@@ -102,7 +102,7 @@ Typical routes (when file-watch is enabled):
 - backlog changes -> ticket owner or legacy planner,
 - todo changes -> ticket owner or legacy todo,
 - verifier changes -> ticket owner or legacy verifier,
-- done/reject changes -> planner follow-up when legacy retries are enabled.
+- done/retry changes -> planner follow-up when legacy retries are enabled.
 
 Each hook dispatch writes a log under `logs/hooks/`.
 
@@ -115,8 +115,8 @@ fallback):
 - `tickets/backlog/`: `ticket` route by default.
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
-- `tickets/reject/`: legacy `plan` route if role-pipeline is enabled.
-- `tickets/done/`: no script-driven wiki route is needed. `wiki` inspects done/reject/log sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
+- `tickets/inbox/order_*_retry_*.md`: `plan` route when file-watch fallback is enabled.
+- `tickets/done/`: no script-driven wiki route is needed. `wiki` inspects done/log/retry sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
 
 ## Operating Principle
 
@@ -132,7 +132,7 @@ Protocol files under `protocols/` define the AI-first workflow:
 - `recovery.md`: stalled/blocked/requeue classification and evidence rules.
 - `owner-contract.md`: owner execution contract and planner instruction handling.
 
-Use `autoflow guard` or `scripts/board-guard.js` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
+Use `autoflow guard` or `scripts/board-guard.ts` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
 
 ## Context Lifecycle
 

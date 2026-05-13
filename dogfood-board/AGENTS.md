@@ -1,286 +1,232 @@
 # AGENTS.md
 
-이 보드의 목적은 `문서 기반 AI 작업 하네스 보드`를 운영하는 것이다.
-
-기본 실행 모델은 `Ticket Owner` 다. 한 runner 가 한 티켓의 local plan, implementation, verification, evidence 기록, done/reject 이동까지 끝까지 책임진다.
-
-아래의 planner / todo / verifier role-pipeline 문서는 호환용 레거시 경로다. 새 구현과 기본 runner 는 역할을 분리하지 말고 `ticket-owner` 흐름을 우선한다.
+This board is an Autoflow sidecar harness installed inside a host project.
+The default execution model is **4-runner mode**: Planner AI creates tickets, Impl AI owns implementation, Verifier AI checks semantic fit, and Wiki AI maintains derived knowledge. Failures route to inbox retry orders, not an active reject queue.
 
 ## Canonical Flow
 
-기본 흐름:
+Default 4-runner flow:
 
-`tickets/backlog -> tickets/inprogress/tickets_NNN.md -> rules/verifier -> tickets/inprogress/verify_NNN.md -> logs -> tickets/done/<project-key>/verify_NNN.md`
+```text
+PROJECT_ROOT
+  -> .autoflow/tickets/inbox/order_NNN.md             (사용자 /order 또는 worker fail retry)
+  -> .autoflow/tickets/backlog/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
+  -> .autoflow/tickets/todo/Todo-NNN.md               (Planner 가 발급)
+  -> .autoflow/tickets/inprogress/Todo-NNN.md         (Worker active, worktree 1 개)
+  -> .autoflow/tickets/verifier/Todo-NNN.md           (Verifier semantic review)
+  -> .autoflow/tickets/done/<project-key>/Todo-NNN.md (성공만 모임)
+```
 
-레거시 role-pipeline 호환 흐름:
+Worker fail 시 ticket 본문은 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 되고 inprogress markdown 은 `rm`. 별도 reject 큐 없음.
 
-`tickets/backlog -> tickets/plan -> tickets/inprogress/plan_NNN.md -> tickets/todo -> tickets/inprogress/tickets_NNN.md -> tickets/verifier -> tickets/done/<project-key>/verify_NNN.md`
+Directory meanings:
 
-의미:
+- `PROJECT_ROOT`: the real product repository root.
+- `tickets/inbox/`: quick order + worker-fail retry order 큐. Planner AI 가 promotion.
+- `tickets/backlog/`: approved spec 큐.
+- `tickets/todo/`: Planner 가 발급한 ticket 큐. Worker claim 대기.
+- `tickets/inprogress/`: active Worker ticket (single live worktree).
+- `tickets/done/<project-key>/`: passed ticket, archived spec/plan, completion log. 성공만 모임.
+- `reference/`: templates and board reference material.
+- `protocols/`: AI-first orchestration, owner, and recovery contracts.
+- `rules/`: operating rules and wiki linting.
+- `automations/`: hook, heartbeat, and runtime context contracts.
+- `agents/`: role prompts used by human or local runner agents.
+- `logs/`: completion logs and hook dispatch logs.
+- `wiki/`: generated and human-maintained project knowledge derived from completed work.
 
-- `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
-- `tickets/plan/`: legacy role-pipeline 에서 어떤 일을 어떤 순서로 티켓화할지 정리
-- `automations/`: 훅과 폴더별 자동화 역할
-- `agents/`: 각 훅이 실행할 역할 정의
-- `tickets/`: 작업 단위와 상태 보드
-- `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
-- `tickets/plan/`: legacy role-pipeline 의 plan 대기열
-- `tickets/inprogress/`: Ticket Owner 가 점유한 `tickets_*.md` 와 진행 중 검증 기록을 두는 구역. legacy role-pipeline 에서는 `plan_*.md` / todo worker 티켓도 이곳을 쓴다.
-- `tickets/done/<project-key>/`: 완료 티켓, 처리된 spec, legacy ticket 생성 완료 plan 을 프로젝트 단위로 보관
-- `reference/`: 상태 폴더 밖에서 README 와 템플릿 보관
-- `rules/verifier/`: 검증 기준과 체크리스트
-- `tickets/inprogress/verify_NNN.md`: Ticket Owner 또는 verifier 가 작업 중일 때 쓰는 임시 검증 기록
-- `logs/`: owner / verifier 완료 이력 로그
+Removed (refactor 2026-05-07): `tickets/reject/` fail routing and `tickets/check/` monitor ledger. `tickets/verifier/` was reintroduced for semantic review in the 4-runner topology. Verification evidence lives directly in the ticket markdown's `## Verification` section.
 
 ## Read Order
 
-작업을 시작할 때는 아래 순서로 읽는다.
+At the start of work, read in this order:
 
 1. `README.md`
 2. `rules/README.md`
 3. `reference/backlog.md`
-4. `reference/plan.md`
-5. `automations/README.md`
-6. `reference/tickets-board.md`
-7. `rules/verifier/README.md`
-8. 관련 문서:
-   - 새 의도 받아서 spec 초안이면 `agents/spec-author-agent.md`
-   - 기본 ticket owner 실행이면 `agents/ticket-owner-agent.md`
-   - plan 도출 / reject 재계획이면 `agents/plan-to-ticket-agent.md`
-   - claim + 구현이면 `agents/todo-queue-agent.md`
-   - 검증 / pass 커밋 / fail reject 면 `agents/verifier-agent.md`, `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`, `reference/tickets-board.md`
+4. `reference/order.md`
+5. `reference/plan.md`
+6. `automations/README.md`
+7. `reference/tickets-board.md`
+8. `reference/runner-tool-contract.md`
+9. Role-specific files:
+   - PRD handoff: `agents/spec-author-agent.md`
+   - default execution (Impl AI): `agents/ticket-owner-agent.md`
+   - orchestration (Planner AI): `agents/plan-to-ticket-agent.md`
+   - wiki maintenance (Wiki AI): `agents/wiki-maintainer-agent.md`
+   - legacy compat: `agents/todo-queue-agent.md`, `agents/coordinator-agent.md`, `agents/merge-bot-agent.md`
 
 ## Runtime Command Convention
 
-- 모든 런타임 진입점은 `scripts/*.ts` 다. 예: `autoflow/scripts/start-ticket-owner.ts`
-- 문서에서 `start-ticket-owner 런타임`, `verify-ticket-owner 런타임`, `finish-ticket-owner 런타임`, `start-plan 런타임`, `start-todo 런타임`, `handoff-todo 런타임`, `start-verifier 런타임` 이라고 하면 같은 이름의 `.ts` 진입점을 가리킨다. 별도 verifier log 전용 진입점은 더 이상 사용하지 않는다.
+- Use the matching `scripts/*.ts` entrypoint for runtime commands.
+- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.ts` script in `scripts/`.
+- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.ts planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.ts worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.ts verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.ts wiki ...` over adding behavior to a large script.
 
 ## Core Rules
 
-1. 스펙이 없으면 Ticket Owner 는 backlog 기반 새 티켓을 만들지 않는다. legacy role-pipeline 에서는 스펙이 없으면 플랜도 티켓도 만들지 않는다.
-2. 기본 실행은 `scripts/start-ticket-owner.ts` 로 한 owner 가 티켓을 만들거나 점유한 뒤, 같은 owner 가 local plan / 구현 / 검증 / evidence / done-reject 이동까지 처리한다.
-3. 레거시 role-pipeline 에서 플랜은 `#plan` heartbeat 가 spec 에서 도출해 만든다. 사람이 손으로 만들 수도 있다.
-4. 레거시 role-pipeline 에서 새 티켓은 planner agent 가 plan 의 Execution Candidates 를 보고 `tickets/todo/` 에 직접 작성한다. `start-plan.ts` 는 각 Candidate 에 대해 ID/경로/lock/중복체크를 해주고 `pending_ticket_begin ... pending_ticket_end` 블록을 출력하며, agent 가 해당 블록마다 `tickets_{id}.md` 본문을 `reference/ticket-template.md` 기반으로 작성한다. `Plan Candidate` 필드는 script 의 `candidate` 값을 글자 그대로 복사해야 dedup 이 동작한다.
-5. legacy planner 가 실제 todo ticket 을 만들면 대응 spec 과 plan 은 `tickets/done/<project-key>/` 로 옮겨 backlog / plan 루트에서 빠져야 한다. 기본 Ticket Owner 는 처리한 spec 을 바로 done 프로젝트 폴더로 보관한다.
-6. legacy `#todo` 는 티켓을 `todo → inprogress` 로 점유 이동한 뒤 티켓별 git worktree 를 만들고 **같은 worker 가 그 worktree 에서 구현**한다. execution 별도 역할 없음. 구현이 끝나면 `handoff-todo` 런타임으로 중앙 보드 티켓을 `tickets/inprogress/ → tickets/verifier/` 로 옮기고 active ticket context 를 비운다.
-7. 티켓 제목, Goal, Done When 문구가 검증·리뷰처럼 보여도 파일이 `tickets/todo/` 또는 `tickets/inprogress/` 에 있으면 현재 stage 의 owner 가 구현 또는 확인을 계속 진행한다. 기본 흐름에서는 Ticket Owner 가 pass / fail 을 판정하고, legacy role-pipeline 에서는 verifier 만 판정한다.
-8. legacy `#veri` 는 `tickets/verifier/` 의 티켓을 검사해 pass → `tickets/done/<project-key>/` + git commit (local), fail → `tickets/reject/reject_NNN.md` + `## Reject Reason` 기록. 기본 Ticket Owner 는 `verify-ticket-owner` 와 `finish-ticket-owner` 로 같은 evidence / done / reject 계약을 수행한다. **`git push` 절대 금지.**
-9. Ticket Owner / verifier 의 브라우저 확인 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
-10. Ticket Owner / verifier 가 현재 턴에서 Codex 브라우저 도구 / Claude browser tool 탭을 열었다면, 사용자가 유지하라고 하지 않는 한 같은 턴에서 반드시 닫고 끝낸다.
-11. Ticket Owner / verifier 는 `BOARD_ROOT` / ticket worktree / `PROJECT_ROOT` 범위 안의 검증 명령 실행, 브라우저 확인, verifier 관련 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 추가 허락을 묻지 않는다. 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
-12. legacy planner heartbeat 와 plan hook 은 `tickets/reject/reject_NNN.md` 뿐 아니라 `tickets/done/<project-key>/` 완료 뒤에도 backlog 를 다시 확인해, 다음 populated spec 이 남아 있으면 다음 plan 으로 이어가야 한다. reject 원인을 반영한 재시도 todo 가 생성되면 해당 reject 파일은 `tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
-13. 같은 번호의 티켓 파일이 여러 상태 폴더에 동시에 존재하지 않는다. (`todo/` ↔ `inprogress/` ↔ `verifier/` ↔ `done/` 또는 `reject/` 중 한 곳)
-14. `inprogress` 티켓에는 `Owner`, `Stage`, `Claimed By`, `Execution Owner`, `Verifier Owner`, `Last Updated`, `Next Action`, `Resume Context` 가 있어야 한다.
-15. 대화창이 중단/재시작되어도 재개는 항상 `tickets/inprogress/` 의 `Resume Context` 를 기준으로 한다.
-16. `automations/state/*.context` 는 stop hook 과 worker 역할 문맥을 위한 런타임 상태다. Ticket Owner / legacy `#todo` / legacy `#veri` 는 tick 중에 active ticket context 를 잡아도 완료 시 active ticket 문맥을 비우고 role / worker 문맥만 남긴다. 상관관계는 Reference Notes, `References`, `Resume Context`, run/log 파일을 기준으로 재구성한다.
-17. 여러 owner worker 가 동시 실행 가능. mv 기반 claim 이 경합을 막는다.
-18. Ticket Owner / verifier 는 작업을 시작할 때 `tickets/inprogress/verify_NNN.md` 를 만들고, 완료 시 이 기록을 최종 티켓 옆으로 함께 이동한다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md` 를 남기고 `logs/verifier_NNN_*.md` completion log 도 별도로 남긴다.
-19. `done` 으로 옮길 때는 `Verification`, `Result` 항목을 갱신하고 `tickets/done/<project-key>/verify_NNN.md` 및 생성된 completion log 와 연결한다. ticket finish 는 위키 managed section 을 자동 갱신하므로 일반 완료 흐름에 별도 위키 실행기를 요구하지 않는다.
-20. 티켓 파일명은 항상 `tickets_001.md` 형식. 새 번호는 현재 존재하는 최대 번호 + 1.
-21. git 저장소에서는 Ticket Owner / legacy todo 가 티켓별 worktree / branch 를 사용한다. 제품 코드 변경은 worktree 에 남기고, pass 시 중앙 `PROJECT_ROOT` 에 무커밋 통합한 뒤 board 변경과 함께 한 커밋으로 묶는다.
-22. 중앙 `PROJECT_ROOT` 에 board 밖 dirty file 이 있으면 Ticket Owner / verifier 는 worktree 통합을 막고, 다른 티켓 변경을 섞어 커밋하지 않는다.
-23. heartbeat worker 는 할 일 없어도 스스로 멈추지 않는다. `status=idle` 로 턴만 마치고 다음 wake-up 을 기다린다. "멈춰" 명령은 사용자만 내린다.
-24. 기본 heartbeat 는 Ticket Owner 용이다. 사용자가 legacy `#plan`, `#todo`, `#veri` 라고 하면 해당 역할의 **1분 heartbeat 자동화**를 생성 또는 재개하고, 같은 턴에서 첫 tick 도 바로 수행한다. 자동화는 사용자가 멈추라고 하기 전까지 절대 스스로 꺼지지 않는다.
-25. heartbeat / runner tick 이 종료될 때는 현재 공정률을 표기한다. 가능하면 `autoflow metrics` 또는 보드의 spec/ticket 집계를 기준으로 한 percent 를 tick 의 마지막 대화/로그 요약에 남긴다.
+1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Planner AI.
+2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+4. The default execution path uses four runners: `planner` promotes order/backlog/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
+5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/fail finalization. The verifier runner owns semantic review when the ticket enters the verifier lane.
+6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
+7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
+8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
+9. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
+10. Never run `git push` from automation or agent work. Remote publication is always a human decision.
+11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's mechanical sanity gate (git diff >= 1 + every Done When `[x]`) blocks false pass mechanically.
+12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
+13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
+14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
+15. `tickets/inprogress/Todo-NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
+16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
+17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
+18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
+19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
+20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
+21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.ts` runs only after the AI-owned implementation and required verification/merge preparation have happened; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
+22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
+23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
+24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
+25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly order prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
-이 보드에서 기본 실행은 `Planner AI Mode` + `Ticket Owner Mode` 다. `Spec Authoring Mode` 는 heartbeat 없이 사용자가 수동으로 트리거한다. legacy role-pipeline 이 필요할 때만 plan / todo / verifier heartbeat 를 분리해 쓴다.
-
 ### 1. Spec Authoring Mode
 
-목적:
+Trigger: Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`.
 
-- Codex/Claude 대화창에서 사용자가 `#af` 또는 `#autoflow` 라고 말했을 때, 이어지는 대화로 프로젝트/기능 의도를 모아 **`tickets/backlog/project_{번호}.md` 초안을 대화창에서 먼저 정리하고**, 사용자가 명시적으로 저장을 허락하면 spec 파일에만 남긴다.
+Purpose: turn the conversation into one approved backlog spec, or a small ordered PRD set when the scope is too large for one safe spec.
 
-반드시 읽을 파일:
+Read:
 
 - `agents/spec-author-agent.md`
-- 호스트 루트 `AGENTS.md` (있으면)
-- 기존 `tickets/backlog/*.md`, `tickets/plan/*.md`, `tickets/inprogress/plan_*.md`, `tickets/done/*/project_*.md`, `tickets/done/*/plan_*.md`
+- host `AGENTS.md` or `CLAUDE.md` when present
+- existing backlog, plan, inprogress, and done specs
 - `reference/project-spec-template.md`
 
-해야 하는 일:
+Do:
 
-- `scripts/start-spec.ts` 실행해서 대상 번호 슬롯 확인
-- 사용자와 대화하면서 Goal, Scope, Stack, Allowed Paths, Acceptance Criteria 수집
-- 저장 전에는 대화창 안에서 spec 전문 초안을 보여주고 수정 요청을 반영
-- 사용자가 명시적으로 저장을 허락하면 `project_{번호}.md` 에만 저장
+- Run `scripts/start-spec.ts` to reserve or resume a spec slot.
+- Gather goal, scope, modules, allowed paths, acceptance criteria, and verification command through lightweight chat.
+- If the request spans multiple independent outcomes, modules, releases, or verification paths, propose a short PRD split map before drafting.
+- Use short questions and decision recaps; do not render the PRD template every turn.
+- Render the full spec draft only after the user gives an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
+- For a PRD set, render each PRD draft separately and include sibling references in `Conversation Handoff` or `Notes`.
+- Save only after separate explicit user confirmation. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
+- Save only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Multiple PRDs must be separate backlog files, saved one active slot at a time.
 
-하면 안 되는 일:
+Do not:
 
-- 사용자 확인 없이 spec 파일을 쓰는 것
-- `tickets/plan/` 아래 파일을 만들거나 수정하는 것
-- 티켓 생성
-- 구현 / 검증
+- Write a spec without confirmation.
+- Create plan files.
+- Create tickets.
+- Implement, verify, commit, or push.
 
-### 2. Ticket Owner Mode (default)
+### 2. Quick Order Intake Mode
 
-목적:
+Trigger: Claude `/order`, Codex `$order`, or compatibility alias `#order`.
 
-- `ticket-owner` heartbeat 또는 `autoflow run ticket` 으로 동작. 한 owner 가 자기 `tickets/inprogress/` 티켓을 이어가거나, 없으면 `tickets/todo/` 또는 legacy `tickets/verifier/` 항목을 점유해 local plan, 구현, 검증, evidence, done/reject 이동까지 끝까지 처리한다. Populated backlog spec 은 Plan AI 가 먼저 `tickets/todo/` 로 변환한다.
+Purpose: capture a small request without a full PRD handoff.
 
-반드시 읽을 파일:
+Do:
+
+- Preserve the original user request in `tickets/inbox/order_*.md`.
+- Add scope, Allowed Paths, and verification hints only when obvious.
+- Let Plan AI promote the inbox note into a generated PRD and todo ticket when safe.
+
+Do not:
+
+- Draft a full PRD in chat.
+- Create PRDs or tickets directly.
+- Implement, verify, commit, or push.
+
+### 3. Ticket Owner Mode
+
+Purpose: one owner completes one ticket end to end.
+
+Read:
 
 - `agents/ticket-owner-agent.md`
-- 대상 `tickets/inprogress/tickets_NNN.md`, `tickets/todo/tickets_NNN.md`, 또는 legacy `tickets/verifier/tickets_NNN.md`
-- 참조된 `tickets/done/*/prd_*.md`
-- `rules/verifier/README.md`, `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`
+- target spec or ticket
+- referenced docs, rules, and verifier checklist
 
-해야 하는 일:
+Do:
 
-- `scripts/start-ticket-owner.ts` 실행 후 출력된 `ticket`, `implementation_root`, `run`, `done_target`, `reject_target` 를 기준으로 작업한다.
-- 티켓의 `Allowed Paths` 안에서만 구현하고, 진행 상황은 `Notes`, `Next Action`, `Resume Context`, `Result` 에 남긴다.
-- 검증 준비가 되면 `scripts/verify-ticket-owner.ts <ticket-id>` 로 `tickets/inprogress/verify_NNN.md` evidence 를 만든다.
-- pass 면 `scripts/finish-ticket-owner.ts <ticket-id> pass "<summary>"` 로 worktree 통합, done 이동, completion log, local commit 을 처리한다.
-- fail 이고 owner 가 같은 scope 안에서 고칠 수 없으면 `scripts/finish-ticket-owner.ts <ticket-id> fail "<concrete reason>"` 으로 reject 와 completion log 를 남긴다.
+- Resume an owned active ticket first.
+- Otherwise claim or create one ticket from backlog/todo/verifier.
+- Write a short mini-plan in `Notes`.
+- Implement only within `Allowed Paths`.
+- Run verification and capture evidence.
+- Finish pass or fail through the runtime scripts.
 
-하면 안 되는 일:
+Do not:
 
-- 허용 경로 밖 수정
-- 검증 기록 없이 done/reject 처리
-- 같은 owner 가 동시에 여러 active ticket 처리
-- `git push`
+- Split work into planner/todo/verifier roles unless the user explicitly requests legacy mode.
+- Push.
+- Modify unrelated files.
 
-### 3. Planner AI Mode (default planner)
+### 4. Legacy Plan Automation Mode
 
-목적:
+Trigger: `#plan`.
 
-- `planner` heartbeat 또는 `autoflow run planner` 로 동작. quick memo, populated backlog spec, reject 기록을 todo work 로 변환하고, blocked/stalled ticket 에는 `Recovery State` 기반 복구 지시를 남긴다. `start-plan.ts` 는 다음 plan-side work 를 선택하는 도구이고, agent 가 결과를 읽어 plan/ticket/recovery markdown 을 작성한다. 모든 Candidate 에 대응 ticket 이 존재하면 script 가 spec 과 plan 을 `tickets/done/<project-key>/` 로 보관한다. 재시도 todo 생성 뒤에는 소비된 reject 도 같은 프로젝트 done 폴더로 보관한다.
+Purpose: convert quick orders, populated specs, and reject reasons into todo tickets.
 
-반드시 읽을 파일:
+Do:
 
-- `agents/plan-to-ticket-agent.md`
-- 대상 `tickets/backlog/project_{번호}.md`, `tickets/plan/plan_{번호}.md`, `tickets/inprogress/plan_{번호}.md`
-- `tickets/inbox/memo_*.md`, `tickets/reject/reject_*.md`, active `tickets/todo/` 또는 `tickets/inprogress/` recovery 대상
-- `reference/roadmap.md`
-- `reference/ticket-template.md`
-- `protocols/board-orchestration.md`, `protocols/recovery.md`
+- Keep a 1-minute heartbeat alive until the user stops it.
+- Use `scripts/runner-tool.ts planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `scripts/start-plan.ts` only for compatibility branches that have not yet been split into runner tools.
+- Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
+- Create or update `plan_NNN.md` from specs or rejects.
+- Generate todo ticket bodies from `Execution Candidates`.
+- Archive consumed specs/plans/rejects under `done/<project-key>/`.
 
-해야 하는 일:
+Do not implement, verify, commit, or push.
 
-- spec 이 채워져 있는데 plan 이 없으면 plan 초안 생성 (Candidates 까지 채움, Status 는 draft 유지)
-- 다음 tick 에서 `start-plan.ts` 가 draft → ready 자동 flip + `tickets/inprogress/plan_NNN.md` 점유 + pending_ticket 블록 출력 → agent 가 같은 tick 에서 `tickets/todo/tickets_NNN.md` 본문 작성. 모든 Candidate 가 ticket 화되면 다음 tick 에서 script 가 spec/plan 을 done 으로 보관.
-- reject 티켓의 `## Reject Reason` 을 읽고 새 Candidate 추가 + plan Status 를 ready 로 되돌림. 재시도 todo 가 생성되면 해당 `reject_NNN.md` 는 `tickets/done/<project-key>/` 로 이동
-- blocked/stalled/repeated reject 상태는 product code 를 건드리지 않고 ticket markdown 의 `Recovery State`, `Next Action`, `Resume Context` 로 복구 지시를 남김
+### 5. Legacy Todo Queue Mode
 
-하면 안 되는 일:
+Trigger: `#todo`.
 
-- 티켓을 `inprogress` 로 이동
-- 구현 시작
-- 검증 실행
-- `done` 판정
-- `git push`
+Purpose: claim a todo ticket and implement it.
 
-### 4. Todo Queue Mode (legacy role-pipeline claim + 구현)
+Do:
 
-목적:
+- Keep a 1-minute heartbeat alive until the user stops it.
+- Resume owned inprogress work first.
+- Use `scripts/start-todo.*` and `scripts/handoff-todo.js`.
+- Implement within `Allowed Paths`.
+- On completion, the worker finalizer takes over (atomic: verify → master merge → done).
 
-- `#todo` heartbeat 로 동작. `tickets/todo/` 에서 한 티켓을 점유해 `tickets/inprogress/` 로 옮기고 **같은 worker 가 구현까지 진행**. 완료 시 `tickets/verifier/` 로 이동시켜 검증 대기 상태로 넘긴다.
+Do not push.
 
-반드시 읽을 파일:
+### 6. Verifier Mode
 
-- `agents/todo-queue-agent.md`
-- 대상 티켓 파일 또는 `tickets/todo/*`
-- 참조된 `tickets/backlog/*`, `tickets/plan/*`, `tickets/done/*/project_*.md`, `tickets/done/*/plan_*.md`
+The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/fail through `scripts/runner-tool.ts verifier ...`. Legacy `#veri` remains compatibility-only.
 
-해야 하는 일:
+### 7. Coordinator Mode
 
-- 먼저 자기 owner 로 배정된 `tickets/inprogress/` 가 있으면 그것부터 재개
-- 없으면 `start-todo.ts` 로 새 claim
-- 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태 폴더가 `todo` 또는 `inprogress` 이면 그대로 구현 단계로 처리
-- 티켓의 `Worktree.Path` 또는 `implementation_root` 에서 `Allowed Paths` 범위 안으로 Goal 구현. 여러 heartbeat tick 에 걸쳐 Resume Context 로 이어가도 됨
-- 기존 `inprogress` 재개 시에는 `scripts/set-thread-context.ts todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥도 맞춘다
-- 완료 시 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.ts` 런타임으로 중앙 보드 파일을 `tickets/verifier/` 로 넘기고 현재 ticket 문맥만 비운다
+Purpose: explain legacy board/runtime health and blocked work when explicitly enabled.
 
-하면 안 되는 일:
+Do:
 
-- 허용 경로 밖 수정
-- 검증 / 커밋 / push
-- reject 처리 (planner 영역)
-- 다른 티켓 생성
+- Outside a coordinator adapter turn, run or resume `autoflow runners start coordinator-1` to keep the long-lived coordinator alive.
+- Inside a coordinator adapter turn, do not start, restart, or run the coordinator recursively. Execute the provided runtime script directly once.
+- Inspect shared Allowed Path blockers, dirty root overlap, worktree health, runner state, and scaffold checks.
+- Recommend the smallest safe next action.
 
-### 5. Verification Mode (legacy role-pipeline)
-
-목적:
-
-- `#veri` heartbeat 로 동작. `tickets/verifier/` 에 올라온 티켓을 검증해 pass → `tickets/done/<project-key>/` + git commit (local), fail → `tickets/reject/reject_NNN.md` + `## Reject Reason` 기록. 완료 시 `logs/` 아래 completion log 도 남긴다.
-
-반드시 읽을 파일:
-
-- `agents/verifier-agent.md`
-- 대상 티켓 파일 (`tickets/verifier/tickets_NNN.md`)
-- 관련 `tickets/backlog/*`
-- `rules/verifier/checklist-template.md`
-- `rules/verifier/verification-template.md`
-
-해야 하는 일:
-
-- `start-verifier.ts` 가 출력한 `working_root` 에서 spec 의 `Verification.Command` 실행 + Acceptance Criteria 관찰
-- 검증 시작 시 `tickets/inprogress/verify_NNN.md` 에 pass/fail 결과 기록
-- `logs/verifier_NNN_*.md` completion log 생성
-- **Pass**: worktree 가 있으면 `scripts/integrate-worktree.ts` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓을 `tickets/done/<project-key>/` 로 mv → `git add . && git commit -m "[prd_NNN] 작업내용 요약본"` (local commit). bracket 값은 티켓의 `PRD Key` / project key 를 쓰고, PRD key 가 없는 legacy 티켓만 `[tickets_NNN]` 으로 fallback 한다.
-- **Fail**: 티켓 하단에 `## Reject Reason` 추가 후 `tickets/reject/reject_NNN.md` 로 mv. commit 하지 않음
-
-하면 안 되는 일:
-
-- 기준 없이 임의 pass
-- 검증 기록 없이 티켓 종료
-- 코드 수정 (fix 는 todo worker 영역)
-- **`git push` 절대 금지**
-
-## Ticket Lifecycle
-
-기본 Orchestrator + Ticket Owner 흐름 (아래 경로는 예시 번호 `001` 을 쓴 형식이며 각 보드가 번호를 직접 발급한다):
-
-```text
-tickets/backlog/project_001.md            (사용자가 #af 로 채움)
-  → tickets/plan/plan_001.md           (Plan AI 가 도출 후 Candidates 채움)
-  → tickets/todo/tickets_001.md        (Plan AI 가 todo 본문 작성)
-  → tickets/inprogress/tickets_001.md  (Ticket Owner 가 todo claim)
-  → tickets/inprogress/verify_001.md    (Ticket Owner 가 verify-ticket-owner 로 evidence 기록)
-  → tickets/done/project_001/tickets_001.md  (pass: finish-ticket-owner 로 local commit + mv)
-  ↘ tickets/done/project_001/project_001.md  (처리된 spec 보관)
-   ↘ tickets/reject/reject_001.md   (fail: concrete Reject Reason 기록)
-```
-
-legacy role-pipeline 흐름:
-
-```text
-tickets/backlog/project_001.md            (사용자가 #af 로 채움)
-  → tickets/plan/plan_001.md           (planner heartbeat 가 도출 후 Candidates 채움)
-  → tickets/inprogress/plan_001.md (planner 가 ticket 생성 작업 점유)
-  → tickets/todo/tickets_001.md      (start-plan.ts 가 pending_ticket 블록 출력 → planner agent 가 본문 작성)
-  → tickets/inprogress/tickets_001.md   (todo worker 가 claim + 구현)
-  → tickets/verifier/tickets_001.md  (구현 완료 후 verifier 로 mv)
-  → tickets/done/project_001/tickets_001.md  (pass: git commit + mv)
-  ↘ tickets/done/project_001/project_001.md  (ticket 생성 뒤 spec 보관)
-  ↘ tickets/done/project_001/plan_001.md     (ticket 생성 뒤 plan 보관)
-   ↘ tickets/reject/reject_001.md   (fail: Reject Reason 기록, planner 가 재계획)
-     → tickets/done/project_001/reject_001.md (재계획 todo 생성 뒤 보관)
-```
-
-규칙:
-
-- `todo`: 아직 시작 전
-- `inprogress`: Ticket Owner 또는 legacy todo worker 가 점유해 구현 / 검증 중
-- `verifier`: legacy 구현 완료, 검증 대기. 기본 Ticket Owner 도 기존 verifier 티켓을 이어받을 수 있다.
-- `done`: 검증 pass + local commit 완료 티켓, 처리된 spec, legacy ticket 생성 완료 plan 을 프로젝트 단위로 보관
-- `reject`: 검증 fail + Reject Reason 기록. 파일명은 `reject_NNN.md` 이며 legacy planner 가 재계획 이후 새 ticket 으로 다시 돌리면 프로젝트별 `done` 폴더로 보관할 수 있다.
-- `verify_NNN.md`: Ticket Owner 또는 verifier 가 시작 시 `inprogress/` 아래에 만들고, 완료 시 final ticket 위치로 같이 이동하는 검증 기록 파일
+Do not implement, requeue, reset, hand-edit merge results, or push.
 
 ## Required Ticket Fields
 
-모든 티켓은 아래 항목을 유지해야 한다.
+Every ticket must keep these sections or fields current:
 
 - `ID`
 - `Project Key`
 - `Title`
 - `Stage`
-- `Owner`
+- `AI`
 - `Claimed By`
-- `Execution Owner`
-- `Verifier Owner`
+- `Execution AI`
 - `Goal`
 - `References`
 - `Reference Notes`
@@ -295,100 +241,48 @@ tickets/backlog/project_001.md            (사용자가 #af 로 채움)
 
 ## Duplicate Prevention
 
-새 티켓을 만들기 전 반드시 아래를 확인한다.
+Before creating a ticket, check:
 
 - `tickets/todo/`
 - `tickets/inprogress/`
-- `tickets/verifier/`
 - `tickets/done/`
-- `tickets/reject/`
+- `tickets/inbox/` (for `order_*_retry_*.md` from worker fail)
 
-이미 같은 Goal 또는 같은 plan source 를 가진 티켓이 있으면 새로 만들지 않는다. 단, reject 의 재시도는 새 Candidate → 새 티켓 번호로 발급하는 것이 원칙 (reject 원본은 기록으로 남김).
+Do not create a duplicate for the same goal or same plan source. A retry order gets a new file under `tickets/inbox/` with `retry_count` incremented.
 
-## Chat Trigger
+## Retry Order Retention Policy
 
-Codex/Claude 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Spec Authoring Mode` 로 해석한다 (manual 전용).
-
-- `#af`
-- `#autoflow`
-
-동작 규칙:
-
-1. `scripts/start-spec.ts` 실행.
-2. 트리거 뒤에 번호가 있으면 해당 project 번호 슬롯을 쓰고, 번호가 없으면 현재 보드에 존재하는 최대 project 번호 다음 번호를 쓴다.
-3. 사용자와 대화해서 Goal / Scope / 관련 파일·모듈 / Acceptance Criteria 를 모은다.
-4. 실행 기준은 `tickets/backlog/project_{번호}.md` spec 이다. Desktop/CLI handoff 저장 또는 사용자 명시 요청이 있을 때만 같은 번호의 `conversations/project_{번호}/spec-handoff.md` 를 추가로 남긴다.
-5. 저장은 사용자가 명시적으로 허락한 뒤에만 한다.
-6. 다음 단계는 기본적으로 Ticket Owner runner 가 이어받는다. legacy role-pipeline 이 필요할 때만 사용자가 `#plan` 으로 planner heartbeat 를 시작한다.
-7. 티켓은 만들지 않는다.
-8. `tickets/plan/` 은 건드리지 않는다.
-
-Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Plan Automation Mode` 로 해석한다 (heartbeat 대상).
-
-- `#plan`
-
-동작 규칙 (매 tick):
-
-1. 먼저 현재 스레드에 `plan` 역할용 1분 heartbeat 자동화를 생성 또는 재개한다. 이 자동화는 사용자가 "멈춰"라고 할 때까지 유지한다.
-2. `scripts/start-plan.ts` 실행. 출력 읽기.
-3. `reject_count > 0` 이면 각 `reject_NNN.md` 의 `## Reject Reason` 을 해당 plan 의 새 Candidate 로 추가 + Status = ready 되돌림.
-4. `status=idle` / `reason=no_actionable_plan` + populated spec 에 대응 plan 이 없으면 `reference/plan-template.md` 를 참고해 plan 초안 생성 (Candidates 까지 채움, Status=draft). 다음 tick 에서 auto-flip + inprogress 점유 + pending_ticket 출력.
-5. `status=ok` / `pending_ticket_count>0` 이면 각 `pending_ticket_begin ... pending_ticket_end` 블록의 `file` 경로에 `reference/ticket-template.md` 기반 ticket 본문을 작성한다. `Plan Candidate` 는 블록의 `candidate` 를 글자 그대로, `Title`/`Goal`/`Done When`/`Verification` 은 spec 과 plan 의 Allowed Paths 를 참고해 구체적으로 채운다. 그 뒤 backlog 를 다시 확인해 다음 populated spec 의 plan drafting 으로 이어간다.
-5a. `status=ok` / `pending_ticket_count=0` + `archived_plan=...` 이 있으면 해당 plan 은 script 가 done 으로 보관한 것. 추가 작업 없음.
-6. 구현 / 이동 / 검증 / commit / push 금지.
-
-Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Todo Queue Mode` 로 해석한다 (heartbeat 대상).
-
-- `#todo`
-
-동작 규칙 (매 tick):
-
-1. 먼저 현재 스레드에 `todo` 역할용 1분 heartbeat 자동화를 생성 또는 재개한다. 이 자동화는 사용자가 "멈춰"라고 할 때까지 유지한다.
-2. 자기 owner 로 배정된 `tickets/inprogress/` 티켓이 있으면 그것부터 이어서 **구현**.
-3. 없으면 `scripts/start-todo.ts` 로 새 claim.
-4. 티켓 제목 / Goal / Done When 이 검증처럼 보여도 stage 가 `todo` 또는 `executing` 인 한 todo worker 가 구현을 계속 진행한다. legacy role-pipeline 에서는 verifier 만 pass / fail 을 판정한다.
-5. 티켓 `Worktree.Path` 또는 `implementation_root` 에서 `Allowed Paths` 범위 안으로 Goal 구현 (한 tick 에 끝내지 못하면 Resume Context 남기고 다음 tick 에 이어감).
-6. 기존 `inprogress` 재개 시에는 `scripts/set-thread-context.ts todo <worker-id> <ticket-id> executing <ticket-path>` 로 active ticket 문맥을 현재 ticket 에 맞춘다.
-7. `Done When` 충족되면 `Notes`, `Result.Summary`, `Verification: pending` 갱신 후 `scripts/handoff-todo.ts` 런타임으로 티켓을 `tickets/verifier/` 로 넘긴다. 이 런타임이 이동과 `clear-thread-context --active-only` 를 함께 수행해 현재 ticket 문맥만 비운다.
-8. 다른 티켓 생성 / 검증 / commit / push 금지.
-
-Codex 대화창에서 사용자가 아래 문구를 보내면 에이전트는 `Verification Mode` 로 해석한다 (heartbeat 대상).
-
-- `#veri`
-
-동작 규칙 (매 tick):
-
-1. 먼저 현재 스레드에 `verifier` 역할용 1분 heartbeat 자동화를 생성 또는 재개한다. 이 자동화는 사용자가 "멈춰"라고 할 때까지 유지한다.
-2. `scripts/start-verifier.ts` 실행. `status=idle` 이면 현재 wake-up 만 마치고 다음 tick 을 기다린다.
-3. `status=ok` 이면 `verify` / `run` / `working_root` / `integration_command` 경로를 읽고 `working_root` 에서 spec 의 `Verification.Command` + Acceptance Criteria 검사.
-4. **Pass**: run 파일에 pass 기록 → worktree 가 있으면 `integration_command` 로 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합 → 티켓 `Stage=done`, `Result.Summary` 갱신 → 티켓을 `tickets/done/<project-key>/` 로 mv → `finish-ticket-owner.ts` finalization records the completion log and verification archive.
-5. **Fail**: run 파일에 fail 기록 → 티켓 하단에 `## Reject Reason` 섹션 추가 → 티켓을 `tickets/reject/reject_NNN.md` 로 mv → `finish-ticket-owner.ts` finalization records the completion log and verification archive.
+- Retry artifacts are evidence for failure history and must be preserved, not deleted, once created.
+- Files matching `done/<prd>/order_*_retry_*.md` should remain in `tickets/done/<prd>/` until a planner/owner decision removes them.
+- If a retry is reissued, create a fresh `tickets/inbox/order_<id>_retry_<N>_<ts>.md` file with updated metadata and keep the previous order in the done archive path for audit.
+- Do not delete retry files from done as part of cleanup unless a higher-priority runbook explicitly mandates retention reset.
 
 ## Completion Standard
 
-아래를 만족해야만 `done` 으로 옮길 수 있다.
+A ticket may move to done only when:
 
-1. 티켓의 `Done When` 항목이 충족되었다.
-2. `rules/verifier/` 기준으로 검증했다.
-3. 검증 기록이 최종 티켓과 같은 위치에 있다. pass 는 `tickets/done/<project-key>/verify_NNN.md`, fail 은 `tickets/reject/verify_NNN.md`.
-4. completion log 가 `logs/` 에 있다.
-5. 티켓의 `Verification` 항목에 그 기록과 로그가 연결되어 있다.
-6. 티켓의 `Result` 가 채워져 있다.
+1. Every `## Done When` item is `[x]` (mechanically enforced by the shell sanity gate at finalize).
+2. `git diff <Worktree.Base Commit>..HEAD` line count ≥ 1 (mechanically enforced).
+3. The ticket markdown's `## Verification` section records the run result inline.
+4. A completion log exists under `logs/`.
+6. `Result` is filled.
 
-## Communication Style Inside Files
+## File Writing Style
 
-- AI / runner-facing Markdown files (agents, rules, reference templates, tickets, verification records, logs, and runtime contracts) should be written in concise, AI-friendly English.
-- Human-facing documents (product README text, desktop UI copy, user guides, and user-facing release notes) should be written in Korean by default.
-- Mixed-audience documents should separate machine-readable English contracts from Korean human explanation.
-- 짧고 명확하게 쓴다.
-- 추상적인 표현보다 관찰 가능한 문장을 쓴다.
-- "좋아 보임" 대신 "390px 폭에서 버튼이 겹치지 않음"처럼 쓴다.
-- 체크리스트는 실제로 판단 가능한 문장으로 유지한다.
+Use this language split:
 
-## Priority When Instructions Conflict
+- Newly generated PRD, plan, ticket, and user-friendly order prose should be Korean by default.
+- Human-facing documents (product README content, desktop UI copy, user guides, release notes for the user) should be Korean by default unless the user requests another language.
+- User-visible terminal or chat prose from runners should be Korean by default while preserving machine-readable formats.
+- AI-facing Markdown files (`agents/`, `rules/`, `reference/`, runtime contracts, and board operating docs) should keep concise, parser-compatible structure. Human-readable placeholder and guidance prose may be Korean when it shapes generated PRD/plan/ticket/order output.
+- Mixed-audience documents should preserve machine-readable English contracts and use Korean for human-facing explanation where appropriate.
+- Prefer observable statements over vague quality words.
+- Use checklists only when each item can be judged.
+- Keep durable context in board files, not chat.
+- Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, key=value output, and runtime formats exactly.
 
-우선순위는 아래와 같다.
+## Conflict Priority
 
-1. 직접 받은 사용자 요청
-2. 이 `AGENTS.md`
-3. 각 폴더의 README 와 템플릿
+1. Direct user request.
+2. This `AGENTS.md`.
+3. Folder README files and templates.

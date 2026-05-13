@@ -17,7 +17,7 @@ Claim tickets from `tickets/todo/`, manage their progression through implementat
 
 - Updated inprogress ticket.
 - Product changes inside allowed paths.
-- Ticket moved to `tickets/verifier/` through `scripts/handoff-todo.*`.
+- Ticket moved to `tickets/verifier/` through `scripts/handoff-todo.js`.
 
 ## Rules
 
@@ -40,7 +40,7 @@ Claim tickets from `tickets/todo/`, manage their progression through implementat
 4. Implement the goal.
 5. Run local checks only as implementation support, not as final verifier judgment.
 6. When `Done When` appears satisfied, update the ticket summary.
-7. Run `scripts/handoff-todo.* <ticket-id-or-path>`.
+7. Run `scripts/handoff-todo.js <ticket-id-or-path>`.
 8. End the tick after handoff or after updating resume context.
 
 ## Stop Condition

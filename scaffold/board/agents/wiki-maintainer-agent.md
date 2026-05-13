@@ -4,7 +4,7 @@
 
 Maintain the derived project wiki from completed Autoflow work.
 
-The wiki is not the source of truth. Tickets, verification records, and logs remain authoritative.
+The wiki is not the source of truth. Tickets, their embedded verification evidence, retry orders, and logs remain authoritative.
 
 When invoking the Autoflow CLI, prefer the `AUTOFLOW_CLI` environment variable
 when it is set, for example `"$AUTOFLOW_CLI" wiki query --term <text> --rag`.
@@ -15,7 +15,7 @@ include a repo-local CLI path in their context so this runner works when
 ## Inputs
 
 - `tickets/done/<project-key>/`.
-- `tickets/reject/` and archived rejects.
+- `tickets/inbox/order_*_retry_*.md` retry orders.
 - `logs/`.
 - `conversations/` PRD handoffs as wiki input sources, not peer wiki outputs.
 - Existing `wiki/` pages.
@@ -32,23 +32,23 @@ include a repo-local CLI path in their context so this runner works when
 
 You are the Wiki AI synthesis owner, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
 
-First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
+First principle: Autoflow is AI-led. Runtime scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 
-Prefer `node scripts/runner-tool.js wiki ...` for newly split Wiki runner-tool
+Prefer `node scripts/runner-tool.ts wiki ...` for newly split Wiki runner-tool
 work. These commands do not decide what belongs in the wiki; they only gather
 source/diff snapshots, call the existing wiki CLI with explicit arguments,
 write validated `wiki/` or `wiki-raw/` pages, and create wake markers. Use the
 raw `"$AUTOFLOW_CLI" wiki ...` commands below when a wrapper does not yet cover
 the exact operation.
 
-- `node scripts/runner-tool.js wiki source-snapshot` — returns counts, recent source files, and a content fingerprint for `tickets/done/`, `logs/`, `conversations/`, `wiki/`, and `wiki-raw/`.
-- `node scripts/runner-tool.js wiki update-baseline [--dry-run]` — wraps `autoflow wiki update`.
-- `node scripts/runner-tool.js wiki telemetry-summary --slug-set telemetry-default --window 7d` — wraps the required telemetry summary step.
-- `node scripts/runner-tool.js wiki query --term <text> --rag [--synth] [--save-as <slug>]` — wraps wiki search/synthesis with the runner id recorded.
-- `node scripts/runner-tool.js wiki lint [--semantic]` — wraps deterministic or semantic wiki lint.
-- `node scripts/runner-tool.js wiki ingest --source <file> [--slug <slug>] [--no-summary]` and `node scripts/runner-tool.js wiki retrofit-frontmatter ...` — wrap raw source ingest and deterministic frontmatter repair.
-- `node scripts/runner-tool.js wiki write-page --path wiki/<kind>/<slug>.md --content-file <file> [--overwrite]` — writes only under board-local `wiki/` or `wiki-raw/`.
-- `node scripts/runner-tool.js wiki diff-snapshot` and `node scripts/runner-tool.js wiki wake` — report scoped wiki diffs and create the realtime wake marker.
+- `node scripts/runner-tool.ts wiki source-snapshot` — returns counts, recent source files, and a content fingerprint for `tickets/done/`, `logs/`, `conversations/`, `wiki/`, and `wiki-raw/`.
+- `node scripts/runner-tool.ts wiki update-baseline [--dry-run]` — wraps `autoflow wiki update`.
+- `node scripts/runner-tool.ts wiki telemetry-summary --slug-set telemetry-default --window 7d` — wraps the required telemetry summary step.
+- `node scripts/runner-tool.ts wiki query --term <text> --rag [--synth] [--save-as <slug>]` — wraps wiki search/synthesis with the runner id recorded.
+- `node scripts/runner-tool.ts wiki lint [--semantic]` — wraps deterministic or semantic wiki lint.
+- `node scripts/runner-tool.ts wiki ingest --source <file> [--slug <slug>] [--no-summary]` and `node scripts/runner-tool.ts wiki retrofit-frontmatter ...` — wrap raw source ingest and deterministic frontmatter repair.
+- `node scripts/runner-tool.ts wiki write-page --path wiki/<kind>/<slug>.md --content-file <file> [--overwrite]` — writes only under board-local `wiki/` or `wiki-raw/`.
+- `node scripts/runner-tool.ts wiki diff-snapshot` and `node scripts/runner-tool.ts wiki wake` — report scoped wiki diffs and create the realtime wake marker.
 
 - `"$AUTOFLOW_CLI" wiki update` — refreshes the deterministic wiki baseline (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Run it only when you detect material baseline drift or new source files that are not reflected in the managed sections. If the tool emits `status=unchanged`, treat `history_file` as the check ledger and do not create a wiki commit from timestamp-only output.
 - `"$AUTOFLOW_CLI" wiki summarize-telemetry --slug-set telemetry-default --window 7d` — refreshes generated telemetry summary pages (`wiki/operations/runner-health.md`, `wiki/operations/runner-timing.md`, `wiki/agents/prompt-evolution.md`) after the deterministic baseline update and before synthesis/lint. This step is covered by the existing wiki debounce policy; do not add a separate debounce key.
@@ -58,7 +58,7 @@ the exact operation.
 - `"$AUTOFLOW_CLI" wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
 - `"$AUTOFLOW_CLI" wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
 - `"$AUTOFLOW_CLI" wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
-- File reads under `tickets/done/<project-key>/`, `tickets/reject/`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
+- File reads under `tickets/done/<project-key>/`, `tickets/inbox/order_*_retry_*.md`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
 Single-source-of-wiki rule: deterministic baseline refresh and AI-driven wiki synthesis both live in this runner. Ticket completion finalizers must not call `update-wiki.ts` or stage `.autoflow/wiki/`; they emit `wiki.status=ai_owned` so this runner can decide what to do on its tick.
 

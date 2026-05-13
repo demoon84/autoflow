@@ -1,26 +1,30 @@
-# Plan
+# Plan Template
 
 ## Plan
 
-- Plan ID:
+- ID: plan_NNN
+- PRD Key: prd_NNN
 - Title:
 - Status: draft
+- Created By:
+- Last Updated:
 
-권장 상태값:
+Recommended status values:
 
-- `draft`
-- `ready`
-- `inprogress`
-- `done`
+- `draft`: planner is still shaping the plan.
+- `ready`: runtime may generate tickets.
+- `inprogress`: planner has claimed ticket generation.
+- `ticketed`: tickets were generated.
+- `done`: plan was archived.
 
 ## Goal
 
-- 이 plan 이 해결하려는 큰 목표:
+- 이 plan이 다루는 큰 목표를 한국어로 적는다.
 
-## Spec References
+## PRD References
 
-- Project Spec:
-- Feature Spec:
+- PRD:
+- Feature PRD:
 
 ## Reference Notes
 
@@ -29,25 +33,27 @@
 
 ## Scope
 
-- In Scope:
-- Out of Scope:
+- In Scope: 이번 plan에 포함되는 범위를 한국어로 적는다.
+- Out of Scope: 이번 plan에서 제외되는 범위를 한국어로 적는다.
 
 ## Execution Candidates
 
-- [ ] 실행 후보 1
-- [ ] 실행 후보 2
-- [ ] 실행 후보 3
+- [ ] 실행 가능한 후보 작업 1
+- [ ] 실행 가능한 후보 작업 2
+- [ ] 실행 가능한 후보 작업 3
 
 ## Ticket Rules
 
 - Allowed Paths:
-- Ticket split notes:
+  - `path/to/file-or-folder`
+- Ticket split notes: 티켓 분할 기준과 주의사항을 한국어로 적는다.
 
 ## Generated Tickets
 
-- 아직 없음
+- None yet.
 
 ## Notes
 
-- Allowed Paths 는 repo-relative 경로로 적는다. todo 구현 중에는 티켓 worktree 루트 기준으로 해석되고, worktree 가 없을 때만 `PROJECT_ROOT` 기준으로 fallback 한다.
-- Reference Notes 는 note 이름 기준 (`[[project_001]]`, `[[plan_001]]`) 으로 적는다.
+- Allowed Paths are repo-relative. During implementation they are interpreted from the ticket worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
+- Reference Notes use note names such as `[[prd_001]]` and `[[plan_001]]`.
+- Human-readable plan prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

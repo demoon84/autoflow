@@ -4,16 +4,16 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = ".autoflow/"
 
-# Three-runner topology: Plan AI + Impl AI + Wiki AI.
-# Plan AI processes backlog/reject into todo. Impl AI claims todo and runs
-# implementation, verification, and inline merge. Wiki AI periodically
-# inspects done/ + reject/ and calls wiki update only when content changes.
+# Four-runner topology: Plan AI + Impl AI + Verifier AI + Wiki AI.
+# Plan AI processes order/retry/backlog into todo. Impl AI claims todo and runs
+# implementation and local verification. Verifier AI checks semantic fit.
+# Wiki AI periodically inspects done/retry/log sources and calls wiki update only when content changes.
 # Path-disjoint set so concurrent ticks never produce merge conflicts.
 owner_workers = ["worker"]
 planner_workers = ["planner"]
 wiki_workers = ["wiki"]
 todo_workers = []
-verifier_workers = []
+verifier_workers = ["verifier"]
 merge_workers = []
 
 execution_pool = ""
@@ -33,8 +33,9 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 planner = "REPLACE_WITH_PLANNER_THREAD_ID"
 worker = "REPLACE_WITH_WORKER_THREAD_ID"
 wiki = "REPLACE_WITH_WIKI_THREAD_ID"
+verifier = "REPLACE_WITH_VERIFIER_THREAD_ID"
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-topology_rule = "Three-runner model: planner_workers=[\"planner\"], owner_workers=[\"worker\"], wiki_workers=[\"wiki\"]. Scale only after profiling shows the pipeline is starved."
-trigger_rule = "All three heartbeats keep running until the user explicitly says stop."
+topology_rule = "Four-runner model: planner_workers=[\"planner\"], owner_workers=[\"worker\"], verifier_workers=[\"verifier\"], wiki_workers=[\"wiki\"]. Scale only after profiling shows the pipeline is starved."
+trigger_rule = "All four heartbeats keep running until the user explicitly says stop."
 wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.ts or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."

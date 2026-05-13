@@ -1,6 +1,6 @@
 # Merge Finalizer Agent
 
-This agent finalizes verified tickets that are ready for merge. While the Impl AI (`worker`) handles the AI-led merge and integrates changes, this agent's role is to manage the final stages of ticket closure, including archiving evidence and creating completion commits. Its functionality is integrated within the `finish-ticket-owner.*` process.
+This agent finalizes verified tickets that are ready for merge. While the Impl AI (`worker`) handles the AI-led merge and integrates changes, this agent's role is to manage the final stages of ticket closure, including archiving evidence and creating completion commits. Its functionality is integrated within the `finish-ticket-owner.ts` process.
 
 ## Purpose
 
@@ -10,21 +10,21 @@ Merge Bot does not decide pass/fail verification and does not merge product code
 
 ## Inputs
 
-- `scripts/merge-ready-ticket.*` output.
+- `scripts/merge-ready-ticket.ts` output.
 - The lowest-numbered `tickets/ready-to-merge/Todo-NNN.md`, unless a ticket id/path was provided.
-- The matching `tickets/ready-to-merge/verify_NNN.md` evidence file.
+- The ticket's embedded `## Verification` evidence.
 
 ## Outputs
 
 - Passed ticket moved to `tickets/done/<project-key>/`.
-- Verification evidence moved to `tickets/done/<project-key>/verify_NNN.md`.
+- Verification evidence preserved in the done ticket's `## Verification` section.
 - Completion log under `logs/`.
 - Local git commit containing the ticket board move, evidence/log/wiki updates, and AI-merged product changes from the ticket Allowed Paths.
 - If the prepared worktree commit is not yet present in `PROJECT_ROOT`, runtime reports `needs_ai_merge` and leaves the ticket for the ticket-owner AI.
 
 ## Procedure
 
-1. Run `scripts/merge-ready-ticket.* [ticket-id-or-path]`.
+1. Run `scripts/merge-ready-ticket.ts [ticket-id-or-path]`.
 2. If it reports `status=done`, stop after one finalization.
 3. If it reports `status=needs_ai_merge`, return control to the ticket-owner AI; do not rebase, cherry-pick, or resolve conflicts.
 4. If it reports `status=blocked`, read the `reason`, ticket `Notes`, and `Worktree` section. Do not make a verification decision.

@@ -1,167 +1,160 @@
-# Local Board
+# Autoflow Board
 
-이 폴더는 호스트 프로젝트 안에서 운영되는 로컬 AI 작업 보드다.
+This directory is a local AI work harness installed inside a host project.
+It lets Codex, Claude Code, OpenCode, Gemini CLI, and local runners share one file-based source of truth.
 
-Autoflow 보드는 Codex, Claude Code, OpenCode, Gemini CLI 같은 코딩 에이전트가 같은 작업 원장을 보고 움직이게 하는 local harness layer 다. 대화창은 작업 진입점일 수 있지만, 작업 상태의 기준은 이 보드 파일이다.
+The chat window can start work, but the board owns work state.
 
-핵심 원칙은 단순하다.
+## Default Flow
 
-- 기준 큐는 `tickets/backlog/`
-- 기본 실행자는 `ticket-owner`
-- 실행 단위는 `tickets/`
-- 레거시 계획 큐는 `tickets/plan/`
-- 검증 기준과 템플릿은 `rules/verifier/`
-- 검증 증거는 시작 시 `tickets/inprogress/verify_*.md`, 완료 후에는 final ticket 옆 `verify_*.md`
-- owner / verifier 완료 이력은 `logs/`
+Use Ticket Owner Mode by default:
 
-운영 구분:
+1. User starts PRD handoff with Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`. For small changes, the user may instead drop a quick order with Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`.
+2. The agent gathers requirements in lightweight chat with short questions and decision recaps.
+3. If the scope is too large for one safe handoff, the agent proposes a short PRD split map before drafting.
+4. The agent renders a full PRD draft, or multiple PRD drafts from an accepted split map, only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
+5. The user explicitly approves saving after the draft is shown. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
+6. The approved spec is saved as `tickets/backlog/prd_NNN.md`. Split PRDs are saved as separate backlog files, one active slot at a time.
+7. The planner runner acts as Planner AI: it promotes order/retry/backlog work and repairs ticket markdown when owner work stalls or breaks.
+8. A Ticket Owner runner creates or claims one ticket in `tickets/inprogress/`.
+9. The same owner writes a mini-plan, implements, runs and judges verification, manually merges verified work into `PROJECT_ROOT`, records evidence, and finishes pass or fail.
+10. Passed owner work is finalized only after the AI-merged result is already present in `PROJECT_ROOT`.
+11. The finalization runtime validates the AI-merged result via the mechanical sanity gate, writes the completion log, and moves it to `tickets/done/<project-key>/` with a local commit.
+12. Wiki AI refreshes derived knowledge later when source change weight crosses the debounce threshold.
+13. Failed work embeds the entire ticket body inside `tickets/inbox/order_<id>_retry_<N>_<ts>.md` (under `## Original Ticket`) and removes the inprogress ticket. The planner re-plans it like any other inbox order. Same fingerprint reaching `retry_max` flips `retry_decision=needs_user` so the order parks in inbox until the user redirects. `done/<key>/` only contains successful tickets.
 
-- `tickets/` 는 실행 원장이다.
-- `wiki/` 는 완료된 작업과 결정을 정리하는 이해의 지도다.
-- `runners/` 는 local process state 이며 ticket stage 를 대체하지 않는다.
+Legacy role-pipeline mode (`#plan`, `#todo`) remains available for compatibility, but it is not the default.
 
-## First Use
+## Important Directories
 
-1. `#af` 또는 `#autoflow` 로 사용자와 대화해 내용을 정리하고, 저장이 확정되면 `tickets/backlog/project_{NNN}.md` 에 남긴다. Desktop/CLI handoff 저장을 켜면 같은 승인 내용을 `conversations/project_{NNN}/spec-handoff.md` 에도 보관한다.
-2. 원하면 `scripts/install-stop-hook.ts install` 을 한 번 실행한다. 그러면 현재 보드 `check-stop.ts` 가 Codex Stop hook 에 연결되어, Ticket Owner 또는 legacy role work 가 남아 있으면 autopilot 스킬처럼 너무 이른 종료를 막는다. 이 훅은 heartbeat / watcher 를 대체하지 않고 보완한다.
-3. `autoflow run ticket` 으로 `worker` runner 를 깨운다. 이 runner 는 한 티켓의 local plan, implementation, verification, evidence, done/reject 이동까지 한 번에 책임진다.
-4. 검증 실패가 티켓 scope 안에서 고칠 수 있으면 같은 owner loop 안에서 수정하고 다시 검증한다. scope 밖이면 `reject` 기록으로 남긴다.
-5. 기존 `#plan`, `#todo`, `#veri` role-pipeline 흐름은 호환 경로로만 유지한다.
-6. 위 heartbeat 는 사용자가 명시적으로 "멈춰"라고 하기 전까지 pause / delete / self-stop 하지 않는다. idle 은 종료가 아니라 다음 wake-up 대기다.
-7. heartbeat 대신 파일 변화에 더 빨리 반응시키고 싶다면 watcher 를 같이 둔다. `scripts/watch-board.ts` 를 실행한다. 기본 watcher 는 `tickets/backlog/`, `tickets/todo/`, `tickets/verifier/` 변경을 `ticket` route 로 보낸다. legacy role-pipeline route 를 켜면 `tickets/reject/`, `tickets/done/` 하위 프로젝트 폴더도 함께 감시한다. hook 실행 기록은 `logs/hooks/` 에 남는다.
+- `tickets/inbox/`: quick orders + worker fail retry orders waiting for Planner AI promotion. Failed tickets are embedded inside `order_<id>_retry_<N>_<ts>.md` here.
+- `tickets/backlog/`: approved or generated PRDs waiting for execution.
+- `tickets/todo/`: tickets the Planner has issued and the Worker is about to claim.
+- `tickets/inprogress/`: active Ticket Owner tickets (only one alive worktree at a time).
+- `tickets/done/<project-key>/`: successful tickets, archived PRDs, and legacy `verify_*.md` / `reject_*.md` history. Successful only — fail flow no longer writes here.
+- `agents/`: AI role instructions.
+- `automations/`: heartbeat, hook, and context contracts.
+- `reference/`: templates and board documentation.
+- `protocols/`: AI-first orchestration, owner, and recovery contracts.
+- `rules/`: verification and wiki maintenance rules.
+- `runners/`: local runner configuration, state, and logs.
+- `conversations/`: approved handoff summaries.
+- `metrics/`: progress snapshots.
+- `wiki/`: derived project knowledge.
+- `logs/`: completion logs and hook dispatch logs.
 
-직접 heartbeat 세트를 관리하고 싶다면 생성된 `automations/heartbeat-set.toml` 을 수정한 뒤 `autoflow render-heartbeats` 를 실행하면 된다. 결과는 `automations/rendered/<set-name>/` 아래에 생긴다.
+## Runners And Runner Tools
 
-보드 루트에서 아래처럼 watcher 를 직접 띄울 수 있다. 이 방식은 디버깅용 foreground 실행이다.
+Autoflow uses four default **runners**:
 
-```bash
-./scripts/watch-board.ts
-```
+- `planner`: turns inbox orders, retry orders, and backlog PRDs into worker-ready todo tickets.
+- `worker`: claims one todo ticket, implements it, verifies locally, and prepares the AI-led merge.
+- `verifier`: checks the finished diff against the ticket title, goal, and Done When items.
+- `wiki`: turns completed work and decisions into derived wiki knowledge.
 
-창 없는 운영은 설치 CLI 쪽에서 아래처럼 실행한다.
+The canonical responsibility boundary is `reference/runner-tool-contract.md`.
+Short version: a runner is the LLM-backed decision-maker; a runner tool is a
+small deterministic command the runner calls for one explicit action. Runner
+tools must not choose scope, draft `Done When`, decide pass/fail, resolve merge
+strategy, decide wiki meaning, or drive the whole workflow.
 
-```bash
-./bin/autoflow watch-bg /path/to/project
-./bin/autoflow watch-status /path/to/project
-./bin/autoflow watch-stop /path/to/project
-```
+Current split tools live behind `scripts/runner-tool.ts`; run
+`autoflow tool list` for the installed tool catalog and contract summary.
+Large script-driven flows such as `start-plan.ts` and `start-ticket-owner.ts`
+remain compatibility wrappers while their behavior is split into smaller
+TypeScript runner tools.
 
-## Folder Map
+## Trigger Summary
 
-- `agents/`: 역할 정의
-  - `spec-author-agent.md`
-  - `ticket-owner-agent.md`
-  - `plan-to-ticket-agent.md`
-  - `todo-queue-agent.md`
-  - `verifier-agent.md`
-  - `adapters/`: Codex, Claude, OpenCode, Gemini CLI, shell adapter contracts
-- `automations/`: 1분 heartbeat 자동화 계약, file-watch 설정, 템플릿
-- `conversations/`: 승인된 대화 요약과 spec handoff 기록
-- `reference/`: state 폴더 밖에서 관리하는 README 와 템플릿
-- `rules/`: verifier 기준과 wiki 유지보수 기준 문서
-- `rules/wiki/`: wiki page / lint 기준
-- `runners/`: ticket owner runner 설정, 상태, 프로세스 로그
-- `metrics/`: board transition 에서 파생되는 수치 파일
-- `wiki/`: 완료된 작업과 의사결정을 정리하는 LLM-maintained project map
-- `tickets/`: todo / inprogress / verifier / done / reject 상태 보드
-- `tickets/backlog/`: 아직 plan 전인 spec 입력 큐
-- `tickets/plan/`: legacy role-pipeline 에서 쓰는 plan 대기열
-- `tickets/inprogress/`: Ticket Owner 가 점유한 `tickets_*.md` 와 진행 중 검증 기록을 두는 구역. legacy role-pipeline 에서는 `plan_*.md` / todo worker 티켓도 이곳을 쓴다.
-- `tickets/inprogress/verify_*.md`: 진행 중 검증 기록
-- `tickets/done/<project-key>/verify_*.md`, `tickets/reject/verify_*.md`: 완료 후 정리된 검증 기록
-- `logs/`: owner / verifier 완료 로그
-- `tickets/done/<project-key>/`: 프로젝트 단위로 모아 둔 완료 티켓, 처리된 spec, legacy ticket 생성 완료 plan
-- `scripts/`: 보드 runtime 훅
+- Claude `/autoflow`: PRD handoff only.
+- Codex `$autoflow`: PRD handoff only.
+- `#autoflow`: compatibility alias for PRD handoff only.
+- Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`: quick order intake only.
+- `autoflow runners start planner`: Planner AI loop runner — order/retry/backlog → todo plus markdown recovery for stalled/blocked work.
+- `autoflow run ticket` / `autoflow runners start worker`: Impl AI — todo claim → mini-plan → implementation → AI-led verification → AI-led merge → done/inbox-retry. Default Ticket Owner execution.
+- `autoflow runners start wiki`: Wiki AI loop runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
+- `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
+- Desktop Owner runner: default Impl AI execution from the UI.
+- `autoflow runners start coordinator-1`: legacy looped coordinator (DEPRECATED, not part of default 4-runner topology).
+- `#plan`: legacy planner heartbeat (Plan AI runner replaces this).
+- `#todo`: legacy todo heartbeat (Impl AI claims todo directly).
 
-## Runtime Hooks
+## Spec Handoff Rules
 
-생성된 보드에는 아래 runtime 훅과 helper 가 들어 있다.
+Spec handoff never starts implementation.
 
-- `common.ts`
-- `runner-common.ts`
-- `check-stop.ts`
-- `file-watch-common.ts`
-- `install-stop-hook.ts`
-- `run-hook.ts`
-- `watch-board.ts`
-- `set-thread-context.ts`
-- `clear-thread-context.ts`
-- `start-spec.ts`
-- `start-ticket-owner.ts`
-- `verify-ticket-owner.ts`
-- `finish-ticket-owner.ts`
-- `start-plan.ts`
-- `start-todo.ts`
-- `handoff-todo.ts`
-- `start-verifier.ts`
-- `integrate-worktree.ts`
+The agent must:
 
-`install-stop-hook.ts` 는 현재 보드 `check-stop.ts` 를 Codex Stop hook manifest (`~/.codex/hooks.json`) 에 설치 / 제거 / 상태 확인하는 helper 다. 이미 있던 다른 Stop hook 은 유지하고, 현재 보드 command 만 idempotent 하게 추가 / 제거한다.
-`run-hook.ts` / `watch-board.ts` 는 file-watch 쪽 one-shot dispatcher 와 watcher 다.
+1. Read `agents/spec-author-agent.md`.
+2. Reserve or resume a spec slot with `scripts/start-spec.ts` when available.
+3. Gather missing goal, scope, allowed paths, acceptance criteria, and verification details through short questions and decision recaps.
+4. If the scope is large, propose a lightweight PRD split map with boundaries, dependency order, and verification focus.
+5. Do not show the complete PRD draft until the user gives an explicit draft trigger (`초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, `show draft`, or equivalent).
+6. After a draft trigger, show the complete spec in chat and mark unknowns as `TBD` / `미정`. For split work, show each PRD draft separately.
+7. Save only after separate explicit user approval. The draft trigger is not save approval.
+8. Save only to `tickets/backlog/` and optional `conversations/` archive. Split PRDs must be separate backlog files with sibling references in `Conversation Handoff` or `Notes`.
 
-기본 실행 역할은 아래처럼 둔다.
+## Order Intake Rules
 
-- `#af` / `#autoflow`
-  - 사용자와 대화해 정리된 spec 을 `tickets/backlog/` 에 남긴다.
-  - heartbeat 는 붙이지 않는다.
+Quick order intake never starts implementation.
 
-- `ticket-owner` / `autoflow run ticket`
-  - `tickets/inprogress/` 에 자기 owner 의 티켓이 있으면 먼저 이어서 진행한다.
-  - 없으면 `tickets/todo/` 또는 `tickets/verifier/` 의 기존 티켓을 점유할 수 있다.
-  - todo / verifier 티켓도 없으면 populated backlog spec 에서 바로 `tickets/inprogress/tickets_NNN.md` 를 만든다.
-  - 같은 owner 가 local plan, implementation, verification, evidence, done/reject 이동까지 이어서 책임진다.
-  - 검증 실패가 티켓 scope 안이면 같은 owner loop 안에서 수정하고 다시 검증한다.
-  - scope 밖이거나 명확히 실패하면 `reject/reject_NNN.md` 로 남긴다.
-  - pass 면 worktree 변경을 중앙 프로젝트 루트에 통합한 뒤 `done/<project-key>/` + local commit 으로 마무리한다.
-  - `git push` 는 절대 금지다.
+The agent must:
 
-legacy role-pipeline 이 필요할 때만 아래 역할을 켠다.
+1. Preserve the user's original request in `tickets/inbox/order_NNN.md`.
+2. Add scope, allowed path, and verification hints only when obvious.
+3. Avoid drafting a full PRD in chat.
+4. Let Planner AI promote the order into a generated PRD and todo ticket when safe.
+5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe orders should be blocked.
 
-- `#plan`
-  - 1분 planner heartbeat 를 생성 또는 재개한다.
-  - populated spec 이 있으면 plan 을 도출하고 `tickets/todo/` 를 만든다.
-  - 현재 plan 이 ticketed 가 된 뒤에도 backlog 에 다음 populated spec 이 남아 있으면 계속 다음 plan 으로 이어간다.
-  - `tickets/reject/reject_NNN.md` 를 계속 감시해 재계획하고, 재시도 todo 생성 뒤에는 `tickets/done/<project-key>/reject_NNN.md` 로 보관한다.
+## Ticket Owner Rules
 
-- `#todo`
-  - 1분 todo heartbeat 를 생성 또는 재개한다.
-  - `tickets/todo/` 를 `inprogress/` 로 옮기고 티켓별 git worktree 를 만든 뒤 같은 worker 가 그 worktree 에서 구현한다.
-  - 티켓 제목 / Goal / Done When 이 검증처럼 보여도 상태가 `todo` / `inprogress` 이면 todo worker 가 구현을 계속 진행한다.
-  - 완료되면 `tickets/verifier/` 로 이동한다.
+Ticket Owner work should be narrow and durable:
 
-- `#veri`
-  - 1분 verifier heartbeat 를 생성 또는 재개한다.
-  - `tickets/verifier/` 를 검사해 `working_root` 에서 검증한다.
-  - pass 면 worktree 변경을 중앙 프로젝트 루트에 통합한 뒤 `done/<project-key>/` + local commit, fail 면 `reject/reject_NNN.md` 로 이동한다.
-  - 완료 시 `logs/` 아래 completion log 를 남긴다.
-  - `git push` 는 절대 금지다.
+- One owner handles one ticket at a time.
+- Work inside the ticket worktree when available.
+- Edit only `Allowed Paths`.
+- Update `Notes`, `Resume Context`, `Verification`, and `Result` as durable state.
+- Follow `Recovery State` planner instructions when present, and update it when blocked or recovered.
+- Prefer `scripts/runner-tool.ts worker ...` for claim, worktree setup, status snapshots, evidence recording, and mechanical checks. Use legacy runtime scripts only where the small tool has not yet replaced the macro.
+- On pass, the AI owner merges verified changes into `PROJECT_ROOT` itself, resolves conflicts itself, reruns needed verification, and then uses finish/finalization scripts only as bookkeeping tools.
+- Do not push.
 
-- `watch-board.ts`
-  - 장기 실행 watcher 다.
-  - `automations/file-watch.psd1` (legacy) 설정을 읽고 route 별 hook 을 dispatch 한다.
-  - 기본값은 backlog / todo / verifier 변경을 `ticket` route 로 dispatch 한다.
-  - legacy role-pipeline route 를 켜면 `done/<project-key>/` 완료 이벤트도 planner route 를 깨워 다음 backlog plan 이 있으면 이어서 진행한다.
-  - watcher 자체는 사용자가 멈출 때까지 계속 살아 있고, 결과는 `logs/hooks/` 에 남긴다.
+## Verification Rules
 
-## Path Rules
+Verification must be evidence-based:
 
-- `References` 는 이 보드 루트 기준 상대 경로로 적는다.
-- `Allowed Paths` 는 repo-relative 경로로 적고, 구현 중에는 티켓 `Worktree.Path` 기준으로 해석한다. worktree 를 쓸 수 없는 환경에서만 호스트 프로젝트 루트 기준으로 fallback 한다.
-- `## Reference Notes` 는 note 이름 기준 링크 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`, `[[verify_001]]`) 로 적는다.
+- Run the specified command from the ticket working root.
+- Check acceptance criteria, not only command exit code.
+- Record stdout/stderr summaries when useful.
+- Use browser tools only when rendered behavior must be observed.
+- Pass and fail both require a verification record and completion log.
 
-예:
+## Wiki Rules
 
-- `References`: `tickets/backlog/project_001.md` 또는 `tickets/done/project_001/project_001.md`
-- `Allowed Paths`: `src/`, `public/`, `package.json`
+The wiki is a derived knowledge map. It is not the source of truth for stage, ownership, pass/fail, or commit state.
 
-## Notes
+Use the wiki to summarize:
 
-- 실제 제품 코드는 이 보드 밖의 호스트 프로젝트 루트에 있다.
-- 보드 상태 파일은 이 폴더 안에서 추적한다.
-- `tickets/` 는 실행 원장이고, `wiki/` 는 완료된 작업과 의사결정을 읽기 좋게 정리한 지도다.
-- `runners/` 는 로컬 프로세스 상태만 담으며 ticket stage 를 대체하지 않는다.
-- 완료 판정은 `tickets/` 와 verifier 기록으로 한다. `wiki/` 는 이해를 돕는 파생 문서다.
-- local runner 와 adapter one-shot execution 은 지원한다. embedded terminal 은 다음 단계이며, 현재 board lifecycle 의 기본값은 `#af` / `#autoflow` handoff 뒤 `autoflow run ticket` 으로 이어지는 ticket-owner 흐름이다.
-- 검증 명령은 기본적으로 `verify-ticket-owner.ts` 가 출력한 `working_root` 에서 실행한다. legacy verifier mode 에서는 `start-verifier.ts` 가 같은 역할을 한다. 티켓 worktree 가 있으면 worktree 가 우선이고, 없으면 호스트 프로젝트 루트다.
-- 자동화는 사용자가 멈추라고 하기 전까지 계속 살아 있어야 한다.
-- board stage 가 authoritative 다. 기본 흐름에서는 Ticket Owner 가 pass / fail 을 판정하고, legacy role-pipeline 에서는 verifier 만 판정한다.
+- completed work,
+- decisions,
+- known patterns,
+- repeated failures,
+- architecture notes.
+
+## Coordinator Rules (DEPRECATED)
+
+Coordinator is no longer a default runner in the 4-runner topology. Its responsibilities have been split: Impl AI (`worker`) owns implementation and local verification evidence, Verifier AI (`verifier`) owns semantic diff review, and Wiki AI (`wiki`) owns material wiki baseline refresh plus AI synthesis. The role identifier `coordinator` is kept for backwards compatibility with users who opted into a coordinator runner before the topology refactor; new boards should not add one.
+
+If you do run a legacy coordinator, the historical contract still applies: it diagnoses board health (shared Allowed Path blockers, active-ticket worktree health, dirty `PROJECT_ROOT` overlap, shared non-base HEAD groups, runner readiness, board scaffold issues) and may produce evidence for a next action. It must not implement, verify, rebase, cherry-pick, resolve conflicts, or otherwise merge product code; product-code repair and merge are Impl AI's responsibility. Finalization scripts may create the local completion commit only after the AI owner has already merged and verified the result. Completed ticket worktrees and their `autoflow/tickets_*` branches are deleted by the finalization runtime before the completion commit so the board does not accumulate merged worktrees. Repair, requeue, reset, deleting non-completed worktrees, and push remain separate human-directed actions.
+
+## Writing Standard
+
+All installed board Markdown should be written in concise, AI-friendly English.
+
+Good board text is:
+
+- explicit about paths,
+- explicit about ownership,
+- explicit about next action,
+- observable in verification,
+- safe to resume from after chat compaction.

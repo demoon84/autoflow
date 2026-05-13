@@ -2,26 +2,28 @@
 
 ## Ticket
 
-- ID:
-- Project Key:
+- ID: Todo-NNN
+- PRD Key: prd_NNN
 - Plan Candidate:
 - Title:
+- Priority: normal
+- Change Type: code
 - Stage: todo
-- Owner: unassigned
-- Claimed By: unclaimed
-- Execution Owner: unassigned
-- Verifier Owner: unassigned
+- AI:
+- Claimed By:
+- Execution AI:
+- Verifier AI:
 - Last Updated:
 
 ## Goal
 
-- 이번 작업의 목표:
+- 이 티켓이 달성해야 하는 구체적 목표를 한국어로 적는다.
 
 ## References
 
-- Project Spec:
-- Feature Spec:
-- Plan Source:
+- PRD:
+- Feature PRD:
+- Plan:
 
 ## Reference Notes
 
@@ -31,50 +33,82 @@
 
 ## Allowed Paths
 
-- ...
+- `path/to/file-or-folder`
 
 ## Worktree
 
-- Path:
 - Branch:
-- Base Commit:
-- Worktree Commit:
-- Integration Status: pending_claim
+- Path:
+- Base:
+- Created At:
+
+## Goal Runtime
+
+- Status:
+- Started At:
+- Started Epoch:
+- Updated At:
+- Tick Count: 0
+- Time Used Seconds: 0
+- Token Budget:
+- Tokens Used:
+- Continuation Suppressed: false
+- Last Event:
+- Last Progress Fingerprint:
+- Iteration Fingerprints: []
+- Last Lint Status:
+- Last Lint Vagueness Score:
+
+## Recovery State
+
+- Status: healthy
+- Detected By:
+- Failure Class:
+- Evidence:
+- Planner Decision:
+- Owner Resume Instruction:
+- Last Recovery At:
 
 ## Done When
 
-- [ ] ...
-- [ ] ...
+- [ ] 명령/증거로 확인한 완료 조건을 충족했는지를 표시한다.
+- [ ] 충족된 항목은 `[x]`, 미충족/미실행 항목은 `[ ]`으로 남기고, ticket 문서 자체가 최종 상태 증거로 보존된다.
 
 ## Next Action
 
-- 다음에 바로 이어서 할 일:
+- 다음에 바로 실행할 작업을 한국어로 적는다.
 
 ## Resume Context
 
-- 현재 상태 요약:
-- 직전 작업:
-- 재개 시 먼저 볼 것:
+- Current state: 현재 상태를 한국어로 적는다.
+- Last completed action: 마지막으로 끝낸 작업을 한국어로 적는다.
+- First thing to inspect on resume: 재개 시 먼저 확인할 대상을 한국어로 적는다.
 
 ## Notes
 
-- ...
+- Mini-plan: 구현 전 짧은 계획을 한국어로 적는다.
+- Progress: 진행 상황과 관련 wiki/ticket 참고를 한국어로 적는다.
 
 ## Verification
 
+- Command: `command-to-run`
 - Run file:
-- Log file:
 - Result:
 
 ## Result
 
-- Summary:
-- Remaining risk:
+- Summary: 결과 요약을 한국어로 적는다.
+- Commit:
 
 ## Path Notes
 
-- `References` 는 `BOARD_ROOT` 상대 경로다.
-- `Allowed Paths` 는 구현 worktree 루트 기준 상대 경로다. worktree 가 없으면 `PROJECT_ROOT` 기준이다.
-- `Worktree` 는 todo claim 시 자동으로 채워진다. 보드는 중앙 `BOARD_ROOT` 를 유지하고, 제품 코드는 티켓별 worktree 에서 수정한다.
-- `Reference Notes` 는 note 이름 기준 (`[[project_001]]`, `[[plan_001]]`, `[[tickets_001]]`) 으로 적는다.
-- `Plan Candidate` 는 plan 의 `Execution Candidates` 에 있던 문구를 **글자 그대로** 옮긴다. 중복 ticketing 감지에 쓰이므로 agent 가 Title 이나 Goal 을 다듬더라도 이 필드는 건드리지 않는다. Title / Goal / Done When / Verification 은 spec 맥락을 반영해 풍부하게 작성해도 된다.
+- `References` are relative to `BOARD_ROOT`.
+- `Allowed Paths` are relative to the implementation worktree root. If no worktree exists, they fall back to `PROJECT_ROOT`.
+- `Worktree` is filled during claim when a worktree is available.
+- `Reference Notes` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[Todo-001]]`.
+- `Plan Candidate` must copy the exact candidate text from `Execution Candidates`. It is a duplicate-detection key.
+- `Change Type` ∈ `{code, docs, cleanup, infra}` (default `code` if omitted). The worker finalizer's sanity gate uses this to choose its diff matrix:
+  - `code` (default): zero-diff is refused (≥1 changed line required) and every Done When `- [ ]` must be `- [x]`.
+  - `docs` and `cleanup`: zero-diff is allowed (a doc-only or cleanup ticket may legitimately produce no code diff after moving/removing files); Done When checklist gate still applies.
+  - `infra`: diff threshold is `AUTOFLOW_INFRA_MIN_DIFF_LINES` (default 10) so trivial config tweaks are flagged.
+- Human-readable ticket prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

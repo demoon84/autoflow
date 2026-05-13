@@ -51,11 +51,11 @@ tetris/
 ```
 
 여기서 `.autoflow/docs/` 는 필요하면 나중에 직접 추가하는 선택 폴더다.
-프로젝트별 온보딩 메모나 테스트 명령 모음은 둘 수 있지만, 상태 폴더에는 실제 작업 문서만 둔다. 설명서와 템플릿은 `reference/` 에 모으고, 검증 기준 문서는 `rules/verifier/` 아래에 둔다. 기본 Ticket Owner 흐름에서는 planner 가 backlog PRD 를 `tickets/todo/Todo-NNN.md` 로 만들고 worker 가 `tickets/inprogress/Todo-NNN.md` 로 claim 한다. 처리한 PRD 와 완료 티켓은 `tickets/done/<project-key>/` 로 이동한다. project / ticket / verification / log 문서는 `[[prd_NNN]]`, `[[Todo-001]]`, `[[verify_NNN]]` 형태의 옵시디언 링크도 함께 남겨 서로 연결한다.
+프로젝트별 온보딩 메모나 테스트 명령 모음은 둘 수 있지만, 상태 폴더에는 실제 작업 문서만 둔다. 설명서와 템플릿은 `reference/` 에 모으고, 검증 기준 문서는 `rules/verifier/` 아래에 둔다. 기본 4-runner 흐름에서는 planner 가 inbox order / retry order / backlog PRD 를 `tickets/todo/Todo-NNN.md` 로 만들고 worker 가 `tickets/inprogress/Todo-NNN.md` 로 claim 한다. verifier 는 완성된 diff 를 의미 검증하고, wiki 는 완료된 작업에서 파생 지식을 갱신한다. 처리한 PRD 와 성공 티켓은 `tickets/done/<project-key>/` 로 이동한다. project / ticket / verification / log 문서는 `[[prd_NNN]]`, `[[Todo-001]]`, `[[verification]]` 형태의 옵시디언 링크도 함께 남겨 서로 연결한다.
 
 중요한 구분:
 
-- `tickets/` 는 실행 원장이다. 실제 상태, 책임자, 검증 결과, reject reason 은 여기서 판단한다.
+- `tickets/` 는 실행 원장이다. 실제 상태, 책임자, 검증 결과, retry reason 은 여기서 판단한다.
 - `wiki/` 는 이해의 지도다. 완료된 작업, 결정, 실패 패턴을 재사용 가능한 지식으로 정리하지만 완료 판정의 source of truth 는 아니다.
 - `runners/` 는 process state 다. Codex/Claude/OpenCode/Gemini CLI 같은 실행기가 어떤 역할로 움직이는지 기록하지만 ticket stage 를 대체하지 않는다.
 
@@ -117,7 +117,7 @@ PROJECT_ROOT
   -> .autoflow/tickets/inprogress/Todo-NNN.md
   -> .autoflow/tickets/verifier/Todo-NNN.md
   -> .autoflow/rules/verifier
-  -> .autoflow/tickets/inprogress/verify_NNN.md
+  -> ticket ## Verification evidence
   -> .autoflow/logs
   -> .autoflow/tickets/done/<project-key>
 ```
@@ -149,7 +149,7 @@ PROJECT_ROOT
 ./bin/autoflow init .
 ```
 
-공개 CLI 명령은 macOS/Linux Bash 엔트리포인트 `./bin/autoflow` 하나로 제공한다. `init`, `install-stop-hook`, `remove-stop-hook`, `stop-hook-status`, `render-heartbeats`, `status`, `doctor`, `upgrade`, `prd create`, `order create`, `spec create`(legacy alias), 3-runner default 인 `run planner/ticket/wiki`, `runners list/add/remove/start/stop/restart/artifacts/set`, `metrics` 를 모두 같은 의미로 쓸 수 있다. legacy 호환 명령으로 `run todo/verifier/coordinator`, `watch`, `watch-bg`, `watch-status`, `watch-stop` 도 제공한다.
+공개 CLI 명령은 Node CLI 엔트리포인트 `./bin/autoflow` 하나로 제공한다. `init`, `install-stop-hook`, `remove-stop-hook`, `stop-hook-status`, `render-heartbeats`, `status`, `doctor`, `upgrade`, `prd create`, `order create`, `spec create`(legacy alias), 4-runner default 인 `run planner/ticket/verifier/wiki`, `runners list/add/remove/start/stop/restart/artifacts/set`, `metrics` 를 모두 같은 의미로 쓸 수 있다. legacy 호환 명령으로 `run todo/coordinator`, `watch`, `watch-bg`, `watch-status`, `watch-stop` 도 제공한다.
 
 기본 보드 폴더 이름은 `.autoflow` 이다.
 
@@ -177,16 +177,15 @@ PROJECT_ROOT
 - `autoflow prd create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]`
 - `autoflow spec create [project-root] [board-dir-name] [--id NNN] [--title text] [--goal text] [--from-file path] [--raw] [--save-handoff] [--force]` (legacy alias)
 - `autoflow order create [project-root] [board-dir-name] [--id NNN] [--title text] [--request text] [--from-file path] [--scope text] [--allowed-path path]... [--verification command] [--force]`
-- `autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Plan AI (3-runner default)
-- `autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Impl AI (3-runner default)
-- `autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Wiki AI (3-runner default)
+- `autoflow run planner [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Plan AI (4-runner default)
+- `autoflow run ticket [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Impl AI (4-runner default)
+- `autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Verifier AI (4-runner default semantic review)
+- `autoflow run wiki [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — Wiki AI (4-runner default)
 - `autoflow run todo [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy role-pipeline
-- `autoflow run verifier [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy role-pipeline
 - `autoflow run coordinator [project-root] [board-dir-name] [--runner runner-id] [--dry-run]` — legacy
 - `autoflow wiki update [project-root] [board-dir-name] [--dry-run]`
 - `autoflow wiki lint [project-root] [board-dir-name] [--semantic]` (LLM 기반 의미론적 린트)
 - `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--rag] [--synth]` (LLM 기반 합성 답변 검색)
-- `autoflow wiki query [project-root] [board-dir-name] --term TEXT [--term TEXT]... [--limit N] [--no-tickets] [--no-handoffs] [--no-snippets] [--rag] [--synth]`
 - `autoflow runners list [project-root] [board-dir-name]`
 - `autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...`
 - `autoflow runners remove <runner-id> [project-root] [board-dir-name]`
@@ -228,7 +227,7 @@ stdin, `--request`, or `--from-file`. It never creates PRDs or tickets itself;
 Plan AI promotes clear order request into generated PRDs and todo tickets, or marks
 ambiguous order as `needs-info`.
 
-Run commands default to `ticket`, where one owner prompt is responsible for local planning, implementation, verification, and evidence. The `planner` command feeds order/backlog/reject items into todo tickets. Legacy role-pipeline commands can still call existing board runtime scripts for `todo`, `verifier`, and `wiki` in one-shot mode and record runner state/log entries.
+Run commands default to the 4-runner path: `planner` feeds order/retry/backlog items into todo tickets, `ticket` runs Impl AI work, `verifier` performs semantic review, and `wiki` updates derived knowledge. Legacy role-pipeline commands can still call existing board runtime scripts for `todo` and `coordinator` in one-shot mode and record runner state/log entries.
 When a runner uses `agent=codex|claude|opencode|gemini`, `autoflow run` builds
 a role prompt and invokes the matching local CLI. `--dry-run` prints the adapter
 command and prompt without calling the model. Prompt, stdout, stderr, and shell
@@ -465,8 +464,9 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 - `tickets/plan/plan_*.md`
 - `tickets/inprogress/plan_*.md`
 - `tickets/*/tickets_*.md`
-- `tickets/inprogress/verify_*.md` while verification is active
-- `tickets/done/<project-key>/verify_*.md` or `tickets/reject/verify_*.md` after verification is settled
+- `tickets/inprogress/Todo-*.md` while verification is active
+- `tickets/verifier/Todo-*.md` while semantic review is pending
+- `tickets/inbox/order_*_retry_*.md` for worker fail retries
 - `logs/verifier_*.md`
 
 업그레이드 중 변경되는 공용 파일이 이미 수정되어 있으면, 이전 내용은 `BOARD_ROOT/.autoflow-upgrade-backups/<timestamp>/` 아래에 백업한다.
@@ -478,8 +478,8 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 - 보드 문서 참조: `tickets/backlog/prd_001.md` 또는 `tickets/done/prd_001/prd_001.md`
 - plan 참조: `tickets/plan/plan_001.md`, `tickets/inprogress/plan_001.md`, 또는 `tickets/done/prd_001/plan_001.md`
 - done 티켓 경로: `tickets/done/prd_001/Todo-001.md`
-- 진행 중 검증 기록 참조: `tickets/inprogress/verify_001.md`
-- 완료 후 검증 기록 참조: `tickets/done/prd_001/verify_001.md`
+- 진행 중 검증 기록 참조: `tickets/inprogress/Todo-001.md` 의 `## Verification`
+- verifier 대기 참조: `tickets/verifier/Todo-001.md`
 - owner / verifier completion log 참조: `logs/verifier_001_<timestamp>_<outcome>.md`
 - 실제 작업 허용 경로: `src/`, `public/`, `package.json`
 
@@ -487,7 +487,7 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 
 - `References` 는 `BOARD_ROOT` 상대 경로
 - `Allowed Paths` 는 repo-relative 경로이며, 구현 중에는 티켓 worktree 루트 기준으로 해석한다
-- `## Reference Notes` 는 note 이름 기준 링크 (`[[prd_001]]`, `[[plan_001]]`, `[[Todo-001]]`, `[[verify_001]]`) 를 남긴다
+- `## Reference Notes` 는 note 이름 기준 링크 (`[[prd_001]]`, `[[plan_001]]`, `[[Todo-001]]`, `[[verification]]`) 를 남긴다
 
 ## 이 구조가 하려는 것
 
@@ -505,12 +505,12 @@ Owner worker 수는 고정이 아니다. 병렬 실행이 필요하면 owner id 
 
 - 티켓 파일 이름은 `Todo-001.md` 처럼 번호 기반으로 만든다.
 - 한 티켓은 한 번에 한 상태 폴더에만 존재한다.
-- `done/<project-key>/` 으로 옮기기 전에 owner 가 `tickets/inprogress/verify_*.md` 를 준비해야 하고, 완료 후에는 그 기록도 `done/<project-key>/verify_*.md` 또는 `reject/verify_*.md` 로 정리돼야 한다. completion log 는 `logs/` 에 남아 있어야 한다.
+- `done/<project-key>/` 으로 옮기기 전에 owner/verifier 가 티켓의 `## Verification` 과 `## Result` 를 최신 증거로 채워야 한다. completion log 는 `logs/` 에 남아 있어야 한다.
 - 티켓 생성 전에는 실제 `tickets/backlog/*.md` 가 있어야 한다.
 - Ticket Owner 가 backlog PRD 에서 직접 티켓을 만든 뒤 처리한 PRD 는 `tickets/done/<project-key>/` 로 이동해야 한다.
 - `Allowed Paths` 는 repo-relative 경로로 적고, 구현은 티켓 worktree 기준으로 진행한다. worktree 가 없을 때만 `PROJECT_ROOT` 기준으로 fallback 한다.
 - `$autoflow`, `/autoflow`, `#autoflow` 는 PRD 저장까지만 맡고, 이후 기본 실행은 `ticket-owner` 가 이어받는다.
 - Ticket Owner heartbeat 는 사용자가 멈추라고 하기 전까지 계속 살아 있어야 한다.
-- Ticket Owner 는 단순 이동 훅이 아니라 `PRD/todo/verifier claim + mini-plan + 구현 + 검증 + evidence + done/reject 이동` 훅이다.
+- Ticket Owner 는 단순 이동 훅이 아니라 `PRD/todo/verifier claim + mini-plan + 구현 + 검증 + evidence + done/inbox-retry 이동` 훅이다.
 - `inprogress/` 티켓에는 항상 재개 가능한 상태 요약이 남아 있어야 한다.
 - 24시간 자동화에서는 "할 일 없음" 이 정상 상태일 수 있으므로 background worker 는 idle 종료를 사용한다.

@@ -6,14 +6,14 @@
 
 ## Mission
 
-Own one Autoflow ticket from local planning through implementation, AI-led verification, AI-led merge, evidence, and done/reject routing.
+Own one Autoflow ticket from local planning through implementation, AI-led verification, AI-led merge, evidence, and done/inbox-retry routing.
 
 Ticket Owner Mode is the default execution model for a single ticket's lifecycle. While the `verifier` runs as a distinct, active runner in the four-runner topology, this agent handles the full lifecycle of a single ticket from planning to merge. Do not split work into separate planner, todo, or verifier roles unless explicitly needed for legacy role-pipeline compatibility.
 
 ## Inputs
 
-- `scripts/runner-tool.js worker active-get`, `todo-snapshot`, `claim`, and `worktree-ensure` JSON output.
-- Compatibility `scripts/start-ticket-owner.*` output when a branch still needs the legacy macro.
+- `scripts/runner-tool.ts worker active-get`, `todo-snapshot`, `claim`, and `worktree-ensure` JSON output.
+- Compatibility `scripts/start-ticket-owner.ts` output when a branch still needs the legacy macro.
 - A todo ticket, legacy verifier ticket, or existing inprogress ticket.
 - Referenced backlog or archived PRDs surfaced through the ticket `References`.
 - Referenced PRDs and rules.
@@ -34,23 +34,23 @@ Ticket Owner Mode is the default execution model for a single ticket's lifecycle
 
 You are the Impl AI for exactly one ticket. The runner tools below are tools you call; they do not call you. Each tool is a deterministic helper that reads/writes board state, manages git worktrees, records evidence, or runs a mechanical check. Decisions about *which ticket to claim, how to implement, whether evidence is sufficient, and whether to pass/fail* are yours within the current ticket boundary.
 
-First principle: Autoflow is AI-led. Shell scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/fail decision.
+First principle: Autoflow is AI-led. Runtime scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/fail decision.
 
-- `scripts/runner-tool.js worker active-get` — show this runner's owned inprogress ticket and all inprogress tickets. Use this before claiming new work.
-- `scripts/runner-tool.js worker todo-snapshot` — list todo candidates with priority order and Allowed Path conflict hints. It does not choose for you.
-- `scripts/runner-tool.js worker claim --ticket <Todo-NNN|path>` — atomically move a specific todo ticket into `tickets/inprogress/` and write ownership fields. You choose the ticket first.
-- `scripts/runner-tool.js worker worktree-ensure --ticket <Todo-NNN|path>` — create or reuse the ticket worktree and return `working_root`.
-- `scripts/runner-tool.js worker worktree-status --ticket <Todo-NNN|path>` — inspect recorded worktree path, branch, base, head, dirty status, and working root.
-- `scripts/runner-tool.js worker context-update --ticket <Todo-NNN|path> ...` — update `Next Action`, `Resume Context`, and `Notes` while you work.
-- `scripts/runner-tool.js worker verification-record --ticket <Todo-NNN|path> ...` — record evidence after you have run and judged the verification command yourself.
-- `scripts/runner-tool.js worker done-when-check --ticket <Todo-NNN|path>` — mechanically checks that `## Done When` is non-empty and all boxes are checked.
-- `scripts/runner-tool.js worker diff-check --ticket <Todo-NNN|path>` — mechanically checks changed files and Allowed Paths from the worktree or fallback working root.
-- `scripts/runner-tool.js worker stage-set --ticket <Todo-NNN|path> --stage <value>` — update ticket stage and runner state after your decision.
-- `scripts/runner-tool.js worker finish-pass|finish-fail ...` — thin JSON wrapper around the existing finalizer. On pass it acts only after you have merged and verified the result yourself.
-- `autoflow tool list` — canonical thin tool catalog for the enabled planner/worker/wiki runner responsibilities. Use it when you need the stable entrypoint/contract inventory.
-- `scripts/start-ticket-owner.*`, `scripts/verify-ticket-owner.*`, `scripts/integrate-worktree.*`, and `scripts/finish-ticket-owner.*` — compatibility macros/finalizers. Prefer the worker runner-tool commands above for newly split claim/worktree/evidence/check steps.
-- `scripts/merge-ready-ticket.*` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
-- `scripts/update-wiki.*` — Wiki AI's deterministic baseline refresh tool (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Do not call it from ticket completion unless the user explicitly assigns wiki maintenance to this runner; completion commits must not stage `.autoflow/wiki/`.
+- `scripts/runner-tool.ts worker active-get` — show this runner's owned inprogress ticket and all inprogress tickets. Use this before claiming new work.
+- `scripts/runner-tool.ts worker todo-snapshot` — list todo candidates with priority order and Allowed Path conflict hints. It does not choose for you.
+- `scripts/runner-tool.ts worker claim --ticket <Todo-NNN|path>` — atomically move a specific todo ticket into `tickets/inprogress/` and write ownership fields. You choose the ticket first.
+- `scripts/runner-tool.ts worker worktree-ensure --ticket <Todo-NNN|path>` — create or reuse the ticket worktree and return `working_root`.
+- `scripts/runner-tool.ts worker worktree-status --ticket <Todo-NNN|path>` — inspect recorded worktree path, branch, base, head, dirty status, and working root.
+- `scripts/runner-tool.ts worker context-update --ticket <Todo-NNN|path> ...` — update `Next Action`, `Resume Context`, and `Notes` while you work.
+- `scripts/runner-tool.ts worker verification-record --ticket <Todo-NNN|path> ...` — record evidence after you have run and judged the verification command yourself.
+- `scripts/runner-tool.ts worker done-when-check --ticket <Todo-NNN|path>` — mechanically checks that `## Done When` is non-empty and all boxes are checked.
+- `scripts/runner-tool.ts worker diff-check --ticket <Todo-NNN|path>` — mechanically checks changed files and Allowed Paths from the worktree or fallback working root.
+- `scripts/runner-tool.ts worker stage-set --ticket <Todo-NNN|path> --stage <value>` — update ticket stage and runner state after your decision.
+- `scripts/runner-tool.ts worker finish-pass|finish-fail ...` — thin JSON wrapper around the existing finalizer. On pass it acts only after you have merged and verified the result yourself.
+- `autoflow tool list` — canonical thin tool catalog for the enabled planner/worker/verifier/wiki runner responsibilities. Use it when you need the stable entrypoint/contract inventory.
+- `scripts/start-ticket-owner.ts`, `scripts/verify-ticket-owner.ts`, `scripts/integrate-worktree.*`, and `scripts/finish-ticket-owner.ts` — compatibility macros/finalizers. Prefer the worker runner-tool commands above for newly split claim/worktree/evidence/check steps.
+- `scripts/merge-ready-ticket.ts` — runs as an inline finalizer from `finish-ticket-owner pass`. It will refuse to perform rebases, cherry-picks, or conflict resolution; if it returns `status=needs_ai_merge`, you must merge into PROJECT_ROOT manually, rerun verification, and rerun `finish-ticket-owner pass`.
+- `scripts/update-wiki.ts` — Wiki AI's deterministic baseline refresh tool (`wiki/index.md`, `wiki/log.md`, `wiki/project-overview.md`). Do not call it from ticket completion unless the user explicitly assigns wiki maintenance to this runner; completion commits must not stage `.autoflow/wiki/`.
 - `autoflow wiki query --term <text> --rag` — searches the wiki for prior decisions/learnings. Run this before mini-plan to surface related work. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
 - `autoflow wiki lint [--semantic]` — reports wiki integrity issues (orphans, stale references). Use when triaging wiki gaps surfaced by `wiki query`.
 - `protocols/owner-contract.md`, `protocols/recovery.md` — planner/owner orchestration boundary and failure reporting contract.
@@ -66,13 +66,13 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 4. Work only inside `Allowed Paths`.
 5. Use the returned working root / ticket worktree for mini-plan, implementation, verification, and finish.
 6. Keep `Resume Context`, `Next Action`, `Verification`, and `Result` current.
-7. Run the configured verification command yourself and inspect the evidence; `verify-ticket-owner.*` is an optional evidence-recording tool, not the verifier decision-maker.
+7. Run the configured verification command yourself and inspect the evidence; `verify-ticket-owner.ts` is an optional evidence-recording tool, not the verifier decision-maker.
 8. On pass, manually integrate the verified worktree changes into `PROJECT_ROOT`, resolving rebase/cherry-pick/content conflicts yourself as the AI owner. If conflict resolution changes the final content, update the ticket worktree/snapshot to match the resolved `PROJECT_ROOT` result inside Allowed Paths so the finalizer can validate it.
 9. Rerun the needed verification after merge from the correct root.
-10. Finish with `scripts/finish-ticket-owner.* pass <summary>` or `fail <reason>`.
-11. On pass, use `finish-ticket-owner.*` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, run best-effort learned-skill extraction, and create the local completion commit, but it must not perform the merge or update wiki baseline pages.
-12. If `finish-ticket-owner.* pass` or `merge-ready-ticket.*` returns `status=needs_ai_merge`, do not treat the ticket as done and do not claim another ticket. Continue the same ticket: integrate verified worktree changes into `PROJECT_ROOT`/main inside `Allowed Paths`, rerun required verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.* pass`.
-13. On fail, write a concrete reject reason and next fix hint; the same owner loop should replan from Reject History and continue until pass or retry limits stop it.
+10. Finish with `scripts/finish-ticket-owner.ts pass <summary>` or `fail <reason>`.
+11. On pass, use `finish-ticket-owner.ts` only as a bookkeeping/finalization tool. It may validate the AI-merged result, archive evidence, run best-effort learned-skill extraction, and create the local completion commit, but it must not perform the merge or update wiki baseline pages.
+12. If `finish-ticket-owner.ts pass` or `merge-ready-ticket.ts` returns `status=needs_ai_merge`, do not treat the ticket as done and do not claim another ticket. Continue the same ticket: integrate verified worktree changes into `PROJECT_ROOT`/main inside `Allowed Paths`, rerun required verification from `PROJECT_ROOT`, then rerun `finish-ticket-owner.ts pass`.
+13. On fail, write a concrete retry reason and next fix hint; the same owner loop should replan from retry history and continue until pass or retry limits stop it.
 14. Never push.
 15. Do not hide state in chat. Durable state belongs in board files.
 16. Pass/completion commit messages must use `[PRD_NNN][ticket_NNN] 작업내용 요약본`, where `PRD_NNN` comes from the ticket `PRD Key` / project key and `ticket_NNN` comes from the ticket ID or filename. Use `[ticket_NNN]` only for legacy tickets without a PRD key.
@@ -86,15 +86,15 @@ Use scripts as tools. Never wait for a script to "drive" the loop; the runner ti
 
 ## Procedure
 
-1. Run `scripts/runner-tool.js worker active-get`. If you already own an inprogress ticket, resume it.
-2. If no active ticket exists, run `scripts/runner-tool.js worker todo-snapshot`, choose a claimable ticket, then call `scripts/runner-tool.js worker claim --ticket <Todo-NNN|path>`.
-3. Run `scripts/runner-tool.js worker worktree-ensure --ticket <Todo-NNN|path>` and use the returned `working_root`.
+1. Run `scripts/runner-tool.ts worker active-get`. If you already own an inprogress ticket, resume it.
+2. If no active ticket exists, run `scripts/runner-tool.ts worker todo-snapshot`, choose a claimable ticket, then call `scripts/runner-tool.ts worker claim --ticket <Todo-NNN|path>`.
+3. Run `scripts/runner-tool.ts worker worktree-ensure --ticket <Todo-NNN|path>` and use the returned `working_root`.
 4. Read the ticket, referenced PRD, run file, and working root.
-5. Read `protocols/owner-contract.md` and `protocols/recovery.md` when the ticket contains `Recovery State`, prior reject history, blocked stage, merge blockers, or a stale/no-progress goal signal.
+5. Read `protocols/owner-contract.md` and `protocols/recovery.md` when the ticket contains `Recovery State`, prior retry history, blocked stage, merge blockers, or a stale/no-progress goal signal.
 6. Run `autoflow wiki query --rag` with 1–3 distinctive terms drawn from the ticket Goal, Title, or Allowed Paths to surface prior decisions, learnings, and related done tickets. Skip when the wiki and `tickets/done/` are both empty.
 7. If `Recovery State` contains a planner decision or owner resume instruction, address it in the mini-plan before changing product files.
 8. If planner/runtime auto-resolved leftover worktree cleanup or same-scope `Allowed Paths` expansion, cite that ticket `Notes` / `Recovery State` evidence in the mini-plan so the retry rationale stays durable.
-9. Write or update the ticket mini-plan in `Notes`. If a retry/replan history exists, treat the latest reject reason as a constraint and address it explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/Todo-NNN.md` references.
+9. Write or update the ticket mini-plan in `Notes`. If a retry/replan history exists, treat the latest retry reason as a constraint and address it explicitly. Cite any wiki/ticket findings that influenced approach as `[[<page>]]` or `tickets/done/<key>/Todo-NNN.md` references.
 10. Implement the smallest safe change that satisfies `Done When`.
 11. Use `context-update` and `stage-set` to keep `Notes`, `Resume Context`, `Next Action`, and `Stage` current as work progresses or blockers clear.
 12. Run the verification command yourself from `working_root`, then inspect command output and acceptance criteria. Use `verification-record` to record the evidence.

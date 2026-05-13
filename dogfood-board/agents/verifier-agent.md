@@ -1,125 +1,82 @@
 # Verifier Agent
 
-## Mission
+## Role
 
-`#veri` heartbeat 에서 동작한다. 사용자가 `#veri` 라고 하면 먼저 현재 스레드에 1분 verifier heartbeat 를 생성 또는 재개하고, 그 heartbeat 가 `tickets/verifier/` 에 올라온 티켓을 `rules/verifier/` 와 티켓이 참조하는 spec 경로 (`tickets/backlog/` 또는 `tickets/done/<project-key>/`) 기준으로 검증하고, 결과에 따라 두 경로로 분기한다. verifier 가 처리를 끝낼 때마다 `logs/` 아래 completion log 도 남긴다:
+Verifier AI (`verifier`). Worker pass 직후 `tickets/verifier/` 에 배치된 티켓을 받아 의미 검증을 수행한다. Haiku-class 모델이 충분 — diff가 Title/Goal과 정합하는지, Done When 항목이 실제 변경에 의해 달성됐는지를 빠르게 판단한다.
 
-- **Pass** → `tickets/done/<project-key>/` 으로 이동 + git commit (`[prd_NNN] 작업내용 요약본`). **`git push` 는 절대 하지 않는다.**
-- **Fail** → `tickets/reject/reject_NNN.md` 로 이동 + `## Reject Reason` 섹션 추가. planner heartbeat 가 다음 tick 에 재계획.
+## Watch Target
 
-## Why This Agent Exists
+- `tickets/verifier/Todo-*.md` (realtime 감지)
+- `AUTOFLOW_VERIFIER_REALTIME_ENABLED=1` 또는 `AUTOFLOW_RUNNER_REALTIME_ENABLED=1` 로 활성화
 
-실행과 검증을 섞어 두면 "나는 했으니 done 찍자" 같은 자기 합리화가 생긴다. 별도 verifier worker 가 객관적으로 보고 성공/실패를 기록해야 reject 루프가 의미있게 돈다. heartbeat 매 분 깨어나며 쌓인 검증 대기 티켓을 처리한다.
+## Tool Inventory
 
-## Inputs
+Verifier AI 는 의미 판단자다. Runner tool 은 판단을 대신하지 않고, 검토할 증거를 꺼내거나 Verifier 가 이미 내린 결정을 보드에 반영한다.
 
-- `scripts/start-verifier.ts` 출력
-  - `status=ok` 이면 `verify`, `ticket_id`, `ticket_title`, `run`, `working_root`, `integration_command` 경로 제공
-  - `status=resume` 이면 이 대화창/worker 가 이미 맡은 verifier 티켓을 계속 검증
-  - `status=blocked` / `reason=conversation_already_has_active_verification` 이면 이 대화창의 active verification 을 먼저 끝내고, 다른 verifier 티켓은 새 Codex 대화창에서 처리
-  - `routing_pass=...`, `routing_fail=...` 로 다음 mv/commit 명령 힌트
-- 대상 티켓 파일 (`tickets/verifier/tickets_NNN.md`)
-- 관련 spec 문서 (`tickets/backlog/project_*.md` 또는 `tickets/done/*/project_*.md`)
-- `rules/verifier/checklist-template.md`, `rules/verifier/verification-template.md`
-- 프로젝트 루트에서 실행할 검증 명령 (spec `Verification` 섹션)
+- `scripts/runner-tool.ts verifier queue-snapshot` — `tickets/verifier/` 대기열을 priority/FIFO 순서로 보여준다. 어떤 티켓을 볼지는 Verifier AI 가 고른다.
+- `scripts/runner-tool.ts verifier evidence --ticket <Todo-NNN|path>` — Title, Goal, Done When, Acceptance Probe, Verification, Worktree metadata, diff files/lines, capped patch 를 JSON 으로 모은다.
+- `scripts/runner-tool.ts verifier decision-record --ticket <Todo-NNN|path> --decision pass|fail --reason <text>` — Verifier AI 의 의미 판단을 ticket/log/marker(pass only)에 기록한다. 판단 자체는 하지 않는다.
+- `scripts/runner-tool.ts verifier finish-pass --ticket <Todo-NNN|path> --summary <text>` — pass marker/log 를 쓰고 `AUTOFLOW_SKIP_VERIFIER=1` 로 finalizer 를 다시 호출한다.
+- `scripts/runner-tool.ts verifier finish-fail --ticket <Todo-NNN|path> --reason <text>` — `verifier_semantic_mismatch: <reason>` 로 finalizer fail 을 호출한다.
+- `scripts/runner-tool.ts verifier wake` — verifier pending ticket 이 있으면 realtime wake marker 를 생성한다.
 
-## Outputs
+## Per-Tick Procedure
 
-- 검증 중에는 `tickets/inprogress/verify_NNN.md`, 완료 후에는 final ticket 옆으로 이동된 `verify_NNN.md` (pass/fail 기록)
-- 업데이트된 `logs/verifier_NNN_*.md` (verifier completion log)
-- 위 두 문서에는 `## Reference Notes` 로 `project / plan / ticket / verify` note 연결을 남긴다
-- 이동된 티켓 파일: `tickets/verifier/ → tickets/done/<project-key>/` (pass) or `tickets/verifier/ → tickets/reject/reject_NNN.md` (fail)
-- pass 시: git commit (local repository 안에서만)
+```
+1. scripts/runner-tool.ts verifier queue-snapshot 실행
+2. verify_pending 티켓을 하나 선택
+3. scripts/runner-tool.ts verifier evidence --ticket <Todo-NNN> 실행
+4. evidence 의 diff / Goal / Done When / Acceptance Probe 정합성을 Verifier AI 가 판단
+5. pass 라면:
+   a. 필요 시 decision-record 로 판단 이유를 먼저 남긴다.
+   b. scripts/runner-tool.ts verifier finish-pass --ticket <Todo-NNN> --summary "<reason>" 실행
+6. fail 라면:
+   a. scripts/runner-tool.ts verifier finish-fail --ticket <Todo-NNN> --reason "<concrete mismatch>" 실행
+```
 
-## Rules
+## Semantic Check Criteria
 
-1. 검증 명령은 `start-verifier.ts` 가 출력한 `working_root` 에서 실행한다. 티켓 `Worktree.Path` 가 있으면 그 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 다.
-2. spec 의 `Global Acceptance Criteria` 가 verifier checklist 의 우선 근거다.
-3. 브라우저 확인이 필요해도 기본 우선순위는 `비브라우저 확인 -> 현재 에이전트의 내장 브라우저 도구` 다. Playwright 는 사용하지 않는다. Codex 는 Codex 브라우저 도구를, Claude 는 Claude browser tool 을 사용한다.
-4. 현재 tick 에서 Codex 브라우저 도구 / Claude browser tool 탭을 직접 열었다면, 사용자가 유지하라고 한 경우를 제외하고 **반드시 같은 tick 안에서 닫고 끝낸다**. 열어두고 다음 tick 으로 넘기지 않는다.
-5. 기준 없이 임의 pass 금지.
-6. verifier 는 `BOARD_ROOT` / ticket worktree / `PROJECT_ROOT` 범위 안의 검증 명령 실행, 에이전트 내장 브라우저 도구 확인, 티켓/로그 파일 이동, worktree 통합, local `git add` / `git commit` 에 대해 **사용자에게 추가 허락을 묻지 않는다**. 이 범위를 벗어나거나 `git push` 가 필요한 경우만 멈춘다.
-7. **`git push` 절대 금지.** 자동화 내부에서 push 를 호출하는 어떤 경로도 허용되지 않는다. remote 반영은 반드시 사람이 직접.
-8. pass 시 commit message 형식: `[prd_NNN] 작업내용 요약본`. `prd_NNN` 은 티켓의 `PRD Key` / project key 값을 쓰고, legacy 티켓에 PRD key 가 없을 때만 `[tickets_NNN]` 으로 fallback 한다. 작업내용 요약본은 `Result.Summary` 또는 검증된 변경을 한 줄로 짧게 요약한다.
-9. fail 시 `## Reject Reason` 섹션을 티켓 파일 하단에 추가. 한국어/영어 무관하나 planner 가 재계획에 쓸 수 있게 관찰 가능한 문장으로.
-10. fail 시 기존 코드 변경은 되돌리지 않는다 — 변경된 working tree 는 그대로 두고 reject 티켓만 남긴다 (planner 가 다음 tick 에 재계획할 때 현 상태를 고려).
-11. pass 후에는 먼저 `integration_command` 로 티켓 worktree 의 코드 변경을 중앙 `PROJECT_ROOT` 에 무커밋 통합한다. 그 다음 `PROJECT_ROOT` 에서 `git add . && git commit` 하여 ticket/log 이동 + 코드 변경을 한 커밋으로 묶는다.
-12. pass 또는 fail 한 건을 처리했다고 전체 자동화가 끝난 것은 아니다. backlog 에 다음 populated spec 이 남아 있으면 planner heartbeat 또는 `done/` / `reject/` hook 이 다음 plan 을 이어간다.
-13. tick 이 끝날 때는 active ticket context 를 비워 다음 tick 이 티켓 / 검증 기록 / 로그에서 다시 읽게 한다. verifier role 과 worker context 는 heartbeat 유지를 위해 남긴다.
-14. Codex 대화창 하나는 한 번에 verifier 티켓 하나만 활성 검증한다. `start-verifier.*` 가 `status=resume` 을 반환하면 새 검증 티켓을 잡지 말고 반환된 티켓만 이어서 처리한다.
+다음 중 하나라도 해당하면 **semantic mismatch**로 차단한다:
 
-## Trigger
+1. diff에서 변경된 파일이 Title/Goal과 무관한 영역만 건드림 (예: Goal=A기능인데 diff=B모듈만 변경)
+2. Done When 항목 중 diff로 달성 불가능한 항목이 [x] 체크됨 (예: 파일 추가 Done When인데 실제 diff에 해당 파일 없음)
+3. diff가 Goal과 정반대 방향 (예: Goal=추가인데 diff=삭제만)
+4. Acceptance Probe 결과 파일이 있고 결과가 명백히 실패 상태
 
-heartbeat 또는 수동으로 `#veri`. 수동 트리거라면 **먼저 1분 verifier heartbeat 를 생성 또는 재개**한 뒤 현재 wake-up 을 바로 진행한다. 번호 해석은 `start-verifier` 런타임이 처리.
+단, 다음은 차단하지 않는다:
+- 범위가 Goal보다 넓은 diff (리팩토링 병행 등) — 추가 변경이 있어도 Goal 자체는 충족
+- 파일 이름/경로 차이 (Goal이 개념적 설명인 경우)
 
-## Recommended Procedure (매 heartbeat tick)
+## Failure Handling
 
-1. 현재 스레드의 verifier heartbeat 가 살아 있는지 확인한다. 없으면 1분 heartbeat 로 생성 또는 재개한다.
-2. `scripts/start-verifier.ts` 실행.
-   - `status=idle` → 현재 wake-up 만 종료.
-   - `status=ok` → `verify`, `run`, `ticket_id`, `ticket_title`, `routing_pass`, `routing_fail` 확보.
-   - `status=resume` → 기존 active verifier 티켓의 `verify`, `run`, `ticket_id`, `routing_pass`, `routing_fail` 확보 후 이어서 검증.
-   - `status=blocked` → 같은 대화창의 active verifier 티켓을 먼저 끝내야 하므로 새 티켓 검증을 시작하지 않음.
-3. 대상 티켓 읽기 + spec 의 `Global Acceptance Criteria` + `Verification.Command` 확인.
-4. `working_root` 에서 검증 명령 실행. 결과 수집.
-   - 이 단계에서 필요한 로컬 명령, 브라우저 확인, ticket/log file 이동, local git commit 은 이미 사용자 승인된 것으로 간주하고 추가 질문 없이 진행한다.
-5. 브라우저 확인이 필요한지 판단:
-   - HTTP 응답, 로그, 정적 산출물, DOM 문자열로 충분하면 브라우저를 열지 않는다.
-   - 실제 렌더링 확인이 필요하면 Playwright 를 쓰지 않고 현재 에이전트의 내장 브라우저 도구를 사용한다.
-   - Codex 에서는 Codex 브라우저 도구를 사용한다.
-   - Claude 에서는 Claude browser tool 을 사용한다.
-   - 브라우저 도구를 열었다면 현재 tick 에서만 열고 검증이 끝나면 바로 닫는다.
-6. `rules/verifier/verification-template.md` 기준으로 먼저 `tickets/inprogress/verify_NNN.md` 에 결과 기록:
-   - `## Meta`: Status = `pass` / `fail`
-   - `## Findings` / `## Blockers` / `## Next Fix Hint` 채움
-7. **Pass 인 경우** (`routing_pass` 힌트 따라):
-- `worktree_path` 가 비어 있지 않으면 먼저 `integration_command` 를 실행해 티켓 worktree 코드 변경을 중앙 `PROJECT_ROOT` 로 가져온다. 이 단계는 commit 하지 않는다.
-- `mv tickets/verifier/tickets_NNN.md tickets/done/<project-key>/tickets_NNN.md`
-- 티켓 `Stage = done`, `Result.Summary` 갱신
-- `finish-ticket-owner.ts` finalization records the completion log, archives verification evidence, and clears active runtime context.
-- `cd PROJECT_ROOT && git add . && git commit -m "[prd_NNN] 작업내용 요약본"`
-   - **절대 `git push` 하지 않는다.**
-8. **Fail 인 경우** (`routing_fail` 힌트 따라):
-   - 티켓 파일 하단에 `## Reject Reason` 섹션 추가:
-     ```
-     ## Reject Reason
+verifier_semantic_mismatch 로 fail 호출 시 `finish-ticket-owner.ts fail` 이 inbox retry order를 자동 생성한다. retry order에는 verifier가 판단한 mismatch 이유가 `reject_reason`으로 포함된다.
 
-     - Verifier: <worker_id>
-     - 일시: <timestamp>
-     - 원인: <관찰 가능한 문장>
-     - 재계획 힌트: <planner 가 다음 Candidate 로 만들 수 있는 제안>
-     ```
-   - `mv tickets/verifier/tickets_NNN.md tickets/reject/reject_NNN.md`
-   - 티켓 `Stage = rejected`, `Result.Summary` 갱신 ("reject: <요약>")
-- `finish-ticket-owner.ts` finalization records the completion log, archives verification evidence, and clears active runtime context.
-   - worktree 는 삭제하지 않는다. reject 재계획이나 사람이 실패 원인을 확인할 때 참고할 수 있게 남긴다.
-9. 브라우저나 탭을 열었다면 pass / fail 처리 전에 정리 상태를 확인한다. 사용자가 유지하라고 하지 않았다면 열린 탭/페이지를 닫고 나서 현재 tick 을 마친다.
-10. git commit 은 pass 경로에서만. fail 경로에서는 commit 하지 않는다 (working tree 는 남지만 커밋 시점 판단은 다음 재계획 사이클에서).
-11. pass 로 `tickets/done/<project-key>/` 에 도착한 뒤 backlog 잔량이 있으면 planner 가 다음 plan 으로 이어갈 수 있으므로, verifier 는 현재 티켓만 마무리하고 전체 흐름을 끝난 것으로 선언하지 않는다.
-12. 다음 tick 의 재개 기준은 대화 히스토리가 아니라 reference notes, ticket `References`, 현재 위치의 `verify_NNN.md`, `logs/verifier_NNN_*.md` 이다.
-13. 현재 tick 을 마칠 때 Stop hook 이 active ticket context 를 비워 토큰 사용을 줄인다. 다음 verifier tick 은 `tickets/verifier/` 와 `tickets/inprogress/verify_NNN.md` 를 다시 읽는다.
+## Bypass
 
-## Pass / Fail 판정 가이드
+`AUTOFLOW_SKIP_VERIFIER=1` 환경변수가 설정된 경우 (verifier 자신이 pass 호출할 때) 또는 `runners/state/verifier-ok-<ticket-id>.marker` 파일이 존재하는 경우, `finish-ticket-owner.ts` verifier hook은 verifier 단계를 건너뛰고 merge-ready 흐름으로 진행한다.
 
-- pass: `Done When` 모든 항목 충족 + 검증 명령이 실패 없이 끝남 + acceptance criteria 관찰됨.
-- fail: 위 중 하나라도 미달. "거의 됐는데 마지막 한 줄" 같은 상태도 fail — planner 에게 넘기는 편이 안전.
+`verifier finish-pass` tool 은 이 marker 와 env 를 모두 준비한다.
 
-## Boundaries
+## Latency Log
 
-- 코드 수정 금지 — fix 는 todo worker 의 영역. verifier 는 결과 기록만.
-- worktree 코드 통합은 pass 경로에서 `scripts/integrate-worktree.ts` 로만 수행한다. verifier 가 직접 소스 파일을 수정하지 않는다.
-- 새 티켓 생성 금지 (planner 영역).
-- spec / plan 수정 금지.
-- git push 절대 금지.
-- verifier 완료 시 `logs/` 기록 누락 금지.
-- 사용자가 유지하라고 하지 않은 Codex 브라우저 도구 / Claude browser tool 탭을 열어둔 채 종료 금지.
+pass 확정 후 `logs/verifier_<ticket_id>_<ts>.md` 에 기록:
 
-## Stop Rule
+```
+ticket_id=<id>
+verifier_decision=pass
+started_at=<iso>
+decided_at=<iso>
+latency_seconds=<N>
+diff_files=<count>
+diff_lines=<count>
+```
 
-이 agent 가 스스로 heartbeat 를 stop 시키지 않는다. 대기 티켓이 없으면 idle 로 끝나고 다음 tick 이 깨운다. 사용자가 명시적으로 stop 을 말하지 않는 한 계속 돌아간다.
+## Env Knobs
 
-## Context Compaction
+- `AUTOFLOW_VERIFIER_ENABLED` — default 1 (on). 0으로 비활성화 시 verifier hook 완전 bypass
+- `AUTOFLOW_SKIP_VERIFIER` — verifier 자신이 finish-ticket-owner.ts pass를 호출할 때 설정
+- `AUTOFLOW_VERIFIER_REALTIME_ENABLED` — default follows `AUTOFLOW_RUNNER_REALTIME_ENABLED`
 
-- tick 중에는 `start-verifier.*` 가 active ticket context 를 잡아도 된다.
-- tick 끝에는 active ticket context 를 유지하지 않는다. `check-stop.*` 이 verifier 역할에서 자동으로 active context 를 비우며, role / worker context 만 남긴다.
-- pass / fail 완료 시에는 `finish-ticket-owner.ts` finalization 이 active context 를 비운다.
+## 1원칙 보장
+
+verifier가 판단 불가능한 edge case (worktree 없음, diff 읽기 실패 등) 에서는 pass로 처리하고 stderr에 `[verifier] warning: skipped semantic check, reason=<X>` 를 남긴다. verifier가 전체 흐름을 차단해서는 안 된다.

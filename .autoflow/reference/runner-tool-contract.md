@@ -88,32 +88,32 @@ Tools may perform atomic filesystem operations, lock acquisition, id reservation
 `planner`:
 
 - Owns order/backlog promotion, ticket drafting, queue choice, and recovery decisions.
-- Uses `scripts/runner-tool.js planner ...` for queue snapshots, id reservation, validated PRD/ticket writes, archival, recovery field updates, and guard checks.
+- Uses `scripts/runner-tool.ts planner ...` for queue snapshots, id reservation, validated PRD/ticket writes, archival, recovery field updates, and guard checks.
 - Does not implement product code, verify tickets, merge code, update wiki meaning, or manage runner processes.
 
 `worker`:
 
 - Owns one active ticket from claim through implementation, local verification judgment, merge preparation, and pass/fail request.
-- Uses `scripts/runner-tool.js worker ...` for active lookup, todo snapshots, explicit claim, worktree setup/status, context/stage updates, evidence records, Done When checks, diff checks, and finalizer wrappers.
+- Uses `scripts/runner-tool.ts worker ...` for active lookup, todo snapshots, explicit claim, worktree setup/status, context/stage updates, evidence records, Done When checks, diff checks, and finalizer wrappers.
 - The worker chooses the ticket, writes the mini-plan, edits code inside `Allowed Paths`, runs verification, judges evidence, and resolves merge work. Tools only record or check those actions.
 
 `verifier`:
 
 - Owns semantic review of verifier-lane tickets.
-- Uses `scripts/runner-tool.js verifier ...` for queue snapshots, evidence bundles, decision records, wake markers, and finalizer wrappers.
+- Uses `scripts/runner-tool.ts verifier ...` for queue snapshots, evidence bundles, decision records, wake markers, and finalizer wrappers.
 - The verifier decides whether the finished diff matches the ticket title, goal, and Done When. Tools only gather evidence and route the recorded decision.
 
 `wiki`:
 
 - Owns derived wiki knowledge.
-- Uses `scripts/runner-tool.js wiki ...` for source snapshots, baseline updates, query/lint/telemetry wrappers, raw ingest, validated page writes, diff snapshots, and wake markers.
+- Uses `scripts/runner-tool.ts wiki ...` for source snapshots, baseline updates, query/lint/telemetry wrappers, raw ingest, validated page writes, diff snapshots, and wake markers.
 - The wiki runner decides whether a content update is meaningful. Tools must not rewrite committed wiki pages for check timestamps alone.
 
 ## Macro Compatibility
 
 Large runtime scripts remain only as compatibility layers while behavior is split into smaller runner tools.
 
-- Prefer `scripts/runner-tool.js <role> ...` for new behavior.
+- Prefer `scripts/runner-tool.ts <role> ...` for new behavior.
 - Keep TypeScript entrypoints as the only runtime contract; do not add shell wrappers for new calls.
 - Remove legacy shell companions once a JS/TS wrapper owns the behavior.
 - Remove a legacy shell fallback once the JS/TS implementation is the single owner and package/doctor/smoke docs no longer require it.
@@ -136,4 +136,4 @@ When adding or changing a runner tool:
 3. Keep `autoflow tool list` contract text accurate.
 4. Update this file if the responsibility boundary changes.
 5. Update package install, doctor companion checks, and smoke tests when files move or disappear.
-6. Run `node .autoflow/scripts/runner-tool.js --help`, `./bin/autoflow tool list`, and `./bin/autoflow doctor . .autoflow`.
+6. Run `node .autoflow/scripts/runner-tool.ts --help`, `./bin/autoflow tool list`, and `./bin/autoflow doctor . .autoflow`.

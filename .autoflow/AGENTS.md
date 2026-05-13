@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This board is an Autoflow sidecar harness installed inside a host project.
-The default execution model is **Ticket Owner Mode**: one runner owns one ticket from local planning through implementation, verification, evidence, and done/reject routing.
+The default execution model is **4-runner mode**: Planner AI creates tickets, Impl AI owns implementation, Verifier AI checks semantic fit, and Wiki AI maintains derived knowledge. Failures route to inbox retry orders, not an active reject queue.
 
 ## Canonical Flow
 
@@ -60,13 +60,13 @@ At the start of work, read in this order:
 
 - Use the matching `scripts/*.ts` entrypoint for runtime commands.
 - When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.ts` script in `scripts/`.
-- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.js planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.js worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.js verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.js wiki ...` over adding behavior to a large script.
+- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.ts planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.ts worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.ts verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.ts wiki ...` over adding behavior to a large script.
 
 ## Core Rules
 
 1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Planner AI.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only (quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
 4. The default execution path uses four runners: `planner` promotes order/backlog/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/fail finalization. The verifier runner owns semantic review when the ticket enters the verifier lane.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
@@ -74,7 +74,7 @@ At the start of work, read in this order:
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
 9. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
 10. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's shell sanity gate (git diff ≥ 1 + every Done When `[x]`) blocks false pass mechanically.
+11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's mechanical sanity gate (git diff >= 1 + every Done When `[x]`) blocks false pass mechanically.
 12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
 14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
@@ -84,7 +84,7 @@ At the start of work, read in this order:
 18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
 19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
 20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
-21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.*` runs only after the AI-owned implementation and required verification/merge preparation have happened; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
+21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.ts` runs only after the AI-owned implementation and required verification/merge preparation have happened; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
@@ -107,7 +107,7 @@ Read:
 
 Do:
 
-- Run `scripts/start-spec.*` to reserve or resume a spec slot.
+- Run `scripts/start-spec.ts` to reserve or resume a spec slot.
 - Gather goal, scope, modules, allowed paths, acceptance criteria, and verification command through lightweight chat.
 - If the request spans multiple independent outcomes, modules, releases, or verification paths, propose a short PRD split map before drafting.
 - Use short questions and decision recaps; do not render the PRD template every turn.
@@ -175,7 +175,7 @@ Purpose: convert quick orders, populated specs, and reject reasons into todo tic
 Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
-- Use `scripts/runner-tool.js planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `scripts/start-plan.*` only for compatibility branches that have not yet been split into runner tools.
+- Use `scripts/runner-tool.ts planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `scripts/start-plan.ts` only for compatibility branches that have not yet been split into runner tools.
 - Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or rejects.
 - Generate todo ticket bodies from `Execution Candidates`.
@@ -193,7 +193,7 @@ Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
 - Resume owned inprogress work first.
-- Use `scripts/start-todo.*` and `scripts/handoff-todo.*`.
+- Use `scripts/start-todo.*` and `scripts/handoff-todo.js`.
 - Implement within `Allowed Paths`.
 - On completion, the worker finalizer takes over (atomic: verify → master merge → done).
 
@@ -201,7 +201,7 @@ Do not push.
 
 ### 6. Verifier Mode
 
-The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/fail through `scripts/runner-tool.js verifier ...`. Legacy `#veri` remains compatibility-only.
+The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/fail through `scripts/runner-tool.ts verifier ...`. Legacy `#veri` remains compatibility-only.
 
 ### 7. Coordinator Mode
 

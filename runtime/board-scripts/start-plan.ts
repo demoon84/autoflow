@@ -546,7 +546,7 @@ function createTodoTicketFromSpec(specFile: string): string {
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Change Type"));
   const verificationCommand = utils.extractScalarFieldInSection(archivedSpecFile, "Verification", "Command");
   const allowedPaths = extractBulletSection(archivedSpecFile, "Allowed Paths").map((p) => `- ${p}`).join("\n") || "- TODO: Plan AI must narrow this to concrete repo-relative paths before Impl AI claims.";
-  const doneWhen = extractChecklist(archivedSpecFile, "Global Acceptance Criteria").join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/reject";
+  const doneWhen = extractChecklist(archivedSpecFile, "Global Acceptance Criteria").join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/inbox-retry";
 
   fs.mkdirSync(path.dirname(ticketFile), { recursive: true });
   fs.writeFileSync(
