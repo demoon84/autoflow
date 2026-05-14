@@ -1,7 +1,7 @@
 # Worker Stop Investigation Progress
 
 - 2026-05-12 — Started worker stop investigation using systematic debugging and file-based planning. Checked existing dirty diff summary and prior session catchup; no fix attempted yet.
-- 2026-05-12 — Read Autoflow board contracts, runner config/state, live processes, ticket files, worktree diff, doctor, guard, and metrics. Evidence points to board/config/state corruption and duplicate worker ownership rather than a dead OS process.
+- 2026-05-12 — Read Autoflow board contracts, runner config/state, live processes, ticket files, worktree diff, doctor, guard, and metrics. Evidence points to board/config/state corruption and duplicate worker claim rather than a dead OS process.
 
 ---
 
@@ -18,7 +18,7 @@
 
 - 2026-05-12 — Started Worker runner-tool MVP using the same runner/runner-tool boundary as Planner: Worker decides; runner-tool performs narrow board, worktree, evidence, and mechanical check operations.
 - 2026-05-12 — Added Worker commands to `runner-tool.ts`: active lookup, todo snapshot, explicit claim, worktree ensure/status, stage/context updates, verification record, Done When check, diff check, and finish wrappers. Mirrored the tool into `.autoflow/scripts/`.
-- 2026-05-12 — Updated current/scaffold Worker instructions so new Worker flow starts with `runner-tool.js worker active-get/todo-snapshot/claim/worktree-ensure`, while legacy `start-ticket-owner.*` remains compatibility.
+- 2026-05-12 — Updated current/scaffold Worker instructions so new Worker flow starts with `runner-tool.js worker active-get/todo-snapshot/claim/worktree-ensure`, while legacy `start-ticket.*` remains compatibility.
 - 2026-05-12 — Verification passed: `worker-runner-tool-smoke.sh`, existing Planner runner-tool smoke, runtime companion smoke, Node wrapper checks, tsx command checks, current-board worker snapshot, and targeted whitespace/diff checks.
 - 2026-05-12 — Fixed `replaceScalarFieldInSection` so newly recorded Worker evidence fields are inserted inside the intended markdown section instead of drifting to file end; reran the same verification bundle successfully.
 
@@ -82,19 +82,19 @@
 - 2026-04-24 23:59 — Reverted the Obsidian-like setup screen back to the earlier board-first layout with a bottom project selector and `.autoflow` setup button.
 - 2026-04-25 13:39 — Started LangGraph feasibility review and separated it from the completed Electron visualizer plan.
 - 2026-04-25 13:42 — Read root README, board AGENTS guidance, generated board README, and root package scripts.
-- 2026-04-25 13:47 — Inspected CLI dispatch, runner invocation, ticket-owner runtime, verification/finish runtime, watcher dispatch, status/metrics, and desktop IPC/read boundaries.
+- 2026-04-25 13:47 — Inspected CLI dispatch, runner invocation, worker runtime, verification/finish runtime, watcher dispatch, status/metrics, and desktop IPC/read boundaries.
 - 2026-04-25 13:53 — Checked official LangGraph docs for overview, Graph API, persistence, durable execution, interrupts, functional API, JS v1 notes, and GitHub security advisories; checked current npm versions for relevant JS packages.
-- 2026-04-25 13:56 — Ran current board status and read runner config, ticket-owner agent contract, and watcher route settings.
-- 2026-04-25 14:00 — Completed recommendation: optional LangGraph-backed ticket-owner runner is viable; replacing the file-based board is not recommended.
+- 2026-04-25 13:56 — Ran current board status and read runner config, worker agent contract, and watcher route settings.
+- 2026-04-25 14:00 — Completed recommendation: optional LangGraph-backed worker runner is viable; replacing the file-based board is not recommended.
 - 2026-04-25 16:05 — Tokenized scaffold board path references with `{{BOARD_DIR}}` and verified init renders them to `.autoflow/`.
-- 2026-04-25 16:08 — Reworded README execution guidance around chat-authored specs, Ticket Owner default flow, and Desktop Flow Viewer runner controls.
+- 2026-04-25 16:08 — Reworded README execution guidance around chat-authored specs, Worker default flow, and Desktop Flow Viewer runner controls.
 - 2026-04-25 16:10 — Verified custom board directory init/status with `.teamflow` and clarified README/CLI docs that `BOARD_ROOT` is configurable.
 - 2026-04-25 16:12 — Added a README source-path responsibility table separating CLI/app source, scaffold source, runtime source, tests, and dogfood board state.
 - 2026-04-25 16:19 — Replaced the old public spec handoff chat command with `#af`, leaving `#af` and `#autoflow` as the documented handoff triggers.
 - 2026-04-25 18:33 — Started desktop tabs layout change; current UI uses a two-column `workspace-layout` with `settings-area` sidebar and `dashboard-area` progress content.
 - 2026-04-25 18:35 — Converted desktop layout to `진행 상태` and `설정` tabs, rebuilt `apps/desktop/dist/renderer`, and visually verified both tabs in Electron.
 - 2026-04-25 20:54 — Started essential-decision UI simplification after user feedback that the service has too many unnecessary UI features.
-- 2026-04-25 20:55 — Read Autoflow board rules, ticket-owner guidance, current planning files, session catchup, and dirty worktree summary before editing UI.
+- 2026-04-25 20:55 — Read Autoflow board rules, worker guidance, current planning files, session catchup, and dirty worktree summary before editing UI.
 - 2026-04-25 20:58 — Mapped desktop UI controls and identified operational controls to remove from the visible renderer surface.
 - 2026-04-25 21:03 — User clarified the sidebar UI must remain; restored the renderer root to the existing sidebar-based `App` and rebuilt desktop assets.
 - 2026-04-25 21:05 — Verification passed: `npm --prefix apps/desktop run build`, `npm --prefix apps/desktop run check`, and targeted `git diff --check`.
@@ -110,14 +110,14 @@
 - 2026-04-26 00:00 — Added `완료 커밋`, `변경 코드량`, and `코드 영향` report surfaces to the desktop `처리 지표` view.
 - 2026-04-26 00:00 — Re-verified CLI metrics output, desktop `npm --prefix apps/desktop run check`, whitespace checks, and visual rendering of the new report cards/charts in Electron.
 - 2026-04-26 12:13 — Completed GitHub competitive scan across direct coding agents, desktop/agent workspace apps, PRD task managers, and GitHub Agent HQ. Conclusion: Autoflow is not competitive as a direct coding agent UI, but has a viable wedge as a repo-local agent work harness if worktree reliability, blocked-ticket UX, GitHub integration, packaging, and sandbox story are strengthened.
-- 2026-04-26 13:20 — Started blocked-runner status debug after screenshot showed repeated `막힘` pills on active Ticket Owner runners. Read systematic debugging instructions, planning-file workflow, and required Autoflow board contracts.
-- 2026-04-26 13:26 — Stopped worker through owner-5 with `autoflow runners stop`, confirmed no current-project runner/codex processes remain, archived worktree status/diffs under `.autoflow/logs/worktree-cleanup_20260426T042800Z/`, removed all registered Autoflow ticket worktrees, pruned the worktree registry, and cleared stale active ticket metadata from stopped runner state files.
+- 2026-04-26 13:20 — Started blocked-runner status debug after screenshot showed repeated `막힘` pills on active Worker runners. Read systematic debugging instructions, planning-file workflow, and required Autoflow board contracts.
+- 2026-04-26 13:26 — Stopped worker through worker-5 with `autoflow runners stop`, confirmed no current-project runner/codex processes remain, archived worktree status/diffs under `.autoflow/logs/worktree-cleanup_20260426T042800Z/`, removed all registered Autoflow ticket worktrees, pruned the worktree registry, and cleared stale active ticket metadata from stopped runner state files.
 - 2026-04-26 13:27 — A first archive command used newline-separated worktrees incorrectly under zsh and only created a partial `worktree-cleanup_20260426T042748Z`; removed that partial artifact after rerunning the archive safely with `while read`.
 - 2026-04-26 13:29 — Replanned the remaining reject ticket with `replan_reject_to_todo`: `.autoflow/tickets/reject/reject_006.md` moved to `.autoflow/tickets/todo/tickets_006.md`. Verified metrics now report `reject_count=0` and `ticket_todo_count=1`.
-- 2026-04-26 13:31 — Reset all active PRD/ticket work to execution wait: tickets 001, 003, 004, 005, 006, and 007 are now in `.autoflow/tickets/todo/`; `inprogress/` is empty, reject count is 0, and all current-project owners remain stopped.
+- 2026-04-26 13:31 — Reset all active PRD/ticket work to execution wait: tickets 001, 003, 004, 005, 006, and 007 are now in `.autoflow/tickets/todo/`; `inprogress/` is empty, reject count is 0, and all current-project workers remain stopped.
 - 2026-04-26 13:33 — Reset `.autoflow/tickets/` to PRD-only state. PRDs 001 through 010 are now in backlog; no generated tickets, done tickets, reject files, or verifier files remain under `.autoflow/tickets/`.
 - 2026-04-26 13:38 — Reset processing metrics: emptied `.autoflow/metrics/daily.jsonl`, archived 39 verifier completion logs outside `.autoflow/logs`, verified metrics now report zero ticket/verifier/code-work counts, and corrected the desktop `AI 산출물` card to exclude non-applicable runner entries.
-- 2026-04-26 13:48 — Reproduced "blocked from start": owner runners 2-5 immediately blocked because dirty root Allowed Paths forced `project_root_fallback`, so overlapping desktop renderer paths were treated as shared locks instead of isolated ticket worktree edits. Stopped all five owner runners to freeze evidence before patching.
+- 2026-04-26 13:48 — Reproduced "blocked from start": worker runners 2-5 immediately blocked because dirty root Allowed Paths forced `project_root_fallback`, so overlapping desktop renderer paths were treated as shared locks instead of isolated ticket worktree edits. Stopped all five worker runners to freeze evidence before patching.
 - 2026-04-26 13:51 — Patched worktree fallback mode: default `auto` now creates ticket worktrees despite dirty root Allowed Paths, while `project-root-on-dirty` preserves the old shared-path serialization behavior for explicit fallback mode. Added a dirty-root worktree smoke test and updated the fallback smoke test.
 - 2026-04-26 13:51 — Reset the live board after the blocked-start reproduction: tickets are PRD-only again, all five runners are stopped with no active ticket metadata, and no extra git worktrees or ticket branches are registered.
 - 2026-04-26 15:05 — Started processing metrics extension for code change volume and token usage. Confirmed code-volume fields already exist and found Codex token usage summaries in runner stdout logs.
@@ -127,7 +127,7 @@
 - 2026-04-26 20:50 — Started Doctor Agent work after repeated `막힘` states. Confirmed existing `autoflow doctor` is scaffold-focused and needs active-ticket dependency/worktree diagnostics plus optional runner-role wiring.
 - 2026-04-26 20:58 — Extended Bash `autoflow doctor` with active-ticket shared Allowed Path blockers, dirty `PROJECT_ROOT` overlap, worktree health, risk hints, and shared non-base HEAD grouping.
 - 2026-04-26 21:03 — Added an initial `doctor` runner role, created Doctor Agent instructions, added a default doctor runner to the scaffold/current board config, and added a blocked-ticket smoke test.
-- 2026-04-26 21:10 — Verification found and fixed an unrelated `merge-ready-ticket.sh` cleanup `git_root` scope bug so the existing `ticket-owner-smoke` passes with the new default runner set.
+- 2026-04-26 21:10 — Verification found and fixed an unrelated `merge-ready-ticket.sh` cleanup `git_root` scope bug so the existing `worker-smoke` passes with the new default runner set.
 - 2026-04-26 21:15 — Adjusted the default doctor runner from shell to Codex AI. The deterministic shell scanner remains `autoflow doctor`, and smoke coverage uses a dedicated shell runner.
 - 2026-04-26 21:22 — Reframed the AI role as `coordinator`: diagnostics stay in `autoflow doctor`, while `autoflow run coordinator` runs diagnostics and processes exactly one ready-to-merge ticket when present.
 - 2026-04-26 21:30 — Removed the merge-bot runner from the default workflow. `coordinator-1` is now the only ready-to-merge workflow runner; the merge script remains an internal coordinator implementation detail.
@@ -135,10 +135,10 @@
 - 2026-04-26 21:48 — Fixed macOS loop startup by using a Python `start_new_session` fallback when `setsid` is unavailable, and added smoke coverage that starts/lists/stops a loop coordinator runner.
 - 2026-04-26 21:55 — Fixed coordinator AI recursion: adapter prompts and coordinator instructions now forbid starting/running the coordinator from inside its own turn. Restarted live `coordinator-1`; its first tick recorded `result=blocked`, `ready_to_merge_count=0`, root blocker `tickets_001`, three shared-path blocked tickets, and one shared non-base HEAD group.
 - 2026-04-26 22:00 — Started coordinator wiki-role expansion. Read board contracts plus coordinator and wiki-maintainer prompts; current direction is to fold derived wiki maintenance into Coordinator Mode without changing wiki source-of-truth boundaries.
-- 2026-04-26 22:07 — Wired coordinator as a wiki-capable adapter: `autoflow run wiki` accepts coordinator runners, wiki query/lint falls back from legacy wiki-maintainer to coordinator, post-merge wiki maintenance can select coordinator, and current/scaffold docs/config now describe coordinator-backed wiki-bot ownership.
-- 2026-04-26 22:13 — Verification passed for the coordinator/wiki expansion: shell syntax checks, ticket-owner coordinator merge smoke, blocked-ticket coordinator smoke, temp wiki synth/semantic coordinator fallback checks, runtime/current-board mirror diffs, `autoflow metrics`, and targeted `git diff --check`.
+- 2026-04-26 22:07 — Wired coordinator as a wiki-capable adapter: `autoflow run wiki` accepts coordinator runners, wiki query/lint falls back from legacy wiki-maintainer to coordinator, post-merge wiki maintenance can select coordinator, and current/scaffold docs/config now describe coordinator-backed wiki-bot claim.
+- 2026-04-26 22:13 — Verification passed for the coordinator/wiki expansion: shell syntax checks, worker coordinator merge smoke, blocked-ticket coordinator smoke, temp wiki synth/semantic coordinator fallback checks, runtime/current-board mirror diffs, `autoflow metrics`, and targeted `git diff --check`.
 - 2026-04-27 — Started Korean terminal AI response work. Session catchup found prior PRD handoff context only; current repo remains heavily dirty from existing Autoflow/Desktop work, so this pass will keep edits scoped to prompt/runtime language behavior.
-- 2026-04-27 — Read required Autoflow board docs and Ticket Owner instructions. Key boundary: board contracts stay English; terminal-facing AI responses should be controlled in generated prompts.
+- 2026-04-27 — Read required Autoflow board docs and Worker instructions. Key boundary: board contracts stay English; terminal-facing AI responses should be controlled in generated prompts.
 - 2026-04-27 — Traced runner prompt generation to `packages/cli/run-role.sh`, packaged runtime prompt generation to `runtime/board-scripts/run-role.sh`, and wiki synthesis prompts to `packages/cli/wiki-project.sh`.
 - 2026-04-27 — Added prompt-level language policy to runner adapter prompts, wiki synth/lint prompts, hook prompts, heartbeat templates, and AGENTS guidance: visible prose Korean by default; parser-sensitive formats unchanged.
 - 2026-04-27 — Verification: `bash -n` passed for changed shell scripts; targeted `git diff --check` passed; disposable `autoflow run ticket --dry-run` prompt includes the Language policy; heartbeat templates and wiki prompts contain the Korean-output directives.
@@ -148,5 +148,5 @@
 - 2026-04-29 — Patched planner preflight so idle planner runtime exits before Codex adapter launch; memo contracts now treat inbox memos as implementation directives, including scaffold/current docs and memo creation hooks.
 - 2026-04-29 — Compressed the repeated `memo_005` planner notes, marked it ready, and observed the live planner promote it into `prd_039` / `tickets_039`.
 - 2026-04-29 — Added runtime duplicate protection for already-promoted memo sources and automatic source memo archiving during backlog-to-todo ticket creation; moved `memo_005` to `tickets/done/prd_039/memo_005.md`.
-- 2026-04-29 — Verification passed: shell syntax checks, `tests/smoke/ticket-owner-smoke.sh`, targeted `git diff --check`, and runtime preflight now selects `memo_011` rather than reprocessing `memo_005`.
+- 2026-04-29 — Verification passed: shell syntax checks, `tests/smoke/worker-smoke.sh`, targeted `git diff --check`, and runtime preflight now selects `memo_011` rather than reprocessing `memo_005`.
 - 2026-04-29 — Lowered live `planner` reasoning from `xhigh` to `medium` and terminated the already-running xhigh planner adapter tick while keeping the planner loop runner itself alive.

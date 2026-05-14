@@ -423,7 +423,7 @@ Files likely to change:
 - `scripts/cli/run-role.sh`
 - `scripts/cli/run-role.ps1`
 - `scripts/runtime/start-plan.sh`
-- `scripts/runtime/start-todo.sh`
+- `scripts/runtime/start-todo.ts`
 - `scripts/runtime/start-verifier.sh`
 - role agent docs if command examples need updates
 
@@ -565,7 +565,7 @@ Work items:
 - Runner lease and stale lock detection.
 - Dirty worktree checks before verifier integration.
 - Risk tier field for tickets.
-- Verifier owner must differ from execution owner for high-risk tickets.
+- Verifier worker must differ from execution worker for high-risk tickets.
 - Event log for state transitions.
 - Doctor checks for runner and wiki health.
 

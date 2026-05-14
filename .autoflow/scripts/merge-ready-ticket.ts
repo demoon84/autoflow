@@ -3,7 +3,7 @@
  * merge-ready-ticket.ts
  *
  * Cross-platform merge finalization shim. The durable finalization logic lives
- * in finish-ticket-owner.ts; this command preserves the historical manual
+ * in finish-ticket.ts; this command preserves the historical manual
  * merge entrypoint without delegating to shell.
  */
 
@@ -28,7 +28,7 @@ if (!ticketRef) {
 
 const ticketFile = resolveTicketFile(ticketRef);
 const summary = ticketFile ? scalar(ticketFile, "Result", "Summary") || "merge ready ticket" : "merge ready ticket";
-const finishTs = path.join(scriptDir, "finish-ticket-owner.ts");
+const finishTs = path.join(scriptDir, "finish-ticket.ts");
 const runner = tsxCommand();
 const result = spawnSync(runner.command, [...runner.args, finishTs, ticketRef, "pass", summary], {
   cwd: boardRoot,
@@ -39,7 +39,6 @@ const result = spawnSync(runner.command, [...runner.args, finishTs, ticketRef, "
     BOARD_ROOT: boardRoot,
     PROJECT_ROOT: projectRoot,
     AUTOFLOW_ROLE: "merge",
-    AUTOFLOW_SKIP_VERIFIER: "1",
   },
   stdio: "inherit",
 });

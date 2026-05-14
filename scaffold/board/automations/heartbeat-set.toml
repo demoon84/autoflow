@@ -4,7 +4,7 @@ set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
 board_root = "{{BOARD_DIR}}/"
 
-owner_workers = ["worker"]
+worker_runners = ["worker"]
 planner_workers = ["planner"]
 wiki_workers = ["wiki"]
 verifier_workers = ["verifier"]
@@ -17,7 +17,7 @@ execution_pool = ""
 verifier_pool = ""
 max_execution_load_per_worker = 1
 
-owner_template = "automations/templates/ticket-owner-heartbeat.template.toml"
+worker_template = "automations/templates/worker-heartbeat.template.toml"
 plan_template = "automations/templates/plan-heartbeat.template.toml"
 todo_template = "automations/templates/todo-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"

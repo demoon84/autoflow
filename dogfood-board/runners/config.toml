@@ -6,7 +6,7 @@
 
 [[runners]]
 id = "worker"
-role = "ticket-owner"
+role = "worker"
 agent = "codex"
 model = ""
 reasoning = ""

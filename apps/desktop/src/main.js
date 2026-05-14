@@ -46,28 +46,29 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
-// Roles accepted by `autoflow run <role>` per packages/cli/run-role.sh
+// Roles accepted by `autoflow run <role>` per packages/cli/run-role.ts
 // case statement. Active: ticket / planner / wiki (with their
-// owner/ticket-owner, plan, wiki-maintainer aliases). Legacy: todo,
-// coordinator (+ coord/doctor/diagnose aliases), merge / merge-bot.
+// worker, plan, wiki-maintainer aliases). Legacy: todo, coordinator
+// (+ coord/doctor/diagnose aliases), merge / merge-bot.
 // Trial: self-improve (+ self_improve/selfimprove).
 const allowedRunRoles = new Set([
-  "ticket", "ticket-owner", "owner",
+  "ticket", "worker",
   "planner", "plan",
+  "verifier",
   "wiki", "wiki-maintainer",
   "todo",
   "coordinator", "coord", "doctor", "diagnose",
   "merge", "merge-bot",
   "self-improve", "self_improve", "selfimprove"
 ]);
-// Active: ticket-owner / planner / wiki-maintainer (with legacy
-// aliases owner / plan / wiki). Legacy/back-compat: todo,
-// coordinator (+ aliases coord/doctor/diagnose), merge / merge-bot,
-// watcher. Trial (disabled by default): self-improve.
-// Mirrors `runner_allowed_role` in packages/cli/runners-project.sh.
+// Active: worker / planner / verifier / wiki-maintainer (with plan / wiki
+// aliases). Legacy/back-compat: todo, coordinator (+ aliases
+// coord/doctor/diagnose), merge / merge-bot, watcher.
+// Mirrors runner role validation in packages/cli/runners-project.ts.
 const allowedRunnerRoles = new Set([
-  "ticket-owner", "owner", "ticket",
+  "worker", "ticket",
   "planner", "plan",
+  "verifier",
   "wiki-maintainer", "wiki",
   "todo",
   "coordinator", "coord", "doctor", "diagnose",
@@ -126,7 +127,7 @@ const metricSnapshotKeys = [
   "spec_total",
   "ticket_done_count",
   "active_ticket_count",
-  "reject_count",
+  "retry_order_count",
   "handoff_count",
   "runner_total_count",
   "runner_running_count",
@@ -222,6 +223,43 @@ function parseTomlStringValue(rawValue) {
   }
 
   return value.split(/\s+/)[0] || "";
+}
+
+function readRunnerConfigBlock(projectRoot, boardDirName, runnerId) {
+  if (!projectRoot || !runnerId) return {};
+  const configPath = (() => {
+    const local = path.join(projectRoot, boardDirName || defaultBoardDirName, "runners", "config.local.toml");
+    const base = path.join(projectRoot, boardDirName || defaultBoardDirName, "runners", "config.toml");
+    return fsSync.existsSync(local) ? local : base;
+  })();
+  let text = "";
+  try {
+    text = fsSync.readFileSync(configPath, "utf8");
+  } catch {
+    return {};
+  }
+  const blocks = text.split(/\[\[runners\]\]/).slice(1);
+  for (const block of blocks) {
+    const values = {};
+    for (const rawLine of block.split(/\r?\n/)) {
+      const line = stripTomlComment(rawLine).trim();
+      const match = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
+      if (!match) continue;
+      values[match[1]] = parseTomlStringValue(match[2]);
+    }
+    if (values.id === runnerId) {
+      return values;
+    }
+  }
+  return {};
+}
+
+function inferRunnerRoleFromId(runnerId) {
+  const id = String(runnerId || "").toLowerCase();
+  if (id === "worker" || id.startsWith("worker-")) return "worker";
+  if (id === "wiki" || id.startsWith("wiki-")) return "wiki-maintainer";
+  if (id === "verifier" || id.startsWith("verifier-")) return "verifier";
+  return "planner";
 }
 
 function supportedCodexProfile(model, reasoning) {
@@ -590,177 +628,6 @@ function reapPreviousPtySessionPids() {
 // prompts and main can update the runner state file on lifecycle events.
 //   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
-// runnerId -> live claude session-log watcher state
-const ptyRunnerTokenWatchers = new Map();
-
-function claudeProjectsDirForProjectRoot(projectRoot) {
-  const home = os.homedir();
-  const projectKey = path.resolve(projectRoot).replace(/[\\/]/g, "-");
-  return path.join(home, ".claude", "projects", projectKey);
-}
-
-function extractClaudeUsageTotalFromJsonLine(line) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed.startsWith("{")) return { increment: 0, lastTurn: 0 };
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return { increment: 0, lastTurn: 0 };
-  }
-  const usage = parsed?.usage;
-  if (!usage || typeof usage !== "object") return { increment: 0, lastTurn: 0 };
-  const input = positiveIntegerValue(usage.input_tokens);
-  const output = positiveIntegerValue(usage.output_tokens);
-  const cacheRead = positiveIntegerValue(usage.cache_read_input_tokens);
-  const cacheCreate = positiveIntegerValue(usage.cache_creation_input_tokens);
-  const total = input + output + cacheRead + cacheCreate;
-  if (total <= 0) return { increment: 0, lastTurn: 0 };
-  if (parsed?.type === "result" || parsed?.type === "message_delta") {
-    return { increment: total, lastTurn: total };
-  }
-  return { increment: total, lastTurn: 0 };
-}
-
-async function createClaudeTokenWatcher({ runnerId, projectRoot, boardDirName, broadcastPty }) {
-  const sessionsDir = claudeProjectsDirForProjectRoot(projectRoot);
-  let entries = [];
-  try {
-    entries = await fs.readdir(sessionsDir, { withFileTypes: true });
-  } catch {
-    // No claude project session dir yet: start empty and retry on poll.
-  }
-
-  const offsets = new Map();
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-    const fp = path.join(sessionsDir, entry.name);
-    try {
-      const stat = await fs.stat(fp);
-      offsets.set(fp, stat.size);
-    } catch {}
-  }
-
-  const state = {
-    runnerId,
-    projectRoot,
-    boardDirName,
-    sessionsDir,
-    offsets,
-    tails: new Map(),
-    cumulativeTokens: 0,
-    lastTurnTokens: 0,
-    timer: null,
-    disposed: false
-  };
-
-  const publish = async () => {
-    // Precedence: if the runner is actively reporting tokens via
-    // `runner-tokens.js report` (token_source=llm_reported), the LLM's own
-    // counts are authoritative — don't clobber them with session-log derived
-    // values. Only update last_event_at so liveness stays fresh.
-    let existingSource = "";
-    try {
-      const meta = ptyRunnerMeta.get(runnerId);
-      if (meta) {
-        const statePath = path.join(meta.projectRoot, meta.boardDirName, "runners", "state", `${runnerId}.state`);
-        const raw = await fs.readFile(statePath, "utf8").catch(() => "");
-        const m = raw.match(/(?:^|\n)token_source=([^\n]*)/);
-        if (m) existingSource = m[1].trim();
-      }
-    } catch {}
-    const llmReporting = existingSource === "llm_reported";
-    const fields = llmReporting
-      ? { last_event_at: new Date().toISOString() }
-      : {
-          cumulative_tokens: String(state.cumulativeTokens),
-          last_turn_tokens: String(state.lastTurnTokens),
-          token_source: "session_log",
-          last_token_usage_source: "session_log",
-          last_event_at: new Date().toISOString()
-        };
-    await writePtyRunnerStateFile(runnerId, fields);
-    broadcastPty("autoflow:runnerTokenUpdate", {
-      runnerId,
-      cumulativeTokens: llmReporting ? undefined : state.cumulativeTokens,
-      lastTurnTokens: llmReporting ? undefined : state.lastTurnTokens,
-      tokenSource: llmReporting ? "llm_reported" : "session_log"
-    });
-  };
-
-  const poll = async () => {
-    if (state.disposed) return;
-    let sessionEntries = [];
-    try {
-      sessionEntries = await fs.readdir(state.sessionsDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of sessionEntries) {
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      const filePath = path.join(state.sessionsDir, entry.name);
-      let stat;
-      try {
-        stat = await fs.stat(filePath);
-      } catch {
-        continue;
-      }
-      const prevOffset = state.offsets.get(filePath) ?? 0;
-      const startOffset = Math.max(0, Math.min(prevOffset, stat.size));
-      const readLength = stat.size - startOffset;
-      if (readLength <= 0) continue;
-      let chunk = "";
-      let handle;
-      try {
-        handle = await fs.open(filePath, "r");
-        const buffer = Buffer.allocUnsafe(readLength);
-        await handle.read(buffer, 0, readLength, startOffset);
-        chunk = buffer.toString("utf8");
-      } catch {
-        continue;
-      } finally {
-        if (handle) await handle.close().catch(() => {});
-      }
-      state.offsets.set(filePath, stat.size);
-      const combined = (state.tails.get(filePath) || "") + chunk;
-      const lines = combined.split("\n");
-      state.tails.set(filePath, lines.pop() || "");
-      for (const line of lines) {
-        const usage = extractClaudeUsageTotalFromJsonLine(line);
-        if (usage.increment > 0) {
-          state.cumulativeTokens += usage.increment;
-        }
-        if (usage.lastTurn > 0) {
-          state.lastTurnTokens = usage.lastTurn;
-        }
-      }
-    }
-    await publish();
-  };
-
-  // Race fix: do NOT publish at watcher-creation time. The spawn flow writes
-  // the runner's identity fields (id/status/mode/pid/role/agent) AFTER this
-  // watcher is created, so an immediate publish() would create a state file
-  // with only token fields and leave it partial until subsequent merges. By
-  // delaying the first publish, we let the spawn's writePtyRunnerStateFile
-  // land first. defensive merge in writePtyRunnerStateFile is the safety
-  // net for any remaining races.
-  setTimeout(() => { void publish(); }, 2000);
-  state.timer = setInterval(() => {
-    void poll();
-  }, 1200);
-  if (state.timer && typeof state.timer.unref === "function") {
-    state.timer.unref();
-  }
-  return {
-    dispose: () => {
-      if (state.disposed) return;
-      state.disposed = true;
-      if (state.timer) clearInterval(state.timer);
-    }
-  };
-}
-
 // Per-runner safety-poll state: idle detection + queue fingerprint cache.
 //   runnerId -> { lastWakeAt: number (ms epoch), queueFingerprint: string }
 const wakePollState = new Map();
@@ -768,9 +635,48 @@ const wakePollState = new Map();
 // Safety poller handles per scope key — prevents duplicate setIntervals.
 const wakeSafetyPollers = new Map();
 
+function migrateLegacyTicketQueueSync(boardRoot, fromName, toName) {
+  try {
+    const ticketsRoot = path.join(boardRoot, "tickets");
+    const fromDir = path.join(ticketsRoot, fromName);
+    const toDir = path.join(ticketsRoot, toName);
+    if (!fsSync.existsSync(fromDir)) return;
+    fsSync.mkdirSync(toDir, { recursive: true });
+    for (const name of fsSync.readdirSync(fromDir)) {
+      const from = path.join(fromDir, name);
+      const to = path.join(toDir, name);
+      let stat;
+      try {
+        stat = fsSync.statSync(from);
+      } catch {
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      if (fsSync.existsSync(to)) {
+        if (name === ".gitkeep") fsSync.rmSync(from, { force: true });
+        continue;
+      }
+      fsSync.renameSync(from, to);
+    }
+    try {
+      fsSync.rmdirSync(fromDir);
+    } catch {
+      // Leave unresolved legacy conflicts visible rather than deleting evidence.
+    }
+  } catch {
+    // best-effort migration; callers still inspect both legacy and current dirs.
+  }
+}
+
+function migrateLegacyTicketQueuesSync(boardRoot) {
+  migrateLegacyTicketQueueSync(boardRoot, "inbox", "order");
+  migrateLegacyTicketQueueSync(boardRoot, "backlog", "prd");
+}
+
 // Return true if the role has actionable work in its queue directories.
 function queueHasPendingWork(role, boardRoot) {
   try {
+    migrateLegacyTicketQueuesSync(boardRoot);
     const check = (dir, pattern) => {
       const full = path.join(boardRoot, dir);
       if (!fsSync.existsSync(full)) return false;
@@ -778,15 +684,20 @@ function queueHasPendingWork(role, boardRoot) {
     };
     if (role === "planner") {
       return (
+        check("tickets/order", /^order_.*\.md$/) ||
+        check("tickets/prd", /^prd_.*\.md$/) ||
         check("tickets/inbox", /^order_.*\.md$/) ||
-        check("tickets/backlog", /^prd_.*\.md$/)
+        check("tickets/backlog", /^(prd|project)_.*\.md$/)
       );
     }
-    if (role === "ticket-owner") {
+    if (role === "worker") {
       return (
         check("tickets/inprogress", /^Todo-\d+\.md$/) ||
         check("tickets/todo", /^Todo-\d+\.md$/)
       );
+    }
+    if (role === "verifier") {
+      return check("tickets/verifier", /^Todo-\d+\.md$/);
     }
     if (role === "wiki-maintainer") {
       return check("tickets/done", /\.md$/);
@@ -802,9 +713,12 @@ function queueHasPendingWork(role, boardRoot) {
 function computeQueueFingerprint(role, boardRoot) {
   const dirs = [];
   if (role === "planner") {
-    dirs.push("tickets/inbox", "tickets/backlog");
-  } else if (role === "ticket-owner") {
+    migrateLegacyTicketQueuesSync(boardRoot);
+    dirs.push("tickets/order", "tickets/prd", "tickets/inbox", "tickets/backlog");
+  } else if (role === "worker") {
     dirs.push("tickets/inprogress", "tickets/todo");
+  } else if (role === "verifier") {
+    dirs.push("tickets/verifier");
   } else if (role === "wiki-maintainer") {
     dirs.push("tickets/done");
   }
@@ -976,17 +890,27 @@ function updateWakeActivity(runnerId) {
 }
 
 // Map a board-relative change path to the role that owns it.
-//   tickets/inbox/  / tickets/backlog/  -> planner
-//   tickets/todo/                       -> ticket-owner
+//   tickets/order/  / tickets/prd/      -> planner
+//   legacy tickets/inbox/ / tickets/backlog/ -> planner migration fallback
+//   tickets/todo/                       -> worker
+//   tickets/verifier/                   -> verifier
 //   tickets/done/   / wiki/             -> wiki-maintainer
 function rolesForBoardChange(relPath) {
   const p = String(relPath || "");
   if (!p) return [];
-  if (p.startsWith("tickets/inbox/") || p.startsWith("tickets/backlog/") || p.startsWith("tickets/reject/")) {
+  if (
+    p.startsWith("tickets/order/") ||
+    p.startsWith("tickets/prd/") ||
+    p.startsWith("tickets/inbox/") ||
+    p.startsWith("tickets/backlog/")
+  ) {
     return ["planner"];
   }
   if (p.startsWith("tickets/todo/") || p.startsWith("tickets/inprogress/")) {
-    return ["ticket-owner"];
+    return ["worker"];
+  }
+  if (p.startsWith("tickets/verifier/")) {
+    return ["verifier"];
   }
   if (p.startsWith("tickets/done/") || p.startsWith("wiki/")) {
     return ["wiki-maintainer"];
@@ -996,7 +920,7 @@ function rolesForBoardChange(relPath) {
 
 // Persist a minimal state file so the renderer's existing UI (slider /
 // badges / activity card) keeps working even though the legacy
-// runners-project.sh path is no longer the source of truth.
+// runners-project.ts path is no longer the source of truth.
 async function writePtyRunnerStateFile(runnerId, fields) {
   try {
     const meta = ptyRunnerMeta.get(runnerId);
@@ -1030,6 +954,9 @@ async function writePtyRunnerStateFile(runnerId, fields) {
       if (!lines.has("pid") && ptyRunner.pid) lines.set("pid", String(ptyRunner.pid));
       if (!lines.has("started_at") && meta.startedAt) lines.set("started_at", meta.startedAt);
     }
+    for (const [key, value] of Object.entries(runnerTokenStateDefaults)) {
+      if (!lines.has(key)) lines.set(key, value);
+    }
     for (const [k, v] of Object.entries(fields || {})) {
       if (v === undefined || v === null) continue;
       lines.set(k, String(v));
@@ -1038,7 +965,9 @@ async function writePtyRunnerStateFile(runnerId, fields) {
     const out = Array.from(lines.entries())
       .map(([k, v]) => `${k}=${v}`)
       .join("\n");
-    await fs.writeFile(statePath, `${out}\n`, "utf8");
+    const tmpPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tmpPath, `${out}\n`, "utf8");
+    await fs.rename(tmpPath, statePath);
   } catch (err) {
     // best-effort; UI can fall back to other signals
   }
@@ -1053,7 +982,8 @@ function buildAgentCliCommand(agent, model, reasoning) {
   switch (String(agent || "").toLowerCase()) {
     case "claude": {
       parts.push("claude", "--dangerously-skip-permissions",
-        "--permission-mode", "bypassPermissions");
+        "--permission-mode", "bypassPermissions",
+        "--plugin-dir", ".claude/autoflow-plugin");
       if (model) parts.push("--model", model);
       if (reasoning) parts.push("--effort", reasoning);
       break;
@@ -1081,57 +1011,132 @@ function buildAgentCliCommand(agent, model, reasoning) {
     .join(" ");
 }
 
-// Initial prompt sent once after the agent CLI is up. Keep it tiny — the
-// agent reads role instructions / AGENTS.md via its own tools (one-time
-// per session), so we don't inline them here. fs.watch wakes will push
-// short follow-up prompts when new orders/tickets arrive.
+function normalizeRunnerRole(role) {
+  const value = String(role || "").toLowerCase();
+  if (value === "plan") return "planner";
+  if (value === "ticket") return "worker";
+  if (value === "wiki") return "wiki-maintainer";
+  if (value === "verify") return "verifier";
+  if (["coord", "doctor", "diagnose"].includes(value)) return "coordinator";
+  if (value === "merge") return "merge-bot";
+  if (value === "self_improve" || value === "selfimprove") return "self-improve";
+  return value || "planner";
+}
+
+function roleInstructionPath(boardRoot, role) {
+  switch (normalizeRunnerRole(role)) {
+    case "planner":
+      return path.join(boardRoot, "agents", "plan-to-ticket-agent.md");
+    case "worker":
+      return path.join(boardRoot, "agents", "worker-agent.md");
+    case "verifier":
+      return path.join(boardRoot, "agents", "verifier-agent.md");
+    case "wiki-maintainer":
+      return path.join(boardRoot, "agents", "wiki-maintainer-agent.md");
+    case "todo":
+      return path.join(boardRoot, "agents", "todo-queue-agent.md");
+    case "merge-bot":
+      return path.join(boardRoot, "agents", "merge-bot-agent.md");
+    default:
+      return path.join(boardRoot, "agents", "coordinator-agent.md");
+  }
+}
+
+function startupRulesPath(boardRoot, role) {
+  switch (normalizeRunnerRole(role)) {
+    case "planner":
+      return path.join(boardRoot, "reference", "runner-startup-rules", "planner.md");
+    case "worker":
+      return path.join(boardRoot, "reference", "runner-startup-rules", "worker.md");
+    case "verifier":
+      return path.join(boardRoot, "reference", "runner-startup-rules", "verifier.md");
+    case "wiki-maintainer":
+      return path.join(boardRoot, "reference", "runner-startup-rules", "wiki-maintainer.md");
+    default:
+      return "";
+  }
+}
+
+function commonStartupRulesPath(boardRoot) {
+  return path.join(boardRoot, "reference", "runner-startup-common.md");
+}
+
+function readPromptDoc(filePath, maxChars = 16000) {
+  if (!filePath) return "";
+  try {
+    const content = fsSync.readFileSync(filePath, "utf8").trim();
+    if (!content) return "";
+    if (content.length <= maxChars) return content;
+    return `${content.slice(0, maxChars)}\n\n[... truncated by Desktop runner startup prompt at ${maxChars} chars ...]`;
+  } catch {
+    return "";
+  }
+}
+
+function injectedDocBlock(label, filePath, content) {
+  if (!filePath) return "";
+  return [
+    `--- ${label}: ${filePath} ---`,
+    content || `[missing or empty: ${filePath}]`,
+    `--- end ${label} ---`
+  ].join("\n");
+}
+
+function uniquePaths(paths) {
+  const seen = new Set();
+  return paths.filter((candidate) => {
+    if (!candidate || seen.has(candidate)) return false;
+    seen.add(candidate);
+    return true;
+  });
+}
+
+// Initial prompt sent once after the agent CLI is up. The Desktop start button
+// injects compact common + role startup rules immediately, then points the
+// runner at the full role/project contracts for one-time startup reads.
 function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot, boardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
   const wikiRoot = path.join(boardRoot, "wiki");
-  const roleInstruction = (() => {
-    switch (role) {
-      case "planner":
-      case "plan":
-        return path.join(boardRoot, "agents", "plan-to-ticket-agent.md");
-      case "ticket-owner":
-      case "ticket":
-      case "owner":
-        return path.join(boardRoot, "agents", "ticket-owner-agent.md");
-      case "wiki-maintainer":
-      case "wiki":
-        return path.join(boardRoot, "agents", "wiki-maintainer-agent.md");
-      default:
-        return path.join(boardRoot, "agents", "coordinator-agent.md");
-    }
-  })();
+  const normalizedRole = normalizeRunnerRole(role);
+  const roleInstruction = roleInstructionPath(boardRoot, role);
+  const commonRulesPath = commonStartupRulesPath(boardRoot);
+  const roleRulesPath = startupRulesPath(boardRoot, role);
+  const commonRules = readPromptDoc(commonRulesPath);
+  const roleRules = readPromptDoc(roleRulesPath);
+  const runnerWakeScript = path.join(boardRoot, "scripts", "runner-wake.js");
+  const runnerStageScript = path.join(boardRoot, "scripts", "runner-stage.js");
+  const runnerTokensScript = path.join(boardRoot, "scripts", "runner-tokens.js");
   // Role-specific "what to scan FIRST" so the runner picks up pre-existing
   // pending work instead of idling until a fresh fs.watch event.
   const startupScan = (() => {
-    switch (role) {
+    switch (normalizedRole) {
       case "planner":
-      case "plan":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. List ${path.join(ticketsRoot, "inbox")} — process every order_*.md (oldest first, priority-aware).`,
-          `  2. List ${path.join(ticketsRoot, "backlog")} — promote populated PRDs to todo tickets per the cross-category rule.`,
+          `  1. List ${path.join(ticketsRoot, "order")} — process every order_*.md (oldest first, priority-aware).`,
+          `  2. List ${path.join(ticketsRoot, "prd")} — promote populated PRDs to todo tickets per the cross-category rule.`,
           `  3. Only after both queues are drained should you idle and wait for [wake] events.`
         ].join("\n");
-      case "ticket-owner":
-      case "ticket":
-      case "owner":
+      case "worker":
         return [
           `Atomic rule: at most ONE active ticket at any moment.`,
-          `Worktree cwd lock: after start-ticket-owner returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
+          `Worktree cwd lock: after worker claim/worktree-ensure returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
           `Startup scan order:`,
           `  1. inprogress/ first — resume the single Todo-*.md if present (mv extras back to todo/ if 2+).`,
           `  2. Only when inprogress is empty, claim one highest-priority Todo-*.md from todo/.`,
-          `  3. Run the full atomic close-out per the agent contract (see "Mandatory Close-Out" in ticket-owner-agent.md).`,
-          `  4. After each phase, also call \`node .autoflow/scripts/runner-stage.js <stage>\` to keep runner state active_stage/ticket_id in sync.`,
+          `  3. Run the full atomic close-out per the injected worker startup rules and worker-agent.md.`,
+          `  4. After each phase, also call \`node ${runnerStageScript} <stage>\` to keep runner state active_stage/ticket_id in sync.`,
           `  5. Loop back to step 1. Idle only when both inprogress/ and todo/ are empty.`
         ].join("\n");
+      case "verifier":
+        return [
+          `Startup scan (do this BEFORE waiting for any [wake] message):`,
+          `  1. List ${path.join(ticketsRoot, "verifier")} — select one pending verifier-lane Todo-*.md by priority/FIFO.`,
+          `  2. Gather evidence via verifier runner tools, then make the semantic pass/revise/replan decision yourself.`,
+          `  3. On pass, only grant merge permission and wake worker; on revise, wake worker for the same worktree; on replan, wake worker to create retry order and delete the worktree.`
+        ].join("\n");
       case "wiki-maintainer":
-      case "wiki":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
           `  1. Compare ${path.join(ticketsRoot, "done")} and ${wikiRoot} against the wiki baseline manifest.`,
@@ -1146,18 +1151,31 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     }
   })();
   const projectAgents = path.join(projectRoot, "AGENTS.md");
+  const boardAgents = path.join(boardRoot, "AGENTS.md");
+  const fullContractFiles = uniquePaths([
+    roleInstruction,
+    projectAgents,
+    boardAgents
+  ]);
   return [
     `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
     `Project root: ${projectRoot}`,
     `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    `Role:         ${normalizedRole}`,
     ``,
-    `Your VERY FIRST action — before any planning, scanning, or other tool`,
-    `calls — must be to Read both of these files in full so you load your role`,
-    `contract and the project rules:`,
-    `  - ${roleInstruction}`,
-    `  - ${projectAgents}`,
-    `Do not skip this. Do not summarize from memory. Do not start the startup`,
-    `scan until both Read calls have completed.`,
+    `Injected startup rules from the Desktop start button:`,
+    injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
+    roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null,
+    ``,
+    `After absorbing the injected rules, read these full contract files once before`,
+    `planning, scanning, or other tool calls:`,
+    ...fullContractFiles.map((filePath) => {
+      const status = fsSync.existsSync(filePath) ? "" : " (missing on disk; report this and continue with injected rules)";
+      return `  - ${filePath}${status}`;
+    }),
+    `Do not skip the available reads. Do not start the startup scan until the`,
+    `available full contract reads have completed.`,
     ``,
     startupScan,
     ``,
@@ -1168,16 +1186,20 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `as anything is pending.`,
     ``,
     `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
-    `record durable progress in board files; do not re-read the role/AGENTS files`,
-    `again within this session.`,
+    `record durable progress in board files; do not re-read the full startup`,
+    `contract files again within this session unless this runner process restarts.`,
     ``,
     `Active reporting (every turn — required):`,
-    `  - Start of turn: \`node .autoflow/scripts/runner-wake.js poll --runner ${runnerId}\``,
-    `  - On stage change: \`node .autoflow/scripts/runner-stage.js <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
-    `  - End of turn: \`node .autoflow/scripts/runner-tokens.js report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
-    `Use the tokens shown in your TUI status line. Format tick-id as`,
+    `  - Start of turn: \`node ${runnerWakeScript} poll --runner ${runnerId}\``,
+    `  - On stage change: \`node ${runnerStageScript} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
+    `  - End of turn: \`node ${runnerTokensScript} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
+    `Token reporting is part of the runner contract; run it before ending every`,
+    `assistant turn, even when the board action was idle or no files changed.`,
+    `Use only exact tokens shown in your TUI status line. If exact input/output/cache`,
+    `values are unavailable, report --input 0 --output 0; never invent placeholders`,
+    `such as 1, 1000, or estimates. Format tick-id as`,
     `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
-  ].join("\n");
+  ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
 }
 
 function projectScopeKey(projectRoot, boardDirName) {
@@ -1187,6 +1209,7 @@ function projectScopeKey(projectRoot, boardDirName) {
 // Install fs.watch handlers for the directories that should retrigger the
 // renderer's `readBoard` snapshot:
 //   - tickets/* (queue moves: planner / worker / manual)
+//   - runners/config*.toml (agent/model/reasoning changes)
 //   - runners/state/* (status flips)
 //   - wiki/skills-local/* (skill counter / list changes)
 // Coalesces bursts (e.g. planner moving 6 files in one tick) into a single
@@ -1264,7 +1287,7 @@ function ensureBoardWatcher(scope) {
         }
       }
       // Sticky context generation: when a Todo-*.md appears in inprogress/,
-      // the ticket-owner just claimed it. Write sticky-context.md with the
+      // the worker just claimed it. Write sticky-context.md with the
       // ticket's Allowed Paths / Done When / Acceptance Probe.
       if (
         reason.startsWith("tickets/inprogress/") &&
@@ -1275,12 +1298,12 @@ function ensureBoardWatcher(scope) {
         for (const [rid, meta] of ptyRunnerMeta.entries()) {
           if (meta.projectRoot !== scope.projectRoot) continue;
           if (meta.boardDirName !== boardDirName) continue;
-          if (meta.role !== "ticket-owner") continue;
+          if (meta.role !== "worker") continue;
           generateStickyContext(boardRoot, rid, ticketPath);
         }
       }
       // Context reset after ticket pass: when a done/*/Todo-*.md appears,
-      // the ticket-owner just finished a pass. Schedule compact/clear inject.
+      // the worker just finished a pass. Schedule compact/clear inject.
       if (
         reason.startsWith("tickets/done/") &&
         /\/Todo-\d+\.md$/.test(reason)
@@ -1288,7 +1311,7 @@ function ensureBoardWatcher(scope) {
         for (const [rid, meta] of ptyRunnerMeta.entries()) {
           if (meta.projectRoot !== scope.projectRoot) continue;
           if (meta.boardDirName !== boardDirName) continue;
-          if (meta.role !== "ticket-owner") continue;
+          if (meta.role !== "worker") continue;
           scheduleContextReset(rid, meta);
         }
       }
@@ -1344,6 +1367,7 @@ function ensureBoardWatcher(scope) {
   // enough for the queue folders since we only care about file-level adds
   // and removes one level deep.
   watchDir("tickets", true);
+  watchDir("runners", false);
   watchDir("runners/state", false);
   watchDir("wiki/skills-local", true);
 
@@ -1986,7 +2010,8 @@ function runAutoflowCachedOrRefresh(command, options = {}, ttlMs = readBoardDiag
   }
 
   if (!entry?.promise) {
-    void startCachedAutoflowRefresh(command, options, key, entry);
+    return startCachedAutoflowRefresh(command, options, key, entry)
+      .then((result) => markReadBoardFallback(cloneRunResult(result), { cacheStatus: "miss" }));
   }
 
   return Promise.resolve(emptyCachedAutoflowResult(command, options, {
@@ -2014,9 +2039,39 @@ function parseKeyValueOutput(output) {
 
 const projectHostSkillAssets = [
   {
+    sourceRoot: "scaffold/host",
+    sourceRel: "AGENTS.md",
+    targetRel: "AGENTS.md"
+  },
+  {
+    sourceRoot: "scaffold/host",
+    sourceRel: "CLAUDE.md",
+    targetRel: "CLAUDE.md"
+  },
+  {
     sourceRoot: "integrations/claude/skills",
     sourceRel: "autoflow/SKILL.md",
     targetRel: ".claude/skills/autoflow/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/claude/skills",
+    sourceRel: "order/SKILL.md",
+    targetRel: ".claude/skills/order/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/claude/plugin",
+    sourceRel: ".claude-plugin/plugin.json",
+    targetRel: ".claude/autoflow-plugin/.claude-plugin/plugin.json"
+  },
+  {
+    sourceRoot: "integrations/claude/skills",
+    sourceRel: "autoflow/SKILL.md",
+    targetRel: ".claude/autoflow-plugin/skills/autoflow/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/claude/skills",
+    sourceRel: "order/SKILL.md",
+    targetRel: ".claude/autoflow-plugin/skills/order/SKILL.md"
   },
   {
     sourceRoot: "integrations/codex/skills",
@@ -2027,6 +2082,16 @@ const projectHostSkillAssets = [
     sourceRoot: "integrations/codex/skills",
     sourceRel: "autoflow/agents/openai.yaml",
     targetRel: ".codex/skills/autoflow/agents/openai.yaml"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "order/SKILL.md",
+    targetRel: ".codex/skills/order/SKILL.md"
+  },
+  {
+    sourceRoot: "integrations/codex/skills",
+    sourceRel: "order/agents/openai.yaml",
+    targetRel: ".codex/skills/order/agents/openai.yaml"
   },
 ];
 
@@ -2105,7 +2170,7 @@ function commandExists(command) {
     };
     const child = spawn("bash", ["-lc", `command -v ${command}`], {
       cwd: repoRoot,
-      env: process.env
+      env: sanitizedProcessEnv()
     });
     const timeout = setTimeout(() => {
       child.kill();
@@ -2318,6 +2383,29 @@ function parseRunnerListOutput(output) {
       lastPromptLog: values[`${prefix}last_prompt_log`] || "",
       lastStdoutLog: values[`${prefix}last_stdout_log`] || "",
       lastStderrLog: values[`${prefix}last_stderr_log`] || "",
+      cumulativeTokens: positiveIntegerValue(values[`${prefix}cumulative_tokens`]),
+      lastTurnTokens: positiveIntegerValue(values[`${prefix}last_turn_tokens`]),
+      lastTurnInputTokens: positiveIntegerValue(values[`${prefix}last_turn_input_tokens`]),
+      lastTurnOutputTokens: positiveIntegerValue(values[`${prefix}last_turn_output_tokens`]),
+      lastTurnCacheReadTokens: positiveIntegerValue(values[`${prefix}last_turn_cache_read_tokens`]),
+      lastTurnCacheCreateTokens: positiveIntegerValue(values[`${prefix}last_turn_cache_create_tokens`]),
+      lastTurnAt: values[`${prefix}last_turn_at`] || "",
+      lastTurnTickId: values[`${prefix}last_turn_tick_id`] || "",
+      tokenSource: values[`${prefix}token_source`] || "none",
+      lastTokenUsageSource: values[`${prefix}last_token_usage_source`] || "none",
+      cumulativeCodeFilesChanged: positiveIntegerValue(values[`${prefix}cumulative_code_files_changed`]),
+      cumulativeCodeInsertions: positiveIntegerValue(values[`${prefix}cumulative_code_insertions`]),
+      cumulativeCodeDeletions: positiveIntegerValue(values[`${prefix}cumulative_code_deletions`]),
+      cumulativeCodeVolume: positiveIntegerValue(values[`${prefix}cumulative_code_volume`]),
+      cumulativeCodeNetDelta: Number.parseInt(values[`${prefix}cumulative_code_net_delta`] || "0", 10) || 0,
+      lastCodeTicketId: values[`${prefix}last_code_ticket_id`] || "",
+      lastCodeFilesChanged: positiveIntegerValue(values[`${prefix}last_code_files_changed`]),
+      lastCodeInsertions: positiveIntegerValue(values[`${prefix}last_code_insertions`]),
+      lastCodeDeletions: positiveIntegerValue(values[`${prefix}last_code_deletions`]),
+      lastCodeVolume: positiveIntegerValue(values[`${prefix}last_code_volume`]),
+      lastCodeNetDelta: Number.parseInt(values[`${prefix}last_code_net_delta`] || "0", 10) || 0,
+      lastCodeReportedAt: values[`${prefix}last_code_reported_at`] || "",
+      codeSource: values[`${prefix}code_source`] || "none",
       artifactStatus: values[`${prefix}artifact_status`] || "",
       artifactRuntimeStatus: values[`${prefix}artifact_runtime_status`] || "",
       artifactPromptStatus: values[`${prefix}artifact_prompt_status`] || "",
@@ -2329,7 +2417,7 @@ function parseRunnerListOutput(output) {
       authRequired: false,
       authMessage: "",
       authUrl: "",
-      tokenUsage: 0
+      tokenUsage: positiveIntegerValue(values[`${prefix}cumulative_tokens`])
     });
   }
 
@@ -2339,157 +2427,14 @@ function parseRunnerListOutput(output) {
   };
 }
 
-// Strict drop set — applied when the log is structured as adapter conversation
-// (begin/end markers present). It removes the protocol envelope and any
-// key=value scaffolding so only the agent's natural-language text remains.
-const conversationDropPatterns = [
-  /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
-  /^Warning: Basic terminal detected\b/i,
-  /^Warning: 256-color support not detected\b/i,
-  /^YOLO mode is enabled\b/i,
-  /^Error executing tool [\w-]+: Error: /i,
-  /^[a-z][a-z0-9_.-]*=/i,
-  /^[a-z][a-z0-9_.-]*\.output_(?:begin|end)$/i,
-  /^[a-z][a-z0-9_.-]*_output_(?:begin|end)$/i,
-  /\bcodex_core::plugins::manifest: ignoring interface\.defaultPrompt\b/i,
-  /\bcodex_core_plugins::manifest: ignoring interface\.defaultPrompt\b/i,
-  /\bcodex_core_skills::loader: ignoring interface\.(?:icon_small|icon_large)\b/i,
-  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i,
-  /\bcodex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group\b/i,
-  /^\/.*\/\.autoflow\/tickets\/.*\.md$/i
-];
-
-// Permissive drop set — applied when the log carries only the runtime tick
-// stream (no adapter conversation embedded, as is the case when codex/claude
-// is not on PATH or the adapter ran but produced nothing). We keep `key=value`
-// tick lines so the runner card terminal panel can show a live, growing
-// stream and the typing animation has new characters to reveal each tick.
-const conversationEnvelopeDropPatterns = [
-  /^adapter_(stdout|stderr|prompt|runtime)_(begin|end)\s*$/i,
-  /^[a-z][a-z0-9_.-]*\.output_(?:begin|end)$/i,
-  /^[a-z][a-z0-9_.-]*_output_(?:begin|end)$/i,
-  /^Warning: Basic terminal detected\b/i,
-  /^Warning: 256-color support not detected\b/i,
-  /^YOLO mode is enabled\b/i,
-  /\bcodex_core::plugins::manifest: ignoring interface\.defaultPrompt\b/i,
-  /\bcodex_core_plugins::manifest: ignoring interface\.defaultPrompt\b/i,
-  /\bcodex_core_skills::loader: ignoring interface\.(?:icon_small|icon_large)\b/i,
-  /\bcodex_core::plugins::manager: failed to load plugin: plugin is not installed\b/i,
-  /\bcodex_rmcp_client::stdio_server_launcher: Failed to terminate MCP process group\b/i
-];
-
-const adapterMarkerPattern = /^adapter_(stdout|stderr|prompt|runtime)_begin\s*$/im;
-
-// Detect rich-mode only when there is real conversation content between
-// adapter_*_begin and adapter_*_end. When the adapter executable is missing
-// the runtime emits empty marker pairs (`begin\nend`); those should fall
-// back to permissive mode so the runtime tick stream is visible.
-function hasNonEmptyAdapterBody(text) {
-  const re = /adapter_(stdout|stderr|prompt|runtime)_begin\s*\n([\s\S]*?)\nadapter_\1_end/g;
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    if (match[2] && match[2].trim().length > 0) return true;
-  }
-  return false;
-}
-
 const conversationAnsiEscapePattern = /\x1B\[[0-?]*[ -/]*[@-~]/g;
-const conversationRepeatNormalizers = [
-  [/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, "<timestamp>"],
-  [/\b\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\b/g, "<timestamp>"],
-  [/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT\b/g, "<http-date>"],
-  [/\bAttempt \d+ failed\b/g, "Attempt <n> failed"],
-  [/\bprocess group \d+\b/g, "process group <pid>"],
-  [/\bpid=\d+\b/g, "pid=<pid>"],
-  [/\bdur=\d+\b/g, "dur=<duration>"],
-  [/\bx-[a-z0-9-]+-trace-id': '[^']+'/gi, "x-trace-id: '<id>'"]
-];
-
-function cleanConversationLine(line) {
-  return line.replace(conversationAnsiEscapePattern, "").trim();
-}
-
-function conversationRepeatKey(line) {
-  let key = cleanConversationLine(line);
-  if (!key) return "";
-  for (const [pattern, replacement] of conversationRepeatNormalizers) {
-    key = key.replace(pattern, replacement);
-  }
-  return key;
-}
-
-function collapseRepeatedConversationLines(lines) {
-  const collapsed = [];
-  const seenKeys = new Set();
-
-  for (const line of lines) {
-    const key = conversationRepeatKey(line);
-    if (!key) {
-      const previous = collapsed[collapsed.length - 1] || "";
-      if (previous.trim()) {
-        collapsed.push(line);
-      }
-      continue;
-    }
-
-    if (seenKeys.has(key)) {
-      continue;
-    }
-
-    seenKeys.add(key);
-    collapsed.push(line);
-  }
-
-  while (collapsed.length && !collapsed[collapsed.length - 1].trim()) collapsed.pop();
-
-  return collapsed;
-}
 
 function extractAgentConversation(text, maxChars = 4000) {
   if (!text) return "";
-  const lines = text.split(/\r?\n/);
-
-  // Apply a drop-pattern set + optional dedup over the line list.
-  function applyFilter(dropPatterns, dedupe) {
-    const kept = [];
-    for (const rawLine of lines) {
-      const line = rawLine.replace(/\s+$/, "");
-      const matchTarget = cleanConversationLine(line);
-      if (dropPatterns.some((pattern) => pattern.test(matchTarget))) continue;
-      kept.push(line);
-    }
-    while (kept.length && !kept[0].trim()) kept.shift();
-    while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
-    return dedupe ? collapseRepeatedConversationLines(kept) : kept;
+  let conversation = text.replace(/\s+$/u, "");
+  while (conversation.startsWith("\n")) {
+    conversation = conversation.slice(1);
   }
-
-  // Strict: only the agent's natural-language conversation, with envelope and
-  // `key=value` scaffolding removed. Useful when an adapter is actually
-  // running and emitting prose.
-  const strict = applyFilter(conversationDropPatterns, true);
-  // Permissive: drop only the protocol envelope and error noise; keep
-  // `key=value` runtime tick lines and skip dedup so the terminal panel grows
-  // tick-by-tick — that growth is what makes the ConversationStream typing
-  // animation visibly play.
-  const permissive = applyFilter(conversationEnvelopeDropPatterns, false);
-
-  // Pick strict only when it actually has meaningful conversation content.
-  // When the adapter is missing or its body is empty, strict collapses to a
-  // stray fragment; permissive keeps the live tick stream visible.
-  const useStrict = strict.length >= 3 || strict.length >= permissive.length;
-  const result = useStrict ? strict : permissive;
-
-  // Single stray log/path line (e.g. wiki stderr that contains only its own
-  // log filename) is not useful as a "conversation" — return empty so the
-  // caller can fall through to the next candidate log.
-  if (
-    result.length === 1 &&
-    /^[\w./_-]+\.(log|txt|md)$/i.test(result[0].trim())
-  ) {
-    return "";
-  }
-
-  let conversation = result.join("\n");
   if (conversation.length > maxChars) {
     conversation = `…\n${conversation.slice(conversation.length - maxChars)}`;
   }
@@ -2959,307 +2904,13 @@ async function pathExists(filePath) {
   }
 }
 
-const runnerLogNamePattern = /^(.+?)_\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z_(?:stdout|stderr)\.log$/;
 const runnerLiveLogNamePattern =
   /^(.+?)_(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)_live_(?:stdout|stderr)\.log$/;
 const ansiEscapePattern = /\[[0-9;?]*[A-Za-z]/g;
-const totalTokensMarkerPattern = /total[_ -]?tokens/;
-const tokenTotalMarkers = ["total_tokens", "total tokens", "total-tokens", "totaltokens"];
-const tokenComponentMarkers = [
-  "cache_creation_input_tokens",
-  "cache creation input tokens",
-  "cachecreationinputtokens",
-  "cache_read_input_tokens",
-  "cache read input tokens",
-  "cachereadinputtokens",
-  "cached_input_tokens",
-  "cached input tokens",
-  "cachedinputtokens",
-  "reasoning_tokens",
-  "reasoning tokens",
-  "reasoningtokens",
-  "prompt_tokens",
-  "prompt tokens",
-  "prompttokens",
-  "input_tokens",
-  "input tokens",
-  "inputtokens",
-  "completion_tokens",
-  "completion tokens",
-  "completiontokens",
-  "output_tokens",
-  "output tokens",
-  "outputtokens"
-];
-const defaultTelemetryMaxRowTokens = 100000000;
-const telemetryMaxRowTokens =
-  positiveIntegerValue(process.env.AUTOFLOW_TELEMETRY_MAX_ROW_TOKENS) || defaultTelemetryMaxRowTokens;
-const liveTokenLogCache = new Map();
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function numberAfterTokenMarker(lower, marker) {
-  const markerPattern = new RegExp(`(^|[^a-z0-9_])${escapeRegExp(marker)}[^0-9]*([0-9][0-9,]*)`);
-  const match = lower.match(markerPattern);
-  return match ? Number.parseInt(match[2].replace(/,/g, ""), 10) : -1;
-}
 
 function positiveIntegerValue(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function isSaneTelemetryTokenCount(input, output) {
-  const total = input + output;
-  return input < telemetryMaxRowTokens && output < telemetryMaxRowTokens && total < telemetryMaxRowTokens;
-}
-
-function firstPositiveTokenKeyValue(source, keys) {
-  if (!source || typeof source !== "object") return 0;
-  for (const key of keys) {
-    const value = positiveIntegerValue(source[key]);
-    if (value > 0) return value;
-  }
-  return 0;
-}
-
-function geminiUsageTotalFromObject(source) {
-  if (!source || typeof source !== "object") return 0;
-
-  const usageSource = source.usageMetadata || source.usage_metadata || source;
-  const total = firstPositiveTokenKeyValue(usageSource, ["totalTokenCount", "total_token_count"]);
-  if (total > 0) return total;
-
-  const prompt = firstPositiveTokenKeyValue(usageSource, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
-  const candidates = firstPositiveTokenKeyValue(usageSource, [
-    "candidatesTokenCount",
-    "candidates_token_count",
-    "outputTokenCount",
-    "output_token_count"
-  ]);
-  if (prompt + candidates > 0) return prompt + candidates;
-
-  if (Array.isArray(source)) {
-    return source.reduce((sum, item) => sum + geminiUsageTotalFromObject(item), 0);
-  }
-
-  return Object.values(source).reduce((sum, item) => sum + geminiUsageTotalFromObject(item), 0);
-}
-
-function numberAfterJsonTokenKey(line, keys) {
-  for (const key of keys) {
-    const keyPattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*([0-9][0-9,]*)`, "i");
-    const match = line.match(keyPattern);
-    if (match) return Number.parseInt(match[1].replace(/,/g, ""), 10);
-  }
-  return 0;
-}
-
-function geminiUsageTotalFromLine(line) {
-  const trimmed = line.trim();
-  if (!/(usageMetadata|usage_metadata|TokenCount|token_count)/i.test(trimmed)) return 0;
-
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      const total = geminiUsageTotalFromObject(parsed);
-      if (total > 0) return total;
-    } catch {
-      // Fall through to regex parsing for stream fragments or non-JSON logs.
-    }
-  }
-
-  const total = numberAfterJsonTokenKey(trimmed, ["totalTokenCount", "total_token_count"]);
-  if (total > 0) return total;
-
-  const prompt = numberAfterJsonTokenKey(trimmed, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
-  const candidates = numberAfterJsonTokenKey(trimmed, [
-    "candidatesTokenCount",
-    "candidates_token_count",
-    "outputTokenCount",
-    "output_token_count"
-  ]);
-  return prompt + candidates;
-}
-
-function tokenUsageFromLine(lower) {
-  for (const marker of tokenTotalMarkers) {
-    const value = numberAfterTokenMarker(lower, marker);
-    if (value >= 0) return value;
-  }
-
-  let total = 0;
-  for (const marker of tokenComponentMarkers) {
-    const value = numberAfterTokenMarker(lower, marker);
-    if (value >= 0) total += value;
-  }
-  return total;
-}
-
-function isCodexGuardWarningLine(line) {
-  return /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z\s+WARN\s+codex_core_(?:plugins::manifest|skills::loader):/.test(line);
-}
-
-function claudeStreamJsonUsageFromLine(line) {
-  // Claude `--output-format stream-json --include-partial-messages` emits one
-  // JSON object per line. Only the final `{"type":"result","subtype":"success"}`
-  // event carries authoritative cumulative `usage` for the whole turn. The
-  // intermediate `assistant` / `stream_event:message_delta` events also carry
-  // partial usage values; summing all of them via regex would multi-count
-  // dramatically. Returns the result-event usage total when present, else 0.
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return 0;
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return 0;
-  }
-  if (!parsed || typeof parsed !== "object") return 0;
-  if (parsed.type !== "result" || parsed.subtype !== "success") return 0;
-  const usage = parsed.usage;
-  if (!usage || typeof usage !== "object") return 0;
-  const input = positiveIntegerValue(usage.input_tokens);
-  const output = positiveIntegerValue(usage.output_tokens);
-  const cacheCreate = positiveIntegerValue(usage.cache_creation_input_tokens);
-  const cacheRead = positiveIntegerValue(usage.cache_read_input_tokens);
-  return input + output + cacheCreate + cacheRead;
-}
-
-function isClaudeStreamJsonLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return false;
-  return /"type"\s*:\s*"(?:system|assistant|user|stream_event|result)"/.test(trimmed);
-}
-
-function codexStreamJsonUsageFromLine(line) {
-  // Codex `--json` emits one JSON object per line. The final
-  // `{"type":"turn.completed","usage":{...}}` carries the authoritative
-  // cumulative usage for the whole turn.
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return 0;
-  let parsed;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return 0;
-  }
-  if (!parsed || typeof parsed !== "object") return 0;
-  if (parsed.type !== "turn.completed") return 0;
-  const usage = parsed.usage;
-  if (!usage || typeof usage !== "object") return 0;
-  // OpenAI codex API: cached_input_tokens is a SUBSET of input_tokens
-  // (cache-hit portion of the same input). Adding both double-counts.
-  // reasoning_output_tokens is a subset of output_tokens.
-  const input = positiveIntegerValue(usage.input_tokens);
-  const output = positiveIntegerValue(usage.output_tokens);
-  return input + output;
-}
-
-function isCodexStreamJsonLine(line) {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes('"type"')) return false;
-  return /"type"\s*:\s*"(?:thread\.started|turn\.started|turn\.completed|item\.started|item\.completed)"/.test(trimmed);
-}
-
-function parseTokenUsageChunk(chunk, prior) {
-  const combined = (prior?.tail || "") + chunk;
-  const lines = combined.split("\n");
-  const newTail = lines.pop() ?? "";
-  // prior.tokens = regex-sum + claudeFinalUsage + codexFinalUsage. We track
-  // claude and codex final-event usage separately so a newer event replaces
-  // the prior value instead of summing with the regex-sum total.
-  const priorClaudeFinalUsage = prior?.claudeFinalUsage ?? 0;
-  const priorCodexFinalUsage = prior?.codexFinalUsage ?? 0;
-  let total = (prior?.tokens ?? 0) - priorClaudeFinalUsage - priorCodexFinalUsage;
-  if (total < 0) total = 0;
-  let claudeFinalUsage = priorClaudeFinalUsage;
-  let codexFinalUsage = priorCodexFinalUsage;
-  let waiting = prior?.waiting ?? false;
-
-  for (const rawLine of lines) {
-    const clean = rawLine.replace(/\r$/, "").replace(ansiEscapePattern, "");
-    if (isCodexGuardWarningLine(clean)) {
-      continue;
-    }
-    const claudeResultUsage = claudeStreamJsonUsageFromLine(clean);
-    if (claudeResultUsage > 0) {
-      // Authoritative per-turn usage; replace prior result-event value rather
-      // than summing across multiple result events in the same file.
-      claudeFinalUsage = claudeResultUsage;
-      continue;
-    }
-    if (isClaudeStreamJsonLine(clean)) {
-      // Skip intermediate stream-json events to avoid double-counting partial
-      // `usage` fields that already roll up into the final result event.
-      continue;
-    }
-    const codexTurnUsage = codexStreamJsonUsageFromLine(clean);
-    if (codexTurnUsage > 0) {
-      codexFinalUsage = codexTurnUsage;
-      continue;
-    }
-    if (isCodexStreamJsonLine(clean)) {
-      continue;
-    }
-    const lower = clean.toLowerCase();
-    const geminiUsageTotal = geminiUsageTotalFromLine(clean);
-    if (geminiUsageTotal > 0) {
-      total += geminiUsageTotal;
-      continue;
-    }
-
-    if (waiting) {
-      const numberMatch = clean.replace(/,/g, "").match(/[0-9]+/);
-      if (numberMatch) {
-        total += Number.parseInt(numberMatch[0], 10);
-        waiting = false;
-        continue;
-      }
-      if (clean.trim() !== "") {
-        waiting = false;
-      }
-    }
-
-    // Marker must be at the start of the line so ticket markdown fields
-    // (e.g. "- Tokens Used:") and wiki snippet text
-    // (e.g. "result.N.snippet.text=- Tokens Used: ... 335739843")
-    // are not mistaken for adapter token reports.
-    const tokensUsedLineMatch = lower.match(/^\s*tokens\s+used\b/);
-    if (tokensUsedLineMatch) {
-      const after = clean.slice(tokensUsedLineMatch[0].length).replace(/,/g, "");
-      const inlineMatch = after.match(/[0-9]+/);
-      if (inlineMatch) {
-        total += Number.parseInt(inlineMatch[0], 10);
-      } else {
-        waiting = true;
-      }
-      continue;
-    }
-
-    if (
-      /^\s*total[_ -]?tokens\b/.test(lower) ||
-      /^\s*totaltokens\b/.test(lower) ||
-      /"total[_-]?tokens"\s*:\s*[0-9]/.test(lower)
-    ) {
-      const tokenLineTotal = tokenUsageFromLine(lower);
-      if (tokenLineTotal > 0) total += tokenLineTotal;
-      continue;
-    }
-
-    if (
-      /^\s*(input|output|prompt|completion|cache|cached|reasoning)[_ -]?tokens\b/.test(lower) ||
-      /^\s*(input|output|prompt|completion|cache|cached|reasoning)tokens\b/.test(lower) ||
-      /"(input|output|prompt|completion|cache_creation_input|cache_read_input|cached_input|reasoning)[_-]?tokens"\s*:\s*[0-9]/.test(lower)
-    ) {
-      const tokenLineTotal = tokenUsageFromLine(lower);
-      if (tokenLineTotal > 0) total += tokenLineTotal;
-    }
-  }
-
-  return { tokens: total + claudeFinalUsage + codexFinalUsage, waiting, tail: newTail, claudeFinalUsage, codexFinalUsage };
 }
 
 function timestampFromRunnerLogName(value) {
@@ -3272,215 +2923,17 @@ function timestampFromRunnerLogName(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function runningRunnerStartTimes(runners) {
-  const startTimes = new Map();
-  for (const runner of runners || []) {
-    const status = String(runner?.stateStatus || "").toLowerCase();
-    const pid = String(runner?.pid || "").trim();
-    if (status !== "running" && !pid) continue;
-    const runnerId = typeof runner?.id === "string" ? runner.id : "";
-    if (!runnerId) continue;
-    const startedAtMs = Date.parse(String(runner?.startedAt || ""));
-    startTimes.set(runnerId, Number.isFinite(startedAtMs) ? startedAtMs : 0);
-  }
-  return startTimes;
-}
-
-async function aggregateLiveTokenUsage(logsDir, activeStartTimes) {
-  const totals = new Map();
-  if (!activeStartTimes || activeStartTimes.size === 0) {
-    liveTokenLogCache.clear();
-    return totals;
-  }
-
-  let entries;
-  try {
-    entries = await fs.readdir(logsDir);
-  } catch {
-    return totals;
-  }
-
-  // Pick only the freshest live_stdout per runner. Older leftover files for
-  // completed ticks already wrote their token counts into telemetry/runs.jsonl;
-  // counting them here on top of telemetry would double-count (the bug user
-  // saw as "stop/start makes worker tokens balloon"). Only the currently
-  // active tick's stdout has tokens not yet reflected in telemetry.
-  const newestByRunner = new Map();
-  for (const name of entries) {
-    const match = runnerLiveLogNamePattern.exec(name);
-    if (!match) continue;
-    const runnerId = match[1];
-    if (!activeStartTimes.has(runnerId)) continue;
-    const activeStartedAtMs = activeStartTimes.get(runnerId);
-    const logStartedAtMs = timestampFromRunnerLogName(match[2]);
-    if (activeStartedAtMs > 0 && logStartedAtMs > 0 && logStartedAtMs < activeStartedAtMs) continue;
-    const prev = newestByRunner.get(runnerId);
-    if (!prev || logStartedAtMs > prev.ts) {
-      newestByRunner.set(runnerId, { name, ts: logStartedAtMs });
-    }
-  }
-
-  const seenPaths = new Set();
-
-  await Promise.all(
-    Array.from(newestByRunner.entries()).map(async ([runnerId, picked]) => {
-      const name = picked.name;
-      const match = runnerLiveLogNamePattern.exec(name);
-      if (!match) return;
-      const filePath = path.join(logsDir, name);
-
-      let stat;
-      try {
-        stat = await fs.stat(filePath);
-      } catch {
-        return;
-      }
-      if (!stat.isFile()) return;
-
-      seenPaths.add(filePath);
-      if (stat.size === 0) return;
-
-      const cached = liveTokenLogCache.get(filePath);
-      if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
-        totals.set(runnerId, (totals.get(runnerId) || 0) + cached.tokens);
-        return;
-      }
-
-      let startOffset = 0;
-      let prior = { tokens: 0, waiting: false, tail: "", claudeFinalUsage: 0, codexFinalUsage: 0 };
-      if (cached && cached.size > 0 && cached.size <= stat.size) {
-        startOffset = cached.size;
-        prior = {
-          tokens: cached.tokens,
-          waiting: cached.waiting,
-          tail: cached.tail,
-          claudeFinalUsage: cached.claudeFinalUsage || 0,
-          codexFinalUsage: cached.codexFinalUsage || 0
-        };
-      }
-
-      let content = "";
-      const length = stat.size - startOffset;
-      if (length > 0) {
-        let handle;
-        try {
-          handle = await fs.open(filePath, "r");
-          const buffer = Buffer.allocUnsafe(length);
-          await handle.read(buffer, 0, length, startOffset);
-          content = buffer.toString("utf8");
-        } catch {
-          return;
-        } finally {
-          if (handle) await handle.close().catch(() => {});
-        }
-      }
-
-      const result = parseTokenUsageChunk(content, prior);
-      liveTokenLogCache.set(filePath, {
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-        tokens: result.tokens,
-        waiting: result.waiting,
-        tail: result.tail,
-        claudeFinalUsage: result.claudeFinalUsage,
-        codexFinalUsage: result.codexFinalUsage
-      });
-
-      totals.set(runnerId, (totals.get(runnerId) || 0) + result.tokens);
-    })
-  );
-
-  for (const cachedPath of liveTokenLogCache.keys()) {
-    if (!seenPaths.has(cachedPath)) {
-      liveTokenLogCache.delete(cachedPath);
-    }
-  }
-
-  return totals;
+function isRunnerTokenSourceAuthoritative(source) {
+  return String(source || "").trim() === "llm_reported";
 }
 
 async function readRunnerTokenUsage(boardRoot, runners = []) {
-  const cacheTotals = new Map();
-  const cachePath = path.join(boardRoot, "metrics", "token-cache.tsv");
-  const maxDataAgeSeconds = positiveIntegerValue(process.env.AUTOFLOW_TOKEN_BUDGET_MAX_DATA_AGE_SECONDS) || 3600;
-  const nowMs = Date.now();
+  const totals = new Map();
 
-  let raw;
-  try {
-    raw = await fs.readFile(cachePath, "utf8");
-  } catch {
-    raw = "";
-  }
-
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line) continue;
-    const parts = line.split("\t");
-    if (parts.length < 4) continue;
-    const tokenCount = Number.parseInt(parts[3], 10);
-    if (!Number.isFinite(tokenCount) || tokenCount <= 0) continue;
-    const cacheTimestampMs = Date.parse(parts[2] || "");
-    if (!Number.isFinite(cacheTimestampMs)) continue;
-    if ((nowMs - cacheTimestampMs) / 1000 > maxDataAgeSeconds) continue;
-    const match = path.basename(parts[0]).match(runnerLogNamePattern);
-    if (!match) continue;
-    cacheTotals.set(match[1], (cacheTotals.get(match[1]) || 0) + tokenCount);
-  }
-
-  const telemetryTotals = new Map();
-  const telemetryPath = path.join(boardRoot, "telemetry", "runs.jsonl");
-  let telemetryRaw;
-  try {
-    telemetryRaw = await fs.readFile(telemetryPath, "utf8");
-  } catch {
-    telemetryRaw = "";
-  }
-
-  // Apply the same recent-window cap as metrics-project.sh's
-  // count_autoflow_token_metrics so per-runner footers and the dashboard
-  // header total stay consistent. Old inflated rows pollute the cumulative
-  // sum and disagree with the 1h-windowed header otherwise.
-  for (const line of telemetryRaw.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    let row;
-    try {
-      row = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!row || typeof row !== "object") continue;
-    const runnerId = typeof row.runner_id === "string" ? row.runner_id : "";
-    if (!runnerId) continue;
-    const rowTimestamp = Date.parse(row.ended_at || row.started_at || "");
-    if (!Number.isFinite(rowTimestamp)) continue;
-    if ((nowMs - rowTimestamp) / 1000 > maxDataAgeSeconds) continue;
-    const tokenInput = positiveIntegerValue(row.token_input);
-    const tokenOutput = positiveIntegerValue(row.token_output);
-    const tokenCount = tokenInput + tokenOutput;
-    if (tokenCount <= 0) continue;
-    if (!isSaneTelemetryTokenCount(tokenInput, tokenOutput)) continue;
-    telemetryTotals.set(runnerId, (telemetryTotals.get(runnerId) || 0) + tokenCount);
-  }
-
-  const totals = new Map(telemetryTotals);
-  for (const [runnerId, count] of cacheTotals) {
-    if (!totals.has(runnerId)) {
-      totals.set(runnerId, count);
-    }
-  }
-
-  const liveTotals = await aggregateLiveTokenUsage(
-    path.join(boardRoot, "runners", "logs"),
-    runningRunnerStartTimes(runners)
-  );
-  for (const [runnerId, count] of liveTotals) {
-    totals.set(runnerId, (totals.get(runnerId) || 0) + count);
-  }
-
-  // LLM-reported override — when a runner pushes its own usage via
-  // `runner-tokens.js report`, its state file's `cumulative_tokens` is the
-  // authoritative monotonic counter across turns. Use it as the total so the
-  // per-runner card footer reflects the LLM's own numbers instead of an empty
-  // telemetry roll-up.
+  // Runner-reported usage is the only authoritative monotonic counter across
+  // turns. Do not derive runner totals from session files, live stdout, token
+  // caches, or telemetry rows; those sources can include pasted prompts,
+  // partial output, or stale historical runs.
   const stateDir = path.join(boardRoot, "runners", "state");
   for (const runner of runners) {
     const rid = runner && runner.id;
@@ -3497,7 +2950,7 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
         if (key === "token_source") tokenSource = val.trim();
         else if (key === "cumulative_tokens") cumulative = Number.parseInt(val, 10) || 0;
       }
-      if (tokenSource === "llm_reported" && cumulative > 0) {
+      if (isRunnerTokenSourceAuthoritative(tokenSource) && cumulative > 0) {
         totals.set(rid, cumulative);
       }
     } catch {}
@@ -3722,9 +3175,11 @@ async function listTicketFolders(ticketsRoot) {
   }
 
   const entries = await fs.readdir(ticketsRoot, { withFileTypes: true });
-  const canonicalOrder = ["backlog", "inbox", "todo", "inprogress", "done", "reject", "check"];
+  const canonicalOrder = ["order", "prd", "todo", "inprogress", "verifier", "done", "check"];
+  const ignoredLegacyFolders = new Set(["inbox", "backlog", "reject"]);
   return entries
     .filter((entry) => entry.isDirectory())
+    .filter((entry) => !ignoredLegacyFolders.has(entry.name))
     .map((entry) => entry.name)
     .sort((left, right) => {
       const leftIndex = canonicalOrder.indexOf(left);
@@ -3945,7 +3400,164 @@ async function readBoardFile(options = {}) {
   }
 }
 
-async function deleteInboxOrderFile(options = {}) {
+async function resolveStartupRulesDocument(options = {}) {
+  const empty = {
+    ok: false,
+    filePath: "",
+    name: "",
+    stderr: ""
+  };
+  if (!options.projectRoot) {
+    return { ...empty, stderr: "Project root is required." };
+  }
+
+  const boardDirName = options.boardDirName || defaultBoardDirName;
+  if (!isSafeBoardDirName(boardDirName)) {
+    return { ...empty, stderr: "Invalid board directory name." };
+  }
+
+  const boardRoot = path.resolve(options.projectRoot, boardDirName);
+  const kind = String(options.kind || "common").toLowerCase();
+  const role = normalizeRunnerRole(options.role || "");
+  const targetPath =
+    kind === "common"
+      ? commonStartupRulesPath(boardRoot)
+      : kind === "role"
+        ? startupRulesPath(boardRoot, role)
+        : "";
+
+  if (!targetPath) {
+    return {
+      ...empty,
+      stderr: kind === "role" ? `No startup rule document for role: ${role || "unknown"}` : "Unsupported startup rule document."
+    };
+  }
+
+  const resolvedTarget = path.resolve(targetPath);
+  const relativePath = path.relative(boardRoot, resolvedTarget);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return {
+      ...empty,
+      filePath: resolvedTarget,
+      name: path.basename(resolvedTarget),
+      stderr: "File must be inside the Autoflow board."
+    };
+  }
+
+  if (path.extname(resolvedTarget) !== ".md") {
+    return {
+      ...empty,
+      filePath: resolvedTarget,
+      name: path.basename(resolvedTarget),
+      stderr: "Only markdown startup rule documents can be edited."
+    };
+  }
+
+  try {
+    const stat = await fs.stat(resolvedTarget);
+    if (!stat.isFile()) {
+      return {
+        ...empty,
+        filePath: resolvedTarget,
+        name: path.basename(resolvedTarget),
+        stderr: "Path is not a file."
+      };
+    }
+  } catch (error) {
+    return {
+      ...empty,
+      filePath: resolvedTarget,
+      name: path.basename(resolvedTarget),
+      stderr: error && error.message ? String(error.message) : "Startup rule document does not exist."
+    };
+  }
+
+  return {
+    ok: true,
+    filePath: resolvedTarget,
+    name: path.basename(resolvedTarget),
+    stderr: ""
+  };
+}
+
+async function readStartupRules(options = {}) {
+  const target = await resolveStartupRulesDocument(options);
+  const empty = {
+    ok: false,
+    filePath: target.filePath || "",
+    name: target.name || "",
+    content: "",
+    truncated: false,
+    modifiedAt: "",
+    size: 0,
+    stderr: target.stderr || ""
+  };
+  if (!target.ok) {
+    return empty;
+  }
+
+  try {
+    const stat = await fs.stat(target.filePath);
+    const content = await fs.readFile(target.filePath, "utf8");
+    return {
+      ok: true,
+      filePath: target.filePath,
+      name: target.name,
+      content,
+      truncated: false,
+      modifiedAt: stat.mtime.toISOString(),
+      size: stat.size,
+      stderr: ""
+    };
+  } catch (error) {
+    return {
+      ...empty,
+      stderr: error && error.message ? String(error.message) : "Startup rule document could not be read."
+    };
+  }
+}
+
+async function writeStartupRules(options = {}) {
+  const target = await resolveStartupRulesDocument(options);
+  const empty = {
+    ok: false,
+    filePath: target.filePath || "",
+    name: target.name || "",
+    content: "",
+    truncated: false,
+    modifiedAt: "",
+    size: 0,
+    stderr: target.stderr || ""
+  };
+  if (!target.ok) {
+    return empty;
+  }
+
+  const content = typeof options.content === "string" ? options.content : "";
+  try {
+    await fs.writeFile(target.filePath, content, "utf8");
+    const stat = await fs.stat(target.filePath);
+    return {
+      ok: true,
+      filePath: target.filePath,
+      name: target.name,
+      content,
+      truncated: false,
+      modifiedAt: stat.mtime.toISOString(),
+      size: stat.size,
+      stderr: ""
+    };
+  } catch (error) {
+    return {
+      ...empty,
+      content,
+      stderr: error && error.message ? String(error.message) : "Startup rule document could not be saved."
+    };
+  }
+}
+
+
+async function deleteOrderFile(options = {}) {
   if (!options.projectRoot) {
     return {
       ok: false,
@@ -3994,13 +3606,13 @@ async function deleteInboxOrderFile(options = {}) {
 
   const normalizedRelativePath = relativePath.replace(/\\/g, "/");
   const orderName = path.basename(relativePath);
-  if (!normalizedRelativePath.startsWith("tickets/inbox/") || !/^order_\d+\.md$/i.test(orderName)) {
+  if (!normalizedRelativePath.startsWith("tickets/order/") || !/^order_\d+(?:_retry_\d+_[A-Za-z0-9T.:-]+)?\.md$/i.test(orderName)) {
     return {
       ok: false,
       filePath: targetPath,
       name: orderName,
       message: "",
-        stderr: "Only tickets/inbox/order_*.md files can be deleted."
+      stderr: "Only tickets/order/order_*.md files can be deleted."
     };
   }
 
@@ -4058,6 +3670,9 @@ async function readBoard({ projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot || "", normalizedBoardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
   const exists = await pathExists(boardRoot);
+  if (exists) {
+    migrateLegacyTicketQueuesSync(boardRoot);
+  }
   const hostSkillsResult = exists
     ? await ensureProjectHostSkills({ projectRoot, boardDirName: normalizedBoardDirName })
     : null;
@@ -4178,16 +3793,43 @@ async function readBoard({ projectRoot, boardDirName }) {
     orderBy: "mtime"
   });
 
-  // LLM-reported token override for dashboard metrics — sum each runner's
-  // state cumulative_tokens when token_source=llm_reported, then override the
-  // autoflow CLI's autoflow_token_usage_count so the top stats bar reflects
-  // the LLM's own numbers (telemetry/log aggregator won't see them otherwise).
+  // Runner token override for dashboard metrics — sum each runner's enriched
+  // tokenUsage/state cumulative_tokens, then override the autoflow CLI's
+  // autoflow_token_usage_count when the local runner sources are fresher.
   const parsedMetrics = metricsResult ? parseKeyValueOutput(metricsResult.stdout) : {};
   try {
+    const ownsCodeMetrics = (runner) => {
+      const role = String(runner?.role || "");
+      const id = String(runner?.id || "");
+      return role === "worker" || role === "ticket" || id === "worker" || id.startsWith("worker-");
+    };
+    const codeTotals = {
+      files: 0,
+      insertions: 0,
+      deletions: 0,
+      volume: 0,
+      net: 0,
+    };
+    for (const runner of (runnersResult?.runners || [])) {
+      if (!ownsCodeMetrics(runner)) continue;
+      codeTotals.files += positiveIntegerValue(runner.cumulativeCodeFilesChanged);
+      codeTotals.insertions += positiveIntegerValue(runner.cumulativeCodeInsertions);
+      codeTotals.deletions += positiveIntegerValue(runner.cumulativeCodeDeletions);
+      codeTotals.volume += positiveIntegerValue(runner.cumulativeCodeVolume);
+      codeTotals.net += Number.parseInt(String(runner.cumulativeCodeNetDelta || "0"), 10) || 0;
+    }
+    parsedMetrics.autoflow_code_files_changed_count = String(codeTotals.files);
+    parsedMetrics.autoflow_code_insertions_count = String(codeTotals.insertions);
+    parsedMetrics.autoflow_code_deletions_count = String(codeTotals.deletions);
+    parsedMetrics.autoflow_code_volume_count = String(codeTotals.volume);
+    parsedMetrics.autoflow_code_net_delta_count = String(codeTotals.net);
+  } catch {}
+  try {
     const stateDir = path.join(boardRoot, "runners", "state");
-    let llmTotal = 0;
+    let runnerTokenTotal = 0;
     for (const runner of (runnersResult?.runners || [])) {
       if (!runner?.id) continue;
+      let runnerTotal = positiveIntegerValue(runner.tokenUsage);
       try {
         const raw = await fs.readFile(path.join(stateDir, `${runner.id}.state`), "utf8");
         let src = "", cum = 0;
@@ -4197,14 +3839,14 @@ async function readBoard({ projectRoot, boardDirName }) {
           if (line.slice(0, eq) === "token_source") src = line.slice(eq + 1).trim();
           else if (line.slice(0, eq) === "cumulative_tokens") cum = Number.parseInt(line.slice(eq + 1), 10) || 0;
         }
-        if (src === "llm_reported" && cum > 0) llmTotal += cum;
+        if (isRunnerTokenSourceAuthoritative(src) && cum > 0) {
+          runnerTotal = Math.max(runnerTotal, cum);
+        }
       } catch {}
+      runnerTokenTotal += runnerTotal;
     }
-    if (llmTotal > 0) {
-      const prev = Number.parseInt(parsedMetrics.autoflow_token_usage_count, 10) || 0;
-      if (llmTotal > prev) {
-        parsedMetrics.autoflow_token_usage_count = String(llmTotal);
-      }
+    if (runnerTokenTotal > 0) {
+      parsedMetrics.autoflow_token_usage_count = String(runnerTokenTotal);
     }
   } catch {}
 
@@ -4278,58 +3920,56 @@ async function listRunners(options = {}) {
 }
 
 // Some runner paths still leave stale `active_ticket_id` / `active_ticket_title`
-// in state files when ownership shifts between workers. Re-derive the active
-// ticket from the board so the UI reflects the current inprogress/backlog
+// in state files when claims shift between workers. Re-derive the active
+// ticket from the board so the UI reflects the current inprogress/prd
 // source of truth instead of stale runner state.
-//   ticket-owner    → first Todo-*.md in tickets/inprogress/
-//   planner         → first order_*.md in tickets/inbox/, else first prd_*.md in tickets/backlog/
+//   worker    → first Todo-*.md in tickets/inprogress/
+//   planner         → first order_*.md in tickets/order/, else first prd_*.md in tickets/prd/
 //   wiki-maintainer → leave blank (no per-ticket active item)
-function canonicalTicketOwnerId(value) {
+function canonicalWorkerRunnerId(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
   if (normalized.includes(":")) {
-    return canonicalTicketOwnerId(normalized.split(":")[0]);
+    return canonicalWorkerRunnerId(normalized.split(":")[0]);
   }
-  if (normalized === "ticket-owner" || normalized === "ticket" || normalized === "owner") return "worker";
-  if (/^owner-\d+$/.test(normalized)) return normalized.replace(/^owner-/, "worker-");
+  if (normalized === "worker" || normalized === "ticket") return "worker";
   if (/^ai-\d+$/i.test(normalized)) return normalized.replace(/^ai-/i, "worker-");
   return normalized;
 }
 
-function runnerOwnershipKeys(runner) {
+function runnerClaimKeys(runner) {
   const keys = new Set();
-  const normalizedId = canonicalTicketOwnerId(runner?.id || "");
+  const normalizedId = canonicalWorkerRunnerId(runner?.id || "");
   const role = String(runner?.role || "").trim().toLowerCase();
   if (normalizedId) keys.add(normalizedId);
-  if (role === "ticket-owner" || role === "ticket" || role === "owner") {
+  if (role === "worker" || role === "ticket") {
     keys.add("worker");
     if (normalizedId.startsWith("worker-")) {
       const suffix = normalizedId.replace(/^worker-/, "");
-      keys.add(`owner-${suffix}`);
       keys.add(`ai-${suffix}`);
     }
   }
   return keys;
 }
 
-function isTicketOwnerRunner(runner) {
+function isWorkerRunner(runner) {
   const role = String(runner?.role || "").trim().toLowerCase();
-  if (role === "ticket-owner" || role === "ticket" || role === "owner") {
+  if (role === "worker" || role === "ticket") {
     return true;
   }
-  const normalizedId = canonicalTicketOwnerId(runner?.id || "");
+  const normalizedId = canonicalWorkerRunnerId(runner?.id || "");
   return normalizedId === "worker" || /^worker-\d+$/.test(normalizedId);
 }
 
-function runnerOwnsTicketFromMeta(runner, ticketMeta) {
-  const runnerKeys = runnerOwnershipKeys(runner);
+function runnerClaimsTicketFromMeta(runner, ticketMeta) {
+  const runnerKeys = runnerClaimKeys(runner);
   if (runnerKeys.size === 0) return false;
   const ticketKeys = [
     ticketMeta?.claimedBy,
     ticketMeta?.executionAi,
     ticketMeta?.ai
   ]
-    .map((value) => canonicalTicketOwnerId(value))
+    .map((value) => canonicalWorkerRunnerId(value))
     .filter(Boolean);
   return ticketKeys.some((value) => runnerKeys.has(value));
 }
@@ -4363,59 +4003,76 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
         title: readScalar("Title"),
         ai: readScalar("AI"),
         executionAi: readScalar("Execution AI"),
-        claimedBy: readScalar("Claimed By")
+        claimedBy: readScalar("Claimed By"),
+        stage: readScalar("Stage"),
+        prdKey: readScalar("PRD Key")
       };
     } catch {
       return null;
     }
   };
+  const inprogressTickets = [];
+  try {
+    const entries = (await fs.readdir(path.join(ticketsRoot, "inprogress")))
+      .filter((name) => /^Todo-\d+\.md$/i.test(name))
+      .sort();
+    for (const file of entries) {
+      const ticketPath = path.join(ticketsRoot, "inprogress", file);
+      inprogressTickets.push({
+        id: file.replace(/\.md$/, ""),
+        path: ticketPath,
+        meta: await readTicketMeta(ticketPath)
+      });
+    }
+  } catch {}
+  const assignTicketToRunner = async (runner, ticket, fallbackStage = "inprogress") => {
+    runner.activeTicketId = ticket.id;
+    runner.activeTicketTitle = ticket.meta?.title || await readTitle(ticket.path);
+    runner.activeItem = ticket.id;
+    runner.activeSpecRef = ticket.meta?.prdKey ? `tickets/done/${ticket.meta.prdKey}/${ticket.meta.prdKey}.md` : runner.activeSpecRef || "";
+    if (!runner.activeStage || runner.activeStage.toLowerCase() === "idle") {
+      runner.activeStage = ticket.meta?.stage || fallbackStage;
+    }
+  };
+  const clearActiveTicket = (runner) => {
+    runner.activeTicketId = "";
+    runner.activeTicketTitle = "";
+    runner.activeItem = "";
+    runner.activeStage = "";
+  };
   for (const runner of runners) {
-    if (isTicketOwnerRunner(runner)) {
-      const file = await readFirstMatch(path.join(ticketsRoot, "inprogress"), "Todo-");
-      if (file) {
-        const id = file.replace(/\.md$/, "");
-        const ticketPath = path.join(ticketsRoot, "inprogress", file);
-        const ticketMeta = await readTicketMeta(ticketPath);
-        const hasLiveOwnershipState = runners.some((candidate) => {
-          if (!isTicketOwnerRunner(candidate)) return false;
-          if ((candidate.activeTicketId || "") !== id) return false;
-          const stage = String(candidate.activeStage || "").trim().toLowerCase();
-          return Boolean(stage) && stage !== "idle";
-        });
-        const anyRunnerMetaMatches = runners.some(
-          (candidate) => isTicketOwnerRunner(candidate) && runnerOwnsTicketFromMeta(candidate, ticketMeta)
-        );
-        const runnerStateMatches = (runner.activeTicketId || "") === id && (runner.activeStage || "").toLowerCase() !== "idle";
-        const runnerMetaMatches = runnerOwnsTicketFromMeta(runner, ticketMeta);
-        const shouldAssign = runnerMetaMatches || (!anyRunnerMetaMatches && runnerStateMatches);
-        if (shouldAssign) {
-          runner.activeTicketId = id;
-          runner.activeTicketTitle = ticketMeta?.title || await readTitle(ticketPath);
-          runner.activeItem = id;
-          if (!runner.activeStage || runner.activeStage.toLowerCase() === "idle") {
-            runner.activeStage = "inprogress";
-          }
-        } else if (anyRunnerMetaMatches || hasLiveOwnershipState || runner.activeTicketId === id) {
-          runner.activeTicketId = "";
-          runner.activeTicketTitle = "";
-          runner.activeItem = "";
-          runner.activeStage = "";
-        }
+    if (isWorkerRunner(runner)) {
+      const byClaim = inprogressTickets.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
+      const byState = inprogressTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
+      const unclaimed = inprogressTickets.find((ticket) => !runners.some((candidate) => runnerClaimsTicketFromMeta(candidate, ticket.meta)));
+      const ticket = byClaim || byState || (inprogressTickets.length === 1 ? inprogressTickets[0] : unclaimed);
+      if (ticket) {
+        await assignTicketToRunner(runner, ticket);
       } else {
-        runner.activeTicketId = "";
-        runner.activeTicketTitle = "";
-        runner.activeItem = "";
-        runner.activeStage = "";
+        clearActiveTicket(runner);
+      }
+    } else if (runner.role === "verifier") {
+      const byClaim = inprogressTickets.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
+      const byState = inprogressTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
+      const blockedVerifierTicket = inprogressTickets.find((ticket) => {
+        const stage = String(ticket.meta?.stage || "").toLowerCase();
+        return stage === "verifying" || (stage === "blocked" && runnerClaimsTicketFromMeta(runner, ticket.meta));
+      });
+      const ticket = byClaim || byState || blockedVerifierTicket;
+      if (ticket) {
+        await assignTicketToRunner(runner, ticket, "verifying");
+      } else {
+        clearActiveTicket(runner);
       }
     } else if (runner.role === "planner") {
-      const inbox = await readFirstMatch(path.join(ticketsRoot, "inbox"), "order_");
-      const backlog = inbox ? "" : await readFirstMatch(path.join(ticketsRoot, "backlog"), "prd_");
-      const file = inbox || backlog;
+      const order = await readFirstMatch(path.join(ticketsRoot, "order"), "order_");
+      const prd = order ? "" : await readFirstMatch(path.join(ticketsRoot, "prd"), "prd_");
+      const file = order || prd;
       if (file) {
         const id = file.replace(/\.md$/, "");
         runner.activeTicketId = id;
         runner.activeTicketTitle = await readTitle(
-          path.join(ticketsRoot, inbox ? "inbox" : "backlog", file)
+          path.join(ticketsRoot, order ? "order" : "prd", file)
         );
         runner.activeItem = id;
         runner.activeStage = "planning";
@@ -4439,6 +4096,25 @@ function readBoardRunnerListCacheKey(options = {}) {
 
 function clearReadBoardRunnerListCache(options = {}) {
   readBoardRunnerListCache.delete(readBoardRunnerListCacheKey(options));
+}
+
+function publishBoardChange(scope = {}, reason = "board-change") {
+  const projectRoot = scope.projectRoot || "";
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) {
+      continue;
+    }
+    try {
+      win.webContents.send("autoflow:boardChange", {
+        projectRoot,
+        boardDirName,
+        reason
+      });
+    } catch {
+      // Renderer may be closing; board polling is the fallback.
+    }
+  }
 }
 
 function cloneRunnersResult(result) {
@@ -4857,6 +4533,7 @@ function configureRunner(options = {}) {
     const values = parseKeyValueOutput(result.stdout || "");
     if (result.ok) {
       clearReadBoardRunnerListCache({ projectRoot: options.projectRoot, boardDirName });
+      publishBoardChange({ projectRoot: options.projectRoot, boardDirName }, "runners/config.local.toml");
     }
     return {
       ...result,
@@ -5203,11 +4880,11 @@ function inspectPidIdentity(pid) {
 function commandLooksLikeAutoflowRunner(command) {
   if (typeof command !== "string" || !command) return false;
   if (command.includes("autoflow")) return true;
-  if (command.includes("run-role.sh")) return true;
-  if (command.includes("start-plan.sh")) return true;
-  if (command.includes("start-ticket-owner.sh")) return true;
-  if (command.includes("update-wiki.sh")) return true;
-  // adapter CLIs spawned by run-role.sh
+  if (command.includes("run-role.ts")) return true;
+  if (command.includes("start-plan.ts")) return true;
+  if (command.includes("start-ticket.ts")) return true;
+  if (command.includes("update-wiki.ts")) return true;
+  // adapter CLIs spawned by run-role.ts
   if (/\bgemini\b/.test(command) && command.includes("--prompt")) return true;
   if (/\bcodex\b/.test(command) && command.includes("exec")) return true;
   if (/\bclaude\b/.test(command) && command.includes("--permission-mode")) return true;
@@ -5215,7 +4892,7 @@ function commandLooksLikeAutoflowRunner(command) {
 }
 
 // OS-wide orphan reaper. Runs in whenReady BEFORE IPC handlers so any legacy
-// `runners-project.sh loop-worker` / `run-role.sh` daemons left over from a
+// `runners-project.ts loop-worker` / `run-role.ts` daemons left over from a
 // previous desktop session (crash, force-quit, kernel sleep) are killed
 // before the new session starts spawning. This is independent of the
 // scope-aware sweep below, which only fires after the renderer has loaded a
@@ -5242,13 +4919,15 @@ function reapOrphanLegacyRunnerDaemons() {
       if (!Number.isInteger(pid) || pid <= 0) continue;
       // Only orphans (parent already dead → re-parented to launchd/init).
       if (ppid !== 1) continue;
-      // Only legacy autoflow loop drivers; do not touch arbitrary processes.
-      if (
-        !command.includes("runners-project.sh") &&
-        !command.includes("run-role.sh") &&
-        !command.includes("start-plan.sh") &&
-        !command.includes("start-ticket-owner.sh")
-      ) {
+      // Only legacy Autoflow loop drivers or their orphaned adapter children;
+      // do not touch arbitrary user shells.
+      const isLegacyDriver =
+        command.includes("runners-project.ts") ||
+        command.includes("run-role.ts") ||
+        command.includes("start-plan.ts") ||
+        command.includes("start-ticket.ts");
+      const isLegacyAdapter = command.includes("Autoflow Local Runner Mode");
+      if (!isLegacyDriver && !isLegacyAdapter) {
         continue;
       }
       orphans.push({ pid, command });
@@ -5316,7 +4995,7 @@ async function sweepStaleRunnersForScope(scope) {
       values.last_stop_reason = "startup_no_pid";
       values.last_result = "loop_stopped";
       values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-      try { await fs.writeFile(filePath, serializeRunnerState(values), "utf8"); } catch {}
+      try { await writeRunnerStateAtomic(filePath, values); } catch {}
       continue;
     }
 
@@ -5348,7 +5027,7 @@ async function sweepStaleRunnersForScope(scope) {
     values.last_result = "loop_stopped";
     values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
     // Also clear active recovery + active ticket — single-flow design:
-    // any unfinished blocker should re-emerge through inbox retry, not as
+    // any unfinished blocker should re-emerge through order retry, not as
     // stale state on the new desktop session.
     for (const key of [
       "active_item",
@@ -5366,7 +5045,7 @@ async function sweepStaleRunnersForScope(scope) {
       values[key] = "";
     }
     try {
-      await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+      await writeRunnerStateAtomic(filePath, values);
     } catch {}
     cleanedCount += 1;
   }
@@ -5429,10 +5108,43 @@ function parseRunnerStateFile(content) {
   return values;
 }
 
+const runnerTokenStateDefaults = {
+  cumulative_tokens: "0",
+  last_turn_tokens: "0",
+  last_turn_input_tokens: "0",
+  last_turn_output_tokens: "0",
+  last_turn_cache_read_tokens: "0",
+  last_turn_cache_create_tokens: "0",
+  last_turn_at: "",
+  last_turn_tick_id: "",
+  token_source: "none",
+  last_token_usage_source: "none",
+  cumulative_code_files_changed: "0",
+  cumulative_code_insertions: "0",
+  cumulative_code_deletions: "0",
+  cumulative_code_volume: "0",
+  cumulative_code_net_delta: "0",
+  last_code_ticket_id: "",
+  last_code_files_changed: "0",
+  last_code_insertions: "0",
+  last_code_deletions: "0",
+  last_code_volume: "0",
+  last_code_net_delta: "0",
+  last_code_reported_at: "",
+  code_source: "none",
+};
+
 function serializeRunnerState(values) {
   return Object.entries(values)
     .map(([key, value]) => `${key}=${value ?? ""}`)
     .join("\n") + "\n";
+}
+
+async function writeRunnerStateAtomic(filePath, values) {
+  const next = { ...runnerTokenStateDefaults, ...values };
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tmpPath, serializeRunnerState(next), "utf8");
+  await fs.rename(tmpPath, filePath);
 }
 
 async function readRunnerStateValues(filePath) {
@@ -5455,7 +5167,7 @@ function shouldSelfHealStoppedRunner(runner, stateValues) {
 
 async function selfHealStoppedRunnersForScope(_scope) {
   // Disabled in PTY mode (vibe-terminal pattern). The legacy `controlRunner
-  // start` path spawns `autoflow runners start <id>` → `runners-project.sh
+  // start` path spawns `autoflow runners start <id>` -> `runners-project.ts
   // loop-worker`, which is the long-poll adapter loop. Auto-resurrecting it
   // here means every time the user opens a project, hidden legacy daemons
   // come back even though the user never asked. Explicit ▶ in the UI now
@@ -5503,7 +5215,7 @@ async function shutdownRunnersForScope(scope) {
         values.last_result = "loop_stopped";
         values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
         try {
-          await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+          await writeRunnerStateAtomic(filePath, values);
         } catch {}
       })
   );
@@ -5576,7 +5288,7 @@ async function forceKillSurvivingRunners() {
       values.last_result = "loop_stopped";
       values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
       try {
-        await fs.writeFile(filePath, serializeRunnerState(values), "utf8");
+        await writeRunnerStateAtomic(filePath, values);
       } catch {}
     }
   }
@@ -5728,9 +5440,11 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
+  ipcMain.handle("autoflow:readStartupRules", withTimeout(withScopeMemory(readStartupRules), 10000));
+  ipcMain.handle("autoflow:writeStartupRules", withTimeout(withScopeMemory(writeStartupRules), 10000));
   // ArrivalGauge (PRD_285, 2026-05-12): the renderer computes arrival metrics
-  // directly from the board snapshot's tickets.inbox array (retry order filenames).
-  // No extra IPC handler is needed; readBoard already delivers the inbox file list.
+  // directly from the board snapshot's tickets.order array (retry order filenames).
+  // No extra IPC handler is needed; readBoard already delivers the order file list.
   // board-watcher fires on every tickets/ change so the gauge refreshes in real time.
   // manual_order_196 (2026-05-09): live stdout tail. Reads the LAST maxBytes
   // of a board file (default 16KB) so a polling renderer can show a real-time
@@ -5825,7 +5539,7 @@ app.whenReady().then(() => {
       10000
     )
   );
-  ipcMain.handle("autoflow:deleteInboxOrderFile", withScopeMemory(deleteInboxOrderFile));
+  ipcMain.handle("autoflow:deleteOrderFile", withScopeMemory(deleteOrderFile));
   ipcMain.handle(
     "autoflow:projectExists",
     withTimeout(async (_event, projectRoot) => {
@@ -5875,13 +5589,13 @@ app.whenReady().then(() => {
   // One pty.spawn() per runner. Renderer subscribes via push events
   //   autoflow:runnerPtyBytes  { runnerId, data }   — main → renderer
   //   autoflow:runnerPtyStatus { runnerId, status, pid?, exitCode?, signal? }
-  // Renderer-callable commands (read-only stdin per project policy):
+  // Renderer-callable commands:
   //   autoflow:runnerPtyStart   { runnerId, command, cwd, cols?, rows?, env? }
   //   autoflow:runnerPtyStop    { runnerId, force? }
+  //   autoflow:runnerPtyInput   { runnerId, data }  — raw scoped stdin bytes
   //   autoflow:runnerPtySnapshot { runnerId } → string  (replay buffer)
   //   autoflow:runnerPtyList     → [{ id, status, pid, ... }]
-  // writePrompt() is intentionally NOT exposed to the renderer — only main
-  // process callers (fs.watch handler, runner controller) push prompts.
+  // writePrompt() remains main-process only for automation prompts.
   globalThis.__autoflowPtyManager = globalThis.__autoflowPtyManager || new PtyRunnerManager();
   const ptyManager = globalThis.__autoflowPtyManager;
   const broadcastPty = (channel, payload) => {
@@ -5909,11 +5623,6 @@ app.whenReady().then(() => {
     }
     void writePtyRunnerStateFile(payload.runnerId, fields);
     if (payload.status === "stopped") {
-      const tokenWatcher = ptyRunnerTokenWatchers.get(payload.runnerId);
-      if (tokenWatcher) {
-        try { tokenWatcher.dispose(); } catch {}
-        ptyRunnerTokenWatchers.delete(payload.runnerId);
-      }
       ptyRunnerMeta.delete(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
@@ -5951,7 +5660,7 @@ app.whenReady().then(() => {
   // Higher-level "spawn runner in PTY mode" — renderer passes runner config
   // (agent / model / reasoning / role / projectRoot / boardDirName), main
   // builds the CLI command and the initial prompt, then writes the prompt to
-  // stdin after the CLI is ready. This replaces the legacy run-role.sh path
+  // stdin after the CLI is ready. This replaces the legacy run-role.ts path
   // for runners that should use long-lived process + LLM-driven loop.
   ipcMain.handle("autoflow:runnerPtySpawn", async (_event, opts = {}) => {
     console.log("[autoflow:runnerPtySpawn] called", opts);
@@ -5959,31 +5668,40 @@ app.whenReady().then(() => {
       console.warn("[autoflow:runnerPtySpawn] node-pty unavailable");
       return { ok: false, error: "node-pty unavailable (rebuild required)" };
     }
-    const runnerId = String(opts.runnerId || "");
-    const role = String(opts.role || "ticket-owner");
-    const agent = String(opts.agent || "claude").toLowerCase();
-    const model = String(opts.model || "");
-    const reasoning = String(opts.reasoning || "");
     const projectRoot = String(opts.projectRoot || "");
     const boardDirName = String(opts.boardDirName || ".autoflow");
+    const runnerId = String(opts.runnerId || "");
     if (!runnerId || !projectRoot) {
       return { ok: false, error: "runnerId and projectRoot required" };
+    }
+    const diskRunnerConfig = readRunnerConfigBlock(projectRoot, boardDirName, runnerId);
+    const role = String(diskRunnerConfig.role || opts.role || inferRunnerRoleFromId(runnerId));
+    const agent = String(diskRunnerConfig.agent || opts.agent || "codex").toLowerCase();
+    const model = String(diskRunnerConfig.model ?? opts.model ?? "");
+    const reasoning = String(diskRunnerConfig.reasoning ?? opts.reasoning ?? "");
+    if (!(await commandExists(agent))) {
+      return { ok: false, error: `${agent} CLI not found in shell PATH` };
     }
     const command = buildAgentCliCommand(agent, model, reasoning);
     if (!command) {
       return { ok: false, error: `unsupported agent: ${agent}` };
     }
     try {
+      const existing = ptyManager.get(runnerId);
+      if (existing && existing.status === "running" && existing.command && existing.command !== command) {
+        ptyManager.stop(runnerId, { force: true });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
       const runner = ptyManager.start(runnerId, {
         command,
         cwd: projectRoot,
         cols: Number.isFinite(opts.cols) ? opts.cols : 120,
         rows: Number.isFinite(opts.rows) ? opts.rows : 30,
         env: {
-          // Pin the autoflow-side stable runner id so common.sh `owner_id()`
+          // Pin the autoflow-side stable runner id so worker helpers
           // picks this instead of codex's per-session UUID. Without this,
-          // every PTY restart issues a fresh UUID, ticket ownership locks
-          // become stale, and start-ticket-owner.sh refuses to claim until
+          // every PTY restart issues a fresh UUID, workership locks
+          // become stale, and worker claim refuses to proceed until
           // a janitor pass clears the lock.
           AUTOFLOW_WORKER_ID: runnerId,
           AUTOFLOW_RUNNER_ID: runnerId,
@@ -6013,19 +5731,6 @@ app.whenReady().then(() => {
         last_event_at: startedAt,
         last_result: ""
       });
-      if (agent === "claude") {
-        try {
-          const watcher = await createClaudeTokenWatcher({
-            runnerId,
-            projectRoot,
-            boardDirName,
-            broadcastPty
-          });
-          if (watcher) {
-            ptyRunnerTokenWatchers.set(runnerId, watcher);
-          }
-        } catch {}
-      }
       // Record PID in precise reaper registry so a desktop crash next time
       // leaves the next session a clean kill list.
       try {
@@ -6077,16 +5782,23 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.handle("autoflow:runnerPtyStop", (_event, opts = {}) => {
-    const tokenWatcher = ptyRunnerTokenWatchers.get(opts.runnerId);
-    if (tokenWatcher) {
-      try { tokenWatcher.dispose(); } catch {}
-      ptyRunnerTokenWatchers.delete(opts.runnerId);
-    }
     return { ok: ptyManager.stop(opts.runnerId, { force: !!opts.force }) };
   });
   ipcMain.handle("autoflow:runnerPtyResize", (_event, opts = {}) => {
     const ok = ptyManager.resize(opts.runnerId, opts.cols, opts.rows);
     return { ok };
+  });
+  ipcMain.handle("autoflow:runnerPtyInput", (_event, opts = {}) => {
+    const runnerId = String(opts.runnerId || "");
+    const data = String(opts.data || "");
+    if (!runnerId) {
+      return { ok: false, error: "runnerId required" };
+    }
+    if (!data) {
+      return { ok: false, error: "data required" };
+    }
+    const ok = ptyManager.writeInput(runnerId, data);
+    return ok ? { ok: true } : { ok: false, error: "runner not running" };
   });
   ipcMain.handle("autoflow:runnerPtySnapshot", (_event, opts = {}) => {
     return { snapshot: ptyManager.snapshot(opts.runnerId) };
@@ -6125,15 +5837,17 @@ app.whenReady().then(() => {
           const enabled = grab("enabled");
           if (enabled !== "true") continue;
           const runnerId = grab("id");
-          const agent = grab("agent") || "claude";
+          const agent = grab("agent") || "codex";
           const model = grab("model") || "";
           const reasoning = grab("reasoning") || "";
           if (!runnerId) continue;
-          const role = runnerId === "worker"
-            ? "ticket-owner"
-            : (runnerId === "wiki" ? "wiki-maintainer" : "planner");
+          const role = grab("role") || inferRunnerRoleFromId(runnerId);
           if (ptyManager.list().some((r) => r.id === runnerId && r.status === "running")) {
             console.log(`[auto-spawn] ${runnerId} already running; skip`);
+            continue;
+          }
+          if (!(await commandExists(agent))) {
+            console.warn(`[auto-spawn] ${runnerId} skipped: ${agent} CLI not found in shell PATH`);
             continue;
           }
           const command = buildAgentCliCommand(agent, model, reasoning);

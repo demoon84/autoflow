@@ -7,10 +7,10 @@
 - Plan Candidate: Update README and reference docs to describe Autoflow as a local coding-agent harness with board ledger and wiki map.
 - Title: Document the local agent harness and wiki direction
 - Stage: done
-- Owner: verify-1
+- Worker: verify-1
 - Claimed By: todo-1
-- Execution Owner: unassigned
-- Verifier Owner: verify-1
+- Execution Worker: unassigned
+- Verifier Worker: verify-1
 - Last Updated: 2026-04-24T23:18:03Z
 
 ## Goal

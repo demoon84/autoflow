@@ -7,7 +7,8 @@ through the repo-local `tsx` runtime.
 ## CLI Files
 
 - `autoflow.ts`: top-level command dispatcher.
-- `cli-core.ts`: shared command implementation and path helpers.
+- `cli-core.ts`: stable compatibility entrypoint. The implementation lives in
+  `cli-core/`, split by command (`commands/`) and shared feature (`shared/`).
 - `*-project.ts`: command-specific entrypoints for scaffold, upgrade, order,
   spec, runners, metrics, status, doctor, wiki, telemetry, watch, stop-hook,
   origin, coordinator, and log cleanup.
@@ -16,7 +17,8 @@ through the repo-local `tsx` runtime.
 - `guard-project.ts`: board guard CLI bridge.
 
 There are no repo-owned shell CLI entrypoints. New package commands should be
-added as `.ts` files and routed through `cli-core.ts`.
+added as `.ts` files and routed through the matching `cli-core/commands/*`
+module, with reusable helpers placed under `cli-core/shared/*`.
 
 ## Runtime Source Copied Into Boards
 
@@ -34,26 +36,32 @@ TypeScript-first:
 - `clear-thread-context.ts`
 - `start-plan.ts`
 - `start-spec.ts`
-- `start-ticket-owner.ts`
+- `start-ticket.ts`
 - `start-todo.ts`
 - `start-verifier.ts`
-- `verify-ticket-owner.ts`
-- `finish-ticket-owner.ts`
+- `verify-ticket.ts`
+- `finish-ticket.ts`
 - `merge-ready-ticket.ts`
 - `update-wiki.ts`
 - `watch-board.ts`
 - `wiki-query.ts`
 - `wiki-search-index.ts`
 
+Large runtime entrypoints may keep a small top-level `*.ts` wrapper and place
+their real implementation in a same-named folder with `index.ts` plus
+feature-owned modules. Current examples include `runner-tool/`, `start-plan/`,
+`start-ticket/`, `verify-ticket/`, `finish-ticket/`, `board-utils/`, and
+`board-guard/`.
+
 Legacy `.js` companions may remain for Node runtime compatibility, but shell
 companions are not installed.
 
 ## Smoke Tests
 
-Smoke tests live in `tests/smoke/*.ts`. The public ticket-owner smoke command is:
+Smoke tests live in `tests/smoke/*.ts`. The public worker smoke command is:
 
 ```bash
-npm run smoke:ticket-owner
+npm run smoke:worker
 ```
 
 The smoke suite now checks that repo-owned `.sh` files are absent outside
@@ -63,11 +71,11 @@ third-party dependency folders.
 
 - `autoflow init` and `autoflow upgrade` copy scaffold docs plus TypeScript
   runtime scripts into the target board.
-- `autoflow order create` writes quick requests into `tickets/inbox/`.
+- `autoflow order create` writes quick requests into `tickets/order/`.
 - `autoflow prd create` / `autoflow spec create` writes PRD markdown into
-  `tickets/backlog/`.
+  `tickets/prd/`.
 - `autoflow run <role>` dispatches TypeScript runtime scripts for planner,
-  ticket-owner, todo, verifier, wiki, and self-improve roles.
+  worker, todo, verifier, wiki, and self-improve roles.
 - `autoflow wiki query` performs local markdown retrieval directly in the
   TypeScript CLI; `runtime/board-scripts/wiki-query.ts` delegates back to this
   CLI without shell fallback.

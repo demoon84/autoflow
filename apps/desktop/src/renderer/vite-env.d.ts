@@ -83,7 +83,7 @@ type AutoflowMetricSnapshot = {
   ticket_total: number;
   ticket_done_count: number;
   active_ticket_count: number;
-  reject_count: number;
+  retry_order_count: number;
   handoff_count: number;
   runner_total_count: number;
   runner_running_count: number;
@@ -103,10 +103,6 @@ type AutoflowMetricSnapshot = {
   autoflow_code_volume_count: number;
   autoflow_token_usage_count: number;
   autoflow_token_report_count: number;
-  autoflow_avg_lead_seconds: number;
-  autoflow_avg_active_seconds: number;
-  autoflow_avg_ticks_per_done_ticket: number;
-  autoflow_duration_total_24h_seconds: number;
   completion_rate_percent: number;
 };
 
@@ -262,13 +258,26 @@ interface Window {
       boardDirName: string;
       filePath: string;
     }) => Promise<AutoflowFileContentResult>;
+    readStartupRules: (options: {
+      projectRoot: string;
+      boardDirName: string;
+      kind: "common" | "role";
+      role?: string;
+    }) => Promise<AutoflowFileContentResult>;
+    writeStartupRules: (options: {
+      projectRoot: string;
+      boardDirName: string;
+      kind: "common" | "role";
+      role?: string;
+      content: string;
+    }) => Promise<AutoflowFileContentResult>;
     tailBoardFile: (options: {
       projectRoot: string;
       boardDirName: string;
       filePath: string;
       maxBytes?: number;
     }) => Promise<AutoflowFileContentResult>;
-    deleteInboxOrderFile: (options: {
+    deleteOrderFile: (options: {
       projectRoot: string;
       boardDirName: string;
       filePath: string;
@@ -277,6 +286,52 @@ interface Window {
     cancelInvocation: (
       invocationId: string
     ) => Promise<{ ok: boolean; cancelled: boolean; reason?: string }>;
+    runnerPtyStart: (options: {
+      runnerId: string;
+      command?: string;
+      cwd?: string;
+      cols?: number;
+      rows?: number;
+      env?: Record<string, string>;
+      shell?: string;
+    }) => Promise<{ ok: boolean; runnerId?: string; pid?: number; status?: string; error?: string }>;
+    runnerPtySpawn: (options: {
+      runnerId: string;
+      role: string;
+      agent: string;
+      model?: string;
+      reasoning?: string;
+      projectRoot: string;
+      boardDirName: string;
+      cols?: number;
+      rows?: number;
+    }) => Promise<{ ok: boolean; runnerId?: string; pid?: number; status?: string; error?: string }>;
+    runnerPtyStop: (options: {
+      runnerId: string;
+      force?: boolean;
+    }) => Promise<{ ok: boolean }>;
+    runnerPtyResize: (options: {
+      runnerId: string;
+      cols: number;
+      rows: number;
+    }) => Promise<{ ok: boolean }>;
+    runnerPtySnapshot: (options: {
+      runnerId: string;
+    }) => Promise<{ snapshot: string }>;
+    runnerPtyInput: (options: {
+      runnerId: string;
+      data: string;
+    }) => Promise<{ ok: boolean; error?: string }>;
+    runnerPtyList: () => Promise<{
+      runners: Array<{
+        id: string;
+        status: string;
+        pid?: number;
+        cwd?: string;
+        command?: string;
+        startedAt?: string;
+      }>;
+    }>;
     onBoardChange: (
       handler: (payload: {
         projectRoot: string;

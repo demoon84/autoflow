@@ -7,7 +7,7 @@ Use this adapter when a runner delegates work to local Codex CLI.
 - Binary: `codex`.
 - Input: a role prompt generated from the Autoflow ticket or PRD.
 - Output: stdout, stderr, exit code, and copied prompt/runtime artifacts.
-- Best for: Ticket Owner work, code changes, and local verification inside allowed paths.
+- Best for: Worker work, code changes, and local verification inside allowed paths.
 
 ## Requirements
 

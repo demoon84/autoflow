@@ -12,7 +12,7 @@
 
 - 별도 canonical spec / plan 위치:
 
-- `tickets/backlog/`
+- `tickets/prd/`
   - 무엇이 맞는지 정의
 - `tickets/plan/`
   - 어떤 일을 어떤 순서로 티켓화할지 정의
@@ -28,7 +28,7 @@
 
 권장 읽기 순서:
 
-1. `reference/backlog.md`
+1. `reference/prd.md`
 2. `reference/plan.md`
 3. `rules/verifier/README.md`
 4. `rules/wiki/README.md`

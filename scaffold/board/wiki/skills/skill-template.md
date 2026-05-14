@@ -1,6 +1,6 @@
 ---
 title: "Example skill title"
-pattern_type: ticket_owner_pattern
+pattern_type: ticket_worker_pattern
 applies_to:
   - "path/or/module"
 keywords:

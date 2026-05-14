@@ -49,7 +49,7 @@ created_at: <ISO8601>
 ## 운영 규칙
 
 - in-repo `skills/` 는 lifecycle 자동 archive 대상 아님. 직접 편집 / 삭제로 관리한다.
-- agent-created `skills-local/` 는 finish-ticket-owner pass 경로에서 best-effort 로 생성된다. 추출 실패는 ticket pass 를 막지 않는다.
+- agent-created `skills-local/` 는 finish-ticket pass 경로에서 best-effort 로 생성된다. 추출 실패는 ticket pass 를 막지 않는다.
 - `.archive/` 는 자동 정리 대상이지만, 절대 삭제하지 않고 복구가 가능하도록 유지한다.
 - `pinned: true` 인 skill 은 어떤 자동 lifecycle transition (archive, retire) 에서도 우회된다.
 - 통계 sidecar (`.usage.json`) 가 깨져도 CLI 는 동작한다 (best-effort 회복 후 다시 작성).

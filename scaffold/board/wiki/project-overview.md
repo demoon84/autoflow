@@ -14,4 +14,4 @@ List durable decisions with source links.
 
 ## Open Questions
 
-List unresolved questions with owner or source when known.
+List unresolved questions with worker or source when known.

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This board is an Autoflow sidecar harness installed inside a host project.
-The default execution model is **4-runner mode**: Planner AI creates tickets, Impl AI owns implementation, Verifier AI checks semantic fit, and Wiki AI maintains derived knowledge. Failures route to inbox retry orders, not an active reject queue.
+The default execution model is **4-runner mode**: Planner AI creates tickets, Impl AI owns implementation, Verifier AI checks semantic fit, and Wiki AI maintains derived knowledge. Verifier replan routes to order retry orders; verifier revise keeps the same worktree.
 
 ## Canonical Flow
 
@@ -9,33 +9,33 @@ Default 4-runner flow:
 
 ```text
 PROJECT_ROOT
-  -> .autoflow/tickets/inbox/order_NNN.md             (사용자 /order 또는 worker fail retry)
-  -> .autoflow/tickets/backlog/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
+  -> .autoflow/tickets/order/order_NNN.md             (사용자 /order 또는 verifier replan retry)
+  -> .autoflow/tickets/prd/prd_NNN.md             (Planner 가 승격 / 사용자 /autoflow)
   -> .autoflow/tickets/todo/Todo-NNN.md               (Planner 가 발급)
   -> .autoflow/tickets/inprogress/Todo-NNN.md         (Worker active, worktree 1 개)
   -> .autoflow/tickets/verifier/Todo-NNN.md           (Verifier semantic review)
   -> .autoflow/tickets/done/<project-key>/Todo-NNN.md (성공만 모임)
 ```
 
-Worker fail 시 ticket 본문은 `tickets/inbox/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 되고 inprogress markdown 은 `rm`. 별도 reject 큐 없음.
+Verifier replan 시 worker 가 ticket 본문을 `tickets/order/order_<id>_retry_<N>_<ts>.md` 의 `## Original Ticket` 섹션에 통째 embed 하고 worktree/inprogress markdown 을 정리한다. Verifier revise 는 같은 worktree 를 유지한다. 별도 reject 큐 없음.
 
 Directory meanings:
 
 - `PROJECT_ROOT`: the real product repository root.
-- `tickets/inbox/`: quick order + worker-fail retry order 큐. Planner AI 가 promotion.
-- `tickets/backlog/`: approved spec 큐.
+- `tickets/order/`: quick order + verifier replan retry order 큐. Planner AI 가 promotion.
+- `tickets/prd/`: approved spec 큐.
 - `tickets/todo/`: Planner 가 발급한 ticket 큐. Worker claim 대기.
 - `tickets/inprogress/`: active Worker ticket (single live worktree).
 - `tickets/done/<project-key>/`: passed ticket, archived spec/plan, completion log. 성공만 모임.
 - `reference/`: templates and board reference material.
-- `protocols/`: AI-first orchestration, owner, and recovery contracts.
+- `protocols/`: AI-first orchestration, worker, and recovery contracts.
 - `rules/`: operating rules and wiki linting.
 - `automations/`: hook, heartbeat, and runtime context contracts.
 - `agents/`: role prompts used by human or local runner agents.
 - `logs/`: completion logs and hook dispatch logs.
 - `wiki/`: generated and human-maintained project knowledge derived from completed work.
 
-Removed (refactor 2026-05-07): `tickets/reject/` fail routing and `tickets/check/` monitor ledger. `tickets/verifier/` was reintroduced for semantic review in the 4-runner topology. Verification evidence lives directly in the ticket markdown's `## Verification` section.
+Removed (refactor 2026-05-07): separate reject fail routing and the `tickets/check/` monitor ledger. `tickets/verifier/` was reintroduced for semantic review in the 4-runner topology. Verification evidence lives directly in the ticket markdown's `## Verification` section.
 
 ## Read Order
 
@@ -43,38 +43,41 @@ At the start of work, read in this order:
 
 1. `README.md`
 2. `rules/README.md`
-3. `reference/backlog.md`
+3. `reference/prd.md`
 4. `reference/order.md`
 5. `reference/plan.md`
 6. `automations/README.md`
 7. `reference/tickets-board.md`
 8. `reference/runner-tool-contract.md`
-9. Role-specific files:
+9. `reference/runner-startup-common.md`
+10. Role-specific startup rules under `reference/runner-startup-rules/`
+11. Role-specific files:
    - PRD handoff: `agents/spec-author-agent.md`
-   - default execution (Impl AI): `agents/ticket-owner-agent.md`
+   - default execution (Impl AI): `agents/worker-agent.md`
    - orchestration (Planner AI): `agents/plan-to-ticket-agent.md`
+   - verifier review (Verifier AI): `agents/verifier-agent.md`
    - wiki maintenance (Wiki AI): `agents/wiki-maintainer-agent.md`
    - legacy compat: `agents/todo-queue-agent.md`, `agents/coordinator-agent.md`, `agents/merge-bot-agent.md`
 
 ## Runtime Command Convention
 
 - Use the matching `scripts/*.ts` entrypoint for runtime commands.
-- When docs say `start-ticket-owner runtime`, `verify-ticket-owner runtime`, `finish-ticket-owner runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.ts` script in `scripts/`.
-- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.ts planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.ts worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.ts verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.ts wiki ...` over adding behavior to a large script.
+- When docs say `start-ticket runtime`, `verify-ticket runtime`, `finish-ticket runtime`, `start-plan runtime`, or `merge-ready-ticket runtime`, run the `.ts` script in `scripts/`.
+- `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `scripts/runner-tool.ts planner ...`, for new Worker claim/worktree/evidence/check operations prefer `scripts/runner-tool.ts worker ...`, for new Verifier semantic-review evidence/decision routing prefer `scripts/runner-tool.ts verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `scripts/runner-tool.ts wiki ...`. Add new helper behavior as a one-feature file under `scripts/runner-tool/<role>/` and export it through that folder's `index.ts`.
 
 ## Core Rules
 
 1. Do not create plans or tickets without an approved spec or a clear quick order promoted by Planner AI.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/inbox/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
-4. The default execution path uses four runners: `planner` promotes order/backlog/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh backlog PRDs; legacy planner/todo/verifier splitting remains compatibility-only.
-5. A Ticket Owner runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/fail finalization. The verifier runner owns semantic review when the ticket enters the verifier lane.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/order/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+4. The default execution path uses four runners: `planner` promotes order/prd/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh PRD queue items; legacy planner/todo/verifier splitting remains compatibility-only.
+5. A Worker runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/replan finalization. The verifier runner owns semantic review when the ticket enters the verifier lane and returns pass/revise/replan.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
 9. Never edit outside `Allowed Paths` unless the user explicitly expands scope.
 10. Never run `git push` from automation or agent work. Remote publication is always a human decision.
-11. Ticket Owner may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's mechanical sanity gate (git diff >= 1 + every Done When `[x]`) blocks false pass mechanically.
+11. Worker may run local verification commands, use built-in browser tools when needed, and move board files without asking again. The finalizer's mechanical sanity gate (git diff >= 1 + every Done When `[x]`) blocks false pass mechanically.
 12. If a browser tool is opened during a turn, close it before the turn ends unless the user asks to keep it open.
 13. Prefer non-browser checks first. Use the current agent's built-in browser tool only when rendered behavior matters. Do not use Playwright.
 14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
@@ -84,7 +87,7 @@ At the start of work, read in this order:
 18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
 19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. Wiki AI refreshes derived knowledge separately; no inline wiki update at finalize.
 20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
-21. In git repositories, Ticket Owner work happens in the ticket worktree when available. On pass, `scripts/finish-ticket-owner.ts` runs only after the AI-owned implementation and required verification/merge preparation have happened; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
+21. In git repositories, Worker work happens in the ticket worktree when available. `scripts/runner-tool.ts worker submit-to-verifier` happens after local worktree verification and before PROJECT_ROOT merge, handing off to Verifier AI. Verifier pass wakes worker for merge/finalization, revise wakes worker to correct the same worktree, and replan wakes worker to create the retry order and delete the worktree. Only after verifier pass may worker merge and run `scripts/runner-tool.ts worker finalize-approved`; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
 23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
 24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
@@ -96,13 +99,13 @@ At the start of work, read in this order:
 
 Trigger: Claude `/autoflow`, Codex `$autoflow`, or compatibility alias `#autoflow`.
 
-Purpose: turn the conversation into one approved backlog spec, or a small ordered PRD set when the scope is too large for one safe spec.
+Purpose: turn the conversation into one approved PRD queue spec, or a small ordered PRD set when the scope is too large for one safe spec.
 
 Read:
 
 - `agents/spec-author-agent.md`
 - host `AGENTS.md` or `CLAUDE.md` when present
-- existing backlog, plan, inprogress, and done specs
+- existing prd, plan, inprogress, and done specs
 - `reference/project-spec-template.md`
 
 Do:
@@ -114,7 +117,7 @@ Do:
 - Render the full spec draft only after the user gives an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
 - For a PRD set, render each PRD draft separately and include sibling references in `Conversation Handoff` or `Notes`.
 - Save only after separate explicit user confirmation. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
-- Save only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Multiple PRDs must be separate backlog files, saved one active slot at a time.
+- Save only `tickets/prd/prd_NNN.md` and optional conversation handoff. Multiple PRDs must be separate PRD files, saved one active slot at a time.
 
 Do not:
 
@@ -131,9 +134,9 @@ Purpose: capture a small request without a full PRD handoff.
 
 Do:
 
-- Preserve the original user request in `tickets/inbox/order_*.md`.
+- Preserve the original user request in `tickets/order/order_*.md`.
 - Add scope, Allowed Paths, and verification hints only when obvious.
-- Let Plan AI promote the inbox note into a generated PRD and todo ticket when safe.
+- Let Plan AI promote the order note into a generated PRD and todo ticket when safe.
 
 Do not:
 
@@ -141,24 +144,24 @@ Do not:
 - Create PRDs or tickets directly.
 - Implement, verify, commit, or push.
 
-### 3. Ticket Owner Mode
+### 3. Worker Mode
 
-Purpose: one owner completes one ticket end to end.
+Purpose: one worker completes one ticket end to end.
 
 Read:
 
-- `agents/ticket-owner-agent.md`
+- `agents/worker-agent.md`
 - target spec or ticket
 - referenced docs, rules, and verifier checklist
 
 Do:
 
 - Resume an owned active ticket first.
-- Otherwise claim or create one ticket from backlog/todo/verifier.
+- Otherwise claim or create one ticket from prd/todo/verifier.
 - Write a short mini-plan in `Notes`.
 - Implement only within `Allowed Paths`.
 - Run verification and capture evidence.
-- Finish pass or fail through the runtime scripts.
+- Finish pass or replan through the runtime scripts; revise stays in the same worktree.
 
 Do not:
 
@@ -170,16 +173,16 @@ Do not:
 
 Trigger: `#plan`.
 
-Purpose: convert quick orders, populated specs, and reject reasons into todo tickets.
+Purpose: convert quick orders, populated specs, and replan reasons into todo tickets.
 
 Do:
 
 - Keep a 1-minute heartbeat alive until the user stops it.
 - Use `scripts/runner-tool.ts planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `scripts/start-plan.ts` only for compatibility branches that have not yet been split into runner tools.
 - Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
-- Create or update `plan_NNN.md` from specs or rejects.
+- Create or update `plan_NNN.md` from specs or replan retry orders.
 - Generate todo ticket bodies from `Execution Candidates`.
-- Archive consumed specs/plans/rejects under `done/<project-key>/`.
+- Archive consumed specs/plans/retry orders under `done/<project-key>/`.
 
 Do not implement, verify, commit, or push.
 
@@ -195,13 +198,13 @@ Do:
 - Resume owned inprogress work first.
 - Use `scripts/start-todo.*` and `scripts/handoff-todo.js`.
 - Implement within `Allowed Paths`.
-- On completion, the worker finalizer takes over (atomic: verify → master merge → done).
+- On local completion, the worker calls `runner-tool.ts worker submit-to-verifier` to hand off to verifier before any merge. After verifier pass, the worker merges approved work into `PROJECT_ROOT`, reruns verification, then calls `runner-tool.ts worker finalize-approved` for bookkeeping and the local completion commit. Verifier revise keeps the same worktree; verifier replan creates an order retry and deletes the worktree through worker create-retry-order.
 
 Do not push.
 
 ### 6. Verifier Mode
 
-The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/fail through `scripts/runner-tool.ts verifier ...`. Legacy `#veri` remains compatibility-only.
+The active `verifier` runner owns semantic review of verifier-lane tickets. It compares the finished diff with the ticket Title, Goal, and Done When items, records the decision, and routes pass/revise/replan through `scripts/runner-tool.ts verifier ...`. Legacy `#veri` remains compatibility-only.
 
 ### 7. Coordinator Mode
 
@@ -246,9 +249,9 @@ Before creating a ticket, check:
 - `tickets/todo/`
 - `tickets/inprogress/`
 - `tickets/done/`
-- `tickets/inbox/` (for `order_*_retry_*.md` from worker fail)
+- `tickets/order/` (for `order_*_retry_*.md` from verifier replan)
 
-Do not create a duplicate for the same goal or same plan source. A retry order gets a new file under `tickets/inbox/` with `retry_count` incremented.
+Do not create a duplicate for the same goal or same plan source. A retry order gets a new file under `tickets/order/` with `retry_count` incremented.
 
 ## Completion Standard
 

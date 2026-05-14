@@ -1,8 +1,8 @@
 # Autoflow runner configuration.
 #
 # Default 4-runner topology:
-#   planner : Planner AI — promotes tickets/inbox/ orders + tickets/backlog/
-#               PRDs into tickets/todo/ work. Worker fail re-emits inbox retry
+#   planner : Planner AI — promotes tickets/order/ orders + tickets/prd/
+#               PRDs into tickets/todo/ work. Worker fail re-emits order retry
 #               orders that planner re-plans like any other order — there is
 #               no separate reject queue.
 #   worker  : Impl AI — todo claim → worktree create → code edit → local
@@ -36,7 +36,7 @@ command = ""
 
 [[runners]]
 id = "worker"
-role = "ticket-owner"
+role = "worker"
 agent = "codex"
 model = ""
 reasoning = "low"

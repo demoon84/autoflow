@@ -11,4 +11,4 @@ Use wiki pages for:
 - architecture notes,
 - lessons learned.
 
-Do not use the wiki as the source of truth for active ticket stage, ownership, pass/fail result, or commit state.
+Do not use the wiki as the source of truth for active ticket stage, claim, verifier decision, or commit state.

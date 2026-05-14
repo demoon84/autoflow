@@ -83,10 +83,10 @@ CREATE TABLE IF NOT EXISTS origin_chain (
   trigger_kind TEXT NOT NULL,            -- 'autoflow' | 'order' | 'plan' | 'todo'
   trigger_ts TEXT NOT NULL,
   user_prompt_excerpt TEXT,              -- first 280 chars of the triggering user prompt
-  prd_path TEXT,                         -- e.g. '.autoflow/tickets/done/prd_142/prd_142.md' or inbox/order_NNN.md
+  prd_path TEXT,                         -- e.g. '.autoflow/tickets/done/prd_142/prd_142.md' or order/order_NNN.md
   prd_key TEXT,                          -- 'prd_142' | 'express_900' | 'order_88'
   ticket_id TEXT,                        -- normalized 3-digit id of the resulting Todo-NNN
-  ticket_status TEXT,                    -- 'inbox' | 'backlog' | 'todo' | 'inprogress' | 'done' | 'failed'
+  ticket_status TEXT,                    -- 'order' | 'prd' | 'todo' | 'inprogress' | 'done' | 'failed'
   commit_hash TEXT,
   commit_subject TEXT,
   done_at TEXT,

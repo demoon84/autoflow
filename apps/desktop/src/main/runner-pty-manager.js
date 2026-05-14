@@ -12,7 +12,7 @@
 //   stop()     → send SIGTERM, kill subtree, status='stopped'
 //
 // fs.watch wakes are mediated by the caller — when a board change fires,
-// the caller decides what prompt to push via writePrompt().
+// the caller decides what prompt or raw stdin bytes to push.
 
 const { EventEmitter } = require("events");
 const path = require("node:path");
@@ -64,6 +64,8 @@ function buildShellEnv(extraEnv) {
   // Strip color-killers that some CI/dev shells set.
   delete merged.NO_COLOR;
   delete merged.CI;
+  delete merged.npm_config_prefix;
+  delete merged.NPM_CONFIG_PREFIX;
   // Disable some CLIs' "do you want to update?" prompts by default.
   merged.NO_UPDATE_NOTIFIER = "1";
   return merged;
@@ -226,6 +228,20 @@ class PtyRunnerManager extends EventEmitter {
       runner.stdinQueue.push("\r");
       this._drainStdin(runner);
     }, 400);
+    return true;
+  }
+
+  // Forward literal user stdin bytes to the runner PTY.
+  // Unlike writePrompt(), this does not append Enter or wrap bracketed paste.
+  writeInput(runnerId, data) {
+    const runner = this.runners.get(runnerId);
+    if (!runner || runner.status !== STATUS.RUNNING) {
+      return false;
+    }
+    const raw = String(data || "");
+    if (!raw) return false;
+    runner.stdinQueue.push(raw);
+    this._drainStdin(runner);
     return true;
   }
 

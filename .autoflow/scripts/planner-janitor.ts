@@ -75,9 +75,9 @@ function appendNote(ticketPath: string, line: string): boolean {
   return safeWriteFile(ticketPath, next);
 }
 
-interface OwnershipLock { runnerId: string; pid: number; uuid?: string; spawnedAt: string; }
+interface WorkerLock { runnerId: string; pid: number; uuid?: string; spawnedAt: string; }
 
-function parseOwnershipLock(line: string): OwnershipLock | null {
+function parseWorkerLock(line: string): WorkerLock | null {
   const modern = line.match(/^([\w-]+):(\d+):([0-9TZ:.\-]+)$/);
   if (modern) {
     return { runnerId: modern[1], pid: parseInt(modern[2], 10), spawnedAt: modern[3] };
@@ -88,7 +88,7 @@ function parseOwnershipLock(line: string): OwnershipLock | null {
   return null;
 }
 
-function clearStaleOwnershipLocks(): number {
+function clearStaleWorkerLocks(): number {
   const ticketDirs = ["todo", "inprogress"].map((d) => path.join(BOARD_ROOT, "tickets", d));
   let cleared = 0;
   for (const dir of ticketDirs) {
@@ -98,15 +98,15 @@ function clearStaleOwnershipLocks(): number {
       const ticketPath = path.join(dir, name);
       const content = safeReadFile(ticketPath);
       if (!content) continue;
-      const lockMatch = content.match(/^- Result:\s*pending ticket-owner by\s*(.+)$/m);
+      const lockMatch = content.match(/^- Result:\s*pending worker by\s*(.+)$/m);
       if (!lockMatch) continue;
-      const ownership = parseOwnershipLock(lockMatch[1].trim());
+      const claim = parseWorkerLock(lockMatch[1].trim());
       let stale = false;
-      if (!ownership) stale = true;
-      else if (ownership.pid > 0 && !pidAlive(ownership.pid)) stale = true;
-      else if (ownership.runnerId === "legacy") stale = true;
+      if (!claim) stale = true;
+      else if (claim.pid > 0 && !pidAlive(claim.pid)) stale = true;
+      else if (claim.runnerId === "legacy") stale = true;
       if (!stale) continue;
-      const cleared_line = lockMatch[0].replace(/pending ticket-owner by\s*.+$/, "");
+      const cleared_line = lockMatch[0].replace(/pending worker by\s*.+$/, "");
       const next = content.replace(lockMatch[0], cleared_line);
       if (safeWriteFile(ticketPath, next)) {
         appendNote(ticketPath, `planner cleared stale lock (${lockMatch[1].trim().slice(0, 60)})`);
@@ -259,7 +259,7 @@ function pruneOrphanWorktrees(): number {
 (function main(): void {
   log(`board=${BOARD_ROOT} dry-run=${DRY_RUN}`);
   let total = 0;
-  try { total += clearStaleOwnershipLocks(); } catch (e: any) { warn("stale-lock pass failed", e); }
+  try { total += clearStaleWorkerLocks(); } catch (e: any) { warn("stale-lock pass failed", e); }
   try { total += fixAtomicViolations(); } catch (e: any) { warn("atomic pass failed", e); }
   try { total += fixZombieAndStageMismatch(); } catch (e: any) { warn("zombie pass failed", e); }
   try { total += pruneOrphanWorktrees(); } catch (e: any) { warn("orphan-worktree pass failed", e); }

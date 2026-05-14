@@ -87,7 +87,7 @@ const pathForTicket = (ticketValue: string): string => {
     path.join(boardRoot, "tickets", "verifier", ticketValue),
     path.join(boardRoot, "tickets", "ready-to-merge", ticketValue),
     path.join(boardRoot, "tickets", "done", ticketValue),
-    path.join(boardRoot, "tickets", "inbox", ticketValue),
+    path.join(boardRoot, "tickets", "order", ticketValue),
     path.join(boardRoot, "tickets", "check", ticketValue),
   ];
 
@@ -216,9 +216,36 @@ const next: Record<string, string> = {
 };
 if (note) next.last_result = note;
 
+const tokenDefaults: Record<string, string> = {
+  cumulative_tokens: "0",
+  last_turn_tokens: "0",
+  last_turn_input_tokens: "0",
+  last_turn_output_tokens: "0",
+  last_turn_cache_read_tokens: "0",
+  last_turn_cache_create_tokens: "0",
+  last_turn_at: "",
+  last_turn_tick_id: "",
+  token_source: "none",
+  last_token_usage_source: "none",
+  cumulative_code_files_changed: "0",
+  cumulative_code_insertions: "0",
+  cumulative_code_deletions: "0",
+  cumulative_code_volume: "0",
+  cumulative_code_net_delta: "0",
+  last_code_ticket_id: "",
+  last_code_files_changed: "0",
+  last_code_insertions: "0",
+  last_code_deletions: "0",
+  last_code_volume: "0",
+  last_code_net_delta: "0",
+  last_code_reported_at: "",
+  code_source: "none",
+};
+
 const known = new Set(Object.keys(next));
 const seen = new Set<string>();
 const out: string[] = [];
+const existingKeys = new Set<string>();
 
 for (const line of current) {
   if (!line.includes("=")) {
@@ -228,6 +255,7 @@ for (const line of current) {
 
   const eq = line.indexOf("=");
   const key = line.slice(0, eq);
+  existingKeys.add(key);
   if (known.has(key)) {
     out.push(`${key}=${next[key]}`);
     seen.add(key);
@@ -242,5 +270,13 @@ for (const [key, value] of Object.entries(next)) {
   }
 }
 
-fs.writeFileSync(statePath, out.join("\n"));
+for (const [key, value] of Object.entries(tokenDefaults)) {
+  if (!existingKeys.has(key)) {
+    out.push(`${key}=${value}`);
+  }
+}
+
+const tempPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
+fs.writeFileSync(tempPath, out.join("\n") + "\n");
+fs.renameSync(tempPath, statePath);
 process.exit(0);

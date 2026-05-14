@@ -47,6 +47,11 @@
 - Status:
 - Started At:
 - Started Epoch:
+- Processing Started At:
+- Processing Started Epoch:
+- Processing Finished At:
+- Processing Finished Epoch:
+- Processing Seconds: 0
 - Updated At:
 - Tick Count: 0
 - Time Used Seconds: 0
@@ -66,7 +71,7 @@
 - Failure Class:
 - Evidence:
 - Planner Decision:
-- Owner Resume Instruction:
+- Worker Resume Instruction:
 - Last Recovery At:
 
 ## Done When

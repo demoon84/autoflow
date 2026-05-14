@@ -10,7 +10,7 @@
     "typecheck:board": "tsc -p runtime/board-scripts/tsconfig.json --noEmit",
     "typecheck:cli": "tsc -p packages/cli/tsconfig.json --noEmit",
     "typecheck:smoke": "tsc --noEmit --target ES2022 --module Node16 --moduleResolution Node16 --types node tests/smoke/*.ts",
-    "smoke:ticket-owner": "tsx tests/smoke/ticket-owner-smoke.ts"
+    "smoke:worker": "tsx tests/smoke/worker-smoke.ts"
   },
   "dependencies": {
     "chokidar": "^5.0.0"

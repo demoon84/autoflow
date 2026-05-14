@@ -43,6 +43,9 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-3: 0 18px 46px rgba(0, 0, 0, 0.12);
+  --terminal-background: #F3F6FA;
+  --terminal-border: #B8C4D3;
+  --terminal-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 1px 2px rgba(15, 23, 42, 0.07);
   --font-size-page: 14px;
   --font-size-control: 12px;
   --font-size-control-sm: 11px;
@@ -54,8 +57,8 @@
   --font-size-title-sm: 14px;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui,
     "Apple SD Gothic Neo", "Noto Sans KR", "Helvetica Neue", Arial, sans-serif;
-  --titlebar-height: 64px;
-  --workflow-grid-gap: 12px;
+  --titlebar-height: 60px;
+  --workflow-grid-gap: 10px;
 }
 
 :root[data-theme="dark"] {
@@ -95,6 +98,9 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.32), 0 1px 3px rgba(0, 0, 0, 0.28);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.34);
   --shadow-3: 0 18px 46px rgba(0, 0, 0, 0.42);
+  --terminal-background: #2D323B;
+  --terminal-border: #1F242C;
+  --terminal-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 * {
@@ -736,6 +742,7 @@ pre {
 
 .footer-project-button:hover:not(:disabled),
 .footer-project-install-button:hover:not(:disabled),
+.settings-nav-startup-rule-button:hover:not(:disabled),
 .essential-icon-button:hover:not(:disabled),
 .essential-setup-button:hover:not(:disabled),
 .essential-primary-button:hover:not(:disabled),
@@ -753,6 +760,7 @@ pre {
 
 .footer-project-button:focus-visible,
 .footer-project-install-button:focus-visible,
+.settings-nav-startup-rule-button:focus-visible,
 .essential-icon-button:focus-visible,
 .essential-setup-button:focus-visible,
 .essential-primary-button:focus-visible,
@@ -770,6 +778,7 @@ pre {
 
 .footer-project-button:active:not(:disabled),
 .footer-project-install-button:active:not(:disabled),
+.settings-nav-startup-rule-button:active:not(:disabled),
 .essential-icon-button:active:not(:disabled),
 .essential-setup-button:active:not(:disabled),
 .essential-primary-button:active:not(:disabled),
@@ -1065,7 +1074,7 @@ pre {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: 4px;
   min-width: 0;
   min-height: 0;
@@ -1084,6 +1093,34 @@ pre {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.settings-nav-startup-rules {
+  display: grid;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.settings-nav-startup-rule-button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 34px !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--sidebar-foreground) !important;
+  box-shadow: none !important;
+  font-weight: 650;
+}
+
+.settings-nav-startup-rule-button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-nav-footer {
@@ -1238,7 +1275,7 @@ pre {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   height: var(--titlebar-height);
   min-width: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, white);
@@ -1250,7 +1287,7 @@ pre {
 .settings-title-group {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -1337,8 +1374,8 @@ pre {
 .metrics-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
-  gap: 10px;
-  margin-bottom: 2px;
+  gap: 8px;
+  margin-bottom: 0;
 }
 
 .settings-content-progress .dashboard-area {
@@ -1370,7 +1407,8 @@ pre {
 .settings-content-progress .ai-progress-board {
   min-height: 0;
   overflow: hidden;
-  padding-right: 2px;
+  gap: 10px;
+  padding: 3px 3px 5px 4px;
 }
 
 .setup-required-panel {
@@ -1417,8 +1455,8 @@ pre {
 .workflow-stat-strip {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 0 4px 6px;
+  gap: 4px;
+  padding: 0 3px 5px;
 }
 
 .workflow-stat-row {
@@ -1439,13 +1477,13 @@ pre {
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
   min-width: 0;
-  min-height: 33px;
+  min-height: 31px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, white);
   border-radius: 10px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--card) 96%, var(--accent)) 0%, var(--card) 100%);
-  padding: 4px 8px;
-  gap: 7px;
+  padding: 4px 7px;
+  gap: 6px;
   box-shadow: var(--shadow-1);
 }
 
@@ -2328,7 +2366,7 @@ pre {
 .page-layout {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 11px;
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -2337,7 +2375,7 @@ pre {
 .page-layout-header {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -2355,8 +2393,8 @@ pre {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-right: 6px;
+  gap: 12px;
+  padding-right: 4px;
 }
 
 .workflow-progress-layout {
@@ -2371,7 +2409,7 @@ pre {
 .workflow-pin-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -2425,7 +2463,7 @@ pre {
   border-radius: 16px;
   background:
     linear-gradient(180deg, var(--card) 0%, color-mix(in srgb, var(--card) 90%, var(--background)) 100%);
-  padding: 15px;
+  padding: 13px;
   box-sizing: border-box;
   box-shadow: var(--shadow-1);
   transition:
@@ -2444,7 +2482,7 @@ pre {
 }
 
 .ai-progress-row > * + * {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .ai-progress-row > .ai-conversation-panel-activity {
@@ -2453,11 +2491,11 @@ pre {
 }
 
 .ai-progress-board {
-  padding: 3px 4px 6px;
+  padding: 3px 3px 5px;
 }
 
 .workflow-progress-divider {
-  margin: 14px 0;
+  margin: 10px 0;
   border: 0;
   border-top: 1px solid var(--border);
 }
@@ -3218,10 +3256,9 @@ pre {
 .ai-conversation-panel-activity {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   margin-top: 10px;
-  padding: 8px 12px 0;
-  border-top: 1px dashed var(--border);
+  padding: 6px 10px 0;
   color: var(--muted-foreground);
   font-size: var(--font-size-meta);
   font-variant-numeric: tabular-nums;
@@ -3266,22 +3303,29 @@ pre {
   width: 100%;
   flex: 1 1 0;
   min-height: 200px;
-  margin-top: 10px;
-  border: 1px solid var(--border);
+  margin-top: 6px;
+  border: 1px solid var(--terminal-border);
   border-radius: 8px;
-  background: var(--card);
+  background: var(--terminal-background);
   overflow: hidden;
   /* outer 만 padding — 시각 여백 제공. xterm host 는 padding 0 영역에서
      fit 계산 → 우측 글자 잘림 없음. */
-  padding: 6px 8px;
+  padding: 5px 7px;
   box-sizing: border-box;
   display: flex;
+  cursor: default;
+  box-shadow: var(--terminal-shadow);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
-[data-theme="dark"] .live-terminal-view {
-  /* 다크는 vibe-terminal 톤 유지. xterm theme 객체와 한 쌍으로 정렬. */
-  border-color: #1f242c;
-  background: #2d323b;
+.live-terminal-view:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--terminal-border));
+  box-shadow:
+    var(--terminal-shadow),
+    0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent);
 }
 
 .live-terminal-view-host {
@@ -3308,13 +3352,18 @@ pre {
   padding-right: 0 !important;
 }
 
-.live-terminal-view .xterm .xterm-viewport {
-  background: var(--card) !important;
-  scrollbar-width: thin;
+.live-terminal-view .xterm .xterm-rows,
+.live-terminal-view .xterm .xterm-rows span {
+  /* xterm v6 DOM renderer uses per-span letter-spacing to pad wide glyphs.
+     Korean fallback fonts on macOS can render narrower than xterm's wcwidth,
+     which creates visible blanks between Hangul syllables. */
+  letter-spacing: 0 !important;
+  font-kerning: none;
 }
 
-[data-theme="dark"] .live-terminal-view .xterm .xterm-viewport {
-  background: #2d323b !important;
+.live-terminal-view .xterm .xterm-viewport {
+  background: var(--terminal-background) !important;
+  scrollbar-width: thin;
 }
 
 /* Slim scrollbar — xterm v6 ships VS Code's scrollable-element which sets
@@ -3487,7 +3536,7 @@ pre {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -3533,7 +3582,7 @@ pre {
 .ai-progress-config .runner-select {
   width: 100%;
   min-width: 0;
-  height: 26px;
+  height: 25px;
   border-radius: 6px;
   font-size: var(--font-size-runner-card-meta);
 }
@@ -3541,7 +3590,7 @@ pre {
 .ai-progress-config .runner-save-button {
   width: auto;
   min-width: 0;
-  height: 26px;
+  height: 25px;
   border-radius: 6px;
   padding: 0 8px;
   font-size: var(--font-size-runner-card-meta);
@@ -3558,13 +3607,13 @@ pre {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, white);
-  border-radius: 12px;
+  border-radius: 11px;
   background: color-mix(in srgb, var(--muted) 42%, var(--card));
-  padding: 6px 10px;
+  padding: 5px 9px;
   overflow: hidden;
 }
 
@@ -3844,7 +3893,7 @@ pre {
 .ai-progress-agent {
   display: block;
   min-width: 0;
-  margin-top: auto;
+  margin-top: 0;
 }
 
 .ai-progress-agent-title {
@@ -3896,35 +3945,40 @@ pre {
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--muted) 66%, var(--card));
-  color: var(--foreground);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 34%, transparent);
-}
-
-.ai-agent-app-icon svg {
-  display: block;
-}
-
-.ai-agent-app-icon-image {
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
+  color: var(--foreground);
   box-shadow: none;
+  overflow: hidden;
 }
 
-.ai-agent-app-icon-image img {
+.ai-agent-app-icon img {
   display: block;
   width: 24px;
   height: 24px;
   object-fit: contain;
 }
 
+.ai-agent-app-icon svg {
+  display: block;
+}
+
+.ai-agent-app-icon-codex {
+  background: transparent;
+}
+
+.ai-agent-app-icon-claude {
+  background: transparent;
+}
+
 .ai-agent-app-icon-gemini {
-  border-color: color-mix(in srgb, #4f7db8 36%, var(--border));
-  background: color-mix(in srgb, #4f7db8 13%, var(--card));
-  color: #3f6da6;
+  background: transparent;
+}
+
+.ai-agent-app-icon-fallback {
+  background: transparent;
+  color: #7da7dc;
 }
 
 .ai-progress-agent strong,
@@ -3958,6 +4012,14 @@ pre {
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 400;
+}
+
+.ai-progress-agent .ai-agent-app-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0;
+  color: inherit;
 }
 
 .ai-progress-agent span.ai-progress-token-usage {
@@ -4159,14 +4221,14 @@ pre {
 .workflow-pin {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  min-height: 33px;
+  min-height: 31px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, white);
   border-radius: 10px;
   background:
     linear-gradient(180deg, var(--card) 0%, color-mix(in srgb, var(--card) 92%, var(--background)) 100%);
-  padding: 5px 8px;
+  padding: 4px 7px;
   text-align: left;
   cursor: pointer;
   font: inherit;
@@ -4217,8 +4279,8 @@ pre {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 17px;
-  height: 17px;
+  width: 16px;
+  height: 16px;
   border-radius: 999px;
   flex-shrink: 0;
 }
@@ -4259,7 +4321,7 @@ pre {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--card) 86%, var(--accent));
-  padding: 2px 7px;
+  padding: 2px 6px;
 }
 
 @media (max-width: 1120px) {
@@ -4291,7 +4353,7 @@ pre {
   top: 0;
   right: 0;
   bottom: 0;
-  left: var(--af-dialog-left-offset, 16rem);
+  left: 0;
   z-index: 60;
   display: flex;
   align-items: center;
@@ -4340,12 +4402,6 @@ pre {
   }
 }
 
-@media (max-width: 1160px) {
-  .af-dialog-root {
-    --af-dialog-left-offset: 200px;
-  }
-}
-
 @media (max-width: 1279px) {
   .ai-progress-row-top {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -4374,12 +4430,6 @@ pre {
   }
 }
 
-@media (max-width: 980px) {
-  .af-dialog-root {
-    --af-dialog-left-offset: 0px;
-  }
-}
-
 .af-dialog-content {
   position: relative;
   z-index: 1;
@@ -4397,11 +4447,6 @@ pre {
 
 .workflow-pin-layer-overlay {
   /* Inherit the base 20% dim from .af-dialog-backdrop — no extra blur. */
-}
-
-.af-dialog-root:has(.workflow-pin-layer-panel) {
-  left: 0;
-  padding-left: calc(var(--af-dialog-left-offset, 16rem) + 24px);
 }
 
 .desktop-global-loading-backdrop {
@@ -4492,6 +4537,77 @@ pre {
   max-height: 80vh;
   background:
     linear-gradient(180deg, var(--card) 0%, color-mix(in srgb, var(--card) 86%, var(--background)) 100%);
+}
+
+.startup-rules-layer-panel {
+  width: min(960px, calc(100vw - 48px));
+  height: min(82vh, 820px);
+  max-height: min(82vh, 820px);
+}
+
+.startup-rules-layer-header {
+  flex: 0 0 auto;
+}
+
+.startup-rules-layer-description {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 18px 10px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--mono-font-family, "D2Coding", "Consolas", monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startup-rules-editor-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 18px 12px;
+}
+
+.startup-rules-editor-textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, white);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background) 72%, var(--card));
+  color: var(--foreground);
+  padding: 14px;
+  font-family: var(--mono-font-family, "D2Coding", "Consolas", monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  outline: none;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 40%, transparent);
+}
+
+.startup-rules-editor-textarea:focus {
+  border-color: color-mix(in srgb, var(--ring) 46%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 16%, transparent);
+}
+
+.startup-rules-editor-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 78%, white);
+  padding: 12px 18px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.startup-rules-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .workflow-pin-layer-split {
@@ -4634,8 +4750,15 @@ pre {
   margin: 0;
   padding: 14px 18px 22px;
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 9px;
   overflow-y: auto;
+}
+
+.workflow-pin-list-item {
+  position: relative;
+  min-width: 0;
 }
 
 .workflow-pin-empty {
@@ -4666,6 +4789,30 @@ pre {
   cursor: pointer;
   color: var(--foreground);
   font: inherit;
+}
+
+.workflow-pin-item-deletable {
+  padding-right: 44px;
+}
+
+.workflow-pin-item-delete-button {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  transform: translateY(-50%);
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--muted));
+  background: color-mix(in srgb, var(--card) 94%, white);
+  color: var(--muted-foreground);
+  opacity: 0.9;
+}
+
+.workflow-pin-item-delete-button:hover,
+.workflow-pin-item-delete-button:focus-visible {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  color: var(--destructive);
 }
 
 .workflow-pin-item:hover,

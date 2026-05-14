@@ -56,11 +56,11 @@ export function runnerPidIsRunning(pid: string | number | undefined): boolean {
     return autoflowPidIsRunning(pid);
 }
 
-export function ticketOwnerLockValue(runnerId: string, runnerPid = String(process.pid), spawnedAt = runnerNowIso()): string {
+export function ticketWorkerLockValue(runnerId: string, runnerPid = String(process.pid), spawnedAt = runnerNowIso()): string {
     return `${runnerId}:${runnerPid}:${spawnedAt}`;
 }
 
-export function ticketOwnerLockParse(raw: string): {runnerId: string; pid: string; spawnedAt: string} | null {
+export function ticketWorkerLockParse(raw: string): {runnerId: string; pid: string; spawnedAt: string} | null {
     const match = raw.match(/^(.+):([0-9]+):([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)$/);
     if (!match) {
         return null;

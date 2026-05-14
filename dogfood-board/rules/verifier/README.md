@@ -25,7 +25,7 @@
 주의:
 
 - 실제 검증 명령은 `start-verifier.ts` 가 출력한 `working_root` 에서 실행한다. ticket worktree 가 있으면 worktree 가 우선이고, 없으면 `PROJECT_ROOT` 가 fallback 이다.
-- 검증 기록은 ticket markdown 에 남긴다. pass 는 `tickets/done/<project-key>/`, fail 은 inbox retry order 로 정리된다.
+- 검증 기록은 ticket markdown 에 남긴다. pass 는 `tickets/done/<project-key>/`, fail 은 order retry order 로 정리된다.
 - verifier 가 pass / fail 판정을 끝내면 `BOARD_ROOT/logs/` 에 completion log 를 남긴다.
 - 검증 기록과 completion log 에도 `## Reference Notes` 를 남겨 `project / plan / ticket / verify` note 가 이어지게 한다.
 - 브라우저 확인이 필요해도 기본값은 비브라우저 검증이다. HTTP 응답, 빌드 산출물, 로그, DOM 문자열 확인으로 충분하면 창을 열지 않는다.

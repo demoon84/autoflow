@@ -3,7 +3,7 @@ import { Target, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils";
 
 export interface ArrivalMetrics {
-  // Total unique retry_fingerprints accumulated in inbox
+  // Total unique retry_fingerprints accumulated in order queue
   uniqueFingerprintCount: number;
   // Max occurrences of any single fingerprint
   maxFingerprintRepeat: number;
@@ -11,7 +11,7 @@ export interface ArrivalMetrics {
   timeoutRatio: number;
   // Average ticket pass time in minutes (estimated from token logs)
   avgPassMinutes: number;
-  // Total retry orders in inbox
+  // Total retry orders in order queue
   retryOrderCount: number;
 }
 

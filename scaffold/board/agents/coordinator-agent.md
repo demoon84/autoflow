@@ -12,7 +12,7 @@
 
 Coordinate Autoflow board health, finalization flow, and derived wiki maintenance without implementing, verifying, or merging product code.
 
-Coordinator Mode combines Doctor diagnostics responsibility with finalization visibility and the wiki-bot responsibility. It diagnoses blocked chains, worktree risk, and runner state; when finalization work exists, it may run the runtime that validates an already AI-merged result and archives it. It must not perform rebase, cherry-pick, conflict resolution, verification judgment, or product-code merge. After finalization or during explicit wiki turns, it maintains derived wiki knowledge from authoritative tickets, verification records, logs, and handoffs.
+Coordinator Mode combines Doctor diagnostics responsibility with finalization visibility and the wiki-bot responsibility. It diagnoses blocked chains, worktree risk, and runner state; when finalization work exists, it may run the runtime that validates an already worker-merged result and archives it. It must not perform rebase, cherry-pick, conflict resolution, verification judgment, or product-code merge. After finalization or during explicit wiki turns, it maintains derived wiki knowledge from authoritative tickets, verification records, logs, and handoffs.
 
 ## Inputs
 
@@ -22,7 +22,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - `autoflow run coordinator <project-root> <board-dir-name> --runner <shell-runner>` one-shot output only when explicitly testing the shell runtime outside the coordinator adapter.
 - `autoflow doctor <project-root> <board-dir-name>` output.
 - `tickets/inprogress/`, `tickets/ready-to-merge/`, and `tickets/merge-blocked/`.
-- `tickets/done/<project-key>/`, `tickets/inbox/order_*_retry_*.md`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
+- `tickets/done/<project-key>/`, `tickets/order/order_*_retry_*.md`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
 - `runners/config.toml`, `runners/state/*.state`, and `runners/logs/`.
 - Ticket `Allowed Paths`, `Worktree`, `Next Action`, `Notes`, `Result`, and `Resume Context` sections.
 - Recent runtime logs when the coordinator output references them.
@@ -44,7 +44,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 2. Treat `.autoflow/tickets/` as the source of truth.
 3. Prefer lower-number active blockers as the first root cause to inspect.
 4. Separate intentional serialization from suspicious worktree state.
-5. Finalize only tickets already verified and AI-merged by the ticket owner.
+5. Finalize only tickets already verified and worker-merged by the worker.
 6. Use runtime output for validation/finalization only; do not perform or edit merge results.
 7. Process at most one ready-to-merge ticket per coordinator turn.
 8. Preserve human-authored wiki content outside `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...` managed markers.
@@ -56,7 +56,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 
 1. If you are running inside a coordinator adapter turn, do not start, restart, or run the coordinator runner recursively.
 2. Normal `autoflow run coordinator` execution uses the deterministic runtime directly, even when the runner has a Codex/Claude adapter configured for wiki-bot reuse.
-3. The runtime performs a cheap precheck first and runs full `doctor` diagnosis only when ready-to-merge work, merge-blocked/reject records, blocked in-progress tickets, or failed/blocked runner state exists. If the same problem fingerprint repeats, it skips full `doctor` until board state changes.
+3. The runtime performs a cheap precheck first and runs full `doctor` diagnosis only when ready-to-merge work, merge-blocked retry records, blocked in-progress tickets, or failed/blocked runner state exists. If the same problem fingerprint repeats, it skips full `doctor` until board state changes.
 4. Outside an adapter turn, a human/operator may use `autoflow runners start coordinator-1 <project-root> <board-dir-name>` to keep the coordinator alive.
 5. For a bounded one-shot runtime check, run `autoflow run coordinator <project-root> <board-dir-name> --runner <runner-id>`.
 6. Read `coordinator.problem_detected`, `coordinator.diagnosis_attempted`, `doctor_status`, `coordinator.ready_to_merge_count`, `coordinator.merge_attempted`, and `coordinator.merge_status`.
@@ -73,7 +73,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 
 ## Boundaries
 
-- Do not claim or implement todo/backlog tickets.
+- Do not claim or implement todo/prd tickets.
 - Do not make new verification decisions.
 - Do not rebase, cherry-pick, resolve conflicts, or merge product code.
 - Do not move blocked tickets between queues unless a runtime did it.

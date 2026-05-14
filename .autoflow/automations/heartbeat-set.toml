@@ -2,25 +2,22 @@ format = 1
 kind = "autoflow_heartbeat_set"
 set_name = "Autoflow Default Set"
 target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
-board_root = ".autoflow/"
+board_root = "{{BOARD_DIR}}/"
 
-# Four-runner topology: Plan AI + Impl AI + Verifier AI + Wiki AI.
-# Plan AI processes order/retry/backlog into todo. Impl AI claims todo and runs
-# implementation and local verification. Verifier AI checks semantic fit.
-# Wiki AI periodically inspects done/retry/log sources and calls wiki update only when content changes.
-# Path-disjoint set so concurrent ticks never produce merge conflicts.
-owner_workers = ["worker"]
+worker_runners = ["worker"]
 planner_workers = ["planner"]
 wiki_workers = ["wiki"]
-todo_workers = []
 verifier_workers = ["verifier"]
+
+# Legacy role-pipeline workers. Leave these empty for the default 4-runner topology.
+todo_workers = []
 merge_workers = []
 
 execution_pool = ""
 verifier_pool = ""
 max_execution_load_per_worker = 1
 
-owner_template = "automations/templates/ticket-owner-heartbeat.template.toml"
+worker_template = "automations/templates/worker-heartbeat.template.toml"
 plan_template = "automations/templates/plan-heartbeat.template.toml"
 todo_template = "automations/templates/todo-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"
@@ -32,10 +29,12 @@ verifier_template = "automations/templates/verifier-heartbeat.template.toml"
 [thread_ids]
 planner = "REPLACE_WITH_PLANNER_THREAD_ID"
 worker = "REPLACE_WITH_WORKER_THREAD_ID"
-wiki = "REPLACE_WITH_WIKI_THREAD_ID"
 verifier = "REPLACE_WITH_VERIFIER_THREAD_ID"
+wiki = "REPLACE_WITH_WIKI_THREAD_ID"
+
 [notes]
 edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
-topology_rule = "Four-runner model: planner_workers=[\"planner\"], owner_workers=[\"worker\"], verifier_workers=[\"verifier\"], wiki_workers=[\"wiki\"]. Scale only after profiling shows the pipeline is starved."
-trigger_rule = "All four heartbeats keep running until the user explicitly says stop."
-wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.ts or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."
+scaling_rule = "Scale 4-runner mode by adding workers and matching [thread_ids] entries. Use legacy todo/merge arrays only for role-pipeline compatibility."
+single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
+trigger_rule = "Planner, worker, verifier, and wiki heartbeats should keep running until the user explicitly says stop."
+merge_rule = "`autoflow run merge` should be single-writer; run at most one merge bot for a board."

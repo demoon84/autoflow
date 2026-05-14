@@ -11,7 +11,7 @@ const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BO
 const projectRoot = path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || path.join(boardRoot, ".."));
 const workerId = process.env.RUNNER_ID || process.env.AUTOFLOW_RUNNER_ID || process.env.AUTOFLOW_WORKER_ID || "spec";
 const requestedId = process.argv[2] || "";
-const specDir = path.join(boardRoot, "tickets", "backlog");
+const specDir = path.join(boardRoot, "tickets", "prd");
 const specTemplate = path.join(boardRoot, "reference", "project-spec-template.md");
 
 if (!fs.existsSync(specTemplate)) {

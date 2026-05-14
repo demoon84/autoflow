@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /*
- * start-todo.ts — legacy todo alias routed to start-ticket-owner.ts.
+ * start-todo.ts — legacy todo alias routed to start-ticket.ts.
  */
 
 import * as fs from "node:fs";
@@ -10,15 +10,15 @@ import { spawnSync } from "node:child_process";
 const scriptDir = path.dirname(path.resolve(process.argv[1] || __filename));
 const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(scriptDir, ".."));
 const projectRoot = path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || path.join(boardRoot, ".."));
-const startTicketOwner = path.join(scriptDir, "start-ticket-owner.ts");
+const startTicket = path.join(scriptDir, "start-ticket.ts");
 const runner = tsxCommand();
-const result = spawnSync(runner.command, [...runner.args, startTicketOwner, ...process.argv.slice(2)], {
+const result = spawnSync(runner.command, [...runner.args, startTicket, ...process.argv.slice(2)], {
   cwd: boardRoot,
   env: {
     ...process.env,
     AUTOFLOW_BOARD_ROOT: boardRoot,
     AUTOFLOW_PROJECT_ROOT: projectRoot,
-    AUTOFLOW_ROLE: "ticket-owner",
+    AUTOFLOW_ROLE: "worker",
     AUTOFLOW_WORKER_ID: process.env.AUTOFLOW_WORKER_ID || process.env.RUNNER_ID || "todo-1",
   },
   stdio: "inherit",

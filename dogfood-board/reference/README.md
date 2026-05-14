@@ -2,12 +2,14 @@
 
 Reference files explain the board contract and provide templates.
 
-- `backlog.md`: PRD queue rules.
+- `prd.md`: PRD queue rules.
 - `order.md`: quick order intake rules.
 - `plan.md`: legacy planning rules.
 - `tickets-board.md`: ticket state machine.
 - `runner-tool-contract.md`: canonical runner vs runner-tool responsibility boundary.
-- `project-spec-template.md`: backlog PRD template.
+- `runner-startup-common.md`: common rules injected into Desktop-started runners.
+- `runner-startup-rules/`: role-specific rules injected into Desktop-started runners.
+- `project-spec-template.md`: PRD queue item template.
 - `ticket-template.md`: ticket template.
 - `verification-template.md`: verifier evidence template.
 

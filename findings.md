@@ -2,14 +2,14 @@
 
 - 2026-05-12 조사 시작. `git diff --stat` 기준 기존 dirty 변경이 많다: `.autoflow/scripts/start-plan.ts`, ticket 이동/삭제, desktop package/dev script, `runner-pty-manager.js` 등이 포함된다. 이 변경은 되돌리지 않고 증거로만 취급한다.
 - Planning session catchup은 이전 세션이 worktree cleanup/dev process 종료를 했다고 보고했지만, worker stop의 직접 원인인지는 아직 미확인이다.
-- `.autoflow/runners/config.local.toml` 기준 실제 실행 config는 `worker`와 `worker-2` 두 ticket-owner runner를 동시에 enabled로 둔다. AGENTS/계약의 “동시에 살아 있는 worktree 0 또는 1개” 기본 운영과 충돌한다.
+- `.autoflow/runners/config.local.toml` 기준 실제 실행 config는 `worker`와 `worker-2` 두 worker runner를 동시에 enabled로 둔다. AGENTS/계약의 “동시에 살아 있는 worktree 0 또는 1개” 기본 운영과 충돌한다.
 - `worker.state`와 `worker-2.state`가 모두 `active_ticket_id=Todo-319`, `active_stage=inprogress`를 가리킨다. process는 죽지 않았다: `ps` 기준 두 zsh/codex 프로세스 모두 살아 있다.
 - 현재 보드에는 `Todo-319`가 `.autoflow/tickets/inprogress/Todo-319.md`와 `.autoflow/tickets/verifier/Todo-319.md`에 동시에 존재한다. `./bin/autoflow guard . .autoflow`가 `duplicate_ticket_ids` error로 동일하게 보고했다.
-- `Todo-319` ticket 본문은 Done When이 모두 `[x]`이고 Verification passed로 기록됐지만 `Next Action`은 여전히 `finish-ticket-owner.sh pass`다. 즉 구현/검증 이후 finalizer/merge 단계로 넘어가다 멈춘 상태다.
+- `Todo-319` ticket 본문은 Done When이 모두 `[x]`이고 Verification passed로 기록됐지만 `Next Action`은 여전히 `finish-ticket.sh pass`다. 즉 구현/검증 이후 finalizer/merge 단계로 넘어가다 멈춘 상태다.
 - `tickets_319` worktree에는 `.autoflow/scripts/start-plan.ts`, `runtime/board-scripts/start-plan.ts` 두 파일의 uncommitted diff가 있다. PROJECT_ROOT에는 같은 결과가 완전히 반영되지 않았다: worktree의 두 파일 hash는 동일하지만 PROJECT_ROOT의 두 파일 hash는 서로 다르고 worktree hash와도 다르다.
-- `.autoflow/scripts/start-ticket-owner.legacy.sh`와 runtime mirror의 `sync_runner_active_state()` 안 `ticket_id` 대입 라인이 깨져 있다: `ticket_id="Todo-20 20 ... 400extract_numeric_id "$ticket_file")"`. `bash -n`은 통과하지만 active state 갱신 시 잘못된 ticket id를 쓸 수 있는 데이터 손상이다.
+- `.autoflow/scripts/`와 runtime mirror의 `sync_runner_active_state()` 안 `ticket_id` 대입 라인이 깨져 있다: `ticket_id="Todo-20 20 ... 400extract_numeric_id "$ticket_file")"`. `bash -n`은 통과하지만 active state 갱신 시 잘못된 ticket id를 쓸 수 있는 데이터 손상이다.
 - `Todo-319`의 `Claimed By` lock은 `worker-2:43594:2026-05-12T10:56:13Z`인데 pid 43594는 현재 존재하지 않는다. PTY shell pid는 `worker-2=4291`로 살아 있다. 즉 lock이 장기 실행 PTY pid가 아니라 짧게 끝나는 helper/script pid를 기록하고 있어, 다른 worker가 stale lock으로 판단해 같은 ticket을 takeover할 수 있다.
-- Desktop PTY spawn env는 `AUTOFLOW_WORKER_ID`, `AUTOFLOW_RUNNER_ID`, `RUNNER_ID`만 넣고 `AUTOFLOW_TICKET_OWNER_PID`를 넣지 않는다. `runner-common.sh`는 없으면 `$$`를 lock pid로 쓰므로 PTY 모드에서 ownership liveness가 짧은 script pid에 묶인다.
+- Desktop PTY spawn env는 `AUTOFLOW_WORKER_ID`, `AUTOFLOW_RUNNER_ID`, `RUNNER_ID`만 넣고 `AUTOFLOW_WORKER_PID`를 넣지 않는다. `runner-common.sh`는 없으면 `$$`를 lock pid로 쓰므로 PTY 모드에서 claim liveness가 짧은 script pid에 묶인다.
 - PTY start 시 `writePtyRunnerStateFile()`는 기존 state file을 merge하고 active ticket fields를 명시적으로 비우지 않는다. 그래서 `worker`가 11:21에 새 PTY로 시작됐는데도 예전 `active_ticket_id=Todo-319`가 남아 CLI `runners list`에서 두 worker가 같은 ticket을 잡은 것처럼 보인다.
 - `./bin/autoflow doctor . .autoflow`는 runner pid는 모두 살아 있다고 보며, `verifier` role을 unsupported role warning으로 보고한다. 또한 detailed active-ticket traversal은 lock busy로 일부 생략됐다.
 
@@ -48,16 +48,16 @@
 - User requested terminal conversations to appear in Korean and for the AI to speak Korean.
 - Existing planning context shows many unrelated dirty files, including desktop renderer, runner scripts, board tickets, and wiki files. Treat them as pre-existing and avoid reverting them.
 - Required board docs say installed board Markdown should remain concise, AI-friendly English, while user-facing docs/UI can be Korean. Therefore the likely fix is a prompt-level user-visible language directive, not translating all board contracts.
-- Ticket Owner/automation docs route AI work through runner prompts and agent instruction files. Visible terminal conversation can be Korean while durable board files remain English.
+- Worker/automation docs route AI work through runner prompts and agent instruction files. Visible terminal conversation can be Korean while durable board files remain English.
 - `bin/autoflow run ...` dispatches to `packages/cli/run-role.sh`; its `write_agent_prompt()` feeds Codex, Claude, OpenCode, and Gemini adapters.
 - `runtime/board-scripts/run-role.sh` contains a similar prompt for packaged/generated runtime script copies, but it is currently older than `packages/cli/run-role.sh`.
 - `packages/cli/wiki-project.sh` has separate adapter prompts for `wiki query --synth` and `wiki lint --semantic`; these produce key=value output and should keep exact machine-readable keys while making any natural-language values Korean.
-- Legacy hook and heartbeat paths also generate prompts (`run-hook.sh` and `automations/templates/*heartbeat*.toml`). They need the same language rule for consistency when those compatibility routes are used.
+- Legacy hook and heartbeat paths also generate prompts (`run-hook.ts` and `automations/templates/*heartbeat*.toml`). They need the same language rule for consistency when those compatibility routes are used.
 
 ## Worker Runner Tools Findings
 
 - User direction: Worker must be LLM-led like Planner. Codex/Claude are capable coding agents, so runner tools should expose precise operations rather than pretend the tool is the agent.
-- Existing Worker contract still pointed at `start-ticket-owner.*` as the first macro. That macro combines queue selection, claim, worktree setup, recovery, and context writing, which is too large for the new boundary.
+- Existing Worker contract still pointed at `start-ticket.*` as the first macro. That macro combines queue selection, claim, worktree setup, recovery, and context writing, which is too large for the new boundary.
 - Small Worker tools should cover deterministic surfaces only: active ticket lookup, todo snapshot/conflict hints, explicit claim, worktree creation/status, durable context updates, verification evidence recording, Done When/diff mechanical checks, and finalizer wrappers.
 - Worker tools must not implement code, choose which todo to claim, infer scope, judge semantic correctness, decide pass/fail, or merge conflicts.
 - Worktree creation can be split safely because it already has deterministic inputs: ticket id, git root, base commit, branch name, worktree root, and recorded Worktree fields.
@@ -68,7 +68,7 @@
 - Verifier should stay smaller than Worker: it does not implement or merge, it only reviews whether the finished diff semantically matches Title/Goal/Done When/Acceptance Probe.
 - Existing Verifier contract already has deterministic side effects: queue scan, diff extraction, verifier-ok marker, latency log, wake marker, and finalizer re-entry. These are good runner-tool targets.
 - The semantic decision cannot be a tool result because only the LLM can compare intent, diff meaning, and checklist truthfulness. The tool should output evidence and require an explicit `--decision` / `--reason`.
-- `finish-ticket-owner.*` expects verifier bypass through `AUTOFLOW_SKIP_VERIFIER=1` or `runners/state/verifier-ok-<id>.marker`; Verifier pass tooling should set both before finalizer re-entry.
+- `finish-ticket.*` expects verifier bypass through `AUTOFLOW_SKIP_VERIFIER=1` or `runners/state/verifier-ok-<id>.marker`; Verifier pass tooling should set both before finalizer re-entry.
 - Smoke testing should avoid destructive pass/fail finalization and instead verify queue snapshot, evidence extraction, decision logging, pass marker creation, and wake marker creation.
 
 ## Wiki Runner Tools Findings
@@ -82,11 +82,11 @@
 ## Shell To TS Migration Findings
 
 - Small support wrappers with existing TS bodies are the safest first deletion group: `board-guard`, `integrate-worktree`, `lint-ticket`, `path-conflict-check`, and `state-db`.
-- Directly executing `.ts` is not reliable in this repo because some files are non-executable and `#!/usr/bin/env tsx` requires a global `tsx`; a Node `.js` wrapper should choose local `node_modules/.bin/tsx` or fallback to `npx tsx`.
-- `packages/cli/guard-project.sh`, `packages/cli/origin-project.sh`, `packages/cli/doctor-project.sh`, packaging, and related smoke tests now reference the small support `.js` wrappers instead of `.sh`.
+- Directly executing `.ts` entrypoints now relies on repo-local `tsx`/CLI dispatch instead of keeping per-script `.js` wrappers.
+- `packages/cli/guard-project.sh`, `packages/cli/origin-project.sh`, `packages/cli/doctor-project.sh`, packaging, and related smoke tests now reference TS entrypoints instead of `.sh`.
 - The TS wrapper must infer `AUTOFLOW_BOARD_ROOT` when executed from an installed board's `scripts/` directory or from the board root itself; otherwise TS helpers resolve paths like `.autoflow/.autoflow`.
 - `board-guard-recovery-protocol-sync-smoke.sh` now reads enum values from `board-guard.ts`; this exposed missing `resolved`, `dirty_root_cleared`, and `dirty_project_root_conflict` entries in `protocols/recovery.md`, which were added to dogfood and scaffold docs.
-- Core lifecycle shell remains risky: `finish-ticket-owner.sh` is still the durable finalizer, while current board has dirty `start-plan.ts` work tied to active tickets. These should be later phases, not mixed into small support deletion.
+- Core lifecycle shell remains risky: `finish-ticket.sh` is still the durable finalizer, while current board has dirty `start-plan.ts` work tied to active tickets. These should be later phases, not mixed into small support deletion.
 
 ---
 
@@ -121,8 +121,8 @@
 ## Autoflow Architecture Snapshot
 - Root README describes Autoflow as a local harness layer for coding agents, not a model itself.
 - Project state is intentionally file-based under `.autoflow/`; `tickets/` is the source of truth for execution state.
-- The current default execution model is `ticket-owner`: one runner owns local planning, implementation, verification, evidence, and done/reject movement.
-- Legacy `planner/todo/verifier` role pipeline remains as a compatibility path, but new/default behavior should prefer `ticket-owner`.
+- The current default execution model is `worker`: one runner owns local planning, implementation, verification, evidence, and done/reject movement.
+- Legacy `planner/todo/verifier` role pipeline remains as a compatibility path, but new/default behavior should prefer `worker`.
 - Runner/process state lives under `runners/` and should not replace ticket stage state.
 - Existing CLI supports `run ticket`, `run planner/todo/verifier/wiki`, watcher, stop hook, metrics, doctor, runner management, and desktop observation.
 
@@ -130,10 +130,10 @@
 - `bin/autoflow` is a Bash dispatcher over project-scoped CLI scripts.
 - `packages/cli/run-role.sh` validates runner config, picks the runtime role, writes runner state/logs, and either invokes a local runtime script or an external agent adapter.
 - External adapter support is prompt based for `codex`, `claude`, `opencode`, and `gemini`; dry runs persist prompt/log artifacts.
-- `runtime/board-scripts/start-ticket-owner.sh` already models a deterministic ticket-owner state selection order: resume owned inprogress, requested ticket, todo, verifier, populated backlog spec, then idle.
-- `verify-ticket-owner.sh` runs the verification command from the ticket/spec and records evidence into `verify_*.md`.
-- `finish-ticket-owner.sh` handles pass/fail, worktree integration, done/reject movement, verifier log writing, and optional local commit.
-- `watch-board.sh` polls board fingerprints and dispatches routes through `run-hook.sh`; it is an event trigger layer, not a graph executor.
+- `runtime/board-scripts/start-ticket.sh` already models a deterministic worker state selection order: resume owned inprogress, requested ticket, todo, verifier, populated backlog spec, then idle.
+- `verify-ticket.ts` runs the verification command from the ticket/spec and records evidence into `verify_*.md`.
+- `finish-ticket.sh` handles pass/fail, worktree integration, done/reject movement, verifier log writing, and optional local commit.
+- `watch-board.ts` polls board fingerprints and dispatches routes through `run-hook.ts`; it is an event trigger layer, not a graph executor.
 - The Electron app currently reads board state through CLI outputs and board files, with some guarded command surfaces in main-process IPC.
 
 ## LangGraph Official Capabilities
@@ -147,14 +147,14 @@
 
 ## Current Board Status
 - `./bin/autoflow status . autoflow` reports initialized, package/board version 0.1.0, no active specs/tickets, 5 done tickets, 5 verify runs, runner/wiki/metrics/conversation/adapter scaffold present.
-- Current runner config has one `worker` runner with `role = "ticket-owner"`, `agent = "codex"`, `mode = "one-shot"`.
+- Current runner config has one `worker` runner with `role = "worker"`, `agent = "codex"`, `mode = "one-shot"`.
 - File watcher enables the `ticket` route only by default; legacy `plan`, `todo`, and `verifier` routes are disabled.
-- The ticket owner agent contract explicitly says to keep the ticket file as source of truth, write a mini-plan, verify, record evidence, and finish pass/fail without splitting responsibility.
+- The worker agent contract explicitly says to keep the ticket file as source of truth, write a mini-plan, verify, record evidence, and finish pass/fail without splitting responsibility.
 
 ## Fit Recommendation
 - LangGraph is feasible, but should not become the authoritative state store for Autoflow right now.
-- Best fit: an optional `ticket-owner` runner/adapter that uses LangGraph internally for plan/implement/verify/retry/human-review routing while preserving `tickets/` markdown files as the source of truth.
-- Good candidates: human approval before risky shell/git actions, verification-failure retry loops, streaming node updates to the desktop app, and resumable long-running owner turns.
+- Best fit: an optional `worker` runner/adapter that uses LangGraph internally for plan/implement/verify/retry/human-review routing while preserving `tickets/` markdown files as the source of truth.
+- Good candidates: human approval before risky shell/git actions, verification-failure retry loops, streaming node updates to the desktop app, and resumable long-running worker turns.
 - Poor candidate: replacing `tickets/` state transitions, watcher routing, or CLI shell runtime wholesale.
 - If implemented, prefer JavaScript/TypeScript LangGraph first because the repo already has Node/Electron tooling; avoid adding Python runtime unless a strong reason appears.
 - Side effects must be idempotent or guarded because LangGraph durable execution can replay from node boundaries; existing scripts that append notes, move files, or commit should be called from carefully isolated nodes.
@@ -208,7 +208,7 @@
 
 ## Autoflow Positioning
 - Autoflow should not compete head-on as "the best code editor agent." That lane is crowded and mature.
-- Its best wedge is a repo-local source-of-truth harness: `.autoflow/tickets/` as execution ledger, ticket-owner lifecycle, evidence records, local worktree isolation, no-push guard, and metrics/reporting.
+- Its best wedge is a repo-local source-of-truth harness: `.autoflow/tickets/` as execution ledger, worker lifecycle, evidence records, local worktree isolation, no-push guard, and metrics/reporting.
 - This is closer to "agent operations for local repos" than "AI coding UI."
 
 ## Competitiveness
@@ -226,19 +226,19 @@
 
 # Blocked Runner Status Debug Findings
 
-- User screenshot shows multiple Codex Ticket Owner runners displayed as `실행 중`, current item `tickets_003`, `tickets_005`, `tickets_007`, `tickets_004`, with the visible pill `막힘`; one runner for `tickets_001` is at `구현 중`.
+- User screenshot shows multiple Codex Worker runners displayed as `실행 중`, current item `tickets_003`, `tickets_005`, `tickets_007`, `tickets_004`, with the visible pill `막힘`; one runner for `tickets_001` is at `구현 중`.
 - Initial git status shows several `.autoflow/tickets/inprogress/*.md`, verification files, reject files, wiki files, and desktop renderer/main files are already dirty before this debug pass.
-- Relevant board contract: `inprogress` tickets may remain blocked, but ticket owner mode should continue implementation and verification, and runner state should not replace ticket stage state.
-- Runner evidence before cleanup: worker through owner-5 were loop workers with live PIDs and active tickets; worker/2/3/5 had `active_stage=blocked`, owner-4 had `active_stage=executing`.
+- Relevant board contract: `inprogress` tickets may remain blocked, but worker mode should continue implementation and verification, and runner state should not replace ticket stage state.
+- Runner evidence before cleanup: worker through worker-5 were loop workers with live PIDs and active tickets; worker/2/3/5 had `active_stage=blocked`, worker-4 had `active_stage=executing`.
 - Repeated `막힘` is backed by real ticket state, not only a renderer label: tickets 003/004/005/007 carry `Stage: blocked` with `shared_allowed_path_conflict`; logs also show worktree dependency hydration and stale verification path failures.
 - Worktree cleanup archive: `.autoflow/logs/worktree-cleanup_20260426T042800Z/` contains status/diff/staged/untracked records for each removed worktree. Non-empty diffs existed for `autoflow_tickets_003`, `autoflow_tickets_006_local`, `autoflow_tickets_007`, and stale `autoflowLab_*` worktrees.
-- After cleanup, `git worktree list --porcelain` shows only `/Users/demoon/Documents/project/autoflow`; all Autoflow project owner runners are `stopped` with empty active ticket metadata.
-- One unrelated loop worker remains for another project: `owner-6` on `/Users/demoon/Documents/project/tetris`; it was intentionally not stopped during the Autoflow project cleanup.
-- The only remaining reject ticket was `.autoflow/tickets/reject/reject_006.md`; it was replanned with the runtime's existing `replan_reject_to_todo` logic and moved to `.autoflow/tickets/todo/tickets_006.md` with `Stage: todo`, blank owner fields, `Integration Status: pending_claim`, and `Retry Count: 7`.
-- Manual PRD restart reset moved active tickets 001, 003, 004, 005, and 007 from `inprogress/` to `todo/` with `Stage: todo`, blank owner fields, `Integration Status: pending_claim`, and pending verification/result fields. Existing `verify_001.md`, `verify_003.md`, `verify_005.md`, and `verify_007.md` were archived under `.autoflow/logs/requeue-inprogress_20260426T043110Z/`.
+- After cleanup, `git worktree list --porcelain` shows only `/Users/demoon/Documents/project/autoflow`; all Autoflow project worker runners are `stopped` with empty active ticket metadata.
+- One unrelated loop worker remains for another project: `worker-6` on `/Users/demoon/Documents/project/tetris`; it was intentionally not stopped during the Autoflow project cleanup.
+- The only remaining reject ticket was `.autoflow/tickets/reject/reject_006.md`; it was replanned with the runtime's existing `replan_reject_to_todo` logic and moved to `.autoflow/tickets/todo/tickets_006.md` with `Stage: todo`, blank worker fields, `Integration Status: pending_claim`, and `Retry Count: 7`.
+- Manual PRD restart reset moved active tickets 001, 003, 004, 005, and 007 from `inprogress/` to `todo/` with `Stage: todo`, blank worker fields, `Integration Status: pending_claim`, and pending verification/result fields. Existing `verify_001.md`, `verify_003.md`, `verify_005.md`, and `verify_007.md` were archived under `.autoflow/logs/requeue-inprogress_20260426T043110Z/`.
 - Full tickets reset preserved every PRD document by moving PRDs 001 through 010 into `.autoflow/tickets/backlog/`, then removed generated ticket, done, reject, and verifier files from `.autoflow/tickets/`. The previous ticket tree was archived under `.autoflow/logs/tickets-reset_20260426T043324Z/tickets-before-reset/`.
 - The desktop `처리 지표` view also depends on `.autoflow/metrics/daily.jsonl` and verifier completion logs. The previous metrics history and 39 verifier completion logs were archived under `.autoflow/archive/metrics-reset_20260426T043803Z/`, and the report card calculation was corrected so runners without artifacts no longer count as `AI 산출물`.
-- New start-blocked reproduction: after the PRD-only reset, starting five owner runners moved PRDs 001-005 into `tickets/done/prd_*/` and created five inprogress tickets. `tickets_001` reached `planning`, while `tickets_002` through `tickets_005` immediately became `Stage: blocked` with `Runtime auto-blocked: shared_allowed_path_conflict`.
+- New start-blocked reproduction: after the PRD-only reset, starting five worker runners moved PRDs 001-005 into `tickets/done/prd_*/` and created five inprogress tickets. `tickets_001` reached `planning`, while `tickets_002` through `tickets_005` immediately became `Stage: blocked` with `Runtime auto-blocked: shared_allowed_path_conflict`.
 - Root cause: `ensure_ticket_worktree` calls `worktree_auto_fallback_reason` before creating or reusing a ticket worktree. In default `AUTOFLOW_WORKTREE_MODE=auto`, any dirty root Allowed Path such as `apps/desktop/src/renderer/main.tsx` forces `Integration Status: project_root_fallback`. Once one fallback ticket holds a shared path, later tickets with overlapping Allowed Paths are blocked before implementation starts.
 - The repository rules say ticket worktrees are preferred in git repositories and fallback should happen only when no ticket worktree exists. Dirty root paths are not a worktree-unavailable condition; treating them as fallback input creates the visible start-blocked behavior.
 - Fix: default `auto` mode no longer uses dirty Allowed Paths as a project-root fallback trigger. The old behavior remains available only through explicit `AUTOFLOW_WORKTREE_MODE=project-root-on-dirty` / `fallback-on-dirty`, and the shared-path block smoke test now opts into that legacy mode.
@@ -263,10 +263,10 @@
 - `run-role.sh` supports ticket, planner, todo, verifier, merge, and wiki roles, but needs a coordinator role for diagnosis plus ready-to-merge orchestration.
 - `runners-project.sh` role validation needs `coordinator` so `autoflow runners add coordinator-1 coordinator ...` works.
 - New boards should include a looped `coordinator-1` Codex runner for the AI Coordinator path. The raw `autoflow doctor` scanner remains shell-friendly and deterministic.
-- Existing `ticket-owner-smoke` exposed an unrelated merge cleanup bug: `merge-ready-ticket.sh` used `git_root` after completion without defining it in main scope.
+- Existing `worker-smoke` exposed an unrelated merge cleanup bug: `merge-ready-ticket.sh` used `git_root` after completion without defining it in main scope.
 - On macOS, `setsid` is not available. The previous loop start fallback used plain `nohup`, which did not reliably detach from the launching process group in this environment; `coordinator-1` appeared started and then immediately became a stale PID.
 - The first AI coordinator instruction still told the coordinator to run/resume `autoflow runners start coordinator-1`; inside a coordinator adapter turn, that caused recursive coordinator invocations instead of one bounded diagnostic/merge turn.
-- Current live blocker chain is not a ready-to-merge backlog. `ready_to_merge_count=0`, `tickets_001` is the root active owner item, and tickets 004/005/009 are blocked behind lower-number active tickets through shared Allowed Paths.
+- Current live blocker chain is not a ready-to-merge backlog. `ready_to_merge_count=0`, `tickets_001` is the root active worker item, and tickets 004/005/009 are blocked behind lower-number active tickets through shared Allowed Paths.
 - Current doctor evidence also shows dirty `PROJECT_ROOT` overlap and one shared non-base HEAD group (`001,005,009` on `edc3f23abb487081dd6f4323091519db7933a7b3`), so automatic repair would be destructive without an explicit repair policy.
 
 ---
@@ -276,7 +276,7 @@
 - Current board docs define wiki maintenance as derived knowledge, never as the source of truth for ticket stage, pass/fail, or commits.
 - Current `.autoflow/agents/coordinator-agent.md` covers diagnostics and one ready-to-merge integration, while `.autoflow/agents/wiki-maintainer-agent.md` separately covers wiki update/lint/query behavior.
 - User requested expanding coordinator to include the wiki bot role, so the likely target is to fold wiki-maintainer post-processing and guidance into Coordinator Mode while keeping the wiki derived and idempotent.
-- `merge-ready-ticket.sh` already runs deterministic `update-wiki.sh` after moving a ready ticket to done, then attempts a non-blocking `autoflow run wiki` adapter turn.
+- `merge-ready-ticket.sh` already runs deterministic `update-wiki.ts` after moving a ready ticket to done, then attempts a non-blocking `autoflow run wiki` adapter turn.
 - The existing wiki adapter lookup only accepted `wiki` / `wiki-maintainer`; `query --synth`, `lint --semantic`, and post-merge wiki maintenance therefore needed coordinator fallback support.
 - The old runtime config parser decided on a runner as soon as it saw `role = ...`, before reading a later `enabled = false`; coordinator fallback should evaluate complete `[[runners]]` blocks instead.
 
@@ -287,7 +287,7 @@
 - `memo_005` is parked at `Status: needs-info`; `start-plan.sh` treats only empty, `inbox`, `ready`, and `pending` memo statuses as actionable.
 - The active `planner` runner is a Codex loop runner with `interval_seconds=60` and `reasoning=xhigh`, so every idle tick can be expensive if the adapter is launched before checking runtime state.
 - `start-plan.sh` already provides a deterministic cheap runtime answer (`status=idle`, `reason=no_actionable_plan_input`) when no actionable planner input exists.
-- The current expensive path happens because `run-role.sh` only preflights ticket-owner runs; planner runs launch Codex first and let the AI call `start-plan.sh` itself.
+- The current expensive path happens because `run-role.sh` only preflights worker runs; planner runs launch Codex first and let the AI call `start-plan.sh` itself.
 - For autonomous operation, `needs-info` cannot mean "ask a human every minute." User clarified memo intake should not ask questions; memos are directives that should be promoted by inference unless unsafe.
 - After `memo_005` was made actionable, live `planner` generated `prd_039` and `tickets_039`, but the source memo remained in `tickets/inbox/`. Without an archive/skip guard, the next planner tick could duplicate the generated PRD from the same memo.
 - The runtime can deterministically recognize already-promoted memos by scanning backlog/done PRDs for `## Conversation Handoff` sources that reference the memo.

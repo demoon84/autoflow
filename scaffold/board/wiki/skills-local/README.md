@@ -35,6 +35,6 @@
 
 ## 안전성
 
-- finish-ticket-owner.ts 의 `skill create --from-ticket` 호출은 best-effort 다 — 추출 실패가 ticket pass 를 막지 않는다.
+- finish-ticket.ts 의 `skill create --from-ticket` 호출은 best-effort 다 — 추출 실패가 ticket pass 를 막지 않는다.
 - `AUTOFLOW_SKILL_AUTO_EXTRACT=off` 로 끌 수 있다.
 - 모든 skill 은 `autoflow skill validate` 로 frontmatter / size cap 검증을 통과해야 한다.

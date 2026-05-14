@@ -9,7 +9,7 @@ const BOARD_ROOT = utils.resolveBoardRoot();
 const PROJECT_ROOT = utils.resolveProjectRoot();
 
 function usage(): never {
-  process.stderr.write("Usage: set-thread-context.js <ticket-owner|plan|todo|verifier> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]\n");
+  process.stderr.write("Usage: set-thread-context.js <worker|plan|todo|verifier> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]\n");
   process.exit(1);
 }
 
@@ -62,7 +62,7 @@ function contextEffectiveValue(key: string): string {
   return file ? readContextValue(file, key) : "";
 }
 
-function ownerId(): string {
+function defaultWorkerId(): string {
   return process.env.AUTOFLOW_WORKER_ID || process.env.CODEX_AUTOMATION_ID || process.env.CODEX_THREAD_ID || `${process.env.USER || "unknown"}@${os.hostname() || "localhost"}:${process.pid}`;
 }
 
@@ -92,7 +92,7 @@ function writeContextSnapshot(role: string, workerId: string, executionPool: str
 }
 
 function normalizeRole(raw: string): string {
-  if (raw === "ticket" || raw === "owner") return "ticket-owner";
+  if (raw === "ticket") return "worker";
   return raw;
 }
 
@@ -100,9 +100,9 @@ const args = process.argv.slice(2);
 if (args.length < 1 || args.length > 5) usage();
 
 const role = normalizeRole(args[0]);
-if (!["ticket-owner", "plan", "todo", "verifier"].includes(role)) usage();
+if (!["worker", "plan", "todo", "verifier"].includes(role)) usage();
 
-const workerId = args[1] || ownerId();
+const workerId = args[1] || defaultWorkerId();
 const activeTicketId = args[2] || "";
 const activeStage = args[3] || "";
 const activeTicketPath = args[4] || "";

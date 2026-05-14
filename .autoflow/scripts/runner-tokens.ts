@@ -63,7 +63,13 @@ function readState(runner: string): string {
   catch { return ""; }
 }
 function writeState(runner: string, content: string): boolean {
-  try { fs.writeFileSync(statePath(runner), content); return true; }
+  try {
+    const target = statePath(runner);
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, content);
+    fs.renameSync(tmp, target);
+    return true;
+  }
   catch (err: any) { warn(`state write failed: ${err && err.message}`); return false; }
 }
 
@@ -87,6 +93,32 @@ function parseInt0(s: unknown): number {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+const tokenDefaults = new Map<string, string>([
+  ["cumulative_tokens", "0"],
+  ["last_turn_tokens", "0"],
+  ["last_turn_input_tokens", "0"],
+  ["last_turn_output_tokens", "0"],
+  ["last_turn_cache_read_tokens", "0"],
+  ["last_turn_cache_create_tokens", "0"],
+  ["last_turn_at", ""],
+  ["last_turn_tick_id", ""],
+  ["token_source", "none"],
+  ["last_token_usage_source", "none"],
+  ["cumulative_code_files_changed", "0"],
+  ["cumulative_code_insertions", "0"],
+  ["cumulative_code_deletions", "0"],
+  ["cumulative_code_volume", "0"],
+  ["cumulative_code_net_delta", "0"],
+  ["last_code_ticket_id", ""],
+  ["last_code_files_changed", "0"],
+  ["last_code_insertions", "0"],
+  ["last_code_deletions", "0"],
+  ["last_code_volume", "0"],
+  ["last_code_net_delta", "0"],
+  ["last_code_reported_at", ""],
+  ["code_source", "none"],
+]);
+
 interface ReportOpts {
   tickId?: string;
   input?: string;
@@ -103,18 +135,25 @@ function report(runner: string | undefined, opts: ReportOpts): never {
   const cacheR = parseInt0(opts.cacheRead);
   const cacheC = parseInt0(opts.cacheCreate);
   const turnTotal = inputT + outputT + cacheR + cacheC;
+  const inputSideTotal = inputT + cacheR + cacheC;
   if (turnTotal <= 0) {
     warn("report ignored: total tokens 0");
+    process.exit(0);
+  }
+  if (inputSideTotal <= 0 && outputT > 0) {
+    warn("report ignored: output-only token report is incomplete; pass exact input/cache tokens or report 0/0");
     process.exit(0);
   }
 
   ensureDirs();
   const state = readState(runner);
-  if (!state) {
-    warn(`state file missing for ${runner}; skipping (run runner-stage.js first)`);
-    process.exit(0);
-  }
   const map = parseStateLines(state);
+  if (!map.has("id")) map.set("id", runner);
+  if (!map.has("status")) map.set("status", "idle");
+  if (!map.has("active_stage")) map.set("active_stage", "idle");
+  for (const [key, value] of tokenDefaults) {
+    if (!map.has(key)) map.set(key, value);
+  }
 
   const tickId = String(opts.tickId || "");
   const lastTickId = map.get("last_turn_tick_id") || "";
@@ -123,7 +162,9 @@ function report(runner: string | undefined, opts: ReportOpts): never {
     process.exit(0);
   }
 
-  const prevCumulative = parseInt0(map.get("cumulative_tokens"));
+  const prevCumulative = map.get("token_source") === "llm_reported"
+    ? parseInt0(map.get("cumulative_tokens"))
+    : 0;
   const newCumulative = prevCumulative + turnTotal;
   map.set("last_turn_tokens", String(turnTotal));
   map.set("last_turn_input_tokens", String(inputT));
@@ -134,6 +175,8 @@ function report(runner: string | undefined, opts: ReportOpts): never {
   if (tickId) map.set("last_turn_tick_id", tickId);
   map.set("cumulative_tokens", String(newCumulative));
   map.set("token_source", "llm_reported");
+  map.set("last_token_usage_source", "llm_reported");
+  map.set("updated_at", NOW());
 
   if (writeState(runner, serializeStateLines(map))) {
     process.stdout.write(`[runner-tokens] ${runner}: +${turnTotal} (cum=${newCumulative})\n`);

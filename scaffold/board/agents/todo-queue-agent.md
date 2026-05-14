@@ -10,7 +10,7 @@
 
 Legacy compatibility agent. Claim a todo ticket and implement it, then hand it to the verifier queue.
 
-Use Ticket Owner Mode by default unless the user explicitly asks for legacy role-pipeline behavior.
+Use Worker Mode by default unless the user explicitly asks for legacy role-pipeline behavior.
 
 ## Inputs
 
@@ -33,7 +33,7 @@ Use Ticket Owner Mode by default unless the user explicitly asks for legacy role
 4. Prefer the ticket worktree.
 5. Treat `todo/` and `inprogress/` as implementation stages even if wording sounds like verification.
 6. Keep `Notes`, `Last Updated`, `Next Action`, `Resume Context`, and `Result.Summary` current.
-7. Do not verify pass/fail.
+7. Do not verify pass/revise/replan.
 8. Do not reject.
 9. Do not commit.
 10. Do not push.

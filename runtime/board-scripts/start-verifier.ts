@@ -3,7 +3,7 @@
  * start-verifier.ts
  *
  * Watches tickets/verifier/ for verify_pending tickets and triggers the
- * verifier runner wake. Called by finish-ticket-owner.ts after the sanity
+ * verifier runner wake. Called by finish-ticket.ts after the sanity
  * gate passes when AUTOFLOW_VERIFIER_ENABLED=1.
  *
  * Writes runners/state/verifier.verifier-realtime-wakeup.pending to trigger

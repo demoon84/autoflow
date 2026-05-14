@@ -7,9 +7,9 @@ Automations connect board folders to recurring workers, stop hooks, and file-wat
 Default 4-runner topology (planner + worker + verifier + wiki):
 
 - Claude `/autoflow`, Codex `$autoflow`, or `#autoflow`: manual PRD handoff, no heartbeat.
-- `planner` (Planner runner): converts quick orders, retry orders, and populated backlog PRDs into todo tickets, then supervises board health when owner work stalls or breaks. Path scope: `tickets/{inbox,backlog,todo,inprogress,done}/` for markdown-only orchestration. Owns order promotion and `Recovery State` decisions.
-- `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges verification, manually merges into `PROJECT_ROOT`, and finishes pass or fail. It does not refresh or stage wiki pages during ticket completion.
-- `verifier` (Verifier runner): reads verifier-lane tickets, compares the diff against the ticket title, goal, and Done When items, and records pass/fail semantics without implementing code.
+- `planner` (Planner runner): converts quick orders, retry orders, and populated PRD queue items into todo tickets, then supervises board health when worker work stalls or breaks. Path scope: `tickets/{order,prd,todo,inprogress,done}/` for markdown-only orchestration. Owns order promotion and `Recovery State` decisions.
+- `worker` (Impl AI): claims one ticket from `tickets/todo/`, writes a mini-plan, implements, runs and judges local verification, hands off to verifier before merge, handles verifier revise/replan, then after verifier pass manually merges into `PROJECT_ROOT` and finishes pass. It does not refresh or stage wiki pages during ticket completion.
+- `verifier` (Verifier runner): reads verifier-lane tickets, compares the diff against the ticket title, goal, and Done When items, and records pass/revise/replan semantics without implementing code.
 - `wiki` (Wiki AI): ticks every minute, inspects whether source changes require wiki work, calls `autoflow wiki update` only for material baseline drift, and layers AI synthesis (`autoflow wiki query --synth`, `autoflow wiki lint --semantic`) when needed. Path scope: `.autoflow/wiki/` only for real content updates; check-only state belongs under `.autoflow/runners/state/`.
 - The four runners write to disjoint paths so concurrent ticks avoid merge conflicts.
 
@@ -27,29 +27,29 @@ Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#aut
 - If scope is too large for one safe handoff, propose a lightweight PRD split map before drafting.
 - Render the full PRD draft(s) only after an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, or `show draft`.
 - Save only after separate explicit approval. A draft trigger is not save approval; multiple drafts need per-PRD approval or a clear save-all confirmation.
-- Write only `tickets/backlog/prd_NNN.md` and optional conversation handoff. Split PRDs are separate backlog files saved one active slot at a time.
+- Write only `tickets/prd/prd_NNN.md` and optional conversation handoff. Split PRDs are separate PRD files saved one active slot at a time.
 - Do not create plans, tickets, code, verification records, commits, or pushes.
 
 Order skill handoff (`/order`, `$order`, `#order`) and `autoflow order create`:
 
-- Save only a quick order under `tickets/inbox/order_*.md`.
+- Save only a quick order under `tickets/order/order_*.md`.
 - Preserve the original request and optional hints.
 - Do not create PRDs, tickets, code, verification records, commits, or pushes.
 - Plan AI promotes clear order into generated PRDs and todo tickets.
 
-`ticket-owner`:
+`worker`:
 
 - Claims or creates one active ticket.
-- Reads planner `Recovery State` / owner resume instruction when present.
+- Reads planner `Recovery State` / worker resume instruction when present.
 - Writes a mini-plan in the ticket.
 - Implements within `Allowed Paths`.
 - Runs verification commands directly, judges evidence, and records evidence.
 - Manually merges verified changes into `PROJECT_ROOT`, resolving conflicts when needed.
-- Finishes pass or fail.
+- Finishes pass, or follows verifier replan to create a retry order and delete the worktree.
 
 Legacy `#plan`:
 
-- Reads backlog specs and reject reasons.
+- Reads PRD queue specs and replan reasons.
 - Creates or updates plans.
 - Generates todo tickets from execution candidates.
 
@@ -62,8 +62,9 @@ Legacy `#todo`:
 Legacy `#veri`:
 
 - Verifies tickets waiting in `tickets/verifier/`.
-- Pass moves to done with local commit.
-- Fail moves to reject with `## Reject Reason`.
+- Pass wakes worker for merge/finalization.
+- Revise wakes worker to fix the same worktree.
+- Replan wakes worker to create the retry order and delete the worktree.
 
 ## Heartbeat Policy
 
@@ -75,14 +76,14 @@ Legacy `#veri`:
 
 ## Optional Stop Hook
 
-The stop hook checks for unfinished owner or legacy work before the agent exits too early.
+The stop hook checks for unfinished worker or legacy work before the agent exits too early.
 
 It may block exit when:
 
-- a Ticket Owner ticket is active,
+- a Worker ticket is active,
 - todo tickets are waiting,
 - verifier tickets are waiting,
-- reject records require planning,
+- retry orders require planning,
 - active context says work remains.
 
 The stop hook supplements heartbeats. It does not replace them.
@@ -98,10 +99,10 @@ fallback for environments where the minute heartbeat is unreliable.
 
 Typical routes (when file-watch is enabled):
 
-- inbox changes -> planner,
-- backlog changes -> ticket owner or legacy planner,
-- todo changes -> ticket owner or legacy todo,
-- verifier changes -> ticket owner or legacy verifier,
+- order changes -> planner,
+- prd changes -> planner,
+- todo changes -> worker or legacy todo,
+- verifier changes -> worker or legacy verifier,
 - done/retry changes -> planner follow-up when legacy retries are enabled.
 
 Each hook dispatch writes a log under `logs/hooks/`.
@@ -111,11 +112,11 @@ Each hook dispatch writes a log under `logs/hooks/`.
 Recommended map (when running file-watch alongside the heartbeat as a
 fallback):
 
-- `tickets/inbox/`: `plan` route when file-watch fallback is enabled.
-- `tickets/backlog/`: `ticket` route by default.
+- `tickets/order/`: `plan` route when file-watch fallback is enabled.
+- `tickets/prd/`: `plan` route when file-watch fallback is enabled.
 - `tickets/todo/`: `ticket` route by default.
 - `tickets/verifier/`: `ticket` route by default.
-- `tickets/inbox/order_*_retry_*.md`: `plan` route when file-watch fallback is enabled.
+- `tickets/order/order_*_retry_*.md`: `plan` route when file-watch fallback is enabled.
 - `tickets/done/`: no script-driven wiki route is needed. `wiki` inspects done/log/retry sources on its own heartbeat and calls `autoflow wiki update` as a tool only when the managed baseline materially changes.
 
 ## Operating Principle
@@ -130,9 +131,9 @@ Protocol files under `protocols/` define the AI-first workflow:
 
 - `board-orchestration.md`: planner-owned board supervision and shell safety boundary.
 - `recovery.md`: stalled/blocked/requeue classification and evidence rules.
-- `owner-contract.md`: owner execution contract and planner instruction handling.
+- `worker-contract.md`: worker execution contract and planner instruction handling.
 
-Use `autoflow guard` or `scripts/board-guard.ts` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for rejected/done tickets, and missing active-ticket recovery sections.
+Use `autoflow guard` or `scripts/board-guard.ts` after AI-authored board repair to catch duplicate ticket states, stale todo worktree metadata, leftover ticket worktrees for done tickets, and missing active-ticket recovery sections.
 
 ## Context Lifecycle
 
@@ -172,7 +173,7 @@ The runners are path-disjoint and tick on heartbeat/realtime wakeups without con
 ## Non-Goals
 
 - No automatic push.
-- No hidden pass/fail.
+- No hidden pass/revise/replan.
 - No implementation during PRD handoff.
 - No wiki-as-source-of-truth.
 

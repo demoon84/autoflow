@@ -7,7 +7,7 @@ When another document describes the same boundary, this file wins.
 
 - **Runner**: the LLM-backed actor for one role (`planner`, `worker`, `verifier`, or `wiki`). The runner reads the board, reasons about the next safe action, calls tools, interprets results, and writes durable decisions.
 - **Runner tool**: a deterministic command called by a runner for one explicit action. The tool may inspect state, validate invariants, reserve ids, perform narrow board mutations, prepare evidence, or run a mechanical check.
-- **Runtime macro**: a legacy or compatibility script such as `start-plan.*`, `start-ticket-owner.*`, or `finish-ticket-owner.*`. Macros are allowed only where the equivalent small runner tools have not fully replaced the flow.
+- **Runtime macro**: a coarse runtime script such as `start-plan.*`, `start-ticket.*`, or `finish-ticket.*`. Macros are allowed only where the equivalent small runner tools have not fully replaced the flow. A start macro may provide startup context, but it must not choose work, claim tickets, create worktrees, or silently fall back from a missing worktree to `PROJECT_ROOT` implementation.
 - **Board state**: files under `.autoflow/tickets/`, `.autoflow/runners/`, `.autoflow/logs/`, and related reference/runtime state. Board state is the source of truth; chat text is not.
 
 ## Primary Rule
@@ -20,7 +20,7 @@ The runner owns every semantic decision:
 - what scope and `Allowed Paths` mean,
 - what `Done When` should require,
 - whether evidence satisfies the ticket,
-- whether to pass, fail, block, replan, or ask the user,
+- whether to pass, revise, replan, block, or ask the user,
 - how to resolve merge or recovery strategy,
 - what wiki meaning should be written.
 
@@ -87,21 +87,21 @@ Tools may perform atomic filesystem operations, lock acquisition, id reservation
 
 `planner`:
 
-- Owns order/backlog promotion, ticket drafting, queue choice, and recovery decisions.
+- Owns order/prd promotion, ticket drafting, queue choice, and recovery decisions.
 - Uses `scripts/runner-tool.ts planner ...` for queue snapshots, id reservation, validated PRD/ticket writes, archival, recovery field updates, and guard checks.
 - Does not implement product code, verify tickets, merge code, update wiki meaning, or manage runner processes.
 
 `worker`:
 
-- Owns one active ticket from claim through implementation, local verification judgment, merge preparation, and pass/fail request.
+- Owns one active ticket from claim through implementation, local verification judgment, verifier handoff, verifier revise/replan handling, verifier-approved merge, and finalization request.
 - Uses `scripts/runner-tool.ts worker ...` for active lookup, todo snapshots, explicit claim, worktree setup/status, context/stage updates, evidence records, Done When checks, diff checks, and finalizer wrappers.
 - The worker chooses the ticket, writes the mini-plan, edits code inside `Allowed Paths`, runs verification, judges evidence, and resolves merge work. Tools only record or check those actions.
 
 `verifier`:
 
 - Owns semantic review of verifier-lane tickets.
-- Uses `scripts/runner-tool.ts verifier ...` for queue snapshots, evidence bundles, decision records, wake markers, and finalizer wrappers.
-- The verifier decides whether the finished diff matches the ticket title, goal, and Done When. Tools only gather evidence and route the recorded decision.
+- Uses `scripts/runner-tool.ts verifier ...` for queue snapshots, evidence bundles, decision records, pass markers, and worker wake routing.
+- The verifier decides whether the finished diff matches the ticket title, goal, and Done When. Tools only gather evidence and route the recorded decision; verifier tools must not merge or finalize product code.
 
 `wiki`:
 
@@ -114,26 +114,28 @@ Tools may perform atomic filesystem operations, lock acquisition, id reservation
 Large runtime scripts remain only as compatibility layers while behavior is split into smaller runner tools.
 
 - Prefer `scripts/runner-tool.ts <role> ...` for new behavior.
-- Keep TypeScript entrypoints as the only runtime contract; do not add shell wrappers for new calls.
-- Remove legacy shell companions once a JS/TS wrapper owns the behavior.
-- Remove a legacy shell fallback once the JS/TS implementation is the single owner and package/doctor/smoke docs no longer require it.
+- Do not add `.sh` entrypoints for repo-owned runtime behavior.
+- Do not keep a renamed runtime alias merely for convenience; stale aliases make runner/tool claim ambiguous.
+- Remove a legacy fallback once the JS/TS implementation is the single worker and package/doctor/smoke docs no longer require it.
 
-## Pass, Fail, And Merge Rules
+## Pass, Revise, Replan, And Merge Rules
 
 Finalizer tools are bookkeeping and mechanical gates.
 
-- `finish-pass` must be called only after the runner has already decided pass.
-- For worker pass, the AI owner must already have verified the work and merged or prepared the required result according to the current topology.
-- The finalizer may validate diff/Done When, archive evidence, write logs, create local completion commits, and route verifier/fail flows.
-- The finalizer must not be the actor that makes semantic pass/fail decisions or resolves product-code merge conflicts.
+- `approve-merge` must be called only after the runner has already decided pass.
+- For worker pass, the AI worker must already have verified the work and merged or prepared the required result according to the current topology.
+- `verifier request-revision` keeps the same inprogress ticket/worktree and wakes worker for correction.
+- `verifier request-replan` marks the inprogress ticket for replacement and wakes worker; worker then calls `worker create-retry-order` to create the retry order, delete the worktree, and remove the old inprogress ticket.
+- The finalizer may validate diff/Done When, archive evidence, write logs, create local completion commits, and route verifier/replan flows.
+- The finalizer must not be the actor that makes semantic pass/revise/replan decisions or resolves product-code merge conflicts.
 
 ## Extension Checklist
 
 When adding or changing a runner tool:
 
-1. Add the command to `scripts/runner-tool.ts` and keep the wrapper stable.
+1. Add the command as a narrow feature file under `scripts/runner-tool/<role>/<command>.ts`, export it from that role folder's `index.ts`, and keep the top-level `scripts/runner-tool.ts` wrapper stable.
 2. Document the action in the relevant role agent file.
 3. Keep `autoflow tool list` contract text accurate.
 4. Update this file if the responsibility boundary changes.
 5. Update package install, doctor companion checks, and smoke tests when files move or disappear.
-6. Run `node .autoflow/scripts/runner-tool.ts --help`, `./bin/autoflow tool list`, and `./bin/autoflow doctor . .autoflow`.
+6. Run `.autoflow/scripts/runner-tool.js --help` or `npx tsx .autoflow/scripts/runner-tool.ts --help`, `./bin/autoflow tool list`, and `./bin/autoflow doctor . .autoflow`.

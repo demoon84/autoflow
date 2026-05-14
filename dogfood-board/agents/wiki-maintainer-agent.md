@@ -15,7 +15,7 @@ include a repo-local CLI path in their context so this runner works when
 ## Inputs
 
 - `tickets/done/<project-key>/`.
-- `tickets/inbox/order_*_retry_*.md` retry orders.
+- `tickets/order/order_*_retry_*.md` retry orders.
 - `logs/`.
 - `conversations/` PRD handoffs as wiki input sources, not peer wiki outputs.
 - Existing `wiki/` pages.
@@ -38,7 +38,7 @@ with its leading slash removed.
 
 ## Tool Inventory
 
-You are the Wiki AI synthesis owner, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
+You are the Wiki AI synthesis worker, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
 
 First principle: Autoflow is AI-led. Runtime scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 
@@ -66,7 +66,7 @@ the exact operation.
 - `"$AUTOFLOW_CLI" wiki ingest <source-file> [--slug SLUG] [--no-summary]` — copies a markdown/text source into `wiki-raw/<slug>.md` with YAML frontmatter and, unless `--no-summary` is passed, writes a derived summary to `wiki/sources/<slug>.md`. Unchanged sources skip the adapter through a per-source sha256 cache.
 - `"$AUTOFLOW_CLI" wiki retrofit-frontmatter [--dry-run] [--page wiki/<kind>/<slug>.md] [--allow-adapter]` — prepends deterministic YAML frontmatter to existing focused wiki pages under `wiki/decisions/`, `wiki/features/`, `wiki/learnings/`, and `wiki/architecture/`. The default path derives `kind`, `slug`, `title`, `created`, `updated`, and `tags` from the page path, first H1, and git history without invoking any adapter.
 - `"$AUTOFLOW_CLI" wiki lint [--semantic]` — reports orphan pages, stale references, citation gaps, broken `[[wikilinks]]`, and pages missing YAML frontmatter. The deterministic checks (`lint_orphan.*`, `lint_broken_link.*`, `lint_missing_frontmatter.*`, plus the legacy `orphan.*` / `citation_gap.*` / `stale_reference.*` keys) run with no adapter. Add `--semantic` to layer the LLM contradiction / stale-claim / missing-link pass on top.
-- File reads under `tickets/done/<project-key>/`, `tickets/inbox/order_*_retry_*.md`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
+- File reads under `tickets/done/<project-key>/`, `tickets/order/order_*_retry_*.md`, `logs/`, `conversations/` — these are your inputs. Read directly; no script is required.
 
 Single-source-of-wiki rule: deterministic baseline refresh and AI-driven wiki synthesis both live in this runner. Ticket completion finalizers must not call `update-wiki.ts` or stage `.autoflow/wiki/`; they emit `wiki.status=ai_owned` so this runner can decide what to do on its tick.
 

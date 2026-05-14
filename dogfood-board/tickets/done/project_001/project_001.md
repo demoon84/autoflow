@@ -4,7 +4,7 @@
 
 - Name: Autoflow Runner/Wiki Board Scaffold
 - Goal: Generated Autoflow boards include the first runner, wiki, metrics, conversations, and agent-adapter scaffold needed for the local agent harness direction.
-- Owner: demoon
+- Worker: demoon
 
 ## Core Scope
 

@@ -28,23 +28,23 @@ process.stdout.write(JSON.stringify({
 }, null, 2) + "\n");
 
 function reasonFor(role: string, workerId: string): string {
-  if (["ticket-owner", "ticket", "owner", "todo"].includes(role)) {
+  if (["worker", "ticket", "todo"].includes(role)) {
     const owned = listTickets("inprogress").find((file) => {
-      const owner = scalar(file, "Ticket", "AI");
+      const worker = scalar(file, "Ticket", "AI");
       const claimed = scalar(file, "Ticket", "Claimed By");
       const execution = scalar(file, "Ticket", "Execution AI");
-      return !workerId || [owner, claimed, execution].some((value) => value === workerId || value.startsWith(`${workerId}:`));
+      return !workerId || [worker, claimed, execution].some((value) => value === workerId || value.startsWith(`${workerId}:`));
     });
-    if (owned) return `ticket-owner work remains: owner ${workerId || "worker"} still has inprogress ticket ${path.basename(owned)}.`;
+    if (owned) return `worker work remains: runner ${workerId || "worker"} still has inprogress ticket ${path.basename(owned)}.`;
     const todo = listTickets("todo")[0];
-    if (todo) return `ticket-owner work remains: claimable ticket ${path.basename(todo)} is waiting.`;
+    if (todo) return `worker work remains: claimable ticket ${path.basename(todo)} is waiting.`;
   }
 
   if (["plan", "planner"].includes(role)) {
-    const backlog = listFiles(path.join(boardRoot, "tickets", "backlog"), /^(prd|project)_\d+\.md$/)[0];
-    if (backlog) return `planner work remains: populated backlog spec ${path.basename(backlog)} still needs Plan AI processing.`;
-    const inbox = listFiles(path.join(boardRoot, "tickets", "inbox"), /^order_.*\.md$/)[0];
-    if (inbox) return `planner work remains: inbox order ${path.basename(inbox)} still needs Plan AI processing.`;
+    const prd = listFiles(path.join(boardRoot, "tickets", "prd"), /^(prd|project)_\d+\.md$/)[0];
+    if (prd) return `planner work remains: populated PRD ${path.basename(prd)} still needs Plan AI processing.`;
+    const order = listFiles(path.join(boardRoot, "tickets", "order"), /^order_.*\.md$/)[0];
+    if (order) return `planner work remains: order ${path.basename(order)} still needs Plan AI processing.`;
   }
 
   if (role === "verifier") {

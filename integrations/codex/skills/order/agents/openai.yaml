@@ -1,4 +1,4 @@
 interface:
   display_name: "Order"
   short_description: "Drop a quick Autoflow order"
-  default_prompt: "Use $order to save a small request into the Autoflow order inbox."
+  default_prompt: "Use $order to save a small request into the Autoflow order order queue."

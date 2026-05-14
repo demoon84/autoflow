@@ -79,10 +79,10 @@ function plainFileList(files: string[], empty: string, limit: number): string {
   return files.slice(0, limit).map((file) => `- ${firstNonBlank(file)}. Source: \`${relToBoard(file)}\`.`).join("\n") + "\n";
 }
 
-function rejectList(files: string[], limit: number): string {
-  if (files.length === 0) return "- No reject records.\n";
+function retryList(files: string[], limit: number): string {
+  if (files.length === 0) return "- No retry orders.\n";
   return files.slice(0, limit).map((file) => {
-    const reason = extractField(file, "Reason");
+    const reason = extractField(file, "failure_class") || extractField(file, "Failure Class");
     const name = path.basename(file, ".md");
     return reason
       ? `- ${name}. Reason: ${reason}. Source: \`${relToBoard(file)}\`.`
@@ -129,7 +129,7 @@ function appendHistory(status: string, timestamp: string, counts: Record<string,
     `wiki_root=${path.join(boardRoot, "wiki")}`,
     `changed_file_count=${changedCount}`,
     `ticket_done_count=${counts.done}`,
-    `reject_count=${counts.rejects}`,
+    `retry_order_count=${counts.retryOrders}`,
     `log_count=${counts.logs}`,
     `handoff_count=${counts.handoffs}`,
     "",
@@ -147,14 +147,14 @@ function main(): void {
   }
 
   const doneTickets = collectFiles(path.join(boardRoot, "tickets", "done"), /^Todo-\d+\.md$/);
-  const rejects = collectFiles(path.join(boardRoot, "tickets"), /^reject_\d+\.md$/);
+  const retryOrders = collectFiles(path.join(boardRoot, "tickets", "order"), /^order_.*_retry_.*\.md$/);
   const logs = collectFiles(path.join(boardRoot, "logs"), /\.md$/);
   const handoffs = collectFiles(path.join(boardRoot, "conversations"), /^spec-handoff\.md$/);
   const timestamp = nowIso();
 
   const counts = {
     done: doneTickets.length,
-    rejects: rejects.length,
+    retryOrders: retryOrders.length,
     logs: logs.length,
     handoffs: handoffs.length,
   };
@@ -164,7 +164,7 @@ function main(): void {
     "## Autoflow Work Map",
     "",
     `- Done tickets: ${counts.done}`,
-    `- Reject records: ${counts.rejects}`,
+    `- Retry orders: ${counts.retryOrders}`,
     `- Verifier logs: ${counts.logs}`,
     `- Conversation handoffs: ${counts.handoffs}`,
     `- Last updated: ${timestamp}`,
@@ -187,9 +187,9 @@ function main(): void {
     "",
     plainFileList(logs, "No verifier logs found.", 20).trimEnd(),
     "",
-    "### Reject Records",
+    "### Retry Orders",
     "",
-    rejectList(rejects, 20).trimEnd(),
+    retryList(retryOrders, 20).trimEnd(),
     "",
     "### Conversation Handoffs",
     "",
@@ -202,7 +202,7 @@ function main(): void {
     `- Project root: \`${projectRoot}\``,
     `- Board root: \`${boardRoot}\``,
     `- Done tickets: ${counts.done}`,
-    `- Reject records: ${counts.rejects}`,
+    `- Retry orders: ${counts.retryOrders}`,
     `- Verifier logs: ${counts.logs}`,
     `- Conversation handoffs: ${counts.handoffs}`,
     `- Last updated: ${timestamp}`,
@@ -223,7 +223,7 @@ function main(): void {
     out("board_root", boardRoot);
     out("wiki_root", wikiRoot);
     out("ticket_done_count", counts.done);
-    out("reject_count", counts.rejects);
+    out("retry_order_count", counts.retryOrders);
     out("log_count", counts.logs);
     out("handoff_count", counts.handoffs);
     return;
@@ -245,7 +245,7 @@ function main(): void {
   out("wiki_root", wikiRoot);
   out("checked_at", timestamp);
   out("ticket_done_count", counts.done);
-  out("reject_count", counts.rejects);
+  out("retry_order_count", counts.retryOrders);
   out("log_count", counts.logs);
   out("handoff_count", counts.handoffs);
   out("changed_file_count", changed.length);

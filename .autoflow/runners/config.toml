@@ -1,114 +1,81 @@
-# Autoflow runner configuration — 4-runner topology.
+# Autoflow runner configuration.
 #
-#   planner : Planner AI — order/PRD intake, todo creation.
-#               Watches tickets/{inbox,backlog}.
-#   worker  : Impl AI — claims todo, creates worktree, edits code, runs and
-#               records local verification, and calls finish-ticket-owner.ts.
-#               The finalizer's shell sanity gate blocks false pass
-#               mechanically, then verifier handles semantic review.
-#   verifier: Verifier AI — reviews finished diffs against Title/Goal/Done
-#               When and routes pass/fail through runner-tool finalizer
-#               wrappers.
-#   wiki    : Wiki AI — watches tickets/done + wiki/ for source change,
-#               refreshes .autoflow/wiki/. .gitignore excludes
-#               .autoflow/wiki/ (except curated skills/), so wiki never
-#               creates a master commit and never causes dirty PROJECT_ROOT.
+# Default 4-runner topology:
+#   planner : Planner AI — promotes tickets/order/ orders + tickets/prd/
+#               PRDs into tickets/todo/ work. Worker fail re-emits order retry
+#               orders that planner re-plans like any other order — there is
+#               no separate reject queue.
+#   worker  : Impl AI — todo claim → worktree create → code edit → local
+#               verification evidence → finalizer mechanical gate. Single
+#               live worktree at a time.
+#   verifier: Verifier AI — semantic review of finished diff vs Title/Goal/
+#               Done When before done routing.
+#   wiki    : Wiki AI — refreshes wiki/ when tickets/done/ or wiki/ source
+#               changes. Path-disjoint from planner/worker.
 #
-# monitor was removed 2026-05-07. verifier was reintroduced 2026-05-12 with
-# narrow semantic-review scope. Runner liveness signals come from the OS
-# supervisor and planner's safety heartbeat instead of a dedicated monitor
-# loop.
+# Change agent/model fields to claude, opencode, gemini, shell, or a custom
+# command when Codex CLI is not the desired local runner.
 #
-# Realtime (event-driven) wakeup: when AUTOFLOW_RUNNER_REALTIME_ENABLED=1
-# (or per-role AUTOFLOW_<ROLE>_REALTIME_ENABLED=1), the loop sleep is broken
-# early on watched-folder file changes. interval_seconds is just a safety
-# heartbeat — fs-watch handles the actual wakeups.
+# Trial `self-improve-1` runner is kept reachable as an opt-in experiment —
+# it ships disabled by default.
 #
-# Recommended model tiers (PRD 3, 2026-05-09):
-#   planner — sonnet-class reasoning is enough; backlog/PRD analysis rarely
-#     needs the heaviest model. Use opus-1m only when the project routinely
-#     handles >50 file PRDs.
-#   worker  — opus-class for code edits + verification reasoning. Trim to
-#     sonnet-class if cost dominates and the project is mostly small fixes.
-#   wiki    — haiku-class flash model is sufficient for material baseline
-#     refresh + RAG synthesis. Heavier models do not improve wiki quality.
-#
-# These are guidelines; explicit `model` below wins over any default.
+# Legacy `coordinator-1` is no longer scaffolded. Existing boards that opted
+# into it keep working (the role identifier is still accepted), and new
+# installs can opt in with `autoflow runners add coordinator-1 coordinator`.
 
 [[runners]]
 id = "planner"
 role = "planner"
-agent = "claude"
-model = "opus-1m"
-reasoning = "high"
+agent = "codex"
+model = ""
+reasoning = "low"
 mode = "loop"
-interval_seconds = 1800
+interval_seconds = 60
 enabled = true
-realtime_enabled = true
 command = ""
 
 [[runners]]
 id = "worker"
-role = "ticket-owner"
+role = "worker"
 agent = "codex"
-model = "gpt-5.3-codex-spark"
+model = ""
 reasoning = "low"
 mode = "loop"
-interval_seconds = 1800
+interval_seconds = 60
 enabled = true
-realtime_enabled = true
 command = ""
 
 [[runners]]
 id = "verifier"
 role = "verifier"
-agent = "claude"
-model = "claude-haiku-4-5-20251001"
-reasoning = ""
+agent = "codex"
+model = ""
+reasoning = "low"
 mode = "loop"
 interval_seconds = 300
 enabled = true
-realtime_enabled = true
 command = ""
 
 [[runners]]
 id = "wiki"
 role = "wiki-maintainer"
-agent = "gemini"
-model = "gemini-3-flash-preview"
-reasoning = ""
+agent = "codex"
+model = ""
+reasoning = "low"
 mode = "loop"
-interval_seconds = 1800
+interval_seconds = 60
 enabled = true
-realtime_enabled = true
 command = ""
 
-# Meta-Runner — self-diagnostics (opt-in, default off).
-# Reads telemetry/state/logs every 5 min and emits hints for timeout, stall, etc.
-# Activate by setting AUTOFLOW_META_RUNNER_ENABLED=1 in env.
-#
-# [[runners]]
-# id = "meta"
-# role = "meta-runner"
-# agent = "none"          # runs via node directly, no LLM
-# mode = "loop"
-# interval_seconds = 300  # 5 min
-# enabled = false         # flip to true after setting AUTOFLOW_META_RUNNER_ENABLED=1
-
-# Notification channels — fired on needs_user / blocked threshold events.
-# Secrets (webhook_url) go in .autoflow/.local/secrets.json (gitignored).
-# Uncomment and fill in to activate a channel.
-#
-# [[notifications]]
-# type = "osascript"   # macOS system notification (no URL needed)
-# enabled = true
-#
-# [[notifications]]
-# type = "slack"
-# enabled = false
-# webhook_url = "https://hooks.slack.com/services/..."
-#
-# [[notifications]]
-# type = "webhook"
-# enabled = false
-# webhook_url = "https://your-webhook-endpoint/..."
+[[runners]]
+id = "self-improve-1"
+role = "self-improve"
+agent = "shell"
+model = ""
+reasoning = ""
+mode = "one-shot"
+interval_seconds = 1800
+enabled = false
+max_duration_seconds = 10800
+max_ticks = 6
+command = ""

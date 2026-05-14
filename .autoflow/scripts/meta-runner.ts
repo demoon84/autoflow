@@ -68,14 +68,14 @@ function readStateField(stateFile: string, key: string): string {
   } catch { return ""; }
 }
 
-function readInboxRetryFingerprints(boardRoot: string): Map<string, number> {
+function readOrderRetryFingerprints(boardRoot: string): Map<string, number> {
   const counts = new Map<string, number>();
-  const inboxDir = path.join(boardRoot, "tickets", "inbox");
+  const orderDir = path.join(boardRoot, "tickets", "order");
   try {
-    for (const f of fs.readdirSync(inboxDir)) {
+    for (const f of fs.readdirSync(orderDir)) {
       if (!f.match(/order_.*_retry_.*\.md$/)) continue;
       try {
-        const raw = fs.readFileSync(path.join(inboxDir, f), "utf8");
+        const raw = fs.readFileSync(path.join(orderDir, f), "utf8");
         const m = raw.match(/^retry_fingerprint:\s*(\S+)/m);
         if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
       } catch {}
@@ -136,7 +136,7 @@ function diagConsecutiveTimeout(boardRoot: string): Array<DiagnosticReport["diag
 
 function diagRetryFingerprint(boardRoot: string): Array<DiagnosticReport["diagnostics"][0]> {
   const results: DiagnosticReport["diagnostics"] = [];
-  const fpMap = readInboxRetryFingerprints(boardRoot);
+  const fpMap = readOrderRetryFingerprints(boardRoot);
   for (const [fp, count] of fpMap.entries()) {
     if (count >= 2) {
       const hint = `retry_fingerprint ${fp} 이 ${count}회 누적됨 — 기존 접근과 다른 방법을 시도하세요 (Allowed Paths 또는 Done When 재설계).`;

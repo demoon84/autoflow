@@ -64,8 +64,8 @@ TRIGGER_RE = re.compile(
     re.MULTILINE,
 )
 
-INBOX_REL_PATTERN = re.compile(r'tickets/inbox/order_\d{3}.*\.md$')
-BACKLOG_REL_PATTERN = re.compile(r'tickets/backlog/(?:prd|project)_\d{3}\.md$')
+ORDER_REL_PATTERN = re.compile(r'tickets/order/order_\d{3}.*\.md$')
+PRD_REL_PATTERN = re.compile(r'tickets/prd/(?:prd|project)_\d{3}\.md$')
 PRD_KEY_PATTERN = re.compile(r'(?:^|/)((?:prd|project|express|order)_\d{3})')
 TODO_NNN_PATTERN = re.compile(r'tickets/(?:todo|inprogress|done(?:/[^/]+)?)/Todo-(\d{3})\.md$')
 
@@ -399,9 +399,9 @@ def extract_claude_session(path: pathlib.Path, board_root: pathlib.Path,
                     fp = tool_input.get('file_path') or tool_input.get('filePath')
                     if fp:
                         file_touches.append((ts or '', name, fp))
-                        # Match inbox/backlog creation back to the most recent trigger.
+                        # Match order/prd creation back to the most recent trigger.
                         rel = relative_to_board(fp, board_root)
-                        if rel and (INBOX_REL_PATTERN.search(rel) or BACKLOG_REL_PATTERN.search(rel)):
+                        if rel and (ORDER_REL_PATTERN.search(rel) or PRD_REL_PATTERN.search(rel)):
                             target = pending_trigger or (triggers[-1] if triggers else None)
                             if target and 'prd_path' not in target:
                                 target['prd_path'] = rel
@@ -498,14 +498,14 @@ def extract_codex_session(path: pathlib.Path, board_root: pathlib.Path,
                         if isinstance(cmd, list):
                             cmd = ' '.join(cmd)
                         file_touches.append((ts or '', name, str(cmd)[:200]))
-                        # Heuristic: if a 'cat > .autoflow/tickets/inbox/order_*.md' or write
+                        # Heuristic: if a '.autoflow/tickets/order/order_*.md' write
                         # operation appears, attribute back to the recent trigger.
-                        for m in INBOX_REL_PATTERN.finditer(cmd):
+                        for m in ORDER_REL_PATTERN.finditer(cmd):
                             target = pending_trigger or (triggers[-1] if triggers else None)
                             if target and 'prd_path' not in target:
                                 target['prd_path'] = m.group(0)
                                 target['prd_key'] = prd_key_from_path(m.group(0))
-                        for m in BACKLOG_REL_PATTERN.finditer(cmd):
+                        for m in PRD_REL_PATTERN.finditer(cmd):
                             target = pending_trigger or (triggers[-1] if triggers else None)
                             if target and 'prd_path' not in target:
                                 target['prd_path'] = m.group(0)
@@ -554,11 +554,11 @@ def extract_codex_session(path: pathlib.Path, board_root: pathlib.Path,
 
 def find_prd_files(board_root: pathlib.Path) -> dict[str, str]:
     """Return {prd_key: relative_path} for every PRD/order file currently
-    in inbox/backlog/done. The same key may exist in multiple stages over
+    in order/prd/done. The same key may exist in multiple stages over
     time; this returns the latest one we can find."""
     out: dict[str, str] = {}
     candidates = []
-    for sub in ['tickets/inbox', 'tickets/backlog']:
+    for sub in ['tickets/order', 'tickets/prd']:
         d = board_root / sub
         if d.exists():
             candidates.extend(d.glob('*.md'))
@@ -622,8 +622,6 @@ def parse_ticket_md(path: pathlib.Path) -> dict:
         elif section == 'goal runtime':
             if stripped.startswith('- Tick Count:'):
                 out['tick_count'] = stripped.split(':', 1)[1].strip()
-            elif stripped.startswith('- Time Used Seconds:'):
-                out['time_used'] = stripped.split(':', 1)[1].strip()
             elif stripped.startswith('- Started At:'):
                 out['started_at'] = stripped.split(':', 1)[1].strip()
             elif stripped.startswith('- Updated At:'):
@@ -729,10 +727,7 @@ def enrich_chains(conn: sqlite3.Connection, board_root: pathlib.Path,
             tick_count = int(info.get('tick_count') or 0)
         except (ValueError, TypeError):
             tick_count = 0
-        try:
-            active_seconds = int(info.get('time_used') or 0)
-        except (ValueError, TypeError):
-            active_seconds = 0
+        active_seconds = 0
 
         upsert_lifecycle(
             conn,
@@ -765,7 +760,7 @@ def enrich_chains(conn: sqlite3.Connection, board_root: pathlib.Path,
 
         # Match priority:
         # 1. prd_path basename appears in any ticket's References.PRD/Order/Plan
-        # 2. chain.prd_key matches ticket.prd_key (e.g. backlog prd_142)
+        # 2. chain.prd_key matches ticket.prd_key (e.g. prd prd_142)
         candidates: list[tuple[str, str, str]] = []
         if prd_path:
             base = os.path.basename(prd_path)

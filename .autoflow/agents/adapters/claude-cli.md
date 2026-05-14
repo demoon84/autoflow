@@ -7,7 +7,7 @@ Use this adapter when a runner delegates work to Claude Code.
 - Binary: `claude`.
 - Input: a role prompt generated from the Autoflow ticket or PRD.
 - Output: stdout, stderr, exit code, and copied prompt/runtime artifacts.
-- Best for: Ticket Owner work and PRD handoff when Claude Code is the chat entry point.
+- Best for: Worker work and PRD handoff when Claude Code is the chat entry point.
 
 ## Requirements
 

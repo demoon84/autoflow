@@ -7,10 +7,10 @@
 - Plan Candidate: Update init/package-board logic so fresh boards include the new runner/wiki scaffold without overwriting existing state.
 - Title: Include runner and wiki scaffold in fresh board init
 - Stage: done
-- Owner: verify-1
+- Worker: verify-1
 - Claimed By: todo-1
-- Execution Owner: unassigned
-- Verifier Owner: verify-1
+- Execution Worker: unassigned
+- Verifier Worker: verify-1
 - Last Updated: 2026-04-24T23:14:20Z
 
 ## Goal

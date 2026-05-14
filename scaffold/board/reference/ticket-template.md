@@ -49,7 +49,6 @@
 - Started Epoch:
 - Updated At:
 - Tick Count: 0
-- Time Used Seconds: 0
 - Token Budget:
 - Tokens Used:
 - Continuation Suppressed: false
@@ -66,7 +65,7 @@
 - Failure Class:
 - Evidence:
 - Planner Decision:
-- Owner Resume Instruction:
+- Worker Resume Instruction:
 - Last Recovery At:
 
 ## Done When

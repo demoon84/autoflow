@@ -18,8 +18,10 @@ contextBridge.exposeInMainWorld("autoflow", {
   controlStopHook: (options) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options) => ipcRenderer.invoke("autoflow:controlWatcher", options),
   readBoardFile: (options) => ipcRenderer.invoke("autoflow:readBoardFile", options),
+  readStartupRules: (options) => ipcRenderer.invoke("autoflow:readStartupRules", options),
+  writeStartupRules: (options) => ipcRenderer.invoke("autoflow:writeStartupRules", options),
   tailBoardFile: (options) => ipcRenderer.invoke("autoflow:tailBoardFile", options),
-  deleteInboxOrderFile: (options) => ipcRenderer.invoke("autoflow:deleteInboxOrderFile", options),
+  deleteOrderFile: (options) => ipcRenderer.invoke("autoflow:deleteOrderFile", options),
   projectExists: (projectRoot) => ipcRenderer.invoke("autoflow:projectExists", projectRoot),
   cancelInvocation: (invocationId) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId),
   // PRD 10 (2026-05-09): origin ledger bridge.
@@ -44,16 +46,15 @@ contextBridge.exposeInMainWorld("autoflow", {
     return () => ipcRenderer.removeListener("autoflow:boardChange", listener);
   },
   // ----- PTY runner manager (vibe-terminal pattern) -----
-  // Read-only — renderer cannot push stdin (project policy: user input
-  // disabled in LiveTerminalView). Renderer only:
-  //   1) start / stop the runner
-  //   2) subscribe to bytes / status events
-  //   3) request the replay buffer when re-mounting xterm
+  // Renderer can send scoped stdin bytes only to an existing runner PTY.
+  // The bridge intentionally stays narrow: start / stop / resize / snapshot /
+  // status-bytes subscription / raw stdin write.
   runnerPtyStart: (options) => ipcRenderer.invoke("autoflow:runnerPtyStart", options),
   runnerPtySpawn: (options) => ipcRenderer.invoke("autoflow:runnerPtySpawn", options),
   runnerPtyStop: (options) => ipcRenderer.invoke("autoflow:runnerPtyStop", options),
   runnerPtyResize: (options) => ipcRenderer.invoke("autoflow:runnerPtyResize", options),
   runnerPtySnapshot: (options) => ipcRenderer.invoke("autoflow:runnerPtySnapshot", options),
+  runnerPtyInput: (options) => ipcRenderer.invoke("autoflow:runnerPtyInput", options),
   runnerPtyList: () => ipcRenderer.invoke("autoflow:runnerPtyList"),
   onRunnerPtyBytes: (handler) => {
     if (typeof handler !== "function") return () => {};

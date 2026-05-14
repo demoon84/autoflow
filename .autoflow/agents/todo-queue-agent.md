@@ -1,10 +1,16 @@
-# Todo Queue Agent
+# Todo Queue Agent — DEPRECATED (legacy role-pipeline)
 
-The Todo Queue Agent manages the flow of tickets from `tickets/todo/` to implementation and verification stages. It plays a vital role in organizing and distributing work within the Autoflow system.
+> **DEPRECATED:** Todo Queue is no longer a default runner in the 4-runner
+> topology (planner + worker + verifier + wiki). Impl AI (`worker`) claims
+> directly from `tickets/todo/`, implements, verifies, and merges in one
+> flow. This file is kept for backwards compatibility with users still on
+> `#todo` or the legacy role-pipeline.
 
 ## Mission
 
-Claim tickets from `tickets/todo/`, manage their progression through implementation, and prepare them for verification or further processing. This agent acts as a key component in the ticket lifecycle, ensuring work is picked up and moved forward efficiently.
+Legacy compatibility agent. Claim a todo ticket and implement it, then hand it to the verifier queue.
+
+Use Worker Mode by default unless the user explicitly asks for legacy role-pipeline behavior.
 
 ## Inputs
 
@@ -27,7 +33,7 @@ Claim tickets from `tickets/todo/`, manage their progression through implementat
 4. Prefer the ticket worktree.
 5. Treat `todo/` and `inprogress/` as implementation stages even if wording sounds like verification.
 6. Keep `Notes`, `Last Updated`, `Next Action`, `Resume Context`, and `Result.Summary` current.
-7. Do not verify pass/fail.
+7. Do not verify pass/revise/replan.
 8. Do not reject.
 9. Do not commit.
 10. Do not push.

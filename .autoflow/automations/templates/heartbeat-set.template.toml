@@ -2,14 +2,21 @@ format = 1
 kind = "autoflow_heartbeat_set"
 set_name = "{{SET_NAME}}"
 target_thread_id = "{{THREAD_ID}}"
-board_root = ".autoflow/"
+board_root = "{{BOARD_DIR}}/"
 
-owner_workers = ["worker"]
+# Four-runner topology: Plan AI + Impl AI + Verifier AI + Wiki AI.
+# Plan AI processes order/retry/prd into todo. Impl AI claims todo and runs
+# implementation and local verification. Verifier AI checks semantic fit.
+# Wiki AI periodically inspects done/retry/log sources and calls wiki update only when content changes.
+# Path-disjoint set so concurrent ticks never produce merge conflicts.
+worker_runners = ["worker"]
 planner_workers = ["planner"]
 wiki_workers = ["wiki"]
 verifier_workers = ["verifier"]
 
-# Legacy role-pipeline workers. Leave these empty for the default 4-runner topology.
+# Legacy role-pipeline workers. Keep these empty for the default
+# 4-runner topology. Populate only if you intentionally opt into the
+# legacy todo or merge-bot pipeline.
 todo_workers = []
 merge_workers = []
 
@@ -17,7 +24,7 @@ execution_pool = ""
 verifier_pool = ""
 max_execution_load_per_worker = 1
 
-owner_template = "automations/templates/ticket-owner-heartbeat.template.toml"
+worker_template = "automations/templates/worker-heartbeat.template.toml"
 plan_template = "automations/templates/plan-heartbeat.template.toml"
 todo_template = "automations/templates/todo-heartbeat.template.toml"
 verifier_template = "automations/templates/verifier-heartbeat.template.toml"
@@ -32,9 +39,10 @@ verifier = "{{VERIFIER_THREAD_ID}}"
 wiki = "{{WIKI_THREAD_ID}}"
 
 [notes]
-scaling_rule = "Scale 4-runner mode by adding workers and matching [thread_ids] entries. Use legacy todo/merge arrays only for role-pipeline compatibility."
+topology_rule = "Four-runner model: planner_workers=[\"planner\"], worker_runners=[\"worker\"], verifier_workers=[\"verifier\"], wiki_workers=[\"wiki\"]. Scale only after profiling shows the pipeline is starved."
 idle_rule = "Always-on workers should use AUTOFLOW_BACKGROUND=1 so empty wake-ups return status=idle."
-ownership_rule = "Every live worker id should be unique. In Ticket Owner Mode each owner owns one active ticket end-to-end."
+worker_rule = "Every live worker id should be unique. Impl AI (worker) owns one active ticket end-to-end."
 thread_binding_rule = "One conversation per worker: fill every [thread_ids] entry with a unique Codex thread id. Shared mode: leave [thread_ids] empty and set target_thread_id only."
-trigger_rule = "Planner, worker, verifier, and wiki heartbeats should keep running until the user explicitly says stop."
-merge_rule = "`autoflow run merge` should be single-writer; run at most one merge bot for a board."
+trigger_rule = "All four heartbeats should keep running until the user explicitly says stop."
+wiki_rule = "Wiki AI owns wiki updates. Impl AI does not call update-wiki.ts or stage .autoflow/wiki during ticket completion; wiki inspects source changes and calls autoflow wiki update only for material baseline drift, with check-only state in runners/state/wiki-baseline.history."
+legacy_rule = "merge_workers and todo_workers are kept for role-pipeline compatibility; the 4-runner topology uses the verifier runner for semantic review and keeps legacy todo/merge workers empty."

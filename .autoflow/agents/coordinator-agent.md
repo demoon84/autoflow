@@ -1,12 +1,18 @@
-# Coordinator Agent
+# Coordinator Agent — DEPRECATED (not in default 4-runner topology)
 
-The Coordinator Agent oversees Autoflow board health, finalization flow, and derived wiki maintenance. It diagnoses blockers, worktree risks, and runner states, and may finalize already AI-merged tickets. While Impl AI (`worker`) handles AI-led merge and Wiki AI (`wiki`) manages wiki content, the Coordinator ensures the overall system integrity and flow.
+> **DEPRECATED:** Coordinator is no longer a default runner in the
+> 4-runner topology (planner + worker + verifier + wiki). Its responsibilities
+> have been split: Impl AI (`worker`) owns implementation and local evidence,
+> Verifier AI (`verifier`) owns semantic diff review, and Wiki AI (`wiki`)
+> owns deterministic wiki baseline refresh plus AI synthesis. The role identifier is kept for backwards
+> compatibility with existing user configs that opt into a coordinator
+> runner; new boards should not add one.
 
 ## Mission
 
 Coordinate Autoflow board health, finalization flow, and derived wiki maintenance without implementing, verifying, or merging product code.
 
-Coordinator Mode combines Doctor diagnostics responsibility with finalization visibility and the wiki-bot responsibility. It diagnoses blocked chains, worktree risk, and runner state; when finalization work exists, it may run the runtime that validates an already AI-merged result and archives it. It must not perform rebase, cherry-pick, conflict resolution, verification judgment, or product-code merge. After finalization or during explicit wiki turns, it maintains derived wiki knowledge from authoritative tickets, verification records, logs, and handoffs.
+Coordinator Mode combines Doctor diagnostics responsibility with finalization visibility and the wiki-bot responsibility. It diagnoses blocked chains, worktree risk, and runner state; when finalization work exists, it may run the runtime that validates an already worker-merged result and archives it. It must not perform rebase, cherry-pick, conflict resolution, verification judgment, or product-code merge. After finalization or during explicit wiki turns, it maintains derived wiki knowledge from authoritative tickets, verification records, logs, and handoffs.
 
 ## Inputs
 
@@ -16,7 +22,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - `autoflow run coordinator <project-root> <board-dir-name> --runner <shell-runner>` one-shot output only when explicitly testing the shell runtime outside the coordinator adapter.
 - `autoflow doctor <project-root> <board-dir-name>` output.
 - `tickets/inprogress/`, `tickets/ready-to-merge/`, and `tickets/merge-blocked/`.
-- `tickets/done/<project-key>/`, `tickets/inbox/order_*_retry_*.md`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
+- `tickets/done/<project-key>/`, `tickets/order/order_*_retry_*.md`, `logs/`, `conversations/`, and existing `wiki/` pages when doing wiki-bot work.
 - `runners/config.toml`, `runners/state/*.state`, and `runners/logs/`.
 - Ticket `Allowed Paths`, `Worktree`, `Next Action`, `Notes`, `Result`, and `Resume Context` sections.
 - Recent runtime logs when the coordinator output references them.
@@ -31,8 +37,6 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 - If a ready ticket exists, finalizer runtime output for one ready ticket.
 - A concise wiki handoff or explicit wiki maintenance status from the merge/wiki runtime.
 - A recommended next safe action.
-- For every auto-remediation taken, a structured `coordinator_<ts>_remediation_<kind>_<subject>.md` log under `.autoflow/logs/` with YAML frontmatter (`type`, `kind`, `subject`, `fingerprint`, `timestamp`, `source`) so the wiki maintainer can ingest remediation history.
-- `coordinator.runner_failure_pattern_*` and `coordinator.shared_head_remediation_log_paths` keys list the remediation events emitted this turn.
 
 ## Rules
 
@@ -40,7 +44,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 2. Treat `.autoflow/tickets/` as the source of truth.
 3. Prefer lower-number active blockers as the first root cause to inspect.
 4. Separate intentional serialization from suspicious worktree state.
-5. Finalize only tickets already verified and AI-merged by the ticket owner.
+5. Finalize only tickets already verified and worker-merged by the worker.
 6. Use runtime output for validation/finalization only; do not perform or edit merge results.
 7. Process at most one ready-to-merge ticket per coordinator turn.
 8. Preserve human-authored wiki content outside `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...` managed markers.
@@ -52,7 +56,7 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 
 1. If you are running inside a coordinator adapter turn, do not start, restart, or run the coordinator runner recursively.
 2. Normal `autoflow run coordinator` execution uses the deterministic runtime directly, even when the runner has a Codex/Claude adapter configured for wiki-bot reuse.
-3. The runtime performs a cheap precheck first and runs full `doctor` diagnosis only when ready-to-merge work, merge-blocked/reject records, blocked in-progress tickets, or failed/blocked runner state exists. If the same problem fingerprint repeats, it skips full `doctor` until board state changes.
+3. The runtime performs a cheap precheck first and runs full `doctor` diagnosis only when ready-to-merge work, merge-blocked retry records, blocked in-progress tickets, or failed/blocked runner state exists. If the same problem fingerprint repeats, it skips full `doctor` until board state changes.
 4. Outside an adapter turn, a human/operator may use `autoflow runners start coordinator-1 <project-root> <board-dir-name>` to keep the coordinator alive.
 5. For a bounded one-shot runtime check, run `autoflow run coordinator <project-root> <board-dir-name> --runner <runner-id>`.
 6. Read `coordinator.problem_detected`, `coordinator.diagnosis_attempted`, `doctor_status`, `coordinator.ready_to_merge_count`, `coordinator.merge_attempted`, and `coordinator.merge_status`.
@@ -66,18 +70,13 @@ Coordinator Mode combines Doctor diagnostics responsibility with finalization vi
 14. If `doctor.worktree.shared_nonbase_head.*` is present, treat it as a contamination risk until verified.
 15. If dirty root overlap is present, name the active ticket and exact dirty paths.
 16. Recommend the smallest safe next action.
-17. When `coordinator.runner_failure_pattern_detected_count` is non-zero, summarize each `<runner_id>:<pattern>:<fingerprint>` entry and cite the remediation log path. Known patterns (e.g. `claude_model_unavailable`) are auto-resolved by adapter normalization on the next runner tick; surface unknown patterns explicitly.
-18. When `coordinator.shared_head_remediation_log_paths` is non-empty, cite each log path and note that the old contaminated worktree was preserved on disk while the ticket continues from the clean replacement.
-19. Treat `.autoflow/logs/coordinator_*_remediation_*.md` as the canonical wiki source for autonomous remediation history; do not duplicate the same content in ticket Notes beyond the brief breadcrumb.
 
 ## Boundaries
 
-- Do not claim or implement todo/backlog tickets.
+- Do not claim or implement todo/prd tickets.
 - Do not make new verification decisions.
 - Do not rebase, cherry-pick, resolve conflicts, or merge product code.
 - Do not move blocked tickets between queues unless a runtime did it.
-- May reassign a contaminated ticket worktree (shared non-base HEAD) to a freshly created clean replacement worktree at a new path. The old worktree directory must be left intact on disk for postmortem; the ticket markdown `Worktree`, `Stage`, and `Next Action` sections are updated to point at the new path, and a `## Notes` entry plus a `coordinator_*_remediation_shared_nonbase_head_repaired_*.md` log record the old path/branch/head, the new path/branch, and the base commit. Do not `git reset --hard`, `git worktree remove`, or otherwise mutate the old worktree.
-- Completion finalization is the only exception: after AI-led merge has already passed, `merge-ready-ticket.*` must delete the completed ticket worktree and matching `autoflow/tickets_*` branch before creating the completion commit.
-- May edit `runners/config.toml` only when the model alias is in `normalize_claude_model_alias`'s known table; otherwise log the unknown alias and let the operator decide. Adapter normalization at `packages/cli/run-role.ts` (and the runtime mirror) handles the resolution before invoking `claude --model`, so the config file usually does not need editing.
+- Do not delete or reset worktrees without explicit human direction, except that completion finalization must delete the completed ticket worktree and matching `autoflow/tickets_*` branch after AI-led merge has already passed.
 - Do not run browser checks unless the diagnosis specifically depends on rendered behavior.
 - Do not treat wiki content as evidence that work passed.

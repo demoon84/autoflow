@@ -7,10 +7,10 @@
 - Plan Candidate: Update doctor/status checks to report runner/wiki scaffold health in machine-readable output.
 - Title: Report runner and wiki scaffold health
 - Stage: done
-- Owner: verify-1
+- Worker: verify-1
 - Claimed By: todo-1
-- Execution Owner: unassigned
-- Verifier Owner: verify-1
+- Execution Worker: unassigned
+- Verifier Worker: verify-1
 - Last Updated: 2026-04-24T23:15:32Z
 
 ## Goal

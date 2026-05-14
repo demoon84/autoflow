@@ -27,7 +27,6 @@ import {
   RotateCcw,
   Search,
   ShieldCheck,
-  Sparkles,
   Square,
   Sun,
   Terminal,
@@ -58,9 +57,9 @@ import {
 import { cn } from "@/lib/utils";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
-import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
+import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
@@ -94,7 +93,7 @@ function AlertBox({
   );
 }
 
-const ticketFolders = ["backlog", "inbox", "todo", "inprogress", "done"] as const;
+const ticketFolders = ["order", "prd", "todo", "inprogress", "done"] as const;
 
 function DesktopGlobalLoading({
   open,
@@ -127,7 +126,7 @@ function FullPageLoading({
   return <DesktopGlobalLoading open={open} label={label} />;
 }
 
-const ownerFlowStages = [
+const workerFlowStages = [
   { key: "idle", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
   { key: "inprogress", label: "구현", meta: "mini-plan / 구현 / 검증", icon: Activity, tone: "flow-inprogress" },
   { key: "merging", label: "머지", meta: "통합 준비", icon: CheckCircle2, tone: "flow-done" }
@@ -146,7 +145,7 @@ const wikiBotFlowStages = [
 ] as const;
 
 const plannerFlowStages = [
-  { key: "idle", label: "대기", meta: "backlog/reject 감시", icon: Layers3, tone: "flow-todo" },
+  { key: "idle", label: "대기", meta: "order/prd 감시", icon: Layers3, tone: "flow-todo" },
   { key: "planning", label: "계획", meta: "PRD 분해 / 재계획", icon: ClipboardList, tone: "flow-plan" },
   { key: "generating-todo", label: "티켓생성", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" }
 ] as const;
@@ -227,6 +226,12 @@ type RunnerConfigApplyPending = {
 
 type RunnerAuthChoice = "continue" | "cancel";
 type RunnerControlAction = "start" | "stop" | "restart";
+type StartupRulesKind = "common" | "role";
+type OpenStartupRulesHandler = (kind: StartupRulesKind, role?: string) => void;
+type StartupRulesLayerState = {
+  kind: StartupRulesKind;
+  role?: string;
+};
 type RunnerControlOptions = {
   force?: boolean;
 };
@@ -416,7 +421,7 @@ function completedWorkKey(board: AutoflowBoardSnapshot | null) {
     return "";
   }
 
-  const completedFiles = [...(board.tickets.done || []), ...(board.tickets.reject || [])];
+  const completedFiles = board.tickets.done || [];
   return completedFiles
     .map((file) => `${file.filePath}:${file.modifiedAt}:${file.title}`)
     .sort()
@@ -566,29 +571,8 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
     tokenCache24hCount: statusNumber(metrics, "autoflow_token_cache_24h_count"),
     commit24hCount: statusNumber(metrics, "autoflow_commit_count_24h"),
     commitAuto24hCount: statusNumber(metrics, "autoflow_commit_auto_count_24h"),
-    commitManual24hCount: statusNumber(metrics, "autoflow_commit_manual_count_24h"),
-    avgLeadSeconds: statusNumber(metrics, "autoflow_avg_lead_seconds"),
-    avgActiveSeconds: statusNumber(metrics, "autoflow_avg_active_seconds"),
-    avgTicksPerDoneTicket: statusNumber(metrics, "autoflow_avg_ticks_per_done_ticket"),
-    durationTotal24hSeconds: statusNumber(metrics, "autoflow_duration_total_24h_seconds")
+    commitManual24hCount: statusNumber(metrics, "autoflow_commit_manual_count_24h")
   };
-}
-
-function formatDurationMetric(seconds: number) {
-  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
-  const formatter = new Intl.NumberFormat("ko-KR", {
-    maximumFractionDigits: safeSeconds < 60 ? 0 : 1
-  });
-
-  if (safeSeconds < 60) {
-    return `${formatter.format(Math.round(safeSeconds))}초`;
-  }
-
-  if (safeSeconds < 3600) {
-    return `${formatter.format(safeSeconds / 60)}분`;
-  }
-
-  return `${formatter.format(safeSeconds / 3600)}h`;
 }
 
 function formatPercentValue(value: number) {
@@ -756,12 +740,11 @@ const statusLabels: Record<string, string> = {
   false: "중지"
 };
 
-// Default topology is Planner AI + Impl AI + Wiki AI. Legacy role labels are
+// Default topology is Planner AI + Impl AI + Verifier AI + Wiki AI. Legacy role labels are
 // kept so older boards with coordinator / merge runners still render readable
 // names.
 const runnerRoleLabels: Record<string, string> = {
-  "ticket-owner": "Impl AI",
-  owner: "Impl AI",
+  "worker": "Impl AI",
   ticket: "Impl AI",
   planner: "Planner",
   plan: "Planner",
@@ -880,6 +863,31 @@ function normalizeRunnerSelections(
   };
 }
 
+function runnerDraftFromRunner(runner: AutoflowRunner): RunnerDraft {
+  return {
+    agent: runner.agent || "codex",
+    model: runner.model || "",
+    reasoning: runner.reasoning || "",
+    mode: runner.mode || "loop",
+    intervalSeconds: runner.intervalSeconds || "60",
+    enabled: runner.enabled || "true",
+    command: runner.command || ""
+  };
+}
+
+function runnerDraftsEqual(left?: RunnerDraft, right?: RunnerDraft) {
+  if (!left || !right) return false;
+  return (
+    left.agent === right.agent &&
+    left.model === right.model &&
+    left.reasoning === right.reasoning &&
+    left.mode === right.mode &&
+    left.intervalSeconds === right.intervalSeconds &&
+    left.enabled === right.enabled &&
+    left.command === right.command
+  );
+}
+
 function runnerAppliedConfigFingerprint(runner: AutoflowRunner) {
   return (runner as RunnerWithConfigEvidence).appliedConfigFingerprint || "";
 }
@@ -891,7 +899,7 @@ function runnerConfigApplyTimeoutMs(runner: AutoflowRunner) {
 }
 
 function runRoleForRunner(role: string) {
-  if (role === "ticket-owner" || role === "owner") {
+  if (role === "worker") {
     return "ticket";
   }
 
@@ -1042,25 +1050,9 @@ function runnerIsEnabled(value: string) {
   return value ? value === "true" : true;
 }
 
-// AI 주도 sh 실행 원칙: Codex/Claude 같은 어댑터의 raw transcript 가
-// 그대로 들어 있는 파일 (`*_live_stdout.log`, `*_live_stderr.log`,
-// `*_stdout.log`, `*_stderr.log`) 은 사용자 view 에서 숨긴다. envelope
-// wrapping 없이 raw tool 호출 / diff / shell 명령이 그대로 들어 있어 필터로
-// 정리할 수 없다. AI 의 narrative 는 같은 tick 의 runner 메인 로그에
-// `narrative_text` envelope 으로 surface 되므로 그쪽으로 노출한다. 단,
-// LiveTerminalView 는 active Claude stream-json stdout 만 별도 parser 로
-// 사람이 읽는 한 줄 요약으로 변환해 붙인다. 필요하면 `.autoflow/runners/logs/`
-// 의 원본 파일을 파일 시스템에서 직접 확인한다.
-const RAW_ADAPTER_TRANSCRIPT_FILE = /_(?:live_)?(?:stdout|stderr)\.log$/;
-function isRawAdapterTranscriptFile(filePath: string) {
-  return RAW_ADAPTER_TRANSCRIPT_FILE.test(filePath);
-}
-
 function recentLogs(board: AutoflowBoardSnapshot | null, limit: number | null = 16): DisplayLog[] {
   const boardLogs = (board?.logs || []).map((log) => ({ ...log, source: "Board" as const }));
-  const runnerLogs = (board?.runnerLogs || [])
-    .filter((log) => !isRawAdapterTranscriptFile(log.filePath))
-    .map((log) => ({ ...log, source: "Runner" as const }));
+  const runnerLogs = (board?.runnerLogs || []).map((log) => ({ ...log, source: "Runner" as const }));
 
   const sorted = [...boardLogs, ...runnerLogs].sort((a, b) =>
     String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))
@@ -1077,12 +1069,10 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
     ...ticketFolders.flatMap((key) => board.tickets[key] || []),
     ...(board.tickets.check || [])
   ];
-  const visibleRunnerLogs = (board.runnerLogs || []).filter((log) => !isRawAdapterTranscriptFile(log.filePath));
-
   return [
     ...ticketFiles,
     ...(board.logs || []),
-    ...visibleRunnerLogs,
+    ...(board.runnerLogs || []),
     ...(board.wikiFiles || []),
     ...(board.metricsFiles || []),
     ...(board.conversationFiles || [])
@@ -1293,11 +1283,11 @@ function runnerHealthToastKey(runners: AutoflowRunner[]) {
 }
 
 function runnerHealthToastMessage(unhealthy: AutoflowRunner[], allRunners: AutoflowRunner[]) {
-  // Single-flow design: every worker fail routes through inbox retry orders,
+  // Single-flow design: verifier replan routes through order retry files,
   // so raw failure_class / recovery_status / last_result are noise here. We
   // only surface the runner display name and its top-level stateStatus
   // (running / idle / blocked / failed) — actionable retry context lives in
-  // the inbox retry order itself.
+  // the order retry file itself.
   const preview = unhealthy.slice(0, 3).map((runner) => {
     const display = displayWorkflowRunnerId(runner.id, allRunners);
     const status = runner.stateStatus ? displayStatus(runner.stateStatus) : "";
@@ -1362,6 +1352,12 @@ function App() {
   const [logPreview, setLogPreview] = React.useState<AutoflowFileContentResult | null>(null);
   const [isReadingLog, setIsReadingLog] = React.useState(false);
   const [logError, setLogError] = React.useState("");
+  const [startupRulesLayer, setStartupRulesLayer] = React.useState<StartupRulesLayerState | null>(null);
+  const [startupRulesContent, setStartupRulesContent] = React.useState<AutoflowFileContentResult | null>(null);
+  const [startupRulesDraft, setStartupRulesDraft] = React.useState("");
+  const [startupRulesLoading, setStartupRulesLoading] = React.useState(false);
+  const [startupRulesSaving, setStartupRulesSaving] = React.useState(false);
+  const [startupRulesError, setStartupRulesError] = React.useState("");
   const [setupError, setSetupError] = React.useState("");
   const [wikiError, setWikiError] = React.useState("");
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
@@ -1807,30 +1803,35 @@ function App() {
 
   React.useEffect(() => {
     const runners = board?.runners || [];
+    setRunnerSavedDrafts((current) => {
+      const next: Record<string, RunnerDraft> = {};
+      let changed = false;
+      for (const runner of runners) {
+        const runnerDraft = runnerDraftFromRunner(runner);
+        const currentSaved = current[runner.id];
+        const currentDraft = runnerDrafts[runner.id];
+        const hasLocalUnsavedEdit =
+          Boolean(currentSaved && currentDraft && !runnerDraftsEqual(currentDraft, currentSaved)) &&
+          !runnerDraftsEqual(currentDraft, runnerDraft);
+        next[runner.id] = hasLocalUnsavedEdit && currentSaved ? currentSaved : runnerDraft;
+        if (!runnerDraftsEqual(next[runner.id], current[runner.id])) {
+          changed = true;
+        }
+      }
+      if (Object.keys(current).length !== Object.keys(next).length) {
+        changed = true;
+      }
+      return changed ? next : current;
+    });
     setRunnerDrafts((previous) => {
       const next: Record<string, RunnerDraft> = {};
       for (const runner of runners) {
-        const runnerDraft = {
-          agent: runner.agent || "codex",
-          model: runner.model || "",
-          reasoning: runner.reasoning || "",
-          mode: runner.mode || "loop",
-          intervalSeconds: runner.intervalSeconds || "60",
-          enabled: runner.enabled || "true",
-          command: runner.command || ""
-        };
+        const runnerDraft = runnerDraftFromRunner(runner);
         const previousDraft = previous[runner.id];
-        const previousIsDirty = previousDraft
-          ? previousDraft.agent !== runnerDraft.agent ||
-            previousDraft.model !== runnerDraft.model ||
-            previousDraft.reasoning !== runnerDraft.reasoning ||
-            previousDraft.mode !== runnerDraft.mode ||
-            previousDraft.intervalSeconds !== runnerDraft.intervalSeconds ||
-            previousDraft.enabled !== runnerDraft.enabled ||
-            previousDraft.command !== runnerDraft.command
-          : false;
+        const savedDraft = runnerSavedDrafts[runner.id];
+        const previousHasUnsavedEdits = Boolean(previousDraft && savedDraft && !runnerDraftsEqual(previousDraft, savedDraft));
         const isThisRunnerWorking = Boolean(runnerActionKeys[runner.id]);
-        const baseDraft = previousDraft && (isThisRunnerWorking || previousIsDirty) ? previousDraft : runnerDraft;
+        const baseDraft = previousDraft && (isThisRunnerWorking || previousHasUnsavedEdits) ? previousDraft : runnerDraft;
         const normalized = normalizeRunnerSelections(
           baseDraft.agent || "codex",
           baseDraft.model || "",
@@ -1846,7 +1847,7 @@ function App() {
       }
       return next;
     });
-  }, [board?.runners, installedAgentProfiles, runnerActionKeys]);
+  }, [board?.runners, installedAgentProfiles, runnerActionKeys, runnerSavedDrafts]);
 
   React.useEffect(() => {
     const runners = board?.runners || [];
@@ -1886,7 +1887,7 @@ function App() {
     previousSettingsSectionRef.current = activeSettingsSection;
   }, [activeSettingsSection]);
 
-  // (checks tab removed — no automated intervention ledger in 3-runner topology)
+  // (checks tab removed — no automated intervention ledger in the 4-runner topology)
 
   const refreshRecentProjects = React.useCallback(async () => {
     setIsRefreshingRecentProjects(true);
@@ -2025,6 +2026,12 @@ function App() {
       beginRunnerTransition(runner, action, forceStop);
       setRunnerError("");
       try {
+        let effectiveRunnerConfig = {
+          agent: runner.agent || "codex",
+          model: runner.model || "",
+          reasoning: runner.reasoning || "",
+          command: runner.command || ""
+        };
         if (runner && action === "stop" && (runner.enabled || "true") !== "false") {
           const disableResult = await window.autoflow.configureRunner({
             runnerId,
@@ -2051,6 +2058,12 @@ function App() {
             command: runner.command || ""
           };
           const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
+          effectiveRunnerConfig = {
+            agent: draft.agent,
+            model: normalized.model,
+            reasoning: normalized.reasoning,
+            command: draft.command
+          };
           const needsLoopNormalization =
             (runner.mode || "loop") !== "loop" ||
             (runner.enabled || "true") !== "true" ||
@@ -2088,10 +2101,10 @@ function App() {
         if (action === "start") {
           const spawnRes = await (window.autoflow as any).runnerPtySpawn({
             runnerId,
-            role: runner?.role || "ticket-owner",
-            agent: runner?.agent || "claude",
-            model: runner?.model || "",
-            reasoning: runner?.reasoning || "",
+            role: runner?.role || "worker",
+            agent: effectiveRunnerConfig.agent || "codex",
+            model: effectiveRunnerConfig.model || "",
+            reasoning: effectiveRunnerConfig.reasoning || "",
             projectRoot: options.projectRoot,
             boardDirName: options.boardDirName
           });
@@ -2148,6 +2161,92 @@ function App() {
       setRunnerAction
     ]
   );
+
+  const openStartupRules = React.useCallback(
+    async (kind: StartupRulesKind, role?: string) => {
+      if (!options.projectRoot) {
+        pushToast("warning", "프로젝트 루트가 설정되어 있지 않습니다.");
+        return;
+      }
+
+      const request = { kind, ...(role ? { role } : {}) };
+      setStartupRulesLayer(request);
+      setStartupRulesContent(null);
+      setStartupRulesDraft("");
+      setStartupRulesError("");
+      setStartupRulesLoading(true);
+      try {
+        const result = await window.autoflow.readStartupRules({
+          ...options,
+          ...request
+        });
+        if (!result.ok) {
+          setStartupRulesError(result.stderr || "시작 규칙 문서를 불러오지 못했습니다.");
+          return;
+        }
+
+        setStartupRulesContent(result);
+        setStartupRulesDraft(result.content || "");
+      } catch (error) {
+        setStartupRulesError(error instanceof Error ? error.message : "시작 규칙 문서를 불러오지 못했습니다.");
+      } finally {
+        setStartupRulesLoading(false);
+      }
+    },
+    [options, pushToast]
+  );
+
+  const startupRulesDirty = Boolean(
+    startupRulesLayer && startupRulesContent && startupRulesDraft !== startupRulesContent.content
+  );
+  const startupRulesCanSave = Boolean(
+    options.projectRoot &&
+    startupRulesLayer &&
+    startupRulesContent &&
+    startupRulesDirty &&
+    !startupRulesLoading &&
+    !startupRulesSaving
+  );
+
+  const closeStartupRulesLayer = React.useCallback(() => {
+    if (startupRulesDirty && !window.confirm("저장하지 않은 변경사항이 있습니다. 닫을까요?")) {
+      return;
+    }
+    setStartupRulesLayer(null);
+    setStartupRulesContent(null);
+    setStartupRulesDraft("");
+    setStartupRulesError("");
+    setStartupRulesLoading(false);
+    setStartupRulesSaving(false);
+  }, [startupRulesDirty]);
+
+  const saveStartupRules = React.useCallback(async () => {
+    if (!startupRulesCanSave || !startupRulesLayer) {
+      return;
+    }
+
+    setStartupRulesSaving(true);
+    setStartupRulesError("");
+    try {
+      const result = await window.autoflow.writeStartupRules({
+        ...options,
+        ...startupRulesLayer,
+        content: startupRulesDraft
+      });
+      if (!result.ok) {
+        setStartupRulesError(result.stderr || "시작 규칙 문서를 저장하지 못했습니다.");
+        return;
+      }
+
+      setStartupRulesContent(result);
+      setStartupRulesDraft(result.content || "");
+      pushToast("success", `${result.name || "시작 규칙 문서"}를 저장했습니다.`);
+    } catch (error) {
+      setStartupRulesError(error instanceof Error ? error.message : "시작 규칙 문서를 저장하지 못했습니다.");
+    } finally {
+      setStartupRulesSaving(false);
+    }
+  }, [options, pushToast, startupRulesCanSave, startupRulesDraft, startupRulesLayer]);
 
   const answerRunnerAuthPrompt = React.useCallback(
     async (choice: RunnerAuthChoice, runner: AutoflowRunner) => {
@@ -2424,9 +2523,12 @@ function App() {
           return;
         }
 
+        await loadBoard();
+
         if (!restartAfterSave) {
           // 새 model/agent 는 다음 runner tick (interval 안) 에 자연스럽게 적용된다.
-          // 자동 재시작 없음. loadBoard 는 다음 polling cycle 에서 흡수하므로 여기서 호출하지 않는다.
+          // 저장 직후에는 실제 config.local.toml 기준으로 다시 읽어 낙관 UI와
+          // 파일 상태가 갈라지지 않게 한다.
           setRunnerAction(runner.id, "");
           return;
         }
@@ -2449,7 +2551,7 @@ function App() {
         setRunnerError(error instanceof Error ? error.message : "AI 설정 저장에 실패했습니다.");
       }
     },
-    [installedAgentProfiles, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
+    [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
   );
 
   const writeMetricsSnapshot = React.useCallback(async () => {
@@ -2515,6 +2617,19 @@ function App() {
                   </Button>
                 ))}
               </nav>
+              <div className="settings-nav-startup-rules">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="settings-nav-startup-rule-button"
+                  title="공통 시작 규칙 Markdown 편집"
+                  disabled={!options.projectRoot}
+                  onClick={() => void openStartupRules("common")}
+                >
+                  <BookOpenText className="h-4 w-4" aria-hidden="true" />
+                  <span>공통 시작 규칙</span>
+                </Button>
+              </div>
               <div className="settings-nav-footer">
                 <div className="toolbar-project-controls" ref={projectSwitcherRef}>
                   <Button
@@ -2643,6 +2758,11 @@ function App() {
                       onRunnerAuthChoice={answerRunnerAuthPrompt}
                       onDraftChange={updateRunnerDraft}
                       onConfigure={saveRunnerConfig}
+                      onOpenStartupRules={openStartupRules}
+                      onActionToast={pushToast}
+                      onRequestRefresh={() => {
+                        void loadBoard();
+                      }}
                     />
                   </section>
                 </section>
@@ -2778,6 +2898,19 @@ function App() {
           </div>
         </div>
       ) : null}
+      <StartupRulesEditorLayer
+        layer={startupRulesLayer}
+        content={startupRulesContent}
+        draft={startupRulesDraft}
+        loading={startupRulesLoading}
+        saving={startupRulesSaving}
+        error={startupRulesError}
+        dirty={startupRulesDirty}
+        canSave={startupRulesCanSave}
+        onDraftChange={setStartupRulesDraft}
+        onSave={saveStartupRules}
+        onClose={closeStartupRulesLayer}
+      />
       <FullPageLoading open={showGlobalLoading} label="잠시만 기다려 주세요" />
       {globalToast ? (
         <div className="af-toast-region" aria-live="polite">
@@ -3442,8 +3575,7 @@ function RunnerConsole({
 }) {
   const runners = (board?.runners || []).filter(
     (runner) =>
-      runner.role === "ticket-owner" ||
-      runner.role === "owner" ||
+      runner.role === "worker" ||
       runner.role === "planner" ||
       runner.role === "plan" ||
       runner.role === "wiki-maintainer" ||
@@ -3656,7 +3788,7 @@ function RunnerConsole({
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
                 <span>
-                  Planner(planner) / Impl AI(ticket-owner) / Wiki AI(wiki-maintainer) runner가 추가되면 여기에 표시됩니다.
+                  Planner(planner) / Impl AI(worker) / Wiki AI(wiki-maintainer) runner가 추가되면 여기에 표시됩니다.
                 </span>
               </div>
             )}
@@ -4348,24 +4480,18 @@ function ReportDailyCountBars({
 
 function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
   const {
-    doneTicketCount,
     codeFilesChangedCount,
     codeInsertionsCount,
     codeDeletionsCount,
     codeVolumeCount,
     tokenUsageCount,
-    tokenReportCount,
-    avgLeadSeconds,
-    avgActiveSeconds,
-    avgTicksPerDoneTicket,
-    durationTotal24hSeconds
+    tokenReportCount
   } = getWorkflowMetricCounts(board);
   const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
-  const hasTimeData = avgLeadSeconds > 0 || avgActiveSeconds > 0 || durationTotal24hSeconds > 0;
 
   return (
     <div className="workflow-stat-strip" aria-label="작업 흐름 지표 요약">
-      <div className="workflow-stat-row workflow-stat-row-3">
+      <div className="workflow-stat-row workflow-stat-row-2">
         <div className="workflow-stat-cell">
           <Badge variant="secondary">변경 코드량</Badge>
           <strong>{formatCount(codeVolumeCount)}줄</strong>
@@ -4379,23 +4505,14 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
           <strong>{formatCount(tokenUsageCount)}</strong>
           <span>실행 로그 {formatCount(tokenReportCount)}개</span>
         </div>
-        <div
-          className={`workflow-stat-cell${hasTimeData ? "" : " workflow-stat-cell-muted"}`}
-          title={`n=${formatCount(doneTicketCount)}, lead=${formatCount(avgLeadSeconds)}s, active=${formatCount(
-            avgActiveSeconds
-          )}s, ticks=${avgTicksPerDoneTicket.toFixed(1)}, 24h=${formatCount(durationTotal24hSeconds)}s`}
-        >
-          <Badge variant="secondary">평균 처리 시간</Badge>
-          <strong>{formatDurationMetric(avgActiveSeconds)}</strong>
-        </div>
       </div>
     </div>
   );
 }
 
 function computeArrivalMetrics(board: AutoflowBoardSnapshot | null): ArrivalMetrics {
-  const inboxFiles = board?.tickets?.inbox ?? [];
-  const retryFiles = inboxFiles.filter((f) => /order_.*_retry_.*\.md$/i.test(f.name));
+  const orderFiles = board?.tickets?.order ?? [];
+  const retryFiles = orderFiles.filter((f) => /order_.*_retry_.*\.md$/i.test(f.name));
   // Count retries grouped by origin ticket id (extracted from filename)
   const ticketRetryCounts = new Map<string, number>();
   for (const f of retryFiles) {
@@ -4863,16 +4980,16 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
   const runnerRunningCount = statusValue(metrics, "runner_running_count", "0");
   const runnerTotalCount = statusValue(metrics, "runner_total_count", String(board?.runners?.length || 0));
   const runnerEnabledCount = statusValue(metrics, "runner_enabled_count", runnerTotalCount);
-  const ownerActiveCount = statusValue(
+  const workerActiveCount = statusValue(
     metrics,
-    "ticket_owner_active_count",
-    statusValue(status, "ticket_owner_active_count", String(board?.tickets.inprogress?.length || 0))
+    "ticket_worker_active_count",
+    statusValue(status, "ticket_worker_active_count", String(board?.tickets.inprogress?.length || 0))
   );
   const planningCount = statusValue(metrics, "ticket_planning_count", statusValue(status, "ticket_planning_count", "0"));
   const cards = [
     {
       label: "PRD",
-      value: statusValue(metrics, "spec_total", statusValue(status, "spec_count", String(board?.tickets.backlog?.length || 0))),
+      value: statusValue(metrics, "spec_total", statusValue(status, "spec_count", String(board?.tickets.prd?.length || 0))),
       detail: `${handoffCount}개 전달 요청`,
       icon: ClipboardCheck,
       tone: "metric-blue"
@@ -4886,7 +5003,7 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
     },
     {
       label: "AI",
-      value: ownerActiveCount,
+      value: workerActiveCount,
       detail: `계획 ${planningCount}개 / AI ${runnerRunningCount}/${runnerEnabledCount}`,
       icon: Activity,
       tone: "metric-teal"
@@ -4924,8 +5041,8 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketWorkspaceTabKey = "prd" | "inbox" | "issued";
-type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done" | "reject";
+type TicketWorkspaceTabKey = "prd" | "order" | "issued";
+type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done";
 type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
 type TicketKanbanFolderKey = string;
 type TicketPriority = "critical" | "high" | "normal" | "low";
@@ -4951,13 +5068,13 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketKanbanFolderOrder = ["backlog", "inbox", "todo", "inprogress", "done"] as const;
+const ticketKanbanFolderOrder = ["order", "prd", "todo", "inprogress", "done"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
   description: string;
 }> = [
-  { key: "inbox", label: "Order", description: "빠른 오더 intake" },
+  { key: "order", label: "Order", description: "빠른 오더 intake" },
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
   { key: "issued", label: "Ticket", description: "발급된 작업 티켓" }
 ];
@@ -4965,12 +5082,11 @@ const ticketKanbanFolderMeta: Record<string, {
   label: string;
   description: string;
 }> = {
-  backlog: { label: "Backlog", description: "PRD 대기" },
-  inbox: { label: "Order", description: "오더 대기" },
+  prd: { label: "PRD", description: "PRD 대기" },
+  order: { label: "Order", description: "오더 대기" },
   todo: { label: "TODO", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "Worker가 처리중" },
-  done: { label: "완료", description: "완료 기록" },
-  reject: { label: "반려", description: "재시도/검토 필요" }
+  done: { label: "완료", description: "완료 기록" }
 };
 
 function workflowFileDisplayName(name: string) {
@@ -4980,9 +5096,6 @@ function workflowFileDisplayName(name: string) {
   }
   if (stem.startsWith("project_")) {
     return stem.replace(/^project_/, "PRD-");
-  }
-  if (stem.startsWith("reject_")) {
-    return stem.replace(/^reject_/, "Reject-");
   }
   if (stem.startsWith("order_")) {
     return stem.replace(/^order_/, "Order-");
@@ -5090,7 +5203,7 @@ function ticketFolderKeyFromFile(file: AutoflowFilePreview) {
 }
 
 function isTicketWorkspaceBoardFile(file: AutoflowFilePreview) {
-  return isPrdBoardFile(file) || isTicketBoardFile(file) || isRejectBoardFile(file);
+  return isPrdBoardFile(file) || isTicketBoardFile(file);
 }
 
 function isPrdBoardFile(file: AutoflowFilePreview) {
@@ -5102,15 +5215,11 @@ function isTicketBoardFile(file: AutoflowFilePreview) {
 }
 
 function isOrderBoardFile(file: AutoflowFilePreview) {
-  return /^order_\d+(?:_retry_\d+_\d{8}T\d{6}Z)?\.md$/i.test(file.name);
+  return /^order_\d+(?:_retry_\d+_[A-Za-z0-9T.:-]+)?\.md$/i.test(file.name);
 }
 
-function isInboxOrderBoardFile(file: AutoflowFilePreview) {
-  return isOrderBoardFile(file) && boardPath(file.filePath).includes("/tickets/inbox/");
-}
-
-function isRejectBoardFile(file: AutoflowFilePreview) {
-  return /^reject_\d+\.md$/i.test(file.name);
+function isOrderQueueBoardFile(file: AutoflowFilePreview) {
+  return isOrderBoardFile(file) && boardPath(file.filePath).includes("/tickets/order/");
 }
 
 function markdownScalar(content: string, labels: string[]) {
@@ -5145,11 +5254,8 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   if (isPrdBoardFile(file)) {
     return "prd";
   }
-  if (isInboxOrderBoardFile(file)) {
+  if (isOrderQueueBoardFile(file)) {
     return "order";
-  }
-  if (isRejectBoardFile(file)) {
-    return "reject";
   }
   if (!isTicketBoardFile(file)) {
     return null;
@@ -5174,7 +5280,7 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
 
 function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: AutoflowFilePreview, content: string) {
   if (statusKey === "prd") {
-    return boardPath(file.filePath).includes("/tickets/backlog/") ? "PRD" : "보관 PRD";
+    return boardPath(file.filePath).includes("/tickets/prd/") ? "PRD" : "보관 PRD";
   }
 
   if (statusKey === "order") {
@@ -5200,14 +5306,13 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
 
   const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "order" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
     todo: "발급됨",
-    done: "완료",
-    reject: "반려"
+    done: "완료"
   };
   return labels[statusKey];
 }
 
 function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
-  if (statusKey === "blocked" || statusKey === "merge-blocked" || statusKey === "reject") {
+  if (statusKey === "blocked" || statusKey === "merge-blocked") {
     return "destructive" as const;
   }
 
@@ -5220,7 +5325,7 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
 
 function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, runners?: AutoflowRunner[]): TicketWorkspaceItemMeta {
   const id = markdownScalar(content, ["ID"]) || workflowFileDisplayName(file.name);
-  const ai = markdownScalar(content, ["AI", "Execution AI", "Owner"]);
+  const ai = markdownScalar(content, ["AI", "Execution AI", "Worker"]);
   const claimedBy = markdownScalar(content, ["Claimed By"]);
   const title = markdownScalar(content, ["Title"]) || markdownSectionPreview(content, "Request") || file.title || file.name;
   const stage = markdownScalar(content, ["Stage"]);
@@ -5259,7 +5364,7 @@ function prdWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
   return sortFilesByModifiedAt(files);
 }
 
-function inboxWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
+function orderWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
   const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
     folderFiles.filter(isOrderBoardFile)
   );
@@ -5268,13 +5373,11 @@ function inboxWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
 }
 
 function ticketWorkspaceTabFromStorage(value: string | null): TicketWorkspaceTabKey {
+  if (value === "inbox") return "order";
   return ticketWorkspaceTabs.some((tab) => tab.key === value) ? (value as TicketWorkspaceTabKey) : "issued";
 }
 
 function ticketKanbanFolderForItem(item: TicketWorkspaceItem): TicketKanbanFolderKey {
-  if (isRejectBoardFile(item)) {
-    return "reject";
-  }
   return ticketFolderKeyFromFile(item);
 }
 
@@ -5610,7 +5713,7 @@ function TicketWorkspaceKanbanView({
       return;
     }
 
-    if (!isInboxOrderBoardFile(deleteTarget)) {
+    if (!isOrderQueueBoardFile(deleteTarget)) {
       const message = "대기 Order 항목만 삭제할 수 있습니다.";
       setDeleteError(message);
       onActionToast?.("warning", message);
@@ -5620,7 +5723,7 @@ function TicketWorkspaceKanbanView({
     setDeleteInProgress(true);
     setDeleteError("");
     try {
-      const result = await window.autoflow.deleteInboxOrderFile({
+      const result = await window.autoflow.deleteOrderFile({
         ...options,
         filePath: deleteTarget.filePath
       });
@@ -5876,6 +5979,8 @@ function TicketWorkspaceKanbanView({
 function WorkflowPinLayer({
   files,
   options,
+  onActionToast,
+  onRequestRefresh,
   pinTitle,
   pinSubtitle,
   pinIcon,
@@ -5886,6 +5991,8 @@ function WorkflowPinLayer({
 }: {
   files: WorkflowFileEntry[];
   options?: WorkflowBoardOptions;
+  onActionToast?: (severity: AlertSeverity, message: string) => void;
+  onRequestRefresh?: () => Promise<void> | void;
   pinTitle: string;
   pinSubtitle?: string;
   pinIcon: React.ReactNode;
@@ -5899,6 +6006,9 @@ function WorkflowPinLayer({
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
+  const [deleteTarget, setDeleteTarget] = React.useState<WorkflowFileEntry | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState("");
 
   const closeLayer = React.useCallback(() => {
     setLayerOpen(false);
@@ -5952,6 +6062,60 @@ function WorkflowPinLayer({
     },
     [options]
   );
+
+  const closeDeleteDialog = React.useCallback(() => {
+    if (deleteInProgress) return;
+    setDeleteTarget(null);
+    setDeleteError("");
+  }, [deleteInProgress]);
+
+  const requestDelete = React.useCallback((file: WorkflowFileEntry) => {
+    setDeleteError("");
+    setDeleteTarget(file);
+  }, []);
+
+  const confirmDelete = React.useCallback(async () => {
+    if (!deleteTarget || !options?.projectRoot) {
+      setDeleteError("삭제 대상을 찾을 수 없습니다.");
+      return;
+    }
+    if (!isOrderQueueBoardFile(deleteTarget)) {
+      const message = "대기 Order 항목만 삭제할 수 있습니다.";
+      setDeleteError(message);
+      onActionToast?.("warning", message);
+      return;
+    }
+
+    setDeleteInProgress(true);
+    setDeleteError("");
+    try {
+      const result = await window.autoflow.deleteOrderFile({
+        ...options,
+        filePath: deleteTarget.filePath
+      });
+      if (!result.ok) {
+        const message = result.stderr || "삭제에 실패했습니다.";
+        setDeleteError(message);
+        onActionToast?.("error", message);
+        return;
+      }
+
+      onActionToast?.("success", `${workflowFileDisplayName(deleteTarget.name)} 삭제를 완료했습니다.`);
+      if (detailFile?.filePath === deleteTarget.filePath) {
+        setDetailFile(null);
+        setDetailContent(null);
+        setDetailError("");
+      }
+      setDeleteTarget(null);
+      await onRequestRefresh?.();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "삭제 중 오류가 발생했습니다.";
+      setDeleteError(message);
+      onActionToast?.("error", message);
+    } finally {
+      setDeleteInProgress(false);
+    }
+  }, [deleteTarget, detailFile?.filePath, onActionToast, onRequestRefresh, options]);
 
   if (files.length === 0 && !showWhenEmpty) return null;
 
@@ -6007,12 +6171,14 @@ function WorkflowPinLayer({
                 <ul className="workflow-pin-list">
                   {files.map((file) => {
                     const isActive = detailFile?.filePath === file.filePath;
+                    const canDelete = isOrderQueueBoardFile(file);
+                    const isDeletingThis = deleteTarget?.filePath === file.filePath && deleteInProgress;
                     return (
-                      <li key={file.filePath}>
+                      <li key={file.filePath} className="workflow-pin-list-item">
                         <Button
                           variant="ghost"
                           type="button"
-                          className={`workflow-pin-item${isActive ? " workflow-pin-item-active" : ""}`}
+                          className={`workflow-pin-item${isActive ? " workflow-pin-item-active" : ""}${canDelete ? " workflow-pin-item-deletable" : ""}`}
                           onClick={() => handleOpenDetail(file)}
                           aria-pressed={isActive}
                           title={file.title || file.name}
@@ -6029,6 +6195,24 @@ function WorkflowPinLayer({
                           ) : null}
                           <time>{formatDate(file.modifiedAt)}</time>
                         </Button>
+                        {canDelete ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="workflow-pin-item-delete-button"
+                            disabled={isDeletingThis}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              requestDelete(file);
+                            }}
+                            title={`${workflowFileDisplayName(file.name)} 삭제`}
+                            aria-label={`${workflowFileDisplayName(file.name)} 삭제`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Button>
+                        ) : null}
                       </li>
                     );
                   })}
@@ -6069,6 +6253,57 @@ function WorkflowPinLayer({
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeDeleteDialog();
+          }
+        }}
+      >
+        <DialogContent
+          className="workflow-pin-layer-panel ticket-delete-confirm-dialog"
+          overlayClassName="workflow-pin-layer-overlay"
+          keepMounted
+          aria-describedby={undefined}
+        >
+          {deleteTarget ? (
+            <>
+              <div className="workflow-pin-layer-header">
+                <div className="workflow-pin-layer-heading">
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  <DialogTitle asChild>
+                    <strong>Order 삭제 확인</strong>
+                  </DialogTitle>
+                </div>
+              </div>
+              <div className="ticket-delete-confirm-body">
+                <DialogDescription>
+                  삭제 대상: <strong>{workflowFileDisplayName(deleteTarget.name)}</strong>
+                  <br />
+                  {deleteTarget.filePath}
+                </DialogDescription>
+                <p>이 Order를 삭제하면 플래너 러너가 처리하지 않습니다.</p>
+                {deleteError ? <div className="workflow-pin-detail-error">{deleteError}</div> : null}
+                <div className="ticket-delete-confirm-actions">
+                  <Button type="button" variant="outline" size="sm" onClick={closeDeleteDialog} disabled={deleteInProgress}>
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void confirmDelete()}
+                    disabled={deleteInProgress}
+                  >
+                    {deleteInProgress ? "삭제 중..." : "삭제"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
     </>
@@ -6162,7 +6397,7 @@ function TicketKanban({
 }) {
   const issuedFiles = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
   const prdFiles = React.useMemo(() => prdWorkspaceFiles(board), [board]);
-  const inboxFiles = React.useMemo(() => inboxWorkspaceFiles(board), [board]);
+  const orderFiles = React.useMemo(() => orderWorkspaceFiles(board), [board]);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = React.useState<TicketWorkspaceTabKey>(() =>
     ticketWorkspaceTabFromStorage(window.localStorage.getItem("autoflow.activeTicketWorkspaceTab"))
   );
@@ -6206,17 +6441,17 @@ function TicketKanban({
               files={prdFiles}
               options={options}
               runners={board?.runners}
-              defaultFolders={["backlog", "done"]}
+              defaultFolders={["prd", "done"]}
               ariaLabel="폴더 기준 PRD 칸반"
             />
           ) : null}
-          {activeWorkspaceTab === "inbox" ? (
+          {activeWorkspaceTab === "order" ? (
             <TicketWorkspaceKanbanView
-              key="inbox"
-              files={inboxFiles}
+              key="order"
+              files={orderFiles}
               options={options}
               runners={board?.runners}
-              defaultFolders={["inbox", "done"]}
+              defaultFolders={["order", "done"]}
               ariaLabel="폴더 기준 Order 칸반"
               onActionToast={onActionToast}
               onRequestRefresh={onRequestRefresh}
@@ -6251,7 +6486,10 @@ function TicketBoard({
   onControl,
   onRunnerAuthChoice,
   onDraftChange,
-  onConfigure
+  onConfigure,
+  onOpenStartupRules,
+  onActionToast,
+  onRequestRefresh
 }: {
   board: AutoflowBoardSnapshot | null;
   installedAgentProfiles?: InstalledAgentProfiles;
@@ -6269,6 +6507,9 @@ function TicketBoard({
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
+  onOpenStartupRules?: OpenStartupRulesHandler;
+  onActionToast?: (severity: AlertSeverity, message: string) => void;
+  onRequestRefresh?: () => Promise<void> | void;
 }) {
   if (!board) {
     return (
@@ -6281,13 +6522,13 @@ function TicketBoard({
   const runners = sortProgressBoardRunners(
     (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve")
   );
-  const backlogSpecs = (board?.tickets.backlog || [])
+  const prdSpecs = (board?.tickets.prd || [])
     .filter((file) => {
       const name = file?.name || "";
       return name.startsWith("prd_") || name.startsWith("project_");
     })
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const inboxOrders = (board?.tickets.inbox || [])
+  const orderQueueItems = (board?.tickets.order || [])
     .filter(isOrderBoardFile)
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneOrders = (board?.tickets.done || [])
@@ -6320,11 +6561,11 @@ function TicketBoard({
     const match = name.match(/order_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
-  const specFiles: WorkflowFileEntry[] = [...backlogSpecs, ...doneSpecs].sort(
+  const specFiles: WorkflowFileEntry[] = [...prdSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
   const orderFilesById = new Map<string, WorkflowFileEntry>();
-  for (const order of [...inboxOrders, ...doneOrders]) {
+  for (const order of [...orderQueueItems, ...doneOrders]) {
     if (!orderFilesById.has(order.name)) {
       orderFilesById.set(order.name, order);
     }
@@ -6341,8 +6582,8 @@ function TicketBoard({
   const todoFiles: WorkflowFileEntry[] = Array.from(todoFilesById.values()).sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
-  const prdPinTitle = `PRD (${backlogSpecs.length}/${specFiles.length})`;
-  const orderPinTitle = `ORDER (${inboxOrders.length}/${orderFiles.length})`;
+  const prdPinTitle = `PRD (${prdSpecs.length}/${specFiles.length})`;
+  const orderPinTitle = `ORDER (${orderQueueItems.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
   const todoPinSubtitle =
     todoTickets.length === 0 && inprogressTickets.length > 0
@@ -6361,43 +6602,39 @@ function TicketBoard({
       header={
         hasHeader ? (
           <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
-            {hasWorkflowPins ? (
-              <WorkflowPinLayer
-                files={orderFiles}
-                options={options}
+                <WorkflowPinLayer
+                  files={orderFiles}
+                  options={options}
+                onActionToast={onActionToast}
+                onRequestRefresh={onRequestRefresh}
                 pinTitle={orderPinTitle}
-                pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
-                variant="default"
-                layerHeading={orderPinTitle}
-                emptyText="아직 들어온 오더가 없습니다."
-                showWhenEmpty
-              />
-            ) : null}
-            {hasWorkflowPins ? (
-              <WorkflowPinLayer
-                files={specFiles}
-                options={options}
-                pinTitle={prdPinTitle}
-                pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
-                variant="default"
-                layerHeading={prdPinTitle}
-                emptyText="아직 작성된 PRD가 없습니다."
-                showWhenEmpty
-              />
-            ) : null}
-            {hasWorkflowPins ? (
-              <WorkflowPinLayer
-                files={todoFiles}
-                options={options}
-                pinTitle={todoPinTitle}
-                pinSubtitle={todoPinSubtitle}
-                pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
-                variant="default"
-                layerHeading={todoPinTitle}
-                emptyText="아직 발급된 TODO 티켓이 없습니다."
-                showWhenEmpty
-              />
-            ) : null}
+                  pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
+                  variant="default"
+                  layerHeading={orderPinTitle}
+                  emptyText="아직 들어온 오더가 없습니다."
+                  showWhenEmpty
+                />
+                <WorkflowPinLayer
+                  files={specFiles}
+                  options={options}
+                  pinTitle={prdPinTitle}
+                  pinIcon={<ClipboardCheck className="h-4 w-4" aria-hidden="true" />}
+                  variant="default"
+                  layerHeading={prdPinTitle}
+                  emptyText="아직 작성된 PRD가 없습니다."
+                  showWhenEmpty
+                />
+                <WorkflowPinLayer
+                  files={todoFiles}
+                  options={options}
+                  pinTitle={todoPinTitle}
+                  pinSubtitle={todoPinSubtitle}
+                  pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
+                  variant="default"
+                  layerHeading={todoPinTitle}
+                  emptyText="아직 발급된 TODO 티켓이 없습니다."
+                  showWhenEmpty
+                />
           </div>
         ) : null
       }
@@ -6426,6 +6663,7 @@ function TicketBoard({
                 onRunnerAuthChoice={onRunnerAuthChoice}
                 onDraftChange={onDraftChange}
                 onConfigure={onConfigure}
+                onOpenStartupRules={onOpenStartupRules}
               />
             ))}
             {!runners.some((r) => r.role === "verifier") && (
@@ -6471,6 +6709,108 @@ function PageLayout({
       ) : null}
       <div className="page-layout-body">{children}</div>
     </div>
+  );
+}
+
+function startupRulesTitle(layer: StartupRulesLayerState | null) {
+  if (!layer || layer.kind === "common") return "공통 시작 규칙";
+  const role = startupRuleRoleForValue(layer.role || "");
+  if (role === "planner") return "Planner 시작 규칙";
+  if (role === "worker") return "Worker 시작 규칙";
+  if (role === "verifier") return "Verifier 시작 규칙";
+  if (role === "wiki-maintainer") return "Wiki 시작 규칙";
+  return "시작 규칙";
+}
+
+function StartupRulesEditorLayer({
+  layer,
+  content,
+  draft,
+  loading,
+  saving,
+  error,
+  dirty,
+  canSave,
+  onDraftChange,
+  onSave,
+  onClose
+}: {
+  layer: StartupRulesLayerState | null;
+  content: AutoflowFileContentResult | null;
+  draft: string;
+  loading: boolean;
+  saving: boolean;
+  error: string;
+  dirty: boolean;
+  canSave: boolean;
+  onDraftChange: (value: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) {
+  const title = startupRulesTitle(layer);
+  return (
+    <Dialog open={Boolean(layer)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent
+        className="workflow-pin-layer-panel workflow-pin-layer-default startup-rules-layer-panel"
+        overlayClassName="workflow-pin-layer-overlay"
+        keepMounted
+        aria-describedby={undefined}
+      >
+        {layer ? (
+          <>
+            <div className="workflow-pin-layer-header startup-rules-layer-header">
+              <div className="workflow-pin-layer-heading">
+                <BookOpenText className="h-4 w-4" aria-hidden="true" />
+                <DialogTitle asChild>
+                  <strong>{title}</strong>
+                </DialogTitle>
+              </div>
+              {dirty ? <Badge variant="outline">수정됨</Badge> : null}
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                className="workflow-pin-layer-close"
+                onClick={onClose}
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <DialogDescription className="startup-rules-layer-description">
+              {content?.filePath || "시작 규칙 Markdown 문서를 불러오는 중입니다."}
+            </DialogDescription>
+            <div className="startup-rules-editor-body">
+              {loading ? (
+                <div className="workflow-pin-detail-loading">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <span>불러오는 중…</span>
+                </div>
+              ) : null}
+              {error ? <div className="workflow-pin-detail-error">{error}</div> : null}
+              {!loading && !error ? (
+                <textarea
+                  className="startup-rules-editor-textarea"
+                  value={draft}
+                  onChange={(event) => onDraftChange(event.target.value)}
+                  spellCheck={false}
+                  aria-label={`${title} Markdown 편집`}
+                />
+              ) : null}
+            </div>
+            <div className="startup-rules-editor-footer">
+              <span>{content?.modifiedAt ? `마지막 저장 ${formatDate(content.modifiedAt)}` : ""}</span>
+              <div className="startup-rules-editor-actions">
+                <Button type="button" size="sm" disabled={!canSave} onClick={onSave}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+                  <span>저장</span>
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -6572,32 +6912,32 @@ const LIVE_TERMINAL_FONT_SIZE = 10;
 // (line ~3515) 의 colors map 톤을 차용해 ConversationStream 시리즈와 시각
 // 일관성을 맞췄고, 다크 팔레트는 기존 vibe-terminal 톤을 유지한다.
 const LIVE_TERMINAL_THEME_LIGHT = {
-  background: "#FFFFFF",
-  foreground: "#0f172a",
-  cursor: "#0f172a",
-  cursorAccent: "#FFFFFF",
-  selectionBackground: "rgba(31, 41, 55, 0.18)",
-  selectionInactiveBackground: "rgba(31, 41, 55, 0.10)",
-  scrollbarSliderBackground: "rgba(31, 41, 55, 0.20)",
-  scrollbarSliderHoverBackground: "rgba(31, 41, 55, 0.32)",
-  scrollbarSliderActiveBackground: "rgba(31, 41, 55, 0.42)",
-  overviewRulerBorder: "#FFFFFF",
-  black: "#1f2937",
-  red: "#b91c1c",
-  green: "#15803d",
-  yellow: "#a16207",
-  blue: "#1d4ed8",
-  magenta: "#7e22ce",
-  cyan: "#0e7490",
-  white: "#4b5563",
-  brightBlack: "#4b5563",
-  brightRed: "#dc2626",
-  brightGreen: "#22c55e",
-  brightYellow: "#ca8a04",
-  brightBlue: "#2563eb",
-  brightMagenta: "#9333ea",
-  brightCyan: "#0891b2",
-  brightWhite: "#111827"
+  background: "#F3F6FA",
+  foreground: "#111827",
+  cursor: "#2563EB",
+  cursorAccent: "#F3F6FA",
+  selectionBackground: "rgba(37, 99, 235, 0.20)",
+  selectionInactiveBackground: "rgba(37, 99, 235, 0.10)",
+  scrollbarSliderBackground: "rgba(30, 64, 175, 0.18)",
+  scrollbarSliderHoverBackground: "rgba(30, 64, 175, 0.28)",
+  scrollbarSliderActiveBackground: "rgba(30, 64, 175, 0.38)",
+  overviewRulerBorder: "#F3F6FA",
+  black: "#111827",
+  red: "#B42318",
+  green: "#047857",
+  yellow: "#B45309",
+  blue: "#1D4ED8",
+  magenta: "#7C3AED",
+  cyan: "#0369A1",
+  white: "#64748B",
+  brightBlack: "#334155",
+  brightRed: "#DC2626",
+  brightGreen: "#059669",
+  brightYellow: "#C2410C",
+  brightBlue: "#2563EB",
+  brightMagenta: "#9333EA",
+  brightCyan: "#0284C7",
+  brightWhite: "#0F172A"
 } as const;
 
 const LIVE_TERMINAL_THEME_DARK = {
@@ -6636,6 +6976,22 @@ function readDocumentThemeMode(): "light" | "dark" {
 
 function liveTerminalThemeFor(mode: "light" | "dark") {
   return mode === "dark" ? LIVE_TERMINAL_THEME_DARK : LIVE_TERMINAL_THEME_LIGHT;
+}
+
+function liveTerminalReadabilityFor(mode: "light" | "dark") {
+  return {
+    fontWeight: mode === "light" ? "500" : "400",
+    fontWeightBold: "700",
+    minimumContrastRatio: mode === "light" ? 4.5 : 1
+  } as const;
+}
+
+function applyLiveTerminalAppearance(terminal: XTermTerminal, mode: "light" | "dark") {
+  const readability = liveTerminalReadabilityFor(mode);
+  terminal.options.theme = { ...liveTerminalThemeFor(mode) };
+  terminal.options.fontWeight = readability.fontWeight;
+  terminal.options.fontWeightBold = readability.fontWeightBold;
+  terminal.options.minimumContrastRatio = readability.minimumContrastRatio;
 }
 
 // vibe-terminal appendOutput 패턴: PTY 는 작은 chunk 가 실시간 도착하므로
@@ -6684,51 +7040,6 @@ function runnerQuotaToastSignal(runner: AutoflowRunner | undefined, text: string
   };
 }
 
-const SPINNER_GLYPH_CHAR_CLASS = "[\\u23F8\\u23F9\\u23FA\\u23FB\\u25CF\\u25CB\\u25D0-\\u25D7\\u2022\\u00B7\\u22EF\\u2026\\u2191\\u2193\\u2728\\u2733\\u2734\\u2736\\u2737\\u2738\\u2739\\u273A\\u273B\\u273C\\u273D\\u25EC\\u25EF\\u25C9\\u25CE\\u25E6\\u29BF\\u23FA\\u23F8\\u23F9\\u2B24\\u2B22\\u25C7\\u25C6\\u23F7\\u2807\\u2820-\\u28FF]";
-const SPINNER_ARTIFACT_LINE = new RegExp(
-  "^[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]*(?:still\\s+)?(?:thinking|Cultivating|Photosynthesizing|Pondering|Ruminating|Brewing|Churning|cooking|Marinating|Creating|loading|Processing)?[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]*$",
-  "i"
-);
-const SPINNER_THINKING_PHRASE = /(?:\w*…\s*\d*\s*thinking|still\s+thinking|thinking\s+with\s+(?:medium|high|low)\s+effort)/i;
-const SPINNER_ONLY_GLYPHS_DIGITS = new RegExp("^[\\s\\d" + SPINNER_GLYPH_CHAR_CLASS.slice(1, -1) + "stokens↑↓()·]+$");
-
-function isSpinnerArtifact(line: string): boolean {
-  const plain = line.replace(/\x1B\[[0-9;?]*m/g, "").trim();
-  if (!plain) return false;
-  if (SPINNER_THINKING_PHRASE.test(plain)) return true;
-  if (SPINNER_ONLY_GLYPHS_DIGITS.test(plain)) return true;
-  return false;
-}
-
-function sanitizePtyChunkForNarrowTerm(input: string): string {
-  if (!input) return input;
-  let out = input.replace(/\r\n/g, "\n");
-  out = out.replace(/\x1B\[[0-?]*[ -/]*[ABCDEFGHJKSTfsuhl]/g, "");
-  out = out.replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "");
-  const lines = out.split("\n").map((line) => {
-    if (line.indexOf("\r") === -1) return line;
-    const parts = line.split("\r");
-    for (let i = parts.length - 1; i >= 0; i--) {
-      if (parts[i] !== "") return parts[i];
-    }
-    return "";
-  });
-  const filtered: string[] = [];
-  let blankRun = 0;
-  for (const line of lines) {
-    if (isSpinnerArtifact(line)) continue;
-    if (line.trim() === "") {
-      blankRun++;
-      if (blankRun > 1) continue;
-      filtered.push(line);
-    } else {
-      blankRun = 0;
-      filtered.push(line);
-    }
-  }
-  return filtered.join("\r\n");
-}
-
 // Direct PTY byte stream → xterm. No file polling, no JSON summarization.
 // Subscribes to main-process IPC channel and writes raw bytes (with ANSI
 // escape codes) straight into xterm — same as vibe-terminal.
@@ -6744,6 +7055,7 @@ function LivePtyView({
   const terminalRef = React.useRef<XTermTerminal | null>(null);
   const fitAddonRef = React.useRef<FitAddon | null>(null);
   const fitTimerRef = React.useRef<number | null>(null);
+  const fitRafRef = React.useRef<number | null>(null);
   const pendingChunksRef = React.useRef<string[]>([]);
   const flushRafRef = React.useRef<number | null>(null);
   const [terminalThemeMode, setTerminalThemeMode] = React.useState<
@@ -6775,6 +7087,22 @@ function LivePtyView({
       host.style.paddingRight = prevPaddingRight;
     }
   }, [syncPtyColsWithTerminal]);
+  const scheduleFitAndResize = React.useCallback((delayMs = LIVE_TERMINAL_FIT_DEBOUNCE_MS) => {
+    if (fitTimerRef.current !== null) {
+      window.clearTimeout(fitTimerRef.current);
+    }
+    if (fitRafRef.current !== null) {
+      window.cancelAnimationFrame(fitRafRef.current);
+      fitRafRef.current = null;
+    }
+    fitTimerRef.current = window.setTimeout(() => {
+      fitTimerRef.current = null;
+      fitRafRef.current = window.requestAnimationFrame(() => {
+        fitRafRef.current = null;
+        try { fitAndResize(); } catch {}
+      });
+    }, delayMs);
+  }, [fitAndResize]);
 
   // Mount xterm once.
   React.useEffect(() => {
@@ -6784,12 +7112,13 @@ function LivePtyView({
       cursorBlink: false,
       cursorStyle: "bar",
       cursorInactiveStyle: "none",
-      convertEol: true,
+      convertEol: false,
       disableStdin: true,
       allowProposedApi: false,
       fontFamily: LIVE_TERMINAL_FONT_FAMILY,
       fontSize: LIVE_TERMINAL_FONT_SIZE,
       lineHeight: 1.2,
+      ...liveTerminalReadabilityFor(terminalThemeMode),
       rescaleOverlappingGlyphs: false,
       scrollback: LIVE_TERMINAL_SCROLLBACK,
       theme: liveTerminalThemeFor(terminalThemeMode)
@@ -6800,14 +7129,26 @@ function LivePtyView({
     terminalRef.current = terminal;
     fitAddonRef.current = fit;
     fitAndResize();
+    const postMountFitTimers = [0, 80, 220, 500].map((delayMs) => window.setTimeout(() => {
+      scheduleFitAndResize(0);
+    }, delayMs));
     return () => {
+      postMountFitTimers.forEach((timer) => window.clearTimeout(timer));
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current);
+        fitTimerRef.current = null;
+      }
+      if (fitRafRef.current !== null) {
+        window.cancelAnimationFrame(fitRafRef.current);
+        fitRafRef.current = null;
+      }
       try { terminal.dispose(); } catch {}
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
     // Theme handled separately below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitAndResize]);
+  }, [fitAndResize, runnerId]);
 
   // Theme observer (light/dark swap on data-theme change)
   React.useEffect(() => {
@@ -6824,25 +7165,27 @@ function LivePtyView({
   React.useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
-    terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
+    applyLiveTerminalAppearance(terminal, terminalThemeMode);
   }, [terminalThemeMode]);
 
   // Resize on host element changes (debounced fit).
   React.useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserver(() => scheduleFitAndResize());
+    observer.observe(host);
+    return () => {
+      observer.disconnect();
       if (fitTimerRef.current !== null) {
         window.clearTimeout(fitTimerRef.current);
-      }
-      fitTimerRef.current = window.setTimeout(() => {
         fitTimerRef.current = null;
-        try { fitAndResize(); } catch {}
-      }, LIVE_TERMINAL_FIT_DEBOUNCE_MS);
-    });
-    observer.observe(host);
-    return () => observer.disconnect();
-  }, [fitAndResize]);
+      }
+      if (fitRafRef.current !== null) {
+        window.cancelAnimationFrame(fitRafRef.current);
+        fitRafRef.current = null;
+      }
+    };
+  }, [scheduleFitAndResize]);
 
   // Subscribe to PTY bytes for this runner. Buffer + RAF flush so multiple
   // chunks within a frame coalesce into a single xterm.write() call.
@@ -6856,7 +7199,7 @@ function LivePtyView({
       const term = terminalRef.current;
       const chunks = pendingChunksRef.current;
       if (!term || chunks.length === 0) return;
-      const merged = sanitizePtyChunkForNarrowTerm(chunks.join(""));
+      const merged = chunks.join("");
       pendingChunksRef.current = [];
       try { term.write(merged); } catch {}
     };
@@ -6969,6 +7312,7 @@ function LiveTerminalView({
     if (!host || terminalRef.current) return;
 
     // vibe-terminal renderer.js line 5389~5413 옵션 풀세트.
+    const initialThemeMode = readDocumentThemeMode();
     const terminal = new XTermTerminal({
       cursorBlink: false,
       cursorStyle: "bar",
@@ -6979,10 +7323,11 @@ function LiveTerminalView({
       fontFamily: LIVE_TERMINAL_FONT_FAMILY,
       fontSize: LIVE_TERMINAL_FONT_SIZE,
       lineHeight: 1.2,
+      ...liveTerminalReadabilityFor(initialThemeMode),
       rescaleOverlappingGlyphs: false,
       scrollback: LIVE_TERMINAL_SCROLLBACK,
       overviewRuler: { width: 1 },
-      theme: { ...liveTerminalThemeFor(readDocumentThemeMode()) }
+      theme: { ...liveTerminalThemeFor(initialThemeMode) }
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -7055,7 +7400,7 @@ function LiveTerminalView({
   React.useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
-    terminal.options.theme = { ...liveTerminalThemeFor(terminalThemeMode) };
+    applyLiveTerminalAppearance(terminal, terminalThemeMode);
   }, [terminalThemeMode]);
 
   // vibe-terminal pattern: 새 chunk 를 pendingChunksRef 에 push 하고
@@ -7383,7 +7728,7 @@ function useLiveStdoutText(
         });
         if (cancelled) return;
         const raw = result.ok ? result.content || "" : "";
-        setText(detectAndSummarizeJsonLines(raw));
+        setText(raw);
       } catch {
         // best-effort polling — swallow read errors
       }
@@ -7465,7 +7810,7 @@ function stageIsTerminal(key: string, stages: readonly FlowStageDef[]): boolean 
 function flowStepState(
   stepKey: string,
   currentKey: string,
-  stages: readonly FlowStageDef[] = ownerFlowStages
+  stages: readonly FlowStageDef[] = workerFlowStages
 ) {
   const terminalKeys = new Set(["reject", "blocked", "done", "failed"]);
   if (terminalKeys.has(currentKey)) {
@@ -7494,7 +7839,7 @@ function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
   if (role === "merge-bot" || role === "merge") return mergeBotFlowStages;
   if (role.includes("wiki")) return wikiBotFlowStages;
   if (role === "planner" || role === "plan") return plannerFlowStages;
-  return ownerFlowStages;
+  return workerFlowStages;
 }
 
 function runnerStageKey(runner: AutoflowRunner): string {
@@ -7530,7 +7875,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
   const hasWorkerIdleSignal = /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
-  const hasCommittedViaInlineMerge = /\bcommitted_via_inline_merge\b/.test(stateText);
+  const hasCompletionFinalizerCommit = /\bcommitted_via_completion_finalizer\b/.test(stateText);
   const isFailLike =
     status === "failed" ||
     /^(rejected|reject|fail|failed|error|adapter_exit_[1-9])$/.test(activeStage) ||
@@ -7553,11 +7898,11 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (role === "planner" || role === "plan") {
     const hasPlannerIdleSignal =
-      /\bno_actionable_plan_input\b|\bidle_wait_for_backlog_or_reject\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
+      /\bno_actionable_plan_input\b|\bidle_wait_for_order_or_prd\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
     if (isFailLike) return "blocked";
     if (/^(stalled|blocked|repairing|requeued|needs_user)$/.test(activeRecoveryStatus)) return "planning";
     if (hasPlannerIdleSignal && !runnerActiveTicket && !runner.activeItem) return "idle";
-    if (/\bsource=backlog-to-todo\b|\bsource=reject-replan\b|\btodo_ticket=/.test(stateText)) return "generating-todo";
+    if (/\bsource=prd-to-todo\b|\btodo_ticket=/.test(stateText)) return "generating-todo";
     if (status === "running" && (runnerActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
     if (runnerActiveTicket) return "generating-todo";
     return "idle";
@@ -7569,7 +7914,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   // an idle tick that found no todo also emits adapter_finish status=ok.
   if (hasWorkerIdleSignal && !runnerActiveTicket) return "idle";
 
-  if (hasCommittedViaInlineMerge) return "done";
+  if (hasCompletionFinalizerCommit) return "done";
 
   if (runnerActiveTicket) {
     if (/^(merging)$/.test(activeStage)) return "merging";
@@ -7609,7 +7954,7 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
     return "blocked";
   }
 
-  if (/\bdone\b|\bpass\b|\bcomplete\b|\bcompleted\b|\bcommitted_via_inline_merge\b/.test(stateSignalText)) {
+  if (/\bdone\b|\bpass\b|\bcomplete\b|\bcompleted\b|\bcommitted_via_completion_finalizer\b/.test(stateSignalText)) {
     return "done";
   }
 
@@ -7623,7 +7968,7 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
 function runnerProgressDetail(runner: AutoflowRunner) {
   // Recovery reason / failure_class strings (e.g. "recovery_state_blocked",
   // "dirty_root") are no longer surfaced — single-flow fail handling routes
-  // every blocker to inbox retry, so users only need the active title.
+  // every blocker to order retry, so users only need the active title.
   if (runner.activeTicketTitle) {
     return runner.activeTicketTitle;
   }
@@ -7657,16 +8002,31 @@ function isMachineRunnerLog(value: string) {
 
 function canonicalWorkflowRunnerRole(value: string) {
   const normalized = (value || "").toLowerCase();
-  if (normalized === "worker" || /^(owner|worker|ai)-/.test(normalized)) return "ticket-owner";
+  if (normalized === "worker" || /^(worker|ai)-/.test(normalized)) return "worker";
   if (normalized === "planner" || /^(planner|plan)-/.test(normalized)) return "planner";
   if (normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki-maintainer";
   return "";
 }
 
+function startupRuleRoleForValue(value: string) {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "worker" || normalized === "ticket" || /^(worker|ai)-/.test(normalized)) return "worker";
+  if (normalized === "planner" || normalized === "plan" || /^(planner|plan)-/.test(normalized)) return "planner";
+  if (normalized === "verifier" || normalized === "verify" || /^verifier-/.test(normalized)) return "verifier";
+  if (normalized === "wiki-maintainer" || normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) {
+    return "wiki-maintainer";
+  }
+  return "";
+}
+
+function startupRuleRoleForRunner(runner: AutoflowRunner) {
+  return startupRuleRoleForValue(runner.role) || startupRuleRoleForValue(runner.id);
+}
+
 function runnerRoleMatchesDisplayRole(role: string, displayRole: string) {
   const normalized = (role || "").toLowerCase();
-  if (displayRole === "ticket-owner") {
-    return normalized === "ticket-owner" || normalized === "owner" || normalized === "ticket";
+  if (displayRole === "worker") {
+    return normalized === "worker" || normalized === "ticket";
   }
   if (displayRole === "planner") {
     return normalized === "planner" || normalized === "plan";
@@ -7690,9 +8050,9 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (!value) return value;
   const role = canonicalWorkflowRunnerRole(value);
   const singleton = workflowRoleIsSingleton(runners, role);
-  const workerAliasMatch = value.match(/^(?:owner|worker|ai)-(\d+)$/i);
+  const workerAliasMatch = value.match(/^(?:worker|ai)-(\d+)$/i);
   if (value === "worker") return "worker";
-  if (singleton && role === "ticket-owner") return "worker";
+  if (singleton && role === "worker") return "worker";
   if (workerAliasMatch) {
     const suffix = workerAliasMatch[1];
     return suffix === "1" ? "worker" : `worker-${suffix}`;
@@ -7726,7 +8086,7 @@ function displayProgressRunnerLabel(runner: AutoflowRunner) {
 function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunner[]) {
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "Planner";
-  if (role === "ticket-owner" || role === "owner" || role === "ticket") {
+  if (role === "worker" || role === "ticket") {
     return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
   }
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
@@ -7753,7 +8113,7 @@ function progressBoardRunnerOrder(runner: AutoflowRunner) {
     return 4;
   }
   if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
-  if (["ticket-owner", "worker", "ticket", "owner"].includes(role) || idRole === "ticket-owner") return 5;
+  if (["worker", "ticket"].includes(role) || idRole === "worker") return 5;
   if (role === "verifier") return 6;
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 7;
   return 8;
@@ -7766,30 +8126,33 @@ function sortProgressBoardRunners(runners: AutoflowRunner[]) {
     .map(({ runner }) => runner);
 }
 
-function AgentAppIcon({ agent }: { agent: string }) {
-  const agentKey = (agent || "").toLowerCase();
-  const iconAsset =
-    agentKey === "codex"
-      ? codexAppIcon
-      : agentKey === "claude"
-        ? claudeAppIcon
-        : agentKey === "gemini"
-          ? geminiAppIcon
-          : "";
+const AGENT_APP_ICONS: Record<string, string> = {
+  claude: claudeAppIcon,
+  codex: codexAppIcon,
+  gemini: geminiAppIcon
+};
 
-  if (iconAsset) {
+function normalizeAgentIconKey(agent: string) {
+  const normalized = (agent || "").trim().toLowerCase();
+  if (normalized.includes("claude")) return "claude";
+  if (normalized.includes("codex")) return "codex";
+  if (normalized.includes("gemini")) return "gemini";
+  return normalized;
+}
+
+function AgentAppIcon({ agent }: { agent?: string }) {
+  const iconKey = normalizeAgentIconKey(agent || "codex");
+  const iconSrc = AGENT_APP_ICONS[iconKey];
+  if (!iconSrc) {
     return (
-      <span className="ai-agent-app-icon ai-agent-app-icon-image" aria-hidden="true">
-        <img src={iconAsset} alt="" />
+      <span className="ai-agent-app-icon ai-agent-app-icon-fallback" aria-hidden="true">
+        <Workflow size={14} strokeWidth={2.2} />
       </span>
     );
   }
-
-  const iconClassName = `ai-agent-app-icon ai-agent-app-icon-${agentKey || "default"}`;
-
   return (
-    <span className={iconClassName} aria-hidden="true">
-      <Sparkles size={13} strokeWidth={2.2} />
+    <span className={`ai-agent-app-icon ai-agent-app-icon-${iconKey}`} aria-hidden="true">
+      <img src={iconSrc} alt="" />
     </span>
   );
 }
@@ -7829,7 +8192,8 @@ function AiProgressRow({
   onControl,
   onRunnerAuthChoice,
   onDraftChange,
-  onConfigure
+  onConfigure,
+  onOpenStartupRules
 }: {
   runner: AutoflowRunner;
   onSelect: (filePath: string) => void;
@@ -7843,6 +8207,7 @@ function AiProgressRow({
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
+  onOpenStartupRules?: OpenStartupRulesHandler;
 }) {
   const currentKey = runnerStageKey(runner);
   const hideProgressTrack = isCoordinatorRole(runner.role);
@@ -7857,7 +8222,7 @@ function AiProgressRow({
   const cycleResult = runnerCycleResult(runner);
   const status = runner.stateStatus || "idle";
   const role = (runner.role || "").toLowerCase();
-  const isWorkerProgressRow = role === "ticket-owner" || role === "owner" || role === "ticket";
+  const isWorkerProgressRow = role === "worker" || role === "ticket";
   const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
@@ -7892,14 +8257,15 @@ function AiProgressRow({
   };
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
+  const startupRuleRole = startupRuleRoleForRunner(runner);
+  const canOpenRoleStartupRules = Boolean(onOpenStartupRules && startupRuleRole);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
   const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
     runner.role === "wiki" ||
-    runner.role === "ticket-owner" ||
-    runner.role === "owner" ||
+    runner.role === "worker" ||
     runner.role === "planner" ||
     runner.role === "plan" ||
     runner.role === "verifier";
@@ -7971,7 +8337,7 @@ function AiProgressRow({
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
           <div className={`ai-progress-agent-title${isWorkerProgressRow ? " ai-progress-agent-title-worker" : ""}`}>
-            <AgentAppIcon agent={runner.agent || ""} />
+            <AgentAppIcon agent={runnerDraft.agent || runner.agent || "codex"} />
             <div className="ai-progress-agent-label-cluster">
               <strong>{agentTitle}</strong>
             </div>
@@ -7979,6 +8345,19 @@ function AiProgressRow({
         </div>
         {canControl ? (
           <div className="ai-progress-actions" aria-label={`${agentTitle} 제어`}>
+            {canOpenRoleStartupRules ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="runner-icon-button runner-plain-icon-button"
+                aria-label={`${agentTitle} 시작 규칙 열기`}
+                title={`${agentTitle} 시작 규칙 문서 열기`}
+                onClick={() => onOpenStartupRules?.("role", startupRuleRole)}
+              >
+                <BookOpenText className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
             {canStop ? (
               <>
                 <Button
@@ -8373,121 +8752,6 @@ function WikiList({
   );
 }
 
-// AI 주도 sh 실행 원칙: 사용자 view 에는 AI 가 한 일(narrative)만 보이고,
-// sh tool 의 raw protocol — envelope 마커, key=value 프로토콜 라인,
-// 그리고 어댑터(Codex/Claude) transcript 안의 tool 호출/diff/shell 명령
-// 같은 raw transcript 본문 — 은 모두 숨긴다. 디버그가 필요하면 원본은
-// .autoflow/runners/logs/ 의 raw 파일에서 확인할 수 있고, UI 에서는
-// 헤더의 "raw +N" 토글로 펼칠 수 있다.
-//
-// 룰:
-//  - `*_begin` / `*_end` envelope 마커 자체는 항상 strip.
-//  - `narrative_text` envelope 안의 content 는 AI 의 최종 메시지이므로 KEEP.
-//  - 그 외 envelope (adapter_stdout, adapter_stderr, recovery_signal,
-//    runtime_output, finish.output, adapter_prompt 등) 안의 content 는
-//    DROP — AI 가 도구로 한 일이지 AI 가 사용자에게 한 말이 아님.
-//  - envelope 밖에서 `narrative=<text>` 한 줄은 prose 로 surface.
-//  - envelope 밖에서 snake_case `key=value` 는 protocol 이므로 DROP.
-//  - 그 외 prose 라인은 KEEP.
-const NARRATIVE_KEEP_ENVELOPES = new Set<string>(["narrative_text"]);
-
-// Collapse interactive-CLI carriage-return overwrites and strip ANSI escape
-// sequences before line-splitting. Claude Code 의 "✻ Photosynthesizing… with
-// medium effort 5s" 같은 스피너는 `\r` 로 같은 자리를 덮어쓰는 방식이라 진짜
-// 터미널이면 한 줄만 갱신되지만, 로그 파일이나 plain 텍스트 뷰는 `\r` 을
-// 줄바꿈으로 인식 못 해 모든 프레임이 한 줄에 떡진 채로 누적된다.
-// 1) CRLF 는 LF 로 정규화 (실제 줄은 보존)
-// 2) 줄 안의 고립 `\r` 은 "줄 머리로 돌아가서 덮어쓰기" 의미이므로 마지막
-//    `\r` 뒤 fragment 만 남긴다 (스피너 마지막 프레임만 살아남음)
-// 3) CSI / OSC ANSI escape 시퀀스 (`\x1b[2K`, `\x1b[K`, `\x1b[1G`, 컬러 등)
-//    제거. live xterm 뷰가 아닌 plain 요약 뷰는 시각적 의미가 없다.
-function normalizeRunnerLogForSplit(input: string): string {
-  if (!input) return input;
-  const crlfNormalized = input.replace(/\r\n/g, "\n");
-  const collapsed = crlfNormalized
-    .split("\n")
-    .map((line) => {
-      if (line.indexOf("\r") === -1) return line;
-      const parts = line.split("\r");
-      for (let i = parts.length - 1; i >= 0; i--) {
-        if (parts[i] !== "") return parts[i];
-      }
-      return "";
-    })
-    .join("\n");
-  return collapsed
-    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
-    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
-}
-
-function summarizeRunnerLogForUserView(rawContent: string): { content: string; hidLines: number } {
-  if (!rawContent) {
-    return { content: rawContent, hidLines: 0 };
-  }
-  const ENVELOPE_BEGIN = /^([a-z_][a-z0-9_.]*)_begin$/;
-  const ENVELOPE_END = /^([a-z_][a-z0-9_.]*)_end$/;
-  const PROTOCOL_KV = /^[a-z_][a-z0-9_.]*=/;
-  const lines = normalizeRunnerLogForSplit(rawContent).split("\n");
-  const out: string[] = [];
-  const envelopeStack: string[] = [];
-  let hid = 0;
-  let lastBlank = true;
-  for (const raw of lines) {
-    const line = raw.replace(/\s+$/u, "");
-    const trimmed = line.trim();
-    const beginMatch = ENVELOPE_BEGIN.exec(trimmed);
-    if (beginMatch) {
-      envelopeStack.push(beginMatch[1]);
-      hid++;
-      continue;
-    }
-    const endMatch = ENVELOPE_END.exec(trimmed);
-    if (endMatch) {
-      const idx = envelopeStack.lastIndexOf(endMatch[1]);
-      if (idx >= 0) {
-        envelopeStack.splice(idx, 1);
-      }
-      hid++;
-      continue;
-    }
-    const insideEnvelope = envelopeStack.length > 0;
-    // Innermost envelope wins: nested transcript (e.g. recovery_signal) inside
-    // a narrative_text wrapper still gets dropped.
-    const innermost = envelopeStack[envelopeStack.length - 1];
-    const insideKeepEnvelope = !!innermost && NARRATIVE_KEEP_ENVELOPES.has(innermost);
-    if (insideEnvelope && !insideKeepEnvelope) {
-      // Drop everything inside transcript / protocol envelopes.
-      hid++;
-      continue;
-    }
-    if (!insideEnvelope && PROTOCOL_KV.test(line)) {
-      if (line.startsWith("narrative=")) {
-        const text = line.slice("narrative=".length);
-        if (text) {
-          out.push(text);
-          lastBlank = false;
-        }
-      } else {
-        hid++;
-      }
-      continue;
-    }
-    if (line === "") {
-      if (!lastBlank) {
-        out.push("");
-        lastBlank = true;
-      }
-      continue;
-    }
-    out.push(line);
-    lastBlank = false;
-  }
-  while (out.length && out[out.length - 1] === "") {
-    out.pop();
-  }
-  return { content: out.join("\n"), hidLines: hid };
-}
-
 function LogPreview({
   preview,
   isLoading,
@@ -8499,13 +8763,7 @@ function LogPreview({
   error: string;
   headerAction?: React.ReactNode;
 }) {
-  const [showRaw, setShowRaw] = React.useState(false);
-  const summary = React.useMemo(
-    () => (preview?.content ? summarizeRunnerLogForUserView(preview.content) : { content: "", hidLines: 0 }),
-    [preview?.content]
-  );
-  const displayContent = preview ? (showRaw ? preview.content : summary.content) : "";
-  const placeholder = showRaw ? "(비어 있음)" : "(AI 가 정리한 메시지가 없습니다)";
+  const displayContent = preview ? preview.content : "";
   return (
     <div className="log-preview">
       <div className="log-preview-header">
@@ -8516,22 +8774,10 @@ function LogPreview({
             일부만 표시
           </Badge>
         ) : null}
-        {!isLoading && preview && summary.hidLines > 0 ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="log-preview-raw-toggle"
-            onClick={() => setShowRaw((current) => !current)}
-            title={showRaw ? "AI 정리 본문만 보기" : `숨겨진 sh raw 라인 ${summary.hidLines}개 펼치기`}
-          >
-            {showRaw ? "AI 본문" : `raw +${summary.hidLines}`}
-          </Button>
-        ) : null}
         {headerAction}
       </div>
       {error ? <div className="log-preview-error">{error}</div> : null}
-      {!error && preview ? <pre>{displayContent || placeholder}</pre> : null}
+      {!error && preview ? <pre>{displayContent || "(비어 있음)"}</pre> : null}
       {!error && !preview ? <div className="empty-panel log-preview-empty">선택된 로그가 없습니다</div> : null}
     </div>
   );

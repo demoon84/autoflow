@@ -2,8 +2,8 @@
 
 ## Now
 
-- Keep backlog PRDs small and executable.
-- Prefer Ticket Owner Mode for new work.
+- Keep PRD queue items small and executable.
+- Prefer Worker Mode for new work.
 - Record evidence before marking work done.
 
 ## Next

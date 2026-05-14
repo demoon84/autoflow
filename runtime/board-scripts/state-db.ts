@@ -164,7 +164,7 @@ VALUES ('${sqlEsc(runnerId)}','${sqlEsc(lastResult)}',${timeoutCount === "" ? "N
     }
   }
 
-  for (const bucket of ["inbox", "backlog", "todo", "inprogress"]) {
+  for (const bucket of ["order", "prd", "todo", "inprogress"]) {
     const dir = path.join(BOARD_ROOT, "tickets", bucket);
     let count = 0;
     try {

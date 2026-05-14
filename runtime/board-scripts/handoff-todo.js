@@ -5,12 +5,12 @@
  * handoff-todo.js
  *
  * Node primary implementation for the deprecated legacy todo -> verifier
- * handoff. The 4-runner topology verifies via finish-ticket-owner + verifier,
+ * handoff. The 4-runner topology verifies via finish-ticket + verifier,
  * but this compatibility command still needs deterministic behavior for older
  * boards and smoke tests.
  *
  * The legacy shell fallback was removed after the Node implementation became
- * the single owner of this deprecated compatibility path.
+ * the single implementation path of this deprecated compatibility command.
  */
 
 const fs = require('node:fs');
@@ -189,7 +189,7 @@ function clearActiveTicketContext() {
   return changed;
 }
 
-function ownerId() {
+function defaultWorkerId() {
   return process.env.AUTOFLOW_WORKER_ID || process.env.RUNNER_ID || 'worker';
 }
 
@@ -230,7 +230,7 @@ function resolveTicket(requested) {
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  const worker = ownerId();
+  const worker = defaultWorkerId();
   for (const candidate of listTickets(path.join(root, 'tickets', 'inprogress'))) {
     const text = read(candidate);
     if (

@@ -49,7 +49,6 @@
 - Started Epoch:
 - Updated At:
 - Tick Count: 0
-- Time Used Seconds: 0
 - Token Budget:
 - Tokens Used:
 - Continuation Suppressed: false
@@ -66,7 +65,7 @@
 - Failure Class:
 - Evidence:
 - Planner Decision:
-- Owner Resume Instruction:
+- Worker Resume Instruction:
 - Last Recovery At:
 
 ## Done When
@@ -107,8 +106,4 @@
 - `Worktree` is filled during claim when a worktree is available.
 - `Reference Notes` use note names such as `[[prd_001]]`, `[[plan_001]]`, and `[[Todo-001]]`.
 - `Plan Candidate` must copy the exact candidate text from `Execution Candidates`. It is a duplicate-detection key.
-- `Change Type` ∈ `{code, docs, cleanup, infra}` (default `code` if omitted). The worker finalizer's sanity gate uses this to choose its diff matrix:
-  - `code` (default): zero-diff is refused (≥1 changed line required) and every Done When `- [ ]` must be `- [x]`.
-  - `docs` and `cleanup`: zero-diff is allowed (a doc-only or cleanup ticket may legitimately produce no code diff after moving/removing files); Done When checklist gate still applies.
-  - `infra`: diff threshold is `AUTOFLOW_INFRA_MIN_DIFF_LINES` (default 10) so trivial config tweaks are flagged.
 - Human-readable ticket prose should be Korean by default. Preserve parser-sensitive headings, field names, ids, project keys, paths, commands, code, and runtime formats.

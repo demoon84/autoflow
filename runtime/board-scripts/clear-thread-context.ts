@@ -58,7 +58,7 @@ function contextEffectiveFile(): string {
     return fs.existsSync(current) ? current : "";
 }
 
-function ownerId(): string {
+function defaultWorkerId(): string {
     return process.env.AUTOFLOW_WORKER_ID || process.env.CODEX_AUTOMATION_ID || process.env.CODEX_THREAD_ID || `${process.env.USER || "unknown"}@${os.hostname() || "localhost"}:${process.pid}`;
 }
 
@@ -91,7 +91,7 @@ function clearActiveTicketContextRecord(): boolean {
     const role = process.env.AUTOFLOW_ROLE || (contextFile ? readContextValue(contextFile, "role") : "");
     if (!role) return false;
 
-    const workerId = process.env.AUTOFLOW_WORKER_ID || (contextFile ? readContextValue(contextFile, "worker_id") : "") || ownerId();
+    const workerId = process.env.AUTOFLOW_WORKER_ID || (contextFile ? readContextValue(contextFile, "worker_id") : "") || defaultWorkerId();
     const executionPool = process.env.AUTOFLOW_EXECUTION_POOL || (contextFile ? readContextValue(contextFile, "execution_pool") : "");
     const verifierPool = process.env.AUTOFLOW_VERIFIER_POOL || (contextFile ? readContextValue(contextFile, "verifier_pool") : "");
 

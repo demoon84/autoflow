@@ -1,0 +1,9 @@
+{
+  "name": "autoflow",
+  "version": "0.1.0",
+  "description": "Autoflow PRD handoff and quick order skills for a project-local Autoflow board.",
+  "author": {
+    "name": "Autoflow",
+    "email": "autoflow@example.invalid"
+  }
+}

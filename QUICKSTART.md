@@ -29,13 +29,13 @@ git clone <this-repo> ~/code/autoflow
 
 방법은 두 가지다.
 
-- **PRD 핸드오프** (큰 작업): Claude / Codex 에서 `/af` 또는 `#af` 를 쓴다. AI 가 PRD 를 정리해서 `.autoflow/tickets/backlog/prd_NNN.md` 에 저장한다.
-- **빠른 주문** (작은 변경): `/order` 또는 `#order` 를 쓴다. `.autoflow/tickets/inbox/memo_NNN.md` 에 짧은 노트로 떨어진다.
+- **PRD 핸드오프** (큰 작업): Claude / Codex 에서 `/af` 또는 `#af` 를 쓴다. AI 가 PRD 를 정리해서 `.autoflow/tickets/prd/prd_NNN.md` 에 저장한다.
+- **빠른 주문** (작은 변경): `/order` 또는 `#order` 를 쓴다. `.autoflow/tickets/order/order_NNN.md` 에 짧은 노트로 떨어진다.
 
 CLI 로 직접 만들 수도 있다.
 
 ```bash
-~/code/autoflow/bin/autoflow memo create /path/to/your/project \
+~/code/autoflow/bin/autoflow order create /path/to/your/project \
   --request "본문 폰트 크기를 2px 키워줘" \
   --title "본문 폰트" \
   --allowed-path apps/desktop/src/renderer/styles.css \
@@ -46,7 +46,7 @@ CLI 로 직접 만들 수도 있다.
 
 ```bash
 # 한 번씩 손으로 돌려보면서 흐름 익히기
-~/code/autoflow/bin/autoflow run planner /path/to/your/project    # backlog/inbox → todo
+~/code/autoflow/bin/autoflow run planner /path/to/your/project    # PRD queue/order queue → todo
 ~/code/autoflow/bin/autoflow run ticket  /path/to/your/project    # todo → done
 
 # 익숙해지면 loop 모드로 두 runner 를 켠다
@@ -69,16 +69,16 @@ npm run dev
 
 ## 6. 팀 출시 시 꼭 알 것
 
-- **Plan AI 는 한 머신에서만 돌린다.** 여러 명이 동시에 `planner` loop 을 켜면 `tickets/backlog` `tickets/todo` 가 git 충돌난다.
+- **Plan AI 는 한 머신에서만 돌린다.** 여러 명이 동시에 `planner` loop 을 켜면 `tickets/prd` `tickets/todo` 가 git 충돌난다.
 - **티켓 보드는 git 으로 추적**된다. 각자 작업한 결과를 `git pull/push` 로 공유한다. 어댑터 키, runner state, 로그는 git 무시.
-- **막힌 티켓이 보이면**: `bin/autoflow doctor /path/to/your/project` 로 진단을 본다. 출력에 따라 `tickets/inprogress/` 의 파일을 `tickets/reject/` 로 옮기고 다음 tick 을 기다린다.
+- **막힌 티켓이 보이면**: `bin/autoflow doctor /path/to/your/project` 로 진단을 본다. retry 가 필요하면 verifier replan 뒤 worker 가 `tickets/order/order_*_retry_*.md` 로 재발행한다.
 
 ## 7. 자주 하는 실수
 
 | 증상 | 원인 / 해결 |
 |---|---|
 | `adapter.X=missing` 로그 | 어댑터 CLI 가 PATH 에 없음. 본인 셸의 `PATH` 를 확인. |
-| 티켓이 며칠째 inprogress | verifier 가 fail 사이클에 갇혔을 가능성. 최신 `.autoflow/logs/verifier_NNN_*_fail.md` 를 본다. |
+| 티켓이 며칠째 inprogress | verifier revise/replan 이후 worker 처리가 막혔을 가능성. 최신 `.autoflow/logs/verifier_NNN_*.md` 와 ticket `Next Action` 을 본다. |
 | Wiki 가 갱신 안 됨 | `wiki` 은 debounce(기본 3변동/30분)를 적용한다. 즉시 보고 싶으면 `bin/autoflow run wiki <project>` 를 한 번 직접 호출. |
 | 보드 충돌 | 여러 명이 같은 ticket 을 동시에 claim. Plan/Wiki AI 는 1명만, worker 은 자기 worktree 안에서만 동작. |
 
