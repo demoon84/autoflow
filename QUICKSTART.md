@@ -1,89 +1,104 @@
-# Autoflow 빠른 시작
+# Autoflow Quickstart
 
-처음 만지는 팀원이 5분 안에 첫 티켓을 흘려보내기 위한 최소 절차다. 깊은 내용은 [`README.md`](README.md) 와 [`AGENTS.md`](AGENTS.md) 를 본다.
+처음 만지는 사람이 현재 구조를 기준으로 보드를 설치하고 첫 흐름을 확인하는 최소 절차다. 전체 구조는 [README.md](README.md), 작업 규칙은 [AGENTS.md](AGENTS.md)를 본다.
 
-## 1. 사전 준비
+## 1. 준비
 
-- macOS / Linux, Bash, Git
-- Node 20+ (데스크톱 앱을 쓰려면)
-- 어댑터 CLI 중 **하나 이상** 을 직접 설치하고 본인 계정으로 로그인해 둔다.
-  - Claude Code: <https://docs.claude.com/en/docs/claude-code/quickstart>
-  - Codex CLI: <https://github.com/openai/codex>
-  - Gemini CLI: <https://github.com/google-gemini/gemini-cli>
+- Node.js 20 이상
+- Git
+- 선택한 로컬 에이전트 CLI 하나 이상
+  - Codex CLI
+  - Claude Code
+  - Gemini CLI
 
-> 어댑터 인증 자격은 각자 홈(`~/.claude/`, `~/.codex/`, `~/.config/`)에 저장된다. **`.autoflow/` 폴더에는 어떤 키도 두지 않는다.** 보드는 git 으로 공유돼서 키가 새는 사고를 막아야 한다.
+에이전트 인증 정보는 각 도구의 홈 설정에 둔다. `.autoflow/` 보드 안에는 API key나 로그인 토큰을 두지 않는다.
 
 ## 2. 설치
 
 ```bash
-# 이 저장소를 어딘가에 둔다 (예: ~/code/autoflow)
-git clone <this-repo> ~/code/autoflow
-
-# 작업할 프로젝트에 보드를 설치
-~/code/autoflow/app/bin/autoflow init /path/to/your/project
+git clone <repo-url> ~/code/autoflow
+cd ~/code/autoflow
+npm install
+npm run check
 ```
 
-`init` 출력에 `adapter.claude=ok`, `adapter.codex=ok`, `adapter.gemini=ok` 중 적어도 하나가 있어야 한다. 모두 `missing` 이면 어댑터 CLI 가 PATH 에 없다는 뜻이다 — 1번 단계로 돌아간다.
-
-## 3. 첫 PRD / 첫 주문 만들기
-
-방법은 두 가지다.
-
-- **PRD 핸드오프** (큰 작업): Claude / Codex 에서 `/af` 또는 `#af` 를 쓴다. AI 가 PRD 를 정리해서 `.autoflow/tickets/prd/prd_NNN.md` 에 저장한다.
-- **빠른 주문** (작은 변경): `/order` 또는 `#order` 를 쓴다. `.autoflow/tickets/order/order_NNN.md` 에 짧은 노트로 떨어진다.
-
-CLI 로 직접 만들 수도 있다.
+대상 프로젝트에 보드를 설치한다.
 
 ```bash
-~/code/autoflow/app/bin/autoflow order create /path/to/your/project \
-  --request "본문 폰트 크기를 2px 키워줘" \
+~/code/autoflow/app/bin/autoflow init /path/to/project
+~/code/autoflow/app/bin/autoflow doctor /path/to/project
+```
+
+`doctor`가 `status=ok`이면 기본 보드 구조와 host guidance가 준비된 상태다. 경고가 있으면 메시지에 나온 파일을 먼저 확인한다.
+
+## 3. 입력 만들기
+
+작은 요청은 order로 넣는다.
+
+```bash
+~/code/autoflow/app/bin/autoflow order create /path/to/project \
   --title "본문 폰트" \
+  --request "본문 폰트 크기를 2px 키워줘" \
   --allowed-path app/src/renderer/styles.css \
   --verification "npm run check"
 ```
 
-## 4. 자동화 띄우기
+큰 작업은 PRD로 넣는다.
 
 ```bash
-# 한 번씩 손으로 돌려보면서 흐름 익히기
-~/code/autoflow/app/bin/autoflow run planner /path/to/your/project    # PRD queue/order queue → todo
-~/code/autoflow/app/bin/autoflow run ticket  /path/to/your/project    # todo → done
-
-# 익숙해지면 loop 모드로 두 runner 를 켠다
-~/code/autoflow/app/bin/autoflow runners start planner /path/to/your/project
-~/code/autoflow/app/bin/autoflow runners start worker   /path/to/your/project
-~/code/autoflow/app/bin/autoflow runners start wiki    /path/to/your/project
+~/code/autoflow/app/bin/autoflow prd create /path/to/project \
+  --title "새 기능" \
+  --goal "사용자가 완료 조건을 확인할 수 있게 한다" \
+  --from-file ./request.md
 ```
 
-상태는 `~/code/autoflow/app/bin/autoflow status /path/to/your/project` 로 본다.
+Codex/Claude skill을 쓰는 프로젝트라면 사용자 대화에서는 `$autoflow` / `/autoflow` 로 PRD를 만들고, `$order` / `/order` 로 작은 요청을 만든다.
+
+## 4. 러너 실행
+
+처음에는 한 번씩 직접 실행해서 흐름을 확인한다.
+
+```bash
+~/code/autoflow/app/bin/autoflow run planner /path/to/project
+~/code/autoflow/app/bin/autoflow run worker /path/to/project
+~/code/autoflow/app/bin/autoflow run verifier /path/to/project
+~/code/autoflow/app/bin/autoflow run wiki /path/to/project
+```
+
+역할:
+
+- 플래너 러너(`planner`): order / PRD를 Todo 티켓으로 정리
+- 워커 러너(`worker`): Todo claim, worktree 작업, 로컬 검증, verifier handoff, 승인 후 finalization
+- 검증 러너(`verifier`): pass / revise / replan 판단
+- 위키 러너(`wiki`): 완료된 작업에서 운영 지식 갱신
+
+상태 확인:
+
+```bash
+~/code/autoflow/app/bin/autoflow status /path/to/project
+~/code/autoflow/app/bin/autoflow runners list /path/to/project
+```
 
 ## 5. 데스크톱 앱
 
 ```bash
 cd ~/code/autoflow
-npm install
 npm run dev
 ```
 
-좌측 사이드바 → "프로젝트 폴더 선택" → 본인 프로젝트를 고른다. 보드가 없으면 "Install" 버튼이 뜬다.
+앱에서 대상 프로젝트 폴더를 선택한다. 보드가 없으면 설치 버튼이 뜨고, 보드가 있으면 티켓, 러너, 로그, 위키, doctor 상태를 한 화면에서 볼 수 있다.
 
-## 6. 팀 출시 시 꼭 알 것
+## 6. 운영 메모
 
-- **Plan AI 는 한 머신에서만 돌린다.** 여러 명이 동시에 `planner` loop 을 켜면 `tickets/prd` `tickets/todo` 가 git 충돌난다.
-- **티켓 보드는 git 으로 추적**된다. 각자 작업한 결과를 `git pull/push` 로 공유한다. 어댑터 키, runner state, 로그는 git 무시.
-- **막힌 티켓이 보이면**: `app/bin/autoflow doctor /path/to/your/project` 로 진단을 본다. retry 가 필요하면 verifier replan 뒤 worker 가 `tickets/order/order_*_retry_*.md` 로 재발행한다.
+- 플래너 러너와 위키 러너는 보통 한 보드에서 하나만 켠다.
+- 워커 러너는 여러 개 둘 수 있지만, 한 워커는 한 번에 한 티켓만 claim한다.
+- 루트 Autoflow 저장소에는 `.autoflow/` 보드를 만들지 않는다.
+- `app/runtime/` 코드는 보드에 복사되지 않는다. `autoflow upgrade`는 `install/` source를 대상 프로젝트 보드에 동기화한다.
+- 막힌 흐름은 `autoflow doctor <project-root>` 와 `tickets/inprogress/`, `tickets/verifier/`, `runners/logs/`를 먼저 본다.
 
-## 7. 자주 하는 실수
+## 7. 다음 문서
 
-| 증상 | 원인 / 해결 |
-|---|---|
-| `adapter.X=missing` 로그 | 어댑터 CLI 가 PATH 에 없음. 본인 셸의 `PATH` 를 확인. |
-| 티켓이 며칠째 inprogress | verifier revise/replan 이후 worker 처리가 막혔을 가능성. 최신 `.autoflow/logs/verifier_NNN_*.md` 와 ticket `Next Action` 을 본다. |
-| Wiki 가 갱신 안 됨 | `wiki` 은 debounce(기본 3변동/30분)를 적용한다. 즉시 보고 싶으면 `app/bin/autoflow run wiki <project>` 를 한 번 직접 호출. |
-| 보드 충돌 | 여러 명이 같은 ticket 을 동시에 claim. Plan/Wiki AI 는 1명만, worker 은 자기 worktree 안에서만 동작. |
-
-## 8. 더 자세히
-
-- 운영 규칙: [`AGENTS.md`](AGENTS.md)
-- 보드 구조: [`.autoflow/README.md`](.autoflow/README.md)
-- 에이전트 워크플로우: [`.autoflow/agents/`](.autoflow/agents/)
+- [README.md](README.md): 현재 저장소 구조와 핵심 개념
+- [app/docs/README.md](app/docs/README.md): 앱 레벨 구조
+- [app/docs/cli.md](app/docs/cli.md): CLI command ownership
+- [install/docs/README.md](install/docs/README.md): 설치 레벨 구조

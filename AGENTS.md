@@ -13,6 +13,7 @@
 5. worktree, merge, verifier pass/revise/replan 흐름은 설치 보드 계약 문서(`install/board/reference/`, `install/host/AGENTS.md`)와 런타임 코드가 기준이다.
 6. `tickets/order/`, `tickets/prd/`, `tickets/todo/`, `tickets/inprogress/`, `tickets/verifier/`, `tickets/done/` 은 설치 보드 안의 실행 원장이다. 소스 저장소 루트에 같은 보드를 복제하지 않는다.
 7. 새 기능이나 리팩터링 뒤에는 가능한 한 `npm run typecheck`, 관련 smoke 테스트, 그리고 별도 대상 프로젝트 upgrade 검증까지 이어서 한다.
+8. README, QUICKSTART, 설치 문서, 사용자-facing CLI/앱 문구에는 개인 로컬 검증 프로젝트명을 쓰지 않는다. 예시는 `<project-root>` 또는 `target-project` 처럼 중립 표현을 쓴다.
 
 ## 주요 경로
 
