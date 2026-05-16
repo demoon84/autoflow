@@ -42,6 +42,13 @@ write validated `wiki/` or `wiki-raw/` pages, and create wake markers. Use the
 raw `"$AUTOFLOW_CLI" wiki ...` commands below when a wrapper does not yet cover
 the exact operation.
 
+- `autoflow tool runner-tool wiki tick` — preferred first command for a normal
+  wiki runner turn. It batches the routine deterministic maintenance steps
+  (baseline update, telemetry summary, index refresh when sources changed, and
+  deterministic lint) and returns a compact follow-up scope. Do not separately
+  run `source-snapshot`, `update-baseline`, `telemetry-summary`,
+  `index-refresh`, and `lint` in the same turn unless `tick` reports a failed
+  step or the user explicitly asks for those raw steps.
 - `autoflow tool runner-tool wiki source-snapshot` — returns counts, recent source files, and a content fingerprint for `tickets/done/`, `logs/`, `conversations/`, `wiki/`, and `wiki-raw/`.
 - `autoflow tool runner-tool wiki update-baseline [--dry-run]` — wraps `autoflow wiki update`.
 - `autoflow tool runner-tool wiki telemetry-summary --slug-set telemetry-default --window 7d` — wraps the required telemetry summary step.
@@ -110,15 +117,34 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 
 ## Procedure
 
-1. Identify the input set for this run: latest done ticket, related verification log, conversation handoff, and any existing wiki page under `wiki/decisions/`, `wiki/features/`, `wiki/architecture/`, or `wiki/learnings/` that already covers the same topic.
-2. Inspect the input diff and existing managed baseline. Run `autoflow wiki update <project-root> <board-dir-name>` only when there is material drift or new source content to reflect; `status=unchanged` is a successful check, not a wiki content change.
-3. After the baseline update check, always run the telemetry summary command once for every admitted wiki runner tick, even when there is no other new synthesis work: `"${AUTOFLOW_CLI:-autoflow}" wiki summarize-telemetry "${AUTOFLOW_PROJECT_ROOT:-<project-root>}" "${AUTOFLOW_BOARD_DIR_NAME:-.autoflow}" --slug-set telemetry-default --window 7d`. This is the required telemetry-summary step before any synth/lint work; do not call the wiki CLI without an action, and do not stop with "no work" until this command has run. Inspect each slug's `summary_status`; `updated` and `skipped_unchanged` are both successful idempotent results.
-4. Refresh the hybrid index when source/wiki content changed, after writing managed wiki pages, or whenever `query --rag` reports `status=needs_hybrid_index`. Use `autoflow tool runner-tool wiki index-refresh` and require `status=ok`, `index_backend=hybrid`, and `vector_count > 0` before treating RAG as ready.
-5. Keep the run idempotent: same sources should converge to the same managed content, duplicate headings should be merged, and repeated runs should not append near-identical bullets.
-6. Preserve human-authored regions. Only rewrite inside explicit managed markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text outside those regions untouched.
-7. Run `autoflow wiki lint` when available. Triage any `stale_reference.*` entries before opening orphan or citation gap fixes.
-8. Treat conversation handoffs as raw reading material for the wiki: they inform summaries and decisions, but they are not peer PRD deliverables to the wiki itself.
-9. When triaging or answering "did we already handle X?", run `autoflow wiki query --term <text> --rag` instead of grepping by hand. Cite the returned `result.N.path` and chunk line metadata in any new entity or concept page.
+1. Start a normal admitted wiki turn with `autoflow tool runner-tool wiki tick`.
+   Treat its output as the compact input set for the turn.
+2. If `tick.failed_step_count > 0`, inspect only the failed step output and fix
+   or report that deterministic maintenance failed. Do not fan out into every
+   raw wiki command.
+3. If `tick.ai_followup_recommended` is false, summarize the `tick` result and
+   idle. The routine baseline, telemetry, index, and lint work has already run.
+4. If `tick.ai_followup_recommended` is true, inspect only the paths under
+   `tick.ai_followup_scope.inspect_only_recent_sources` plus the existing wiki
+   page that clearly covers the same topic. Add or update focused pages under
+   `wiki/decisions/`, `wiki/features/`, `wiki/architecture/`, or
+   `wiki/learnings/` when the source has a reusable decision, recurring
+   failure, architecture note, or synthesis answer.
+5. After manual wiki edits, rerun `autoflow tool runner-tool wiki tick
+   --skip-telemetry` once to refresh index/lint around those edits. Do not run
+   individual routine commands unless this follow-up tick reports a failed step.
+6. Keep the run idempotent: same sources should converge to the same managed
+   content, duplicate headings should be merged, and repeated runs should not
+   append near-identical bullets.
+7. Preserve human-authored regions. Only rewrite inside explicit managed
+   markers such as `AUTOFLOW:BEGIN ... / AUTOFLOW:END ...`; leave all text
+   outside those regions untouched.
+8. Treat conversation handoffs as raw reading material for the wiki: they
+   inform summaries and decisions, but they are not peer PRD deliverables to
+   the wiki itself.
+9. When triaging or answering "did we already handle X?", run `autoflow wiki
+   query --term <text> --rag` instead of grepping by hand. Cite the returned
+   `result.N.path` and chunk line metadata in any new entity or concept page.
 10. Leave a concise summary of updated pages.
 11. The wiki runner owns the skill curator lifecycle for `.autoflow/wiki/skills-local/`: idle wiki ticks may run `autoflow skill curator-run <project-root> <board-dir-name> --idle`, and explicit checks may run `autoflow skill curator-status`. The curator must use auxiliary-client bookkeeping only (`auxiliary_client=true`, `main_prompt_cache_touched=false`) and must not inject skill content into the main planner/worker prompt cache path.
 12. Curator lifecycle applies only to agent-created `skills-local/` folder-unit skills. Human-curated `.autoflow/wiki/skills/` content is skipped, `pinned: true` skills bypass every stale/archive transition, 30-day unused skills become `state: stale`, and 90-day unused skills move under `skills-local/.archive/` without deletion.

@@ -9,6 +9,7 @@ import { cmdWikiRetrofitFrontmatter } from "./retrofit-frontmatter";
 import { cmdWikiWritePage } from "./write-page";
 import { cmdWikiDiffSnapshot } from "./diff-snapshot";
 import { cmdWikiWake } from "./wake";
+import { cmdWikiTick } from "./tick";
 
 export function dispatchWiki(command: string): void {
   switch (command) {
@@ -44,6 +45,9 @@ export function dispatchWiki(command: string): void {
       return;
     case "wake":
       cmdWikiWake();
+      return;
+    case "tick":
+      cmdWikiTick();
       return;
     default:
       fail(2, `unknown wiki command: ${command}`);

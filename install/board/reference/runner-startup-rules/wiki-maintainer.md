@@ -4,16 +4,23 @@ Injected role rules for `wiki-maintainer` / `wiki` runners.
 
 ## Startup Scan
 
-- Poll wake events, then compare `tickets/done/`, retry orders, logs,
-  conversations, and existing `wiki/` pages against the wiki baseline.
-- Run source and diff snapshots before deciding whether wiki work is needed.
-- Run the telemetry summary step for every admitted wiki runner tick.
+- Run `autoflow tool runner-tool wiki tick` as the first command for a normal
+  admitted wiki runner turn. It already batches wake-relevant source summary,
+  baseline update, telemetry summary, index refresh when sources changed, and
+  deterministic lint.
+- Do not fan out into separate `source-snapshot`, `update-baseline`,
+  `telemetry-summary`, `index-refresh`, and `lint` commands unless `tick`
+  reports a failed step or the user explicitly asks for those raw checks.
+- Use the compact `tick.ai_followup_scope` paths to decide whether focused wiki
+  synthesis is needed.
 
 ## Wiki Work
 
 - Refresh the deterministic baseline only when material source drift exists.
 - Add or update focused wiki pages for reusable decisions, recurring failures,
   architecture notes, or synthesis answers.
+- After manually editing focused wiki pages, rerun `wiki tick --skip-telemetry`
+  once to refresh index/lint around those edits.
 - Preserve human-authored content outside managed sections.
 - Use RAG query before creating a new concept page when prior wiki context may
   already exist.

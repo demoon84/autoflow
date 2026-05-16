@@ -304,6 +304,7 @@ function scopedCodexSessionTokenEntries(
     }
     const rel = path.relative(sessionsRoot, filePath);
     let lineIndex = 0;
+    let lastSessionTotal = 0;
     for (const line of raw.split(/\r?\n/)) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -317,16 +318,27 @@ function scopedCodexSessionTokenEntries(
       if (parsed?.type !== "event_msg" || parsed?.payload?.type !== "token_count") continue;
       const usage = parsed?.payload?.info?.last_token_usage;
       if (!usage || typeof usage !== "object") continue;
+      const sessionUsage = parsed?.payload?.info?.total_token_usage;
       const at = String(parsed?.timestamp || "");
       const atMs = Date.parse(at);
       if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
       const inputTotal = parseInt0(usage.input_tokens);
       const cacheRead = parseInt0(usage.cached_input_tokens);
       const output = parseInt0(usage.output_tokens);
-      const turnTotal = parseInt0(usage.total_tokens) || inputTotal + output;
+      const reportedTurnTotal = parseInt0(usage.total_tokens) || inputTotal + output;
+      const sessionTotal = sessionUsage && typeof sessionUsage === "object"
+        ? parseInt0(sessionUsage.total_tokens)
+        : 0;
+      if (sessionTotal > 0) {
+        if (sessionTotal <= lastSessionTotal) continue;
+        lastSessionTotal = sessionTotal;
+      }
+      const turnTotal = reportedTurnTotal;
       if (turnTotal <= 0) continue;
 
-      const tickId = `codex-session:${rel}:${lineIndex}`;
+      const tickId = sessionTotal > 0
+        ? `codex-session:${rel}:total:${sessionTotal}`
+        : `codex-session:${rel}:${lineIndex}`;
       if (knownTicks.has(tickId) || seen.has(tickId)) continue;
       seen.add(tickId);
       entries.push({

@@ -1309,11 +1309,25 @@ function emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind = "fs.watc
   } catch {}
 }
 
-function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch" }) {
+function markRunnerInitialPromptSent(runnerId) {
+  const meta = ptyRunnerMeta.get(runnerId);
+  if (!meta) return;
+  meta.initialPromptSentAt = new Date().toISOString();
+}
+
+function runnerInitialPromptWasSent(meta) {
+  const sentAt = Date.parse(String(meta?.initialPromptSentAt || ""));
+  return Number.isFinite(sentAt) && sentAt > 0;
+}
+
+function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true }) {
   const paste = meta.agent === "claude" ? "bracketed" : "plain";
   let promptOk = false;
+  const canPrompt = prompt && kind !== "safety-poll" && runnerInitialPromptWasSent(meta);
   try {
-    promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
+    if (canPrompt) {
+      promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
+    }
   } catch {}
   emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
   updateWakeActivity(runnerId);
@@ -1585,9 +1599,10 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
       case "wiki-maintainer":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Compare ${path.join(ticketsRoot, "done")} and ${wikiRoot} against the wiki baseline manifest.`,
-          `  2. If new done tickets or material wiki source changes are pending, run the wiki update / synth flow per the wiki agent contract.`,
-          `  3. Only after the baseline is current should you idle and wait for [wake] events.`
+          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId}\` first.`,
+          `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle.`,
+          `  3. If follow-up is needed, inspect only the compact paths returned by tick before editing focused wiki pages.`,
+          `  4. After manual wiki edits, run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry\` once, then idle.`
         ].join("\n");
       default:
         return [
@@ -1598,11 +1613,22 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   })();
   const projectAgents = path.join(projectRoot, "AGENTS.md");
   const boardAgents = path.join(boardRoot, "AGENTS.md");
-  const fullContractFiles = uniquePaths([
-    roleInstruction,
-    projectAgents,
-    boardAgents
-  ]);
+  const fullContractFiles = uniquePaths(
+    normalizedRole === "wiki-maintainer"
+      ? [roleInstruction]
+      : [roleInstruction, projectAgents, boardAgents]
+  );
+  const contractReadIntro = normalizedRole === "wiki-maintainer"
+    ? [
+        `The wiki turn is token-sensitive. Read the role contract once, then`,
+        `use the injected startup rules and \`wiki tick\` output as the compact`,
+        `runtime source. Do not re-read project/board AGENTS unless tick reports`,
+        `a failed step or the follow-up paths make those files directly relevant:`
+      ]
+    : [
+        `Read these full contract files once before planning, editing board state, or`,
+        `making role judgments:`
+      ];
   return [
     `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
     `Project root: ${projectRoot}`,
@@ -1617,8 +1643,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `Desktop already ran deterministic startup preflight before opening this PTY.`,
     `If this prompt is visible, actionable work or recovery evidence was found.`,
     ``,
-    `Read these full contract files once before planning, editing board state, or`,
-    `making role judgments:`,
+    ...contractReadIntro,
     ...fullContractFiles.map((filePath) => {
       const status = fsSync.existsSync(filePath) ? "" : " (missing on disk; report this and continue with injected rules)";
       return `  - ${filePath}${status}`;
@@ -6877,6 +6902,7 @@ app.whenReady().then(() => {
       setTimeout(() => {
         const paste = agent === "claude" ? "bracketed" : "plain";
         const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+        if (ok) markRunnerInitialPromptSent(runnerId);
         console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
       }, PROMPT_INJECT_DELAY_MS);
       // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
@@ -7038,7 +7064,8 @@ app.whenReady().then(() => {
           const promptDelay = agent === "gemini" ? 10000 : 6000;
           setTimeout(() => {
             const paste = agent === "claude" ? "bracketed" : "plain";
-            ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+            const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+            if (ok) markRunnerInitialPromptSent(runnerId);
           }, promptDelay);
           console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
           await new Promise((r) => setTimeout(r, 800));

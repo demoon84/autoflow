@@ -13,8 +13,12 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
 - Desktop-started runners are gated by deterministic startup preflight before a
   PTY is opened. If this runner prompt is visible, the runtime already found
   actionable work, recovery evidence, or a pending wake for this role.
-- Before making any planning, implementation, verification, wiki, or recovery
-  decision, read the full role contract and project rules once.
+- Before making planning, implementation, verification, wiki, or recovery
+  decisions, follow the role-specific startup rule for what to read first. If
+  the role provides a compact deterministic startup tool (for example the wiki
+  `tick` tool), run that tool before expanding additional project/board
+  contract files. Read extra contract files only when the compact output or
+  active work requires them.
 - Treat `[wake] <path>` as a hint to re-scan the relevant queue, not as the only
   trigger for work.
 - Use runner tools as deterministic helpers. The runner decides scope, next
@@ -27,9 +31,10 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   safe action in the board before idling.
 - Call the active-reporting commands at the start of normal turns, on stage
   changes, and at the end of every assistant turn. On the first startup turn,
-  absorb the injected rules and read the required full-contract files before
-  role judgment. Do not rerun deterministic startup preflight inside the LLM
-  turn; the Desktop/runtime already did it before PTY launch.
+  absorb the injected rules and read only the required contract files listed by
+  the role startup prompt before role judgment. Do not rerun deterministic
+  startup preflight inside the LLM turn; the Desktop/runtime already did it
+  before PTY launch.
 - End-of-turn token accounting is captured by the Desktop host when exact live
   provider usage metadata is emitted. Do not also run a manual token report for
   the same Desktop PTY turn.
@@ -38,6 +43,7 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   `autoflow tool runner-tokens report --runner <runner-id> --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`.
 - If exact values are unavailable, skip the token report; never report `0/0`,
   placeholders such as `1` or `1000`, or rough estimates.
-- Read the full role contract and project rules once before role judgment on
-  actionable work. Do not repeat those reads every turn unless this runner
-  process is restarted.
+- Read only the required role contract files before role judgment on actionable
+  work. Do not repeat those reads every turn unless this runner process is
+  restarted, and do not expand optional project/board rules when a compact
+  runner tool already returned the relevant bounded scope.

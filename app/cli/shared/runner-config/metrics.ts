@@ -178,6 +178,7 @@ function scopedCodexSessionTokenEntries(ctx: ProjectContext, runnerId: string, a
         }
         const rel = path.relative(sessionsRoot, filePath);
         let lineIndex = 0;
+        let lastSessionTotal = 0;
         for (const line of raw.split(/\r?\n/)) {
             const trimmed = line.trim();
             if (!trimmed) continue;
@@ -199,10 +200,19 @@ function scopedCodexSessionTokenEntries(ctx: ProjectContext, runnerId: string, a
             const inputTotal = positiveIntegerValue(usage.input_tokens);
             const cacheRead = positiveIntegerValue(usage.cached_input_tokens);
             const output = positiveIntegerValue(usage.output_tokens);
-            const turnTotal = positiveIntegerValue(usage.total_tokens) || inputTotal + output;
+            const reportedTurnTotal = positiveIntegerValue(usage.total_tokens) || inputTotal + output;
+            const sessionUsage = info?.total_token_usage as Record<string, unknown> | undefined;
+            const sessionTotal = sessionUsage ? positiveIntegerValue(sessionUsage.total_tokens) : 0;
+            if (sessionTotal > 0) {
+                if (sessionTotal <= lastSessionTotal) continue;
+                lastSessionTotal = sessionTotal;
+            }
+            const turnTotal = reportedTurnTotal;
             if (turnTotal <= 0) continue;
 
-            const tickId = `codex-session:${rel}:${lineIndex}`;
+            const tickId = sessionTotal > 0
+                ? `codex-session:${rel}:total:${sessionTotal}`
+                : `codex-session:${rel}:${lineIndex}`;
             const key = `${runnerId}:${tickId}`;
             if (seen.has(key)) continue;
             seen.add(key);
