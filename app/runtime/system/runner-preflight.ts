@@ -176,9 +176,6 @@ function first(files: string[]): string {
 
 function decide(): PreflightDecision {
   const wakes = pendingWakeCount(RUNNER_ID);
-  if (wakes > 0) {
-    return { actionable: true, reason: "pending_wake", counts: { wake: wakes } };
-  }
 
   if (ROLE === "planner") {
     const orders = listFiles(path.join(TICKETS_ROOT, "order"), /^order_.*\.md$/);
@@ -188,7 +185,7 @@ function decide(): PreflightDecision {
     return {
       actionable: files.length > 0,
       reason: files.length > 0 ? "planner_queue_or_recovery" : "idle_no_planner_work",
-      counts: { order: orders.length, prd: prds.length, recovery: recovery.length },
+      counts: { wake: wakes, order: orders.length, prd: prds.length, recovery: recovery.length },
       firstPath: first(files),
     };
   }
@@ -201,7 +198,7 @@ function decide(): PreflightDecision {
     return {
       actionable: files.length > 0,
       reason: files.length > 0 ? "worker_queue" : "idle_no_worker_work",
-      counts: { inprogress: inprogress.length, ready_to_merge: readyToMerge.length, todo: todo.length },
+      counts: { wake: wakes, inprogress: inprogress.length, ready_to_merge: readyToMerge.length, todo: todo.length },
       firstPath: first(files),
     };
   }
@@ -211,7 +208,7 @@ function decide(): PreflightDecision {
     return {
       actionable: verifier.length > 0,
       reason: verifier.length > 0 ? "verifier_queue" : "idle_no_verifier_work",
-      counts: { verifier: verifier.length },
+      counts: { wake: wakes, verifier: verifier.length },
       firstPath: first(verifier),
     };
   }
@@ -223,11 +220,11 @@ function decide(): PreflightDecision {
     return {
       actionable: stale,
       reason: stale ? "wiki_index_stale" : "idle_wiki_index_current",
-      counts: { wiki_sources: current.count, index_hash_match: indexed && indexed === current.hash ? 1 : 0 },
+      counts: { wake: wakes, wiki_sources: current.count, index_hash_match: indexed && indexed === current.hash ? 1 : 0 },
     };
   }
 
-  return { actionable: false, reason: "idle_unknown_role", counts: {} };
+  return { actionable: false, reason: "idle_unknown_role", counts: { wake: wakes } };
 }
 
 function writeIdleState(decision: PreflightDecision): void {
