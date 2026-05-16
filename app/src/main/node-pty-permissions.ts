@@ -1,5 +1,19 @@
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+
+type PermissionRepairResult = {
+  checked: string[];
+  fixed: string[];
+  missing: string[];
+  errors: Array<{
+    path: string;
+    message: string;
+  }>;
+};
+
+type PermissionRepairOptions = {
+  log?: (message: string) => void;
+};
 
 function nodePtyPackageRoot() {
   try {
@@ -24,13 +38,17 @@ function nodePtySpawnHelperPaths() {
   );
 }
 
-function modeHasExecutableBits(mode) {
+function modeHasExecutableBits(mode: number) {
   return (mode & 0o111) === 0o111;
 }
 
-function fixNodePtySpawnHelperPermissions(options = {}) {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function fixNodePtySpawnHelperPermissions(options: PermissionRepairOptions = {}): PermissionRepairResult {
   const log = typeof options.log === "function" ? options.log : null;
-  const result = {
+  const result: PermissionRepairResult = {
     checked: [],
     fixed: [],
     missing: [],
@@ -58,7 +76,7 @@ function fixNodePtySpawnHelperPermissions(options = {}) {
     } catch (error) {
       result.errors.push({
         path: helperPath,
-        message: String(error && error.message ? error.message : error)
+        message: errorMessage(error)
       });
     }
   }
@@ -66,7 +84,7 @@ function fixNodePtySpawnHelperPermissions(options = {}) {
   return result;
 }
 
-function nodePtySpawnFailureAdvice() {
+export function nodePtySpawnFailureAdvice() {
   if (process.platform !== "darwin") {
     return "";
   }
@@ -78,8 +96,8 @@ function nodePtySpawnFailureAdvice() {
   ].join(" ");
 }
 
-function enhanceNodePtySpawnError(error) {
-  const message = String(error && error.message ? error.message : error);
+export function enhanceNodePtySpawnError(error: unknown) {
+  const message = errorMessage(error);
   const advice = /posix_spawnp failed/i.test(message) ? nodePtySpawnFailureAdvice() : "";
   if (!advice) {
     return error;
@@ -90,7 +108,11 @@ function enhanceNodePtySpawnError(error) {
   return enhanced;
 }
 
-module.exports = {
+export {
+  nodePtySpawnHelperPaths
+};
+
+export default {
   fixNodePtySpawnHelperPermissions,
   enhanceNodePtySpawnError,
   nodePtySpawnFailureAdvice,

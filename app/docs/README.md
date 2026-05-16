@@ -20,7 +20,7 @@ app/
     main.js          Electron main process
     preload.js
     renderer/        React + Vite renderer
-    main/            main-process helpers (e.g. node-pty-permissions)
+    main/            main-process TS helpers (e.g. node-pty-permissions.ts)
     components/
   scripts/         dev / check-syntax / postinstall 헬퍼 (.mjs)
   docs/            앱 레벨 설명 문서

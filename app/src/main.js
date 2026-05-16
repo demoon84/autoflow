@@ -5,7 +5,8 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { PtyRunnerManager } = require("./main/runner-pty-manager");
+require("tsx/cjs");
+const { PtyRunnerManager } = require("./main/runner-pty-manager.ts");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;

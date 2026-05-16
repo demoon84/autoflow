@@ -1,4 +1,4 @@
-// runner-pty-manager.js
+// runner-pty-manager.ts
 //
 // Long-lived PTY-based runner manager. One pty.spawn() per runner. The runner
 // holds a shell that the user's environment (PATH/PROFILE) is loaded into;
@@ -14,20 +14,70 @@
 // fs.watch wakes are mediated by the caller — when a board change fires,
 // the caller decides what prompt or raw stdin bytes to push.
 
-const { EventEmitter } = require("events");
-const path = require("node:path");
-const os = require("node:os");
-const fs = require("node:fs");
-const {
+import { EventEmitter } from "node:events";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
+import type { IDisposable, IPty } from "node-pty";
+import {
   enhanceNodePtySpawnError,
   fixNodePtySpawnHelperPermissions
-} = require("./node-pty-permissions");
+} from "./node-pty-permissions";
 
-let pty;
+type NodePtyModule = typeof import("node-pty");
+
+type PtyRunnerManagerOptions = {
+  maxBufferBytes?: number;
+};
+
+type RunnerStartOptions = {
+  shell?: string;
+  cwd?: string;
+  cols?: number;
+  rows?: number;
+  env?: NodeJS.ProcessEnv;
+  command?: string;
+  logsDir?: string;
+};
+
+type WritePromptOptions = {
+  paste?: "bracketed" | "plain";
+};
+
+type ContextResetMode = "compact" | "clear";
+
+type StopOptions = {
+  force?: boolean;
+};
+
+type RunnerStatus = (typeof STATUS)[keyof typeof STATUS];
+
+type PtyRunner = {
+  id: string;
+  status: RunnerStatus;
+  pid: number;
+  cwd: string;
+  command: string;
+  shell: string;
+  startedAt: string;
+  liveStdoutLog: string;
+  client: IPty;
+  buffer: string[];
+  bufferBytes: number;
+  stdinQueue: string[];
+  stdinDraining: boolean;
+  lastDataAt: number;
+  exitCode?: number;
+  signal?: number;
+  _dataSub?: IDisposable;
+  _exitSub?: IDisposable;
+};
+
+let pty: NodePtyModule | null;
 try {
   // node-pty is a native module; require lazily so the rest of main.js still
   // boots if rebuild was skipped.
-  pty = require("node-pty");
+  pty = require("node-pty") as NodePtyModule;
 } catch (err) {
   pty = null;
 }
@@ -47,7 +97,7 @@ function getDefaultShell() {
   return process.env.SHELL || "/bin/bash";
 }
 
-function buildShellEnv(extraEnv) {
+function buildShellEnv(extraEnv?: NodeJS.ProcessEnv) {
   const merged = { ...process.env, ...(extraEnv || {}) };
   // Force xterm-256color + truecolor unconditionally. The original `||`
   // form preserved a user-set TERM=dumb / empty / non-color value and then
@@ -71,7 +121,7 @@ function buildShellEnv(extraEnv) {
   return merged;
 }
 
-function safeRunnerLogSegment(value) {
+function safeRunnerLogSegment(value: string) {
   return String(value || "runner").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80) || "runner";
 }
 
@@ -79,8 +129,11 @@ function timestampForLogFile(date = new Date()) {
   return date.toISOString().replace(/\.\d+Z$/, "Z").replace(/:/g, "-");
 }
 
-class PtyRunnerManager extends EventEmitter {
-  constructor(options = {}) {
+export class PtyRunnerManager extends EventEmitter {
+  runners: Map<string, PtyRunner>;
+  maxBufferBytes: number;
+
+  constructor(options: PtyRunnerManagerOptions = {}) {
     super();
     this.runners = new Map();
     this.maxBufferBytes = options.maxBufferBytes || 256 * 1024;
@@ -102,14 +155,14 @@ class PtyRunnerManager extends EventEmitter {
     }));
   }
 
-  get(runnerId) {
+  get(runnerId: string) {
     return this.runners.get(runnerId);
   }
 
   // Start a runner. The agent CLI is typed into the shell after spawn so the
   // shell's profile (PATH etc.) is loaded first. Caller passes the literal
   // shell string to type, e.g. `claude --dangerously-skip-permissions ...`.
-  start(runnerId, opts = {}) {
+  start(runnerId: string, opts: RunnerStartOptions = {}) {
     if (!pty) {
       throw new Error("node-pty not available — rebuild required");
     }
@@ -165,7 +218,7 @@ class PtyRunnerManager extends EventEmitter {
       throw enhanceNodePtySpawnError(err);
     }
 
-    const runner = {
+    const runner: PtyRunner = {
       id: runnerId,
       status: STATUS.STARTING,
       pid: client.pid,
@@ -221,7 +274,7 @@ class PtyRunnerManager extends EventEmitter {
   // Fix: write the text body in one chunk, then schedule a SEPARATE `\r` write
   // a short delay later. The TUI sees the second write as "user pressed Enter"
   // and submits the collapsed paste.
-  writePrompt(runnerId, text, opts = {}) {
+  writePrompt(runnerId: string, text: string, opts: WritePromptOptions = {}) {
     const runner = this.runners.get(runnerId);
     if (!runner || runner.status !== STATUS.RUNNING) {
       return false;
@@ -257,7 +310,7 @@ class PtyRunnerManager extends EventEmitter {
 
   // Forward literal user stdin bytes to the runner PTY.
   // Unlike writePrompt(), this does not append Enter or wrap bracketed paste.
-  writeInput(runnerId, data) {
+  writeInput(runnerId: string, data: string) {
     const runner = this.runners.get(runnerId);
     if (!runner || runner.status !== STATUS.RUNNING) {
       return false;
@@ -277,7 +330,7 @@ class PtyRunnerManager extends EventEmitter {
   //   codex   compact→/compact  clear→/new
   //   gemini  compact→/compress clear→/chat new
   // Slash commands are single-line, so no bracketed-paste envelope.
-  injectContextReset(runnerId, mode = "compact") {
+  injectContextReset(runnerId: string, mode: ContextResetMode = "compact") {
     const runner = this.runners.get(runnerId);
     if (!runner || runner.status !== STATUS.RUNNING) return false;
     const cmd = String(runner.command || "").trimStart().toLowerCase();
@@ -297,7 +350,7 @@ class PtyRunnerManager extends EventEmitter {
     return true;
   }
 
-  _drainStdin(runner) {
+  _drainStdin(runner: PtyRunner) {
     if (runner.stdinDraining) return;
     runner.stdinDraining = true;
     const tick = () => {
@@ -306,6 +359,10 @@ class PtyRunnerManager extends EventEmitter {
         return;
       }
       const next = runner.stdinQueue.shift();
+      if (typeof next !== "string") {
+        runner.stdinDraining = false;
+        return;
+      }
       try {
         runner.client.write(next);
       } catch (err) {
@@ -319,14 +376,14 @@ class PtyRunnerManager extends EventEmitter {
     tick();
   }
 
-  _onData(runner, data) {
+  _onData(runner: PtyRunner, data: string) {
     if (this.runners.get(runner.id) !== runner) return;
     runner.lastDataAt = Date.now();
     // Append to ring buffer (cap at maxBufferBytes).
     runner.buffer.push(data);
     runner.bufferBytes += Buffer.byteLength(data, "utf8");
     while (runner.bufferBytes > this.maxBufferBytes && runner.buffer.length > 1) {
-      const dropped = runner.buffer.shift();
+      const dropped = runner.buffer.shift() || "";
       runner.bufferBytes -= Buffer.byteLength(dropped, "utf8");
     }
     if (runner.liveStdoutLog) {
@@ -339,7 +396,7 @@ class PtyRunnerManager extends EventEmitter {
     this.emit("bytes", { runnerId: runner.id, data });
   }
 
-  _onExit(runner, exitCode, signal) {
+  _onExit(runner: PtyRunner, exitCode: number, signal?: number) {
     if (this.runners.get(runner.id) !== runner) return;
     runner.status = STATUS.STOPPED;
     runner.exitCode = exitCode;
@@ -361,7 +418,7 @@ class PtyRunnerManager extends EventEmitter {
 
   // Return the buffered bytes (for restoring xterm scrollback when the
   // renderer subscribes mid-session).
-  snapshot(runnerId) {
+  snapshot(runnerId: string) {
     const runner = this.runners.get(runnerId);
     if (!runner) return "";
     return runner.buffer.join("");
@@ -372,7 +429,7 @@ class PtyRunnerManager extends EventEmitter {
   // wrapping at the original cols and its cursor-up redraws (claude's
   // "thinking..." spinner, codex's TUI footer, gemini's input frame) leave
   // leftover characters behind.
-  resize(runnerId, cols, rows) {
+  resize(runnerId: string, cols: number, rows: number) {
     const runner = this.runners.get(runnerId);
     if (!runner || runner.status !== STATUS.RUNNING) return false;
     const c = Math.max(1, Math.floor(Number(cols) || 0));
@@ -386,7 +443,7 @@ class PtyRunnerManager extends EventEmitter {
     }
   }
 
-  stop(runnerId, opts = {}) {
+  stop(runnerId: string, opts: StopOptions = {}) {
     const runner = this.runners.get(runnerId);
     if (!runner) return false;
     if (runner.status === STATUS.STOPPED) return true;
@@ -411,7 +468,9 @@ class PtyRunnerManager extends EventEmitter {
   }
 }
 
-module.exports = {
+export const PTY_RUNNER_STATUS = STATUS;
+
+export default {
   PtyRunnerManager,
-  PTY_RUNNER_STATUS: STATUS
+  PTY_RUNNER_STATUS
 };

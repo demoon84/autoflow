@@ -1,9 +1,13 @@
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
-import nodePtyPermissions from "../src/main/node-pty-permissions.js";
+
+const require = createRequire(import.meta.url);
+require("tsx/cjs");
+const nodePtyPermissions = require("../src/main/node-pty-permissions.ts");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;
@@ -96,23 +100,33 @@ function scheduleElectronRestart(filePath) {
   }, 100);
 }
 
-const mainProcessFiles = new Set(["main.js", "preload.js"]);
-// Auto-restart on main.js / preload.js changes is convenient for renderer
-// hot-reload, but extremely disruptive when PTY runners are running — the
-// worker AI sometimes edits PROJECT_ROOT/main.js (instead of its worktree)
-// during ticket work, which triggers electron.kill() and ends up killing
-// the very worker that made the edit. Set AUTOFLOW_DESKTOP_AUTO_RESTART=0
-// to disable auto-restart and require an explicit Cmd+R / restart.
+const mainProcessRootFiles = new Set(["main.js", "preload.js"]);
+const mainProcessHelperExtensions = new Set([".ts", ".js"]);
+// Auto-restart on main.js / preload.js / main-process helper changes is
+// convenient for renderer hot-reload, but extremely disruptive when PTY
+// runners are running — the worker AI sometimes edits PROJECT_ROOT/main.js
+// (instead of its worktree) during ticket work, which triggers electron.kill()
+// and ends up killing the very worker that made the edit. Set
+// AUTOFLOW_DESKTOP_AUTO_RESTART=0 to disable auto-restart and require an
+// explicit Cmd+R / restart.
 const AUTO_RESTART_ENABLED = process.env.AUTOFLOW_DESKTOP_AUTO_RESTART !== "0";
 const mainProcessWatchers = AUTO_RESTART_ENABLED
   ? [
       watch(path.join(desktopRoot, "src"), { persistent: true }, (_eventType, filename) => {
         const changedFile = filename ? filename.toString() : "";
-        if (!mainProcessFiles.has(changedFile)) {
+        if (!mainProcessRootFiles.has(changedFile)) {
           return;
         }
 
         scheduleElectronRestart(path.join(desktopRoot, "src", changedFile));
+      }),
+      watch(path.join(desktopRoot, "src", "main"), { persistent: true }, (_eventType, filename) => {
+        const changedFile = filename ? filename.toString() : "";
+        if (!mainProcessHelperExtensions.has(path.extname(changedFile))) {
+          return;
+        }
+
+        scheduleElectronRestart(path.join(desktopRoot, "src", "main", changedFile));
       })
     ]
   : [];

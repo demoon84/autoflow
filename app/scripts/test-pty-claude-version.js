@@ -5,7 +5,8 @@
 // Usage: ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron scripts/test-pty-claude-version.js
 
 const path = require("node:path");
-const { PtyRunnerManager, PTY_RUNNER_STATUS } = require(path.resolve(__dirname, "../src/main/runner-pty-manager"));
+require("tsx/cjs");
+const { PtyRunnerManager, PTY_RUNNER_STATUS } = require(path.resolve(__dirname, "../src/main/runner-pty-manager.ts"));
 
 const mgr = new PtyRunnerManager();
 if (!mgr.isAvailable()) {
