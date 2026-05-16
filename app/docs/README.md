@@ -7,7 +7,7 @@
 ```text
 app/
   bin/autoflow     사용자 진입점 (Node -> app/cli/autoflow.ts)
-  bootstrap/       Electron main/preload bootstrap (tracked CJS -> TS source)
+  bootstrap/       Electron main bootstrap (tracked CJS -> TS source)
   cli/             autoflow CLI 구현
     autoflow.ts      실제 command router
     runners/         planner/worker/verifier/wiki CLI surfaces
@@ -52,7 +52,7 @@ npm run typecheck     # board + cli TS 타입 체크만
 ./app/bin/autoflow ...    # CLI 직접 호출
 ```
 
-Electron은 `package.json`의 `main`으로 `app/bootstrap/main.cjs`를 읽는다. 실제 main/preload 로직은 `app/src/main.ts`, `app/src/preload.ts`에 있고, bootstrap은 TS source를 로드하는 얇은 진입점이다. `npm run check`는 별도로 `app/dist/main/*.cjs` 빌드 산출물도 생성해 packaging 전 검증을 한다.
+Electron은 `package.json`의 `main`으로 `app/bootstrap/main.cjs`를 읽는다. 실제 main/preload 로직은 `app/src/main.ts`, `app/src/preload.ts`에 있다. main bootstrap은 TS source를 로드하는 얇은 진입점이고, preload는 Electron sandbox 제약 때문에 dev/build 시작 시 생성되는 `app/dist/main/preload.cjs`를 사용한다. `npm run check`는 `app/dist/main/*.cjs` 빌드 산출물을 생성해 packaging 전 검증을 한다.
 
 ## 설계 원칙
 

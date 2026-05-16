@@ -1802,7 +1802,7 @@ function createWindow() {
     trafficLightPosition: { x: 16, y: 16 },
     show: false,
     webPreferences: {
-      preload: path.join(desktopRoot, "bootstrap", "preload.cjs"),
+      preload: path.join(desktopRoot, "dist", "main", "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       devTools: process.env.AUTOFLOW_DESKTOP_DEVTOOLS === "1"
