@@ -130,6 +130,40 @@ const {
 
 export function cmdWorkerCodeReport(): void {
   const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  ok(recordWorkerCodeMetrics(ticket));
+}
+
+type CodeMetricNumbers = {
+  files: number;
+  insertions: number;
+  deletions: number;
+  volume: number;
+  net: number;
+};
+
+function statsNumbers(stats: JsonObject): CodeMetricNumbers {
+  return {
+    files: numberValue(stats.code_files_changed_count),
+    insertions: numberValue(stats.code_insertions_count),
+    deletions: numberValue(stats.code_deletions_count),
+    volume: numberValue(stats.code_volume_count),
+    net: numberValue(stats.code_net_delta_count),
+  };
+}
+
+function readMarkerNumbers(markerPath: string): CodeMetricNumbers {
+  try {
+    return statsNumbers(JSON.parse(fs.readFileSync(markerPath, "utf8")) as JsonObject);
+  } catch {
+    return { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+  }
+}
+
+function nonNegative(value: number): number {
+  return Math.max(0, value);
+}
+
+export function recordWorkerCodeMetrics(ticket: string): JsonObject {
   const runnerId = currentRunnerId("worker");
   const ticketId = `Todo-${idFromPath(ticket)}`;
   const stats = diffStats(ticket);
@@ -137,17 +171,41 @@ export function cmdWorkerCodeReport(): void {
   const markerPath = path.join(markerDir, `${safeSegment(ticketId)}.json`);
   fs.mkdirSync(markerDir, { recursive: true });
 
-  if (fs.existsSync(markerPath)) {
-    ok({
+  const markerExists = fs.existsSync(markerPath);
+  const previous = markerExists ? readMarkerNumbers(markerPath) : { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+  const currentStats = statsNumbers(stats);
+  const delta = {
+    files: currentStats.files - previous.files,
+    insertions: currentStats.insertions - previous.insertions,
+    deletions: currentStats.deletions - previous.deletions,
+    volume: currentStats.volume - previous.volume,
+    net: currentStats.net - previous.net,
+  };
+  const hasDelta = Object.values(delta).some((value) => value !== 0);
+
+  if (!hasDelta) {
+    if (!markerExists) {
+      fs.writeFileSync(markerPath, JSON.stringify({
+        ticket_id: ticketId,
+        runner: runnerId,
+        reported_at: utils.nowIso(),
+        ...stats,
+      }, null, 2) + "\n", "utf8");
+    }
+    return {
       tool: "worker.code-report",
       path: boardRel(ticket),
       runner: runnerId,
       ticket_id: ticketId,
       counted: false,
       marker_path: boardRel(markerPath),
+      delta_code_files_changed_count: 0,
+      delta_code_insertions_count: 0,
+      delta_code_deletions_count: 0,
+      delta_code_volume_count: 0,
+      delta_code_net_delta_count: 0,
       ...stats,
-    });
-    return;
+    };
   }
 
   const state = utils.readRunnerState(runnerId, BOARD_ROOT);
@@ -155,25 +213,20 @@ export function cmdWorkerCodeReport(): void {
     const parsed = Number.parseInt(state.get(key) || "0", 10);
     return Number.isFinite(parsed) ? parsed : 0;
   };
-  const files = numberValue(stats.code_files_changed_count);
-  const insertions = numberValue(stats.code_insertions_count);
-  const deletions = numberValue(stats.code_deletions_count);
-  const volume = numberValue(stats.code_volume_count);
-  const net = numberValue(stats.code_net_delta_count);
   const reportedAt = utils.nowIso();
 
   utils.updateRunnerState(runnerId, {
-    cumulative_code_files_changed: current("cumulative_code_files_changed") + files,
-    cumulative_code_insertions: current("cumulative_code_insertions") + insertions,
-    cumulative_code_deletions: current("cumulative_code_deletions") + deletions,
-    cumulative_code_volume: current("cumulative_code_volume") + volume,
-    cumulative_code_net_delta: current("cumulative_code_net_delta") + net,
+    cumulative_code_files_changed: nonNegative(current("cumulative_code_files_changed") + delta.files),
+    cumulative_code_insertions: nonNegative(current("cumulative_code_insertions") + delta.insertions),
+    cumulative_code_deletions: nonNegative(current("cumulative_code_deletions") + delta.deletions),
+    cumulative_code_volume: nonNegative(current("cumulative_code_volume") + delta.volume),
+    cumulative_code_net_delta: current("cumulative_code_net_delta") + delta.net,
     last_code_ticket_id: ticketId,
-    last_code_files_changed: files,
-    last_code_insertions: insertions,
-    last_code_deletions: deletions,
-    last_code_volume: volume,
-    last_code_net_delta: net,
+    last_code_files_changed: currentStats.files,
+    last_code_insertions: currentStats.insertions,
+    last_code_deletions: currentStats.deletions,
+    last_code_volume: currentStats.volume,
+    last_code_net_delta: currentStats.net,
     last_code_reported_at: reportedAt,
     code_source: "worker_diff_report",
   }, BOARD_ROOT);
@@ -185,13 +238,23 @@ export function cmdWorkerCodeReport(): void {
     ...stats,
   }, null, 2) + "\n", "utf8");
 
-  ok({
+  return {
     tool: "worker.code-report",
     path: boardRel(ticket),
     runner: runnerId,
     ticket_id: ticketId,
     counted: true,
     marker_path: boardRel(markerPath),
+    previous_code_files_changed_count: previous.files,
+    previous_code_insertions_count: previous.insertions,
+    previous_code_deletions_count: previous.deletions,
+    previous_code_volume_count: previous.volume,
+    previous_code_net_delta_count: previous.net,
+    delta_code_files_changed_count: delta.files,
+    delta_code_insertions_count: delta.insertions,
+    delta_code_deletions_count: delta.deletions,
+    delta_code_volume_count: delta.volume,
+    delta_code_net_delta_count: delta.net,
     ...stats,
-  });
+  };
 }

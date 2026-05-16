@@ -1,4 +1,5 @@
 import * as shared from "../../../shared/runner-tool";
+import { recordWorkerCodeMetrics } from "./code-report";
 
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
@@ -144,6 +145,15 @@ export function cmdWorkerVerificationRecord(): void {
   if (summary) utils.replaceScalarFieldInSection(ticket, "Verification", "Summary", oneLine(summary, 500));
   utils.replaceScalarFieldInSection(ticket, "Ticket", "Last Updated", now);
   utils.appendNote(ticket, `Verification recorded at ${now}: result=${result}${exitCode ? ` exit_code=${exitCode}` : ""}`);
+  let codeMetrics: JsonObject = { status: "not_recorded" };
+  try {
+    codeMetrics = recordWorkerCodeMetrics(ticket);
+  } catch (error) {
+    codeMetrics = {
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 
   ok({
     tool: "worker.verification-record",
@@ -152,5 +162,10 @@ export function cmdWorkerVerificationRecord(): void {
     command_recorded: Boolean(command),
     exit_code: exitCode || "",
     summary_recorded: Boolean(summary),
+    code_metrics_counted: codeMetrics.counted === true,
+    code_metrics_status: String(codeMetrics.status || "ok"),
+    code_metrics_files_changed_count: codeMetrics.code_files_changed_count ?? 0,
+    code_metrics_volume_count: codeMetrics.code_volume_count ?? 0,
+    code_metrics_delta_volume_count: codeMetrics.delta_code_volume_count ?? 0,
   });
 }
