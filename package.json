@@ -2,22 +2,40 @@
   "name": "autoflow",
   "version": "0.1.0",
   "private": true,
-  "description": "Autoflow CLI and desktop dashboard for local AI work boards.",
+  "description": "Autoflow desktop app and CLI for local AI work boards.",
+  "main": "app/src/main.js",
+  "type": "commonjs",
   "scripts": {
-    "desktop:dev": "npm --prefix apps/desktop run dev",
-    "desktop:check": "npm --prefix apps/desktop run check",
-    "typecheck": "npm run typecheck:board && npm run typecheck:cli && npm run typecheck:smoke",
-    "typecheck:board": "tsc -p runtime/board-scripts/tsconfig.json --noEmit",
-    "typecheck:cli": "tsc -p packages/cli/tsconfig.json --noEmit",
-    "typecheck:smoke": "tsc --noEmit --target ES2022 --module Node16 --moduleResolution Node16 --types node tests/smoke/*.ts",
-    "smoke:worker": "tsx tests/smoke/worker-smoke.ts"
+    "postinstall": "node app/scripts/fix-node-pty-permissions.mjs",
+    "dev": "node app/scripts/dev.mjs",
+    "build": "vite build --config app/vite.config.ts",
+    "check": "node app/scripts/check-syntax.mjs && node app/scripts/check-install-doc-drift.mjs && tsc -p app/tsconfig.json --noEmit && npm run build",
+    "typecheck": "npm run typecheck:runtime && npm run typecheck:cli",
+    "typecheck:runtime": "tsc -p app/runtime/tsconfig.json --noEmit",
+    "typecheck:cli": "tsc -p app/cli/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "chokidar": "^5.0.0"
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "ansi-to-html": "^0.7.2",
+    "chokidar": "^5.0.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.475.0",
+    "node-pty": "^1.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@types/node": "^22.19.19",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/react": "^19.0.4",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^41.3.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.7"
   }
 }

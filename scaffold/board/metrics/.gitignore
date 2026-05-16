@@ -1,5 +1,0 @@
-*.jsonl
-*.json
-*.tsv
-!.gitignore
-!README.md

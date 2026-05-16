@@ -1,0 +1,59 @@
+format = 1
+
+[install]
+default_board_dir = ".autoflow"
+
+[sources.board]
+path = "install/board"
+target = "{{BOARD_ROOT}}"
+type = "board"
+overwrite = "upgrade"
+template = false
+skip_shell = true
+
+[sources.host]
+path = "install/host/AGENTS.md"
+target = "AGENTS.md"
+type = "host"
+overwrite = "never"
+template = true
+
+[sources.host_claude]
+path = "install/host/CLAUDE.md"
+target = "CLAUDE.md"
+type = "host"
+overwrite = "never"
+template = true
+
+[sources.claude_skills]
+path = "install/integrations/claude/skills"
+target = ".claude/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.claude_plugin]
+path = "install/integrations/claude/plugin"
+target = ".claude/autoflow-plugin"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.claude_plugin_skills]
+path = "install/integrations/claude/skills"
+target = ".claude/autoflow-plugin/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.codex_skills]
+path = "install/integrations/codex/skills"
+target = ".codex/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+# Runtime scripts are NOT installed into the board. They live under
+# `app/runtime/` and are invoked by the app (or by the CLI on the host repo)
+# with `BOARD_ROOT` / `PROJECT_ROOT` env vars pointing at the target board.
+# The board only holds data (tickets, logs, state, wiki).

@@ -3,10 +3,28 @@ dist/
 .DS_Store
 .idea/
 .claude/scheduled_tasks.lock
-dogfood-board/.autoflow-upgrade-backups/
+
+# This checkout is the Autoflow source/runtime repo. Installed board state
+# belongs in target projects such as ../tetris/.autoflow, not in this repo root.
+.autoflow/
+
+# Host integrations installed by `autoflow init/upgrade`. Source of truth lives
+# under install/integrations/. We keep `.claude/skills/` tracked because the
+# local Claude Code uses it (/autoflow, /order triggers), but reject everything
+# else that would otherwise drift from the install source.
+.claude/autoflow-plugin/
+.codex/
+
+# Transient scratch / test-run artifacts kept out of source.
+tmp/
+output/
+.playwright-cli/
+.playwright-mcp/
 
 # electron-builder / vite 빌드 산출물
-apps/desktop/build/
+app/build/
+app/dist/
+dist/
 
 # token-cache 등 metrics 도구가 만드는 임시 백업 (.bak.* timestamps)
 .autoflow/metrics/token-cache.tsv.bak.*

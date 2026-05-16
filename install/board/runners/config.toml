@@ -1,0 +1,65 @@
+# Autoflow runner configuration.
+#
+# Default 4-runner topology:
+#   planner : planner runner — promotes tickets/order/ orders + tickets/prd/
+#               PRDs into tickets/todo/ work. Worker fail re-emits order retry
+#               orders that planner re-plans like any other order — there is
+#               no separate reject queue.
+#   worker  : worker runner — todo claim → worktree create → code edit → local
+#               verification evidence → finalizer mechanical gate. Single
+#               live worktree at a time.
+#   verifier: verifier runner — semantic review of finished diff vs Title/Goal/
+#               Done When before done routing.
+#   wiki    : wiki runner — refreshes wiki/ when tickets/done/ or wiki/ source
+#               changes. Path-disjoint from planner/worker.
+#
+# Change agent/model fields to claude, gemini, shell, or a custom
+# command when Codex CLI is not the desired local runner.
+#
+# Legacy `coordinator-1` is no longer scaffolded. Existing boards that opted
+# into it should migrate to planner/worker/verifier/wiki; the role identifier
+# is kept only for idle/noop compatibility. New installs must not add one.
+
+[[runners]]
+id = "planner"
+role = "planner"
+agent = "codex"
+model = ""
+reasoning = "low"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "worker"
+role = "worker"
+agent = "codex"
+model = ""
+reasoning = "low"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""
+
+[[runners]]
+id = "verifier"
+role = "verifier"
+agent = "codex"
+model = ""
+reasoning = "low"
+mode = "loop"
+interval_seconds = 300
+enabled = true
+command = ""
+
+[[runners]]
+id = "wiki"
+role = "wiki-maintainer"
+agent = "codex"
+model = ""
+reasoning = "low"
+mode = "loop"
+interval_seconds = 60
+enabled = true
+command = ""

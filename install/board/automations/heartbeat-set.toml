@@ -1,0 +1,40 @@
+format = 1
+kind = "autoflow_heartbeat_set"
+set_name = "Autoflow Default Set"
+target_thread_id = "REPLACE_WITH_TARGET_THREAD_ID"
+board_root = "{{BOARD_DIR}}/"
+
+worker_runners = ["worker"]
+planner_workers = ["planner"]
+wiki_workers = ["wiki"]
+verifier_workers = ["verifier"]
+
+# Legacy role-pipeline workers. Leave these empty for the default 4-runner topology.
+todo_workers = []
+merge_workers = []
+
+execution_pool = ""
+verifier_pool = ""
+max_execution_load_per_worker = 1
+
+worker_template = "automations/templates/worker-heartbeat.template.toml"
+plan_template = "automations/templates/plan-heartbeat.template.toml"
+todo_template = "automations/templates/todo-heartbeat.template.toml"
+verifier_template = "automations/templates/verifier-heartbeat.template.toml"
+
+# Per-worker Codex thread_id override. Each entry binds one worker to one
+# conversation. Workers not listed here fall back to the top-level
+# target_thread_id. Values starting with REPLACE_WITH_ are treated as
+# missing at render time.
+[thread_ids]
+planner = "REPLACE_WITH_PLANNER_THREAD_ID"
+worker = "REPLACE_WITH_WORKER_THREAD_ID"
+verifier = "REPLACE_WITH_VERIFIER_THREAD_ID"
+wiki = "REPLACE_WITH_WIKI_THREAD_ID"
+
+[notes]
+edit_before_render = "Replace target_thread_id (fallback) and each [thread_ids] entry with real Codex thread ids before running autoflow render-heartbeats."
+scaling_rule = "Scale 4-runner mode by adding workers and matching [thread_ids] entries. Use legacy todo arrays only for role-pipeline compatibility; worker runners own merge after verifier pass."
+single_thread_mode = "If all workers should share one Codex thread, leave [thread_ids] empty and set only target_thread_id."
+trigger_rule = "Planner, worker, verifier, and wiki heartbeats should keep running until the user explicitly says stop."
+merge_rule = "`autoflow run merge` is a worker-runner compatibility alias; do not configure a separate merge bot."

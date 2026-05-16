@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+
+const fs = require("node:fs");
+const path = require("node:path");
+const {spawnSync} = require("node:child_process");
+
+function resolveRepoRoot() {
+  // app/bin/autoflow -> repo root is two levels up.
+  const self = fs.realpathSync(process.argv[1] || __filename);
+  return path.resolve(path.dirname(self), "..", "..");
+}
+
+function resolveTsxCli(repoRoot) {
+  try {
+    return require.resolve("tsx/cli", {paths: [repoRoot]});
+  } catch (error) {
+    process.stderr.write("tsx is required to run Autoflow TypeScript CLI scripts. Run npm install in the Autoflow repo.\n");
+    process.exit(1);
+  }
+}
+
+const repoRoot = resolveRepoRoot();
+const tsxCli = resolveTsxCli(repoRoot);
+const entrypoint = path.join(repoRoot, "app", "cli", "autoflow.ts");
+const result = spawnSync(process.execPath, [tsxCli, entrypoint, ...process.argv.slice(2)], {
+  stdio: "inherit",
+  env: process.env,
+});
+
+if (result.error) {
+  process.stderr.write(`${result.error.message}\n`);
+  process.exit(1);
+}
+
+process.exit(typeof result.status === "number" ? result.status : 1);

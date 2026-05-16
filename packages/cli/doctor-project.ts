@@ -1,5 +1,0 @@
-#!/usr/bin/env npx tsx
-
-import {runPackageCommand} from "./cli-core";
-
-runPackageCommand("doctor-project", process.argv.slice(2));
