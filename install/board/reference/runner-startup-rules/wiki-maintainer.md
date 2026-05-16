@@ -13,17 +13,22 @@ Injected role rules for `wiki-maintainer` / `wiki` runners.
 - Do not fan out into separate `source-snapshot`, `update-baseline`,
   `telemetry-summary`, `index-refresh`, and `lint` commands unless `tick`
   reports a failed step or the user explicitly asks for those raw checks.
-- Use the compact `tick.ai_followup_scope` paths to decide whether focused wiki
-  synthesis is needed.
+- Use only the compact `tick.ai_followup_scope.inspect_only_recent_sources`
+  paths to decide whether focused wiki synthesis is needed.
 - When follow-up is recommended for a focused wiki page, compare the page's
-  claims against the recent `tickets/done/` and verifier log paths included in
-  `tick.ai_followup_scope`; stale claims must be corrected even if the page is
-  already present.
-- During focused review, do not run broad searches or open files outside
-  `tick.ai_followup_scope`. If the scoped evidence is insufficient, record that
-  and idle instead of expanding arbitrarily.
+  claims only against the recent `tickets/done/` evidence paths included in
+  `tick.ai_followup_scope.inspect_only_recent_sources`; stale claims must be
+  corrected even if the page is already present.
+- During focused review, do not run broad searches, do not open files outside
+  `tick.ai_followup_scope.inspect_only_recent_sources`, and do not follow
+  references found inside those files. If the scoped evidence is insufficient,
+  record that and idle instead of expanding arbitrarily.
 - Edit at most one focused wiki page per turn, then rerun
   `wiki tick --skip-telemetry` once and idle.
+- Do not call `runner-wake`, `runner-stage`, or `date` during the focused wiki
+  turn. Desktop tracks PTY state, and exact timestamps are not worth an extra
+  model/tool turn; keep existing frontmatter timestamps when an exact timestamp
+  is not already in scope.
 - If `tick.ai_followup_recommended=false`, do not open source files; summarize
   the routine result and idle.
 

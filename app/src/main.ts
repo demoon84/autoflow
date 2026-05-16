@@ -1602,7 +1602,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
           `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --max-items 12\` first and let it complete; do not poll it at one-second intervals.`,
           `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle without opening source files.`,
-          `  3. If follow-up is needed, inspect only the compact paths returned by tick; do not run broad searches or open files outside that scope.`,
+          `  3. If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
           `  4. Edit at most one focused wiki page per turn, then run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry --max-items 12\` once and idle.`
         ].join("\n");
       default:
@@ -1639,8 +1639,39 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
         `Compact wiki startup rules from the Desktop start button:`,
         `- Run the wiki tick command below once inside this visible turn.`,
         `- If tick.ai_followup_recommended=false, summarize the compact result and idle.`,
-        `- If follow-up is needed, inspect only tick.ai_followup_scope paths.`,
+        `- If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources.`,
+        `- Do not open or follow references outside the inspect_only_recent_sources list.`,
         `- Edit at most one focused wiki page, rerun tick with --skip-telemetry once, then idle.`
+      ];
+  const runnerTail = normalizedRole === "wiki-maintainer"
+    ? [
+        `Wiki turn boundaries:`,
+        `- Do not call runner-wake or runner-stage during this focused wiki turn; Desktop tracks the PTY state.`,
+        `- Do not run date. If no exact timestamp is already in scope, keep the existing frontmatter timestamp.`,
+        `- Do not open or follow references outside tick.ai_followup_scope.inspect_only_recent_sources.`,
+        `- Stop after one focused summary once the rerun tick finishes.`
+      ]
+    : [
+        `After the startup scan, continue this role's normal Autoflow work.`,
+        `When new files appear in the board (orders, tickets, etc.), I will push a`,
+        `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
+        `re-scan the relevant queue, not as the only signal — keep working as long`,
+        `as anything is pending.`,
+        ``,
+        `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
+        `record durable progress in board files; do not re-read the full startup`,
+        `contract files again within this session unless this runner process restarts.`,
+        ``,
+        `Active reporting (every turn — required):`,
+        `  - Start of turn: \`${runnerWakeCmd} poll --runner ${runnerId}\``,
+        `  - On stage change: \`${runnerStageCmd} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
+        `  - End of turn: Desktop records provider usage automatically when exact live usage metadata is emitted.`,
+        `    Do not also run \`${runnerTokensCmd} report\` for the same Desktop PTY turn.`,
+        `    Only use \`${runnerTokensCmd} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
+        `    in non-Desktop runs or when the host explicitly asks for a manual report and exact values are visible.`,
+        `If exact values are not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
+        `Format tick-id as`,
+        `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
       ];
   return [
     `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
@@ -1666,26 +1697,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     ``,
     startupScan,
     ``,
-    `After the startup scan, continue this role's normal Autoflow work.`,
-    `When new files appear in the board (orders, tickets, etc.), I will push a`,
-    `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
-    `re-scan the relevant queue, not as the only signal — keep working as long`,
-    `as anything is pending.`,
-    ``,
-    `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
-    `record durable progress in board files; do not re-read the full startup`,
-    `contract files again within this session unless this runner process restarts.`,
-    ``,
-    `Active reporting (every turn — required):`,
-    `  - Start of turn: \`${runnerWakeCmd} poll --runner ${runnerId}\``,
-    `  - On stage change: \`${runnerStageCmd} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
-    `  - End of turn: Desktop records provider usage automatically when exact live usage metadata is emitted.`,
-    `    Do not also run \`${runnerTokensCmd} report\` for the same Desktop PTY turn.`,
-    `    Only use \`${runnerTokensCmd} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
-    `    in non-Desktop runs or when the host explicitly asks for a manual report and exact values are visible.`,
-    `If exact values are not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
-    `Format tick-id as`,
-    `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
+    ...runnerTail
   ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
 }
 

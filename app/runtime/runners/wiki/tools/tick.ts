@@ -129,6 +129,23 @@ function isFocusedWikiSourcePath(value: unknown): boolean {
   return /^wiki\/(answers|architecture|decisions|features|learnings)\//.test(String(value || ""));
 }
 
+function normalizeBoardSourcePath(value: unknown): string {
+  return String(value || "").replace(/^\.autoflow\//, "");
+}
+
+function changedFocusedWikiSources(items: shared.JsonObject[]): shared.JsonObject[] {
+  return items
+    .map((item) => {
+      const itemPath = normalizeBoardSourcePath(item.path);
+      if (!isFocusedWikiSourcePath(itemPath)) return null;
+      return {
+        path: itemPath,
+        status: item.status || "",
+      };
+    })
+    .filter(Boolean) as shared.JsonObject[];
+}
+
 function mergeSourcesByPath(items: shared.JsonObject[]): shared.JsonObject[] {
   const seen = new Set<string>();
   const out: shared.JsonObject[] = [];
@@ -390,7 +407,7 @@ export function cmdWikiTick(): void {
   const recentForFollowup = recentSources(Math.max(maxItems, 12));
   const focusedRecent = recentForFollowup
     .filter((item) => isFocusedWikiSourcePath(item.path))
-    .slice(0, 3);
+    .slice(0, 1);
   const focusedFingerprint = focusedWikiFingerprint();
   if (skipTelemetry && focusedFingerprint) {
     writeFocusedReviewFingerprint(focusedFingerprint);
@@ -402,7 +419,14 @@ export function cmdWikiTick(): void {
   const aiFollowupRecommended = (baselineChanged && recentDone.length > 0) || focusedChanged.length > 0 || focusedNeedsReview;
   const indexStep = steps.find((step) => step.name === "index-refresh");
   const backgroundIndexStep = indexStep?.parsed_status === "started_background" ? indexStep : undefined;
-  const followupSources = compactRecentSources(mergeSourcesByPath([...focusedRecent, ...recentForFollowup]));
+  const followupTargetPages = mergeSourcesByPath([
+    ...changedFocusedWikiSources(focusedChanged),
+    ...focusedRecent,
+  ]).slice(0, 1);
+  const followupEvidenceSources = recentDone.slice(0, 1);
+  const followupSources = aiFollowupRecommended
+    ? compactRecentSources(mergeSourcesByPath([...followupTargetPages, ...followupEvidenceSources]))
+    : [];
 
   const output: shared.JsonObject = {
     tool: "wiki.tick",
@@ -426,6 +450,9 @@ export function cmdWikiTick(): void {
         : (aiFollowupRecommended && focusedNeedsReview ? "focused_wiki_review_pending" : "")),
     ai_followup_scope: {
       inspect_only_recent_sources: followupSources,
+      max_files_to_open: followupSources.length,
+      max_wiki_pages_to_edit: aiFollowupRecommended ? 1 : 0,
+      do_not_follow_references_outside_scope: true,
       avoid_routine_tools_already_run: true,
       rerun_tick_after_manual_wiki_edits: true,
     },

@@ -8240,8 +8240,8 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
   const tokenTitle = cacheReadTokens > 0
-    ? `신규 토큰 ${activity.tokens.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
-    : `신규 토큰 ${activity.tokens.toLocaleString()}`;
+    ? `토큰 ${activity.tokens.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
+    : `토큰 ${activity.tokens.toLocaleString()}`;
   const footerTitle = pidLabel ? `${tokenTitle} · ${pidLabel}` : tokenTitle;
   return (
     <footer
@@ -8250,7 +8250,7 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
       aria-live="polite"
       title={footerTitle}
     >
-      <span>{animatedTokens.toLocaleString()} new tokens</span>
+      <span>{animatedTokens.toLocaleString()} tokens</span>
       {cacheReadTokens > 0 ? <span>cache read {cacheReadTokens.toLocaleString()}</span> : null}
       {isRunning ? <RunnerResourceUsage running={isRunning} pid={runner.pid} /> : null}
       {pidLabel ? <span className="ai-conversation-panel-activity-pid">{pidLabel}</span> : null}
