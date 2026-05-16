@@ -1440,8 +1440,8 @@ function uniquePaths(paths) {
 }
 
 // Initial prompt sent once after the agent CLI is up. The Desktop start button
-// injects compact common + role startup rules immediately, then points the
-// runner at the full role/project contracts for one-time startup reads.
+// injects compact common + role startup rules immediately, then asks the
+// runner to do a cheap queue preflight before expanding full contracts.
 function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot, boardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
@@ -1517,14 +1517,20 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
     roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null,
     ``,
-    `After absorbing the injected rules, read these full contract files once before`,
-    `planning, scanning, or other tool calls:`,
+    `After absorbing the injected rules, run a low-cost startup preflight first:`,
+    `poll wake state and inspect the role-owned queue/recovery surfaces named`,
+    `below. If there is no actionable work, record idle and wait without reading`,
+    `the full contract files.`,
+    ``,
+    `If the preflight finds actionable work or recovery evidence, read these full`,
+    `contract files once before planning, editing board state, or making role`,
+    `judgments:`,
     ...fullContractFiles.map((filePath) => {
       const status = fsSync.existsSync(filePath) ? "" : " (missing on disk; report this and continue with injected rules)";
       return `  - ${filePath}${status}`;
     }),
-    `Do not skip the available reads. Do not start the startup scan until the`,
-    `available full contract reads have completed.`,
+    `Do not recursively expand Read Order lists inside host/board AGENTS during`,
+    `Desktop startup. Read referenced docs only when active work requires them.`,
     ``,
     startupScan,
     ``,

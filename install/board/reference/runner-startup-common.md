@@ -10,9 +10,13 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   current runtime context.
 - Treat `tickets/` as the source of truth for work state. Chat history and wiki
   pages are supporting context only.
-- Run the startup scan immediately after absorbing the injected rules and the
-  required one-time full-contract reads. Do not wait for a fresh `[wake]`
-  message before checking the current board.
+- Run a low-cost startup preflight immediately after absorbing the injected
+  rules: poll wake state and inspect the role-owned queue. Do not wait for a
+  fresh `[wake]` message before checking the current board.
+- If the preflight finds no actionable work, record idle and wait without
+  expanding the full contract/read-order set. Before making any planning,
+  implementation, verification, wiki, or recovery decision, read the full role
+  contract and project rules once.
 - Treat `[wake] <path>` as a hint to re-scan the relevant queue, not as the only
   trigger for work.
 - Use runner tools as deterministic helpers. The runner decides scope, next
@@ -25,8 +29,9 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   safe action in the board before idling.
 - Call the active-reporting commands at the start of normal turns, on stage
   changes, and at the end of every assistant turn. On the first startup turn,
-  absorb the injected rules and read the required full-contract files before
-  polling.
+  absorb the injected rules, run the low-cost preflight, then read the required
+  full-contract files only if the preflight found actionable work or recovery
+  evidence that needs role judgment.
 - End-of-turn token accounting is captured by the Desktop host when exact live
   provider usage metadata is emitted. Do not also run a manual token report for
   the same Desktop PTY turn.
@@ -35,5 +40,6 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   `autoflow tool runner-tokens report --runner <runner-id> --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`.
 - If exact values are unavailable, skip the token report; never report `0/0`,
   placeholders such as `1` or `1000`, or rough estimates.
-- Read the full role contract and project rules once at runner startup. Do not
-  repeat those reads every turn unless this runner process is restarted.
+- Read the full role contract and project rules once before role judgment on
+  actionable work. Do not repeat those reads every turn unless this runner
+  process is restarted.
