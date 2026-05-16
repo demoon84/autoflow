@@ -19,10 +19,11 @@ install/
   host/             설치 대상 프로젝트 루트에 놓이는 host 가이드
     AGENTS.md
     CLAUDE.md
-  integrations/     Claude/Codex 호스트 통합
+  integrations/     Claude/Codex/Gemini 호스트 통합
     claude/skills/    /autoflow, /order skill
     claude/plugin/    autoflow-plugin
     codex/skills/     codex 동등 skill + agents/openai.yaml
+    gemini/skills/    Gemini workspace skill
 ```
 
 ## 문서 인덱스
@@ -32,7 +33,7 @@ install/
 | [README.md](README.md) | 설치 레벨 구조와 manifest 계약 | `install/docs/` |
 | [../board/](../board/) | 설치 보드에 복사되는 runner 계약, reference, rules, wiki 템플릿 | 설치 산출물 source 라서 원위치 유지 |
 | [../host/](../host/) | 설치 대상 프로젝트 루트에 놓이는 host `AGENTS.md` / `CLAUDE.md` 템플릿 | 설치 산출물 source 라서 원위치 유지 |
-| [../integrations/](../integrations/) | Codex/Claude skill 및 plugin 템플릿 | 설치 산출물 source 라서 원위치 유지 |
+| [../integrations/](../integrations/) | Codex/Claude/Gemini skill 및 plugin 템플릿 | 설치 산출물 source 라서 원위치 유지 |
 
 ## 설치 매핑
 
@@ -59,6 +60,13 @@ template = true
 [sources.claude_plugin]
 path = "install/integrations/claude/plugin"
 target = ".claude/autoflow-plugin"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.gemini_skills]
+path = "install/integrations/gemini/skills"
+target = ".gemini/skills"
 type = "host"
 overwrite = "upgrade"
 template = true

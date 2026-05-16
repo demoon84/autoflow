@@ -53,6 +53,13 @@ type = "host"
 overwrite = "upgrade"
 template = true
 
+[sources.gemini_skills]
+path = "install/integrations/gemini/skills"
+target = ".gemini/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
 # Runtime scripts are NOT installed into the board. They live under
 # `app/runtime/` and are invoked by the app (or by the CLI on the host repo)
 # with `BOARD_ROOT` / `PROJECT_ROOT` env vars pointing at the target board.

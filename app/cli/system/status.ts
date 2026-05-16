@@ -39,6 +39,8 @@ export function statusProject(args: string[]): void {
     out(`host_claude_plugin_skill_order_present=${fs.existsSync(path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "order", "SKILL.md")) ? "true" : "false"}`);
     out(`host_codex_skill_autoflow_present=${fs.existsSync(path.join(ctx.projectRoot, ".codex", "skills", "autoflow", "SKILL.md")) ? "true" : "false"}`);
     out(`host_codex_skill_order_present=${fs.existsSync(path.join(ctx.projectRoot, ".codex", "skills", "order", "SKILL.md")) ? "true" : "false"}`);
+    out(`host_gemini_skill_autoflow_present=${fs.existsSync(path.join(ctx.projectRoot, ".gemini", "skills", "autoflow", "SKILL.md")) ? "true" : "false"}`);
+    out(`host_gemini_skill_order_present=${fs.existsSync(path.join(ctx.projectRoot, ".gemini", "skills", "order", "SKILL.md")) ? "true" : "false"}`);
     out(`board_agents_present=${fs.existsSync(path.join(ctx.boardRoot, "AGENTS.md")) ? "true" : "false"}`);
     out(`board_readme_present=${fs.existsSync(path.join(ctx.boardRoot, "README.md")) ? "true" : "false"}`);
     out(`project_root_marker_present=${fs.existsSync(path.join(ctx.boardRoot, ".project-root")) ? "true" : "false"}`);
