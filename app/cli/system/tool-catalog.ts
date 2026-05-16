@@ -7,7 +7,7 @@ export function printToolCatalog(args: string[]): void {
     out("catalog_version=2");
     out(`project_root=${ctx.projectRoot}`);
     out(`board_root=${ctx.boardRoot}`);
-    out("tool_count=14");
+    out("tool_count=15");
     out("tool.1.id=autoflow-tool-list");
     out("tool.1.roles=planner,worker,verifier,wiki");
     out("tool.1.kind=cli");
@@ -64,4 +64,8 @@ export function printToolCatalog(args: string[]): void {
     out("tool.14.roles=wiki");
     out("tool.14.kind=runtime_script");
     out("tool.14.entrypoint=app/runtime/runners/tool.ts wiki index-refresh");
+    out("tool.15.id=runner-preflight");
+    out("tool.15.roles=planner,worker,verifier,wiki");
+    out("tool.15.kind=runtime_script");
+    out("tool.15.entrypoint=app/runtime/system/runner-preflight.ts");
 }

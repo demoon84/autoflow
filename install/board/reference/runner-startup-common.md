@@ -10,13 +10,11 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   current runtime context.
 - Treat `tickets/` as the source of truth for work state. Chat history and wiki
   pages are supporting context only.
-- Run a low-cost startup preflight immediately after absorbing the injected
-  rules: poll wake state and inspect the role-owned queue. Do not wait for a
-  fresh `[wake]` message before checking the current board.
-- If the preflight finds no actionable work, record idle and wait without
-  expanding the full contract/read-order set. Before making any planning,
-  implementation, verification, wiki, or recovery decision, read the full role
-  contract and project rules once.
+- Desktop-started runners are gated by deterministic startup preflight before a
+  PTY is opened. If this runner prompt is visible, the runtime already found
+  actionable work, recovery evidence, or a pending wake for this role.
+- Before making any planning, implementation, verification, wiki, or recovery
+  decision, read the full role contract and project rules once.
 - Treat `[wake] <path>` as a hint to re-scan the relevant queue, not as the only
   trigger for work.
 - Use runner tools as deterministic helpers. The runner decides scope, next
@@ -29,9 +27,9 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   safe action in the board before idling.
 - Call the active-reporting commands at the start of normal turns, on stage
   changes, and at the end of every assistant turn. On the first startup turn,
-  absorb the injected rules, run the low-cost preflight, then read the required
-  full-contract files only if the preflight found actionable work or recovery
-  evidence that needs role judgment.
+  absorb the injected rules and read the required full-contract files before
+  role judgment. Do not rerun deterministic startup preflight inside the LLM
+  turn; the Desktop/runtime already did it before PTY launch.
 - End-of-turn token accounting is captured by the Desktop host when exact live
   provider usage metadata is emitted. Do not also run a manual token report for
   the same Desktop PTY turn.

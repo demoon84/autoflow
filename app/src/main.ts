@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen: electronScreen, shell } = require("electron");
-const { spawn, execFile } = require("node:child_process");
+const { spawn, execFile, spawnSync } = require("node:child_process");
 const nodeCrypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -939,34 +939,131 @@ function migrateLegacyTicketQueuesSync(boardRoot) {
   migrateLegacyTicketQueueSync(boardRoot, "backlog", "prd");
 }
 
+function listQueueFilesSync(boardRoot, relDir, pattern, limit = 100) {
+  const full = path.join(boardRoot, relDir);
+  if (!fsSync.existsSync(full)) return [];
+  try {
+    return fsSync.readdirSync(full)
+      .filter((name) => pattern.test(name))
+      .map((name) => path.join(full, name))
+      .filter((filePath) => {
+        try {
+          return fsSync.statSync(filePath).isFile();
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+function plannerRecoveryFilesSync(boardRoot) {
+  const candidates = [
+    ...listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/),
+    ...listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+|plan_\d+)\.md$/),
+  ];
+  return candidates.filter((filePath) => {
+    let text = "";
+    try {
+      text = fsSync.readFileSync(filePath, "utf8");
+    } catch {
+      return false;
+    }
+    if (!/## Recovery State/i.test(text)) return false;
+    const status = text.match(/^-\s*Status:\s*(.*?)\s*$/mi)?.[1]?.trim().toLowerCase() || "";
+    if (status && !["clear", "cleared", "none", "resolved", "idle", "ok"].includes(status)) return true;
+    return /Failure Class:|Planner Decision:|Worker Resume Instruction:/i.test(text);
+  });
+}
+
+function walkMarkdownFilesSync(dir) {
+  const out = [];
+  const visit = (current) => {
+    let entries = [];
+    try {
+      entries = fsSync.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const filePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        visit(filePath);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        out.push(filePath);
+      }
+    }
+  };
+  visit(dir);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+function computeWikiSourceHashSync(boardRoot) {
+  const files = [
+    ...walkMarkdownFilesSync(path.join(boardRoot, "wiki")),
+    ...walkMarkdownFilesSync(path.join(boardRoot, "tickets", "done")),
+  ].sort((a, b) => a.localeCompare(b));
+  const hash = nodeCrypto.createHash("sha256");
+  for (const filePath of files) {
+    try {
+      const text = fsSync.readFileSync(filePath, "utf8");
+      if (!text.trim()) continue;
+      const relPath = path.relative(boardRoot, filePath);
+      const contentSha = nodeCrypto.createHash("sha256").update(text).digest("hex");
+      hash.update(relPath).update("\0").update(contentSha).update("\0");
+    } catch {}
+  }
+  return { hash: hash.digest("hex"), count: files.length };
+}
+
+function readWikiIndexSourceHashSync(boardRoot) {
+  const dbPath = path.join(boardRoot, "runners", "state", "wiki-search.db");
+  if (!fsSync.existsSync(dbPath)) return "";
+  try {
+    const result = spawnSync("sqlite3", [dbPath, "SELECT value FROM wiki_index_meta WHERE key='source_hash' LIMIT 1;"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return result.status === 0 ? String(result.stdout || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function wikiHasPendingWorkSync(boardRoot) {
+  const current = computeWikiSourceHashSync(boardRoot);
+  const indexed = readWikiIndexSourceHashSync(boardRoot);
+  return current.count > 0 && (!indexed || indexed !== current.hash);
+}
+
 // Return true if the role has actionable work in its queue directories.
 function queueHasPendingWork(role, boardRoot) {
   try {
     migrateLegacyTicketQueuesSync(boardRoot);
-    const check = (dir, pattern) => {
-      const full = path.join(boardRoot, dir);
-      if (!fsSync.existsSync(full)) return false;
-      return fsSync.readdirSync(full).some((f) => pattern.test(f));
-    };
     if (role === "planner") {
       return (
-        check("tickets/order", /^order_.*\.md$/) ||
-        check("tickets/prd", /^prd_.*\.md$/) ||
-        check("tickets/inbox", /^order_.*\.md$/) ||
-        check("tickets/backlog", /^(prd|project)_.*\.md$/)
+        listQueueFilesSync(boardRoot, "tickets/order", /^order_.*\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/prd", /^(prd|project)_\d+\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/inbox", /^order_.*\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/backlog", /^(prd|project)_.*\.md$/).length > 0 ||
+        plannerRecoveryFilesSync(boardRoot).length > 0
       );
     }
     if (role === "worker") {
       return (
-        check("tickets/inprogress", /^Todo-\d+\.md$/) ||
-        check("tickets/todo", /^Todo-\d+\.md$/)
+        listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/ready-to-merge", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0
       );
     }
     if (role === "verifier") {
-      return check("tickets/verifier", /^Todo-\d+\.md$/);
+      return listQueueFilesSync(boardRoot, "tickets/verifier", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0;
     }
     if (role === "wiki-maintainer") {
-      return check("tickets/done", /\.md$/);
+      return wikiHasPendingWorkSync(boardRoot);
     }
   } catch {
     // best-effort; return true to avoid suppressing wakes on errors
@@ -986,7 +1083,7 @@ function computeQueueFingerprint(role, boardRoot) {
   } else if (role === "verifier") {
     dirs.push("tickets/verifier");
   } else if (role === "wiki-maintainer") {
-    dirs.push("tickets/done");
+    return computeWikiSourceHashSync(boardRoot).hash.slice(0, 12);
   }
   const parts = [];
   for (const dir of dirs) {
@@ -1517,20 +1614,17 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
     roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null,
     ``,
-    `After absorbing the injected rules, run a low-cost startup preflight first:`,
-    `poll wake state and inspect the role-owned queue/recovery surfaces named`,
-    `below. If there is no actionable work, record idle and wait without reading`,
-    `the full contract files.`,
+    `Desktop already ran deterministic startup preflight before opening this PTY.`,
+    `If this prompt is visible, actionable work or recovery evidence was found.`,
     ``,
-    `If the preflight finds actionable work or recovery evidence, read these full`,
-    `contract files once before planning, editing board state, or making role`,
-    `judgments:`,
+    `Read these full contract files once before planning, editing board state, or`,
+    `making role judgments:`,
     ...fullContractFiles.map((filePath) => {
       const status = fsSync.existsSync(filePath) ? "" : " (missing on disk; report this and continue with injected rules)";
       return `  - ${filePath}${status}`;
     }),
-    `Do not recursively expand Read Order lists inside host/board AGENTS during`,
-    `Desktop startup. Read referenced docs only when active work requires them.`,
+    `Do not recursively expand Read Order lists inside host/board AGENTS unless`,
+    `the active work requires the referenced document.`,
     ``,
     startupScan,
     ``,
@@ -1555,6 +1649,31 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `Format tick-id as`,
     `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
   ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
+}
+
+async function runRunnerStartupPreflight({ runnerId, role, projectRoot, boardDirName }) {
+  const boardRoot = path.join(projectRoot, boardDirName || defaultBoardDirName);
+  const result = await runAutoflowArgs([
+    "tool",
+    "runner-preflight",
+    "--project-root", projectRoot,
+    "--board-root", boardRoot,
+    "--runner", runnerId,
+    "--role", role,
+    "--write-state"
+  ], {
+    env: {
+      AUTOFLOW_PROJECT_ROOT: projectRoot,
+      PROJECT_ROOT: projectRoot,
+      AUTOFLOW_BOARD_ROOT: boardRoot,
+      BOARD_ROOT: boardRoot,
+      AUTOFLOW_BOARD_DIR_NAME: boardDirName || defaultBoardDirName
+    }
+  });
+  return {
+    ...result,
+    values: parseKeyValueOutput(result.stdout || "")
+  };
 }
 
 function projectScopeKey(projectRoot, boardDirName) {
@@ -6651,6 +6770,31 @@ app.whenReady().then(() => {
         ptyManager.stop(runnerId, { force: true });
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
+      const existingAfterScopeCheck = ptyManager.get(runnerId);
+      if (!existingAfterScopeCheck || existingAfterScopeCheck.status !== "running") {
+        const preflight = await runRunnerStartupPreflight({
+          runnerId,
+          role: normalizedRole,
+          projectRoot,
+          boardDirName
+        });
+        if (preflight.ok && preflight.values.decision === "skip") {
+          console.log(`[runner-preflight] ${runnerId} skipped PTY spawn: ${preflight.values.reason || "idle"}`);
+          clearReadBoardCachesForScope({ projectRoot, boardDirName });
+          return {
+            ok: true,
+            runnerId,
+            pid: "",
+            status: "idle",
+            skipped: true,
+            stdout: preflight.stdout || "",
+            reason: preflight.values.reason || ""
+          };
+        }
+        if (!preflight.ok) {
+          console.warn(`[runner-preflight] ${runnerId} failed; falling back to PTY spawn`, preflight.stderr || preflight.stdout || "");
+        }
+      }
       const runnerEnv = buildRunnerPtyEnv({
         agent,
         runnerId,
@@ -6828,6 +6972,19 @@ app.whenReady().then(() => {
           if (ptyManager.list().some((r) => r.id === runnerId && r.status === "running")) {
             console.log(`[auto-spawn] ${runnerId} already running; skip`);
             continue;
+          }
+          const preflight = await runRunnerStartupPreflight({
+            runnerId,
+            role,
+            projectRoot,
+            boardDirName
+          });
+          if (preflight.ok && preflight.values.decision === "skip") {
+            console.log(`[auto-spawn] ${runnerId} preflight idle; skip PTY spawn`);
+            continue;
+          }
+          if (!preflight.ok) {
+            console.warn(`[auto-spawn] ${runnerId} preflight failed; falling back to PTY spawn`);
           }
           if (!(await commandExists(agent))) {
             console.warn(`[auto-spawn] ${runnerId} skipped: ${agent} CLI not found in shell PATH`);
