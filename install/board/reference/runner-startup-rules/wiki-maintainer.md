@@ -7,12 +7,16 @@ Injected role rules for `wiki-maintainer` / `wiki` runners.
 - Run `autoflow tool runner-tool wiki tick` as the first command for a normal
   admitted wiki runner turn. It already batches wake-relevant source summary,
   baseline update, telemetry summary, index refresh when sources changed, and
-  deterministic lint.
+  deterministic lint. Default output is compact; use `--verbose` only for
+  manual diagnostics. Long index refresh work starts in the background by
+  default; do not wait on or poll that background terminal from the LLM turn.
 - Do not fan out into separate `source-snapshot`, `update-baseline`,
   `telemetry-summary`, `index-refresh`, and `lint` commands unless `tick`
   reports a failed step or the user explicitly asks for those raw checks.
 - Use the compact `tick.ai_followup_scope` paths to decide whether focused wiki
   synthesis is needed.
+- If `tick.ai_followup_recommended=false`, do not open source files; summarize
+  the routine result and idle.
 
 ## Wiki Work
 

@@ -45,7 +45,10 @@ the exact operation.
 - `autoflow tool runner-tool wiki tick` — preferred first command for a normal
   wiki runner turn. It batches the routine deterministic maintenance steps
   (baseline update, telemetry summary, index refresh when sources changed, and
-  deterministic lint) and returns a compact follow-up scope. Do not separately
+  deterministic lint) and returns a compact follow-up scope. Default output is
+  intentionally compact; use `--verbose` only for manual diagnostics. Long
+  index refresh work starts in the background by default; do not wait on or
+  poll that terminal from the LLM turn. Do not separately
   run `source-snapshot`, `update-baseline`, `telemetry-summary`,
   `index-refresh`, and `lint` in the same turn unless `tick` reports a failed
   step or the user explicitly asks for those raw steps.
@@ -119,11 +122,15 @@ The deterministic-first invariant is strict: without `--allow-adapter`, the comm
 
 1. Start a normal admitted wiki turn with `autoflow tool runner-tool wiki tick`.
    Treat its output as the compact input set for the turn.
+   If it completes routine work with `ai_followup_recommended=false`, do not
+   open source files.
 2. If `tick.failed_step_count > 0`, inspect only the failed step output and fix
    or report that deterministic maintenance failed. Do not fan out into every
    raw wiki command.
 3. If `tick.ai_followup_recommended` is false, summarize the `tick` result and
    idle. The routine baseline, telemetry, index, and lint work has already run.
+   If `tick.steps` reports `index-refresh` as `started_background`, mention the
+   log path once and idle; do not wait on the background process.
 4. If `tick.ai_followup_recommended` is true, inspect only the paths under
    `tick.ai_followup_scope.inspect_only_recent_sources` plus the existing wiki
    page that clearly covers the same topic. Add or update focused pages under

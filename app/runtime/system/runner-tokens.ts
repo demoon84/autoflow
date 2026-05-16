@@ -21,11 +21,12 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 
 function help(): void {
-  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show|sync-codex-sessions> [args]
+  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show|sync-codex-sessions|reset> [args]
   report  --runner <id> [--tick-id <id>] --input <N> --output <N>
           [--cache-read <N>] [--cache-create <N>] [--note <text>]
   show    --runner <id>
   sync-codex-sessions --runner <id>
+  reset   --runner <id> [--note <text>]
 `);
 }
 
@@ -132,6 +133,10 @@ function parseStateLines(text: string): Map<string, string> {
 
 function serializeStateLines(map: Map<string, string>): string {
   return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
+}
+
+function compactStamp(at = new Date()): string {
+  return at.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
 
 function parseInt0(s: unknown): number {
@@ -502,6 +507,74 @@ function syncCodexSessions(runner: string | undefined): never {
   process.exit(0);
 }
 
+function reset(runner: string | undefined, note?: string): never {
+  if (!runner) { warn("reset requires --runner"); process.exit(0); }
+  ensureDirs();
+  const result = withStateLock(runner, () => {
+    const state = readState(runner);
+    const map = parseStateLines(state);
+    if (!map.has("id")) map.set("id", runner);
+    if (!map.has("status")) map.set("status", "idle");
+    if (!map.has("active_stage")) map.set("active_stage", "idle");
+    for (const [key, value] of tokenDefaults) {
+      if (!map.has(key)) map.set(key, value);
+    }
+
+    const at = NOW();
+    const stamp = compactStamp(new Date(at));
+    const file = tokenLogPath(runner);
+    let backup = "";
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > 0) {
+        backup = `${file}.${stamp}.bak`;
+        fs.renameSync(file, backup);
+      }
+    } catch (error: any) {
+      warn(`token log backup failed: ${error?.message || error}`);
+    }
+
+    const tickId = `reset:${stamp}`;
+    const entry = JSON.stringify({
+      runner,
+      tickId,
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheCreate: 0,
+      turnTotal: 0,
+      cumulative: 0,
+      note: `token_reset:${String(note || "manual")}`,
+      at,
+    }) + "\n";
+    fs.writeFileSync(file, entry, "utf8");
+
+    map.set("last_turn_tokens", "0");
+    map.set("last_turn_input_tokens", "0");
+    map.set("last_turn_output_tokens", "0");
+    map.set("last_turn_cache_read_tokens", "0");
+    map.set("last_turn_cache_create_tokens", "0");
+    map.set("last_turn_at", at);
+    map.set("last_turn_tick_id", tickId);
+    map.set("cumulative_tokens", "0");
+    map.set("token_source", "none");
+    map.set("last_token_usage_source", "none");
+    map.set("updated_at", at);
+    writeState(runner, serializeStateLines(map));
+    return { backup, tickId, at };
+  });
+
+  process.stdout.write([
+    "status=ok",
+    `runner=${runner}`,
+    "cumulative_tokens=0",
+    `last_turn_tick_id=${result?.tickId || ""}`,
+    `reset_at=${result?.at || ""}`,
+    `backup=${result?.backup || ""}`,
+    "",
+  ].join("\n"));
+  process.exit(0);
+}
+
 function show(runner: string | undefined): never {
   if (!runner) { warn("show requires --runner"); process.exit(0); }
   const state = readState(runner);
@@ -545,6 +618,9 @@ switch (SUBCMD) {
     break;
   case "sync-codex-sessions":
     syncCodexSessions(arg("--runner"));
+    break;
+  case "reset":
+    reset(arg("--runner"), arg("--note"));
     break;
   default:
     help();

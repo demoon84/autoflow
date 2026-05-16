@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as shared from "../../../shared/runner-tool";
 
 const {
@@ -28,10 +29,29 @@ type StepResult = {
   parsed: shared.JsonObject;
 };
 
+type CompactStepResult = {
+  name: string;
+  exit_code: number;
+  parsed_status: string;
+  status?: unknown;
+  summary_count?: unknown;
+  changed_file_count?: unknown;
+  ticket_done_count?: unknown;
+  semantic_lint?: unknown;
+  pid?: unknown;
+  log_path?: unknown;
+  stdout_excerpt?: string;
+  stderr_excerpt?: string;
+};
+
 function excerpt(value: string, max = 1600): string {
   const clean = String(value || "").trim();
   if (clean.length <= max) return clean;
   return `${clean.slice(0, max)}\n[truncated:${clean.length - max}]`;
+}
+
+function stamp(): string {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
 }
 
 function sourceFiles(): string[] {
@@ -105,6 +125,40 @@ function recentSources(maxItems: number): shared.JsonObject[] {
     .slice(0, maxItems) as shared.JsonObject[];
 }
 
+function compactRecentSources(items: shared.JsonObject[]): shared.JsonObject[] {
+  return items.map((item) => ({
+    path: item.path,
+    mtime: item.mtime,
+  }));
+}
+
+function compactStep(step: StepResult): CompactStepResult {
+  const parsed = step.parsed || {};
+  const out: CompactStepResult = {
+    name: step.name,
+    exit_code: step.exit_code,
+    parsed_status: step.parsed_status,
+  };
+  for (const key of [
+    "status",
+    "summary_count",
+    "changed_file_count",
+    "ticket_done_count",
+    "semantic_lint",
+    "pid",
+    "log_path",
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(parsed, key)) {
+      (out as any)[key] = parsed[key];
+    }
+  }
+  if (step.exit_code !== 0) {
+    out.stdout_excerpt = excerpt(step.stdout_excerpt, 600);
+    out.stderr_excerpt = excerpt(step.stderr_excerpt, 600);
+  }
+  return out;
+}
+
 function runAutoflowStep(name: string, cliArgs: string[]): StepResult {
   const cli = autoflowCliPath();
   const result = spawnSync(cli, cliArgs, {
@@ -134,6 +188,69 @@ function runAutoflowStep(name: string, cliArgs: string[]): StepResult {
   };
 }
 
+function runAutoflowBackgroundStep(name: string, cliArgs: string[]): StepResult {
+  const cli = autoflowCliPath();
+  const logDir = path.join(BOARD_ROOT, "runners", "logs");
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+  } catch {}
+  const logPath = path.join(logDir, `wiki-${name}-${stamp()}.log`);
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(logPath, "a");
+    const child = spawn(cli, cliArgs, {
+      cwd: PROJECT_ROOT,
+      detached: true,
+      stdio: ["ignore", fd, fd],
+      env: {
+        ...process.env,
+        PROJECT_ROOT,
+        AUTOFLOW_PROJECT_ROOT: PROJECT_ROOT,
+        BOARD_ROOT,
+        AUTOFLOW_BOARD_ROOT: BOARD_ROOT,
+        AUTOFLOW_BOARD_DIR_NAME: boardDirName(),
+        AUTOFLOW_RUNNER_ID: currentRunnerId("wiki"),
+        RUNNER_ID: currentRunnerId("wiki"),
+      },
+    });
+    child.unref();
+    const parsed = {
+      status: "started_background",
+      pid: String(child.pid || ""),
+      log_path: logPath,
+    };
+    return {
+      name,
+      exit_code: child.pid ? 0 : 127,
+      parsed_status: "started_background",
+      stdout_excerpt: [
+        "status=started_background",
+        `pid=${child.pid || ""}`,
+        `log_path=${logPath}`,
+      ].join("\n"),
+      stderr_excerpt: "",
+      parsed,
+    };
+  } catch (error: any) {
+    return {
+      name,
+      exit_code: 127,
+      parsed_status: "spawn_failed",
+      stdout_excerpt: "",
+      stderr_excerpt: excerpt(String(error?.message || error), 800),
+      parsed: {
+        status: "spawn_failed",
+        error: String(error?.message || error),
+        log_path: logPath,
+      },
+    };
+  } finally {
+    if (typeof fd === "number") {
+      try { fs.closeSync(fd); } catch {}
+    }
+  }
+}
+
 function gitChangedWikiFiles(): shared.JsonObject[] {
   const result = spawnSync("git", [
     "status",
@@ -154,10 +271,12 @@ function gitChangedWikiFiles(): shared.JsonObject[] {
 }
 
 export function cmdWikiTick(): void {
-  const maxItems = positiveInt(getArg("--max-items"), 12);
+  const verbose = hasFlag("--verbose");
+  const maxItems = positiveInt(getArg("--max-items"), verbose ? 12 : 5);
   const skipTelemetry = hasFlag("--skip-telemetry");
   const skipLint = hasFlag("--skip-lint");
   const noIndex = hasFlag("--no-index");
+  const waitIndex = hasFlag("--wait-index");
   const forceIndex = hasFlag("--force-index");
   const noTickets = hasFlag("--no-tickets");
 
@@ -195,7 +314,9 @@ export function cmdWikiTick(): void {
   if (!noIndex && (forceIndex || sourceChanged || indexStaleBefore)) {
     const ingestArgs = ["wiki", "ingest", PROJECT_ROOT, boardDirName()];
     if (noTickets) ingestArgs.push("--no-tickets");
-    steps.push(runAutoflowStep("index-refresh", ingestArgs));
+    steps.push(waitIndex
+      ? runAutoflowStep("index-refresh", ingestArgs)
+      : runAutoflowBackgroundStep("index-refresh", ingestArgs));
   }
 
   if (!skipLint) {
@@ -211,32 +332,46 @@ export function cmdWikiTick(): void {
   const recentDone = recent.filter((item) => String(item.path || "").startsWith("tickets/done/"));
   const focusedChanged = changedFiles.filter((item) => /^\.autoflow\/wiki\/(answers|architecture|decisions|features|learnings)\//.test(String(item.path || "")));
   const aiFollowupRecommended = (baselineChanged && recentDone.length > 0) || focusedChanged.length > 0;
+  const indexStep = steps.find((step) => step.name === "index-refresh");
+  const backgroundIndexStep = indexStep?.parsed_status === "started_background" ? indexStep : undefined;
+  const followupSources = compactRecentSources(recent.slice(0, maxItems));
 
-  ok({
+  const output: shared.JsonObject = {
     tool: "wiki.tick",
     runner: currentRunnerId("wiki"),
-    board_root: BOARD_ROOT,
-    project_root: PROJECT_ROOT,
+    output_mode: verbose ? "verbose" : "compact",
     before_source_count: beforeFiles.length,
     after_source_count: sourceFiles().length,
     baseline_changed: baselineChanged,
     source_changed: sourceChanged,
     index_stale_before: indexStaleBefore,
     index_stale_after: indexStaleAfter,
+    index_refresh_mode: indexStep ? (waitIndex ? "wait" : "background") : "none",
     failed_step_count: failedSteps.length,
-    steps,
+    steps: verbose ? steps : steps.map(compactStep),
     changed_files: changedFiles,
-    recent_sources_before: beforeRecent,
-    recent_sources: recent,
     ai_followup_recommended: aiFollowupRecommended,
     ai_followup_reason: aiFollowupRecommended && recentDone.length > 0
       ? "recent_done_sources_present"
       : (aiFollowupRecommended && focusedChanged.length > 0 ? "focused_wiki_pages_changed" : ""),
     ai_followup_scope: {
-      inspect_only_recent_sources: recent.slice(0, maxItems),
+      inspect_only_recent_sources: followupSources,
       avoid_routine_tools_already_run: true,
       rerun_tick_after_manual_wiki_edits: true,
     },
-  });
+  };
+  if (backgroundIndexStep?.parsed?.log_path) {
+    output.index_refresh_log_path = backgroundIndexStep.parsed.log_path;
+  }
+  if (verbose) {
+    output.board_root = BOARD_ROOT;
+    output.project_root = PROJECT_ROOT;
+    output.recent_sources_before = beforeRecent;
+    output.recent_sources = recent;
+  } else {
+    output.details_hint = "rerun wiki tick with --verbose for step excerpts and full recent source lists";
+  }
+
+  ok(output);
   process.exit(failedSteps.length > 0 ? 1 : 0);
 }

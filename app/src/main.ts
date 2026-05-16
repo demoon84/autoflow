@@ -1599,10 +1599,10 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
       case "wiki-maintainer":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId}\` first.`,
-          `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle.`,
+          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --max-items 5\` first and let it complete; do not poll it at one-second intervals.`,
+          `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle without opening source files.`,
           `  3. If follow-up is needed, inspect only the compact paths returned by tick before editing focused wiki pages.`,
-          `  4. After manual wiki edits, run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry\` once, then idle.`
+          `  4. After manual wiki edits, run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry --max-items 5\` once, then idle.`
         ].join("\n");
       default:
         return [
@@ -1641,7 +1641,9 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null,
     ``,
     `Desktop already ran deterministic startup preflight before opening this PTY.`,
-    `If this prompt is visible, actionable work or recovery evidence was found.`,
+    normalizedRole === "wiki-maintainer"
+      ? `For wiki, routine deterministic maintenance with no AI follow-up is handled before PTY spawn. If this prompt is visible, a failed tick or focused AI follow-up needs inspection.`
+      : `If this prompt is visible, actionable work or recovery evidence was found.`,
     ``,
     ...contractReadIntro,
     ...fullContractFiles.map((filePath) => {
@@ -1676,6 +1678,118 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
 }
 
+function parseJsonObjectOutput(output) {
+  const raw = String(output || "").trim();
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function keyValueOutput(fields) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${value ?? ""}`)
+    .join("\n") + "\n";
+}
+
+async function writePreflightIdleState({ runnerId, role, projectRoot, boardDirName, reason, result }) {
+  const boardRoot = path.join(projectRoot, boardDirName || defaultBoardDirName);
+  const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
+  const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const existing = await readRunnerStateValues(statePath);
+  await writeRunnerStateAtomic(statePath, {
+    ...existing,
+    id: runnerId,
+    role,
+    status: "idle",
+    pid: "",
+    active_item: "",
+    active_ticket_id: "",
+    active_ticket_title: "",
+    active_stage: "idle",
+    active_spec_ref: "",
+    active_ticket_path: "",
+    active_recovery_reason: "",
+    active_recovery_status: "",
+    active_recovery_failure_class: "",
+    active_recovery_worktree_path: "",
+    active_recovery_worktree_status: "",
+    active_recovery_board_state: "",
+    last_result: result,
+    last_event_at: now,
+    preflight_last_at: now,
+    preflight_last_result: "idle",
+    preflight_last_reason: reason,
+    updated_at: now,
+  });
+}
+
+async function runWikiStartupMaintenancePreflight({ runnerId, role, projectRoot, boardDirName }) {
+  const boardRoot = path.join(projectRoot, boardDirName || defaultBoardDirName);
+  const tick = await runAutoflowArgs([
+    "tool",
+    "runner-tool",
+    "wiki",
+    "tick",
+    "--runner", runnerId,
+    "--max-items", "5"
+  ], {
+    env: {
+      AUTOFLOW_PROJECT_ROOT: projectRoot,
+      PROJECT_ROOT: projectRoot,
+      AUTOFLOW_BOARD_ROOT: boardRoot,
+      BOARD_ROOT: boardRoot,
+      AUTOFLOW_BOARD_DIR_NAME: boardDirName || defaultBoardDirName,
+      AUTOFLOW_RUNNER_ID: runnerId,
+      RUNNER_ID: runnerId
+    }
+  });
+  const parsed = parseJsonObjectOutput(tick.stdout || "");
+  const failedStepCount = Number.parseInt(String(parsed?.failed_step_count || "0"), 10) || 0;
+  const aiFollowupRecommended = parsed?.ai_followup_recommended === true;
+  if (!tick.ok || !parsed || failedStepCount > 0 || aiFollowupRecommended) {
+    return null;
+  }
+
+  const reason = "wiki_tick_no_ai_followup";
+  const stdout = keyValueOutput({
+    status: "ok",
+    runner: runnerId,
+    role,
+    decision: "skip",
+    result: "preflight_wiki_tick_idle",
+    actionable: "false",
+    reason,
+    "tick.failed_step_count": failedStepCount,
+    "tick.ai_followup_recommended": String(aiFollowupRecommended),
+    "tick.baseline_changed": String(parsed.baseline_changed === true),
+    "tick.source_changed": String(parsed.source_changed === true),
+    "tick.index_refresh_mode": parsed.index_refresh_mode || "",
+    "tick.index_refresh_log_path": parsed.index_refresh_log_path || "",
+  });
+  await writePreflightIdleState({
+    runnerId,
+    role,
+    projectRoot,
+    boardDirName,
+    reason,
+    result: "preflight_wiki_tick_idle"
+  });
+  return {
+    ok: true,
+    command: "runner-preflight wiki tick",
+    code: 0,
+    stdout,
+    stderr: tick.stderr || "",
+    values: parseKeyValueOutput(stdout || "")
+  };
+}
+
 async function runRunnerStartupPreflight({ runnerId, role, projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot, boardDirName || defaultBoardDirName);
   const result = await runAutoflowArgs([
@@ -1695,9 +1809,24 @@ async function runRunnerStartupPreflight({ runnerId, role, projectRoot, boardDir
       AUTOFLOW_BOARD_DIR_NAME: boardDirName || defaultBoardDirName
     }
   });
+  const values = parseKeyValueOutput(result.stdout || "");
+  if (
+    role === "wiki-maintainer" &&
+    result.ok &&
+    values.decision === "start" &&
+    values.reason === "wiki_index_stale"
+  ) {
+    const resolved = await runWikiStartupMaintenancePreflight({
+      runnerId,
+      role,
+      projectRoot,
+      boardDirName
+    });
+    if (resolved) return resolved;
+  }
   return {
     ...result,
-    values: parseKeyValueOutput(result.stdout || "")
+    values
   };
 }
 
@@ -1884,14 +2013,18 @@ function ensureBoardWatcher(scope) {
   ensureWakeSafetyPoller(scope);
 }
 
-// Safety poll: fires a wake to idle runners when queue work is present and
-// either the fingerprint changed or a stall threshold is reached.
+// Safety poll: legacy fallback that fires a wake to idle runners when queue work
+// is present. It is disabled by default because periodic polling can create
+// token churn in long-lived runner sessions; file-watch wakes and explicit
+// runner starts are the normal path.
 // Env knobs:
+//   AUTOFLOW_WAKE_SAFETY_POLL          — set to 1 to enable this fallback
 //   AUTOFLOW_WAKE_POLL_INTERVAL_SEC    — poll tick interval (default 60 s)
 //   AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC   — seconds without a wake → idle (default 30 s)
 //   AUTOFLOW_WAKE_STALL_THRESHOLD_SEC  — seconds without any wake → forced wake (default 1800 s)
 function ensureWakeSafetyPoller(scope) {
   if (!scope || typeof scope.projectRoot !== "string") return;
+  if (process.env.AUTOFLOW_WAKE_SAFETY_POLL !== "1") return;
   const boardDirName = scope.boardDirName || defaultBoardDirName;
   const key = `${scope.projectRoot}::${boardDirName}`;
   if (wakeSafetyPollers.has(key)) return;

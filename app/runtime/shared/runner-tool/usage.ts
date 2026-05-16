@@ -34,7 +34,7 @@ export function usage(): void {
   autoflow tool runner-tool verifier wake
 
   autoflow tool runner-tool wiki source-snapshot [--runner <id>] [--max-items <n>]
-  autoflow tool runner-tool wiki tick [--runner <id>] [--max-items <n>] [--window 7d|30d|all] [--skip-telemetry] [--skip-lint] [--force-index] [--no-index] [--no-tickets]
+  autoflow tool runner-tool wiki tick [--runner <id>] [--max-items <n>] [--window 7d|30d|all] [--skip-telemetry] [--skip-lint] [--force-index] [--wait-index] [--no-index] [--no-tickets] [--verbose]
   autoflow tool runner-tool wiki update-baseline [--dry-run]
   autoflow tool runner-tool wiki telemetry-summary [--slug-set telemetry-default|--slug <slug>] [--window 7d|30d|all] [--runner <id>]
   autoflow tool runner-tool wiki query --term <text> [--term <text>]... [--limit <n>] [--rag] [--synth] [--save-as <slug>] [--runner <id>]
