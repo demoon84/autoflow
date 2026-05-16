@@ -83,6 +83,7 @@ const allowedRunnerRoles = new Set([
 ]);
 const allowedRunnerConfigKeys = new Set([
   "agent",
+  "codex_history",
   "model",
   "reasoning",
   "mode",
@@ -128,6 +129,7 @@ const agentDisplayLabels = {
   claude: "Claude",
   gemini: "Gemini"
 };
+const codexRunnerHistoryModes = new Set(["isolated", "shared"]);
 const metricSnapshotKeys = [
   "ticket_total",
   "spec_total",
@@ -266,6 +268,68 @@ function inferRunnerRoleFromId(runnerId) {
   if (id === "wiki" || id.startsWith("wiki-")) return "wiki-maintainer";
   if (id === "verifier" || id.startsWith("verifier-")) return "verifier";
   return "planner";
+}
+
+function safeCodexHomeSegment(value, fallback = "runner") {
+  const cleaned = String(value || "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned.slice(0, 64) || fallback;
+}
+
+function shortHash(value, length = 12) {
+  return nodeCrypto.createHash("sha256").update(String(value || "")).digest("hex").slice(0, length);
+}
+
+function normalizeCodexHistoryMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  return codexRunnerHistoryModes.has(mode) ? mode : "isolated";
+}
+
+function defaultCodexHomePath() {
+  const fromEnv = String(process.env.CODEX_HOME || "").trim();
+  return fromEnv || path.join(os.homedir(), ".codex");
+}
+
+function copyCodexHomeFileIfFresh(sourceHome, targetHome, fileName, required = false) {
+  const source = path.join(sourceHome, fileName);
+  const target = path.join(targetHome, fileName);
+  try {
+    const sourceStat = fsSync.statSync(source);
+    if (!sourceStat.isFile()) return !required;
+    let shouldCopy = true;
+    try {
+      const targetStat = fsSync.statSync(target);
+      shouldCopy = sourceStat.mtimeMs > targetStat.mtimeMs;
+    } catch {
+      shouldCopy = true;
+    }
+    if (shouldCopy) {
+      fsSync.copyFileSync(source, target);
+      try { fsSync.chmodSync(target, 0o600); } catch {}
+    }
+    return true;
+  } catch {
+    return !required;
+  }
+}
+
+function ensureCodexRunnerHome({ projectRoot, boardDirName, runnerId }) {
+  const sourceHome = defaultCodexHomePath();
+  const projectSlug = safeCodexHomeSegment(path.basename(projectRoot || "project"), "project");
+  const scopeHash = shortHash(`${path.resolve(projectRoot || "")}\0${boardDirName || defaultBoardDirName}`);
+  const targetHome = path.join(
+    app.getPath("userData"),
+    "codex-runners",
+    `${projectSlug}-${scopeHash}`,
+    safeCodexHomeSegment(runnerId, "runner")
+  );
+  fsSync.mkdirSync(targetHome, { recursive: true, mode: 0o700 });
+  try { fsSync.chmodSync(targetHome, 0o700); } catch {}
+
+  const authOk = copyCodexHomeFileIfFresh(sourceHome, targetHome, "auth.json", true);
+  copyCodexHomeFileIfFresh(sourceHome, targetHome, "config.toml");
+  copyCodexHomeFileIfFresh(sourceHome, targetHome, "hooks.json");
+
+  return { codexHome: targetHome, authOk, sourceHome };
 }
 
 function supportedCodexProfile(model, reasoning) {
@@ -1264,6 +1328,37 @@ function normalizeRunnerRole(role) {
   if (value === "coord") return "coordinator";
   if (value === "merge" || value === "merge-bot") return "worker";
   return value || "planner";
+}
+
+function buildRunnerPtyEnv({ agent, runnerId, role, projectRoot, boardDirName, codexHistory }) {
+  const env = {
+    // Pin the autoflow-side stable runner id so worker helpers
+    // picks this instead of codex's per-session UUID. Without this,
+    // every PTY restart issues a fresh UUID, workership locks
+    // become stale, and worker claim refuses to proceed until the
+    // lock is cleared by normal runner state handling.
+    AUTOFLOW_WORKER_ID: runnerId,
+    AUTOFLOW_RUNNER_ID: runnerId,
+    AUTOFLOW_ROLE: role,
+    RUNNER_ID: runnerId,
+    AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
+  };
+  let codexHome = "";
+  const effectiveCodexHistory =
+    String(agent || "").toLowerCase() === "codex"
+      ? normalizeCodexHistoryMode(codexHistory)
+      : "";
+  if (effectiveCodexHistory === "isolated") {
+    const prepared = ensureCodexRunnerHome({ projectRoot, boardDirName, runnerId });
+    codexHome = prepared.codexHome;
+    env.CODEX_HOME = codexHome;
+    env.AUTOFLOW_CODEX_HOME = codexHome;
+    env.AUTOFLOW_CODEX_HISTORY = effectiveCodexHistory;
+    if (!prepared.authOk) {
+      console.warn(`[codex-runner-home] auth.json was not copied from ${prepared.sourceHome}; runner may require login`);
+    }
+  }
+  return { env, codexHome, codexHistory: effectiveCodexHistory || "" };
 }
 
 function roleInstructionPath(boardRoot, role) {
@@ -2578,6 +2673,7 @@ function parseRunnerListOutput(output) {
       id: values[`${prefix}id`] || "",
       role: values[`${prefix}role`] || "",
       agent: values[`${prefix}agent`] || "",
+      codexHistory: values[`${prefix}codex_history`] || "",
       model: values[`${prefix}model`] || "",
       reasoning: values[`${prefix}reasoning`] || "",
       mode: values[`${prefix}mode`] || "",
@@ -6416,6 +6512,7 @@ app.whenReady().then(() => {
     const agent = String(diskRunnerConfig.agent || opts.agent || "codex").toLowerCase();
     const model = String(diskRunnerConfig.model ?? opts.model ?? "");
     const reasoning = String(diskRunnerConfig.reasoning ?? opts.reasoning ?? "");
+    const codexHistory = normalizeCodexHistoryMode(diskRunnerConfig.codex_history ?? opts.codexHistory ?? "");
     if (!(await commandExists(agent))) {
       return { ok: false, error: `${agent} CLI not found in shell PATH` };
     }
@@ -6441,24 +6538,21 @@ app.whenReady().then(() => {
         ptyManager.stop(runnerId, { force: true });
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
+      const runnerEnv = buildRunnerPtyEnv({
+        agent,
+        runnerId,
+        role: normalizedRole,
+        projectRoot,
+        boardDirName,
+        codexHistory
+      });
       const runner = ptyManager.start(runnerId, {
         command,
         cwd: projectRoot,
         cols: Number.isFinite(opts.cols) ? opts.cols : 120,
         rows: Number.isFinite(opts.rows) ? opts.rows : 30,
         logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
-        env: {
-          // Pin the autoflow-side stable runner id so worker helpers
-          // picks this instead of codex's per-session UUID. Without this,
-          // every PTY restart issues a fresh UUID, workership locks
-          // become stale, and worker claim refuses to proceed until the
-          // lock is cleared by normal runner state handling.
-          AUTOFLOW_WORKER_ID: runnerId,
-          AUTOFLOW_RUNNER_ID: runnerId,
-          AUTOFLOW_ROLE: normalizedRole,
-          RUNNER_ID: runnerId,
-          AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
-        }
+        env: runnerEnv.env
       });
       const startedAt = new Date().toISOString();
       ptyRunnerMeta.set(runnerId, {
@@ -6466,6 +6560,8 @@ app.whenReady().then(() => {
         agent,
         projectRoot,
         boardDirName,
+        codexHome: runnerEnv.codexHome,
+        codexHistory: runnerEnv.codexHistory,
         startedAt
       });
       // Initial state — UI immediately reflects "running"
@@ -6479,6 +6575,8 @@ app.whenReady().then(() => {
         mode: "pty",
         pid: String(runner.pid || ""),
         started_at: startedAt,
+        codex_home: runnerEnv.codexHome || "",
+        codex_history: runnerEnv.codexHistory || "",
         last_stdout_log: runner.liveStdoutLog || "",
         last_event_at: startedAt,
         last_result: ""
@@ -6612,8 +6710,9 @@ app.whenReady().then(() => {
           const agent = grab("agent") || "codex";
           const model = grab("model") || "";
           const reasoning = grab("reasoning") || "";
+          const codexHistory = normalizeCodexHistoryMode(grab("codex_history"));
           if (!runnerId) continue;
-          const role = grab("role") || inferRunnerRoleFromId(runnerId);
+          const role = normalizeRunnerRole(grab("role") || inferRunnerRoleFromId(runnerId));
           if (ptyManager.list().some((r) => r.id === runnerId && r.status === "running")) {
             console.log(`[auto-spawn] ${runnerId} already running; skip`);
             continue;
@@ -6625,23 +6724,36 @@ app.whenReady().then(() => {
           const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
           if (!command) continue;
           const startedAt = new Date().toISOString();
+          const runnerEnv = buildRunnerPtyEnv({
+            agent,
+            runnerId,
+            role,
+            projectRoot,
+            boardDirName,
+            codexHistory
+          });
           const runner = ptyManager.start(runnerId, {
             command,
             cwd: projectRoot,
             cols: 120,
             rows: 30,
             logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
-            env: {
-              AUTOFLOW_WORKER_ID: runnerId,
-              AUTOFLOW_RUNNER_ID: runnerId,
-              RUNNER_ID: runnerId,
-              AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
-            }
+            env: runnerEnv.env
           });
-          ptyRunnerMeta.set(runnerId, { role, agent, projectRoot, boardDirName, startedAt });
+          ptyRunnerMeta.set(runnerId, {
+            role,
+            agent,
+            projectRoot,
+            boardDirName,
+            codexHome: runnerEnv.codexHome,
+            codexHistory: runnerEnv.codexHistory,
+            startedAt
+          });
           await writePtyRunnerStateFile(runnerId, {
             id: runnerId, status: "running", role, agent, model, reasoning,
             mode: "pty", pid: String(runner.pid || ""), started_at: startedAt,
+            codex_home: runnerEnv.codexHome || "",
+            codex_history: runnerEnv.codexHistory || "",
             last_stdout_log: runner.liveStdoutLog || "",
             last_event_at: startedAt
           });

@@ -7,12 +7,17 @@ A runner record may define:
 - `id`,
 - `role`,
 - `agent`,
+- `codex_history`,
 - `model`,
 - `reasoning`,
 - `mode`,
 - `interval_seconds`,
 - `enabled`,
 - `command`.
+
+For Codex runners, `codex_history = "isolated"` keeps runner session files in
+Autoflow's app data instead of the user's default Codex chat history. Use
+`shared` only when a runner intentionally needs the default Codex history home.
 
 Modes:
 

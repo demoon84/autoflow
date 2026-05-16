@@ -10,6 +10,8 @@ type RunnerMeta = {
   agent?: string;
   projectRoot?: string;
   boardDirName?: string;
+  codexHome?: string;
+  codexHistory?: string;
   startedAt?: string;
 };
 
@@ -283,8 +285,9 @@ function encodeClaudeProjectPath(projectRoot: string): string {
   return path.resolve(projectRoot).replace(/[^A-Za-z0-9._-]/g, "-");
 }
 
-async function codexSessionDirectories(startedMs: number, nowMs: number): Promise<string[]> {
-  const root = path.join(safeHomeDir(), ".codex", "sessions");
+async function codexSessionDirectories(meta: RunnerMeta, startedMs: number, nowMs: number): Promise<string[]> {
+  const codexHome = String(meta.codexHome || "").trim() || path.join(safeHomeDir(), ".codex");
+  const root = path.join(codexHome, "sessions");
   return dateDirPartsBetween(startedMs, nowMs)
     .map((parts) => path.join(root, ...parts))
     .filter((dir) => fsSync.existsSync(dir));
@@ -313,7 +316,7 @@ async function geminiSessionDirectories(projectRoot: string): Promise<string[]> 
 
 async function candidateFilesForProvider(provider: string, meta: RunnerMeta, startedMs: number, nowMs: number): Promise<string[]> {
   if (provider === "codex") {
-    return collectCandidateFiles(await codexSessionDirectories(startedMs, nowMs), startedMs, false);
+    return collectCandidateFiles(await codexSessionDirectories(meta, startedMs, nowMs), startedMs, false);
   }
   if (provider === "claude") {
     return collectCandidateFiles(await claudeSessionDirectories(String(meta.projectRoot || "")), startedMs, false);

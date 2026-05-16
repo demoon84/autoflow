@@ -32,6 +32,7 @@ type AutoflowRunner = {
   id: string;
   role: string;
   agent: string;
+  codexHistory: string;
   model: string;
   reasoning: string;
   mode: string;
@@ -78,6 +79,7 @@ type AutoflowRunner = {
 type AutoflowRunnerConfigUpdate = Partial<
   Pick<AutoflowRunner, "agent" | "model" | "reasoning" | "mode" | "enabled" | "command"> & {
     interval_seconds: string;
+    codex_history: string;
   }
 >;
 

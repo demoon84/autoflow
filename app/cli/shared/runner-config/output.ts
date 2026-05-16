@@ -12,6 +12,7 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}id=${field("id")}`);
     out(`${prefix}role=${field("role")}`);
     out(`${prefix}agent=${field("agent", runnerStringFieldDefaults.agent)}`);
+    out(`${prefix}codex_history=${field("codex_history", runnerStringFieldDefaults.codex_history)}`);
     out(`${prefix}model=${field("model", runnerStringFieldDefaults.model)}`);
     out(`${prefix}reasoning=${field("reasoning", runnerStringFieldDefaults.reasoning)}`);
     out(`${prefix}mode=${field("mode", runnerStringFieldDefaults.mode)}`);

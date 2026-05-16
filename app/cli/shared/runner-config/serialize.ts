@@ -6,6 +6,7 @@ export const runnerConfigFieldOrder = [
     "id",
     "role",
     "agent",
+    "codex_history",
     "model",
     "reasoning",
     "mode",
@@ -17,6 +18,7 @@ export const runnerConfigFieldOrder = [
 
 export const runnerStringFieldDefaults: Record<string, string> = {
     agent: "codex",
+    codex_history: "isolated",
     model: "",
     reasoning: "",
     mode: "loop",
