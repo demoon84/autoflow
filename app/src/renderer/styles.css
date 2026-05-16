@@ -4719,6 +4719,18 @@ pre {
   gap: 8px;
 }
 
+.startup-rules-save-button:disabled {
+  border-color: var(--border);
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.startup-rules-save-button:disabled svg {
+  opacity: 0.7;
+}
+
 .workflow-pin-layer-split {
   display: flex;
   flex: 1 1 auto;
@@ -5765,6 +5777,7 @@ pre {
 
 .wiki-db-empty {
   align-self: center;
+  border: 0;
   justify-self: center;
 }
 

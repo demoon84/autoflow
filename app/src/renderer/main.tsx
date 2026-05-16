@@ -7078,7 +7078,13 @@ function StartupRulesEditorLayer({
             <div className="startup-rules-editor-footer">
               <span>{content?.modifiedAt ? `마지막 저장 ${formatDate(content.modifiedAt)}` : ""}</span>
               <div className="startup-rules-editor-actions">
-                <Button type="button" size="sm" disabled={!canSave} onClick={onSave}>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="startup-rules-save-button"
+                  disabled={!canSave}
+                  onClick={onSave}
+                >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
                   <span>저장</span>
                 </Button>
