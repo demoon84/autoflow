@@ -27,11 +27,13 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   changes, and at the end of every assistant turn. On the first startup turn,
   absorb the injected rules and read the required full-contract files before
   polling.
-- End-of-turn token accounting is mandatory for every LLM runner turn:
+- End-of-turn token accounting is captured by the Desktop host when provider
+  session metadata is available. If the CLI itself shows exact values, the
+  runner may also report them:
   `node autoflow tool runner-tokens report --runner <runner-id> --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`.
 - Token reporting must use exact input/output/cache values from the active CLI
-  status or result output. If exact token values are unavailable, report `0/0`
-  or skip the token report; never invent placeholder values such as `1`, `1000`,
-  or rough estimates.
+  status, result output, or host-captured session metadata. If exact values are
+  unavailable, skip the token report; never report `0/0`, placeholders such as
+  `1` or `1000`, or rough estimates.
 - Read the full role contract and project rules once at runner startup. Do not
   repeat those reads every turn unless this runner process is restarted.

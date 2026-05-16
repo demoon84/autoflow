@@ -141,7 +141,7 @@ function report(runner: string | undefined, opts: ReportOpts): never {
     process.exit(0);
   }
   if (inputSideTotal <= 0 && outputT > 0) {
-    warn("report ignored: output-only token report is incomplete; pass exact input/cache tokens or report 0/0");
+    warn("report ignored: output-only token report is incomplete; pass exact input/cache tokens or skip the report");
     process.exit(0);
   }
 

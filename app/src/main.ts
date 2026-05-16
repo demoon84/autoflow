@@ -6,6 +6,7 @@ const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { PtyRunnerManager } = require("./main/runner-pty-manager");
+const { createCliUsageLogBridge } = require("./main/cli-usage-log-bridge");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;
@@ -1436,11 +1437,11 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `  - Start of turn: \`${runnerWakeCmd} poll --runner ${runnerId}\``,
     `  - On stage change: \`${runnerStageCmd} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
     `  - End of turn: \`${runnerTokensCmd} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
-    `Token reporting is part of the runner contract; run it before ending every`,
-    `assistant turn, even when the board action was idle or no files changed.`,
-    `Use only exact tokens shown in your TUI status line. If exact input/output/cache`,
-    `values are unavailable, report --input 0 --output 0; never invent placeholders`,
-    `such as 1, 1000, or estimates. Format tick-id as`,
+    `Desktop captures exact CLI token usage automatically when the provider writes`,
+    `usage metadata. If exact input/output/cache values are visible to you, you may`,
+    `also run the end-of-turn report before finishing the turn. If exact values are`,
+    `not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
+    `Format tick-id as`,
     `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
   ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
 }
@@ -3240,12 +3241,12 @@ function ptyUsageReportsFromChunk(runnerId, chunk) {
   return reports;
 }
 
-function reportPtyUsageViaRunnerTool(runnerId, usage) {
+function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
   const meta = ptyRunnerMeta.get(runnerId);
   if (!meta || !meta.projectRoot || !meta.boardDirName) return;
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
   const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  const tickId = `${runnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
+  const tickId = options.tickId || `${runnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
   const args = [
     "tool", "runner-tokens",
     "report",
@@ -3255,7 +3256,7 @@ function reportPtyUsageViaRunnerTool(runnerId, usage) {
     "--output", String(usage.output || 0),
     "--cache-read", String(usage.cacheRead || 0),
     "--cache-create", String(usage.cacheCreate || 0),
-    "--note", `host_pty_stream:${usage.source || "usage"}`
+    "--note", options.note || `host_pty_stream:${usage.source || "usage"}`
   ];
   execFile(autoflowBin, args, {
     cwd: meta.projectRoot,
@@ -6332,6 +6333,12 @@ app.whenReady().then(() => {
   // writePrompt() remains main-process only for automation prompts.
   globalThis.__autoflowPtyManager = globalThis.__autoflowPtyManager || new PtyRunnerManager();
   const ptyManager = globalThis.__autoflowPtyManager;
+  const cliUsageLogBridge = createCliUsageLogBridge({
+    getRunnerMetaEntries: () => Array.from(ptyRunnerMeta.entries()),
+    reportUsage: reportPtyUsageViaRunnerTool,
+    logger: console
+  });
+  cliUsageLogBridge.start();
   const broadcastPty = (channel, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -6344,6 +6351,7 @@ app.whenReady().then(() => {
     for (const usage of ptyUsageReportsFromChunk(runnerId, data)) {
       reportPtyUsageViaRunnerTool(runnerId, usage);
     }
+    cliUsageLogBridge.scheduleRunner(runnerId);
   });
   ptyManager.on("status", (payload) => {
     const scopedPayload = ptyRunnerScopedPayload(payload.runnerId, payload);
@@ -6363,6 +6371,7 @@ app.whenReady().then(() => {
     if (payload.status === "stopped") {
       ptyRunnerMeta.delete(payload.runnerId);
       ptyTokenUsageParseState.delete(payload.runnerId);
+      cliUsageLogBridge.forgetRunner(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
         try { removePtySessionPid(payload.pid); } catch {}
@@ -6507,6 +6516,7 @@ app.whenReady().then(() => {
         const paste = agent === "claude" ? "bracketed" : "plain";
         const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
         console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
+        cliUsageLogBridge.scheduleRunner(runnerId, 4000);
       }, PROMPT_INJECT_DELAY_MS);
       // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
       // whether the TUI accepted it (text in input box / model response /
@@ -6641,6 +6651,7 @@ app.whenReady().then(() => {
           setTimeout(() => {
             const paste = agent === "claude" ? "bracketed" : "plain";
             ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+            cliUsageLogBridge.scheduleRunner(runnerId, 4000);
           }, promptDelay);
           console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
           await new Promise((r) => setTimeout(r, 800));
