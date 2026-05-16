@@ -66,6 +66,10 @@ function tokenLogPath(ctx: ProjectContext, runnerId: string): string {
     return path.join(ctx.boardRoot, "runners", "logs", `${runnerId}-tokens.log`);
 }
 
+function tokenEntrySort(left: TokenLogEntry, right: TokenLogEntry): number {
+    return left.atMs - right.atMs || left.tickId.localeCompare(right.tickId);
+}
+
 function isLegacySessionLogTokenEntry(entry: Record<string, unknown>): boolean {
     return String(entry.note || "").startsWith("host_session_log:");
 }
@@ -124,6 +128,109 @@ function readTrustedTokenLogEntries(ctx: ProjectContext, runnerId: string): Toke
     return {hasTokenLog: true, entries};
 }
 
+function sessionLogFiles(root: string, limit = 500): string[] {
+    const out: string[] = [];
+    const visit = (dir: string): void => {
+        if (out.length >= limit) return;
+        let entries: string[];
+        try {
+            entries = fs.readdirSync(dir);
+        } catch {
+            return;
+        }
+        for (const name of entries) {
+            if (out.length >= limit) return;
+            const filePath = path.join(dir, name);
+            let stat;
+            try {
+                stat = fs.statSync(filePath);
+            } catch {
+                continue;
+            }
+            if (stat.isDirectory()) {
+                visit(filePath);
+                continue;
+            }
+            if (stat.isFile() && name.endsWith(".jsonl")) {
+                out.push(filePath);
+            }
+        }
+    };
+    visit(root);
+    return out.sort();
+}
+
+function scopedCodexSessionTokenEntries(ctx: ProjectContext, runnerId: string, afterMs: number): TokenLogEntry[] {
+    const state = readRunnerState(ctx, runnerId);
+    const codexHome = state.codex_home || "";
+    if (!path.isAbsolute(codexHome)) return [];
+    const sessionsRoot = path.join(codexHome, "sessions");
+    if (!fs.existsSync(sessionsRoot)) return [];
+
+    const entries: TokenLogEntry[] = [];
+    const seen = new Set<string>();
+    for (const filePath of sessionLogFiles(sessionsRoot)) {
+        let raw = "";
+        try {
+            raw = fs.readFileSync(filePath, "utf8");
+        } catch {
+            continue;
+        }
+        const rel = path.relative(sessionsRoot, filePath);
+        let lineIndex = 0;
+        for (const line of raw.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            lineIndex += 1;
+            let parsed: Record<string, unknown>;
+            try {
+                parsed = JSON.parse(trimmed) as Record<string, unknown>;
+            } catch {
+                continue;
+            }
+            const payload = parsed.payload as Record<string, unknown> | undefined;
+            if (parsed.type !== "event_msg" || payload?.type !== "token_count") continue;
+            const info = payload.info as Record<string, unknown> | undefined;
+            const usage = info?.last_token_usage as Record<string, unknown> | undefined;
+            if (!usage) continue;
+
+            const atMs = Date.parse(String(parsed.timestamp || ""));
+            if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
+            const inputTotal = positiveIntegerValue(usage.input_tokens);
+            const cacheRead = positiveIntegerValue(usage.cached_input_tokens);
+            const output = positiveIntegerValue(usage.output_tokens);
+            const turnTotal = positiveIntegerValue(usage.total_tokens) || inputTotal + output;
+            if (turnTotal <= 0) continue;
+
+            const tickId = `codex-session:${rel}:${lineIndex}`;
+            const key = `${runnerId}:${tickId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            entries.push({
+                runner: runnerId,
+                tickId,
+                input: Math.max(0, inputTotal - cacheRead),
+                output,
+                cacheRead,
+                cacheCreate: 0,
+                turnTotal,
+                atMs,
+            });
+        }
+    }
+    return entries;
+}
+
+function runnerTokenEntries(ctx: ProjectContext, runnerId: string): TokenLogReadResult {
+    const tokenLog = readTrustedTokenLogEntries(ctx, runnerId);
+    const latestTrustedAtMs = tokenLog.entries.reduce((max, entry) => Math.max(max, entry.atMs), 0);
+    const sessionEntries = scopedCodexSessionTokenEntries(ctx, runnerId, latestTrustedAtMs);
+    return {
+        hasTokenLog: tokenLog.hasTokenLog || sessionEntries.length > 0,
+        entries: [...tokenLog.entries, ...sessionEntries].sort(tokenEntrySort),
+    };
+}
+
 function tokenStateCumulative(ctx: ProjectContext, runnerId: string): number {
     const state = readRunnerState(ctx, runnerId);
     if (state.token_source !== "llm_reported") return 0;
@@ -131,12 +238,9 @@ function tokenStateCumulative(ctx: ProjectContext, runnerId: string): number {
 }
 
 export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): RunnerTokenAccounting {
-    const tokenLog = readTrustedTokenLogEntries(ctx, runnerId);
+    const tokenLog = runnerTokenEntries(ctx, runnerId);
     if (tokenLog.hasTokenLog) {
-        const last = tokenLog.entries
-            .slice()
-            .sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId))
-            .at(-1);
+        const last = tokenLog.entries.at(-1);
         const source = last ? "llm_reported" : "none";
         return {
             cumulativeTokens: tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0),
@@ -199,7 +303,7 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
     for (const runner of runners) {
         const runnerId = runner.id || "";
         if (!runnerId) continue;
-        const tokenLog = readTrustedTokenLogEntries(ctx, runnerId);
+        const tokenLog = runnerTokenEntries(ctx, runnerId);
         const cumulativeFromTrustedLog = tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0);
         usage += tokenLog.hasTokenLog ? cumulativeFromTrustedLog : tokenStateCumulative(ctx, runnerId);
         reportCount += tokenLog.entries.length;

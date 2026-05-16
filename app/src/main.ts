@@ -4349,30 +4349,10 @@ async function readBoard({ projectRoot, boardDirName }) {
     parsedMetrics.autoflow_code_net_delta_count = String(codeTotals.net);
   } catch {}
   try {
-    const stateDir = path.join(boardRoot, "runners", "state");
     let runnerTokenTotal = 0;
     for (const runner of (runnersResult?.runners || [])) {
       if (!runner?.id) continue;
-      const trustedLog = await readTrustedRunnerTokenLogTotal(boardRoot, runner.id);
-      if (trustedLog.hasTokenLog) {
-        runnerTokenTotal += trustedLog.total;
-        continue;
-      }
-      let runnerTotal = 0;
-      try {
-        const raw = await fs.readFile(path.join(stateDir, `${runner.id}.state`), "utf8");
-        let src = "", cum = 0;
-        for (const line of raw.split(/\r?\n/)) {
-          const eq = line.indexOf("=");
-          if (eq <= 0) continue;
-          if (line.slice(0, eq) === "token_source") src = line.slice(eq + 1).trim();
-          else if (line.slice(0, eq) === "cumulative_tokens") cum = Number.parseInt(line.slice(eq + 1), 10) || 0;
-        }
-        if (isRunnerTokenSourceAuthoritative(src) && cum > 0) {
-          runnerTotal = Math.max(runnerTotal, cum);
-        }
-      } catch {}
-      runnerTokenTotal += runnerTotal;
+      runnerTokenTotal += positiveIntegerValue(runner.cumulativeTokens);
     }
     if (runnerTokenTotal > 0) {
       parsedMetrics.autoflow_token_usage_count = String(runnerTokenTotal);

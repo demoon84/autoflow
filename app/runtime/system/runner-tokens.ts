@@ -21,10 +21,11 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 
 function help(): void {
-  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show> [args]
+  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show|sync-codex-sessions> [args]
   report  --runner <id> [--tick-id <id>] --input <N> --output <N>
           [--cache-read <N>] [--cache-create <N>] [--note <text>]
   show    --runner <id>
+  sync-codex-sessions --runner <id>
 `);
 }
 
@@ -238,6 +239,111 @@ interface ReportOpts {
   note?: string;
 }
 
+type TokenEntry = {
+  tickId: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+  turnTotal: number;
+  at: string;
+  atMs: number;
+};
+
+function sessionLogFiles(root: string, limit = 500): string[] {
+  const out: string[] = [];
+  const visit = (dir: string): void => {
+    if (out.length >= limit) return;
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (out.length >= limit) return;
+      const filePath = path.join(dir, name);
+      let stat;
+      try {
+        stat = fs.statSync(filePath);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        visit(filePath);
+        continue;
+      }
+      if (stat.isFile() && name.endsWith(".jsonl")) {
+        out.push(filePath);
+      }
+    }
+  };
+  visit(root);
+  return out.sort();
+}
+
+function scopedCodexSessionTokenEntries(
+  runner: string,
+  state: Map<string, string>,
+  knownTicks: Set<string>,
+  afterMs: number,
+): TokenEntry[] {
+  const codexHome = state.get("codex_home") || "";
+  if (!path.isAbsolute(codexHome)) return [];
+  const sessionsRoot = path.join(codexHome, "sessions");
+  if (!fs.existsSync(sessionsRoot)) return [];
+
+  const entries: TokenEntry[] = [];
+  const seen = new Set<string>();
+  for (const filePath of sessionLogFiles(sessionsRoot)) {
+    let raw = "";
+    try {
+      raw = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+    const rel = path.relative(sessionsRoot, filePath);
+    let lineIndex = 0;
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      lineIndex += 1;
+      let parsed: any;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      if (parsed?.type !== "event_msg" || parsed?.payload?.type !== "token_count") continue;
+      const usage = parsed?.payload?.info?.last_token_usage;
+      if (!usage || typeof usage !== "object") continue;
+      const at = String(parsed?.timestamp || "");
+      const atMs = Date.parse(at);
+      if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
+      const inputTotal = parseInt0(usage.input_tokens);
+      const cacheRead = parseInt0(usage.cached_input_tokens);
+      const output = parseInt0(usage.output_tokens);
+      const turnTotal = parseInt0(usage.total_tokens) || inputTotal + output;
+      if (turnTotal <= 0) continue;
+
+      const tickId = `codex-session:${rel}:${lineIndex}`;
+      if (knownTicks.has(tickId) || seen.has(tickId)) continue;
+      seen.add(tickId);
+      entries.push({
+        tickId,
+        input: Math.max(0, inputTotal - cacheRead),
+        output,
+        cacheRead,
+        cacheCreate: 0,
+        turnTotal,
+        at,
+        atMs,
+      });
+    }
+  }
+  return entries.sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
+}
+
 function report(runner: string | undefined, opts: ReportOpts): never {
   if (!runner) { warn("report requires --runner"); process.exit(0); }
   const inputT = parseInt0(opts.input);
@@ -313,6 +419,77 @@ function report(runner: string | undefined, opts: ReportOpts): never {
   process.exit(0);
 }
 
+function syncCodexSessions(runner: string | undefined): never {
+  if (!runner) { warn("sync-codex-sessions requires --runner"); process.exit(0); }
+  ensureDirs();
+  const result = withStateLock(runner, () => {
+    const state = readState(runner);
+    const map = parseStateLines(state);
+    if (!map.has("id")) map.set("id", runner);
+    if (!map.has("status")) map.set("status", "idle");
+    if (!map.has("active_stage")) map.set("active_stage", "idle");
+    for (const [key, value] of tokenDefaults) {
+      if (!map.has(key)) map.set(key, value);
+    }
+
+    const trustedLog = trustedLogCumulative(runner);
+    const afterMs = trustedLog.last?.atMs || 0;
+    const entries = scopedCodexSessionTokenEntries(runner, map, trustedLog.ticks, afterMs);
+    let cumulative = trustedLog.hasLog
+      ? trustedLog.total
+      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0);
+    if (entries.length === 0) {
+      return { imported: 0, cumulative, last: trustedLog.last };
+    }
+
+    let payload = "";
+    for (const entry of entries) {
+      cumulative += entry.turnTotal;
+      payload += JSON.stringify({
+        runner,
+        tickId: entry.tickId,
+        input: entry.input,
+        output: entry.output,
+        cacheRead: entry.cacheRead,
+        cacheCreate: entry.cacheCreate,
+        turnTotal: entry.turnTotal,
+        cumulative,
+        note: "codex_session_log:scoped_runner_home",
+        at: entry.at,
+      }) + "\n";
+    }
+    fs.appendFileSync(tokenLogPath(runner), payload, "utf8");
+
+    const last = entries[entries.length - 1];
+    map.set("last_turn_tokens", String(last.turnTotal));
+    map.set("last_turn_input_tokens", String(last.input));
+    map.set("last_turn_output_tokens", String(last.output));
+    map.set("last_turn_cache_read_tokens", String(last.cacheRead));
+    map.set("last_turn_cache_create_tokens", String(last.cacheCreate));
+    map.set("last_turn_at", new Date(last.atMs).toISOString().replace(/\.\d+Z$/, "Z"));
+    map.set("last_turn_tick_id", last.tickId);
+    map.set("cumulative_tokens", String(cumulative));
+    map.set("token_source", "llm_reported");
+    map.set("last_token_usage_source", "llm_reported");
+    map.set("updated_at", NOW());
+    writeState(runner, serializeStateLines(map));
+    return { imported: entries.length, cumulative, last };
+  });
+
+  const imported = result?.imported || 0;
+  const cumulative = result?.cumulative || 0;
+  process.stdout.write([
+    "status=ok",
+    `runner=${runner}`,
+    `imported_count=${imported}`,
+    `cumulative_tokens=${cumulative}`,
+    `last_turn_tokens=${result?.last?.turnTotal || 0}`,
+    `last_turn_at=${result?.last?.at || ""}`,
+    "",
+  ].join("\n"));
+  process.exit(0);
+}
+
 function show(runner: string | undefined): never {
   if (!runner) { warn("show requires --runner"); process.exit(0); }
   const state = readState(runner);
@@ -353,6 +530,9 @@ switch (SUBCMD) {
     break;
   case "show":
     show(arg("--runner"));
+    break;
+  case "sync-codex-sessions":
+    syncCodexSessions(arg("--runner"));
     break;
   default:
     help();
