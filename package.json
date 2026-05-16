@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Autoflow desktop app and CLI for local AI work boards.",
-  "main": "app/dist/main/main.cjs",
+  "main": "app/bootstrap/main.cjs",
   "type": "commonjs",
   "scripts": {
     "postinstall": "node app/scripts/fix-node-pty-permissions.mjs",

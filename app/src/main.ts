@@ -1792,7 +1792,7 @@ function createWindow() {
     trafficLightPosition: { x: 16, y: 16 },
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
+      preload: path.join(desktopRoot, "bootstrap", "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       devTools: process.env.AUTOFLOW_DESKTOP_DEVTOOLS === "1"
@@ -1825,7 +1825,7 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+    win.loadFile(path.join(desktopRoot, "dist", "renderer", "index.html"));
   }
 }
 

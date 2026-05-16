@@ -97,6 +97,7 @@ target-project/
 autoflow/
   app/
     bin/autoflow
+    bootstrap/
     cli/
       autoflow.ts
       runners/
@@ -129,12 +130,13 @@ autoflow/
 실행되는 모든 코드의 소유 영역이다.
 
 - `app/bin/autoflow`: 사용자 진입점
+- `app/bootstrap/`: Electron이 직접 읽는 추적된 main/preload bootstrap
 - `app/cli/`: CLI command router와 command 구현
 - `app/runtime/`: 러너 실행 코드 원본
 - `app/src/`: Electron main/preload/renderer source
 - `app/scripts/`: 개발, 빌드, 검증 보조 스크립트
 
-Electron main/preload source는 TypeScript이고, 빌드 시 `app/dist/main/*.cjs`로 생성된다. renderer는 Vite가 `app/dist/renderer/`로 빌드한다.
+Electron main/preload source는 TypeScript이고, Electron의 `main` 진입점은 추적 파일인 `app/bootstrap/main.cjs`다. 이 bootstrap이 `app/src/main.ts`를 로드하므로 소스 체크아웃 상태에서도 앱 진입점이 항상 존재한다. 빌드 검증은 `app/dist/main/*.cjs`를 생성하고, renderer는 Vite가 `app/dist/renderer/`로 빌드한다.
 
 ### `install/`
 
