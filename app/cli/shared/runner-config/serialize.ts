@@ -28,8 +28,13 @@ export const runnerStringFieldDefaults: Record<string, string> = {
     command: "",
 };
 
+function isScheduledLoopField(key: string): boolean {
+    return key === "mode" || key === "interval_seconds";
+}
+
 export function runnerConfigFingerprint(runner: Record<string, string>): string {
     const body = runnerConfigFieldOrder
+        .filter((key) => !isScheduledLoopField(key))
         .map((key) => `${key}=${runner[key] ?? ""}`)
         .join("\n");
     return crypto.createHash("sha256").update(body).digest("hex").slice(0, 16);
@@ -55,6 +60,9 @@ export function serializeRunnerConfig(runners: Array<Record<string, string>>): s
         lines.push("[[runners]]");
         const known = new Set(runnerConfigFieldOrder);
         for (const key of runnerConfigFieldOrder) {
+            if (isScheduledLoopField(key)) {
+                continue;
+            }
             if (runner[key] === undefined && runnerStringFieldDefaults[key] === undefined) {
                 continue;
             }

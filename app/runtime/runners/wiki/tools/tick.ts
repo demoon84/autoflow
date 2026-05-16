@@ -125,6 +125,64 @@ function recentSources(maxItems: number): shared.JsonObject[] {
     .slice(0, maxItems) as shared.JsonObject[];
 }
 
+function isFocusedWikiSourcePath(value: unknown): boolean {
+  return /^wiki\/(answers|architecture|decisions|features|learnings)\//.test(String(value || ""));
+}
+
+function mergeSourcesByPath(items: shared.JsonObject[]): shared.JsonObject[] {
+  const seen = new Set<string>();
+  const out: shared.JsonObject[] = [];
+  for (const item of items) {
+    const itemPath = String(item.path || "");
+    if (!itemPath || seen.has(itemPath)) continue;
+    seen.add(itemPath);
+    out.push(item);
+  }
+  return out;
+}
+
+function focusedWikiFiles(): string[] {
+  return sourceFiles()
+    .filter((file) => isFocusedWikiSourcePath(boardRel(file)))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function focusedWikiFingerprint(): string {
+  const hash = shared.crypto.createHash("sha256");
+  for (const file of focusedWikiFiles()) {
+    try {
+      const text = fs.readFileSync(file, "utf8");
+      const relPath = boardRel(file);
+      const contentSha = shared.crypto.createHash("sha256").update(text).digest("hex");
+      hash.update(relPath).update("\0").update(contentSha).update("\0");
+    } catch {}
+  }
+  return hash.digest("hex");
+}
+
+function focusedReviewStatePath(): string {
+  return path.join(BOARD_ROOT, "runners", "state", "wiki-focused-review.json");
+}
+
+function readFocusedReviewFingerprint(): string {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(focusedReviewStatePath(), "utf8"));
+    return typeof parsed?.focused_wiki_fingerprint === "string" ? parsed.focused_wiki_fingerprint : "";
+  } catch {
+    return "";
+  }
+}
+
+function writeFocusedReviewFingerprint(fingerprint: string): void {
+  const filePath = focusedReviewStatePath();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const payload = {
+    focused_wiki_fingerprint: fingerprint,
+    reviewed_at: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+  };
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
 function compactRecentSources(items: shared.JsonObject[]): shared.JsonObject[] {
   return items.map((item) => ({
     path: item.path,
@@ -329,12 +387,22 @@ export function cmdWikiTick(): void {
   const indexStaleAfter = indexableAfter.count > 0 && (!indexedAfter || indexedAfter !== indexableAfter.hash);
   const failedSteps = steps.filter((step) => step.exit_code !== 0);
   const recent = recentSources(maxItems);
-  const recentDone = recent.filter((item) => String(item.path || "").startsWith("tickets/done/"));
+  const recentForFollowup = recentSources(Math.max(maxItems, 12));
+  const focusedRecent = recentForFollowup
+    .filter((item) => isFocusedWikiSourcePath(item.path))
+    .slice(0, 3);
+  const focusedFingerprint = focusedWikiFingerprint();
+  if (skipTelemetry && focusedFingerprint) {
+    writeFocusedReviewFingerprint(focusedFingerprint);
+  }
+  const focusedReviewFingerprint = readFocusedReviewFingerprint();
+  const recentDone = recentForFollowup.filter((item) => String(item.path || "").startsWith("tickets/done/"));
   const focusedChanged = changedFiles.filter((item) => /^\.autoflow\/wiki\/(answers|architecture|decisions|features|learnings)\//.test(String(item.path || "")));
-  const aiFollowupRecommended = (baselineChanged && recentDone.length > 0) || focusedChanged.length > 0;
+  const focusedNeedsReview = !skipTelemetry && focusedRecent.length > 0 && focusedFingerprint !== focusedReviewFingerprint;
+  const aiFollowupRecommended = (baselineChanged && recentDone.length > 0) || focusedChanged.length > 0 || focusedNeedsReview;
   const indexStep = steps.find((step) => step.name === "index-refresh");
   const backgroundIndexStep = indexStep?.parsed_status === "started_background" ? indexStep : undefined;
-  const followupSources = compactRecentSources(recent.slice(0, maxItems));
+  const followupSources = compactRecentSources(mergeSourcesByPath([...focusedRecent, ...recentForFollowup]));
 
   const output: shared.JsonObject = {
     tool: "wiki.tick",
@@ -353,7 +421,9 @@ export function cmdWikiTick(): void {
     ai_followup_recommended: aiFollowupRecommended,
     ai_followup_reason: aiFollowupRecommended && recentDone.length > 0
       ? "recent_done_sources_present"
-      : (aiFollowupRecommended && focusedChanged.length > 0 ? "focused_wiki_pages_changed" : ""),
+      : (aiFollowupRecommended && focusedChanged.length > 0
+        ? "focused_wiki_pages_changed"
+        : (aiFollowupRecommended && focusedNeedsReview ? "focused_wiki_review_pending" : "")),
     ai_followup_scope: {
       inspect_only_recent_sources: followupSources,
       avoid_routine_tools_already_run: true,

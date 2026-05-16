@@ -896,15 +896,35 @@ function normalizeRunnerSelections(
 }
 
 function runnerDraftFromRunner(runner: AutoflowRunner): RunnerDraft {
+  const mode = runnerDefaultMode(runner);
+  const intervalSeconds = runnerDefaultIntervalSeconds(runner);
   return {
     agent: runner.agent || "codex",
     model: runner.model || "",
     reasoning: runner.reasoning || "",
-    mode: runner.mode || "loop",
-    intervalSeconds: runner.intervalSeconds || "60",
+    mode: runner.mode || mode,
+    intervalSeconds: runner.intervalSeconds || intervalSeconds,
     enabled: runner.enabled || "true",
     command: runner.command || ""
   };
+}
+
+function isWikiRunner(runner: Pick<AutoflowRunner, "id" | "role">) {
+  const id = (runner.id || "").toLowerCase();
+  const role = (runner.role || "").toLowerCase();
+  return id === "wiki" || id.startsWith("wiki-") || role === "wiki" || role === "wiki-maintainer";
+}
+
+function runnerUsesScheduledLoop(runner: Pick<AutoflowRunner, "id" | "role">) {
+  return false;
+}
+
+function runnerDefaultMode(runner: Pick<AutoflowRunner, "id" | "role">) {
+  return runnerUsesScheduledLoop(runner) ? "loop" : "";
+}
+
+function runnerDefaultIntervalSeconds(runner: Pick<AutoflowRunner, "id" | "role">) {
+  return runnerUsesScheduledLoop(runner) ? "60" : "";
 }
 
 function runnerDraftsEqual(left?: RunnerDraft, right?: RunnerDraft) {
@@ -2247,14 +2267,13 @@ function App() {
             command: hasUnsavedConfigEdit ? draft.command : runner.command || ""
           };
           const needsLoopNormalization =
-            (runner.mode || "loop") !== "loop" ||
+            (runner.mode || "") !== "" ||
+            (runner.intervalSeconds || "") !== "" ||
             (runner.enabled || "true") !== "true" ||
             hasUnsavedConfigEdit;
 
           if (needsLoopNormalization) {
             const config: AutoflowRunnerConfigUpdate = {
-              mode: "loop",
-              interval_seconds: "60",
               enabled: "true"
             };
             if (hasUnsavedConfigEdit) {
@@ -2289,7 +2308,8 @@ function App() {
             model: effectiveRunnerConfig.model || "",
             reasoning: effectiveRunnerConfig.reasoning || "",
             projectRoot: options.projectRoot,
-            boardDirName: options.boardDirName
+            boardDirName: options.boardDirName,
+            freshSession: isWikiRunner(runner)
           });
           result = { ok: !!spawnRes?.ok, stderr: spawnRes?.error || "", stdout: spawnRes?.stdout || "" };
         } else if (action === "stop") {
@@ -2608,20 +2628,21 @@ function App() {
         agent: runner.agent || "codex",
         model: runner.model || "",
         reasoning: runner.reasoning || "",
-        mode: runner.mode || "loop",
-        intervalSeconds: runner.intervalSeconds || "60",
+        mode: runner.mode || runnerDefaultMode(runner),
+        intervalSeconds: runner.intervalSeconds || runnerDefaultIntervalSeconds(runner),
         enabled: runner.enabled || "true",
         command: runner.command || ""
       };
       const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
       const previousRunnerSnapshot = { ...runner };
       const previousSavedDraft = runnerSavedDrafts[runner.id];
+      const scheduledLoop = runnerUsesScheduledLoop(runner);
       const savedDraft: RunnerDraft = {
         agent: draft.agent,
         model: normalized.model,
         reasoning: normalized.reasoning,
-        mode: "loop",
-        intervalSeconds: "60",
+        mode: scheduledLoop ? "loop" : "",
+        intervalSeconds: scheduledLoop ? "60" : "",
         enabled: "true",
         command: draft.command
       };
@@ -2632,8 +2653,8 @@ function App() {
             agent: previousRunnerSnapshot.agent || "codex",
             model: previousRunnerSnapshot.model || "",
             reasoning: previousRunnerSnapshot.reasoning || "",
-            mode: previousRunnerSnapshot.mode || "loop",
-            intervalSeconds: previousRunnerSnapshot.intervalSeconds || "60",
+            mode: previousRunnerSnapshot.mode || runnerDefaultMode(previousRunnerSnapshot),
+            intervalSeconds: previousRunnerSnapshot.intervalSeconds || runnerDefaultIntervalSeconds(previousRunnerSnapshot),
             enabled: previousRunnerSnapshot.enabled || "true",
             command: previousRunnerSnapshot.command || ""
           }
@@ -2695,18 +2716,17 @@ function App() {
       setRunnerAction(runner.id, restartAfterSave ? "config_applying_restart" : "config_applying");
 
       try {
+        const config: AutoflowRunnerConfigUpdate = {
+          agent: draft.agent,
+          model: normalized.model,
+          reasoning: normalized.reasoning,
+          enabled: "true",
+          command: draft.command
+        };
         const result = await window.autoflow.configureRunner({
           runnerId: runner.id,
           ...options,
-          config: {
-            agent: draft.agent,
-            model: normalized.model,
-            reasoning: normalized.reasoning,
-            mode: "loop",
-            interval_seconds: "60",
-            enabled: "true",
-            command: draft.command
-          }
+          config
         });
         if (!result.ok) {
           rollbackOptimistic();
@@ -3709,12 +3729,15 @@ function RunnerConfigControls({
   const agentOptions = runnerAgentOptions.includes(draft.agent as (typeof runnerAgentOptions)[number])
     ? runnerAgentOptions
     : [draft.agent, ...runnerAgentOptions];
+  const scheduledLoop = runnerUsesScheduledLoop(runner);
+  const expectedMode = scheduledLoop ? "loop" : "";
+  const expectedIntervalSeconds = scheduledLoop ? "60" : "";
   const baseline = savedDraft || {
     agent: runner.agent || "codex",
     model: runner.model || "",
     reasoning: runner.reasoning || "",
-    mode: runner.mode || "loop",
-    intervalSeconds: runner.intervalSeconds || "60",
+    mode: runner.mode || expectedMode,
+    intervalSeconds: runner.intervalSeconds || expectedIntervalSeconds,
     enabled: runner.enabled || "true",
     command: runner.command || ""
   };
@@ -3722,8 +3745,8 @@ function RunnerConfigControls({
     draft.agent !== baseline.agent ||
     normalized.model !== baseline.model ||
     normalized.reasoning !== baseline.reasoning ||
-    baseline.mode !== "loop" ||
-    baseline.intervalSeconds !== "60" ||
+    baseline.mode !== expectedMode ||
+    baseline.intervalSeconds !== expectedIntervalSeconds ||
     baseline.enabled !== "true" ||
     draft.command !== baseline.command;
   // actionKey holds the action label for THIS runner only ("" when idle).
@@ -3894,24 +3917,18 @@ function RunnerConsole({
               runners.map((runner) => {
             const enabled = runnerIsEnabled(runner.enabled);
             const status = runner.stateStatus || "idle";
-            const mode = "loop";
-            const intervalLabel = runner.intervalSeconds || runner.intervalEffectiveSeconds || "60";
+            const scheduledLoop = runnerUsesScheduledLoop(runner);
+            const mode = scheduledLoop ? (runner.mode || "loop") : "";
+            const intervalLabel = scheduledLoop ? (runner.intervalSeconds || runner.intervalEffectiveSeconds || "60") : "";
+            const runnerCadenceLabel = scheduledLoop ? `반복 실행 / ${intervalLabel}s` : "수동 실행";
             // actionKey holds the action label for THIS runner only ("" when idle).
             const isWorking = Boolean(actionKey);
             const transitionLabel = runnerTransitionLabel(actionKey);
             const canForceStop = actionKey === "stopping_pending";
-            const canStart = mode === "loop";
+            const canStart = scheduledLoop ? mode === "loop" : true;
             const canStop = status === "running" || Boolean(runner.pid);
             const canEditConfig = status !== "running";
-            const draft = drafts[runner.id] || {
-              agent: runner.agent || "codex",
-              model: runner.model || "",
-              reasoning: runner.reasoning || "",
-              mode,
-              intervalSeconds: runner.intervalSeconds || "60",
-              enabled: runner.enabled || "true",
-              command: runner.command || ""
-            };
+            const draft = drafts[runner.id] || runnerDraftFromRunner(runner);
             const runnerEventRaw = runner.activeItem || runner.lastResult || "이벤트 없음";
             const runnerEvent = isMachineRunnerLog(runnerEventRaw) ? "이벤트 없음" : runnerEventRaw;
             const selected = selectedRunnerId === runner.id;
@@ -3932,7 +3949,7 @@ function RunnerConsole({
                       <strong>{displayWorkflowRunnerId(runner.id, runners)}</strong>
                     </div>
                     <span>
-                      {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - 반복 실행 / {intervalLabel}s
+                      {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - {runnerCadenceLabel}
                     </span>
                   </div>
                   <div className="runner-actions">
@@ -8218,12 +8235,14 @@ function RunnerResourceUsage({ running, pid }: { running: boolean; pid: string }
 function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const activity = useRunnerActivity(runner);
   const animatedTokens = useCountUp(activity.tokens);
+  const cacheReadTokens = typeof runner.cumulativeCacheReadTokens === "number" ? runner.cumulativeCacheReadTokens : 0;
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
-  const footerTitle = pidLabel
-    ? `누적 토큰 ${activity.tokens.toLocaleString()} · ${pidLabel}`
-    : `누적 토큰 ${activity.tokens.toLocaleString()}`;
+  const tokenTitle = cacheReadTokens > 0
+    ? `신규 토큰 ${activity.tokens.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
+    : `신규 토큰 ${activity.tokens.toLocaleString()}`;
+  const footerTitle = pidLabel ? `${tokenTitle} · ${pidLabel}` : tokenTitle;
   return (
     <footer
       className="ai-conversation-panel-activity"
@@ -8231,7 +8250,8 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
       aria-live="polite"
       title={footerTitle}
     >
-      <span>{animatedTokens.toLocaleString()} tokens</span>
+      <span>{animatedTokens.toLocaleString()} new tokens</span>
+      {cacheReadTokens > 0 ? <span>cache read {cacheReadTokens.toLocaleString()}</span> : null}
       {isRunning ? <RunnerResourceUsage running={isRunning} pid={runner.pid} /> : null}
       {pidLabel ? <span className="ai-conversation-panel-activity-pid">{pidLabel}</span> : null}
     </footer>
@@ -8698,23 +8718,16 @@ function AiProgressRow({
   // previewText 가 먼저 쓰이면 writtenLengthRef 가 오염돼 typewriter 가 깨진다.
   const conversationText = isRunnerActive ? liveStdoutText : "";
   const statusLower = status.toLowerCase();
-  const mode = "loop";
+  const scheduledLoop = runnerUsesScheduledLoop(runner);
+  const mode = scheduledLoop ? (runner.mode || "loop") : "";
   // actionKey holds the action label for THIS runner only ("" when idle).
   const isWorking = Boolean(actionKey);
   const transitionLabel = runnerTransitionLabel(actionKey);
   const canForceStop = actionKey === "stopping_pending";
-  const canStart = mode === "loop";
+  const canStart = scheduledLoop ? mode === "loop" : true;
   const canStop = statusLower === "running" || Boolean(runner.pid);
   const canEditConfig = statusLower !== "running";
-  const runnerDraft = draft || {
-    agent: runner.agent || "codex",
-    model: runner.model || "",
-    reasoning: runner.reasoning || "",
-    mode,
-    intervalSeconds: runner.intervalSeconds || "60",
-    enabled: runner.enabled || "true",
-    command: runner.command || ""
-  };
+  const runnerDraft = draft || runnerDraftFromRunner(runner);
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
   const startupRuleRole = startupRuleRoleForRunner(runner);

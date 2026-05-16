@@ -74,6 +74,16 @@ type AutoflowRunner = {
   statePath: string;
   logPath: string;
   tokenUsage?: number;
+  cumulativeTokens?: number;
+  cumulativeTotalTokens?: number;
+  cumulativeCacheReadTokens?: number;
+  cumulativeCacheCreateTokens?: number;
+  lastTurnTokens?: number;
+  lastTurnTotalTokens?: number;
+  lastTurnInputTokens?: number;
+  lastTurnOutputTokens?: number;
+  lastTurnCacheReadTokens?: number;
+  lastTurnCacheCreateTokens?: number;
 };
 
 type AutoflowRunnerConfigUpdate = Partial<
@@ -365,6 +375,7 @@ interface Window {
       boardDirName: string;
       cols?: number;
       rows?: number;
+      freshSession?: boolean;
     }) => Promise<{ ok: boolean; runnerId?: string; pid?: number; status?: string; error?: string }>;
     runnerPtyStop: (options: {
       runnerId: string;

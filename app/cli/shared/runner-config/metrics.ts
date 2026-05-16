@@ -46,7 +46,11 @@ type TokenLogReadResult = {
 
 export type RunnerTokenAccounting = {
     cumulativeTokens: number;
+    cumulativeTotalTokens: number;
+    cumulativeCacheReadTokens: number;
+    cumulativeCacheCreateTokens: number;
     lastTurnTokens: number;
+    lastTurnTotalTokens: number;
     lastTurnInputTokens: number;
     lastTurnOutputTokens: number;
     lastTurnCacheReadTokens: number;
@@ -60,6 +64,10 @@ export type RunnerTokenAccounting = {
 function positiveIntegerValue(value: unknown): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function visibleTokenUsage(entry: TokenLogEntry): number {
+    return Math.max(0, entry.turnTotal - entry.cacheRead);
 }
 
 function tokenLogPath(ctx: ProjectContext, runnerId: string): string {
@@ -132,123 +140,12 @@ function readTrustedTokenLogEntries(ctx: ProjectContext, runnerId: string): Toke
     return {hasTokenLog: true, entries};
 }
 
-function sessionLogFiles(root: string, limit = 500): string[] {
-    const out: string[] = [];
-    const visit = (dir: string): void => {
-        if (out.length >= limit) return;
-        let entries: string[];
-        try {
-            entries = fs.readdirSync(dir);
-        } catch {
-            return;
-        }
-        for (const name of entries) {
-            if (out.length >= limit) return;
-            const filePath = path.join(dir, name);
-            let stat;
-            try {
-                stat = fs.statSync(filePath);
-            } catch {
-                continue;
-            }
-            if (stat.isDirectory()) {
-                visit(filePath);
-                continue;
-            }
-            if (stat.isFile() && name.endsWith(".jsonl")) {
-                out.push(filePath);
-            }
-        }
-    };
-    visit(root);
-    return out.sort();
-}
-
-function scopedCodexSessionTokenEntries(ctx: ProjectContext, runnerId: string, afterMs: number): TokenLogEntry[] {
-    const state = readRunnerState(ctx, runnerId);
-    const codexHome = state.codex_home || "";
-    if (!path.isAbsolute(codexHome)) return [];
-    const sessionsRoot = path.join(codexHome, "sessions");
-    if (!fs.existsSync(sessionsRoot)) return [];
-
-    const entries: TokenLogEntry[] = [];
-    const seen = new Set<string>();
-    for (const filePath of sessionLogFiles(sessionsRoot)) {
-        let raw = "";
-        try {
-            raw = fs.readFileSync(filePath, "utf8");
-        } catch {
-            continue;
-        }
-        const rel = path.relative(sessionsRoot, filePath);
-        let lineIndex = 0;
-        let lastSessionTotal = 0;
-        for (const line of raw.split(/\r?\n/)) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-            lineIndex += 1;
-            let parsed: Record<string, unknown>;
-            try {
-                parsed = JSON.parse(trimmed) as Record<string, unknown>;
-            } catch {
-                continue;
-            }
-            const payload = parsed.payload as Record<string, unknown> | undefined;
-            if (parsed.type !== "event_msg" || payload?.type !== "token_count") continue;
-            const info = payload.info as Record<string, unknown> | undefined;
-            const usage = info?.last_token_usage as Record<string, unknown> | undefined;
-            if (!usage) continue;
-
-            const atMs = Date.parse(String(parsed.timestamp || ""));
-            if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
-            const inputTotal = positiveIntegerValue(usage.input_tokens);
-            const cacheRead = positiveIntegerValue(usage.cached_input_tokens);
-            const output = positiveIntegerValue(usage.output_tokens);
-            const reportedTurnTotal = positiveIntegerValue(usage.total_tokens) || inputTotal + output;
-            const sessionUsage = info?.total_token_usage as Record<string, unknown> | undefined;
-            const sessionTotal = sessionUsage ? positiveIntegerValue(sessionUsage.total_tokens) : 0;
-            if (sessionTotal > 0) {
-                if (sessionTotal <= lastSessionTotal) continue;
-                lastSessionTotal = sessionTotal;
-            }
-            const turnTotal = reportedTurnTotal;
-            if (turnTotal <= 0) continue;
-
-            const tickId = sessionTotal > 0
-                ? `codex-session:${rel}:total:${sessionTotal}`
-                : `codex-session:${rel}:${lineIndex}`;
-            const key = `${runnerId}:${tickId}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            entries.push({
-                runner: runnerId,
-                tickId,
-                input: Math.max(0, inputTotal - cacheRead),
-                output,
-                cacheRead,
-                cacheCreate: 0,
-                turnTotal,
-                atMs,
-            });
-        }
-    }
-    return entries;
-}
-
 function runnerTokenEntries(ctx: ProjectContext, runnerId: string): TokenLogReadResult {
     const tokenLog = readTrustedTokenLogEntries(ctx, runnerId);
-    const latestTrustedAtMs = tokenLog.entries.reduce((max, entry) => Math.max(max, entry.atMs), 0);
-    const sessionEntries = scopedCodexSessionTokenEntries(ctx, runnerId, latestTrustedAtMs);
     return {
-        hasTokenLog: tokenLog.hasTokenLog || sessionEntries.length > 0,
-        entries: [...tokenLog.entries, ...sessionEntries].sort(tokenEntrySort),
+        hasTokenLog: tokenLog.hasTokenLog,
+        entries: tokenLog.entries.sort(tokenEntrySort),
     };
-}
-
-function tokenStateCumulative(ctx: ProjectContext, runnerId: string): number {
-    const state = readRunnerState(ctx, runnerId);
-    if (state.token_source !== "llm_reported") return 0;
-    return intState(state, "cumulative_tokens");
 }
 
 export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): RunnerTokenAccounting {
@@ -256,9 +153,16 @@ export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): Ru
     if (tokenLog.hasTokenLog) {
         const last = tokenLog.entries.at(-1);
         const source = last ? "llm_reported" : "none";
+        const cumulativeTotalTokens = tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0);
+        const cumulativeCacheReadTokens = tokenLog.entries.reduce((total, entry) => total + entry.cacheRead, 0);
+        const cumulativeCacheCreateTokens = tokenLog.entries.reduce((total, entry) => total + entry.cacheCreate, 0);
         return {
-            cumulativeTokens: tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0),
-            lastTurnTokens: last?.turnTotal || 0,
+            cumulativeTokens: tokenLog.entries.reduce((total, entry) => total + visibleTokenUsage(entry), 0),
+            cumulativeTotalTokens,
+            cumulativeCacheReadTokens,
+            cumulativeCacheCreateTokens,
+            lastTurnTokens: last ? visibleTokenUsage(last) : 0,
+            lastTurnTotalTokens: last?.turnTotal || 0,
             lastTurnInputTokens: last?.input || 0,
             lastTurnOutputTokens: last?.output || 0,
             lastTurnCacheReadTokens: last?.cacheRead || 0,
@@ -271,13 +175,25 @@ export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): Ru
     }
 
     const state = readRunnerState(ctx, runnerId);
+    const stateCumulative = state.token_source === "llm_reported" ? intState(state, "cumulative_tokens") : 0;
+    const stateCumulativeTotal = intState(state, "cumulative_total_tokens") || stateCumulative;
+    const stateCumulativeCacheRead = intState(state, "cumulative_cache_read_tokens") || intState(state, "last_turn_cache_read_tokens");
+    const stateCumulativeCacheCreate = intState(state, "cumulative_cache_create_tokens") || intState(state, "last_turn_cache_create_tokens");
+    const stateLastTurn = intState(state, "last_turn_tokens");
+    const stateLastTurnTotal = intState(state, "last_turn_total_tokens") || stateLastTurn;
+    const stateLastCacheRead = intState(state, "last_turn_cache_read_tokens");
+    const stateLastCacheCreate = intState(state, "last_turn_cache_create_tokens");
     return {
-        cumulativeTokens: state.token_source === "llm_reported" ? intState(state, "cumulative_tokens") : 0,
-        lastTurnTokens: intState(state, "last_turn_tokens"),
+        cumulativeTokens: stateCumulative,
+        cumulativeTotalTokens: stateCumulativeTotal,
+        cumulativeCacheReadTokens: stateCumulativeCacheRead,
+        cumulativeCacheCreateTokens: stateCumulativeCacheCreate,
+        lastTurnTokens: stateLastTurn,
+        lastTurnTotalTokens: stateLastTurnTotal,
         lastTurnInputTokens: intState(state, "last_turn_input_tokens"),
         lastTurnOutputTokens: intState(state, "last_turn_output_tokens"),
-        lastTurnCacheReadTokens: intState(state, "last_turn_cache_read_tokens"),
-        lastTurnCacheCreateTokens: intState(state, "last_turn_cache_create_tokens"),
+        lastTurnCacheReadTokens: stateLastCacheRead,
+        lastTurnCacheCreateTokens: stateLastCacheCreate,
         lastTurnAt: state.last_turn_at || "",
         lastTurnTickId: state.last_turn_tick_id || "",
         tokenSource: state.token_source || "none",
@@ -304,6 +220,9 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
     const hourly24h = new Map<number, {hour: number; input: number; output: number; cache: number}>();
 
     let usage = 0;
+    let totalUsage = 0;
+    let cacheReadUsage = 0;
+    let cacheCreateUsage = 0;
     let reportCount = 0;
     let usage1h = 0;
     let usage24h = 0;
@@ -319,25 +238,37 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
         if (!runnerId) continue;
         const tokenLog = runnerTokenEntries(ctx, runnerId);
         const cumulativeFromTrustedLog = tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0);
-        usage += tokenLog.hasTokenLog ? cumulativeFromTrustedLog : tokenStateCumulative(ctx, runnerId);
+        const visibleFromTrustedLog = tokenLog.entries.reduce((total, entry) => total + visibleTokenUsage(entry), 0);
+        const cacheReadFromTrustedLog = tokenLog.entries.reduce((total, entry) => total + entry.cacheRead, 0);
+        const cacheCreateFromTrustedLog = tokenLog.entries.reduce((total, entry) => total + entry.cacheCreate, 0);
+        const state = readRunnerState(ctx, runnerId);
+        const stateCumulative = state.token_source === "llm_reported" ? intState(state, "cumulative_tokens") : 0;
+        const stateTotal = state.token_source === "llm_reported" ? intState(state, "cumulative_total_tokens") || stateCumulative : 0;
+        const stateCacheRead = state.token_source === "llm_reported" ? intState(state, "cumulative_cache_read_tokens") : 0;
+        const stateCacheCreate = state.token_source === "llm_reported" ? intState(state, "cumulative_cache_create_tokens") : 0;
+        usage += tokenLog.hasTokenLog ? visibleFromTrustedLog : stateCumulative;
+        totalUsage += tokenLog.hasTokenLog ? cumulativeFromTrustedLog : stateTotal;
+        cacheReadUsage += tokenLog.hasTokenLog ? cacheReadFromTrustedLog : stateCacheRead;
+        cacheCreateUsage += tokenLog.hasTokenLog ? cacheCreateFromTrustedLog : stateCacheCreate;
         reportCount += tokenLog.entries.length;
 
         for (const entry of tokenLog.entries) {
             if (entry.atMs <= 0) continue;
             const cache = entry.cacheRead + entry.cacheCreate;
+            const visible = visibleTokenUsage(entry);
             if (entry.atMs >= oneHourAgoMs && entry.atMs <= nowMs + 60000) {
-                usage1h += entry.turnTotal;
+                usage1h += visible;
                 input1h += entry.input;
                 output1h += entry.output;
                 cache1h += cache;
             }
             if (entry.atMs < dayAgoMs || entry.atMs > nowMs + 60000) continue;
-            usage24h += entry.turnTotal;
+            usage24h += visible;
             input24h += entry.input;
             output24h += entry.output;
             cache24h += cache;
-            addBreakdownValue(runnerBreakdown24h, runnerId, entry.turnTotal);
-            addBreakdownValue(modelBreakdown24h, runnerModels.get(runnerId) || "unknown", entry.turnTotal);
+            addBreakdownValue(runnerBreakdown24h, runnerId, visible);
+            addBreakdownValue(modelBreakdown24h, runnerModels.get(runnerId) || "unknown", visible);
             const hour = floorHourSeconds(entry.atMs);
             const bucket = hourly24h.get(hour) || {hour, input: 0, output: 0, cache: 0};
             bucket.input += entry.input;
@@ -349,6 +280,9 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
 
     return {
         autoflow_token_usage_count: usage,
+        autoflow_token_total_count: totalUsage,
+        autoflow_token_cache_read_count: cacheReadUsage,
+        autoflow_token_cache_create_count: cacheCreateUsage,
         autoflow_token_report_count: reportCount,
         autoflow_token_usage_1h_count: usage1h,
         autoflow_token_usage_24h_count: usage24h,

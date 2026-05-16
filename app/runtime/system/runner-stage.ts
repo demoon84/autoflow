@@ -218,7 +218,11 @@ if (note) next.last_result = note;
 
 const tokenDefaults: Record<string, string> = {
   cumulative_tokens: "0",
+  cumulative_total_tokens: "0",
+  cumulative_cache_read_tokens: "0",
+  cumulative_cache_create_tokens: "0",
   last_turn_tokens: "0",
+  last_turn_total_tokens: "0",
   last_turn_input_tokens: "0",
   last_turn_output_tokens: "0",
   last_turn_cache_read_tokens: "0",
@@ -244,7 +248,11 @@ const tokenDefaults: Record<string, string> = {
 
 const tokenAccountingKeys = [
   "cumulative_tokens",
+  "cumulative_total_tokens",
+  "cumulative_cache_read_tokens",
+  "cumulative_cache_create_tokens",
   "last_turn_tokens",
+  "last_turn_total_tokens",
   "last_turn_input_tokens",
   "last_turn_output_tokens",
   "last_turn_cache_read_tokens",

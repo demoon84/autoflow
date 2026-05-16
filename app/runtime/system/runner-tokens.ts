@@ -147,6 +147,9 @@ function parseInt0(s: unknown): number {
 type TrustedTokenLogState = {
   hasLog: boolean;
   total: number;
+  visibleTotal: number;
+  cacheReadTotal: number;
+  cacheCreateTotal: number;
   ticks: Set<string>;
   last?: {
     tickId: string;
@@ -162,9 +165,12 @@ type TrustedTokenLogState = {
 
 function trustedLogCumulative(runner: string): TrustedTokenLogState {
   const file = tokenLogPath(runner);
-  if (!fs.existsSync(file)) return { hasLog: false, total: 0, ticks: new Set<string>() };
+  if (!fs.existsSync(file)) return { hasLog: false, total: 0, visibleTotal: 0, cacheReadTotal: 0, cacheCreateTotal: 0, ticks: new Set<string>() };
   const seen = new Set<string>();
   let total = 0;
+  let visibleTotal = 0;
+  let cacheReadTotal = 0;
+  let cacheCreateTotal = 0;
   let last: TrustedTokenLogState["last"];
   let lineIndex = 0;
   try {
@@ -189,14 +195,19 @@ function trustedLogCumulative(runner: string): TrustedTokenLogState {
           parseInt0(parsed?.cacheRead) +
           parseInt0(parsed?.cacheCreate);
       total += turnTotal;
+      const cacheRead = parseInt0(parsed?.cacheRead);
+      const cacheCreate = parseInt0(parsed?.cacheCreate);
+      visibleTotal += Math.max(0, turnTotal - cacheRead);
+      cacheReadTotal += cacheRead;
+      cacheCreateTotal += cacheCreate;
       const at = String(parsed?.at || "");
       const atMs = Date.parse(at);
       const entry = {
         tickId,
         input: parseInt0(parsed?.input),
         output: parseInt0(parsed?.output),
-        cacheRead: parseInt0(parsed?.cacheRead),
-        cacheCreate: parseInt0(parsed?.cacheCreate),
+        cacheRead,
+        cacheCreate,
         turnTotal,
         at,
         atMs: Number.isFinite(atMs) ? atMs : 0,
@@ -206,12 +217,16 @@ function trustedLogCumulative(runner: string): TrustedTokenLogState {
       }
     }
   } catch {}
-  return { hasLog: true, total, ticks: seen, last };
+  return { hasLog: true, total, visibleTotal, cacheReadTotal, cacheCreateTotal, ticks: seen, last };
 }
 
 const tokenDefaults = new Map<string, string>([
   ["cumulative_tokens", "0"],
+  ["cumulative_total_tokens", "0"],
+  ["cumulative_cache_read_tokens", "0"],
+  ["cumulative_cache_create_tokens", "0"],
   ["last_turn_tokens", "0"],
+  ["last_turn_total_tokens", "0"],
   ["last_turn_input_tokens", "0"],
   ["last_turn_output_tokens", "0"],
   ["last_turn_cache_read_tokens", "0"],
@@ -396,32 +411,43 @@ function report(runner: string | undefined, opts: ReportOpts): never {
       return `[runner-tokens] duplicate tick-id ${tickId}, skipped\n`;
     }
 
-    const prevCumulative = trustedLog.hasLog
-      ? trustedLog.total
+    const visible = Math.max(0, turnTotal - cacheR);
+    const prevVisible = trustedLog.hasLog
+      ? trustedLog.visibleTotal
       : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0);
-    const newCumulative = prevCumulative + turnTotal;
-    map.set("last_turn_tokens", String(turnTotal));
+    const prevTotal = trustedLog.hasLog
+      ? trustedLog.total
+      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")) : 0);
+    const prevCacheRead = trustedLog.hasLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens"));
+    const prevCacheCreate = trustedLog.hasLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens"));
+    const newVisible = prevVisible + visible;
+    const newTotal = prevTotal + turnTotal;
+    map.set("last_turn_tokens", String(visible));
+    map.set("last_turn_total_tokens", String(turnTotal));
     map.set("last_turn_input_tokens", String(inputT));
     map.set("last_turn_output_tokens", String(outputT));
     map.set("last_turn_cache_read_tokens", String(cacheR));
     map.set("last_turn_cache_create_tokens", String(cacheC));
     map.set("last_turn_at", NOW());
     if (tickId) map.set("last_turn_tick_id", tickId);
-    map.set("cumulative_tokens", String(newCumulative));
+    map.set("cumulative_tokens", String(newVisible));
+    map.set("cumulative_total_tokens", String(newTotal));
+    map.set("cumulative_cache_read_tokens", String(prevCacheRead + cacheR));
+    map.set("cumulative_cache_create_tokens", String(prevCacheCreate + cacheC));
     map.set("token_source", "llm_reported");
     map.set("last_token_usage_source", "llm_reported");
     map.set("updated_at", NOW());
 
     let message = "";
     if (writeState(runner, serializeStateLines(map))) {
-      message = `[runner-tokens] ${runner}: +${turnTotal} (cum=${newCumulative})\n`;
+      message = `[runner-tokens] ${runner}: +${visible} (total=${turnTotal}, cum=${newVisible})\n`;
     }
 
     try {
       const entry = JSON.stringify({
         runner, tickId,
         input: inputT, output: outputT, cacheRead: cacheR, cacheCreate: cacheC,
-        turnTotal, cumulative: newCumulative,
+        turnTotal, cumulative: newTotal, cumulativeVisible: newVisible,
         note: String(opts.note || ""),
         at: NOW()
       }) + "\n";
@@ -454,14 +480,22 @@ function syncCodexSessions(runner: string | undefined): never {
     const entries = scopedCodexSessionTokenEntries(runner, map, trustedLog.ticks, afterMs);
     let cumulative = trustedLog.hasLog
       ? trustedLog.total
+      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")) : 0);
+    let cumulativeVisible = trustedLog.hasLog
+      ? trustedLog.visibleTotal
       : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0);
+    let cumulativeCacheRead = trustedLog.hasLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens"));
+    let cumulativeCacheCreate = trustedLog.hasLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens"));
     if (entries.length === 0) {
-      return { imported: 0, cumulative, last: trustedLog.last };
+      return { imported: 0, cumulative, cumulativeVisible, last: trustedLog.last };
     }
 
     let payload = "";
     for (const entry of entries) {
       cumulative += entry.turnTotal;
+      cumulativeVisible += Math.max(0, entry.turnTotal - entry.cacheRead);
+      cumulativeCacheRead += entry.cacheRead;
+      cumulativeCacheCreate += entry.cacheCreate;
       payload += JSON.stringify({
         runner,
         tickId: entry.tickId,
@@ -471,6 +505,7 @@ function syncCodexSessions(runner: string | undefined): never {
         cacheCreate: entry.cacheCreate,
         turnTotal: entry.turnTotal,
         cumulative,
+        cumulativeVisible,
         note: "codex_session_log:scoped_runner_home",
         at: entry.at,
       }) + "\n";
@@ -478,19 +513,23 @@ function syncCodexSessions(runner: string | undefined): never {
     fs.appendFileSync(tokenLogPath(runner), payload, "utf8");
 
     const last = entries[entries.length - 1];
-    map.set("last_turn_tokens", String(last.turnTotal));
+    map.set("last_turn_tokens", String(Math.max(0, last.turnTotal - last.cacheRead)));
+    map.set("last_turn_total_tokens", String(last.turnTotal));
     map.set("last_turn_input_tokens", String(last.input));
     map.set("last_turn_output_tokens", String(last.output));
     map.set("last_turn_cache_read_tokens", String(last.cacheRead));
     map.set("last_turn_cache_create_tokens", String(last.cacheCreate));
     map.set("last_turn_at", new Date(last.atMs).toISOString().replace(/\.\d+Z$/, "Z"));
     map.set("last_turn_tick_id", last.tickId);
-    map.set("cumulative_tokens", String(cumulative));
+    map.set("cumulative_tokens", String(cumulativeVisible));
+    map.set("cumulative_total_tokens", String(cumulative));
+    map.set("cumulative_cache_read_tokens", String(cumulativeCacheRead));
+    map.set("cumulative_cache_create_tokens", String(cumulativeCacheCreate));
     map.set("token_source", "llm_reported");
     map.set("last_token_usage_source", "llm_reported");
     map.set("updated_at", NOW());
     writeState(runner, serializeStateLines(map));
-    return { imported: entries.length, cumulative, last };
+    return { imported: entries.length, cumulative, cumulativeVisible, last };
   });
 
   const imported = result?.imported || 0;
@@ -499,8 +538,10 @@ function syncCodexSessions(runner: string | undefined): never {
     "status=ok",
     `runner=${runner}`,
     `imported_count=${imported}`,
-    `cumulative_tokens=${cumulative}`,
-    `last_turn_tokens=${result?.last?.turnTotal || 0}`,
+    `cumulative_tokens=${result?.cumulativeVisible || 0}`,
+    `cumulative_total_tokens=${cumulative}`,
+    `last_turn_tokens=${result?.last ? Math.max(0, (result.last.turnTotal || 0) - (result.last.cacheRead || 0)) : 0}`,
+    `last_turn_total_tokens=${result?.last?.turnTotal || 0}`,
     `last_turn_at=${result?.last?.at || ""}`,
     "",
   ].join("\n"));
@@ -543,12 +584,14 @@ function reset(runner: string | undefined, note?: string): never {
       cacheCreate: 0,
       turnTotal: 0,
       cumulative: 0,
+      cumulativeVisible: 0,
       note: `token_reset:${String(note || "manual")}`,
       at,
     }) + "\n";
     fs.writeFileSync(file, entry, "utf8");
 
     map.set("last_turn_tokens", "0");
+    map.set("last_turn_total_tokens", "0");
     map.set("last_turn_input_tokens", "0");
     map.set("last_turn_output_tokens", "0");
     map.set("last_turn_cache_read_tokens", "0");
@@ -556,6 +599,9 @@ function reset(runner: string | undefined, note?: string): never {
     map.set("last_turn_at", at);
     map.set("last_turn_tick_id", tickId);
     map.set("cumulative_tokens", "0");
+    map.set("cumulative_total_tokens", "0");
+    map.set("cumulative_cache_read_tokens", "0");
+    map.set("cumulative_cache_create_tokens", "0");
     map.set("token_source", "none");
     map.set("last_token_usage_source", "none");
     map.set("updated_at", at);
@@ -567,6 +613,7 @@ function reset(runner: string | undefined, note?: string): never {
     "status=ok",
     `runner=${runner}`,
     "cumulative_tokens=0",
+    "cumulative_total_tokens=0",
     `last_turn_tick_id=${result?.tickId || ""}`,
     `reset_at=${result?.at || ""}`,
     `backup=${result?.backup || ""}`,
@@ -588,8 +635,12 @@ function show(runner: string | undefined): never {
   const last = trustedLog.last;
   const out = {
     runner,
-    cumulative_tokens: useTrustedLog ? trustedLog.total : parseInt0(map.get("cumulative_tokens")),
-    last_turn_tokens: useTrustedLog ? (last?.turnTotal || 0) : parseInt0(map.get("last_turn_tokens")),
+    cumulative_tokens: useTrustedLog ? trustedLog.visibleTotal : parseInt0(map.get("cumulative_tokens")),
+    cumulative_total_tokens: useTrustedLog ? trustedLog.total : parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")),
+    cumulative_cache_read_tokens: useTrustedLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens")) || parseInt0(map.get("last_turn_cache_read_tokens")),
+    cumulative_cache_create_tokens: useTrustedLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens")) || parseInt0(map.get("last_turn_cache_create_tokens")),
+    last_turn_tokens: useTrustedLog ? Math.max(0, (last?.turnTotal || 0) - (last?.cacheRead || 0)) : parseInt0(map.get("last_turn_tokens")),
+    last_turn_total_tokens: useTrustedLog ? (last?.turnTotal || 0) : parseInt0(map.get("last_turn_total_tokens")) || parseInt0(map.get("last_turn_tokens")),
     last_turn_input_tokens: useTrustedLog ? (last?.input || 0) : parseInt0(map.get("last_turn_input_tokens")),
     last_turn_output_tokens: useTrustedLog ? (last?.output || 0) : parseInt0(map.get("last_turn_output_tokens")),
     last_turn_cache_read_tokens: useTrustedLog ? (last?.cacheRead || 0) : parseInt0(map.get("last_turn_cache_read_tokens")),

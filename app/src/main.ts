@@ -1551,8 +1551,8 @@ function uniquePaths(paths) {
 }
 
 // Initial prompt sent once after the agent CLI is up. The Desktop start button
-// injects compact common + role startup rules immediately, then asks the
-// runner to do a cheap queue preflight before expanding full contracts.
+// always opens the runner PTY for explicit user starts, then injects compact
+// common + role startup rules so the runner can do visible startup checks.
 function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot, boardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
@@ -1561,8 +1561,9 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   const roleInstruction = roleInstructionPath(boardRoot, role);
   const commonRulesPath = commonStartupRulesPath(boardRoot);
   const roleRulesPath = startupRulesPath(boardRoot, role);
-  const commonRules = readPromptDoc(commonRulesPath);
-  const roleRules = readPromptDoc(roleRulesPath);
+  const injectStartupDocs = normalizedRole !== "wiki-maintainer";
+  const commonRules = injectStartupDocs ? readPromptDoc(commonRulesPath) : "";
+  const roleRules = injectStartupDocs ? readPromptDoc(roleRulesPath) : "";
   const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
   const runnerWakeCmd = `${autoflowBin} tool runner-wake`;
   const runnerStageCmd = `${autoflowBin} tool runner-stage`;
@@ -1599,10 +1600,10 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
       case "wiki-maintainer":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --max-items 5\` first and let it complete; do not poll it at one-second intervals.`,
+          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --max-items 12\` first and let it complete; do not poll it at one-second intervals.`,
           `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle without opening source files.`,
-          `  3. If follow-up is needed, inspect only the compact paths returned by tick before editing focused wiki pages.`,
-          `  4. After manual wiki edits, run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry --max-items 5\` once, then idle.`
+          `  3. If follow-up is needed, inspect only the compact paths returned by tick; do not run broad searches or open files outside that scope.`,
+          `  4. Edit at most one focused wiki page per turn, then run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry --max-items 12\` once and idle.`
         ].join("\n");
       default:
         return [
@@ -1615,19 +1616,31 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   const boardAgents = path.join(boardRoot, "AGENTS.md");
   const fullContractFiles = uniquePaths(
     normalizedRole === "wiki-maintainer"
-      ? [roleInstruction]
+      ? []
       : [roleInstruction, projectAgents, boardAgents]
   );
   const contractReadIntro = normalizedRole === "wiki-maintainer"
     ? [
-        `The wiki turn is token-sensitive. Read the role contract once, then`,
-        `use the injected startup rules and \`wiki tick\` output as the compact`,
-        `runtime source. Do not re-read project/board AGENTS unless tick reports`,
-        `a failed step or the follow-up paths make those files directly relevant:`
+        `The wiki turn is token-sensitive. Do not open full AGENTS, role docs,`,
+        `or broad source searches unless \`wiki tick\` reports a failed step or`,
+        `the compact follow-up paths make those files directly relevant.`
       ]
     : [
         `Read these full contract files once before planning, editing board state, or`,
         `making role judgments:`
+      ];
+  const injectedStartupRules = injectStartupDocs
+    ? [
+        `Injected startup rules from the Desktop start button:`,
+        injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
+        roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null
+      ]
+    : [
+        `Compact wiki startup rules from the Desktop start button:`,
+        `- Run the wiki tick command below once inside this visible turn.`,
+        `- If tick.ai_followup_recommended=false, summarize the compact result and idle.`,
+        `- If follow-up is needed, inspect only tick.ai_followup_scope paths.`,
+        `- Edit at most one focused wiki page, rerun tick with --skip-telemetry once, then idle.`
       ];
   return [
     `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
@@ -1636,14 +1649,12 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `Runner id:    ${runnerId}`,
     `Role:         ${normalizedRole}`,
     ``,
-    `Injected startup rules from the Desktop start button:`,
-    injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
-    roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null,
+    ...injectedStartupRules,
     ``,
-    `Desktop already ran deterministic startup preflight before opening this PTY.`,
+    `Desktop opened this PTY because the user explicitly started the runner.`,
     normalizedRole === "wiki-maintainer"
-      ? `For wiki, routine deterministic maintenance with no AI follow-up is handled before PTY spawn. If this prompt is visible, a failed tick or focused AI follow-up needs inspection.`
-      : `If this prompt is visible, actionable work or recovery evidence was found.`,
+      ? `For wiki, run the compact tick inside this visible turn, then decide whether focused wiki editing is needed.`
+      : `Run the startup scan below, then either work on the actionable item or record why the runner is idling.`,
     ``,
     ...contractReadIntro,
     ...fullContractFiles.map((filePath) => {
@@ -1655,7 +1666,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     ``,
     startupScan,
     ``,
-    `After the startup scan, begin your normal autoflow loop for this role.`,
+    `After the startup scan, continue this role's normal Autoflow work.`,
     `When new files appear in the board (orders, tickets, etc.), I will push a`,
     `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
     `re-scan the relevant queue, not as the only signal — keep working as long`,
@@ -3009,7 +3020,11 @@ function parseRunnerListOutput(output) {
       lastStdoutLog: values[`${prefix}last_stdout_log`] || "",
       lastStderrLog: values[`${prefix}last_stderr_log`] || "",
       cumulativeTokens: positiveIntegerValue(values[`${prefix}cumulative_tokens`]),
+      cumulativeTotalTokens: positiveIntegerValue(values[`${prefix}cumulative_total_tokens`]),
+      cumulativeCacheReadTokens: positiveIntegerValue(values[`${prefix}cumulative_cache_read_tokens`]),
+      cumulativeCacheCreateTokens: positiveIntegerValue(values[`${prefix}cumulative_cache_create_tokens`]),
       lastTurnTokens: positiveIntegerValue(values[`${prefix}last_turn_tokens`]),
+      lastTurnTotalTokens: positiveIntegerValue(values[`${prefix}last_turn_total_tokens`]),
       lastTurnInputTokens: positiveIntegerValue(values[`${prefix}last_turn_input_tokens`]),
       lastTurnOutputTokens: positiveIntegerValue(values[`${prefix}last_turn_output_tokens`]),
       lastTurnCacheReadTokens: positiveIntegerValue(values[`${prefix}last_turn_cache_read_tokens`]),
@@ -3728,9 +3743,10 @@ async function readTrustedRunnerTokenLogTotal(boardRoot, runnerId) {
         positiveIntegerValue(entry.output) +
         positiveIntegerValue(entry.cacheRead) +
         positiveIntegerValue(entry.cacheCreate);
-    if (turnTotal <= 0) continue;
+    const visibleTotal = Math.max(0, turnTotal - positiveIntegerValue(entry.cacheRead));
+    if (visibleTotal <= 0) continue;
     result.trustedCount += 1;
-    result.total += turnTotal;
+    result.total += visibleTotal;
   }
 
   return result;
@@ -6235,7 +6251,11 @@ function parseRunnerStateFile(content) {
 
 const runnerTokenStateDefaults = {
   cumulative_tokens: "0",
+  cumulative_total_tokens: "0",
+  cumulative_cache_read_tokens: "0",
+  cumulative_cache_create_tokens: "0",
   last_turn_tokens: "0",
+  last_turn_total_tokens: "0",
   last_turn_input_tokens: "0",
   last_turn_output_tokens: "0",
   last_turn_cache_read_tokens: "0",
@@ -6261,7 +6281,11 @@ const runnerTokenStateDefaults = {
 
 const runnerTokenAccountingKeys = [
   "cumulative_tokens",
+  "cumulative_total_tokens",
+  "cumulative_cache_read_tokens",
+  "cumulative_cache_create_tokens",
   "last_turn_tokens",
+  "last_turn_total_tokens",
   "last_turn_input_tokens",
   "last_turn_output_tokens",
   "last_turn_cache_read_tokens",
@@ -6887,7 +6911,7 @@ app.whenReady().then(() => {
   // (agent / model / reasoning / role / projectRoot / boardDirName), main
   // builds the CLI command and the initial prompt, then writes the prompt to
   // stdin after the CLI is ready. This is the path for runners that should use
-  // long-lived process + LLM-driven loop.
+  // user-visible PTY process + LLM-driven runner turn.
   ipcMain.handle("autoflow:runnerPtySpawn", async (_event, opts = {}) => {
     console.log("[autoflow:runnerPtySpawn] called", opts);
     if (!ptyManager.isAvailable()) {
@@ -6923,10 +6947,11 @@ app.whenReady().then(() => {
         projectRoot,
         boardDirName
       });
+      const freshSessionRequested = Boolean(opts.freshSession) || normalizedRole === "wiki-maintainer";
       if (
         existing &&
         existing.status === "running" &&
-        (!existingMatchesScope || (existing.command && existing.command !== command))
+        (freshSessionRequested || !existingMatchesScope || (existing.command && existing.command !== command))
       ) {
         if (Number.isInteger(existing.pid) && existing.pid > 0) {
           killPidForcefully(existing.pid);
@@ -6934,31 +6959,6 @@ app.whenReady().then(() => {
         }
         ptyManager.stop(runnerId, { force: true });
         await new Promise((resolve) => setTimeout(resolve, 300));
-      }
-      const existingAfterScopeCheck = ptyManager.get(runnerId);
-      if (!existingAfterScopeCheck || existingAfterScopeCheck.status !== "running") {
-        const preflight = await runRunnerStartupPreflight({
-          runnerId,
-          role: normalizedRole,
-          projectRoot,
-          boardDirName
-        });
-        if (preflight.ok && preflight.values.decision === "skip") {
-          console.log(`[runner-preflight] ${runnerId} skipped PTY spawn: ${preflight.values.reason || "idle"}`);
-          clearReadBoardCachesForScope({ projectRoot, boardDirName });
-          return {
-            ok: true,
-            runnerId,
-            pid: "",
-            status: "idle",
-            skipped: true,
-            stdout: preflight.stdout || "",
-            reason: preflight.values.reason || ""
-          };
-        }
-        if (!preflight.ok) {
-          console.warn(`[runner-preflight] ${runnerId} failed; falling back to PTY spawn`, preflight.stderr || preflight.stdout || "");
-        }
       }
       const runnerEnv = buildRunnerPtyEnv({
         agent,

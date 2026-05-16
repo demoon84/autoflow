@@ -15,6 +15,15 @@ Injected role rules for `wiki-maintainer` / `wiki` runners.
   reports a failed step or the user explicitly asks for those raw checks.
 - Use the compact `tick.ai_followup_scope` paths to decide whether focused wiki
   synthesis is needed.
+- When follow-up is recommended for a focused wiki page, compare the page's
+  claims against the recent `tickets/done/` and verifier log paths included in
+  `tick.ai_followup_scope`; stale claims must be corrected even if the page is
+  already present.
+- During focused review, do not run broad searches or open files outside
+  `tick.ai_followup_scope`. If the scoped evidence is insufficient, record that
+  and idle instead of expanding arbitrarily.
+- Edit at most one focused wiki page per turn, then rerun
+  `wiki tick --skip-telemetry` once and idle.
 - If `tick.ai_followup_recommended=false`, do not open source files; summarize
   the routine result and idle.
 
@@ -23,7 +32,7 @@ Injected role rules for `wiki-maintainer` / `wiki` runners.
 - Refresh the deterministic baseline only when material source drift exists.
 - Add or update focused wiki pages for reusable decisions, recurring failures,
   architecture notes, or synthesis answers.
-- After manually editing focused wiki pages, rerun `wiki tick --skip-telemetry`
+- After manually editing a focused wiki page, rerun `wiki tick --skip-telemetry`
   once to refresh index/lint around those edits.
 - Preserve human-authored content outside managed sections.
 - Use RAG query before creating a new concept page when prior wiki context may

@@ -3,7 +3,11 @@ import {isRunnerProcessAlive, readRunnerStateFile, serializeRunnerStateFields, w
 
 export const runnerTokenStateDefaults: Record<string, string> = {
     cumulative_tokens: "0",
+    cumulative_total_tokens: "0",
+    cumulative_cache_read_tokens: "0",
+    cumulative_cache_create_tokens: "0",
     last_turn_tokens: "0",
+    last_turn_total_tokens: "0",
     last_turn_input_tokens: "0",
     last_turn_output_tokens: "0",
     last_turn_cache_read_tokens: "0",

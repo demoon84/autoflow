@@ -27,8 +27,6 @@ agent = "codex"
 codex_history = "isolated"
 model = ""
 reasoning = "low"
-mode = "loop"
-interval_seconds = 60
 enabled = true
 command = ""
 
@@ -39,8 +37,6 @@ agent = "codex"
 codex_history = "isolated"
 model = ""
 reasoning = "low"
-mode = "loop"
-interval_seconds = 60
 enabled = true
 command = ""
 
@@ -51,8 +47,6 @@ agent = "codex"
 codex_history = "isolated"
 model = ""
 reasoning = "low"
-mode = "loop"
-interval_seconds = 300
 enabled = true
 command = ""
 
@@ -63,7 +57,5 @@ agent = "codex"
 codex_history = "isolated"
 model = ""
 reasoning = "low"
-mode = "loop"
-interval_seconds = 60
 enabled = true
 command = ""

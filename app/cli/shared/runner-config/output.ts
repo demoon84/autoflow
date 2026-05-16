@@ -17,9 +17,9 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}codex_history=${field("codex_history", runnerStringFieldDefaults.codex_history)}`);
     out(`${prefix}model=${field("model", runnerStringFieldDefaults.model)}`);
     out(`${prefix}reasoning=${field("reasoning", runnerStringFieldDefaults.reasoning)}`);
-    out(`${prefix}mode=${field("mode", runnerStringFieldDefaults.mode)}`);
-    out(`${prefix}interval_seconds=${field("interval_seconds", runnerStringFieldDefaults.interval_seconds)}`);
-    out(`${prefix}interval_effective_seconds=${field("interval_seconds", runnerStringFieldDefaults.interval_seconds)}`);
+    out(`${prefix}mode=${field("mode", "")}`);
+    out(`${prefix}interval_seconds=${field("interval_seconds", "")}`);
+    out(`${prefix}interval_effective_seconds=${field("interval_seconds", "")}`);
     out(`${prefix}enabled=${field("enabled", runnerStringFieldDefaults.enabled)}`);
     out(`${prefix}realtime_enabled=${field("realtime_enabled", runnerStringFieldDefaults.realtime_enabled)}`);
     out(`${prefix}command=${field("command", "")}`);
@@ -52,7 +52,11 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}artifact_stderr_status=${state.artifact_stderr_status || ""}`);
     out(`${prefix}last_log_line=${state.last_log_line || ""}`);
     out(`${prefix}cumulative_tokens=${tokenAccounting.cumulativeTokens}`);
+    out(`${prefix}cumulative_total_tokens=${tokenAccounting.cumulativeTotalTokens}`);
+    out(`${prefix}cumulative_cache_read_tokens=${tokenAccounting.cumulativeCacheReadTokens}`);
+    out(`${prefix}cumulative_cache_create_tokens=${tokenAccounting.cumulativeCacheCreateTokens}`);
     out(`${prefix}last_turn_tokens=${tokenAccounting.lastTurnTokens}`);
+    out(`${prefix}last_turn_total_tokens=${tokenAccounting.lastTurnTotalTokens}`);
     out(`${prefix}last_turn_input_tokens=${tokenAccounting.lastTurnInputTokens}`);
     out(`${prefix}last_turn_output_tokens=${tokenAccounting.lastTurnOutputTokens}`);
     out(`${prefix}last_turn_cache_read_tokens=${tokenAccounting.lastTurnCacheReadTokens}`);
