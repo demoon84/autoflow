@@ -29,12 +29,14 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
 - Stay inside the active role boundary and the ticket `Allowed Paths`.
 - If the runner cannot safely continue, leave observable evidence and the next
   safe action in the board before idling.
-- Call the active-reporting commands at the start of normal turns, on stage
-  changes, and at the end of every assistant turn. On the first startup turn,
-  absorb the injected rules and read only the required contract files listed by
-  the role startup prompt before role judgment. Run the role-specific startup
-  check once inside the visible LLM turn so errors and idle decisions are
-  observable.
+- On the first startup turn, run only the role-specific compact startup tool
+  (`planner queue-snapshot`, `worker active-get`/`todo-snapshot`, `verifier
+  queue-snapshot`, or `wiki tick`) before opening files. Use the tool's
+  `ai_followup_scope.inspect_only_recent_sources` as the initial read boundary.
+- Do not call `runner-wake`, generic `runner-stage`, `runner-tokens`, or `date`
+  during the first focused startup turn. Desktop tracks PTY state and provider
+  usage; role-specific tools update durable board state when an actual state
+  transition is required.
 - End-of-turn token accounting is captured by the Desktop host when exact live
   provider usage metadata is emitted. Do not also run a manual token report for
   the same Desktop PTY turn.
@@ -43,7 +45,7 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
   `autoflow tool runner-tokens report --runner <runner-id> --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]`.
 - If exact values are unavailable, skip the token report; never report `0/0`,
   placeholders such as `1` or `1000`, or rough estimates.
-- Read only the required role contract files before role judgment on actionable
-  work. Do not repeat those reads every turn unless this runner process is
-  restarted, and do not expand optional project/board rules when a compact
-  runner tool already returned the relevant bounded scope.
+- Read role contract files only when the compact startup output or active work
+  explicitly requires them. Do not repeat those reads every turn unless this
+  runner process is restarted, and do not expand optional project/board rules
+  when a compact runner tool already returned the relevant bounded scope.

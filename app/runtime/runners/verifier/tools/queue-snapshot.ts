@@ -4,6 +4,7 @@ type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
 type WakeEmitResult = shared.WakeEmitResult;
+type VerifierTicketItem = WorkerTicketItem & { verify_pending: boolean };
 
 const {
   crypto,
@@ -128,17 +129,51 @@ const {
   fail
 } = shared;
 
+function compactVerifierSource(item: VerifierTicketItem): JsonObject {
+  return {
+    path: item.path,
+    id: item.id,
+    priority: item.priority,
+    title: item.title,
+    stage: item.stage || "",
+    claimed_by: item.claimed_by || "",
+    execution_ai: item.execution_ai || "",
+    worktree_path: item.worktree_path || "",
+    worktree_status: item.worktree_status || "",
+    allowed_paths: item.allowed_paths || [],
+    verify_pending: item.verify_pending,
+  };
+}
+
 export function cmdVerifierQueueSnapshot(): void {
   const runnerId = currentRunnerId("verifier");
-  const tickets = listWorkerTicketItems("verifier").map((item) => ({
+  const maxItems = positiveInt(getArg("--max-items") || "", 12);
+  const tickets: VerifierTicketItem[] = listWorkerTicketItems("verifier").map((item) => ({
     ...item,
     verify_pending: item.stage === "verify_pending" || item.stage === "",
   }));
+  const actionable = tickets.find((item) => item.verify_pending) || tickets[0];
+  const visibleTickets = actionable && !tickets.slice(0, maxItems).some((item) => item.path === actionable.path)
+    ? [actionable, ...tickets.filter((item) => item.path !== actionable.path).slice(0, Math.max(0, maxItems - 1))]
+    : tickets.slice(0, maxItems);
+  const scopedSources = actionable ? [compactVerifierSource(actionable)] : [];
   ok({
     tool: "verifier.queue-snapshot",
     runner: runnerId,
     generated_at: utils.nowIso(),
-    ticket_count: tickets.length,
-    tickets,
+    ticket_count_total: tickets.length,
+    ticket_count: visibleTickets.length,
+    tickets_truncated: tickets.length > visibleTickets.length,
+    tickets: visibleTickets,
+    ai_followup_recommended: Boolean(actionable),
+    ai_followup_reason: actionable ? "verifier_ticket_pending" : "no_pending_verifier_ticket",
+    ai_followup_scope: {
+      inspect_only_recent_sources: scopedSources,
+      max_files_to_open: scopedSources.length,
+      max_tickets_to_edit: actionable ? 1 : 0,
+      do_not_follow_references_outside_scope: true,
+      avoid_routine_tools_already_run: true,
+      rerun_snapshot_after_manual_board_edits: true,
+    },
   });
 }

@@ -1558,6 +1558,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   const ticketsRoot = path.join(boardRoot, "tickets");
   const wikiRoot = path.join(boardRoot, "wiki");
   const normalizedRole = normalizeRunnerRole(role);
+  const compactStartupRole = ["planner", "worker", "verifier", "wiki-maintainer"].includes(normalizedRole);
   const roleInstruction = roleInstructionPath(boardRoot, role);
   const commonRulesPath = commonStartupRulesPath(boardRoot);
   const roleRulesPath = startupRulesPath(boardRoot, role);
@@ -1575,27 +1576,30 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
       case "planner":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. List ${path.join(ticketsRoot, "order")} — process every order_*.md (oldest first, priority-aware).`,
-          `  2. List ${path.join(ticketsRoot, "prd")} — promote populated PRDs to todo tickets per the cross-category rule.`,
-          `  3. Only after both queues are drained should you idle and wait for [wake] events.`
+          `  1. Run \`${autoflowBin} tool runner-tool planner queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
+          `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+          `  3. If work is needed, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
+          `  4. Create or update at most one planner-owned board item, rerun queue-snapshot once, then idle.`
         ].join("\n");
       case "worker":
         return [
           `Atomic rule: at most ONE active ticket at any moment.`,
           `Worktree cwd lock: after worker claim/worktree-ensure returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
           `Startup scan order:`,
-          `  1. inprogress/ first — resume the single Todo-*.md if present (mv extras back to todo/ if 2+).`,
-          `  2. Only when inprogress is empty, claim one highest-priority Todo-*.md from todo/.`,
-          `  3. Run the full atomic close-out per the injected worker startup rules and worker-agent.md.`,
-          `  4. After each phase, also call \`${runnerStageCmd} <stage>\` to keep runner state active_stage/ticket_id in sync.`,
-          `  5. Loop back to step 1. Idle only when both inprogress/ and todo/ are empty.`
+          `  1. Run \`${autoflowBin} tool runner-tool worker active-get --runner ${runnerId} --max-items 12\` once.`,
+          `  2. If active-get.ai_followup_recommended=true, inspect only active-get.ai_followup_scope.inspect_only_recent_sources and resume that ticket.`,
+          `  3. If no owned ticket exists, run \`${autoflowBin} tool runner-tool worker todo-snapshot --runner ${runnerId} --max-items 12\` once.`,
+          `  4. If todo-snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+          `  5. If a candidate exists, inspect only todo-snapshot.ai_followup_scope.inspect_only_recent_sources, then claim/worktree-ensure that one ticket before product edits.`,
+          `  6. Do not inspect unrelated tickets or project files outside the selected ticket's Allowed Paths.`
         ].join("\n");
       case "verifier":
         return [
           `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. List ${path.join(ticketsRoot, "verifier")} — select one pending verifier-lane Todo-*.md by priority/FIFO.`,
-          `  2. Gather evidence via verifier runner tools, then make the semantic pass/revise/replan decision yourself.`,
-          `  3. On pass, only grant merge permission and wake worker; on revise, wake worker for the same worktree; on replan, wake worker to create retry order and delete the worktree.`
+          `  1. Run \`${autoflowBin} tool runner-tool verifier queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
+          `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+          `  3. If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, then run verifier evidence for that one ticket.`,
+          `  4. Make exactly one semantic pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then idle.`
         ].join("\n");
       case "wiki-maintainer":
         return [
@@ -1615,15 +1619,15 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   const projectAgents = path.join(projectRoot, "AGENTS.md");
   const boardAgents = path.join(boardRoot, "AGENTS.md");
   const fullContractFiles = uniquePaths(
-    normalizedRole === "wiki-maintainer"
+    compactStartupRole
       ? []
       : [roleInstruction, projectAgents, boardAgents]
   );
-  const contractReadIntro = normalizedRole === "wiki-maintainer"
+  const contractReadIntro = compactStartupRole
     ? [
-        `The wiki turn is token-sensitive. Do not open full AGENTS, role docs,`,
-        `or broad source searches unless \`wiki tick\` reports a failed step or`,
-        `the compact follow-up paths make those files directly relevant.`
+        `This startup turn is token-sensitive. Do not open full AGENTS, role docs,`,
+        `or broad source searches unless the compact startup tool reports a failed`,
+        `step or the scoped paths make those files directly relevant.`
       ]
     : [
         `Read these full contract files once before planning, editing board state, or`,
@@ -1643,15 +1647,43 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
         `- Do not open or follow references outside the inspect_only_recent_sources list.`,
         `- Edit at most one focused wiki page, rerun tick with --skip-telemetry once, then idle.`
       ];
-  const runnerTail = normalizedRole === "wiki-maintainer"
-    ? [
+  const runnerTail = (() => {
+    switch (normalizedRole) {
+      case "planner":
+        return [
+          `Planner turn boundaries:`,
+          `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused planner startup turn; Desktop tracks PTY state and usage.`,
+          `- Use only planner queue-snapshot output and its ai_followup_scope before opening any board file.`,
+          `- Do not open or follow references outside snapshot.ai_followup_scope.inspect_only_recent_sources.`,
+          `- Stop after one focused planner board update and one queue-snapshot rerun, or immediately if the snapshot is idle.`
+        ];
+      case "worker":
+        return [
+          `Worker turn boundaries:`,
+          `- Do not call runner-wake, generic runner-stage, runner-tokens, or date during this focused worker startup turn; Desktop tracks PTY state and usage.`,
+          `- Use worker active-get first, then todo-snapshot only when there is no owned ticket.`,
+          `- Do not open or follow references outside the selected ticket scope before claim/worktree-ensure.`,
+          `- Product file inspection starts only after worktree-ensure succeeds and must stay inside Allowed Paths.`,
+          `- Stop after the current ticket reaches a wait state, verifier handoff, blocker, or finalization; do not roll into a second ticket in the same context.`
+        ];
+      case "verifier":
+        return [
+          `Verifier turn boundaries:`,
+          `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused verifier startup turn; Desktop tracks PTY state and usage.`,
+          `- Use only verifier queue-snapshot output and its ai_followup_scope before opening any verifier ticket.`,
+          `- Gather evidence for one scoped verifier ticket and do not inspect unrelated project files outside the evidence/Allowed Paths boundary.`,
+          `- Stop after one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot is idle.`
+        ];
+      case "wiki-maintainer":
+        return [
         `Wiki turn boundaries:`,
         `- Do not call runner-wake or runner-stage during this focused wiki turn; Desktop tracks the PTY state.`,
         `- Do not run date. If no exact timestamp is already in scope, keep the existing frontmatter timestamp.`,
         `- Do not open or follow references outside tick.ai_followup_scope.inspect_only_recent_sources.`,
         `- Stop after one focused summary once the rerun tick finishes.`
-      ]
-    : [
+        ];
+      default:
+        return [
         `After the startup scan, continue this role's normal Autoflow work.`,
         `When new files appear in the board (orders, tickets, etc.), I will push a`,
         `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
@@ -1672,7 +1704,9 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
         `If exact values are not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
         `Format tick-id as`,
         `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
-      ];
+        ];
+    }
+  })();
   return [
     `Autoflow ${role} runner started (id=${runnerId}, agent=${agent}).`,
     `Project root: ${projectRoot}`,
@@ -1683,8 +1717,8 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     ...injectedStartupRules,
     ``,
     `Desktop opened this PTY because the user explicitly started the runner.`,
-    normalizedRole === "wiki-maintainer"
-      ? `For wiki, run the compact tick inside this visible turn, then decide whether focused wiki editing is needed.`
+    compactStartupRole
+      ? `Run the compact startup tool inside this visible turn, then decide whether focused work is needed.`
       : `Run the startup scan below, then either work on the actionable item or record why the runner is idling.`,
     ``,
     ...contractReadIntro,

@@ -128,7 +128,24 @@ const {
   fail
 } = shared;
 
+function compactPlannerSource(item: QueueItem): JsonObject {
+  return {
+    path: item.path,
+    kind: item.kind,
+    id: item.id,
+    priority: item.priority,
+    title: item.title,
+    status: item.status || "",
+    stage: item.stage || "",
+    retry: Boolean(item.retry),
+    express: Boolean(item.express),
+    recovery_status: item.recovery_status || "",
+    failure_class: item.failure_class || "",
+  };
+}
+
 export function cmdPlannerQueueSnapshot(): void {
+  const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const items: QueueItem[] = [];
   items.push(...listQueueItems("order", [/^order_.*\.md$/], "order"));
   items.push(...listQueueItems("prd", [/^(prd|project)_\d+\.md$/], "prd"));
@@ -143,12 +160,28 @@ export function cmdPlannerQueueSnapshot(): void {
     return a.path.localeCompare(b.path);
   });
 
+  const visibleItems = items.slice(0, maxItems);
+  const actionable = visibleItems[0];
+  const scopedSources = actionable ? [compactPlannerSource(actionable)] : [];
+
   ok({
     tool: "planner.queue-snapshot",
     board_root: BOARD_ROOT,
     project_root: PROJECT_ROOT,
     generated_at: utils.nowIso(),
-    item_count: items.length,
-    items,
+    item_count_total: items.length,
+    item_count: visibleItems.length,
+    items_truncated: items.length > visibleItems.length,
+    items: visibleItems,
+    ai_followup_recommended: Boolean(actionable),
+    ai_followup_reason: actionable ? `planner_${actionable.kind}_pending` : "no_actionable_plan_input",
+    ai_followup_scope: {
+      inspect_only_recent_sources: scopedSources,
+      max_files_to_open: scopedSources.length,
+      max_board_items_to_edit: actionable ? 1 : 0,
+      do_not_follow_references_outside_scope: true,
+      avoid_routine_tools_already_run: true,
+      rerun_snapshot_after_manual_board_edits: true,
+    },
   });
 }

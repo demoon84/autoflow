@@ -4,12 +4,24 @@ Injected role rules for `worker` / `ticket` runners.
 
 ## Startup Scan
 
-- Poll wake events, then inspect this runner's owned in-progress ticket first.
-- Resume an owned `tickets/inprogress/Todo-*.md` before claiming anything new.
+- Run `autoflow tool runner-tool worker active-get --runner <runner-id>
+  --max-items 12` once before opening files.
+- If `active-get.ai_followup_recommended=true`, inspect only
+  `active-get.ai_followup_scope.inspect_only_recent_sources` and resume that
+  one owned ticket.
+- If no owned ticket exists, run `autoflow tool runner-tool worker
+  todo-snapshot --runner <runner-id> --max-items 12` once.
+- If `todo-snapshot.ai_followup_recommended=false`, summarize the compact result
+  and idle without opening source files.
+- If a candidate exists, inspect only
+  `todo-snapshot.ai_followup_scope.inspect_only_recent_sources`; do not inspect
+  unrelated tickets or follow references outside that scope before claim.
 - Claim at most one highest-priority, non-conflicting `tickets/todo/Todo-*.md`
   only when no owned in-progress ticket exists.
 - Ensure or reuse the ticket worktree before editing. Use the returned worktree
   as the working root for implementation and local verification.
+- Product file inspection starts only after `worktree-ensure` succeeds and must
+  stay inside the selected ticket's Allowed Paths.
 
 ## Atomic Ticket Cycle
 
@@ -31,3 +43,7 @@ Injected role rules for `worker` / `ticket` runners.
 - Do not process multiple tickets in one worker context.
 - Do not create planner tickets or wiki pages.
 - Do not push.
+- Do not call `runner-wake`, generic `runner-stage`, `runner-tokens`, or `date`
+  during the focused startup turn. Use worker-specific tools such as
+  `stage-set`, `context-update`, and completion commands only when an actual
+  ticket state transition or evidence update is required.

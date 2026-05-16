@@ -128,17 +128,51 @@ const {
   fail
 } = shared;
 
+function compactWorkerSource(item: WorkerTicketItem): JsonObject {
+  return {
+    path: item.path,
+    id: item.id,
+    priority: item.priority,
+    title: item.title,
+    stage: item.stage || "",
+    claimed_by: item.claimed_by || "",
+    execution_ai: item.execution_ai || "",
+    worktree_path: item.worktree_path || "",
+    worktree_status: item.worktree_status || "",
+    allowed_paths: item.allowed_paths || [],
+  };
+}
+
 export function cmdWorkerActiveGet(): void {
   const runnerId = currentRunnerId("worker");
+  const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const inprogress = listWorkerTicketItems("inprogress");
   const owned = inprogress.filter((item) => ticketItemOwnedByRunner(item, runnerId));
+  const visibleOwned = owned.slice(0, maxItems);
+  const visibleInprogress = inprogress.slice(0, maxItems);
+  const active = visibleOwned[0];
+  const scopedSources = active ? [compactWorkerSource(active)] : [];
   ok({
     tool: "worker.active-get",
     runner: runnerId,
     generated_at: utils.nowIso(),
-    owned_count: owned.length,
-    owned,
-    inprogress_count: inprogress.length,
-    inprogress,
+    owned_count_total: owned.length,
+    owned_count: visibleOwned.length,
+    owned_truncated: owned.length > visibleOwned.length,
+    owned: visibleOwned,
+    inprogress_count_total: inprogress.length,
+    inprogress_count: visibleInprogress.length,
+    inprogress_truncated: inprogress.length > visibleInprogress.length,
+    inprogress: visibleInprogress,
+    ai_followup_recommended: Boolean(active),
+    ai_followup_reason: active ? "worker_owned_ticket_pending" : "no_owned_inprogress_ticket",
+    ai_followup_scope: {
+      inspect_only_recent_sources: scopedSources,
+      max_files_to_open: scopedSources.length,
+      max_tickets_to_edit: active ? 1 : 0,
+      do_not_follow_references_outside_scope: true,
+      avoid_routine_tools_already_run: true,
+      rerun_snapshot_after_manual_board_edits: true,
+    },
   });
 }
