@@ -3322,9 +3322,9 @@ pre {
 .ai-conversation-panel-activity {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin-top: 10px;
-  padding: 6px 10px 0;
+  padding: 6px 0 0;
   color: var(--muted-foreground);
   font-size: var(--font-size-meta);
   font-variant-numeric: tabular-nums;
@@ -3335,7 +3335,18 @@ pre {
 }
 
 .ai-conversation-panel-activity > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
   min-width: 0;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--background) 62%, transparent);
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+  font-weight: 760;
+  letter-spacing: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3346,63 +3357,61 @@ pre {
 }
 
 .ai-conversation-panel-activity-pid {
-  flex: 0 0 auto;
-  margin-left: auto;
-  color: color-mix(in srgb, var(--foreground) 62%, var(--muted-foreground));
-  font-weight: 650;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-
-.runner-run-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 41px;
-  height: 18px;
-  margin-left: 2px;
-  overflow: hidden;
+  margin-left: 0;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--background) 62%, transparent);
+  color: color-mix(in srgb, var(--foreground) 82%, var(--muted-foreground));
+  font-weight: 760;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.runner-resource-usage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--background) 62%, transparent);
+  color: color-mix(in srgb, var(--foreground) 86%, var(--muted-foreground));
   user-select: none;
-  background-image: var(--runner-cheetah-sprite);
-  background-repeat: no-repeat;
-  background-position: 0 0;
-  background-size: 164px 18px;
-  filter: brightness(0) invert(1) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4));
-  opacity: 0.96;
+  white-space: nowrap;
 }
 
-.runner-run-indicator[data-running="true"] {
-  animation: runner-cheetah-run var(--runner-run-duration, 900ms) linear infinite;
+.runner-resource-usage[data-loading="true"] {
+  opacity: 0.58;
 }
 
-.runner-run-indicator[data-running="false"] {
-  opacity: 0.42;
+.runner-resource-usage-segment {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
 }
 
-@keyframes runner-cheetah-run {
-  0%,
-  24.999% {
-    background-position-x: 0;
-  }
-  25%,
-  49.999% {
-    background-position-x: -41px;
-  }
-  50%,
-  74.999% {
-    background-position-x: -82px;
-  }
-  75%,
-  100% {
-    background-position-x: -123px;
-  }
+.runner-resource-usage-label {
+  color: color-mix(in srgb, var(--muted-foreground) 86%, var(--foreground));
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .runner-run-indicator[data-running="true"] {
-    animation: none;
-  }
+.runner-resource-usage-value {
+  color: var(--foreground);
+  font-weight: 760;
+  letter-spacing: 0;
 }
 
 .ai-conversation-panel-activity-icon {
@@ -4663,6 +4672,7 @@ pre {
 
 .workflow-pin-layer-panel {
   width: 50vw;
+  min-width: 1000px;
   max-width: calc(100vw - 48px);
   /* Lock the layer to 80% viewport height. Overrides the base
      .af-dialog-content max-height: min(86vh, 760px) cap so tall screens

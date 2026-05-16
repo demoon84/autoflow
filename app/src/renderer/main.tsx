@@ -62,15 +62,12 @@ import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
-import runnerCheetahStrip from "./assets/runner-cheetah/runner-cheetah-strip.png";
 import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
 
-const RUNNER_CHEETAH_IDLE_DURATION_MS = 1400;
-const RUNNER_CHEETAH_MIN_DURATION_MS = 320;
-const RUNNER_CHEETAH_POLL_MS = 2000;
+const RUNNER_RESOURCE_USAGE_POLL_MS = 2000;
 
 function readThemeMode(): ThemeMode {
   return initialSetting("autoflow.theme", "dark") === "light" ? "light" : "dark";
@@ -8145,20 +8142,6 @@ function useLiveStdoutText(
   return text;
 }
 
-function clamp01(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
-
-function runnerCheetahDurationMs(usage: AutoflowRunnerResourceUsage | null) {
-  const loadScore = clamp01(usage?.loadScore ?? 0);
-  const easedScore = Math.pow(loadScore, 0.72);
-  return Math.round(
-    RUNNER_CHEETAH_IDLE_DURATION_MS -
-      (RUNNER_CHEETAH_IDLE_DURATION_MS - RUNNER_CHEETAH_MIN_DURATION_MS) * easedScore
-  );
-}
-
 function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerResourceUsage | null {
   const [usage, setUsage] = React.useState<AutoflowRunnerResourceUsage | null>(null);
 
@@ -8180,7 +8163,7 @@ function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerRe
       }
     };
     void fetchUsage();
-    const handle = window.setInterval(fetchUsage, RUNNER_CHEETAH_POLL_MS);
+    const handle = window.setInterval(fetchUsage, RUNNER_RESOURCE_USAGE_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
@@ -8190,28 +8173,45 @@ function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerRe
   return usage;
 }
 
-function RunnerRunIndicator({ running, pid }: { running: boolean; pid: string }) {
+function formatResourcePercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(value >= 10 ? 0 : 1)}%`;
+}
+
+function formatResourceMemory(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  if (value >= 1024) return `${(value / 1024).toFixed(value >= 10240 ? 0 : 1)}GB`;
+  return `${value.toFixed(value >= 100 ? 0 : 1)}MB`;
+}
+
+function RunnerResourceUsage({ running, pid }: { running: boolean; pid: string }) {
   const usage = useRunnerResourceUsage(running, pid);
-  const durationMs = runnerCheetahDurationMs(usage);
-  const title = usage
-    ? `러너 실행 중 · CPU ${usage.cpuPercent.toFixed(1)}% · 메모리 ${usage.memoryPercent.toFixed(1)}%`
+  const measuredUsage = usage?.ok ? usage : null;
+  const cpuLabel = formatResourcePercent(measuredUsage?.cpuPercent);
+  const memoryLabel = formatResourceMemory(measuredUsage?.rssMb);
+  const title = measuredUsage
+    ? `러너 실행 중 · CPU ${cpuLabel} · 메모리 ${memoryLabel} · 프로세스 ${measuredUsage.processCount}`
     : "러너 실행 중 · 부하 측정 중";
-  const style = {
-    "--runner-run-duration": `${durationMs}ms`,
-    "--runner-cheetah-sprite": `url(${runnerCheetahStrip})`
-  } as React.CSSProperties & {
-    "--runner-run-duration": string;
-    "--runner-cheetah-sprite": string;
-  };
+  const segments = [
+    ["CPU", cpuLabel],
+    ["메모리", memoryLabel]
+  ];
 
   return (
     <span
-      className="runner-run-indicator"
+      className="runner-resource-usage"
       data-running={running ? "true" : "false"}
-      aria-label={running ? "러너 실행 중" : "러너 대기 중"}
+      data-loading={usage?.ok ? "false" : "true"}
+      aria-label={title}
       title={title}
-      style={style}
-    />
+    >
+      {segments.map(([label, value]) => (
+        <span className="runner-resource-usage-segment" key={label}>
+          <span className="runner-resource-usage-label">{label}</span>
+          <span className="runner-resource-usage-value">{value}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -8220,17 +8220,20 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const animatedTokens = useCountUp(activity.tokens);
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
-  const pidLabel = runner.pid ? `PID ${runner.pid}` : "PID -";
+  const pidLabel = isRunning ? `PID ${runner.pid}` : "";
+  const footerTitle = pidLabel
+    ? `누적 토큰 ${activity.tokens.toLocaleString()} · ${pidLabel}`
+    : `누적 토큰 ${activity.tokens.toLocaleString()}`;
   return (
     <footer
       className="ai-conversation-panel-activity"
       data-running={isRunning ? "true" : "false"}
       aria-live="polite"
-      title={`누적 토큰 ${activity.tokens.toLocaleString()} · ${pidLabel}`}
+      title={footerTitle}
     >
       <span>{animatedTokens.toLocaleString()} tokens</span>
-      <span className="ai-conversation-panel-activity-pid">{pidLabel}</span>
-      {isRunning ? <RunnerRunIndicator running={isRunning} pid={runner.pid} /> : null}
+      {isRunning ? <RunnerResourceUsage running={isRunning} pid={runner.pid} /> : null}
+      {pidLabel ? <span className="ai-conversation-panel-activity-pid">{pidLabel}</span> : null}
     </footer>
   );
 }

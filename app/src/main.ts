@@ -2503,10 +2503,12 @@ function runAutoflowCachedOrRefresh(command, options = {}, ttlMs = readBoardDiag
       .then((result) => markReadBoardFallback(cloneRunResult(result), { cacheStatus: "miss" }));
   }
 
-  return Promise.resolve(emptyCachedAutoflowResult(command, options, {
-    refreshInFlight: true,
-    cacheStatus: entry?.promise ? "pending" : "miss"
-  }));
+  return entry.promise.then((result) =>
+    markReadBoardFallback(cloneRunResult(result), {
+      refreshInFlight: true,
+      cacheStatus: "pending"
+    })
+  );
 }
 
 function clearReadBoardDiagnosticCache(command, options = {}) {
@@ -6169,7 +6171,12 @@ function serializeRunnerState(values) {
 }
 
 async function writeRunnerStateAtomic(filePath, values) {
-  const next = { ...runnerTokenStateDefaults, ...values };
+  const nextMap = new Map(Object.entries({ ...runnerTokenStateDefaults, ...values }));
+  try {
+    const latest = parseStateMap(await fs.readFile(filePath, "utf8"));
+    preserveLatestRunnerAccountingFields(nextMap, latest, new Set());
+  } catch {}
+  const next = Object.fromEntries(nextMap);
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, serializeRunnerState(next), "utf8");
   await fs.rename(tmpPath, filePath);
