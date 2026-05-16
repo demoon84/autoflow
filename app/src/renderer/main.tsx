@@ -784,8 +784,6 @@ const runnerRoleLabels: Record<string, string> = {
   verifier: "검증 러너",
   coordinator: "coordinator (legacy)",
   coord: "coordinator (legacy)",
-  doctor: "coordinator (legacy)",
-  diagnose: "coordinator (legacy)",
   todo: "작업자 (legacy)",
   watcher: "감시기",
   runner: "AI"
@@ -1301,26 +1299,6 @@ function prefixedValues(values: Record<string, string>, prefix: string) {
     .map(([, value]) => value);
 }
 
-function runnerDoctorId(runnerId: string) {
-  return `runner_${runnerId.replace(/[^A-Za-z0-9_]/g, "_")}`;
-}
-
-function runnerHealthTone(value: string) {
-  if (value === "warning") {
-    return "runner-health-warning";
-  }
-
-  if (value === "error" || value === "fail" || value === "failed") {
-    return "runner-health-fail";
-  }
-
-  if (value === "disabled" || value === "not_applicable" || value === "unknown") {
-    return "runner-health-muted";
-  }
-
-  return "runner-health-ok";
-}
-
 function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
@@ -1463,7 +1441,7 @@ function App() {
   const [isRefreshingProjectTabs, setIsRefreshingProjectTabs] = React.useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = React.useState<SettingsSection>(() => {
     const stored = initialSetting("autoflow.activeSettingsSection", "progress");
-    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "doctor" || stored === "chat") {
+    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "chat") {
       return "progress";
     }
     return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "progress";
@@ -3927,19 +3905,6 @@ function RunnerConsole({
               enabled: runner.enabled || "true",
               command: runner.command || ""
             };
-            const doctorId = runnerDoctorId(runner.id);
-            const roleHealth = board?.doctor[`check.${doctorId}_role`] || "";
-            const adapterHealth = board?.doctor[`check.${doctorId}_adapter`] || "";
-            const enabledHealth = board?.doctor[`check.${doctorId}_enabled`] || "";
-            const modeHealth = board?.doctor[`check.${doctorId}_mode`] || "";
-            const intervalHealth = board?.doctor[`check.${doctorId}_interval`] || "";
-            const pidHealth = board?.doctor[`check.${doctorId}_pid`] || "";
-            const showRoleHealth = runnerHealthNeedsAttention(roleHealth);
-            const showAdapterHealth = enabled || runnerHealthNeedsAttention(adapterHealth);
-            const showEnabledHealth = runnerHealthNeedsAttention(enabledHealth);
-            const showModeHealth = Boolean(modeHealth) && (enabled || runnerHealthNeedsAttention(modeHealth));
-            const showIntervalHealth = Boolean(intervalHealth) && (enabled || runnerHealthNeedsAttention(intervalHealth));
-            const showPidHealth = Boolean(runner.pid) || runnerHealthNeedsAttention(pidHealth);
             const runnerEventRaw = runner.activeItem || runner.lastResult || "이벤트 없음";
             const runnerEvent = isMachineRunnerLog(runnerEventRaw) ? "이벤트 없음" : runnerEventRaw;
             const selected = selectedRunnerId === runner.id;
@@ -3962,38 +3927,6 @@ function RunnerConsole({
                     <span>
                       {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - 반복 실행 / {intervalLabel}s
                     </span>
-                    <div className="runner-health-line">
-                      {showRoleHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(roleHealth)}`}>
-                          역할 {displayStatus(roleHealth)}
-                        </span>
-                      ) : null}
-                      {showAdapterHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(adapterHealth)}`}>
-                          어댑터 {displayStatus(adapterHealth)}
-                        </span>
-                      ) : null}
-                      {showEnabledHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(enabledHealth)}`}>
-                          사용 {displayStatus(enabledHealth)}
-                        </span>
-                      ) : null}
-                      {showModeHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(modeHealth)}`}>
-                          모드 {displayStatus(modeHealth)}
-                        </span>
-                      ) : null}
-                      {showIntervalHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(intervalHealth)}`}>
-                          주기 {displayStatus(intervalHealth)}
-                        </span>
-                      ) : null}
-                      {showPidHealth ? (
-                        <span className={`runner-health-pill ${runnerHealthTone(pidHealth)}`}>
-                          PID {displayStatus(pidHealth)}
-                        </span>
-                      ) : null}
-                    </div>
                   </div>
                   <div className="runner-actions">
                     {canStop ? (
@@ -8387,7 +8320,7 @@ function titleCaseWorkflowRunnerId(value: string) {
 }
 
 function isCoordinatorRole(value: string) {
-  return ["coordinator", "coord", "doctor", "diagnose"].includes((value || "").toLowerCase());
+  return ["coordinator", "coord"].includes((value || "").toLowerCase());
 }
 
 function displayProgressRunnerLabel(runner: AutoflowRunner) {

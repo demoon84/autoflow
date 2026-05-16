@@ -2135,54 +2135,6 @@ pre {
   font-weight: 400;
 }
 
-.runner-health-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-  min-width: 0;
-}
-
-.runner-health-pill {
-  display: inline-flex;
-  align-items: center;
-  max-width: 138px;
-  height: 22px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 8px;
-  font-size: var(--font-size-meta);
-  font-weight: 430;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.runner-health-ok {
-  border-color: color-mix(in oklch, var(--chart-2) 42%, var(--border));
-  background: color-mix(in srgb, var(--chart-2) 9%, var(--card));
-  color: var(--chart-2);
-}
-
-.runner-health-warning {
-  border-color: color-mix(in srgb, var(--chart-4) 28%, var(--border));
-  background: color-mix(in srgb, var(--chart-4) 8%, var(--card));
-  color: color-mix(in srgb, var(--chart-4) 70%, var(--foreground));
-}
-
-.runner-health-fail {
-  border-color: color-mix(in srgb, var(--destructive) 35%, var(--border));
-  background: color-mix(in srgb, var(--destructive) 8%, var(--card));
-  color: var(--destructive);
-}
-
-.runner-health-muted {
-  border-color: var(--border);
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
-
 .runner-state strong {
   color: var(--foreground);
   font-size: var(--font-size-control-sm);
@@ -6645,14 +6597,6 @@ pre {
   min-height: 148px;
 }
 
-.doctor-panel {
-  margin: 0 14px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card);
-  padding: 11px 12px;
-}
-
 .stop-hook-panel,
 .watcher-panel {
   margin: 0 14px 14px;
@@ -6792,55 +6736,8 @@ pre {
   background: color-mix(in srgb, var(--muted) 84%, white);
 }
 
-.doctor-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
-.doctor-panel-header strong {
-  overflow: hidden;
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.doctor-panel ul {
-  display: grid;
-  gap: 5px;
-  margin: 10px 0 0;
-  padding: 0 0 0 16px;
-}
-
-.doctor-panel li,
-.doctor-panel p {
-  color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.doctor-panel p {
-  margin: 10px 0 0;
-}
-
-.doctor-ok {
-  border-color: color-mix(in srgb, var(--chart-2) 36%, var(--border));
-  background: color-mix(in srgb, var(--chart-2) 13%, var(--card));
-}
-
-.doctor-warning {
-  border-color: color-mix(in srgb, var(--chart-4) 34%, var(--border));
-  background: color-mix(in srgb, var(--chart-4) 12%, var(--card));
-}
-
 .settings-utility-grid .stop-hook-panel,
-.settings-utility-grid .watcher-panel,
-.settings-utility-grid .doctor-panel {
+.settings-utility-grid .watcher-panel {
   display: grid;
   align-content: start;
   min-height: 94px;
@@ -6858,14 +6755,8 @@ pre {
   background: var(--card);
 }
 
-.settings-utility-grid .doctor-panel {
-  border-color: var(--border);
-  background: var(--card);
-}
-
 .settings-utility-grid .stop-hook-title strong,
-.settings-utility-grid .watcher-title strong,
-.settings-utility-grid .doctor-panel-header strong {
+.settings-utility-grid .watcher-title strong {
   font-size: 14px;
   font-weight: 500;
 }
@@ -6896,17 +6787,6 @@ pre {
   height: 34px !important;
   border-radius: 8px !important;
   background: var(--card) !important;
-}
-
-.settings-utility-grid .doctor-panel p,
-.settings-utility-grid .doctor-panel li {
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.doctor-fail {
-  border-color: color-mix(in srgb, var(--destructive) 40%, var(--border));
-  background: color-mix(in srgb, var(--destructive) 13%, var(--card));
 }
 
 .log-preview {

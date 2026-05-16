@@ -116,7 +116,7 @@ Large runtime scripts remain only as compatibility layers while behavior is spli
 - Prefer `autoflow tool runner-tool <role> ...` for new behavior.
 - Do not add `.sh` entrypoints for repo-owned runtime behavior.
 - Do not keep a renamed runtime alias merely for convenience; stale aliases make runner/tool claim ambiguous.
-- Remove a legacy fallback once the JS/TS implementation is the single worker and package/doctor/smoke docs no longer require it.
+- Remove a legacy fallback once the JS/TS implementation is the single worker and package/smoke docs no longer require it.
 
 ## Pass, Revise, Replan, And Merge Rules
 
@@ -137,5 +137,5 @@ When adding or changing a runner tool:
 2. Document the action in the relevant role agent file.
 3. Keep `autoflow tool list` contract text accurate.
 4. Update this file if the responsibility boundary changes.
-5. Update package install, doctor companion checks, and smoke tests when files move or disappear.
-6. Run `autoflow tool runner-tool --help` or `npx tsx autoflow tool runner-tool --help`, `./app/bin/autoflow tool list`, and `./app/bin/autoflow doctor . .autoflow`.
+5. Update package install and smoke tests when files move or disappear.
+6. Run `autoflow tool runner-tool --help` or `npx tsx autoflow tool runner-tool --help`, `./app/bin/autoflow tool list`, and installed-board status/runners checks.

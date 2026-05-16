@@ -39,7 +39,6 @@ if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
 const allowedCommands = new Set([
   "init",
   "status",
-  "doctor",
   "metrics",
   "install-stop-hook",
   "remove-stop-hook",
@@ -1259,7 +1258,7 @@ function normalizeRunnerRole(role) {
   if (value === "ticket") return "worker";
   if (value === "wiki") return "wiki-maintainer";
   if (value === "verify") return "verifier";
-  if (["coord", "doctor", "diagnose"].includes(value)) return "coordinator";
+  if (value === "coord") return "coordinator";
   if (value === "merge" || value === "merge-bot") return "worker";
   return value || "planner";
 }
@@ -4055,11 +4054,6 @@ async function readBoard({ projectRoot, boardDirName }) {
       fallback: (error) => runnerListErrorResult({ projectRoot, boardDirName: normalizedBoardDirName }, error)
     },
     {
-      source: "doctor",
-      run: () => runAutoflowCachedOrRefresh("doctor", { projectRoot, boardDirName: normalizedBoardDirName }),
-      fallback: (error) => readBoardDiagnosticErrorResult("doctor", { projectRoot, boardDirName: normalizedBoardDirName }, error)
-    },
-    {
       source: "metrics",
       run: () => runAutoflowCachedOrRefresh("metrics", { projectRoot, boardDirName: normalizedBoardDirName }),
       fallback: (error) => readBoardDiagnosticErrorResult("metrics", { projectRoot, boardDirName: normalizedBoardDirName }, error)
@@ -4081,7 +4075,6 @@ async function readBoard({ projectRoot, boardDirName }) {
   const [
     statusResult,
     runnersResult,
-    doctorResult,
     metricsResult,
     stopHookResult,
     watcherResult
@@ -4091,11 +4084,10 @@ async function readBoard({ projectRoot, boardDirName }) {
           ? settled.value
           : diagnosticTasks[index].fallback(settled.reason)
       ))
-    : [null, null, null, null, null, null];
+    : [null, null, null, null, null];
   const fallbackSources = [
     ["status", statusResult],
     ["runners", runnersResult],
-    ["doctor", doctorResult],
     ["metrics", metricsResult],
     ["stop-hook-status", stopHookResult],
     ["watch-status", watcherResult]
@@ -4226,8 +4218,6 @@ async function readBoard({ projectRoot, boardDirName }) {
     readBoardMeta,
     status: statusResult ? parseKeyValueOutput(statusResult.stdout) : {},
     statusResult,
-    doctor: doctorResult ? parseKeyValueOutput(doctorResult.stdout) : {},
-    doctorResult,
     metrics: parsedMetrics,
     metricsResult,
     stopHook: stopHookResult ? parseKeyValueOutput(stopHookResult.stdout) : {},
@@ -6343,8 +6333,8 @@ app.whenReady().then(() => {
           // Pin the autoflow-side stable runner id so worker helpers
           // picks this instead of codex's per-session UUID. Without this,
           // every PTY restart issues a fresh UUID, workership locks
-          // become stale, and worker claim refuses to proceed until
-          // a janitor pass clears the lock.
+          // become stale, and worker claim refuses to proceed until the
+          // lock is cleared by normal runner state handling.
           AUTOFLOW_WORKER_ID: runnerId,
           AUTOFLOW_RUNNER_ID: runnerId,
           AUTOFLOW_ROLE: normalizedRole,

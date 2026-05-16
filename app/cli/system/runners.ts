@@ -16,7 +16,7 @@ function normalizeRunnerRole(role: string): string {
     if (value === "plan") return "planner";
     if (value === "verify") return "verifier";
     if (value === "wiki") return "wiki-maintainer";
-    if (["coord", "doctor", "diagnose"].includes(value)) return "coordinator";
+    if (value === "coord") return "coordinator";
     if (value === "merge" || value === "merge-bot") return "worker";
     return value;
 }

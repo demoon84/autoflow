@@ -6,7 +6,7 @@
 --
 -- Phase 1 (this scaffold): sqlite holds a periodically refreshed *snapshot*
 -- of the markdown/state files. `state-db.js sync` rebuilds the snapshot;
--- `autoflow doctor` consumes it to report drift.
+-- Runtime status and runner-tool checks can consume it to report drift.
 -- Phase 2 (future): write-time dual-write so that markdown/jsonl and sqlite
 -- both record every event, with sqlite eventually becoming primary.
 

@@ -39,7 +39,7 @@ export function updateRunnerState(
   return writeRunnerState(runnerId, map, boardRoot);
 }
 
-// ─── PID liveness (used by janitor + claim lock) ────────────────
+// ─── PID liveness (used by claim lock) ─────────────────────────
 export function pidAlive(pid: number): boolean {
   return isRunnerProcessAlive(pid);
 }

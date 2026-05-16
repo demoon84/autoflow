@@ -10,7 +10,6 @@ const runtimeToolPaths: Record<string, string> = {
     "notify-user": "system/notify-user.ts",
     "origin-cli": "system/origin-cli.ts",
     "path-conflict-check": "system/path-conflict-check.ts",
-    "planner-janitor": "system/janitor/planner-janitor.ts",
     "run-hook": "system/run-hook.ts",
     "runner-stage": "system/runner-stage.ts",
     "runner-tokens": "system/runner-tokens.ts",

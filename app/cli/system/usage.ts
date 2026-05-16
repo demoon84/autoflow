@@ -16,7 +16,6 @@ Usage:
   autoflow runners <list|start|stop|restart|artifacts|set|add|remove> ...
   autoflow metrics [project-root] [board-dir-name]
   autoflow status [project-root] [board-dir-name]
-  autoflow doctor [--fix] [project-root] [board-dir-name]
   autoflow origin <status|list|search|of-ticket|of-commit|sync> [args...]
   autoflow help`);
 }

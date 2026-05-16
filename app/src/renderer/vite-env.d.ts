@@ -121,8 +121,6 @@ type AutoflowBoardSnapshot = {
   exists: boolean;
   status: Record<string, string>;
   statusResult: AutoflowRunResult | null;
-  doctor: Record<string, string>;
-  doctorResult: AutoflowRunResult | null;
   metrics: Record<string, string>;
   metricsResult: AutoflowRunResult | null;
   stopHook: Record<string, string>;

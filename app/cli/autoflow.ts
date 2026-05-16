@@ -15,7 +15,6 @@ import {skillProject} from "./runners/wiki/skill";
 import {runnersProject} from "./system/runners";
 import {metricsProject} from "./system/metrics";
 import {statusProject} from "./system/status";
-import {doctorProject} from "./system/doctor";
 import {guardProject} from "./system/guard";
 import {originProject} from "./system/origin";
 import {cleanupRunnerLogs} from "./system/cleanup-runner-logs";
@@ -90,9 +89,6 @@ function runAutoflow(argv: string[]): void {
             break;
         case "guard":
             guardProject(argv);
-            break;
-        case "doctor":
-            doctorProject(argv);
             break;
         case "origin":
             originProject(argv);

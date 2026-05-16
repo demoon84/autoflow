@@ -10,7 +10,7 @@ absorbed into the desktop application as the single source of truth.
 - `autoflow.ts`: top-level CLI entrypoint and command dispatcher.
 - `runners/`: runner-facing command code grouped by `planner/`, `worker/`,
   `verifier`, and `wiki`.
-- `system/`: board/runtime management commands such as install, status, doctor,
+- `system/`: board/runtime management commands such as install, status,
   runner config, tool dispatch, telemetry, and cleanup.
 - `shared/`: reusable CLI helpers.
 
@@ -31,7 +31,7 @@ as CLI:
 - `runners/worker/`: worker startup, worktree tools, evidence checks, and finalization.
 - `runners/verifier/`: verifier queue/evidence/decision tools and legacy verify macro.
 - `runners/wiki/`: wiki runner tools plus wiki scripts.
-- `system/`: board guard, stop hook, wake/stage/token, janitor, and runtime maintenance helpers.
+- `system/`: board guard, stop hook, wake/stage/token, and runtime maintenance helpers.
 - `shared/`: shared markdown, git, board, and runner-tool helpers.
 
 Legacy `.js` companions may remain for Node runtime compatibility, but shell
@@ -55,5 +55,3 @@ and exercise the runners there.
   `app/runtime/runners/<role>/` with board/project env vars.
 - `autoflow wiki query` performs local markdown retrieval directly in the
   TypeScript CLI; wiki runner scripts live under `app/runtime/runners/wiki/scripts/`.
-- `autoflow doctor` verifies the active board and required TypeScript runtime
-  companions.

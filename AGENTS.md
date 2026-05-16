@@ -22,7 +22,7 @@
 - `app/runtime/`: runner 실행 코드 원본. 보드에 복사되지 않고 앱/CLI 가 `BOARD_ROOT`/`PROJECT_ROOT` env 만 넘겨 직접 실행한다.
 - `app/runtime/runners/`: 플래너 러너, 워커 러너, 검증 러너, 위키 러너 기준 기능 폴더.
 - `app/runtime/shared/`: runner 공통 도구와 board utility.
-- `app/runtime/system/`: 보드 guard, janitor 같은 시스템성 기능.
+- `app/runtime/system/`: 보드 guard, stop hook, wake/stage/token 같은 시스템성 기능.
 - `install/`: 설치 레벨. 대상 보드로 복사되는 데이터 source (`board/`, `host/`, `integrations/`, `manifest.toml`). runtime 은 여기 없음.
 - `install/board/`: 새 `.autoflow` 보드에 설치되는 문서, 규칙, 템플릿.
 - `install/host/`: 설치 대상 프로젝트 루트에 놓이는 host `AGENTS.md` 템플릿.
