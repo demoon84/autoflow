@@ -4,8 +4,9 @@ import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const files = [
-  "src/main.js",
-  "src/preload.js"
+  "scripts/test-pty-claude-version.js",
+  "scripts/test-pty-manager.js",
+  "scripts/test-pty-spawn-helpers.js"
 ];
 
 let failed = false;

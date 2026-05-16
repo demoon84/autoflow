@@ -75,7 +75,7 @@ type PtyRunner = {
 
 let pty: NodePtyModule | null;
 try {
-  // node-pty is a native module; require lazily so the rest of main.js still
+  // node-pty is a native module; require lazily so the rest of main.ts still
   // boots if rebuild was skipped.
   pty = require("node-pty") as NodePtyModule;
 } catch (err) {

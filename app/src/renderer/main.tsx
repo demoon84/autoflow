@@ -1697,7 +1697,7 @@ function App() {
 
     const scheduleRefresh = () => {
       if (cancelled) return;
-      // Coalesce a burst of board change events from main.js. The main
+      // Coalesce a burst of board change events from main.ts. The main
       // process already debounces ~250ms; we add another small renderer-side
       // window so any in-flight load finishes before we kick off the next.
       if (pendingTimer !== null) {

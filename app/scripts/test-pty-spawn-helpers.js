@@ -1,12 +1,12 @@
 // Smoke test for the helper functions that build the CLI command + initial
-// prompt. These are exposed indirectly via the IPC spawn handler in main.js;
+// prompt. These are exposed indirectly via the IPC spawn handler in main.ts;
 // we re-implement minimal copies here that the runtime helpers should match.
 //
 // Usage: node scripts/test-pty-spawn-helpers.js
 
 const path = require("node:path");
 
-// Mirror main.js buildAgentCliCommand() — keep in sync.
+// Mirror main.ts buildAgentCliCommand() — keep in sync.
 function buildAgentCliCommand(agent, model, reasoning) {
   const parts = [];
   switch (String(agent || "").toLowerCase()) {

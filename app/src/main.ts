@@ -1,3 +1,4 @@
+// @ts-nocheck
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const crypto = require("node:crypto");
@@ -5,8 +6,7 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-require("tsx/cjs");
-const { PtyRunnerManager } = require("./main/runner-pty-manager.ts");
+const { PtyRunnerManager } = require("./main/runner-pty-manager");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;
@@ -19,9 +19,15 @@ function ignoreBrokenPipe(stream) {
 ignoreBrokenPipe(process.stdout);
 ignoreBrokenPipe(process.stderr);
 
-const repoRoot = process.env.AUTOFLOW_REPO_ROOT || path.resolve(__dirname, "../..");
+const repoRoot = process.env.AUTOFLOW_REPO_ROOT || (() => {
+  const candidates = [
+    path.resolve(__dirname, "../../.."),
+    path.resolve(__dirname, "../..")
+  ];
+  return candidates.find((candidate) => fsSync.existsSync(path.join(candidate, "package.json"))) || candidates[0];
+})();
 const scaffoldManifestPath = path.join(repoRoot, "install", "manifest.toml");
-const desktopRoot = path.resolve(__dirname, "..");
+const desktopRoot = path.join(repoRoot, "app");
 const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
 const windowStateFileName = "window-state.json";
 const desktopSessionStateFileName = "desktop-session-state.json";
@@ -1786,7 +1792,7 @@ function createWindow() {
     trafficLightPosition: { x: 16, y: 16 },
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       devTools: process.env.AUTOFLOW_DESKTOP_DEVTOOLS === "1"
@@ -1819,7 +1825,7 @@ function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    win.loadFile(path.join(__dirname, "..", "dist", "renderer", "index.html"));
+    win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   }
 }
 

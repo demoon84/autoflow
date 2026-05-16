@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { buildMainProcess } from "./build-main.mjs";
 
 const require = createRequire(import.meta.url);
 require("tsx/cjs");
@@ -28,6 +29,7 @@ const { fixNodePtySpawnHelperPermissions } = nodePtyPermissions;
 fixNodePtySpawnHelperPermissions({
   log: (message) => console.log(`[desktop dev] ${message}`)
 });
+await buildMainProcess();
 
 const server = await createServer({
   configFile: path.join(desktopRoot, "vite.config.ts"),
@@ -87,8 +89,15 @@ function scheduleElectronRestart(filePath) {
     clearTimeout(restartTimer);
   }
 
-  restartTimer = setTimeout(() => {
+  restartTimer = setTimeout(async () => {
     restartTimer = null;
+    try {
+      await buildMainProcess();
+    } catch (error) {
+      console.error("[desktop dev] Failed to rebuild Electron main process", error);
+      return;
+    }
+
     if (!electron || electron.killed) {
       startElectron();
       return;
@@ -100,11 +109,11 @@ function scheduleElectronRestart(filePath) {
   }, 100);
 }
 
-const mainProcessRootFiles = new Set(["main.js", "preload.js"]);
+const mainProcessRootFiles = new Set(["main.ts", "preload.ts"]);
 const mainProcessHelperExtensions = new Set([".ts", ".js"]);
-// Auto-restart on main.js / preload.js / main-process helper changes is
+// Auto-restart on main.ts / preload.ts / main-process helper changes is
 // convenient for renderer hot-reload, but extremely disruptive when PTY
-// runners are running — the worker AI sometimes edits PROJECT_ROOT/main.js
+// runners are running — the worker AI sometimes edits PROJECT_ROOT/main.ts
 // (instead of its worktree) during ticket work, which triggers electron.kill()
 // and ends up killing the very worker that made the edit. Set
 // AUTOFLOW_DESKTOP_AUTO_RESTART=0 to disable auto-restart and require an
@@ -131,7 +140,7 @@ const mainProcessWatchers = AUTO_RESTART_ENABLED
     ]
   : [];
 if (!AUTO_RESTART_ENABLED) {
-  console.log("[desktop dev] AUTOFLOW_DESKTOP_AUTO_RESTART=0 — main.js/preload.js auto-restart disabled. Use Cmd+R or kill the dev process to restart.");
+  console.log("[desktop dev] AUTOFLOW_DESKTOP_AUTO_RESTART=0 — main.ts/preload.ts auto-restart disabled. Use Cmd+R or kill the dev process to restart.");
 }
 
 startElectron();
