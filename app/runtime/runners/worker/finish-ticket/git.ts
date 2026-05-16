@@ -1,5 +1,6 @@
 import {execFileSync, fs, path, projectRoot, spawnSync} from "./context";
 import {unique} from "./io";
+import { resolveTsxCommand } from "../../../shared/tsx";
 
 export function isGitWorktree(cwd: string): boolean {
   return git(cwd, ["rev-parse", "--is-inside-work-tree"]).status === 0;
@@ -27,10 +28,8 @@ export function git(cwd: string, args: string[]): { status: number } {
 }
 
 export function spawnTsScript(scriptPath: string, scriptArgs: string[], env: NodeJS.ProcessEnv): ReturnType<typeof spawnSync> {
-  const localTsx = path.join(projectRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
-  const command = fs.existsSync(localTsx) ? localTsx : (process.platform === "win32" ? "npx.cmd" : "npx");
-  const args = fs.existsSync(localTsx) ? [scriptPath, ...scriptArgs] : ["tsx", scriptPath, ...scriptArgs];
-  return spawnSync(command, args, { encoding: "utf8", env });
+  const runner = resolveTsxCommand(path.dirname(scriptPath));
+  return spawnSync(runner.command, [...runner.args, scriptPath, ...scriptArgs], { encoding: "utf8", env });
 }
 
 export function spawnOutputText(value: string | Buffer | null | undefined): string {

@@ -54,9 +54,9 @@ contextBridge.exposeInMainWorld("autoflow", {
   onInstallProgress: (handler: unknown) => subscribe("autoflow:installProgress", handler),
   // ----- PTY runner manager (vibe-terminal pattern) -----
   // Renderer can send scoped stdin bytes only to an existing runner PTY.
-  // The bridge intentionally stays narrow: start / stop / resize / snapshot /
+  // The bridge intentionally stays narrow: spawn / stop / resize / snapshot /
   // status-bytes subscription / raw stdin write.
-  runnerPtyStart: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtyStart", options),
+  runnerPtyStart: () => ipcRenderer.invoke("autoflow:runnerPtyStart"),
   runnerPtySpawn: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtySpawn", options),
   runnerPtyStop: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtyStop", options),
   runnerPtyResize: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtyResize", options),

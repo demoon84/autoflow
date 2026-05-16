@@ -69,6 +69,7 @@ type AutoflowRunner = {
   authRequired: boolean;
   authMessage: string;
   authUrl: string;
+  authProviderBlocked?: boolean;
   statePath: string;
   logPath: string;
   tokenUsage?: number;
@@ -339,15 +340,7 @@ interface Window {
     cancelInvocation: (
       invocationId: string
     ) => Promise<{ ok: boolean; cancelled: boolean; reason?: string }>;
-    runnerPtyStart: (options: {
-      runnerId: string;
-      command?: string;
-      cwd?: string;
-      cols?: number;
-      rows?: number;
-      env?: Record<string, string>;
-      shell?: string;
-    }) => Promise<{ ok: boolean; runnerId?: string; pid?: number; status?: string; error?: string }>;
+    runnerPtyStart: () => Promise<{ ok: false; error: string }>;
     runnerPtySpawn: (options: {
       runnerId: string;
       role: string;

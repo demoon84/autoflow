@@ -3,5 +3,9 @@ const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuo
 
 export function originProject(args: string[]): never {
     const ctx = projectContext(process.env.AUTOFLOW_PROJECT_ROOT || ".", process.env.AUTOFLOW_BOARD_DIR_NAME || defaultBoardDirName());
-    return runRuntimeScript(ctx, "system/origin-cli.ts", args);
+    return runNodeOrTsScript(runtimeScriptPath("system/origin-cli.ts"), args, {
+        ...process.env,
+        AUTOFLOW_PROJECT_ROOT: ctx.projectRoot,
+        AUTOFLOW_BOARD_ROOT: ctx.boardRoot,
+    });
 }

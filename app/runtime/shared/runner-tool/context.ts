@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import * as utils from "../board-utils";
+import { resolveTsxCommand } from "../tsx";
 
 export { crypto, fs, path, spawnSync, utils };
 
@@ -88,10 +89,8 @@ export function git(gitArgs: string[], cwd: string): GitRunResult {
 }
 
 export function spawnTsScript(scriptPath: string, scriptArgs: string[], env: NodeJS.ProcessEnv): ReturnType<typeof spawnSync> {
-  const localTsx = path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
-  const command = fs.existsSync(localTsx) ? localTsx : (process.platform === "win32" ? "npx.cmd" : "npx");
-  const args = fs.existsSync(localTsx) ? [scriptPath, ...scriptArgs] : ["tsx", scriptPath, ...scriptArgs];
-  return spawnSync(command, args, { encoding: "utf8", env });
+  const runner = resolveTsxCommand(SCRIPT_DIR);
+  return spawnSync(runner.command, [...runner.args, scriptPath, ...scriptArgs], { encoding: "utf8", env });
 }
 
 export function emitRunnerWake(runnerId: string, reason: string, kind: string): WakeEmitResult {

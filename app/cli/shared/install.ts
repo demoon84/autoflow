@@ -190,14 +190,20 @@ export function syncBoardInstallAssets(ctx: ProjectContext, options: {overwrite?
     return summary;
 }
 
-export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {overwriteSkills?: boolean} = {}): InstallAssetSummary {
+function isHostGuidanceEntry(entry: InstallSourceEntry): boolean {
+    return entry.type === "host" && (entry.target === "AGENTS.md" || entry.target === "CLAUDE.md");
+}
+
+export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {overwriteSkills?: boolean; overwriteHostGuidance?: boolean} = {}): InstallAssetSummary {
     const summary = emptyInstallAssetSummary();
     const overwriteSkills = Boolean(options.overwriteSkills);
+    const overwriteHostGuidance = Boolean(options.overwriteHostGuidance);
     const hostEntries = readInstallSourceEntries().filter((entry) => entry.type === "host");
     for (const entry of hostEntries) {
+        const overwrite = shouldOverwriteInstallSource(entry, overwriteSkills) || (overwriteHostGuidance && isHostGuidanceEntry(entry));
         mergeInstallAssetSummary(
             summary,
-            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, shouldOverwriteInstallSource(entry, overwriteSkills), entry.template, entry.skipShell)
+            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, overwrite, entry.template, entry.skipShell)
         );
     }
     return summary;

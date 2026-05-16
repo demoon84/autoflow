@@ -1,4 +1,5 @@
 import {fs, path, spawnSync, boardRoot, projectRoot, runnerId, scriptDir, type ToolJson} from "./context";
+import { resolveTsxCommand } from "../../../shared/tsx";
 
 export function tool(...args: string[]): ToolJson {
   const runnerTool = path.join(scriptDir, "..", "..", "tool.ts");
@@ -32,7 +33,5 @@ export function tool(...args: string[]): ToolJson {
 }
 
 export function tsxCommand(): { command: string; args: string[] } {
-  const local = path.join(projectRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
-  if (fs.existsSync(local)) return { command: local, args: [] };
-  return { command: process.platform === "win32" ? "npx.cmd" : "npx", args: ["tsx"] };
+  return resolveTsxCommand(scriptDir);
 }

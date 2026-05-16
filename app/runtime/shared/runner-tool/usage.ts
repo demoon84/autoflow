@@ -1,5 +1,7 @@
 export function usage(): void {
   process.stdout.write(`Usage:
+  autoflow tool runner-tool [--project <path>] [--board <path>] <role> <command> ...
+
   autoflow tool runner-tool planner queue-snapshot
   autoflow tool runner-tool planner reserve-id --kind <prd|ticket|order> [--ttl-sec <seconds>]
   autoflow tool runner-tool planner write-prd --id <NNN> --content-file <file> [--reservation <path>] [--overwrite]

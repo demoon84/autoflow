@@ -233,9 +233,17 @@ function cmdOriginSync(extraArgs: string[]): void {
     return;
   }
   if (!fs.existsSync(STATE_DB)) cmdInit();
-  spawnSync("python3", [extractor, "--board-root", BOARD_ROOT, "--project-root", PROJECT_ROOT, ...extraArgs], {
+  const result = spawnSync("python3", [extractor, "--board-root", BOARD_ROOT, "--project-root", PROJECT_ROOT, ...extraArgs], {
     stdio: "inherit"
   });
+  if (result.error) {
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
+  if (result.status !== 0) {
+    process.exit(typeof result.status === "number" ? result.status : 1);
+  }
+  process.stdout.write("status=synced\n");
 }
 
 function help(): void {

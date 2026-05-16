@@ -9,7 +9,7 @@
     "postinstall": "node app/scripts/fix-node-pty-permissions.mjs",
     "dev": "node app/scripts/dev.mjs",
     "build": "node app/scripts/build-main.mjs && vite build --config app/vite.config.ts",
-    "check": "node app/scripts/check-syntax.mjs && node app/scripts/check-install-doc-drift.mjs && tsc -p app/tsconfig.json --noEmit && npm run build",
+    "check": "node app/scripts/check-syntax.mjs && node app/scripts/check-install-doc-drift.mjs && tsc -p app/tsconfig.json --noEmit && tsc -p app/tsconfig.main.json --noEmit && npm run build",
     "typecheck": "npm run typecheck:runtime && npm run typecheck:cli",
     "typecheck:runtime": "tsc -p app/runtime/tsconfig.json --noEmit",
     "typecheck:cli": "tsc -p app/cli/tsconfig.json --noEmit"

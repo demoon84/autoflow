@@ -1,5 +1,6 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, SCRIPT_DIR, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { resolveAutoflowRepoRoot } from "../tsx";
 
 export function wikiSourceGroups(): Record<string, string[]> {
   return {
@@ -36,8 +37,10 @@ export function boardDirName(): string {
 export function autoflowCliPath(): string {
   const configured = process.env.AUTOFLOW_CLI;
   if (configured) return configured;
-  const local = path.join(PROJECT_ROOT, "app", "bin", "autoflow");
-  return fs.existsSync(local) ? local : "autoflow";
+  const repoCli = path.join(resolveAutoflowRepoRoot(SCRIPT_DIR), "app", "bin", "autoflow");
+  if (fs.existsSync(repoCli)) return repoCli;
+  const projectLocal = path.join(PROJECT_ROOT, "app", "bin", "autoflow");
+  return fs.existsSync(projectLocal) ? projectLocal : "autoflow";
 }
 
 export function emitAutoflowResult(tool: string, cliArgs: string[]): void {

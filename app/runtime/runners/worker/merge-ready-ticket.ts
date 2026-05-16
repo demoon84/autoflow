@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveTsxCommand } from "../../shared/tsx";
 
 const scriptDir = path.dirname(path.resolve(process.argv[1] || __filename));
 const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(scriptDir, ".."));
@@ -50,9 +51,7 @@ if (result.error) {
 process.exit(typeof result.status === "number" ? result.status : 1);
 
 function tsxCommand(): { command: string; args: string[] } {
-  const local = path.join(projectRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
-  if (fs.existsSync(local)) return { command: local, args: [] };
-  return { command: process.platform === "win32" ? "npx.cmd" : "npx", args: ["tsx"] };
+  return resolveTsxCommand(scriptDir);
 }
 
 function resolveTicketFile(ref: string): string {

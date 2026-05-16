@@ -2,8 +2,25 @@ import * as shared from "../shared";
 const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, migrateQueueDirectoryNames, syncBoardInstallAssets, syncProjectHostInstallAssets, detectHostGuidanceDrift, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
 import {buildWikiVectorIndex} from "../runners/wiki/wiki";
 
+function hasInstallHelpFlag(args: string[]): boolean {
+    return args.includes("--help") || args.includes("-h");
+}
+
+function printInstallUsage(mode: "init" | "upgrade"): void {
+    out(`Usage: autoflow ${mode} [project-root] [board-dir-name] [--refresh-host-guidance]
+
+Options:
+  --refresh-host-guidance  Overwrite target AGENTS.md and CLAUDE.md from the current Autoflow host templates.`);
+}
+
 export function installBoard(args: string[], mode: "init" | "upgrade" = "init"): void {
-    const ctx = projectContext(args[0] || ".", args[1] || defaultBoardDirName(), true);
+    if (hasInstallHelpFlag(args)) {
+        printInstallUsage(mode);
+        return;
+    }
+    const refreshHostGuidance = args.includes("--refresh-host-guidance");
+    const positionalArgs = args.filter((arg) => arg !== "--refresh-host-guidance");
+    const ctx = projectContext(positionalArgs[0] || ".", positionalArgs[1] || defaultBoardDirName(), true);
     if (samePath(ctx.projectRoot, REPO_ROOT)) {
         fail("Refusing to install a board into the Autoflow source repository root. Choose a separate target project instead.");
     }
@@ -21,7 +38,7 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     const terminologyMigrated = migrateWorkerTerminology(ctx);
     const hostAssets = (() => {
         try {
-            return syncProjectHostInstallAssets(ctx, {overwriteSkills: overwrite});
+            return syncProjectHostInstallAssets(ctx, {overwriteSkills: overwrite, overwriteHostGuidance: refreshHostGuidance});
         } catch (error) {
             return fail(`Host install source sync failed: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -81,6 +98,7 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     if (hostAssets.files.length > 0) {
         out(`host_assets_changed=${hostAssets.files.join(",")}`);
     }
+    out(`host_guidance_refresh_requested=${refreshHostGuidance ? "true" : "false"}`);
     out(`host_guidance_status=${hostGuidanceStatus}`);
     out(`host_guidance_custom_count=${hostGuidanceCustom.length}`);
     out(`host_guidance_stale_count=${hostGuidanceStale.length}`);

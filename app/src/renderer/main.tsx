@@ -1018,7 +1018,12 @@ function commandPreviewForRunner(
   }
 
   if (draft.agent === "gemini") {
-    return ["gemini --skip-trust --approval-mode auto_edit --prompt prompt", model ? `--model ${shellArg(model)}` : ""]
+    return [
+      "gemini --skip-trust --approval-mode yolo --include-directories",
+      shellArg(boardDirName),
+      "--prompt prompt",
+      model ? `--model ${shellArg(model)}` : ""
+    ]
       .filter(Boolean)
       .join(" ");
   }
@@ -1532,7 +1537,12 @@ function App() {
     }
 
     authToastKeyRef.current = toastKey;
-    pushToast("warning", `${runnerLoginMessage(authRunner)} 러너 카드에서 Y 계속을 선택하세요.`);
+    pushToast(
+      "warning",
+      runnerCanContinueAuth(authRunner)
+        ? `${runnerLoginMessage(authRunner)} 러너 카드에서 Y 계속을 선택하세요.`
+        : runnerLoginMessage(authRunner)
+    );
   }, [board?.runners, pushToast]);
 
   React.useEffect(() => {
@@ -2240,42 +2250,43 @@ function App() {
           }
         }
         if (runner && (action === "start" || action === "restart")) {
-          const draft = runnerDrafts[runner.id] || {
-            agent: runner.agent || "codex",
-            model: runner.model || "",
-            reasoning: runner.reasoning || "",
-            mode: runner.mode || "loop",
-            intervalSeconds: runner.intervalSeconds || "60",
-            enabled: runner.enabled || "true",
-            command: runner.command || ""
-          };
+          const currentRunnerDraft = runnerDraftFromRunner(runner);
+          const draft = runnerDrafts[runner.id] || currentRunnerDraft;
+          const savedDraft = runnerSavedDrafts[runner.id] || currentRunnerDraft;
           const normalized = normalizeRunnerSelections(draft.agent, draft.model, draft.reasoning, installedAgentProfiles);
-          effectiveRunnerConfig = {
-            agent: draft.agent,
+          const normalizedDraft = {
+            ...draft,
             model: normalized.model,
-            reasoning: normalized.reasoning,
-            command: draft.command
+            reasoning: normalized.reasoning
+          };
+          const hasUnsavedConfigEdit = !runnerDraftsEqual(normalizedDraft, savedDraft);
+          effectiveRunnerConfig = {
+            agent: hasUnsavedConfigEdit ? draft.agent : runner.agent || "codex",
+            model: hasUnsavedConfigEdit ? normalized.model : runner.model || "",
+            reasoning: hasUnsavedConfigEdit ? normalized.reasoning : runner.reasoning || "",
+            command: hasUnsavedConfigEdit ? draft.command : runner.command || ""
           };
           const needsLoopNormalization =
             (runner.mode || "loop") !== "loop" ||
             (runner.enabled || "true") !== "true" ||
-            draft.agent !== (runner.agent || "codex") ||
-            normalized.model !== (runner.model || "") ||
-            normalized.reasoning !== (runner.reasoning || "");
+            hasUnsavedConfigEdit;
 
           if (needsLoopNormalization) {
+            const config: AutoflowRunnerConfigUpdate = {
+              mode: "loop",
+              interval_seconds: "60",
+              enabled: "true"
+            };
+            if (hasUnsavedConfigEdit) {
+              config.agent = draft.agent;
+              config.model = normalized.model;
+              config.reasoning = normalized.reasoning;
+              config.command = draft.command;
+            }
             const configResult = await window.autoflow.configureRunner({
               runnerId,
               ...options,
-              config: {
-                agent: draft.agent,
-                model: normalized.model,
-                reasoning: normalized.reasoning,
-                mode: "loop",
-                interval_seconds: "60",
-                enabled: "true",
-                command: draft.command
-              }
+              config
             });
 
             if (!configResult.ok) {
@@ -2352,6 +2363,7 @@ function App() {
       pushToast,
       runnerActionKeys,
       runnerDrafts,
+      runnerSavedDrafts,
       setRunnerAction
     ]
   );
@@ -4099,6 +4111,10 @@ function runnerLoginMessage(runner: AutoflowRunner) {
   if (runner.authMessage) return runner.authMessage;
   const agent = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "Agent";
   return `${agent} 로그인이 필요합니다.`;
+}
+
+function runnerCanContinueAuth(runner: AutoflowRunner) {
+  return runnerNeedsLogin(runner) && !runner.authProviderBlocked && (runner.agent || "").toLowerCase() === "gemini";
 }
 
 const ansiConverter = new AnsiToHtml({
@@ -8558,6 +8574,7 @@ function AiProgressRow({
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
   const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
+  const canContinueAuth = runnerCanContinueAuth(runner);
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
     runner.role === "wiki" ||
@@ -8794,16 +8811,18 @@ function AiProgressRow({
             <span>{runnerLoginMessage(runner)}</span>
           </div>
           <div className="runner-auth-actions">
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              disabled={Boolean(actionKey)}
-              onClick={() => onRunnerAuthChoice?.("continue", runner)}
-            >
-              {actionKey === "auth_continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              <span>Y 계속</span>
-            </Button>
+            {canContinueAuth ? (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={Boolean(actionKey)}
+                onClick={() => onRunnerAuthChoice?.("continue", runner)}
+              >
+                {actionKey === "auth_continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                <span>Y 계속</span>
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

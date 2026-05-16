@@ -36,8 +36,27 @@ function requireRunnerRole(role: string): string {
     return normalized;
 }
 
+function printRunnersUsage(): void {
+    out(`Autoflow runners
+
+Usage:
+  autoflow runners list [project-root] [board-dir-name]
+  autoflow runners summary [project-root] [board-dir-name]
+  autoflow runners start <runner-id> [project-root] [board-dir-name]
+  autoflow runners stop <runner-id> [project-root] [board-dir-name]
+  autoflow runners restart <runner-id> [project-root] [board-dir-name]
+  autoflow runners artifacts <runner-id> [project-root] [board-dir-name]
+  autoflow runners set <runner-id> [project-root] [board-dir-name] key=value...
+  autoflow runners add <runner-id> <role> [project-root] [board-dir-name] key=value...
+  autoflow runners remove <runner-id> [project-root] [board-dir-name]`);
+}
+
 export function runnersProject(args: string[]): void {
     const subcmd = args.shift() || "list";
+    if (subcmd === "help" || subcmd === "--help" || subcmd === "-h") {
+        printRunnersUsage();
+        return;
+    }
     const runnerId = (subcmd !== "list" && subcmd !== "summary") ? args.shift() : undefined;
     const addRole = subcmd === "add" ? args.shift() : undefined;
     const parsed = parseArgs(args);

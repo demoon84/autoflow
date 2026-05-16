@@ -1,7 +1,6 @@
-// @ts-nocheck
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen: electronScreen, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
-const crypto = require("node:crypto");
+const nodeCrypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
@@ -119,6 +118,8 @@ const runnerAuthNeededPatterns = [
   /\bsign in required\b/i,
   /로그인(?:이)? 필요/i
 ];
+const claudeSubscriptionDisabledPattern =
+  /organization has disabled Claude subscription access|Claude subscription access.*disabled|Use an Anthropic API key instead/i;
 const authUrlPattern = /https?:\/\/[^\s<>"'`)\]]+/gi;
 const agentDisplayLabels = {
   codex: "Codex",
@@ -592,6 +593,47 @@ function sameResolvedPath(left, right) {
   return normalize(left) === normalize(right);
 }
 
+function isPathInside(rootPath, targetPath) {
+  const relativePath = path.relative(rootPath, targetPath);
+  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+async function resolveExistingPathInside(rootPath, targetPath) {
+  const resolvedRoot = path.resolve(rootPath);
+  const resolvedTarget = path.resolve(targetPath);
+  const relativePath = path.relative(resolvedRoot, resolvedTarget);
+  if (!isPathInside(resolvedRoot, resolvedTarget)) {
+    return {
+      ok: false,
+      targetPath: resolvedTarget,
+      relativePath,
+      stderr: "File must be inside the Autoflow board."
+    };
+  }
+  try {
+    const [realRoot, realTarget] = await Promise.all([
+      fs.realpath(resolvedRoot),
+      fs.realpath(resolvedTarget)
+    ]);
+    if (!isPathInside(realRoot, realTarget)) {
+      return {
+        ok: false,
+        targetPath: resolvedTarget,
+        relativePath,
+        stderr: "File must be inside the Autoflow board."
+      };
+    }
+    return { ok: true, targetPath: resolvedTarget, relativePath, stderr: "" };
+  } catch (error) {
+    return {
+      ok: false,
+      targetPath: resolvedTarget,
+      relativePath,
+      stderr: error && error.message ? error.message : String(error)
+    };
+  }
+}
+
 function desktopSessionStatePath() {
   return path.join(app.getPath("userData"), desktopSessionStateFileName);
 }
@@ -894,7 +936,7 @@ function computeQueueFingerprint(role, boardRoot) {
       }
     } catch {}
   }
-  return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 12);
+  return nodeCrypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 12);
 }
 
 // Append a JSONL entry to the wake-poll log (best-effort, non-blocking).
@@ -1077,6 +1119,45 @@ function rolesForBoardChange(relPath) {
   return [];
 }
 
+function emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind = "fs.watch") {
+  const projectRoot = scope?.projectRoot || "";
+  const boardDirName = scope?.boardDirName || defaultBoardDirName;
+  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
+  if (!projectRoot || !runnerId || !fsSync.existsSync(autoflowBin)) {
+    return;
+  }
+  try {
+    require("node:child_process").spawn(
+      autoflowBin,
+      ["tool", "runner-wake", "emit", "--runner", runnerId, "--reason", String(reason), "--kind", kind],
+      {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          AUTOFLOW_PROJECT_ROOT: projectRoot,
+          PROJECT_ROOT: projectRoot,
+          AUTOFLOW_BOARD_ROOT: boardRoot,
+          BOARD_ROOT: boardRoot,
+          AUTOFLOW_BOARD_DIR_NAME: boardDirName
+        },
+        stdio: "ignore",
+        detached: true
+      }
+    ).unref();
+  } catch {}
+}
+
+function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch" }) {
+  const paste = meta.agent === "claude" ? "bracketed" : "plain";
+  let promptOk = false;
+  try {
+    promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
+  } catch {}
+  emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
+  updateWakeActivity(runnerId);
+  return promptOk;
+}
+
 // Persist a minimal state file so the renderer's existing UI (slider /
 // badges / activity card) keeps working while PTY runner state is the source
 // of truth.
@@ -1136,7 +1217,7 @@ async function writePtyRunnerStateFile(runnerId, fields) {
 // runs in interactive (long-lived) mode. The user will see this exactly as
 // if they typed it themselves. Disable destructive prompts via per-CLI flags
 // so the agent can act without blocking on (y/n) prompts.
-function buildAgentCliCommand(agent, model, reasoning) {
+function buildAgentCliCommand(agent, model, reasoning, options = {}) {
   const parts = [];
   switch (String(agent || "").toLowerCase()) {
     case "claude": {
@@ -1159,6 +1240,8 @@ function buildAgentCliCommand(agent, model, reasoning) {
     case "gemini": {
       parts.push("gemini", "--skip-trust", "--approval-mode", "yolo");
       if (model) parts.push("--model", model);
+      const boardDirName = options.boardDirName || defaultBoardDirName;
+      if (boardDirName) parts.push("--include-directories", boardDirName);
       break;
     }
     default:
@@ -1365,6 +1448,22 @@ function projectScopeKey(projectRoot, boardDirName) {
   return `${projectRoot}\0${boardDirName}`;
 }
 
+function clearReadBoardDiagnosticCacheForScope(scope = {}) {
+  const projectRoot = scope.projectRoot || "";
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  for (const key of readBoardDiagnosticCache.keys()) {
+    const [, cachedProjectRoot, cachedBoardDirName] = String(key).split("\0");
+    if (cachedProjectRoot === projectRoot && cachedBoardDirName === boardDirName) {
+      readBoardDiagnosticCache.delete(key);
+    }
+  }
+}
+
+function clearReadBoardCachesForScope(scope = {}) {
+  clearReadBoardRunnerListCache(scope);
+  clearReadBoardDiagnosticCacheForScope(scope);
+}
+
 // Install fs.watch handlers for the directories that should retrigger the
 // renderer's `readBoard` snapshot:
 //   - tickets/* (queue moves: planner / worker / manual)
@@ -1399,6 +1498,7 @@ function ensureBoardWatcher(scope) {
   const broadcast = () => {
     const reason = entry.lastReason || "fs.watch";
     entry.lastReason = "";
+    clearReadBoardCachesForScope({ projectRoot: scope.projectRoot, boardDirName });
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         try {
@@ -1424,36 +1524,20 @@ function ensureBoardWatcher(scope) {
       if (!mgr) return;
       const targetRoles = new Set(rolesForBoardChange(reason));
       if (targetRoles.size === 0) return;
-      const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-      const wakeOk = fsSync.existsSync(autoflowBin);
       for (const [rid, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
         if (!targetRoles.has(meta.role)) continue;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
-        const paste = meta.agent === "claude" ? "bracketed" : "plain";
-        mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
-        updateWakeActivity(rid);
-        if (wakeOk) {
-          try {
-            require("node:child_process").spawn(
-              autoflowBin,
-              ["tool", "runner-wake", "emit", "--runner", rid, "--reason", String(reason), "--kind", "fs.watch"],
-              {
-                cwd: scope.projectRoot,
-                env: {
-                  ...process.env,
-                  AUTOFLOW_PROJECT_ROOT: scope.projectRoot,
-                  PROJECT_ROOT: scope.projectRoot,
-                  AUTOFLOW_BOARD_ROOT: boardRoot,
-                  BOARD_ROOT: boardRoot
-                },
-                stdio: "ignore",
-                detached: true
-              }
-            ).unref();
-          } catch {}
-        }
+        sendRunnerWake({
+          mgr,
+          runnerId: rid,
+          meta,
+          scope: { projectRoot: scope.projectRoot, boardDirName },
+          boardRoot,
+          reason,
+          kind: "fs.watch"
+        });
       }
       // Sticky context generation: when a Todo-*.md appears in inprogress/,
       // the worker just claimed it. Write sticky-context.md with the
@@ -1582,11 +1666,15 @@ function ensureWakeSafetyPoller(scope) {
         if (!fpChanged && !isStall) continue;
 
         const reason = isStall ? "safety-poll-stall" : "safety-poll-queue-change";
-        const paste = meta.agent === "claude" ? "bracketed" : "plain";
-        try {
-          mgr.writePrompt(rid, `[wake] ${reason}`, { paste });
-        } catch {}
-        updateWakeActivity(rid);
+        sendRunnerWake({
+          mgr,
+          runnerId: rid,
+          meta,
+          scope: { projectRoot: scope.projectRoot, boardDirName },
+          boardRoot,
+          reason,
+          kind: "safety-poll"
+        });
         const ps = wakePollState.get(rid) || {};
         ps.queueFingerprint = fp;
         wakePollState.set(rid, ps);
@@ -1721,7 +1809,7 @@ function readWindowState() {
       };
     }
 
-    const display = screen.getDisplayMatching(bounds);
+    const display = electronScreen.getDisplayMatching(bounds);
     const area = display.workArea;
     const visible =
       Number.isFinite(bounds.x) &&
@@ -2664,24 +2752,40 @@ function extractAuthUrl(text) {
 function runnerAuthInfoFromText(text, agent) {
   const clean = (text || "").replace(conversationAnsiEscapePattern, "");
   if (!clean.trim()) {
-    return { authRequired: false, authMessage: "", authUrl: "" };
+    return { authRequired: false, authMessage: "", authUrl: "", authProviderBlocked: false };
+  }
+
+  if (normalizeAgentKey(agent) === "claude" && claudeSubscriptionDisabledPattern.test(clean)) {
+    return {
+      authRequired: true,
+      authMessage: "Claude 조직 설정상 Claude Code 구독 접근이 비활성화되어 있습니다. Anthropic API 키를 설정하거나 관리자에게 활성화를 요청하세요.",
+      authUrl: "",
+      authProviderBlocked: true
+    };
   }
 
   const authRequired = runnerAuthNeededPatterns.some((pattern) => pattern.test(clean));
   const authUrl = extractAuthUrl(clean);
   if (!authRequired) {
-    return { authRequired: false, authMessage: "", authUrl: "" };
+    return { authRequired: false, authMessage: "", authUrl: "", authProviderBlocked: false };
   }
 
   const label = agentDisplayLabels[normalizeAgentKey(agent)] || agent || "Agent";
   return {
     authRequired: true,
     authMessage: `${label} 로그인이 필요합니다.`,
-    authUrl
+    authUrl,
+    authProviderBlocked: false
   };
 }
 
 function mergeRunnerAuthInfo(current, next) {
+  if (next.authProviderBlocked) {
+    return next;
+  }
+  if (current.authProviderBlocked) {
+    return current;
+  }
   if (current.authRequired) {
     return current.authUrl || !next.authUrl ? current : { ...current, authUrl: next.authUrl };
   }
@@ -3010,7 +3114,7 @@ async function runnerAuthInfo(runner, boardRoot) {
     }
   }
 
-  if (authInfo.authRequired && await agentIsLoggedIn(runner.agent)) {
+  if (authInfo.authRequired && !authInfo.authProviderBlocked && await agentIsLoggedIn(runner.agent)) {
     return { authRequired: false, authMessage: "", authUrl: "" };
   }
 
@@ -3140,7 +3244,7 @@ function reportPtyUsageViaRunnerTool(runnerId, usage) {
   if (!meta || !meta.projectRoot || !meta.boardDirName) return;
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
   const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  const tickId = `${runnerId}-${Math.floor(Date.now() / 1000)}-${crypto.randomBytes(2).toString("hex")}`;
+  const tickId = `${runnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
   const args = [
     "tool", "runner-tokens",
     "report",
@@ -3584,10 +3688,10 @@ async function readBoardFile(options = {}) {
     };
   }
   const boardRoot = path.resolve(options.projectRoot, boardDirName);
-  const targetPath = path.resolve(filePath);
-  const relativePath = path.relative(boardRoot, targetPath);
+  const confinedPath = await resolveExistingPathInside(boardRoot, filePath);
+  const targetPath = confinedPath.targetPath;
 
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  if (!confinedPath.ok) {
     return {
       ok: false,
       filePath: targetPath,
@@ -3596,7 +3700,7 @@ async function readBoardFile(options = {}) {
       truncated: false,
       modifiedAt: "",
       size: 0,
-      stderr: "File must be inside the Autoflow board."
+      stderr: confinedPath.stderr
     };
   }
 
@@ -3694,14 +3798,14 @@ async function resolveStartupRulesDocument(options = {}) {
     };
   }
 
-  const resolvedTarget = path.resolve(targetPath);
-  const relativePath = path.relative(boardRoot, resolvedTarget);
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  const confinedPath = await resolveExistingPathInside(boardRoot, targetPath);
+  const resolvedTarget = confinedPath.targetPath;
+  if (!confinedPath.ok) {
     return {
       ...empty,
       filePath: resolvedTarget,
       name: path.basename(resolvedTarget),
-      stderr: "File must be inside the Autoflow board."
+      stderr: confinedPath.stderr
     };
   }
 
@@ -3852,16 +3956,17 @@ async function deleteOrderFile(options = {}) {
   }
 
   const boardRoot = path.resolve(options.projectRoot, boardDirName);
-  const targetPath = path.resolve(filePath);
-  const relativePath = path.relative(boardRoot, targetPath);
+  const confinedPath = await resolveExistingPathInside(boardRoot, filePath);
+  const targetPath = confinedPath.targetPath;
+  const relativePath = confinedPath.relativePath;
 
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  if (!confinedPath.ok) {
     return {
       ok: false,
       filePath: targetPath,
       name: path.basename(targetPath),
       message: "",
-      stderr: "File must be inside the Autoflow board."
+      stderr: confinedPath.stderr
     };
   }
 
@@ -4362,6 +4467,7 @@ function clearReadBoardRunnerListCache(options = {}) {
 function publishBoardChange(scope = {}, reason = "board-change") {
   const projectRoot = scope.projectRoot || "";
   const boardDirName = scope.boardDirName || defaultBoardDirName;
+  clearReadBoardCachesForScope({ projectRoot, boardDirName });
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) {
       continue;
@@ -6007,14 +6113,14 @@ app.whenReady().then(() => {
           return { ...empty, stderr: "Invalid board directory name." };
         }
         const boardRoot = path.resolve(projectRoot, boardDirNameRaw);
-        const targetPath = path.resolve(filePath);
-        const relativePath = path.relative(boardRoot, targetPath);
-        if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        const confinedPath = await resolveExistingPathInside(boardRoot, filePath);
+        const targetPath = confinedPath.targetPath;
+        if (!confinedPath.ok) {
           return {
             ...empty,
             filePath: targetPath,
             name: path.basename(targetPath),
-            stderr: "File must be inside the Autoflow board."
+            stderr: confinedPath.stderr
           };
         }
         if (!allowedBoardFileExtensions.has(path.extname(targetPath))) {
@@ -6119,7 +6225,7 @@ app.whenReady().then(() => {
   //   autoflow:runnerPtyBytes  { runnerId, projectRoot, boardDirName, data }   — main → renderer
   //   autoflow:runnerPtyStatus { runnerId, projectRoot, boardDirName, status, pid?, exitCode?, signal? }
   // Renderer-callable commands:
-  //   autoflow:runnerPtyStart   { runnerId, command, cwd, cols?, rows?, env? }
+  //   autoflow:runnerPtyStart   disabled legacy low-level start path
   //   autoflow:runnerPtyStop    { runnerId, projectRoot?, boardDirName?, force? }
   //   autoflow:runnerPtyInput   { runnerId, projectRoot?, boardDirName?, data }  — raw scoped stdin bytes
   //   autoflow:runnerPtySnapshot { runnerId, projectRoot?, boardDirName? } → string
@@ -6171,24 +6277,10 @@ app.whenReady().then(() => {
     }));
   });
 
-  ipcMain.handle("autoflow:runnerPtyStart", (_event, opts = {}) => {
-    if (!ptyManager.isAvailable()) {
-      return { ok: false, error: "node-pty unavailable (rebuild required)" };
-    }
-    try {
-      const runner = ptyManager.start(opts.runnerId, {
-        command: opts.command,
-        cwd: opts.cwd,
-        cols: opts.cols,
-        rows: opts.rows,
-        env: opts.env,
-        shell: opts.shell
-      });
-      return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status };
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err) };
-    }
-  });
+  ipcMain.handle("autoflow:runnerPtyStart", () => ({
+    ok: false,
+    error: "Direct PTY start is disabled; use runnerPtySpawn."
+  }));
 
   // Higher-level "spawn runner in PTY mode" — renderer passes runner config
   // (agent / model / reasoning / role / projectRoot / boardDirName), main
@@ -6219,7 +6311,7 @@ app.whenReady().then(() => {
     if (!(await commandExists(agent))) {
       return { ok: false, error: `${agent} CLI not found in shell PATH` };
     }
-    const command = buildAgentCliCommand(agent, model, reasoning);
+    const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
     if (!command) {
       return { ok: false, error: `unsupported agent: ${agent}` };
     }
@@ -6421,7 +6513,7 @@ app.whenReady().then(() => {
             console.warn(`[auto-spawn] ${runnerId} skipped: ${agent} CLI not found in shell PATH`);
             continue;
           }
-          const command = buildAgentCliCommand(agent, model, reasoning);
+          const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
           if (!command) continue;
           const startedAt = new Date().toISOString();
           const runner = ptyManager.start(runnerId, {

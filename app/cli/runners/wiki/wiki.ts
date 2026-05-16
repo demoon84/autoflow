@@ -411,7 +411,7 @@ function resolveEmbeddingProvider(ctx: WikiProjectContext): string {
         return process.env.AUTOFLOW_WIKI_EMBEDDING_PROVIDER;
     }
 
-    const scriptPath = path.join(REPO_ROOT, "app", "runtime", "wiki-embed.ts");
+    const scriptPath = path.join(REPO_ROOT, "app", "runtime", "runners", "wiki", "scripts", "wiki-embed.ts");
     if (!fs.existsSync(scriptPath)) return "";
 
     const tsxCli = resolveTsxCli();

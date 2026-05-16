@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { resolveAutoflowRepoRoot } from "../../../shared/tsx";
 
 const BOARD_ROOT = process.env.BOARD_ROOT
   || process.env.AUTOFLOW_BOARD_ROOT
@@ -20,7 +21,7 @@ const PROJECT_ROOT = process.env.PROJECT_ROOT
 
 const autoflowBin = (() => {
   if (process.env.AUTOFLOW_CLI) return process.env.AUTOFLOW_CLI;
-  const repoBin = path.join(PROJECT_ROOT, "app", "bin", "autoflow");
+  const repoBin = path.join(resolveAutoflowRepoRoot(__dirname), "app", "bin", "autoflow");
   if (fs.existsSync(repoBin)) return repoBin;
   const local = path.join(PROJECT_ROOT, "node_modules", ".bin", "autoflow");
   if (fs.existsSync(local)) return local;

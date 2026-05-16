@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 
 const boardRoot = process.env.BOARD_ROOT
+  || process.env.AUTOFLOW_BOARD_ROOT
   || path.join(process.cwd(), '.autoflow');
 
 const verifierDir = path.join(boardRoot, 'tickets', 'verifier');

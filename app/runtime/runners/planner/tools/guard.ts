@@ -138,7 +138,7 @@ export function cmdPlannerGuard(): void {
     BOARD_ROOT,
     AUTOFLOW_BOARD_ROOT: BOARD_ROOT,
   };
-  const result = spawnSync("npx", ["tsx", guardTs, ...strictArgs], { encoding: "utf8", env: guardEnv });
+  const result = spawnTsScript(guardTs, strictArgs, guardEnv);
   ok({
     tool: "planner.guard",
     status: result.status === 0 ? "ok" : "error",

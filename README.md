@@ -76,7 +76,7 @@ target-project/
 
 ```bash
 ./app/bin/autoflow init <project-root> [board-dir-name]
-./app/bin/autoflow upgrade <project-root> [board-dir-name]
+./app/bin/autoflow upgrade <project-root> [board-dir-name] [--refresh-host-guidance]
 ./app/bin/autoflow status <project-root> [board-dir-name]
 ./app/bin/autoflow doctor [--fix] <project-root> [board-dir-name]
 ./app/bin/autoflow order create <project-root> [board-dir-name] --request "..."
@@ -181,6 +181,7 @@ npm run check
 - `npm run check`: JS syntax 검사, install 문서 drift 검사, app TS 검사, Electron main/preload 빌드, renderer 빌드
 - `./app/bin/autoflow doctor <project-root>`: 설치된 보드 health 검사
 - `./app/bin/autoflow upgrade <project-root>`: install source를 대상 프로젝트 보드에 동기화
+- `./app/bin/autoflow upgrade <project-root> .autoflow --refresh-host-guidance`: 대상 프로젝트의 오래된 `AGENTS.md` / `CLAUDE.md` 를 현재 host 템플릿으로 명시 갱신
 
 루트 `.autoflow/`는 만들지 않는다. 설치 검증은 항상 별도 대상 프로젝트에서 수행한다.
 

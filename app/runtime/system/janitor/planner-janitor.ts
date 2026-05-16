@@ -6,7 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {isRunnerProcessAlive} from "../../../shared/runner-state-store";
 
 const ARGV = process.argv.slice(2);
@@ -17,9 +17,21 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 const DRY_RUN = ARGV.includes("--dry-run");
 const BOARD_ROOT = path.resolve(arg("--board", process.env.AUTOFLOW_BOARD_ROOT || ".autoflow") || ".autoflow");
+const PROJECT_ROOT = path.resolve(process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || path.dirname(BOARD_ROOT));
+const WORKTREE_PROJECT_KEY = path.basename(PROJECT_ROOT) || "project";
 const ZOMBIE_MIN = parseInt(process.env.AUTOFLOW_JANITOR_ZOMBIE_MIN || "30", 10);
 const NOW = new Date();
 const NOW_ISO = NOW.toISOString().replace(/\.\d+Z$/, "Z");
+
+if (ARGV.includes("--help") || ARGV.includes("-h")) {
+  process.stdout.write([
+    "Usage: autoflow tool planner-janitor [--board <path>] [--dry-run]",
+    "",
+    "Cleans stale worker locks, stuck inprogress tickets, and stale ticket worktrees.",
+    "Dirty worktrees are always preserved.",
+  ].join("\n") + "\n");
+  process.exit(0);
+}
 
 function log(msg: string): void {
   process.stdout.write(`[janitor] ${msg}\n`);
@@ -49,13 +61,64 @@ function pidAlive(pid: number): boolean {
   return isRunnerProcessAlive(pid);
 }
 function gitOutput(args: string[], cwd?: string): string {
-  try {
-    return execFileSync("git", args, {
-      cwd: cwd || BOARD_ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    });
-  } catch { return ""; }
+  const result = gitRun(args, cwd);
+  return result.status === 0 ? result.stdout : "";
+}
+function gitRun(args: string[], cwd?: string): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync("git", args, {
+    cwd: cwd || BOARD_ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  if (result.error) {
+    return { status: 1, stdout: "", stderr: result.error.message };
+  }
+  return {
+    status: typeof result.status === "number" ? result.status : 1,
+    stdout: result.stdout || "",
+    stderr: result.stderr || ""
+  };
+}
+
+function ticketWorktreePath(ticketNum: string): string {
+  return path.join(
+    process.env.HOME || "/tmp",
+    "Library/Caches/autoflow/worktrees",
+    WORKTREE_PROJECT_KEY,
+    `tickets_${ticketNum}`
+  );
+}
+
+function worktreeDirty(wtPath: string): boolean {
+  const result = gitRun(["status", "--porcelain", "--untracked-files=all"], wtPath);
+  if (result.status !== 0) {
+    warn(`worktree status failed; preserving ${wtPath}`, new Error(result.stderr || "git status failed"));
+    return true;
+  }
+  return result.stdout.trim().length > 0;
+}
+
+function removeTicketWorktree(wtPath: string, branch: string, label: string): boolean {
+  if (worktreeDirty(wtPath)) {
+    log(`${label} skipped (has changes): ${wtPath}`);
+    return false;
+  }
+  if (DRY_RUN) {
+    log(`DRY-RUN prune ${wtPath}`);
+    return true;
+  }
+  const removeResult = gitRun(["worktree", "remove", "--force", wtPath], PROJECT_ROOT);
+  if (removeResult.status !== 0) {
+    warn(`${label} remove failed: ${wtPath}`, new Error(removeResult.stderr || "git worktree remove failed"));
+    return false;
+  }
+  const branchResult = gitRun(["branch", "-D", branch], PROJECT_ROOT);
+  if (branchResult.status !== 0) {
+    warn(`${label} branch delete failed: ${branch}`, new Error(branchResult.stderr || "git branch delete failed"));
+    return false;
+  }
+  log(`${label} pruned: ${wtPath}`);
+  return true;
 }
 function appendNote(ticketPath: string, line: string): boolean {
   const content = safeReadFile(ticketPath);
@@ -119,11 +182,7 @@ function clearStaleWorkerLocks(): number {
 
 function worktreeChangeCount(ticketId: string): number {
   const ticketNum = ticketId.replace(/^Todo-/i, "");
-  const wtPath = path.join(
-    process.env.HOME || "/tmp",
-    "Library/Caches/autoflow/worktrees/autoflow",
-    `tickets_${ticketNum}`
-  );
+  const wtPath = ticketWorktreePath(ticketNum);
   if (!fs.existsSync(wtPath)) return 0;
   const stat = gitOutput(["diff", "--shortstat"], wtPath);
   const m = stat.match(/(\d+)\s+files?\s+changed/);
@@ -190,43 +249,41 @@ function fixZombieAndStageMismatch(): number {
       moved += 1;
 
       const ticketNum = ticketId.replace(/^Todo-/i, "");
-      const wtPath = path.join(
-        process.env.HOME || "/tmp",
-        "Library/Caches/autoflow/worktrees/autoflow",
-        `tickets_${ticketNum}`
-      );
+      const wtPath = ticketWorktreePath(ticketNum);
       if (fs.existsSync(wtPath) && !DRY_RUN) {
-        gitOutput(["worktree", "remove", "--force", wtPath]);
-        gitOutput(["branch", "-D", `autoflow/tickets_${ticketNum}`]);
+        removeTicketWorktree(wtPath, `autoflow/tickets_${ticketNum}`, "resolved worktree");
       }
     }
   }
   return moved;
 }
 
+function collectTicketStates(): Map<string, "active" | "done"> {
+  const states = new Map<string, "active" | "done">();
+  for (const dir of ["todo", "inprogress"]) {
+    const root = path.join(BOARD_ROOT, "tickets", dir);
+    for (const f of safeReadDir(root)) {
+      const m = f.match(/^Todo-(\d+)\.md$/i);
+      if (m) states.set(m[1], "active");
+    }
+  }
+  const doneRoot = path.join(BOARD_ROOT, "tickets", "done");
+  for (const sub of safeReadDir(doneRoot)) {
+    const subDir = path.join(doneRoot, sub);
+    for (const f of safeReadDir(subDir)) {
+      const m = f.match(/^Todo-(\d+)\.md$/i);
+      if (m) states.set(m[1], "done");
+    }
+  }
+  return states;
+}
+
 function pruneOrphanWorktrees(): number {
-  const list = gitOutput(["worktree", "list", "--porcelain"]);
+  const list = gitOutput(["worktree", "list", "--porcelain"], PROJECT_ROOT);
   if (!list) return 0;
   const blocks = list.split(/\n\n+/).filter(Boolean);
   let pruned = 0;
-  const knownTicketNums = new Set<string>();
-  for (const dir of ["todo", "inprogress", "done"]) {
-    const root = path.join(BOARD_ROOT, "tickets", dir);
-    if (dir === "done") {
-      for (const sub of safeReadDir(root)) {
-        const subDir = path.join(root, sub);
-        for (const f of safeReadDir(subDir)) {
-          const m = f.match(/^Todo-(\d+)\.md$/i);
-          if (m) knownTicketNums.add(m[1]);
-        }
-      }
-    } else {
-      for (const f of safeReadDir(root)) {
-        const m = f.match(/^Todo-(\d+)\.md$/i);
-        if (m) knownTicketNums.add(m[1]);
-      }
-    }
-  }
+  const ticketStates = collectTicketStates();
   for (const block of blocks) {
     const wtMatch = block.match(/^worktree (.+)$/m);
     const branchMatch = block.match(/^branch refs\/heads\/(.+)$/m);
@@ -236,21 +293,17 @@ function pruneOrphanWorktrees(): number {
     const m = branch.match(/autoflow\/tickets_(\d+)$/);
     if (!m) continue;
     const ticketNum = m[1];
-    if (knownTicketNums.has(ticketNum)) continue;
-    const stat = gitOutput(["diff", "--shortstat"], wtPath);
-    if (stat.trim()) {
-      log(`orphan worktree skipped (has changes): ${wtPath}`);
+    const state = ticketStates.get(ticketNum);
+    if (state === "active") continue;
+    if (state === "done") {
+      if (removeTicketWorktree(wtPath, branch, "done-ticket worktree")) {
+        pruned += 1;
+      }
       continue;
     }
-    if (DRY_RUN) {
-      log(`DRY-RUN prune ${wtPath}`);
+    if (removeTicketWorktree(wtPath, branch, "orphan worktree")) {
       pruned += 1;
-      continue;
     }
-    gitOutput(["worktree", "remove", "--force", wtPath]);
-    gitOutput(["branch", "-D", branch]);
-    log(`orphan worktree pruned: ${wtPath}`);
-    pruned += 1;
   }
   return pruned;
 }

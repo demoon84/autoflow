@@ -18,4 +18,4 @@ Typical values:
 - pass rate,
 - completion rate.
 
-`metrics/daily.jsonl` may store appended snapshots.
+The runtime may append daily snapshots as generated JSONL files in this directory. Generated metrics files are intentionally ignored by git.

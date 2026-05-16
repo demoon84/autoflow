@@ -20,6 +20,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { spawnSync } from "node:child_process";
+import { resolveAutoflowRepoRoot, resolveTsxCommand } from "../../../shared/tsx";
 
 const BOARD_ROOT = process.env.BOARD_ROOT
   || process.env.AUTOFLOW_BOARD_ROOT
@@ -44,15 +45,8 @@ function embedProviderCmd(): string {
   }
   // Default: use wiki-embed.ts via tsx
   if (fs.existsSync(EMBED_SCRIPT)) {
-    const tsxBin = path.join(PROJECT_ROOT, "node_modules", ".bin", "tsx");
-    if (fs.existsSync(tsxBin)) {
-      return `${tsxBin} ${EMBED_SCRIPT}`;
-    }
-    // Try global tsx
-    const globalCheck = spawnSync("npx", ["tsx", "--version"], { stdio: "pipe", timeout: 5000 });
-    if (globalCheck.status === 0) {
-      return `npx tsx ${EMBED_SCRIPT}`;
-    }
+    const runner = resolveTsxCommand(SCRIPT_DIR);
+    return [runner.command, ...runner.args, EMBED_SCRIPT].map(shellQuote).join(" ");
   }
   return "";
 }
@@ -78,7 +72,7 @@ const args = process.argv.slice(2);
 // Find the Autoflow CLI. The package CLI is TypeScript-only.
 const autoflowBin = (() => {
   if (process.env.AUTOFLOW_CLI) return process.env.AUTOFLOW_CLI;
-  const repoBin = path.join(PROJECT_ROOT, "app", "bin", "autoflow");
+  const repoBin = path.join(resolveAutoflowRepoRoot(SCRIPT_DIR), "app", "bin", "autoflow");
   if (fs.existsSync(repoBin)) return repoBin;
   const local = path.join(PROJECT_ROOT, "node_modules", ".bin", "autoflow");
   if (fs.existsSync(local)) return local;

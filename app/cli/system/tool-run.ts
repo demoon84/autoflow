@@ -51,6 +51,60 @@ function inferredBoardRoot(projectRoot: string): string {
     return path.join(projectRoot, ".autoflow");
 }
 
+type RuntimeToolScope = {
+    args: string[];
+    projectRoot?: string;
+    boardRoot?: string;
+};
+
+function readScopeFlagValue(argv: string[], index: number, flag: string): {value: string; nextIndex: number} {
+    const eq = flag.indexOf("=");
+    if (eq > 0) {
+        return {value: flag.slice(eq + 1), nextIndex: index};
+    }
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+        fail(`Missing value for ${flag}`);
+    }
+    return {value, nextIndex: index + 1};
+}
+
+function isProjectScopeFlag(arg: string): boolean {
+    return arg === "--project" || arg === "--project-root" || arg.startsWith("--project=") || arg.startsWith("--project-root=");
+}
+
+function isBoardScopeFlag(arg: string): boolean {
+    return arg === "--board" || arg === "--board-root" || arg.startsWith("--board=") || arg.startsWith("--board-root=");
+}
+
+function extractRuntimeToolScope(argv: string[], options: {allowAnywhere?: boolean} = {}): RuntimeToolScope {
+    const forwarded: string[] = [];
+    let projectRoot = "";
+    let boardRoot = "";
+    let scopePrefix = true;
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index] || "";
+        const canReadScope = options.allowAnywhere || scopePrefix;
+        if (canReadScope && isProjectScopeFlag(arg)) {
+            const read = readScopeFlagValue(argv, index, arg);
+            projectRoot = read.value;
+            index = read.nextIndex;
+            continue;
+        }
+        if (canReadScope && isBoardScopeFlag(arg)) {
+            const read = readScopeFlagValue(argv, index, arg);
+            boardRoot = read.value;
+            index = read.nextIndex;
+            continue;
+        }
+        forwarded.push(arg);
+        scopePrefix = false;
+    }
+
+    return {args: forwarded, projectRoot, boardRoot};
+}
+
 export function runRuntimeTool(name: string, args: string[]): never {
     if (!name || name.includes("/") || name.includes("\\") || name.includes("..")) {
         return fail(`Invalid tool name: ${name}`);
@@ -63,9 +117,14 @@ export function runRuntimeTool(name: string, args: string[]): never {
     if (!fs.existsSync(scriptPath)) {
         return fail(`Runtime tool file missing: app/runtime/${relativePath}`);
     }
-    const projectRoot = path.resolve(process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || inferredProjectRoot());
-    const boardRoot = inferredBoardRoot(projectRoot);
-    return runNodeOrTsScript(scriptPath, args, {
+    const scoped = extractRuntimeToolScope(args, {allowAnywhere: name === "runner-tool"});
+    const envProjectRoot = process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || "";
+    const scopedBoardRoot = scoped.boardRoot
+        ? path.resolve(path.isAbsolute(scoped.boardRoot) ? scoped.boardRoot : path.join(scoped.projectRoot || envProjectRoot || inferredProjectRoot(), scoped.boardRoot))
+        : "";
+    const projectRoot = path.resolve(scoped.projectRoot || envProjectRoot || (scopedBoardRoot ? path.dirname(scopedBoardRoot) : inferredProjectRoot()));
+    const boardRoot = scopedBoardRoot || inferredBoardRoot(projectRoot);
+    return runNodeOrTsScript(scriptPath, scoped.args, {
         ...process.env,
         AUTOFLOW_PROJECT_ROOT: projectRoot,
         PROJECT_ROOT: projectRoot,
