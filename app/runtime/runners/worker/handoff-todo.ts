@@ -270,7 +270,7 @@ const resultSummary = sectionScalar(text, "Result", "Summary");
 text = replaceScalar(text, "Ticket", "Stage", "verifier");
 text = replaceScalar(text, "Ticket", "Last Updated", timestamp);
 text = replaceSection(text, "Verification", "- Run file:\n- Log file:\n- Result: pending");
-text = replaceSection(text, "Next Action", "- Next: verifier heartbeat should run the ticket checks from `tickets/verifier/`.");
+text = replaceSection(text, "Next Action", "- Next: verifier runner should run the ticket checks from `tickets/verifier/`.");
 text = replaceSection(text, "Resume Context", "- Current state: implementation work is complete and the ticket has been handed off for verification.\n- Last runtime action: `autoflow tool handoff-todo` moved the ticket from `tickets/inprogress/` to `tickets/verifier/`.\n- Next reader: verifier should review Done When, Verification command, Notes, and the ticket worktree.");
 if (!trim(resultSummary)) {
     text = replaceScalar(text, "Result", "Summary", "Implementation completed; awaiting verifier.");

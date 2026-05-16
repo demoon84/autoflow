@@ -1,6 +1,6 @@
 # Automation State
 
-Runtime state for heartbeats and stop hooks.
+Runtime state for stop hooks, runner identity, and wake continuity.
 
 Rules:
 

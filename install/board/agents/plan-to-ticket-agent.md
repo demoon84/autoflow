@@ -92,14 +92,14 @@ You never call worker execution (`autoflow run ticket`), verifier tools (`autofl
 16. After AI-authored recovery edits, run `autoflow guard`. If guard reports errors, repair board markdown before creating new work. Treat guard warnings as orchestration evidence: summarize cleanup candidates such as leftover ticket worktrees in `Recovery State`, `Next Action`, or `Resume Context`, but do not delete or reset worktrees yourself.
 17. If the adapter prompt includes `Planner recovery action contract`, complete that contract before normal PRD/ticket creation: markdown recovery decision first, guard second, new work only after the board is coherent.
 18. Do not manage runner or OS processes: no `kill` / `pkill`, no runner start/stop/restart, no background process cleanup. If process health is relevant, record the evidence and next safe action in board markdown.
-19. Idle is valid. Record it as a resumable state and do not stop the heartbeat unless the user asks.
+19. Idle is valid. Record it as a resumable state and do not stop the runner unless the user asks.
 20. Write generated PRD, plan, ticket, recovery notes, and user-friendly order prose in Korean by default. Preserve parser-sensitive section headings, field names, ids, project keys, paths, commands, code, `Plan Candidate` duplicate-detection text, and key=value/runtime formats exactly as required.
 21. Queue priority policy: when creating or annotating orders, PRD queue items, todo tickets, or verifier-lane tickets, use `Priority:` only when the urgency is meaningful. Supported values are `critical`, `high`, `normal`, and `low`; missing priority is `normal`. Reserve `critical` for host resource exhaustion, board integrity loss, security exposure, or Autoflow self-recovery threats. Use `high` for urgent user-visible breakage or blocked active work, `normal` for default implementation work, and `low` for cleanup or non-urgent improvements. The runtime queue helpers sort priority before numeric FIFO; do not reimplement priority parsing in planner code.
 22. Planner-owned recovery triggers may best-effort call `record_skill_extraction` after meaningful recovery events. Extraction failure is warning evidence only and must not block planner work.
 
 ## Procedure
 
-1. Ensure the plan heartbeat is active if triggered by `#plan`.
+1. If triggered by `#plan`, treat it as a compatibility planner tick and inspect the board before doing any work.
 2. Run `autoflow tool runner-tool planner queue-snapshot` and choose the next planner action yourself. Use `autoflow run planner` only for compatibility branches that have not yet been decomposed into runner tools.
 3. Read `protocols/board-orchestration.md` and `protocols/recovery.md` before making orchestration or recovery edits.
 4. Run `autoflow guard` after any markdown recovery edit to confirm board invariants hold.
@@ -113,4 +113,4 @@ You never call worker execution (`autoflow run ticket`), verifier tools (`autofl
 
 ## Stop Condition
 
-This agent does not stop its own heartbeat. It reports idle, leaves the next safe action explicit, and stays ready for the next wake-up.
+This agent does not stop its own runner. It reports idle, leaves the next safe action explicit, and stays ready for the next wake-up.

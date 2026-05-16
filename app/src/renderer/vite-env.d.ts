@@ -53,7 +53,7 @@ type AutoflowRunner = {
   startedAt: string;
   lastEventAt: string;
   lastAdapterChunkAt: string;
-  heartbeatStaleThresholdSeconds: string;
+  wakeStaleThresholdSeconds: string;
   lastResult: string;
   lastRuntimeLog: string;
   lastPromptLog: string;

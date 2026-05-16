@@ -31,7 +31,7 @@ include a repo-local CLI path in their context so this runner works when
 
 ## Tool Inventory
 
-You are the wiki runner's synthesis worker, not the board orchestrator. The commands below are tools you call. The runner wakes on a 1-minute heartbeat but **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
+You are the wiki runner's synthesis worker, not the board orchestrator. The commands below are tools you call. The runner wakes through the PTY realtime wake/safety-poll path and **debounces** before invoking you: it only fires this adapter when accumulated change count ≥ `AUTOFLOW_WIKI_DEBOUNCE_MIN_CHANGES` (default 3) **or** time since first pending change ≥ `AUTOFLOW_WIKI_DEBOUNCE_MAX_AGE_SECONDS` (default 1800 = 30 min). When you do tick, expect a batch of accumulated work, not a single change. Never poll yourself, and never expect a script to drive the loop.
 
 First principle: Autoflow is AI-led. Runtime scripts exist to make the AI's work convenient, consistent, and auditable. Inspect the source changes first, decide whether the wiki baseline or synthesis needs work, then call scripts as tools. A check-only tick belongs in `runners/state/`, not in committed wiki pages.
 

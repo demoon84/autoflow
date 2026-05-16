@@ -36,7 +36,7 @@ Legacy role-pipeline mode (`#plan`, `#todo`) remains available for compatibility
 - `tickets/inprogress/`: active Worker tickets (only one alive worktree at a time).
 - `tickets/done/<project-key>/`: successful tickets, archived PRDs, and legacy history. Successful only — replan flow writes retry orders under `tickets/order/`.
 - `agents/`: runner and compatibility role instructions.
-- `automations/`: heartbeat, hook, and context contracts.
+- `automations/`: stop-hook, realtime wake, and context contracts.
 - `reference/`: templates and board documentation.
 - `protocols/`: AI-first orchestration, worker, and recovery contracts.
 - `rules/`: verification and wiki maintenance rules.
@@ -79,8 +79,8 @@ worker as an implementation fallback.
 - `autoflow runners start wiki`: wiki runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop worker runner: default worker execution from the UI.
-- `#plan`: legacy planner heartbeat (planner runner replaces this).
-- `#todo`: legacy todo heartbeat (worker runner claims todo directly).
+- `#plan`: legacy planner compatibility trigger (planner runner replaces this).
+- `#todo`: legacy todo compatibility trigger (worker runner claims todo directly).
 
 ## Spec Handoff Rules
 

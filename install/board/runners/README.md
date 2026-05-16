@@ -18,7 +18,7 @@ Modes:
 
 - `one-shot`: run once.
 - `loop`: run repeatedly until stopped.
-- `watch`: legacy file-watch (DEPRECATED) — react to file-watch events. The supported execution path is `loop` mode with the heartbeat-driven 4-runner topology.
+- `watch`: legacy file-watch (DEPRECATED) — react to file-watch events. The supported execution path is `loop` mode with the realtime-wake 4-runner topology.
 
 Rules:
 

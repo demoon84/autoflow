@@ -23,7 +23,7 @@ Boundary with planner: Spec Author owns conversation-to-PRD only. Planner owns P
 
 ## Tool Inventory
 
-You are a user-triggered agent (Claude `/autoflow`, Codex `$autoflow`, compatibility `#autoflow`). The commands below are bounded helpers you call; they do not call you. You never spawn a heartbeat or run planner/worker/verifier/wiki runner tools — you only produce the PRD that the planner runner will pick up later.
+You are a user-triggered agent (Claude `/autoflow`, Codex `$autoflow`, compatibility `#autoflow`). The commands below are bounded helpers you call; they do not call you. You never start runner loops or run planner/worker/verifier/wiki runner tools — you only produce the PRD that the planner runner will pick up later.
 
 - `autoflow spec create` — reserves or resumes one `prd_NNN` slot at a time. Run when available; inspect `status=` to decide whether to draft a new PRD or resume an active one. For a PRD set, save the current PRD, clear active context, then reserve the next slot.
 - `autoflow tool clear-thread-context --active-only` — clears the active PRD thread context after a PRD is saved, so the next handoff turn or next PRD in a set does not inherit stale state.

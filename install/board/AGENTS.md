@@ -30,7 +30,7 @@ Directory meanings:
 - `reference/`: templates and board reference material.
 - `protocols/`: AI-first orchestration, worker, and recovery contracts.
 - `rules/`: operating rules and wiki linting.
-- `automations/`: hook, heartbeat, and runtime context contracts.
+- `automations/`: stop-hook, realtime wake, and runtime context contracts.
 - `agents/`: role prompts used by human or local runner agents.
 - `logs/`: completion logs and hook dispatch logs.
 - `wiki/`: generated and human-maintained project knowledge derived from completed work.
@@ -86,15 +86,15 @@ At the start of work, read in this order:
 14. There must not be two copies of the same `Todo-NNN.md` in different state folders.
 15. `tickets/inprogress/Todo-NNN.md` must keep `AI`, `Stage`, `Claimed By`, `Execution AI`, `Last Updated`, `Next Action`, and `Resume Context` current.
 16. Resume from board files, not chat memory. Use `Resume Context`, `References`, `Reference Notes`, run files, and logs.
-17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when a heartbeat must continue.
+17. `automations/state/*.context` is runtime state for stop hooks and worker identity. Clear active ticket context at tick end, but keep role/worker context when the runner should continue.
 18. Verification evidence lives directly in the ticket markdown's `## Verification` section (Result / Exit Code / Last Run). Separate `verify_NNN.md` sidecar files were retired 2026-05-07.
 19. Done tickets keep `Verification`, `Result`, and `## Done When` (every item `[x]`) up to date. The wiki runner refreshes derived knowledge separately; no inline wiki update at finalize.
 20. Ticket filenames use `Todo-001.md`. New IDs are max existing ID + 1.
 21. In git repositories, Worker work happens in the ticket worktree when available. `autoflow tool runner-tool worker submit-to-verifier` happens after local worktree verification and before PROJECT_ROOT merge, handing off to the verifier runner. Verifier pass wakes worker for merge/finalization, revise wakes worker to correct the same worktree, and replan wakes worker to create the retry order and delete the worktree. Only after verifier pass may worker merge and run `autoflow tool runner-tool worker finalize-approved`; finalizer scripts perform bookkeeping and mechanical gates, not semantic decisions.
 22. If central `PROJECT_ROOT` has unrelated dirty files outside the board, do not mix them into verification commits.
-23. Heartbeat workers do not stop themselves. Idle means wait for the next wake-up.
-24. At the end of every heartbeat or runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
-25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and heartbeat output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly order prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
+23. Runners do not stop themselves. Idle means wait for the next wake-up or user-directed stop.
+24. At the end of every runner tick, report the current progress percentage. Prefer `autoflow metrics` or board spec/ticket counts, and include the percentage in the tick's final chat or log summary.
+25. User-visible AI conversation, progress summaries, and explanations in terminal, adapter, and runner output should be Korean by default. Newly generated PRD, plan, ticket, and user-friendly order prose should also be Korean by default. Keep key=value output, paths, commands, code, ticket fields, parser-sensitive section names, ids, project keys, runtime formats, and AI-facing board contracts in their required language and format.
 
 ## Agent Modes
 
@@ -172,7 +172,7 @@ Do not:
 - Push.
 - Modify unrelated files.
 
-### 4. Legacy Plan Automation Mode
+### 4. Legacy Plan Compatibility Mode
 
 Trigger: `#plan`.
 
@@ -180,7 +180,7 @@ Purpose: convert quick orders, populated specs, and replan reasons into todo tic
 
 Do:
 
-- Keep a 1-minute heartbeat alive until the user stops it.
+- Run one compatibility planner tick or route to the active planner runner wake path.
 - Use `autoflow tool runner-tool planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `autoflow run planner` only for compatibility branches that have not yet been split into runner tools.
 - Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or replan retry orders.
@@ -189,7 +189,7 @@ Do:
 
 Do not implement, verify, commit, or push.
 
-### 5. Legacy Todo Queue Mode
+### 5. Legacy Todo Queue Compatibility Mode
 
 Trigger: `#todo`.
 
@@ -197,7 +197,7 @@ Purpose: claim a todo ticket and implement it.
 
 Do:
 
-- Keep a 1-minute heartbeat alive until the user stops it.
+- Run one compatibility todo tick or route to the active worker runner wake path.
 - Resume owned inprogress work first.
 - Use `autoflow run todo` and `autoflow tool handoff-todo`.
 - Implement within `Allowed Paths`.

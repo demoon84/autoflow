@@ -10,7 +10,7 @@ install/
   manifest.toml     설치 매핑 (default board dir, sources)
   board/            보드로 복사되는 문서, 규칙, 템플릿
     agents/           plan-to-ticket, worker, verifier, wiki 등 runner 계약
-    automations/      heartbeat 등 자동화 템플릿
+    automations/      stop hook, realtime wake, runner context 계약
     reference/        runner-startup, runner-tool-contract 등
     rules/            wiki 린트 등 보드 운영 규칙
     protocols/        worker-contract, recovery, board-orchestration

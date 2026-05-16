@@ -40,7 +40,7 @@ Use Worker Mode by default unless the user explicitly asks for old role-pipeline
 
 ## Procedure
 
-1. Ensure the todo heartbeat is active if triggered by `#todo`.
+1. If triggered by `#todo`, treat it as a compatibility todo tick and inspect the board before doing any work.
 2. Run `autoflow run todo`.
 3. Read the claimed ticket, references, and allowed paths.
 4. Implement the goal.
@@ -51,4 +51,4 @@ Use Worker Mode by default unless the user explicitly asks for old role-pipeline
 
 ## Stop Condition
 
-This agent does not stop its own heartbeat. It reports idle and waits.
+This agent does not stop its own runner. It reports idle and waits.

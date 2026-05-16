@@ -6,5 +6,5 @@
 process.stdout.write([
   "status=deprecated",
   "reason=file_watch_hook_removed",
-  "next_action=Use realtime/heartbeat runners and runner-tool TS entrypoints instead.",
+  "next_action=Use realtime runner wakeups and runner-tool TS entrypoints instead.",
 ].join("\n") + "\n");

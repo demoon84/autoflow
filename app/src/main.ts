@@ -430,7 +430,7 @@ let appQuitInProgress = false;
 const DEFAULT_MEMORY_CEILING_MB = 1500;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
 const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
-const DEFAULT_HEARTBEAT_STALE_THRESHOLD_SECONDS = 600;
+const DEFAULT_WAKE_STALE_THRESHOLD_SECONDS = 600;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 let memoryCeilingIntervalId = null;
 let lastMemoryCeilingRestartAt = 0;
@@ -463,10 +463,10 @@ function readMemoryCeilingConfig() {
   };
 }
 
-function readHeartbeatStaleThresholdSeconds() {
+function readWakeStaleThresholdSeconds() {
   return parsePositiveIntegerOrDefault(
-    process.env.AUTOFLOW_HEARTBEAT_STALE_THRESHOLD_SECONDS,
-    DEFAULT_HEARTBEAT_STALE_THRESHOLD_SECONDS
+    process.env.AUTOFLOW_WAKE_STALE_THRESHOLD_SECONDS,
+    DEFAULT_WAKE_STALE_THRESHOLD_SECONDS
   );
 }
 
@@ -1416,7 +1416,7 @@ function ensureBoardWatcher(scope) {
     //   1) Push `[wake] <path>` text into the PTY (immediate visual cue,
     //      kept for backward compatibility / human readability).
     //   2) Append the same event into the runner's wake queue file via
-    //      runner-wake.ts emit. The LLM polls this queue at turn boundaries
+    //      `autoflow tool runner-wake emit`. The LLM polls this queue at turn boundaries
     //      so wakes that arrive during paste/thinking aren't lost.
     // Gate: only wake roles that actually have pending work in their queue.
     try {
@@ -1424,9 +1424,8 @@ function ensureBoardWatcher(scope) {
       if (!mgr) return;
       const targetRoles = new Set(rolesForBoardChange(reason));
       if (targetRoles.size === 0) return;
-      const wakeScript = path.join(scope.projectRoot, boardDirName, "scripts", "runner-wake.ts");
-      const tsxBin = path.join(scope.projectRoot, "node_modules", ".bin", "tsx");
-      const wakeOk = fsSync.existsSync(wakeScript) && fsSync.existsSync(tsxBin);
+      const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
+      const wakeOk = fsSync.existsSync(autoflowBin);
       for (const [rid, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
@@ -1438,9 +1437,20 @@ function ensureBoardWatcher(scope) {
         if (wakeOk) {
           try {
             require("node:child_process").spawn(
-              tsxBin,
-              [wakeScript, "emit", "--runner", rid, "--reason", String(reason), "--kind", "fs.watch"],
-              { stdio: "ignore", detached: true }
+              autoflowBin,
+              ["tool", "runner-wake", "emit", "--runner", rid, "--reason", String(reason), "--kind", "fs.watch"],
+              {
+                cwd: scope.projectRoot,
+                env: {
+                  ...process.env,
+                  AUTOFLOW_PROJECT_ROOT: scope.projectRoot,
+                  PROJECT_ROOT: scope.projectRoot,
+                  AUTOFLOW_BOARD_ROOT: boardRoot,
+                  BOARD_ROOT: boardRoot
+                },
+                stdio: "ignore",
+                detached: true
+              }
             ).unref();
           } catch {}
         }
@@ -2502,7 +2512,7 @@ function parseRunnerListOutput(output) {
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
       lastAdapterChunkAt: values[`${prefix}last_adapter_chunk_at`] || "",
-      heartbeatStaleThresholdSeconds: String(readHeartbeatStaleThresholdSeconds()),
+      wakeStaleThresholdSeconds: String(readWakeStaleThresholdSeconds()),
       lastResult,
       lastBudgetSkipReason,
       lastBudgetSource: values[`${prefix}last_budget_source`] || "",

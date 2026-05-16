@@ -149,5 +149,5 @@ Important:
 - A `done/<project-key>/` ticket must carry its final `## Verification` evidence.
 - Each completed worker / verifier run should leave at least one completion log under `BOARD_ROOT/logs/`.
 - Link related specs, plans, tickets, and verification notes with `## Reference Notes`.
-- Heartbeat workers do not stop themselves. `status=idle` is a valid waiting state.
+- Runners do not stop themselves. `status=idle` is a valid waiting state.
 - Board location is authoritative. In the 4-runner topology (planner + worker + verifier + wiki), planner owns board orchestration and recovery notes, worker owns implementation and merge preparation, verifier owns semantic diff review, and wiki owns derived knowledge.

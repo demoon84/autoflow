@@ -206,7 +206,6 @@ export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {over
 export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
     const previousSuffix = ["ticket", ["own", "er"].join("")].join("-");
     const oldAgent = [previousSuffix, "agent.md"].join("-");
-    const oldTemplate = [previousSuffix, "heartbeat.template.toml"].join("-");
     const oldProtocol = [[["own", "er"].join(""), "contract"].join("-"), "md"].join(".");
     const obsolete = [
         path.join(ctx.boardRoot, "scripts"),
@@ -216,7 +215,8 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
         path.join(ctx.boardRoot, "agents", "merge-bot-agent.md"),
         path.join(ctx.boardRoot, "agents", "todo-queue-agent.md"),
         path.join(ctx.boardRoot, "agents", oldAgent),
-        path.join(ctx.boardRoot, "automations", "templates", oldTemplate),
+        path.join(ctx.boardRoot, "automations", ["heart", "beat-set.toml"].join("")),
+        path.join(ctx.boardRoot, "automations", "templates"),
         path.join(ctx.boardRoot, "protocols", oldProtocol),
         path.join(ctx.boardRoot, "reference", "backlog.md"),
         path.join(ctx.boardRoot, "reference", "backlog-processed.md"),
@@ -380,7 +380,6 @@ export function legacyWorkerTermReplacements(): Array<[RegExp, string]> {
     const oldFinish = ["finish", previousSuffix].join("-");
     const oldVerify = ["verify", previousSuffix].join("-");
     const oldAgent = [previousSuffix, "agent"].join("-");
-    const oldTemplate = [previousSuffix, "heartbeat.template"].join("-");
     const oldProtocol = [[legacyActorLower, "contract"].join("-"), "md"].join(".");
     return [
         [new RegExp(`\\b${oldStart}\\b`, "g"), "start-ticket"],
@@ -388,7 +387,6 @@ export function legacyWorkerTermReplacements(): Array<[RegExp, string]> {
         [new RegExp(`\\b${oldVerify}\\b`, "g"), "verify-ticket"],
         [new RegExp(`\\b${previousSuffix}\\b`, "g"), "worker"],
         [new RegExp(`${oldAgent}\\.md`, "g"), "worker-agent.md"],
-        [new RegExp(`${oldTemplate}\\.toml`, "g"), "worker-heartbeat.template.toml"],
         [new RegExp(oldProtocol, "g"), "worker-contract.md"],
         [new RegExp(`${legacyActorUpper} Resume Instruction`, "g"), "Worker Resume Instruction"],
         [new RegExp(`\\b${legacyActorUpper}ship\\b`, "g"), "Claim"],

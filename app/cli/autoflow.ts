@@ -19,7 +19,6 @@ import {doctorProject} from "./system/doctor";
 import {guardProject} from "./system/guard";
 import {originProject} from "./system/origin";
 import {cleanupRunnerLogs} from "./system/cleanup-runner-logs";
-import {renderHeartbeats} from "./system/render-heartbeats";
 import {telemetryProject} from "./system/telemetry";
 
 function runAutoflow(argv: string[]): void {
@@ -91,9 +90,6 @@ function runAutoflow(argv: string[]): void {
             break;
         case "guard":
             guardProject(argv);
-            break;
-        case "render-heartbeats":
-            renderHeartbeats(argv);
             break;
         case "doctor":
             doctorProject(argv);
