@@ -242,6 +242,78 @@ const tokenDefaults: Record<string, string> = {
   code_source: "none",
 };
 
+const tokenAccountingKeys = [
+  "cumulative_tokens",
+  "last_turn_tokens",
+  "last_turn_input_tokens",
+  "last_turn_output_tokens",
+  "last_turn_cache_read_tokens",
+  "last_turn_cache_create_tokens",
+  "last_turn_at",
+  "last_turn_tick_id",
+  "token_source",
+  "last_token_usage_source",
+];
+
+const codeAccountingKeys = [
+  "cumulative_code_files_changed",
+  "cumulative_code_insertions",
+  "cumulative_code_deletions",
+  "cumulative_code_volume",
+  "cumulative_code_net_delta",
+  "last_code_ticket_id",
+  "last_code_files_changed",
+  "last_code_insertions",
+  "last_code_deletions",
+  "last_code_volume",
+  "last_code_net_delta",
+  "last_code_reported_at",
+  "code_source",
+];
+
+const parseStateMap = (text: string): Map<string, string> => {
+  const map = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    map.set(line.slice(0, eq), line.slice(eq + 1));
+  }
+  return map;
+};
+
+const positiveStateInt = (value: unknown): number => {
+  const parsed = Number.parseInt(String(value || "0"), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const copyKeys = (target: Map<string, string>, source: Map<string, string>, keys: string[]): void => {
+  for (const key of keys) {
+    if (source.has(key)) target.set(key, source.get(key) || "");
+  }
+};
+
+const preserveLatestAccounting = (target: Map<string, string>, latest: Map<string, string>): void => {
+  const latestCumulative = positiveStateInt(latest.get("cumulative_tokens"));
+  const targetCumulative = positiveStateInt(target.get("cumulative_tokens"));
+  const latestTokenSource = latest.get("token_source") || "";
+  const targetTokenSource = target.get("token_source") || "";
+  if (
+    latestTokenSource === "llm_reported" &&
+    (latestCumulative >= targetCumulative || targetTokenSource !== "llm_reported")
+  ) {
+    copyKeys(target, latest, tokenAccountingKeys);
+  }
+
+  const latestCodeVolume = positiveStateInt(latest.get("cumulative_code_volume"));
+  const targetCodeVolume = positiveStateInt(target.get("cumulative_code_volume"));
+  if (
+    (latest.get("code_source") || "none") !== "none" &&
+    (latestCodeVolume > targetCodeVolume || (target.get("code_source") || "none") === "none")
+  ) {
+    copyKeys(target, latest, codeAccountingKeys);
+  }
+};
+
 const known = new Set(Object.keys(next));
 const seen = new Set<string>();
 const out: string[] = [];
@@ -277,6 +349,11 @@ for (const [key, value] of Object.entries(tokenDefaults)) {
 }
 
 const tempPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
-fs.writeFileSync(tempPath, out.join("\n") + "\n");
+const outputMap = parseStateMap(out.join("\n"));
+preserveLatestAccounting(outputMap, parseStateMap(readText(statePath)));
+fs.writeFileSync(
+  tempPath,
+  Array.from(outputMap.entries()).map(([key, value]) => `${key}=${value}`).join("\n") + "\n"
+);
 fs.renameSync(tempPath, statePath);
 process.exit(0);

@@ -6,7 +6,6 @@ const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { PtyRunnerManager } = require("./main/runner-pty-manager");
-const { createCliUsageLogBridge } = require("./main/cli-usage-log-bridge");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;
@@ -1263,10 +1262,21 @@ async function writePtyRunnerStateFile(runnerId, fields) {
     for (const [key, value] of Object.entries(runnerTokenStateDefaults)) {
       if (!lines.has(key)) lines.set(key, value);
     }
+    const explicitFields = new Set(Object.keys(fields || {}));
     for (const [k, v] of Object.entries(fields || {})) {
       if (v === undefined || v === null) continue;
       lines.set(k, String(v));
     }
+    try {
+      const latest = new Map();
+      const latestText = await fs.readFile(statePath, "utf8");
+      for (const line of latestText.split(/\r?\n/)) {
+        const eq = line.indexOf("=");
+        if (eq <= 0) continue;
+        latest.set(line.slice(0, eq), line.slice(eq + 1));
+      }
+      preserveLatestRunnerAccountingFields(lines, latest, explicitFields);
+    } catch {}
     lines.set("updated_at", new Date().toISOString());
     const out = Array.from(lines.entries())
       .map(([k, v]) => `${k}=${v}`)
@@ -1531,11 +1541,11 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `Active reporting (every turn — required):`,
     `  - Start of turn: \`${runnerWakeCmd} poll --runner ${runnerId}\``,
     `  - On stage change: \`${runnerStageCmd} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
-    `  - End of turn: \`${runnerTokensCmd} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
-    `Desktop captures exact CLI token usage automatically when the provider writes`,
-    `usage metadata. If exact input/output/cache values are visible to you, you may`,
-    `also run the end-of-turn report before finishing the turn. If exact values are`,
-    `not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
+    `  - End of turn: Desktop records provider usage automatically when exact live usage metadata is emitted.`,
+    `    Do not also run \`${runnerTokensCmd} report\` for the same Desktop PTY turn.`,
+    `    Only use \`${runnerTokensCmd} report --runner ${runnerId} --tick-id <unique> --input <N> --output <N> [--cache-read <N>] [--cache-create <N>]\``,
+    `    in non-Desktop runs or when the host explicitly asks for a manual report and exact values are visible.`,
+    `If exact values are not visible, skip token reporting; never report 0/0, placeholders, or estimates.`,
     `Format tick-id as`,
     `\`${runnerId}-<unix-epoch-sec>-<random4>\` so duplicates dedupe correctly.`
   ].filter((line) => line !== null && typeof line !== "undefined").join("\n");
@@ -3294,23 +3304,28 @@ function usageReportFromJsonLine(line) {
   // Codex JSON final event.
   if (parsed.type === "turn.completed" && parsed.usage && typeof parsed.usage === "object") {
     const usage = parsed.usage;
+    const inputTotal = positiveIntegerValue(usage.input_tokens);
+    const cacheRead = positiveIntegerValue(usage.cached_input_tokens ?? usage.cache_read_input_tokens);
+    const cacheCreate = positiveIntegerValue(usage.cache_creation_input_tokens);
     return {
       source: "codex_turn_completed_usage",
-      input: positiveIntegerValue(usage.input_tokens),
+      input: Math.max(0, inputTotal - cacheRead - cacheCreate),
       output: positiveIntegerValue(usage.output_tokens),
-      cacheRead: 0,
-      cacheCreate: 0
+      cacheRead,
+      cacheCreate
     };
   }
 
   // Gemini stream-json / JSON metadata.
   const usage = parsed.usageMetadata || parsed.usage_metadata;
   if (usage && typeof usage === "object") {
+    const inputTotal = usageValue(usage, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
+    const cacheRead = usageValue(usage, ["cachedContentTokenCount", "cached_content_token_count"]);
     return {
       source: "gemini_usage_metadata",
-      input: usageValue(usage, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]),
+      input: Math.max(0, inputTotal - cacheRead),
       output: usageValue(usage, ["candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count"]),
-      cacheRead: usageValue(usage, ["cachedContentTokenCount", "cached_content_token_count"]),
+      cacheRead,
       cacheCreate: 0
     };
   }
@@ -3390,6 +3405,52 @@ function isRunnerTokenSourceAuthoritative(source) {
   return String(source || "").trim() === "llm_reported";
 }
 
+function isLegacySessionLogTokenEntry(entry) {
+  return String(entry?.note || "").startsWith("host_session_log:");
+}
+
+async function readTrustedRunnerTokenLogTotal(boardRoot, runnerId) {
+  const result = { hasTokenLog: false, trustedCount: 0, total: 0 };
+  const logPath = path.join(boardRoot, "runners", "logs", `${runnerId}-tokens.log`);
+  let raw = "";
+  try {
+    raw = await fs.readFile(logPath, "utf8");
+    result.hasTokenLog = true;
+  } catch {
+    return result;
+  }
+
+  const seen = new Set();
+  let lineIndex = 0;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    lineIndex += 1;
+    let entry;
+    try {
+      entry = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (isLegacySessionLogTokenEntry(entry)) continue;
+    const tickId = String(entry.tickId || `line:${lineIndex}`);
+    const key = `${runnerId}:${tickId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const turnTotal =
+      positiveIntegerValue(entry.turnTotal) ||
+      positiveIntegerValue(entry.input) +
+        positiveIntegerValue(entry.output) +
+        positiveIntegerValue(entry.cacheRead) +
+        positiveIntegerValue(entry.cacheCreate);
+    if (turnTotal <= 0) continue;
+    result.trustedCount += 1;
+    result.total += turnTotal;
+  }
+
+  return result;
+}
+
 async function readRunnerTokenUsage(boardRoot, runners = []) {
   const totals = new Map();
 
@@ -3401,6 +3462,13 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
   for (const runner of runners) {
     const rid = runner && runner.id;
     if (!rid) continue;
+    const trustedLog = await readTrustedRunnerTokenLogTotal(boardRoot, rid);
+    if (trustedLog.hasTokenLog) {
+      if (trustedLog.total > 0) {
+        totals.set(rid, trustedLog.total);
+      }
+      continue;
+    }
     try {
       const raw = await fs.readFile(path.join(stateDir, `${rid}.state`), "utf8");
       let tokenSource = "";
@@ -4250,9 +4318,8 @@ async function readBoard({ projectRoot, boardDirName }) {
     orderBy: "mtime"
   });
 
-  // Runner token override for dashboard metrics — sum each runner's enriched
-  // tokenUsage/state cumulative_tokens, then override the autoflow CLI's
-  // autoflow_token_usage_count when the local runner sources are fresher.
+  // Runner token override for dashboard metrics — prefer trusted runner-tokens
+  // logs so legacy host_session_log imports do not keep inflating totals.
   const parsedMetrics = metricsResult ? parseKeyValueOutput(metricsResult.stdout) : {};
   try {
     const ownsCodeMetrics = (runner) => {
@@ -4286,7 +4353,12 @@ async function readBoard({ projectRoot, boardDirName }) {
     let runnerTokenTotal = 0;
     for (const runner of (runnersResult?.runners || [])) {
       if (!runner?.id) continue;
-      let runnerTotal = positiveIntegerValue(runner.tokenUsage);
+      const trustedLog = await readTrustedRunnerTokenLogTotal(boardRoot, runner.id);
+      if (trustedLog.hasTokenLog) {
+        runnerTokenTotal += trustedLog.total;
+        continue;
+      }
+      let runnerTotal = 0;
       try {
         const raw = await fs.readFile(path.join(stateDir, `${runner.id}.state`), "utf8");
         let src = "", cum = 0;
@@ -5922,6 +5994,69 @@ const runnerTokenStateDefaults = {
   code_source: "none",
 };
 
+const runnerTokenAccountingKeys = [
+  "cumulative_tokens",
+  "last_turn_tokens",
+  "last_turn_input_tokens",
+  "last_turn_output_tokens",
+  "last_turn_cache_read_tokens",
+  "last_turn_cache_create_tokens",
+  "last_turn_at",
+  "last_turn_tick_id",
+  "token_source",
+  "last_token_usage_source",
+];
+
+const runnerCodeAccountingKeys = [
+  "cumulative_code_files_changed",
+  "cumulative_code_insertions",
+  "cumulative_code_deletions",
+  "cumulative_code_volume",
+  "cumulative_code_net_delta",
+  "last_code_ticket_id",
+  "last_code_files_changed",
+  "last_code_insertions",
+  "last_code_deletions",
+  "last_code_volume",
+  "last_code_net_delta",
+  "last_code_reported_at",
+  "code_source",
+];
+
+function parsePositiveStateInteger(value) {
+  const parsed = Number.parseInt(String(value || "0"), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function copyStateKeys(target, source, keys, explicitKeys) {
+  for (const key of keys) {
+    if (explicitKeys.has(key) || !source.has(key)) continue;
+    target.set(key, source.get(key));
+  }
+}
+
+function preserveLatestRunnerAccountingFields(target, latest, explicitKeys) {
+  const latestCumulative = parsePositiveStateInteger(latest.get("cumulative_tokens"));
+  const targetCumulative = parsePositiveStateInteger(target.get("cumulative_tokens"));
+  const latestTokenSource = latest.get("token_source") || "";
+  const targetTokenSource = target.get("token_source") || "";
+  if (
+    isRunnerTokenSourceAuthoritative(latestTokenSource) &&
+    (latestCumulative >= targetCumulative || !isRunnerTokenSourceAuthoritative(targetTokenSource))
+  ) {
+    copyStateKeys(target, latest, runnerTokenAccountingKeys, explicitKeys);
+  }
+
+  const latestCodeVolume = parsePositiveStateInteger(latest.get("cumulative_code_volume"));
+  const targetCodeVolume = parsePositiveStateInteger(target.get("cumulative_code_volume"));
+  if (
+    (latest.get("code_source") || "none") !== "none" &&
+    (latestCodeVolume > targetCodeVolume || (target.get("code_source") || "none") === "none")
+  ) {
+    copyStateKeys(target, latest, runnerCodeAccountingKeys, explicitKeys);
+  }
+}
+
 function serializeRunnerState(values) {
   return Object.entries(values)
     .map(([key, value]) => `${key}=${value ?? ""}`)
@@ -6429,12 +6564,6 @@ app.whenReady().then(() => {
   // writePrompt() remains main-process only for automation prompts.
   globalThis.__autoflowPtyManager = globalThis.__autoflowPtyManager || new PtyRunnerManager();
   const ptyManager = globalThis.__autoflowPtyManager;
-  const cliUsageLogBridge = createCliUsageLogBridge({
-    getRunnerMetaEntries: () => Array.from(ptyRunnerMeta.entries()),
-    reportUsage: reportPtyUsageViaRunnerTool,
-    logger: console
-  });
-  cliUsageLogBridge.start();
   const broadcastPty = (channel, payload) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -6447,7 +6576,6 @@ app.whenReady().then(() => {
     for (const usage of ptyUsageReportsFromChunk(runnerId, data)) {
       reportPtyUsageViaRunnerTool(runnerId, usage);
     }
-    cliUsageLogBridge.scheduleRunner(runnerId);
   });
   ptyManager.on("status", (payload) => {
     const scopedPayload = ptyRunnerScopedPayload(payload.runnerId, payload);
@@ -6467,7 +6595,6 @@ app.whenReady().then(() => {
     if (payload.status === "stopped") {
       ptyRunnerMeta.delete(payload.runnerId);
       ptyTokenUsageParseState.delete(payload.runnerId);
-      cliUsageLogBridge.forgetRunner(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
         try { removePtySessionPid(payload.pid); } catch {}
@@ -6614,7 +6741,6 @@ app.whenReady().then(() => {
         const paste = agent === "claude" ? "bracketed" : "plain";
         const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
         console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
-        cliUsageLogBridge.scheduleRunner(runnerId, 4000);
       }, PROMPT_INJECT_DELAY_MS);
       // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
       // whether the TUI accepted it (text in input box / model response /
@@ -6763,7 +6889,6 @@ app.whenReady().then(() => {
           setTimeout(() => {
             const paste = agent === "claude" ? "bracketed" : "plain";
             ptyManager.writePrompt(runnerId, initialPrompt, { paste });
-            cliUsageLogBridge.scheduleRunner(runnerId, 4000);
           }, promptDelay);
           console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
           await new Promise((r) => setTimeout(r, 800));
