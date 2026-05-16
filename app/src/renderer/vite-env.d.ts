@@ -86,6 +86,17 @@ type AutoflowRunnerListResult = AutoflowRunResult & {
   runners: AutoflowRunner[];
 };
 
+type AutoflowRunnerResourceUsage = {
+  ok: boolean;
+  pid: string;
+  cpuPercent: number;
+  memoryPercent: number;
+  rssMb: number;
+  processCount: number;
+  loadScore: number;
+  stderr: string;
+};
+
 type AutoflowMetricSnapshot = {
   timestamp: string;
   spec_total: number;
@@ -216,6 +227,9 @@ interface Window {
       projectRoot: string;
       boardDirName: string;
     }) => Promise<AutoflowRunnerListResult>;
+    runnerResourceUsage: (options: {
+      pid: string;
+    }) => Promise<AutoflowRunnerResourceUsage>;
     controlRunner: (options: {
       action: "start" | "stop" | "restart" | "remove";
       runnerId: string;

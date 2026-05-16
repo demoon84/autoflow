@@ -62,10 +62,15 @@ import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
+import runnerCheetahStrip from "./assets/runner-cheetah/runner-cheetah-strip.png";
 import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
+
+const RUNNER_CHEETAH_IDLE_DURATION_MS = 1400;
+const RUNNER_CHEETAH_MIN_DURATION_MS = 320;
+const RUNNER_CHEETAH_POLL_MS = 2000;
 
 function readThemeMode(): ThemeMode {
   return initialSetting("autoflow.theme", "dark") === "light" ? "light" : "dark";
@@ -3068,7 +3073,7 @@ function App() {
                       <div className="snapshot-page-toolbar">
                         <div className="workflow-pin-layer-heading">
                           <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                          <strong>Report</strong>
+                          <strong>통계</strong>
                         </div>
                         <div className="snapshot-actions">
                           <Button
@@ -4368,7 +4373,7 @@ function ReportMetricCard({
           <strong>{value}</strong>
           <span>{label}</span>
         </div>
-        <em>{detail}</em>
+        <em className="report-metric-detail">{detail}</em>
         {children ? <div className="report-metric-card-children">{children}</div> : null}
       </CardContent>
     </Card>
@@ -4763,6 +4768,126 @@ function computeArrivalMetrics(board: AutoflowBoardSnapshot | null): ArrivalMetr
   };
 }
 
+function ReportHeroStat({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: string;
+}) {
+  return (
+    <div className={`report-hero-stat report-hero-stat-${tone}`}>
+      <div className="report-hero-stat-icon">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="report-hero-stat-copy">
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <em>{detail}</em>
+      </div>
+    </div>
+  );
+}
+
+function ReportHero({
+  boardExists,
+  lastUpdatedLabel,
+  ticketTotal,
+  codeVolumeCount,
+  tokenUsage24hCount,
+  commit24hCount,
+  runnerRunning,
+  runnerBlocked,
+  metrics
+}: {
+  boardExists: boolean;
+  lastUpdatedLabel: string;
+  ticketTotal: number;
+  codeVolumeCount: number;
+  tokenUsage24hCount: number;
+  commit24hCount: number;
+  runnerRunning: number;
+  runnerBlocked: number;
+  metrics: ArrivalMetrics;
+}) {
+  return (
+    <section className="report-hero" aria-label="운영 통계 요약">
+      <div className="report-hero-copy">
+        <div className="report-hero-kicker">
+          <BarChart3 className="h-4 w-4" aria-hidden="true" />
+          <span>{boardExists ? "보드 추적 중" : "보드 없음"}</span>
+        </div>
+        <h2>운영 통계</h2>
+        <p>
+          마지막 업데이트 <strong>{lastUpdatedLabel}</strong>
+        </p>
+      </div>
+      <ArrivalGauge metrics={metrics} className="report-hero-gauge" />
+      <div className="report-hero-stats">
+        <ReportHeroStat
+          label="티켓 총량"
+          value={`${formatCount(ticketTotal)}개`}
+          detail="주문 / PRD / 대기 / 진행 / 완료"
+          icon={Database}
+          tone="blue"
+        />
+        <ReportHeroStat
+          label="코드 변경량"
+          value={`${formatCompactCount(codeVolumeCount)}줄`}
+          detail="완료 커밋 누적 기준"
+          icon={FolderPlus}
+          tone="green"
+        />
+        <ReportHeroStat
+          label="24h 토큰"
+          value={`${formatCompactCount(tokenUsage24hCount)}토큰`}
+          detail="최근 실행 로그 기준"
+          icon={Terminal}
+          tone="violet"
+        />
+        <ReportHeroStat
+          label="24h 커밋"
+          value={`${formatCount(commit24hCount)}개`}
+          detail={`${formatCount(runnerRunning)}개 실행 · ${formatCount(runnerBlocked)}개 막힘`}
+          icon={CheckCircle2}
+          tone="amber"
+        />
+      </div>
+    </section>
+  );
+}
+
+function displayReportRunnerLabel(value: string, runners?: AutoflowRunner[]) {
+  const label = displayWorkflowRunnerId(value, runners);
+  const normalized = (label || value || "").toLowerCase();
+  const workerMatch = normalized.match(/^worker-(\d+)$/);
+  const wikiMatch = label.match(/^LLM Wiki-(\d+)$/);
+
+  if (normalized === "planner") return "플래너 러너";
+  if (normalized === "verifier") return "검증 러너";
+  if (normalized === "worker") return "워커 러너";
+  if (workerMatch) return `워커 러너 ${workerMatch[1]}`;
+  if (label === "LLM Wiki") return "위키 러너";
+  if (wikiMatch) return `위키 러너 ${wikiMatch[1]}`;
+
+  return label;
+}
+
+function reportRunnerSortWeight(value: string) {
+  const role = startupRuleRoleForValue(value);
+  if (role === "planner") return 10;
+  if (role === "worker") return 20;
+  if (role === "verifier") return 30;
+  if (role === "wiki-maintainer") return 40;
+  return 90;
+}
+
 function ReportingDashboard({
   board,
   lastUpdated,
@@ -4877,12 +5002,12 @@ function ReportingDashboard({
     const rows = new Map<string, { id: string; label: string }>();
 
     (board?.runners || []).forEach((runner) => {
-      rows.set(runner.id, { id: runner.id, label: displayWorkflowRunnerId(runner.id, board?.runners) });
+      rows.set(runner.id, { id: runner.id, label: displayReportRunnerLabel(runner.id, board?.runners) });
     });
 
     Object.keys(runnerStatus24hMap).forEach((runnerId) => {
       if (!rows.has(runnerId)) {
-        rows.set(runnerId, { id: runnerId, label: displayWorkflowRunnerId(runnerId, board?.runners) });
+        rows.set(runnerId, { id: runnerId, label: displayReportRunnerLabel(runnerId, board?.runners) });
       }
     });
 
@@ -4897,7 +5022,10 @@ function ReportingDashboard({
           lastActivity: formatUnixDate((raw?.last_activity as number | string) || 0)
         };
       })
-      .sort((left, right) => left.label.localeCompare(right.label, "ko-KR"));
+      .sort(
+        (left, right) =>
+          reportRunnerSortWeight(left.id) - reportRunnerSortWeight(right.id) || left.label.localeCompare(right.label, "ko-KR")
+      );
   }, [board?.runners, runnerStatus24hMap]);
 
   const totalTickets = formatCount(ticketTotal);
@@ -4910,7 +5038,17 @@ function ReportingDashboard({
 
   return (
     <div className="report-dashboard" aria-label={`통계 카드 ${totalTickets}개 · 마지막 업데이트 ${lastUpdatedLabel}`}>
-      <ArrivalGauge metrics={arrivalMetrics} className="mb-3" />
+      <ReportHero
+        boardExists={Boolean(board?.exists)}
+        lastUpdatedLabel={lastUpdatedLabel}
+        ticketTotal={ticketTotal}
+        codeVolumeCount={codeVolumeCount}
+        tokenUsage24hCount={tokenUsage24hCount}
+        commit24hCount={commit24hCount}
+        runnerRunning={runnerRunning}
+        runnerBlocked={runnerBlocked}
+        metrics={arrivalMetrics}
+      />
       <div className="report-metric-grid report-metric-grid-primary" aria-label="핵심 보드 상태 요약">
         <ReportMetricCard
           label="코드 영향"
@@ -4982,11 +5120,11 @@ function ReportingDashboard({
                   <strong>{formatCount(tokenCache24hCount)}</strong>
                 </div>
                 <div className="report-inline-stat">
-                  <span>러너 분해</span>
+                  <span>러너별</span>
                   <strong>{runnerBreakdown.length}개</strong>
                 </div>
                 <div className="report-inline-stat">
-                  <span>모델 분해</span>
+                  <span>모델별</span>
                   <strong>{modelBreakdown.length}개</strong>
                 </div>
               </div>
@@ -5025,19 +5163,19 @@ function ReportingDashboard({
                 <span>{runner.label}</span>
                 <strong>{runner.lastActivity}</strong>
                 <em>
-                  성공 {formatCount(runner.success)} · 실패 {formatCount(runner.failure)} · timeout {formatCount(runner.timeout)}
+                  성공 {formatCount(runner.success)} · 실패 {formatCount(runner.failure)} · 타임아웃 {formatCount(runner.timeout)}
                 </em>
               </div>
             ))}
             {!hasRunnerData ? <div className="report-fallback">최근 24h 러너 상태가 없습니다</div> : null}
           </div>
           <ReportRunnerTimeline
-            title="최근 24시간 tick 결과 timeline"
+            title="최근 24시간 러너 실행 결과"
             data={runnerTickTimeline}
             runners={runnerRows.map((row) => ({ id: row.id, label: row.label }))}
           />
           <ReportSimpleBars
-            title="러너별 평균 tick 시간"
+            title="러너별 평균 실행 시간"
             items={runnerRows
               .map((row) => ({
                 label: row.label,
@@ -8002,23 +8140,92 @@ function useLiveStdoutText(
   return text;
 }
 
-function RunnerActivityFooter({
-  runner
-}: {
-  runner: AutoflowRunner;
-}) {
+function clamp01(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function runnerCheetahDurationMs(usage: AutoflowRunnerResourceUsage | null) {
+  const loadScore = clamp01(usage?.loadScore ?? 0);
+  const easedScore = Math.pow(loadScore, 0.72);
+  return Math.round(
+    RUNNER_CHEETAH_IDLE_DURATION_MS -
+      (RUNNER_CHEETAH_IDLE_DURATION_MS - RUNNER_CHEETAH_MIN_DURATION_MS) * easedScore
+  );
+}
+
+function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerResourceUsage | null {
+  const [usage, setUsage] = React.useState<AutoflowRunnerResourceUsage | null>(null);
+
+  React.useEffect(() => {
+    if (!running || !pid) {
+      setUsage(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchUsage = async () => {
+      try {
+        const nextUsage = await window.autoflow.runnerResourceUsage({ pid });
+        if (!cancelled) {
+          setUsage(nextUsage?.ok ? nextUsage : null);
+        }
+      } catch {
+        if (!cancelled) setUsage(null);
+      }
+    };
+    void fetchUsage();
+    const handle = window.setInterval(fetchUsage, RUNNER_CHEETAH_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [pid, running]);
+
+  return usage;
+}
+
+function RunnerRunIndicator({ running, pid }: { running: boolean; pid: string }) {
+  const usage = useRunnerResourceUsage(running, pid);
+  const durationMs = runnerCheetahDurationMs(usage);
+  const title = usage
+    ? `러너 실행 중 · CPU ${usage.cpuPercent.toFixed(1)}% · 메모리 ${usage.memoryPercent.toFixed(1)}%`
+    : "러너 실행 중 · 부하 측정 중";
+  const style = {
+    "--runner-run-duration": `${durationMs}ms`,
+    "--runner-cheetah-sprite": `url(${runnerCheetahStrip})`
+  } as React.CSSProperties & {
+    "--runner-run-duration": string;
+    "--runner-cheetah-sprite": string;
+  };
+
+  return (
+    <span
+      className="runner-run-indicator"
+      data-running={running ? "true" : "false"}
+      aria-label={running ? "러너 실행 중" : "러너 대기 중"}
+      title={title}
+      style={style}
+    />
+  );
+}
+
+function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const activity = useRunnerActivity(runner);
   const animatedTokens = useCountUp(activity.tokens);
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
+  const pidLabel = runner.pid ? `PID ${runner.pid}` : "PID -";
   return (
     <footer
       className="ai-conversation-panel-activity"
       data-running={isRunning ? "true" : "false"}
       aria-live="polite"
-      title={`누적 토큰 ${activity.tokens.toLocaleString()}`}
+      title={`누적 토큰 ${activity.tokens.toLocaleString()} · ${pidLabel}`}
     >
       <span>{animatedTokens.toLocaleString()} tokens</span>
+      <span className="ai-conversation-panel-activity-pid">{pidLabel}</span>
+      {isRunning ? <RunnerRunIndicator running={isRunning} pid={runner.pid} /> : null}
     </footer>
   );
 }

@@ -51,6 +51,8 @@ const allowedRunnerActions = new Set(["start", "stop", "restart", "remove"]);
 const allowedStopHookActions = new Set(["install", "remove", "status"]);
 const allowedWatcherActions = new Set(["start", "stop", "status"]);
 const allowedWikiActions = new Set(["update", "lint", "query"]);
+const RUNNER_RESOURCE_USAGE_MAX_CPU_PERCENT = 180;
+const RUNNER_RESOURCE_USAGE_MAX_MEMORY_PERCENT = 12;
 // Roles accepted by `autoflow run <role>` per app/cli/system/run-role.ts
 // case statement. Active: ticket / planner / wiki (with their
 // worker, plan, wiki-maintainer aliases). Legacy: todo. Merge is worker-owned;
@@ -4275,6 +4277,112 @@ async function listRunners(options = {}) {
   };
 }
 
+let processResourceSnapshotCache = null;
+
+function readProcessResourceSnapshot() {
+  const now = Date.now();
+  if (
+    processResourceSnapshotCache &&
+    now - processResourceSnapshotCache.createdAt < 1500
+  ) {
+    return processResourceSnapshotCache.promise;
+  }
+
+  const promise = new Promise((resolve) => {
+    execFile(
+      "ps",
+      ["-axo", "pid=,ppid=,%cpu=,%mem=,rss="],
+      { maxBuffer: 2 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error) {
+          resolve(new Map());
+          return;
+        }
+        const rows = new Map();
+        String(stdout || "")
+          .split(/\r?\n/)
+          .forEach((line) => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 5) return;
+            const pid = Number.parseInt(parts[0], 10);
+            const ppid = Number.parseInt(parts[1], 10);
+            const cpuPercent = Number.parseFloat(parts[2]) || 0;
+            const memoryPercent = Number.parseFloat(parts[3]) || 0;
+            const rssKb = Number.parseInt(parts[4], 10) || 0;
+            if (!Number.isInteger(pid) || pid <= 0) return;
+            rows.set(pid, { pid, ppid, cpuPercent, memoryPercent, rssKb });
+          });
+        resolve(rows);
+      }
+    );
+  });
+
+  processResourceSnapshotCache = { createdAt: now, promise };
+  return promise;
+}
+
+async function runnerResourceUsage(options = {}) {
+  const pid = Number.parseInt(String(options.pid || ""), 10);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return {
+      ok: false,
+      pid: "",
+      cpuPercent: 0,
+      memoryPercent: 0,
+      rssMb: 0,
+      processCount: 0,
+      loadScore: 0,
+      stderr: "Runner PID is required."
+    };
+  }
+
+  const rows = await readProcessResourceSnapshot();
+  const childrenByParent = new Map();
+  for (const row of rows.values()) {
+    if (!childrenByParent.has(row.ppid)) {
+      childrenByParent.set(row.ppid, []);
+    }
+    childrenByParent.get(row.ppid).push(row.pid);
+  }
+
+  const queue = [pid];
+  const seen = new Set();
+  let cpuPercent = 0;
+  let memoryPercent = 0;
+  let rssKb = 0;
+
+  while (queue.length > 0) {
+    const currentPid = queue.shift();
+    if (seen.has(currentPid)) continue;
+    seen.add(currentPid);
+    const row = rows.get(currentPid);
+    if (row) {
+      cpuPercent += row.cpuPercent;
+      memoryPercent += row.memoryPercent;
+      rssKb += row.rssKb;
+    }
+    const children = childrenByParent.get(currentPid) || [];
+    for (const childPid of children) {
+      if (!seen.has(childPid)) queue.push(childPid);
+    }
+  }
+
+  const cpuScore = Math.min(1, cpuPercent / RUNNER_RESOURCE_USAGE_MAX_CPU_PERCENT);
+  const memoryScore = Math.min(1, memoryPercent / RUNNER_RESOURCE_USAGE_MAX_MEMORY_PERCENT);
+  const loadScore = Math.max(cpuScore, memoryScore * 0.85);
+
+  return {
+    ok: rows.has(pid),
+    pid: String(pid),
+    cpuPercent,
+    memoryPercent,
+    rssMb: rssKb / 1024,
+    processCount: seen.size,
+    loadScore,
+    stderr: rows.has(pid) ? "" : "Runner PID is not active."
+  };
+}
+
 // Some runner paths still leave stale `active_ticket_id` / `active_ticket_title`
 // in state files when claims shift between workers. Re-derive the active
 // ticket from the board so the UI reflects the current inprogress/prd
@@ -6046,6 +6154,7 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:readBoard", withTimeout(withScopeMemory(readBoard), 30000));
   ipcMain.handle("autoflow:installBoard", withScopeMemory(installBoard));
   ipcMain.handle("autoflow:listRunners", withTimeout(withScopeMemory(listRunnersStandalone), 30000));
+  ipcMain.handle("autoflow:runnerResourceUsage", withTimeout((_event, options = {}) => runnerResourceUsage(options), 5000));
   ipcMain.handle("autoflow:controlRunner", withScopeMemory(controlRunner));
   ipcMain.handle(
     "autoflow:closeProjectRunners",

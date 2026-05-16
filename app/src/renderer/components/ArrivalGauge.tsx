@@ -35,22 +35,16 @@ function gaugeColor(m: ArrivalMetrics): "ok" | "warning" | "critical" {
 }
 
 function GaugeBar({ fill, color }: { fill: number; color: "ok" | "warning" | "critical" }) {
-  const colorClass =
-    color === "critical"
-      ? "bg-red-500"
-      : color === "warning"
-      ? "bg-yellow-500"
-      : "bg-emerald-500";
   return (
     <div
-      className="relative h-2 w-full rounded-full bg-muted overflow-hidden"
+      className="arrival-gauge-track"
       role="progressbar"
       aria-valuenow={Math.round(fill * 100)}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className={cn("absolute left-0 top-0 h-full rounded-full transition-all duration-500", colorClass)}
+        className={cn("arrival-gauge-fill", `arrival-gauge-fill-${color}`)}
         style={{ width: `${Math.min(100, Math.round(fill * 100))}%` }}
       />
     </div>
@@ -58,9 +52,10 @@ function GaugeBar({ fill, color }: { fill: number; color: "ok" | "warning" | "cr
 }
 
 function StatusIcon({ color }: { color: "ok" | "warning" | "critical" }) {
-  if (color === "critical") return <AlertTriangle className="h-4 w-4 text-red-500" aria-hidden="true" />;
-  if (color === "warning") return <TrendingDown className="h-4 w-4 text-yellow-500" aria-hidden="true" />;
-  return <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden="true" />;
+  const className = cn("arrival-gauge-status-icon", `arrival-gauge-status-icon-${color}`);
+  if (color === "critical") return <AlertTriangle className={className} aria-hidden="true" />;
+  if (color === "warning") return <TrendingDown className={className} aria-hidden="true" />;
+  return <CheckCircle2 className={className} aria-hidden="true" />;
 }
 
 export function ArrivalGauge({ metrics, className }: ArrivalGaugeProps) {
@@ -80,8 +75,8 @@ export function ArrivalGauge({ metrics, className }: ArrivalGaugeProps) {
 
   if (!metrics) {
     return (
-      <div className={cn("arrival-gauge arrival-gauge--loading flex items-center gap-2 text-muted-foreground text-xs", className)}>
-        <Target className="h-4 w-4" aria-hidden="true" />
+      <div className={cn("arrival-gauge arrival-gauge-loading", className)}>
+        <Target className="arrival-gauge-status-icon" aria-hidden="true" />
         <span>도착 게이지 로딩 중…</span>
       </div>
     );
@@ -96,22 +91,19 @@ export function ArrivalGauge({ metrics, className }: ArrivalGaugeProps) {
   return (
     <div
       ref={containerRef}
-      className={cn("arrival-gauge relative flex flex-col gap-1.5 p-3 rounded-lg border bg-card select-none", className)}
+      className={cn("arrival-gauge", `arrival-gauge-${color}`, className)}
     >
       <button
         type="button"
-        className="flex items-center gap-2 w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+        className="arrival-gauge-trigger"
         aria-label={`도착 게이지: 예상 ${attemptsLeft}회 남음, 상태 ${colorLabel}. 클릭하여 상세 보기`}
         aria-expanded={showPopover}
         onClick={() => setShowPopover((v) => !v)}
         onKeyDown={(e) => { if (e.key === "Escape") setShowPopover(false); }}
       >
         <StatusIcon color={color} />
-        <span className="text-xs font-medium flex-1">도착까지</span>
-        <span className={cn(
-          "text-sm font-bold tabular-nums",
-          color === "critical" ? "text-red-500" : color === "warning" ? "text-yellow-600" : "text-emerald-600"
-        )}>
+        <span className="arrival-gauge-label">도착까지</span>
+        <span className={cn("arrival-gauge-value", `arrival-gauge-value-${color}`)}>
           {attemptsLeft}회
         </span>
       </button>
@@ -122,42 +114,39 @@ export function ArrivalGauge({ metrics, className }: ArrivalGaugeProps) {
         <div
           role="dialog"
           aria-label="도착 게이지 상세 지표"
-          className="absolute left-0 top-full mt-1 z-50 w-64 rounded-lg border bg-popover p-3 shadow-md text-xs space-y-1.5"
+          className="arrival-gauge-popover"
           onKeyDown={(e) => { if (e.key === "Escape") setShowPopover(false); }}
         >
-          <p className="font-semibold text-sm mb-1">도착 게이지 상세</p>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">예상 남은 시도</span>
-            <span className="font-medium">{attemptsLeft}회</span>
+          <p className="arrival-gauge-popover-title">도착 게이지 상세</p>
+          <div className="arrival-gauge-popover-row">
+            <span>예상 남은 시도</span>
+            <strong>{attemptsLeft}회</strong>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">재시도 주문 수</span>
-            <span className={metrics.retryOrderCount >= 3 ? "text-red-500 font-medium" : "font-medium"}>
+          <div className="arrival-gauge-popover-row">
+            <span>재시도 주문 수</span>
+            <strong className={metrics.retryOrderCount >= 3 ? "arrival-gauge-danger" : ""}>
               {metrics.retryOrderCount}개
-            </span>
+            </strong>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">최다 fingerprint 반복</span>
-            <span className={metrics.maxFingerprintRepeat >= 3 ? "text-red-500 font-medium" : "font-medium"}>
+          <div className="arrival-gauge-popover-row">
+            <span>최다 fingerprint 반복</span>
+            <strong className={metrics.maxFingerprintRepeat >= 3 ? "arrival-gauge-danger" : ""}>
               {metrics.maxFingerprintRepeat}회
-            </span>
+            </strong>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Timeout 비율 (24h)</span>
-            <span className={metrics.timeoutRatio >= 0.1 ? "text-red-500 font-medium" : "font-medium"}>
+          <div className="arrival-gauge-popover-row">
+            <span>Timeout 비율 (24h)</span>
+            <strong className={metrics.timeoutRatio >= 0.1 ? "arrival-gauge-danger" : ""}>
               {Math.round(metrics.timeoutRatio * 100)}%
-            </span>
+            </strong>
           </div>
           {metrics.avgPassMinutes > 0 && (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">평균 pass 시간</span>
-              <span className="font-medium">{metrics.avgPassMinutes}분</span>
+            <div className="arrival-gauge-popover-row">
+              <span>평균 pass 시간</span>
+              <strong>{metrics.avgPassMinutes}분</strong>
             </div>
           )}
-          <div className={cn(
-            "mt-1 pt-1 border-t text-center font-semibold",
-            color === "critical" ? "text-red-500" : color === "warning" ? "text-yellow-600" : "text-emerald-600"
-          )}>
+          <div className={cn("arrival-gauge-state", `arrival-gauge-state-${color}`)}>
             상태: {colorLabel}
           </div>
         </div>

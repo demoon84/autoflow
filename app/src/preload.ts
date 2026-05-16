@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("autoflow", {
   readBoard: (options: unknown) => ipcRenderer.invoke("autoflow:readBoard", options),
   installBoard: (options: unknown) => ipcRenderer.invoke("autoflow:installBoard", options),
   listRunners: (options: unknown) => ipcRenderer.invoke("autoflow:listRunners", options),
+  runnerResourceUsage: (options: unknown) => ipcRenderer.invoke("autoflow:runnerResourceUsage", options),
   controlRunner: (options: unknown) => ipcRenderer.invoke("autoflow:controlRunner", options),
   closeProjectRunners: (options: unknown) => ipcRenderer.invoke("autoflow:closeProjectRunners", options),
   listRunnerArtifacts: (options: unknown) => ipcRenderer.invoke("autoflow:listRunnerArtifacts", options),
