@@ -320,25 +320,8 @@ function basename(value: string) {
   return value.split(/[\\/]/).filter(Boolean).pop() || value;
 }
 
-function dirname(value: string) {
-  const parts = value.split(/[\\/]/).filter(Boolean);
-  if (parts.length <= 1) {
-    return "";
-  }
-
-  const prefix = value.startsWith("/") ? "/" : "";
-  return `${prefix}${parts.slice(0, -1).join("/")}`;
-}
-
 function defaultRecentProjects(currentProjectRoot: string) {
-  const parent = dirname(currentProjectRoot);
-  if (!parent) {
-    return currentProjectRoot ? [currentProjectRoot] : [];
-  }
-
-  const commonProjectNames = ["tetris", "autoflow", "ez", "mySkills", "local-ai-proxy", "vibe-terminal"];
-  const seeded = commonProjectNames.map((name) => `${parent}/${name}`);
-  return currentProjectRoot ? [currentProjectRoot, ...seeded] : seeded;
+  return currentProjectRoot ? [currentProjectRoot] : [];
 }
 
 function normalizeProjectList(values: string[]) {

@@ -1,6 +1,6 @@
 # Install Level
 
-이 폴더는 **설치 레벨** 영역이다. `autoflow init` / `autoflow upgrade` 가 대상 프로젝트(예: `tetris/.autoflow`) 로 복사하는 **데이터/구조** source 가 `install/` 아래에 있다. 실행 코드는 여기에 없다 — runner 실행 코드는 [../../app/runtime/](../../app/runtime/) (앱 영역) 에 있고 앱/CLI 가 직접 실행한다.
+이 폴더는 **설치 레벨** 영역이다. `autoflow init` / `autoflow upgrade` 가 대상 프로젝트의 보드 디렉터리로 복사하는 **데이터/구조** source 가 `install/` 아래에 있다. 실행 코드는 여기에 없다 — runner 실행 코드는 [../../app/runtime/](../../app/runtime/) (앱 영역) 에 있고 앱/CLI 가 직접 실행한다.
 
 ## 구조
 

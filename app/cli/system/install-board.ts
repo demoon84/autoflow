@@ -5,7 +5,7 @@ import {buildWikiVectorIndex} from "../runners/wiki/wiki";
 export function installBoard(args: string[], mode: "init" | "upgrade" = "init"): void {
     const ctx = projectContext(args[0] || ".", args[1] || defaultBoardDirName(), true);
     if (samePath(ctx.projectRoot, REPO_ROOT)) {
-        fail("Refusing to install a board into the Autoflow source repository root. Choose a target project such as /Users/demoon2016/Documents/project/tetris instead.");
+        fail("Refusing to install a board into the Autoflow source repository root. Choose a separate target project instead.");
     }
     const overwrite = mode === "upgrade";
     ensureDir(ctx.boardRoot);

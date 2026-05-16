@@ -41,7 +41,7 @@ companions are not installed.
 
 Source-repo smoke tests were retired in favor of validating installed boards
 directly. Run `app/bin/autoflow upgrade <project-root>` against a target project
-(default: `tetris/.autoflow`) and exercise the runners there.
+and exercise the runners there.
 
 ## Command Notes
 

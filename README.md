@@ -15,10 +15,10 @@
 - PRD 부터 worker verification 까지 `tickets/` 보드가 실행 원장이 된다.
 - 완료된 작업과 의사결정은 향후 `wiki/` layer 에 사람이 읽기 좋은 지도로 축적한다.
 
-예를 들어 `tetris` 프로젝트에 적용하면 목표 구조는 아래와 같다.
+대상 프로젝트에 적용하면 목표 구조는 아래와 같다.
 
 ```text
-tetris/
+target-project/
   AGENTS.md                         (optional host guidance)
   CLAUDE.md                         (Claude imports AGENTS.md)
   .claude/skills/
@@ -134,7 +134,7 @@ PROJECT_ROOT
 
 아래 같은 상황이면 이 구조가 잘 맞는다.
 
-- `tetris` 같은 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
+- 실제 프로젝트 안에 AI 운영 보드를 같이 두고 싶을 때
 - 여러 Codex 스레드나 heartbeat worker 가 병렬로 티켓을 나눠 처리할 때. 단, 한 worker 는 한 번에 active ticket 하나만 처리한다.
 - Codex, Claude Code, Gemini CLI 를 작업별 runner 로 바꿔가며 쓰고 싶을 때
 - 대화창이 늘어나도 프로젝트의 PRD / ticket / verifier / done 숫자를 보드에서 세고 싶을 때
@@ -392,7 +392,7 @@ autoflow/
 
 `app/bin/autoflow` 는 설치 엔트리포인트이고, 실제로 프로젝트 안에 생성되는 상태 파일은 `.autoflow/` 아래에 남는다.
 
-이 저장소는 자체 보드 사이드카를 두지 않는다. 설치 보드 동작 검증은 `tetris/.autoflow` 같은 별도 대상 프로젝트에 `app/bin/autoflow upgrade` 한 뒤 그곳에서 한다.
+이 저장소는 자체 보드 사이드카를 두지 않는다. 설치 보드 동작 검증은 별도 대상 프로젝트에 `app/bin/autoflow upgrade <project-root>` 를 실행한 뒤 그곳에서 한다.
 
 생성 대상은 현재 저장소 전체가 아니라 `install/board/`, `install/host/`, `install/integrations/` 의 데이터 source 뿐이다 (실행 코드는 보드에 들어가지 않고 `app/runtime/` 에서 직접 호출).
 즉 새 프로젝트에는 이 저장소의 내부 plan, 샘플 ticket, 플러그인 실험 파일이 들어가지 않는다.
