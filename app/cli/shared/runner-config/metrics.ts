@@ -44,6 +44,19 @@ type TokenLogReadResult = {
     entries: TokenLogEntry[];
 };
 
+export type RunnerTokenAccounting = {
+    cumulativeTokens: number;
+    lastTurnTokens: number;
+    lastTurnInputTokens: number;
+    lastTurnOutputTokens: number;
+    lastTurnCacheReadTokens: number;
+    lastTurnCacheCreateTokens: number;
+    lastTurnAt: string;
+    lastTurnTickId: string;
+    tokenSource: string;
+    lastTokenUsageSource: string;
+};
+
 function positiveIntegerValue(value: unknown): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
@@ -115,6 +128,43 @@ function tokenStateCumulative(ctx: ProjectContext, runnerId: string): number {
     const state = readRunnerState(ctx, runnerId);
     if (state.token_source !== "llm_reported") return 0;
     return intState(state, "cumulative_tokens");
+}
+
+export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): RunnerTokenAccounting {
+    const tokenLog = readTrustedTokenLogEntries(ctx, runnerId);
+    if (tokenLog.hasTokenLog) {
+        const last = tokenLog.entries
+            .slice()
+            .sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId))
+            .at(-1);
+        const source = last ? "llm_reported" : "none";
+        return {
+            cumulativeTokens: tokenLog.entries.reduce((total, entry) => total + entry.turnTotal, 0),
+            lastTurnTokens: last?.turnTotal || 0,
+            lastTurnInputTokens: last?.input || 0,
+            lastTurnOutputTokens: last?.output || 0,
+            lastTurnCacheReadTokens: last?.cacheRead || 0,
+            lastTurnCacheCreateTokens: last?.cacheCreate || 0,
+            lastTurnAt: last && last.atMs > 0 ? new Date(last.atMs).toISOString().replace(/\.\d+Z$/, "Z") : "",
+            lastTurnTickId: last?.tickId || "",
+            tokenSource: source,
+            lastTokenUsageSource: source,
+        };
+    }
+
+    const state = readRunnerState(ctx, runnerId);
+    return {
+        cumulativeTokens: state.token_source === "llm_reported" ? intState(state, "cumulative_tokens") : 0,
+        lastTurnTokens: intState(state, "last_turn_tokens"),
+        lastTurnInputTokens: intState(state, "last_turn_input_tokens"),
+        lastTurnOutputTokens: intState(state, "last_turn_output_tokens"),
+        lastTurnCacheReadTokens: intState(state, "last_turn_cache_read_tokens"),
+        lastTurnCacheCreateTokens: intState(state, "last_turn_cache_create_tokens"),
+        lastTurnAt: state.last_turn_at || "",
+        lastTurnTickId: state.last_turn_tick_id || "",
+        tokenSource: state.token_source || "none",
+        lastTokenUsageSource: state.last_token_usage_source || state.token_source || "none",
+    };
 }
 
 function addBreakdownValue(target: Record<string, number>, key: string, value: number): void {

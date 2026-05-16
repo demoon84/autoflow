@@ -1,5 +1,6 @@
 import {path, out, type ProjectContext} from "../context";
 import {readRunnerState, runnerEffectiveStateStatus} from "./state";
+import {runnerTokenAccounting} from "./metrics";
 import {runnerConfigFingerprint, runnerStringFieldDefaults} from "./serialize";
 
 export function outputRunner(index: number, ctx: ProjectContext, runner: Record<string, string>): void {
@@ -7,6 +8,7 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     const state = readRunnerState(ctx, runner.id || "");
     const stateStatus = runnerEffectiveStateStatus(state);
     const configFingerprint = runnerConfigFingerprint(runner);
+    const tokenAccounting = runnerTokenAccounting(ctx, runner.id || "");
     const field = (key: string, fallback = "") => runner[key] ?? fallback;
 
     out(`${prefix}id=${field("id")}`);
@@ -49,16 +51,16 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}artifact_stdout_status=${state.artifact_stdout_status || ""}`);
     out(`${prefix}artifact_stderr_status=${state.artifact_stderr_status || ""}`);
     out(`${prefix}last_log_line=${state.last_log_line || ""}`);
-    out(`${prefix}cumulative_tokens=${state.cumulative_tokens || "0"}`);
-    out(`${prefix}last_turn_tokens=${state.last_turn_tokens || "0"}`);
-    out(`${prefix}last_turn_input_tokens=${state.last_turn_input_tokens || "0"}`);
-    out(`${prefix}last_turn_output_tokens=${state.last_turn_output_tokens || "0"}`);
-    out(`${prefix}last_turn_cache_read_tokens=${state.last_turn_cache_read_tokens || "0"}`);
-    out(`${prefix}last_turn_cache_create_tokens=${state.last_turn_cache_create_tokens || "0"}`);
-    out(`${prefix}last_turn_at=${state.last_turn_at || ""}`);
-    out(`${prefix}last_turn_tick_id=${state.last_turn_tick_id || ""}`);
-    out(`${prefix}token_source=${state.token_source || "none"}`);
-    out(`${prefix}last_token_usage_source=${state.last_token_usage_source || state.token_source || "none"}`);
+    out(`${prefix}cumulative_tokens=${tokenAccounting.cumulativeTokens}`);
+    out(`${prefix}last_turn_tokens=${tokenAccounting.lastTurnTokens}`);
+    out(`${prefix}last_turn_input_tokens=${tokenAccounting.lastTurnInputTokens}`);
+    out(`${prefix}last_turn_output_tokens=${tokenAccounting.lastTurnOutputTokens}`);
+    out(`${prefix}last_turn_cache_read_tokens=${tokenAccounting.lastTurnCacheReadTokens}`);
+    out(`${prefix}last_turn_cache_create_tokens=${tokenAccounting.lastTurnCacheCreateTokens}`);
+    out(`${prefix}last_turn_at=${tokenAccounting.lastTurnAt}`);
+    out(`${prefix}last_turn_tick_id=${tokenAccounting.lastTurnTickId}`);
+    out(`${prefix}token_source=${tokenAccounting.tokenSource}`);
+    out(`${prefix}last_token_usage_source=${tokenAccounting.lastTokenUsageSource}`);
     out(`${prefix}cumulative_code_files_changed=${state.cumulative_code_files_changed || "0"}`);
     out(`${prefix}cumulative_code_insertions=${state.cumulative_code_insertions || "0"}`);
     out(`${prefix}cumulative_code_deletions=${state.cumulative_code_deletions || "0"}`);
