@@ -63,4 +63,4 @@ Electron은 `package.json`의 `main`으로 `app/bootstrap/main.cjs`를 읽는다
 
 ## 데스크톱 화면 1차
 
-프로젝트 루트 선택, `.autoflow/` 없으면 보드 설치, 마지막 업데이트/스냅샷, runner 목록·상태·add/remove·start/stop/restart·dry-run·one-shot, runner agent/model/reasoning/mode/interval/enabled/command 편집, runner 출력 패널 + 최근 실행 이력 + runtime/prompt/stdout/stderr artifact 열람, 상태 카운트·티켓 큐·로그·wiki·metrics history, ticket/log/wiki/metrics 검색·미리보기. 자세한 동작은 [../src/main.ts](../src/main.ts) 와 [../src/renderer/main.tsx](../src/renderer/main.tsx) 참고.
+프로젝트 루트 선택, `.autoflow/` 없으면 보드 설치, 마지막 업데이트/스냅샷, runner 목록·상태·add/remove·start/stop/restart·dry-run·one-shot, runner agent/model/reasoning/codex_history/enabled/command 편집, PTY runner 출력 패널, live stdout/runtime/prompt/stderr artifact 열람, 상태 카운트·티켓 큐·로그·wiki·metrics history, ticket/log/wiki/metrics 검색·미리보기. 데스크톱 PTY는 내부적으로 project root + board dir + runner id 로 scope 를 나누지만, 보드 state/log/wake 이벤트는 계속 `planner`, `worker`, `verifier`, `wiki` 같은 public runner id 를 쓴다. 자세한 동작은 [../src/main.ts](../src/main.ts) 와 [../src/renderer/main.tsx](../src/renderer/main.tsx) 참고.

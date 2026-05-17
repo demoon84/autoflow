@@ -85,9 +85,9 @@ Shell helpers may stop a tick to protect product files or git state. Treat these
 | `vague-done-when` | `vague_completion_promise` | The PRD's `## Done When` or `## Global Acceptance Criteria` failed `autoflow tool lint-ticket` (criteria_count<3, vague-term matches, or zero concrete signals such as commands/paths/exit codes). The runtime emits `lint_status`, `lint_vagueness_score`, and `lint_vague_terms` so spec-author-agent can rework the section. | Hand the PRD back to spec-author-agent with the lint output. Add concrete signals (commands, file extensions, `exit 0`, numeric metrics) and remove non-measurable phrases (`잘 동작`, `정상 작동`, `올바르게`, `properly`, `works correctly`). Override the gate only after review with `AUTOFLOW_LINT_TICKET=off`. |
 | `iteration-no-progress` | `iteration_no_progress` | A retry order carries the same Failure Class / Replan Reason as the most recent retry for the same PRD key, so consuming another retry slot would burn budget without progress. | Park the retry as `Recovery State.Status: needs_user`. The planner runner must address the root cause (narrow Allowed Paths, replace verification command, split the dependent PRD, or escalate the architectural blocker) before another retry. Override the gate only after review with `AUTOFLOW_ITERATION_FINGERPRINT=off`. |
 
-## Planner-Derived Wake Signals
+## Planner-Derived Recovery Signals
 
-Planner runner preflight may also wake the adapter when normal prd/retry input is idle but ticket metadata shows recovery work:
+Planner queue snapshots, runner state, and desktop wake/safety-poll events may surface recovery work even when normal order/PRD input is idle. These signals are evidence for the planner runner; they do not perform cleanup or choose policy by themselves:
 
 | Wake reason | Recovery status | Recovery class | Meaning | Auto-recovery policy |
 | --- | --- | --- | --- | --- |

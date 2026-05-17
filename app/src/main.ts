@@ -811,33 +811,84 @@ function reapPreviousPtySessionPids() {
   return killed;
 }
 
-// Per-runner metadata captured at spawn time so fs.watch can route wake
+// Per-live-PTY metadata captured at spawn time so fs.watch can route wake
 // prompts and main can update the runner state file on lifecycle events.
-//   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
+// Internal PTY keys include the project scope; board-facing runnerId remains
+// the stable runner id (`planner`, `worker`, etc.).
+//   ptyRunnerKey -> { runnerId, role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
 const wakeAutoStartInflight = new Set();
 const deferredWakePromptTimers = new Map();
 const contextResetTimers = new Map();
 
+function ptyRunnerKey(projectRoot, boardDirName, runnerId) {
+  const normalizedProjectRoot = normalizePtyProjectRoot(projectRoot);
+  const normalizedRunnerId = String(runnerId || "").trim();
+  if (!normalizedProjectRoot || !normalizedRunnerId) {
+    return normalizedRunnerId;
+  }
+  const normalizedBoardDirName = normalizePtyBoardDirName(boardDirName);
+  return `${shortHash(`${normalizedProjectRoot}\0${normalizedBoardDirName}`, 16)}:${normalizedRunnerId}`;
+}
+
+function ptyRunnerKeyForScope(scope = {}, runnerId) {
+  return ptyRunnerKey(scope.projectRoot, scope.boardDirName, runnerId);
+}
+
+function ptyRunnerPublicId(runnerKey) {
+  const meta = ptyRunnerMeta.get(runnerKey);
+  return String(meta?.runnerId || runnerKey || "");
+}
+
+function ptyRunnerMetaForScope(runnerId, scope = {}) {
+  const requestedProjectRoot = normalizePtyProjectRoot(scope.projectRoot);
+  if (requestedProjectRoot) {
+    const key = ptyRunnerKeyForScope(scope, runnerId);
+    return { key, meta: ptyRunnerMeta.get(key) };
+  }
+
+  if (ptyRunnerMeta.has(runnerId)) {
+    return { key: runnerId, meta: ptyRunnerMeta.get(runnerId) };
+  }
+
+  for (const [key, meta] of ptyRunnerMeta.entries()) {
+    if (meta?.runnerId === runnerId) {
+      return { key, meta };
+    }
+  }
+
+  return { key: String(runnerId || ""), meta: undefined };
+}
+
+function getPtyRunnerForScope(ptyManager, runnerId, scope = {}) {
+  if (!ptyManager || typeof ptyManager.get !== "function") return null;
+  if (ptyRunnerMeta.has(runnerId)) return ptyManager.get(runnerId) || null;
+  const { key } = ptyRunnerMetaForScope(runnerId, scope);
+  return ptyManager.get(key) || null;
+}
+
 function ptyRunnerMatchesRequestedScope(ptyManager, runnerId, scope = {}) {
   const requestedProjectRoot = normalizePtyProjectRoot(scope.projectRoot);
   if (!requestedProjectRoot) return true;
-  const meta = ptyRunnerMeta.get(runnerId);
+  const { key } = ptyRunnerMetaForScope(runnerId, scope);
+  const meta = ptyRunnerMeta.get(runnerId) || ptyRunnerMeta.get(key);
   if (meta) {
     return ptyScopeMatches(meta.projectRoot, meta.boardDirName, scope);
   }
-  const runner = ptyManager && typeof ptyManager.get === "function" ? ptyManager.get(runnerId) : null;
+  const runner = ptyManager && typeof ptyManager.get === "function"
+    ? ptyManager.get(key) || ptyManager.get(runnerId)
+    : null;
   if (runner && runner.cwd) {
     return normalizePtyProjectRoot(runner.cwd) === requestedProjectRoot;
   }
   return false;
 }
 
-function ptyRunnerScopedPayload(runnerId, payload = {}) {
-  const meta = ptyRunnerMeta.get(runnerId);
+function ptyRunnerScopedPayload(runnerKey, payload = {}) {
+  const meta = ptyRunnerMeta.get(runnerKey);
   return {
     ...payload,
-    runnerId,
+    runnerId: meta?.runnerId || runnerKey,
     projectRoot: meta?.projectRoot || "",
     boardDirName: meta?.boardDirName || defaultBoardDirName
   };
@@ -860,22 +911,25 @@ function stopPtyRunnersForScope(scope = {}, opts = {}) {
   };
 
   const stoppedRunnerIds = new Set();
-  for (const [runnerId, meta] of ptyRunnerMeta.entries()) {
+  const stoppedRunnerKeys = new Set();
+  for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
     if (!ptyScopeMatches(meta.projectRoot, meta.boardDirName, scope)) continue;
-    const runner = typeof ptyManager.get === "function" ? ptyManager.get(runnerId) : null;
+    const runner = typeof ptyManager.get === "function" ? ptyManager.get(runnerKey) : null;
     forceKillRunnerPid(runner);
-    if (ptyManager.stop(runnerId, { force: Boolean(opts.force) })) {
-      stoppedRunnerIds.add(runnerId);
+    if (ptyManager.stop(runnerKey, { force: Boolean(opts.force) })) {
+      stoppedRunnerKeys.add(runnerKey);
+      stoppedRunnerIds.add(meta.runnerId || runnerKey);
     }
   }
 
   for (const runner of ptyManager.list()) {
-    if (!runner || stoppedRunnerIds.has(runner.id)) continue;
+    if (!runner || stoppedRunnerKeys.has(runner.id)) continue;
     if (runner.status !== "running") continue;
     if (!ptyRunnerMatchesRequestedScope(ptyManager, runner.id, scope)) continue;
     forceKillRunnerPid(runner);
     if (ptyManager.stop(runner.id, { force: Boolean(opts.force) })) {
-      stoppedRunnerIds.add(runner.id);
+      stoppedRunnerKeys.add(runner.id);
+      stoppedRunnerIds.add(ptyRunnerPublicId(runner.id));
     }
   }
 
@@ -1291,6 +1345,8 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
 
   const boardDirName = meta.boardDirName || defaultBoardDirName;
   const boardRoot = path.join(meta.projectRoot, boardDirName);
+  const runnerKey = ptyRunnerMeta.has(runnerId) ? runnerId : ptyRunnerKey(meta.projectRoot, boardDirName, runnerId);
+  const publicRunnerId = meta.runnerId || runnerId;
   const thresholdRaw = Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD || "100000", 10);
   const threshold = Number.isFinite(thresholdRaw) ? thresholdRaw : 100000;
   const respawnFallback = (process.env.AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK ?? "1") !== "0";
@@ -1300,7 +1356,7 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
   const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_DELAY_MS || "3000", 10) || 3000);
   const minIdleMs = Math.max(0, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MIN_IDLE_MS || "2500", 10) || 2500);
   const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MAX_ATTEMPTS || "24", 10) || 24);
-  const key = `${meta.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const key = runnerKey;
   const existing = contextResetTimers.get(key);
   if (existing?.timer) clearTimeout(existing.timer);
 
@@ -1316,16 +1372,16 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
       entry.attempt += 1;
 
       const mgr = globalThis.__autoflowPtyManager;
-      const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
+      const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
       if (
         !mgr ||
         !runner ||
         runner.status !== "running" ||
-        !ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot: meta.projectRoot, boardDirName })
+        !ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot: meta.projectRoot, boardDirName })
       ) {
-        appendRunnerLog(boardRoot, runnerId, {
+        appendRunnerLog(boardRoot, publicRunnerId, {
           event: "context_reset_cancelled",
-          runner_id: runnerId,
+          runner_id: publicRunnerId,
           trigger,
           reason: resetReason,
           cause: "runner_not_running"
@@ -1338,9 +1394,9 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
       const idleMs = lastDataAt ? Date.now() - lastDataAt : Number.POSITIVE_INFINITY;
       if (idleMs < minIdleMs) {
         if (entry.attempt >= maxAttempts) {
-          appendRunnerLog(boardRoot, runnerId, {
+          appendRunnerLog(boardRoot, publicRunnerId, {
             event: "context_reset_deferred_timeout",
-            runner_id: runnerId,
+            runner_id: publicRunnerId,
             trigger,
             reason: resetReason,
             idle_ms: String(Math.max(0, Math.round(idleMs))),
@@ -1355,17 +1411,17 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
 
       let cumulativeTokens = 0;
       try {
-        const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
+        const statePath = path.join(boardRoot, "runners", "state", `${publicRunnerId}.state`);
         const raw = fsSync.readFileSync(statePath, "utf8");
         const m = raw.match(/(?:^|\n)cumulative_tokens=(\d+)/);
         if (m) cumulativeTokens = Number.parseInt(m[1], 10) || 0;
       } catch {}
       const mode = resolveContextResetMode(requestedMode, cumulativeTokens, threshold);
-      const injected = mgr.injectContextReset(runnerId, mode);
+      const injected = mgr.injectContextReset(runnerKey, mode);
       if (!injected) {
-        appendRunnerLog(boardRoot, runnerId, {
+        appendRunnerLog(boardRoot, publicRunnerId, {
           event: "context_reset_inject_failed",
-          runner_id: runnerId,
+          runner_id: publicRunnerId,
           mode,
           trigger,
           reason: resetReason
@@ -1374,9 +1430,9 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
         return;
       }
 
-      appendRunnerLog(boardRoot, runnerId, {
+      appendRunnerLog(boardRoot, publicRunnerId, {
         event: "context_reset",
-        runner_id: runnerId,
+        runner_id: publicRunnerId,
         mode,
         trigger,
         reason: resetReason,
@@ -1386,7 +1442,7 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
       clearEntry();
 
       setTimeout(() => {
-        if (mgr.get(runnerId)?.status !== "running") return;
+        if (mgr.get(runnerKey)?.status !== "running") return;
         const wakePolicy = String(opts.wakeAfterReset || process.env.AUTOFLOW_CONTEXT_RESET_WAKE_AFTER || "pending").toLowerCase();
         let shouldWake = wakePolicy === "always";
         if (!shouldWake && wakePolicy !== "never") {
@@ -1394,16 +1450,16 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
         }
         if (shouldWake) {
           scheduleDeferredRunnerWakePrompt({
-            runnerId,
-            meta: ptyRunnerMeta.get(runnerId) || meta,
+            runnerId: runnerKey,
+            meta: ptyRunnerMeta.get(runnerKey) || meta,
             scope: { projectRoot: meta.projectRoot, boardDirName },
             boardRoot,
             reason: "context-reset:fresh-start",
             kind: "context-reset"
           });
-          appendRunnerLog(boardRoot, runnerId, {
+          appendRunnerLog(boardRoot, publicRunnerId, {
             event: "context_reset_wake_deferred",
-            runner_id: runnerId,
+            runner_id: publicRunnerId,
             trigger,
             reason: resetReason,
             wake_reason: "context-reset:fresh-start"
@@ -1414,16 +1470,16 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
         const stickyEnabled = opts.injectSticky === true && (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
         if (stickyEnabled) {
           try {
-            const stickyPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
+            const stickyPath = path.join(boardRoot, "runners", "state", `${publicRunnerId}-sticky-context.md`);
             const stickyContent = fsSync.readFileSync(stickyPath, "utf8").trim();
             if (stickyContent) {
               setTimeout(() => {
-                if (mgr.get(runnerId)?.status !== "running") return;
-                mgr.writePrompt(runnerId, `[sticky-context]\n${stickyContent}`, { paste });
+                if (mgr.get(runnerKey)?.status !== "running") return;
+                mgr.writePrompt(runnerKey, `[sticky-context]\n${stickyContent}`, { paste });
               }, 1000);
-              appendRunnerLog(boardRoot, runnerId, {
+              appendRunnerLog(boardRoot, publicRunnerId, {
                 event: "context_reset_sticky_inject",
-                runner_id: runnerId,
+                runner_id: publicRunnerId,
                 sticky_path: stickyPath,
               });
             }
@@ -1434,12 +1490,12 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
       if (respawnFallback) {
         const beforeData = runner.lastDataAt;
         setTimeout(() => {
-          const r = mgr.get(runnerId);
+          const r = mgr.get(runnerKey);
           if (!r || r.status !== "running") return;
           if (r.lastDataAt === beforeData) {
-            appendRunnerLog(boardRoot, runnerId, {
+            appendRunnerLog(boardRoot, publicRunnerId, {
               event: "context_reset_no_output",
-              runner_id: runnerId,
+              runner_id: publicRunnerId,
               mode,
               threshold,
             });
@@ -1451,9 +1507,9 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
   };
 
   contextResetTimers.set(key, entry);
-  appendRunnerLog(boardRoot, runnerId, {
+  appendRunnerLog(boardRoot, publicRunnerId, {
     event: "context_reset_scheduled",
-    runner_id: runnerId,
+    runner_id: publicRunnerId,
     mode: requestedMode,
     trigger,
     reason: resetReason,
@@ -1657,19 +1713,22 @@ function runnerInitialPromptWasSent(meta) {
 }
 
 function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true, recordQueue = true }) {
-  const paste = meta.agent === "claude" ? "bracketed" : "plain";
+  const runnerKey = ptyRunnerMeta.has(runnerId) ? runnerId : ptyRunnerKeyForScope(scope, runnerId);
+  const currentMeta = ptyRunnerMeta.get(runnerKey) || meta;
+  const publicRunnerId = currentMeta?.runnerId || runnerId;
+  const paste = currentMeta?.agent === "claude" ? "bracketed" : "plain";
   let promptOk = false;
-  const canPrompt = prompt && runnerInitialPromptWasSent(meta);
+  const canPrompt = prompt && runnerInitialPromptWasSent(currentMeta);
   try {
     if (canPrompt) {
-      promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
+      promptOk = Boolean(mgr?.writePrompt(runnerKey, `[wake] ${reason}`, { paste }));
     }
   } catch {}
   if (recordQueue) {
-    emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
+    emitRunnerWakeEvent(scope, publicRunnerId, boardRoot, reason, kind);
   }
   if (promptOk || recordQueue) {
-    updateWakeActivity(runnerId);
+    updateWakeActivity(runnerKey);
   }
   return promptOk;
 }
@@ -1677,7 +1736,9 @@ function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = 
 function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, reason, kind = "fs.watch" }) {
   if (!runnerId || !meta || !scope?.projectRoot || !boardRoot) return;
   const boardDirName = scope.boardDirName || defaultBoardDirName;
-  const key = `${scope.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const runnerKey = ptyRunnerMeta.has(runnerId) ? runnerId : ptyRunnerKeyForScope({ projectRoot: scope.projectRoot, boardDirName }, runnerId);
+  const publicRunnerId = meta.runnerId || runnerId;
+  const key = runnerKey;
   const delayMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_DELAY_MS || "5000", 10) || 5000);
   const minIdleMs = Math.max(250, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MIN_IDLE_MS || "2000", 10) || 2000);
   const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MAX_ATTEMPTS || "12", 10) || 12);
@@ -1712,26 +1773,26 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
       entry.attempt += 1;
       try {
         const mgr = globalThis.__autoflowPtyManager;
-        const currentMeta = ptyRunnerMeta.get(runnerId) || entry.meta;
-        const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
+        const currentMeta = ptyRunnerMeta.get(runnerKey) || entry.meta;
+        const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
         if (
           !mgr ||
           runner?.status !== "running" ||
-          !ptyRunnerMatchesRequestedScope(mgr, runnerId, entry.scope)
+          !ptyRunnerMatchesRequestedScope(mgr, runnerKey, entry.scope)
         ) {
-          appendRunnerLog(entry.boardRoot, runnerId, {
+          appendRunnerLog(entry.boardRoot, publicRunnerId, {
             event: "deferred_wake_prompt_cancelled",
-            runner_id: runnerId,
+            runner_id: publicRunnerId,
             reason: entry.reason,
             cause: "runner_not_running"
           });
           clearEntry();
           return;
         }
-        if (!runnerHasActionableWakeWork(entry.boardRoot, runnerId, currentMeta.role)) {
-          appendRunnerLog(entry.boardRoot, runnerId, {
+        if (!runnerHasActionableWakeWork(entry.boardRoot, publicRunnerId, currentMeta.role)) {
+          appendRunnerLog(entry.boardRoot, publicRunnerId, {
             event: "deferred_wake_prompt_cancelled",
-            runner_id: runnerId,
+            runner_id: publicRunnerId,
             reason: entry.reason,
             cause: "no_actionable_work"
           });
@@ -1746,7 +1807,7 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
         }
         const promptOk = sendRunnerWake({
           mgr,
-          runnerId,
+          runnerId: runnerKey,
           meta: currentMeta,
           scope: entry.scope,
           boardRoot: entry.boardRoot,
@@ -1756,9 +1817,9 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
           recordQueue: false
         });
         if (!promptOk && entry.attempt < maxAttempts) {
-          appendRunnerLog(entry.boardRoot, runnerId, {
+          appendRunnerLog(entry.boardRoot, publicRunnerId, {
             event: "deferred_wake_prompt_retry",
-            runner_id: runnerId,
+            runner_id: publicRunnerId,
             reason: entry.reason,
             kind: entry.kind,
             attempts: String(entry.attempt),
@@ -1767,9 +1828,9 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
           scheduleNext(delayMs);
           return;
         }
-        appendRunnerLog(entry.boardRoot, runnerId, {
+        appendRunnerLog(entry.boardRoot, publicRunnerId, {
           event: promptOk ? "deferred_wake_prompt_sent" : "deferred_wake_prompt_failed",
-          runner_id: runnerId,
+          runner_id: publicRunnerId,
           reason: entry.reason,
           kind: entry.kind,
           prompt_ok: String(promptOk),
@@ -1778,9 +1839,9 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
         });
         clearEntry();
       } catch (error) {
-        appendRunnerLog(entry.boardRoot, runnerId, {
+        appendRunnerLog(entry.boardRoot, publicRunnerId, {
           event: "deferred_wake_prompt_error",
-          runner_id: runnerId,
+          runner_id: publicRunnerId,
           reason: entry.reason,
           error: String(error?.message || error || "")
         });
@@ -1793,9 +1854,9 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
   };
 
   deferredWakePromptTimers.set(key, entry);
-  appendRunnerLog(boardRoot, runnerId, {
+  appendRunnerLog(boardRoot, publicRunnerId, {
     event: "deferred_wake_prompt_scheduled",
-    runner_id: runnerId,
+    runner_id: publicRunnerId,
     reason,
     kind,
     delay_ms: String(delayMs),
@@ -1812,9 +1873,10 @@ async function writePtyRunnerStateFile(runnerId, fields) {
   try {
     const meta = ptyRunnerMeta.get(runnerId);
     if (!meta) return;
+    const publicRunnerId = meta.runnerId || runnerId;
     const stateDir = path.join(meta.projectRoot, meta.boardDirName, "runners", "state");
     await fs.mkdir(stateDir, { recursive: true });
-    const statePath = path.join(stateDir, `${runnerId}.state`);
+    const statePath = path.join(stateDir, `${publicRunnerId}.state`);
     let existing = "";
     try { existing = await fs.readFile(statePath, "utf8"); } catch {}
     const lines = new Map();
@@ -1833,7 +1895,7 @@ async function writePtyRunnerStateFile(runnerId, fields) {
     const ptyRunner = ptyMgr ? ptyMgr.get(runnerId) : null;
     const isPtyAlive = ptyRunner && ptyRunner.status === "running";
     if (isPtyAlive) {
-      if (!lines.has("id")) lines.set("id", runnerId);
+      if (!lines.has("id")) lines.set("id", publicRunnerId);
       if (!lines.has("role") && meta.role) lines.set("role", meta.role);
       if (!lines.has("agent") && meta.agent) lines.set("agent", meta.agent);
       if (!lines.has("mode")) lines.set("mode", "pty");
@@ -1899,9 +1961,10 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
   if (!command) {
     return { ok: false, error: `unsupported agent: ${agent}` };
   }
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
   try {
-    const existing = ptyManager.get(runnerId);
-    const existingMatchesScope = ptyRunnerMatchesRequestedScope(ptyManager, runnerId, {
+    const existing = ptyManager.get(runnerKey);
+    const existingMatchesScope = ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, {
       projectRoot,
       boardDirName
     });
@@ -1915,7 +1978,7 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
         killPidForcefully(existing.pid);
         removePtySessionPid(existing.pid);
       }
-      ptyManager.stop(runnerId, { force: true });
+      ptyManager.stop(runnerKey, { force: true });
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
     const runnerEnv = buildRunnerPtyEnv({
@@ -1926,16 +1989,18 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
       boardDirName,
       codexHistory
     });
-    const runner = ptyManager.start(runnerId, {
+    const runner = ptyManager.start(runnerKey, {
       command,
       cwd: projectRoot,
       cols: Number.isFinite(opts.cols) ? opts.cols : 120,
       rows: Number.isFinite(opts.rows) ? opts.rows : 30,
       logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
+      logSegment: runnerId,
       env: runnerEnv.env
     });
     const startedAt = new Date().toISOString();
-    ptyRunnerMeta.set(runnerId, {
+    ptyRunnerMeta.set(runnerKey, {
+      runnerId,
       role: normalizedRole,
       agent,
       projectRoot,
@@ -1944,7 +2009,7 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
       codexHistory: runnerEnv.codexHistory,
       startedAt
     });
-    await writePtyRunnerStateFile(runnerId, {
+    await writePtyRunnerStateFile(runnerKey, {
       id: runnerId,
       status: "running",
       role: normalizedRole,
@@ -1972,19 +2037,19 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
     });
     setTimeout(() => {
       const paste = agent === "claude" ? "bracketed" : "plain";
-      const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
-      if (ok) markRunnerInitialPromptSent(runnerId);
+      const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+      if (ok) markRunnerInitialPromptSent(runnerKey);
       console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
     }, promptDelay);
     setTimeout(() => {
       try {
-        const snap = ptyManager.snapshot(runnerId) || "";
+        const snap = ptyManager.snapshot(runnerKey) || "";
         console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
       } catch (err) {
         console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
       }
     }, promptDelay + 2500);
-    return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status, stdout: "" };
+    return { ok: true, runnerId, pid: runner.pid, status: runner.status, stdout: "" };
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   }
@@ -2005,8 +2070,9 @@ function scheduleRunnerAutoStartForWake({ runnerId, scope, boardRoot, reason }) 
   const normalizedRole = normalizeRunnerRole(config.role || inferRunnerRoleFromId(runnerId));
   if (!runnerHasActionableWakeWork(boardRoot, runnerId, normalizedRole)) return;
   const mgr = globalThis.__autoflowPtyManager;
-  const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
-  if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot, boardDirName })) return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
+  if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
   if (!autoStartOnWake) {
     appendRunnerLog(boardRoot, runnerId, {
       event: "wake_auto_start_suppressed",
@@ -2489,7 +2555,8 @@ function ensureBoardWatcher(scope) {
       }
       if (contextResetByRunner.size > 0) {
         for (const [rid, event] of contextResetByRunner.entries()) {
-          const meta = ptyRunnerMeta.get(rid);
+          const runnerKey = ptyRunnerKey(scope.projectRoot, boardDirName, rid);
+          const meta = ptyRunnerMeta.get(runnerKey);
           if (!meta) {
             appendRunnerLog(boardRoot, rid, {
               event: "context_reset_event_skipped",
@@ -2511,7 +2578,7 @@ function ensureBoardWatcher(scope) {
             });
             continue;
           }
-          scheduleContextReset(rid, meta, {
+          scheduleContextReset(runnerKey, meta, {
             mode: event?.mode,
             trigger: String(event?.reason || "ticket_boundary"),
             reason: String(event?.tool || event?.reason || "ticket_boundary"),
@@ -2521,20 +2588,21 @@ function ensureBoardWatcher(scope) {
         }
       }
       if (wakeReasonByRole.size === 0 && wakeReasonByRunner.size === 0) return;
-      for (const [rid, meta] of ptyRunnerMeta.entries()) {
+      for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
+        const rid = meta.runnerId || runnerKey;
         const directWakeReason = wakeReasonByRunner.get(rid);
         const roleWakeReason = wakeReasonByRole.get(meta.role);
         if (directWakeReason) {
           if (!runnerHasActionableWakeWork(boardRoot, rid, meta.role)) continue;
-          const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
+          const runner = typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
           const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
           const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
           const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
           const promptOk = sendRunnerWake({
             mgr,
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2545,7 +2613,7 @@ function ensureBoardWatcher(scope) {
           });
           if (!isQuiet || !promptOk) {
             scheduleDeferredRunnerWakePrompt({
-              runnerId: rid,
+              runnerId: runnerKey,
               meta,
               scope: { projectRoot: scope.projectRoot, boardDirName },
               boardRoot,
@@ -2564,14 +2632,14 @@ function ensureBoardWatcher(scope) {
         }
         if (!roleWakeReason) continue;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
-        const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
+        const runner = typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
         if (
           runner?.status !== "running" ||
-          !ptyRunnerMatchesRequestedScope(mgr, rid, { projectRoot: scope.projectRoot, boardDirName })
+          !ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot: scope.projectRoot, boardDirName })
         ) {
           sendRunnerWake({
             mgr,
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2593,7 +2661,7 @@ function ensureBoardWatcher(scope) {
         if (!isQuiet) {
           sendRunnerWake({
             mgr,
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2608,7 +2676,7 @@ function ensureBoardWatcher(scope) {
             quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
           });
           scheduleDeferredRunnerWakePrompt({
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2619,7 +2687,7 @@ function ensureBoardWatcher(scope) {
         }
         const promptOk = sendRunnerWake({
           mgr,
-          runnerId: rid,
+          runnerId: runnerKey,
           meta,
           scope: { projectRoot: scope.projectRoot, boardDirName },
           boardRoot,
@@ -2628,7 +2696,7 @@ function ensureBoardWatcher(scope) {
         });
         if (!promptOk) {
           scheduleDeferredRunnerWakePrompt({
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2644,10 +2712,11 @@ function ensureBoardWatcher(scope) {
         }
       }
       for (const [directRunnerId, directWakeReason] of wakeReasonByRunner.entries()) {
-        const existing = typeof mgr.get === "function" ? mgr.get(directRunnerId) : null;
+        const directRunnerKey = ptyRunnerKey(scope.projectRoot, boardDirName, directRunnerId);
+        const existing = typeof mgr.get === "function" ? mgr.get(directRunnerKey) : null;
         if (
           existing?.status === "running" &&
-          ptyRunnerMatchesRequestedScope(mgr, directRunnerId, { projectRoot: scope.projectRoot, boardDirName })
+          ptyRunnerMatchesRequestedScope(mgr, directRunnerKey, { projectRoot: scope.projectRoot, boardDirName })
         ) {
           continue;
         }
@@ -2668,10 +2737,11 @@ function ensureBoardWatcher(scope) {
         ) {
           const ticketFile = path.basename(candidateReason);
           const ticketPath = path.join(boardRoot, "tickets", "inprogress", ticketFile);
-          for (const [rid, meta] of ptyRunnerMeta.entries()) {
+          for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
             if (meta.projectRoot !== scope.projectRoot) continue;
             if (meta.boardDirName !== boardDirName) continue;
             if (meta.role !== "worker") continue;
+            const rid = meta.runnerId || runnerKey;
             generateStickyContext(boardRoot, rid, ticketPath);
           }
         }
@@ -2761,12 +2831,13 @@ function ensureWakeSafetyPoller(scope) {
       const mgr = globalThis.__autoflowPtyManager;
       if (!mgr) return;
       const now = Date.now();
-      for (const [rid, meta] of ptyRunnerMeta.entries()) {
+      for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
+        const rid = meta.runnerId || runnerKey;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
 
-        const s = wakePollState.get(rid) || {};
+        const s = wakePollState.get(runnerKey) || {};
         const lastWake = s.lastWakeAt || 0;
         const idleSec = (now - lastWake) / 1000;
         const isIdle = (now - lastWake) >= idleThresholdMs;
@@ -2780,7 +2851,7 @@ function ensureWakeSafetyPoller(scope) {
         const reason = isStall ? "safety-poll-stall" : "safety-poll-queue-change";
         const promptOk = sendRunnerWake({
           mgr,
-          runnerId: rid,
+          runnerId: runnerKey,
           meta,
           scope: { projectRoot: scope.projectRoot, boardDirName },
           boardRoot,
@@ -2791,7 +2862,7 @@ function ensureWakeSafetyPoller(scope) {
         });
         if (!promptOk) {
           scheduleDeferredRunnerWakePrompt({
-            runnerId: rid,
+            runnerId: runnerKey,
             meta,
             scope: { projectRoot: scope.projectRoot, boardDirName },
             boardRoot,
@@ -2799,9 +2870,9 @@ function ensureWakeSafetyPoller(scope) {
             kind: "safety-poll"
           });
         }
-        const ps = wakePollState.get(rid) || {};
+        const ps = wakePollState.get(runnerKey) || {};
         ps.queueFingerprint = fp;
-        wakePollState.set(rid, ps);
+        wakePollState.set(runnerKey, ps);
 
         appendWakePollLog(boardRoot, {
           runner: rid,
@@ -4455,13 +4526,14 @@ function ptyUsageReportsFromChunk(runnerId, chunk) {
 function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
   const meta = ptyRunnerMeta.get(runnerId);
   if (!meta || !meta.projectRoot || !meta.boardDirName) return;
+  const publicRunnerId = meta.runnerId || runnerId;
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
   const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  const tickId = options.tickId || `${runnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
+  const tickId = options.tickId || `${publicRunnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
   const args = [
     "tool", "runner-tokens",
     "report",
-    "--runner", runnerId,
+    "--runner", publicRunnerId,
     "--tick-id", tickId,
     "--input", String(usage.input || 0),
     "--output", String(usage.output || 0),
@@ -4475,18 +4547,18 @@ function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
       ...process.env,
       AUTOFLOW_BOARD_ROOT: boardRoot,
       BOARD_ROOT: boardRoot,
-      AUTOFLOW_RUNNER_ID: runnerId,
-      RUNNER_ID: runnerId
+      AUTOFLOW_RUNNER_ID: publicRunnerId,
+      RUNNER_ID: publicRunnerId
     },
     timeout: 30000
   }, (error, stdout, stderr) => {
     if (error) {
-      console.warn(`[runner-tokens] host PTY report failed runner=${runnerId}:`, error.message || error);
+      console.warn(`[runner-tokens] host PTY report failed runner=${publicRunnerId}:`, error.message || error);
       if (stderr) console.warn(stderr);
       return;
     }
     if (stdout && stdout.trim()) {
-      console.log(`[runner-tokens] host PTY report runner=${runnerId}: ${stdout.trim()}`);
+      console.log(`[runner-tokens] host PTY report runner=${publicRunnerId}: ${stdout.trim()}`);
     }
   });
 }
@@ -4494,6 +4566,7 @@ function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
 function runCodexSessionUsageSyncForRunner(runnerId) {
   const meta = ptyRunnerMeta.get(runnerId);
   if (!meta || !["codex", "gemini"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
+  const publicRunnerId = meta.runnerId || runnerId;
   if (codexSessionUsageSyncInflight.has(runnerId)) {
     codexSessionUsageSyncPending.add(runnerId);
     return;
@@ -4502,7 +4575,7 @@ function runCodexSessionUsageSyncForRunner(runnerId) {
 
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
   const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  execFile(autoflowBin, ["tool", "runner-tokens", "sync-codex-sessions", "--runner", runnerId], {
+  execFile(autoflowBin, ["tool", "runner-tokens", "sync-codex-sessions", "--runner", publicRunnerId], {
     cwd: meta.projectRoot,
     env: {
       ...process.env,
@@ -4510,17 +4583,17 @@ function runCodexSessionUsageSyncForRunner(runnerId) {
       PROJECT_ROOT: meta.projectRoot,
       AUTOFLOW_BOARD_ROOT: boardRoot,
       BOARD_ROOT: boardRoot,
-      AUTOFLOW_RUNNER_ID: runnerId,
-      RUNNER_ID: runnerId
+      AUTOFLOW_RUNNER_ID: publicRunnerId,
+      RUNNER_ID: publicRunnerId
     },
     timeout: 30000
   }, (error, stdout, stderr) => {
     codexSessionUsageSyncInflight.delete(runnerId);
     if (error) {
-      console.warn(`[runner-tokens] session sync failed runner=${runnerId}:`, error.message || error);
+      console.warn(`[runner-tokens] session sync failed runner=${publicRunnerId}:`, error.message || error);
       if (stderr) console.warn(stderr);
     } else if (stdout && /imported_count=([1-9]\d*)/.test(stdout)) {
-      console.log(`[runner-tokens] session sync runner=${runnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
+      console.log(`[runner-tokens] session sync runner=${publicRunnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
     }
     if (codexSessionUsageSyncPending.has(runnerId)) {
       codexSessionUsageSyncPending.delete(runnerId);
@@ -7842,9 +7915,10 @@ app.whenReady().then(() => {
     if (!command) {
       return { ok: false, error: `unsupported agent: ${agent}` };
     }
+    const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
     try {
-      const existing = ptyManager.get(runnerId);
-      const existingMatchesScope = ptyRunnerMatchesRequestedScope(ptyManager, runnerId, {
+      const existing = ptyManager.get(runnerKey);
+      const existingMatchesScope = ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, {
         projectRoot,
         boardDirName
       });
@@ -7858,7 +7932,7 @@ app.whenReady().then(() => {
           killPidForcefully(existing.pid);
           removePtySessionPid(existing.pid);
         }
-        ptyManager.stop(runnerId, { force: true });
+        ptyManager.stop(runnerKey, { force: true });
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
       const runnerEnv = buildRunnerPtyEnv({
@@ -7869,16 +7943,18 @@ app.whenReady().then(() => {
         boardDirName,
         codexHistory
       });
-      const runner = ptyManager.start(runnerId, {
+      const runner = ptyManager.start(runnerKey, {
         command,
         cwd: projectRoot,
         cols: Number.isFinite(opts.cols) ? opts.cols : 120,
         rows: Number.isFinite(opts.rows) ? opts.rows : 30,
         logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
+        logSegment: runnerId,
         env: runnerEnv.env
       });
       const startedAt = new Date().toISOString();
-      ptyRunnerMeta.set(runnerId, {
+      ptyRunnerMeta.set(runnerKey, {
+        runnerId,
         role: normalizedRole,
         agent,
         projectRoot,
@@ -7888,7 +7964,7 @@ app.whenReady().then(() => {
         startedAt
       });
       // Initial state — UI immediately reflects "running"
-      void writePtyRunnerStateFile(runnerId, {
+      void writePtyRunnerStateFile(runnerKey, {
         id: runnerId,
         status: "running",
         role: normalizedRole,
@@ -7935,8 +8011,8 @@ app.whenReady().then(() => {
       });
       setTimeout(() => {
         const paste = agent === "claude" ? "bracketed" : "plain";
-        const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
-        if (ok) markRunnerInitialPromptSent(runnerId);
+        const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+        if (ok) markRunnerInitialPromptSent(runnerKey);
         console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
       }, PROMPT_INJECT_DELAY_MS);
       // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
@@ -7944,35 +8020,37 @@ app.whenReady().then(() => {
       // mojibake / nothing).
       setTimeout(() => {
         try {
-          const snap = ptyManager.snapshot(runnerId) || "";
+          const snap = ptyManager.snapshot(runnerKey) || "";
           console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
         } catch (err) {
           console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
         }
       }, PROMPT_INJECT_DELAY_MS + 2500);
-      return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status };
+      return { ok: true, runnerId, pid: runner.pid, status: runner.status };
     } catch (err) {
       return { ok: false, error: String(err && err.message ? err.message : err) };
     }
   });
   ipcMain.handle("autoflow:runnerPtyStop", (_event, opts = {}) => {
-    if (!ptyRunnerMatchesRequestedScope(ptyManager, opts.runnerId, opts)) {
+    const runnerKey = ptyRunnerKeyForScope(opts, opts.runnerId);
+    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, opts)) {
       return { ok: false, error: "runner scope mismatch" };
     }
     if (opts.force) {
-      const runner = typeof ptyManager.get === "function" ? ptyManager.get(opts.runnerId) : null;
+      const runner = typeof ptyManager.get === "function" ? ptyManager.get(runnerKey) : null;
       if (Number.isInteger(runner?.pid) && runner.pid > 0) {
         killPidForcefully(runner.pid);
         removePtySessionPid(runner.pid);
       }
     }
-    return { ok: ptyManager.stop(opts.runnerId, { force: !!opts.force }) };
+    return { ok: ptyManager.stop(runnerKey, { force: !!opts.force }) };
   });
   ipcMain.handle("autoflow:runnerPtyResize", (_event, opts = {}) => {
-    if (!ptyRunnerMatchesRequestedScope(ptyManager, opts.runnerId, opts)) {
+    const runnerKey = ptyRunnerKeyForScope(opts, opts.runnerId);
+    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, opts)) {
       return { ok: false };
     }
-    const ok = ptyManager.resize(opts.runnerId, opts.cols, opts.rows);
+    const ok = ptyManager.resize(runnerKey, opts.cols, opts.rows);
     return { ok };
   });
   ipcMain.handle("autoflow:runnerPtyInput", (_event, opts = {}) => {
@@ -7984,20 +8062,30 @@ app.whenReady().then(() => {
     if (!data) {
       return { ok: false, error: "data required" };
     }
-    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerId, opts)) {
+    const runnerKey = ptyRunnerKeyForScope(opts, runnerId);
+    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, opts)) {
       return { ok: false, error: "runner scope mismatch" };
     }
-    const ok = ptyManager.writeInput(runnerId, data);
+    const ok = ptyManager.writeInput(runnerKey, data);
     return ok ? { ok: true } : { ok: false, error: "runner not running" };
   });
   ipcMain.handle("autoflow:runnerPtySnapshot", (_event, opts = {}) => {
-    if (!ptyRunnerMatchesRequestedScope(ptyManager, opts.runnerId, opts)) {
+    const runnerKey = ptyRunnerKeyForScope(opts, opts.runnerId);
+    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, opts)) {
       return { snapshot: "" };
     }
-    return { snapshot: ptyManager.snapshot(opts.runnerId) };
+    return { snapshot: ptyManager.snapshot(runnerKey) };
   });
   ipcMain.handle("autoflow:runnerPtyList", () => {
-    return { runners: ptyManager.list() };
+    return {
+      runners: ptyManager.list().map((runner) => ({
+        ...runner,
+        runnerKey: runner.id,
+        id: ptyRunnerPublicId(runner.id),
+        projectRoot: ptyRunnerMeta.get(runner.id)?.projectRoot || "",
+        boardDirName: ptyRunnerMeta.get(runner.id)?.boardDirName || defaultBoardDirName
+      }))
+    };
   });
 
   createWindow();
@@ -8036,7 +8124,8 @@ app.whenReady().then(() => {
           const codexHistory = normalizeCodexHistoryMode(grab("codex_history"));
           if (!runnerId) continue;
           const role = normalizeRunnerRole(grab("role") || inferRunnerRoleFromId(runnerId));
-          if (ptyManager.list().some((r) => r.id === runnerId && r.status === "running")) {
+          const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+          if (ptyManager.list().some((r) => r.id === runnerKey && r.status === "running")) {
             console.log(`[auto-spawn] ${runnerId} already running; skip`);
             continue;
           }
@@ -8055,15 +8144,17 @@ app.whenReady().then(() => {
             boardDirName,
             codexHistory
           });
-          const runner = ptyManager.start(runnerId, {
+          const runner = ptyManager.start(runnerKey, {
             command,
             cwd: projectRoot,
             cols: 120,
             rows: 30,
             logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
+            logSegment: runnerId,
             env: runnerEnv.env
           });
-          ptyRunnerMeta.set(runnerId, {
+          ptyRunnerMeta.set(runnerKey, {
+            runnerId,
             role,
             agent,
             projectRoot,
@@ -8072,7 +8163,7 @@ app.whenReady().then(() => {
             codexHistory: runnerEnv.codexHistory,
             startedAt
           });
-          await writePtyRunnerStateFile(runnerId, {
+          await writePtyRunnerStateFile(runnerKey, {
             id: runnerId, status: "running", role, agent, model, reasoning,
             mode: "pty", pid: String(runner.pid || ""), started_at: startedAt,
             codex_home: runnerEnv.codexHome || "",
@@ -8085,8 +8176,8 @@ app.whenReady().then(() => {
           const promptDelay = agent === "gemini" ? 10000 : 6000;
           setTimeout(() => {
             const paste = agent === "claude" ? "bracketed" : "plain";
-            const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
-            if (ok) markRunnerInitialPromptSent(runnerId);
+            const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+            if (ok) markRunnerInitialPromptSent(runnerKey);
           }, promptDelay);
           console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
           await new Promise((r) => setTimeout(r, 800));

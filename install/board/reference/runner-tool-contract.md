@@ -7,7 +7,7 @@ When another document describes the same boundary, this file wins.
 
 - **Runner**: the LLM-backed actor for one role (`planner`, `worker`, `verifier`, or `wiki`). The runner reads the board, reasons about the next safe action, calls tools, interprets results, and writes durable decisions.
 - **Runner tool**: a deterministic command called by a runner for one explicit action. The tool may inspect state, validate invariants, reserve ids, perform narrow board mutations, prepare evidence, or run a mechanical check.
-- **Runtime macro**: a coarse runtime script such as `start-plan.*`, `start-ticket.*`, or `finish-ticket.*`. Macros are allowed only where the equivalent small runner tools have not fully replaced the flow. A start macro may provide startup context, but it must not choose work, claim tickets, create worktrees, or silently fall back from a missing worktree to `PROJECT_ROOT` implementation.
+- **Runtime macro**: a coarse runtime surface such as `autoflow run planner`, `autoflow run worker` / alias `autoflow run ticket`, or the worker finish-ticket modules. Macros are allowed only where the equivalent small runner tools have not fully replaced the flow. A start macro may provide startup context, but it must not choose work, claim tickets, create worktrees, or silently fall back from a missing worktree to `PROJECT_ROOT` implementation.
 - **Board state**: files under `.autoflow/tickets/`, `.autoflow/runners/`, `.autoflow/logs/`, and related reference/runtime state. Board state is the source of truth; chat text is not.
 
 ## Primary Rule

@@ -7,8 +7,8 @@ State why this page exists.
 ## Sources
 
 - Ticket: `tickets/done/<project-key>/Todo-NNN.md`
-- Verification: `tickets/done/<project-key>/verify_NNN.md`
-- Log: `logs/verifier_NNN_<timestamp>_pass.md`
+- Verification: ticket `## Verification`, `## Result`, and checked `## Done When` sections
+- Log: `logs/Todo-NNN_<timestamp>_pass.md` or related verifier/worker completion log
 
 ## Summary
 

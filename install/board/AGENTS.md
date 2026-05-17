@@ -62,10 +62,11 @@ At the start of work, read in this order:
 ## Runtime Command Convention
 
 - All runtime commands are invoked through the `autoflow` CLI. The board itself holds only data; the runtime code lives in the autoflow source repo and the CLI dispatches to it via env vars (`AUTOFLOW_BOARD_ROOT`, `AUTOFLOW_PROJECT_ROOT`).
-- Top-level runner cycles: `autoflow run planner` / `run ticket` / `run verifier` / `run wiki` / `run todo`.
+- Focused runner/startup surfaces: `autoflow run planner` / `run worker` / `run verifier` / `run wiki`; compatibility aliases `run ticket` and `run todo` remain available for old boards and prompts.
 - Mechanical helpers and runner-tool dispatch: `autoflow tool <name> [args...]` (e.g. `autoflow tool runner-tool worker claim --ticket Todo-NNN`, `autoflow tool verify-ticket`, `autoflow tool finish-ticket`, `autoflow tool handoff-todo`).
 - Board guard: `autoflow guard`. Wiki update: `autoflow wiki update`. Ticket lint check: `autoflow tool lint-ticket`.
 - `planner`, `worker`, `verifier`, and `wiki` are runners. The canonical runner/tool boundary is `reference/runner-tool-contract.md`: runners decide, runner tools execute one explicit deterministic action and return inspectable results. For new Planner work prefer `autoflow tool runner-tool planner ...`, for new Worker claim/worktree/evidence/check operations prefer `autoflow tool runner-tool worker ...`, for new Verifier semantic-review evidence/decision routing prefer `autoflow tool runner-tool verifier ...`, and for new Wiki source/update/query/lint/write helpers prefer `autoflow tool runner-tool wiki ...`. Add new helper behavior as a one-feature file under `app/runtime/runners/<role>/tools/` and export it through that folder's `index.ts`.
+- Desktop may scope live PTY sessions internally by project root and board directory. Do not persist or refer to that internal key in board markdown; use the public runner id (`planner`, `worker`, `verifier`, `wiki`) in state files, logs, and wake evidence.
 - Wiki RAG is hybrid. `autoflow init` / `autoflow upgrade` and `autoflow tool runner-tool wiki index-refresh` create or refresh `runners/state/wiki-search.db`; `autoflow wiki query --rag` reports `rag_backend=hybrid`. The index stores SQLite FTS5/BM25 rows plus dense vectors from `BAAI/bge-m3` (1024 dimensions), then combines BM25 and vector similarity at query time.
 
 ## Core Rules
@@ -73,8 +74,8 @@ At the start of work, read in this order:
 1. Do not create plans or tickets without an approved spec or a clear quick order promoted by the planner runner.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
 3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/order/order_*.md` and never decide that PRD authoring can be skipped, create PRDs, create tickets, implementation changes, verification records, commits, or pushes.
-4. The default execution path uses four runners: `planner` promotes order/prd/retry inputs into PRD/todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh PRD queue items; legacy planner/todo/verifier splitting remains compatibility-only.
-5. A Worker runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/replan finalization. The verifier runner owns semantic review when the ticket enters the verifier lane and returns pass/revise/replan.
+4. The default execution path uses four runners: `planner` promotes order/prd/retry inputs into PRD/todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before the worker startup surface (`autoflow run worker`, alias `autoflow run ticket`) for fresh PRD queue items; legacy planner/todo/verifier splitting remains compatibility-only.
+5. A Worker runner claims one planner-issued `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests verifier handoff. The verifier runner owns semantic review when the ticket enters the verifier lane and returns pass/revise/replan.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
 7. Board stage is authoritative. If a ticket is in `todo/` or `inprogress/`, treat it as implementation work even if the title sounds like review or verification.
 8. `Allowed Paths` are repo-relative. In git repositories, ticket worktrees are preferred. If no ticket worktree exists, paths fall back to `PROJECT_ROOT`.
@@ -160,11 +161,13 @@ Read:
 Do:
 
 - Resume an owned active ticket first.
-- Otherwise claim or create one ticket from prd/todo/verifier.
+- Otherwise inspect the worker startup context, choose one todo candidate, and claim it through `autoflow tool runner-tool worker claim`.
 - Write a short mini-plan in `Notes`.
 - Implement only within `Allowed Paths`.
 - Run verification and capture evidence.
-- Finish pass or replan through the runtime scripts; revise stays in the same worktree.
+- Submit verified local work to the verifier runner before merging into `PROJECT_ROOT`.
+- On verifier pass, merge the approved work, rerun needed verification, and call `autoflow tool runner-tool worker finalize-approved`.
+- On verifier revise, keep the same worktree and resubmit after correction; on verifier replan, create the retry order and delete the worktree through the worker runner tool.
 
 Do not:
 

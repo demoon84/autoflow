@@ -15,7 +15,7 @@ When the user invokes `/autoflow` or `#autoflow`, treat it as an Autoflow PRD ha
 5. If the scope is too large for one safe PRD, propose a short PRD split map before drafting. The split map may name multiple candidate PRDs with boundaries, order, and verification focus.
 6. Render the full PRD draft only after the user issues an explicit draft trigger such as `초안`, `초안 작성`, `초안 보여줘`, `정리해줘`, `draft`, `draft prd`, `show draft`, or an equivalent clear request. For split work, render each PRD draft separately. Until that trigger fires, keep the chat lightweight.
 7. After the draft is shown, save only when the user explicitly confirms with words such as `save`, `저장`, `confirm`, `approved`, or `ready`. A draft trigger is **not** save approval. Multiple drafts need per-PRD approval or a clear `save all` / `전부 저장` confirmation.
-8. After saving, tell the user that the planner runner (`autoflow run planner`) will pick the PRD up and create one or more todo tickets on the next tick, and the worker runner (`autoflow run ticket`) will then claim and finish them.
+8. After saving, tell the user that the planner runner (`autoflow run planner`) will pick the PRD up and create one or more todo tickets on the next tick, then the worker runner will continue from those tickets through the desktop PTY runner or the focused worker startup/tool flow (`autoflow run worker`, alias `autoflow run ticket`).
 
 When the user invokes `/order` or `#order`, treat it as an Autoflow quick order trigger:
 

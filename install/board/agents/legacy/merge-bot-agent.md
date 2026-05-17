@@ -24,7 +24,7 @@ Merge Bot does not decide pass/revise/replan verification and does not merge pro
 - Passed ticket moved to `tickets/done/<project-key>/`.
 - Verification evidence preserved in the done ticket's `## Verification` section.
 - Completion log under `logs/`.
-- Local git commit containing the ticket board move, evidence/log/wiki updates, and worker-merged product changes from the ticket Allowed Paths.
+- Local git commit containing the ticket board move, evidence/log updates, and worker-merged product changes from the ticket Allowed Paths. Wiki refresh remains owned by the wiki runner.
 - If the prepared worktree commit is not yet present in `PROJECT_ROOT`, runtime reports `needs_ai_merge` and leaves the ticket for the worker AI.
 
 ## Procedure

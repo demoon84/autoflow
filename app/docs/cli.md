@@ -51,11 +51,16 @@ and exercise the runners there.
 - `autoflow order create` writes quick requests into `tickets/order/`.
 - `autoflow prd create` / `autoflow spec create` writes PRD markdown into
   `tickets/prd/`.
-- `autoflow run <role>` invokes the matching physical path under
-  `app/runtime/runners/<role>/` with board/project env vars.
+- `autoflow run <role>` invokes the matching focused runtime surface with
+  board/project env vars. `planner` may promote order/PRD work; `worker`
+  (alias `ticket`) reports owned active work or the next todo candidate as
+  startup context before the runner uses explicit worker tools.
 - `autoflow run wiki` is the deterministic wiki baseline update surface. A
   normal wiki runner turn uses `autoflow tool runner-tool wiki tick`.
 - `autoflow runners start <runner>` records/prepares runner state/config from
   the CLI. The desktop app's PTY runner path owns long-running process spawn.
+- `autoflow tool runner-tool <role> ...` is the preferred surface for narrow
+  runner actions such as claim, worktree setup, verification evidence,
+  verifier decision routing, wiki source snapshots, and wake markers.
 - `autoflow wiki query` performs local markdown retrieval directly in the
   TypeScript CLI; wiki runner scripts live under `app/runtime/runners/wiki/scripts/`.

@@ -34,7 +34,9 @@ Legacy role-pipeline mode (`#plan`, `#todo`) remains available for compatibility
 - `tickets/prd/`: approved or generated PRDs waiting for execution.
 - `tickets/todo/`: tickets the Planner has issued and the Worker is about to claim.
 - `tickets/inprogress/`: active Worker tickets (only one alive worktree at a time).
+- `tickets/verifier/`: verifier-lane ticket copies waiting for semantic review.
 - `tickets/done/<project-key>/`: successful tickets, archived PRDs, and legacy history. Successful only — replan flow writes retry orders under `tickets/order/`.
+- `tickets/archive/`: manual or compatibility archive space, not a live queue.
 - `agents/`: runner and compatibility role instructions.
 - `automations/`: stop-hook, realtime wake, and context contracts.
 - `reference/`: templates and board documentation.
@@ -64,9 +66,15 @@ strategy, decide wiki meaning, or drive the whole workflow.
 Current split tools live behind `autoflow tool runner-tool`; run
 `autoflow tool list` for the installed tool catalog and contract summary.
 Large script-driven flows are coarse runtime helpers only. In particular,
-`autoflow run ticket` is startup context: it may report active/todo state, but
-must not choose or claim tickets, create worktrees, or hand `PROJECT_ROOT` to a
-worker as an implementation fallback.
+`autoflow run worker` and its compatibility alias `autoflow run ticket` are
+startup context: they may report active/todo state, but must not choose or
+claim tickets, create worktrees, or hand `PROJECT_ROOT` to a worker as an
+implementation fallback.
+
+Desktop PTY sessions may be internally scoped by project root and board
+directory so multiple projects can keep a `worker` runner open at the same
+time. That internal key is not board state: runner state files, wake events,
+logs, and user-facing output should keep using the public runner id.
 
 ## Trigger Summary
 
@@ -75,7 +83,7 @@ worker as an implementation fallback.
 - `#autoflow`: compatibility alias for PRD handoff only.
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`: quick order intake only.
 - `autoflow runners start planner`: records/prepares planner runner state. CLI `runners start` does not spawn a long-running runner process by itself; the desktop PTY runner owns process execution.
-- `autoflow run ticket` / `autoflow runners start worker`: worker startup/state surfaces. Worker implementation still happens through the worker runner and runner tools: todo claim → mini-plan → implementation → local verification → verifier pass/revise/replan handling → runner-led merge → done/order-retry.
+- `autoflow run worker` / alias `autoflow run ticket` / `autoflow runners start worker`: worker startup/state surfaces. Worker implementation still happens through the worker runner and runner tools: todo claim → mini-plan → implementation → local verification → verifier pass/revise/replan handling → runner-led merge → done/order-retry.
 - `autoflow runners start wiki`: records/prepares wiki runner state. A normal wiki runner turn starts with `autoflow tool runner-tool wiki tick`; `autoflow run wiki` is deterministic baseline update, not the full tick loop.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop worker runner: default worker execution from the UI.

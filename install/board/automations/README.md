@@ -32,6 +32,9 @@ Wake sources:
   user, queued work waits until the user starts that runner again.
   `AUTOFLOW_AUTO_START_STOPPED_RUNNER_ON_WAKE=1` is a legacy compatibility
   escape hatch and is off by default.
+- Live PTY routing is scoped by project root and board directory. Public board
+  files still use stable runner ids (`planner`, `worker`, `verifier`, `wiki`);
+  any internal PTY key is an app implementation detail.
 - Desktop safety polling sends a wake when queue work is pending and a runner
   appears idle or stalled.
 - Runner tools can emit durable wake queue events through

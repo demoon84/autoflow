@@ -38,6 +38,7 @@ type RunnerStartOptions = {
   env?: NodeJS.ProcessEnv;
   command?: string;
   logsDir?: string;
+  logSegment?: string;
 };
 
 type WritePromptOptions = {
@@ -188,9 +189,10 @@ export class PtyRunnerManager extends EventEmitter {
     if (logsDir) {
       try {
         fs.mkdirSync(logsDir, { recursive: true });
+        const logSegment = String(opts.logSegment || runnerId);
         liveStdoutLog = path.join(
           logsDir,
-          `${safeRunnerLogSegment(runnerId)}_${timestampForLogFile()}_live_stdout.log`
+          `${safeRunnerLogSegment(logSegment)}_${timestampForLogFile()}_live_stdout.log`
         );
         fs.writeFileSync(liveStdoutLog, "");
       } catch {

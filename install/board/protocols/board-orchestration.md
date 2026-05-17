@@ -25,11 +25,10 @@ The planner runner may rewrite, split, requeue, or annotate ticket markdown when
 
 On each planner tick:
 
-1. Run the normal plan preflight script if configured.
-2. Inspect actionable order/retry/PRD work.
-3. Inspect health of active and todo tickets before creating more work when there is evidence of runner stall, stale worktree metadata, repeated retry, or blocked worker state.
-4. Use wiki query for repeated failures, related done tickets, or architectural constraints.
-5. Choose exactly one safe board action for the tick.
+1. Inspect actionable order/retry/PRD work through the planner queue snapshot or the focused planner startup surface.
+2. Inspect health of active and todo tickets before creating more work when there is evidence of runner stall, stale worktree metadata, repeated retry, or blocked worker state.
+3. Use wiki query for repeated failures, related done tickets, or architectural constraints.
+4. Choose exactly one safe board action for the tick.
 
 ## Board Actions
 
@@ -104,7 +103,7 @@ The helper output is evidence. The planner runner still decides the recovery mea
 | Helper or command | Safety-kernel responsibility | AI-owned decision |
 | --- | --- | --- |
 | `autoflow run planner` | Atomically promote clear order/prd inputs (including verifier replan retry orders) into generated PRD/todo files, expose idle signals. | Decide whether the source request is safe, whether to split/requeue, and what recovery instruction belongs in markdown. |
-| `autoflow run ticket` | Report owned active ticket context or the next todo candidate. It must not claim tickets, create worktrees, choose work, or fall back to `PROJECT_ROOT`. | Choose the ticket, call `autoflow tool runner-tool worker claim` or `autoflow tool runner-tool worker worktree-ensure` explicitly, write the mini-plan, and decide whether blocked evidence requires worker repair, planner re-orchestration, or user input. |
+| `autoflow run worker` / `autoflow run ticket` | Report owned active ticket context or the next todo candidate. It must not claim tickets, create worktrees, choose work, or fall back to `PROJECT_ROOT`. | Choose the ticket, call `autoflow tool runner-tool worker claim` or `autoflow tool runner-tool worker worktree-ensure` explicitly, write the mini-plan, and decide whether blocked evidence requires worker repair, planner re-orchestration, or user input. |
 | `autoflow tool list` | List stable CLI/script/helper entrypoints and their thin contracts. | Decide which helper to call, in what order, and how to interpret its output in the current ticket or planner turn. |
 | `autoflow tool runner-tool worker verification-record` / `autoflow tool verify-ticket` | Record verification evidence when the worker runner has already run and inspected the command. | Decide whether verification proves the ticket goal and Done When are satisfied. |
 | `autoflow tool runner-tool worker submit-to-verifier|create-retry-order|finalize-approved` | Backend finalizer wrappers. They run mechanical sanity gates, create retry orders, and validate/archive/commit the merged result after worker decisions. | Decide pass/revise/replan, integrate verifier-approved changes into `PROJECT_ROOT`, resolve conflicts, and rerun needed verification before final approval finalization. |

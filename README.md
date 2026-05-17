@@ -14,8 +14,8 @@ Autoflow는 로컬 프로젝트에 AI 작업 보드를 설치하고, Codex / Cla
 ```bash
 npm install
 npm run check
-./app/bin/autoflow init /path/to/project
-./app/bin/autoflow status /path/to/project
+./app/bin/autoflow init <project-root>
+./app/bin/autoflow status <project-root>
 ```
 
 데스크톱 앱 개발 실행:
@@ -56,6 +56,13 @@ target-project/
     runners/
     state-schema/
     tickets/
+      archive/
+      done/
+      inprogress/
+      order/
+      prd/
+      todo/
+      verifier/
     wiki/
 ```
 
@@ -68,9 +75,9 @@ target-project/
 | 사용자-facing 이름 | 코드 식별자 | 역할 |
 | --- | --- | --- |
 | 플래너 러너 | `planner` | order / PRD 입력을 읽고 실행 가능한 Todo 티켓으로 정리 |
-| 워커 러너 | `worker`, `ticket` | Todo 티켓 claim, worktree 준비, 구현, 로컬 검증, verifier handoff, 승인 후 finalization |
-| 검증 러너 | `verifier` | 워커 결과를 의미 검증하고 pass / revise / replan 결정 기록 |
-| 위키 러너 | `wiki` | 완료된 작업과 운영 지식을 wiki/index/query/lint 흐름으로 갱신 |
+| 워커 러너 | `worker`, alias `ticket` | Todo 티켓 claim, worktree 준비, 구현, 로컬 검증, 검증 러너 handoff, pass 후 merge/finalization, revise/replan 처리 |
+| 검증 러너 | `verifier` | 워커 결과를 의미 검증하고 pass / revise / replan 결정을 기록한 뒤 워커를 깨움 |
+| 위키 러너 | `wiki` | 완료된 작업과 운영 지식을 debounce 된 wiki tick / index / query / lint 흐름으로 갱신 |
 
 ## Main Commands
 
@@ -85,10 +92,13 @@ target-project/
 ./app/bin/autoflow run verifier <project-root> [board-dir-name]
 ./app/bin/autoflow run wiki <project-root> [board-dir-name]
 ./app/bin/autoflow runners list <project-root> [board-dir-name]
+./app/bin/autoflow runners start <runner-id> <project-root> [board-dir-name]
 ./app/bin/autoflow tool list <project-root> [board-dir-name]
 ```
 
-`autoflow run wiki`는 결정적 wiki baseline update를 실행한다. 일반 위키 러너 tick은 설치 보드 안에서 `autoflow tool runner-tool wiki tick`으로 시작한다. `autoflow runners start <runner>`는 CLI 단독으로 장기 실행 프로세스를 spawn하지 않고 runner state/config를 준비한다. 실제 장기 실행은 데스크톱 앱의 PTY runner 경로가 담당한다.
+`autoflow run <role>`은 집중형 runner/startup 명령이다. `autoflow run planner`는 order/PRD를 승격하고, `autoflow run worker` / alias `autoflow run ticket`은 owned active ticket 또는 다음 todo 후보를 보여주는 시작 컨텍스트를 낸다. 실제 장기 실행, wake prompt 주입, live stdout, context reset은 데스크톱 앱의 PTY runner 경로가 담당한다.
+
+`autoflow run wiki`는 결정적 wiki baseline update를 실행한다. 일반 위키 러너 tick은 설치 보드 안에서 `autoflow tool runner-tool wiki tick`으로 시작한다. `autoflow runners start <runner>`는 CLI 단독으로 장기 실행 프로세스를 spawn하지 않고 runner state/config를 준비한다.
 
 자세한 CLI ownership은 [app/docs/cli.md](app/docs/cli.md)를 본다.
 

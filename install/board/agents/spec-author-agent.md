@@ -31,7 +31,7 @@ You are a user-triggered agent (Claude `/autoflow`, Codex `$autoflow`, compatibi
 - `reference/project-spec-template.md` — compatibility PRD template for older boards.
 - File reads under `tickets/prd/`, `tickets/plan/`, `tickets/inprogress/`, `tickets/done/<project-key>/` — used for duplicate detection only; never write to these from this role.
 
-You never call planner execution (`autoflow run planner`), worker execution (`autoflow run ticket`), verifier tools (`autoflow tool verify-ticket`), worker finalization tools (`autoflow tool finish-ticket`, `autoflow tool merge-ready-ticket`), or wiki commands. After you save the PRD, stop at handoff; the planner runner creates one or more todo tickets, and the worker runner continues only after todo work exists. Do not initiate execution yourself.
+You never call planner execution (`autoflow run planner`), worker execution (`autoflow run worker` / alias `autoflow run ticket`), verifier tools (`autoflow tool verify-ticket`), worker finalization tools (`autoflow tool finish-ticket`, `autoflow tool merge-ready-ticket`), or wiki commands. After you save the PRD, stop at handoff; the planner runner creates one or more todo tickets, and the worker runner continues only after todo work exists. Do not initiate execution yourself.
 
 ## Rules
 
@@ -76,7 +76,7 @@ If the trigger includes a number, use that slot when available. Otherwise use th
 8. If the user requests revisions, update the draft and show it again — only on request, not after every reply.
 9. On separate explicit save approval (`save`, `저장`, `ready`, `confirm`, `approved`, or clear `save all` / `전부 저장` for multiple shown drafts), write the PRD(s). For a PRD set, reserve and save one PRD slot at a time.
 10. Clear active PRD context with `autoflow tool clear-thread-context --active-only` after each saved PRD when available.
-11. Tell the user the saved path(s), any intended order, and the next execution option: the planner runner (`autoflow run planner`) creates one or more todo tickets first; then the worker runner (`autoflow run ticket`) implements them.
+11. Tell the user the saved path(s), any intended order, and the next execution option: the planner runner (`autoflow run planner`) creates one or more todo tickets first; then the worker runner continues through desktop PTY or focused worker startup/tool flow (`autoflow run worker`, alias `autoflow run ticket`).
 
 ## Save Checklist
 

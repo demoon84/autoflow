@@ -49,6 +49,7 @@ target = "{{BOARD_ROOT}}"
 type = "board"
 overwrite = "upgrade"
 template = false
+skip_shell = true
 
 [sources.host]
 path = "install/host/AGENTS.md"
@@ -57,9 +58,37 @@ type = "host"
 overwrite = "never"
 template = true
 
+[sources.host_claude]
+path = "install/host/CLAUDE.md"
+target = "CLAUDE.md"
+type = "host"
+overwrite = "never"
+template = true
+
+[sources.claude_skills]
+path = "install/integrations/claude/skills"
+target = ".claude/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
 [sources.claude_plugin]
 path = "install/integrations/claude/plugin"
 target = ".claude/autoflow-plugin"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.claude_plugin_skills]
+path = "install/integrations/claude/skills"
+target = ".claude/autoflow-plugin/skills"
+type = "host"
+overwrite = "upgrade"
+template = true
+
+[sources.codex_skills]
+path = "install/integrations/codex/skills"
+target = ".codex/skills"
 type = "host"
 overwrite = "upgrade"
 template = true
