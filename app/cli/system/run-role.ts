@@ -79,7 +79,7 @@ export function runRole(args: string[]): never | void {
     }
     switch (role) {
         case "planner":
-            runRuntimeScript(ctx, "runners/planner/start/index.ts", [], runnerEnv);
+            runRuntimeScript(ctx, "runners/planner/start/index.ts", parsed.positionals.slice(2), runnerEnv);
             break;
         case "worker":
             runRuntimeScript(ctx, "runners/worker/start/index.ts", [], runnerEnv);

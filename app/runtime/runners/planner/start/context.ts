@@ -19,6 +19,7 @@ export type PlannerSource =
   | "prd-to-todo"
   | "order-retry"
   | "order"
+  | "order-to-prd"
   | "legacy-plan"
   | "vague-done-when"
   | "needs-user-secret";

@@ -2,6 +2,92 @@ import {fs, path, type ProjectContext} from "../context";
 import {parseRunnerConfig} from "./parse";
 import {intState, readRunnerState} from "./state";
 
+const nonCodeMetricBasenames = new Set([
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "composer.lock",
+    "poetry.lock",
+    "Cargo.lock",
+]);
+
+const nonCodeMetricExtensions = new Set([
+    ".3gp", ".7z", ".aac", ".aiff", ".apk", ".avi", ".avif", ".bin", ".bmp", ".bz2",
+    ".class", ".dmg", ".eot", ".exe", ".flac", ".gif", ".gz", ".heic", ".icns", ".ico",
+    ".jar", ".jpeg", ".jpg", ".m4a", ".m4v", ".mov", ".mp3", ".mp4", ".mpeg", ".mpg",
+    ".ogg", ".otf", ".pdf", ".png", ".rar", ".so", ".tar", ".tgz", ".tif", ".tiff",
+    ".ttf", ".wav", ".webm", ".webp", ".woff", ".woff2", ".zip",
+]);
+
+function safeSegment(value: string): string {
+    return String(value || "").replace(/[^A-Za-z0-9_.-]+/g, "_") || "runner";
+}
+
+function codeMetricPathIsCountable(file: string): boolean {
+    const normalized = String(file || "").replace(/\\/g, "/").replace(/^[.][/]/, "").replace(/\/+$/, "").trim();
+    const basename = path.basename(normalized);
+    if (!basename || nonCodeMetricBasenames.has(basename)) return false;
+    const ext = path.extname(basename).toLowerCase();
+    return !nonCodeMetricExtensions.has(ext);
+}
+
+function stringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
+}
+
+function markerCodeFiles(marker: Record<string, unknown>): string[] {
+    const explicit = stringArray(marker.code_changed_files);
+    const source = explicit.length > 0 ? explicit : stringArray(marker.product_changed_files).filter(codeMetricPathIsCountable);
+    return [...new Set(source.map((item) => item.replace(/\\/g, "/").replace(/^[.][/]/, "").replace(/\/+$/, "").trim()).filter(Boolean))].sort();
+}
+
+function intMarker(marker: Record<string, unknown>, key: string): number {
+    const parsed = Number.parseInt(String(marker[key] || "0"), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+type CodeTotals = {
+    files: number;
+    insertions: number;
+    deletions: number;
+    volume: number;
+    net: number;
+};
+
+function readMarkerTotals(ctx: ProjectContext, runnerId: string): { found: boolean; totals: CodeTotals; files: Set<string> } {
+    const dir = path.join(ctx.boardRoot, "runners", "state", "code-metrics", safeSegment(runnerId));
+    const totals: CodeTotals = {files: 0, insertions: 0, deletions: 0, volume: 0, net: 0};
+    const files = new Set<string>();
+    let entries: string[] = [];
+    try {
+        entries = fs.readdirSync(dir).filter((entry) => entry.endsWith(".json"));
+    } catch {
+        return {found: false, totals, files};
+    }
+    let fallbackFileCount = 0;
+    for (const entry of entries) {
+        let marker: Record<string, unknown> = {};
+        try {
+            marker = JSON.parse(fs.readFileSync(path.join(dir, entry), "utf8")) as Record<string, unknown>;
+        } catch {
+            continue;
+        }
+        const markerFiles = markerCodeFiles(marker);
+        if (markerFiles.length > 0) {
+            for (const file of markerFiles) files.add(file);
+        } else {
+            fallbackFileCount += intMarker(marker, "code_files_changed_count");
+        }
+        totals.insertions += intMarker(marker, "code_insertions_count");
+        totals.deletions += intMarker(marker, "code_deletions_count");
+        totals.volume += intMarker(marker, "code_volume_count");
+        totals.net += intMarker(marker, "code_net_delta_count");
+    }
+    totals.files = files.size + fallbackFileCount;
+    return {found: entries.length > 0, totals, files};
+}
+
 export function runnerOwnsCodeMetrics(runner: Record<string, string>): boolean {
     const id = runner.id || "";
     const role = runner.role || "";
@@ -16,15 +102,28 @@ export function codeMetricTotals(ctx: ProjectContext, runners = parseRunnerConfi
         volume: 0,
         net: 0,
     };
+    const uniqueFiles = new Set<string>();
+    let fallbackFileCount = 0;
     for (const runner of runners) {
         if (!runnerOwnsCodeMetrics(runner)) continue;
+        const markers = readMarkerTotals(ctx, runner.id || "");
+        if (markers.found) {
+            for (const file of markers.files) uniqueFiles.add(file);
+            fallbackFileCount += markers.totals.files - markers.files.size;
+            totals.insertions += markers.totals.insertions;
+            totals.deletions += markers.totals.deletions;
+            totals.volume += markers.totals.volume;
+            totals.net += markers.totals.net;
+            continue;
+        }
         const state = readRunnerState(ctx, runner.id || "");
-        totals.files += intState(state, "cumulative_code_files_changed");
+        fallbackFileCount += intState(state, "cumulative_code_files_changed");
         totals.insertions += intState(state, "cumulative_code_insertions");
         totals.deletions += intState(state, "cumulative_code_deletions");
         totals.volume += intState(state, "cumulative_code_volume");
         totals.net += intState(state, "cumulative_code_net_delta");
     }
+    totals.files = uniqueFiles.size + fallbackFileCount;
     return totals;
 }
 

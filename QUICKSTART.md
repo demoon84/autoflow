@@ -65,6 +65,8 @@ Codex/Claude skill을 쓰는 프로젝트라면 사용자 대화에서는 `$auto
 ~/code/autoflow/app/bin/autoflow run wiki /path/to/project
 ```
 
+`run wiki`는 wiki baseline update 확인용이다. 일반 위키 러너 루프에서는 먼저 `autoflow tool runner-tool wiki tick`을 호출한다. `runners start` 계열 CLI는 runner state/config 준비 명령이며, 데스크톱 앱이 실제 PTY runner 프로세스를 띄운다.
+
 역할:
 
 - 플래너 러너(`planner`): order / PRD를 Todo 티켓으로 정리

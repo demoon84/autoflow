@@ -1,15 +1,29 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
 import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 
+function sectionBodyRange(content: string, section: string): {bodyStart: number; bodyEnd: number} | null {
+  const headingRe = new RegExp(`(^|\\n)## ${escapeRe(section)}\\b[^\\n]*(?:\\n|$)`);
+  const match = headingRe.exec(content);
+  if (!match) return null;
+  const bodyStart = match.index + match[0].length;
+  const nextHeadingRe = /\n## /g;
+  nextHeadingRe.lastIndex = bodyStart;
+  const nextHeading = nextHeadingRe.exec(content);
+  return {
+    bodyStart,
+    bodyEnd: nextHeading ? nextHeading.index : content.length,
+  };
+}
+
 export function replaceSectionBlock(file: string, section: string, body: string): boolean {
   const content = utils.readFileSafe(file);
   if (!content) return false;
   const heading = section.replace(/^##\s+/, "");
   const nextBody = ensureTrailingNewline(body.trim());
-  const re = new RegExp(`(^## ${escapeRe(heading)}\\b[^\\n]*\\n)([\\s\\S]*?)(?=^## |\\Z)`, "m");
+  const range = sectionBodyRange(content, heading);
   let next: string;
-  if (re.test(content)) {
-    next = content.replace(re, (_match, headingLine: string) => `${headingLine}\n${nextBody}\n`);
+  if (range) {
+    next = `${content.slice(0, range.bodyStart)}\n${nextBody}\n${content.slice(range.bodyEnd).replace(/^\n/, "")}`;
   } else {
     next = `${content}${content.endsWith("\n") ? "" : "\n"}\n## ${heading}\n\n${nextBody}`;
   }

@@ -157,6 +157,21 @@ function plannerQueueItemIsActionable(item: QueueItem): boolean {
   return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
+function sourceOrderRef(file: string): string {
+  return utils.readFileSafe(file).match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/)?.[0] || "";
+}
+
+function orderItemIsAlreadyPromoted(item: QueueItem): boolean {
+  if (item.kind !== "order" || item.retry) return false;
+  for (const root of [path.join(TICKETS_ROOT, "prd"), path.join(TICKETS_ROOT, "done")]) {
+    if (!fs.existsSync(root)) continue;
+    for (const file of collectFiles(root, /^(prd|project)_\d+\.md$/, 4)) {
+      if (sourceOrderRef(file) === item.path) return true;
+    }
+  }
+  return false;
+}
+
 function plannerFollowupReason(item: QueueItem): string {
   const status = String(item.status || "").trim().toLowerCase();
   if (item.kind === "order" && !item.retry) {
@@ -172,7 +187,9 @@ function plannerFollowupReason(item: QueueItem): string {
 export function cmdPlannerQueueSnapshot(): void {
   const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const items: QueueItem[] = [];
-  items.push(...listQueueItems("order", [/^order_.*\.md$/], "order").filter(plannerQueueItemIsActionable));
+  items.push(...listQueueItems("order", [/^order_.*\.md$/], "order")
+    .filter(plannerQueueItemIsActionable)
+    .filter((item) => !orderItemIsAlreadyPromoted(item)));
   items.push(...listQueueItems("prd", [/^(prd|project)_\d+\.md$/], "prd").filter(plannerQueueItemIsActionable));
   items.push(...listQueueItems("todo", [/^(Todo-\d+|tickets_\d+)\.md$/], "todo"));
   items.push(...listQueueItems("inprogress", [/^(Todo-\d+|tickets_\d+)\.md$/], "inprogress"));

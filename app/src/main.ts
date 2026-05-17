@@ -5104,35 +5104,42 @@ async function readBoard({ projectRoot, boardDirName }) {
     orderBy: "mtime"
   });
 
-  // Runner token override for dashboard metrics — prefer trusted runner-tokens
-  // logs so legacy host_session_log imports do not keep inflating totals.
+  // Dashboard metrics come from `autoflow metrics`. Code totals are marker-based
+  // there; runner state is only a fallback when metrics output is unavailable.
   const parsedMetrics = metricsResult ? parseKeyValueOutput(metricsResult.stdout) : {};
   try {
-    const ownsCodeMetrics = (runner) => {
-      const role = String(runner?.role || "");
-      const id = String(runner?.id || "");
-      return role === "worker" || role === "ticket" || id === "worker" || id.startsWith("worker-");
-    };
-    const codeTotals = {
-      files: 0,
-      insertions: 0,
-      deletions: 0,
-      volume: 0,
-      net: 0,
-    };
-    for (const runner of (runnersResult?.runners || [])) {
-      if (!ownsCodeMetrics(runner)) continue;
-      codeTotals.files += positiveIntegerValue(runner.cumulativeCodeFilesChanged);
-      codeTotals.insertions += positiveIntegerValue(runner.cumulativeCodeInsertions);
-      codeTotals.deletions += positiveIntegerValue(runner.cumulativeCodeDeletions);
-      codeTotals.volume += positiveIntegerValue(runner.cumulativeCodeVolume);
-      codeTotals.net += Number.parseInt(String(runner.cumulativeCodeNetDelta || "0"), 10) || 0;
+    const metricsHasCodeTotals =
+      positiveIntegerValue(parsedMetrics.autoflow_code_files_changed_count) > 0 ||
+      positiveIntegerValue(parsedMetrics.autoflow_code_insertions_count) > 0 ||
+      positiveIntegerValue(parsedMetrics.autoflow_code_deletions_count) > 0 ||
+      positiveIntegerValue(parsedMetrics.autoflow_code_volume_count) > 0;
+    if (!metricsHasCodeTotals) {
+      const ownsCodeMetrics = (runner) => {
+        const role = String(runner?.role || "");
+        const id = String(runner?.id || "");
+        return role === "worker" || role === "ticket" || id === "worker" || id.startsWith("worker-");
+      };
+      const codeTotals = {
+        files: 0,
+        insertions: 0,
+        deletions: 0,
+        volume: 0,
+        net: 0,
+      };
+      for (const runner of (runnersResult?.runners || [])) {
+        if (!ownsCodeMetrics(runner)) continue;
+        codeTotals.files += positiveIntegerValue(runner.cumulativeCodeFilesChanged);
+        codeTotals.insertions += positiveIntegerValue(runner.cumulativeCodeInsertions);
+        codeTotals.deletions += positiveIntegerValue(runner.cumulativeCodeDeletions);
+        codeTotals.volume += positiveIntegerValue(runner.cumulativeCodeVolume);
+        codeTotals.net += Number.parseInt(String(runner.cumulativeCodeNetDelta || "0"), 10) || 0;
+      }
+      parsedMetrics.autoflow_code_files_changed_count = String(codeTotals.files);
+      parsedMetrics.autoflow_code_insertions_count = String(codeTotals.insertions);
+      parsedMetrics.autoflow_code_deletions_count = String(codeTotals.deletions);
+      parsedMetrics.autoflow_code_volume_count = String(codeTotals.volume);
+      parsedMetrics.autoflow_code_net_delta_count = String(codeTotals.net);
     }
-    parsedMetrics.autoflow_code_files_changed_count = String(codeTotals.files);
-    parsedMetrics.autoflow_code_insertions_count = String(codeTotals.insertions);
-    parsedMetrics.autoflow_code_deletions_count = String(codeTotals.deletions);
-    parsedMetrics.autoflow_code_volume_count = String(codeTotals.volume);
-    parsedMetrics.autoflow_code_net_delta_count = String(codeTotals.net);
   } catch {}
   try {
     let runnerTokenTotal = 0;

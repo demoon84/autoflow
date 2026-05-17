@@ -72,13 +72,16 @@ export function checkActiveSections(): void {
 }
 
 export function checkRecoveryStateFields(): void {
-    const fields = ["Status", "Detected By", "Failure Class", "Evidence", "Planner Decision", "Owner Resume Instruction", "Last Recovery At"];
+    const fields = ["Status", "Detected By", "Failure Class", "Evidence", "Planner Decision", "Worker Resume Instruction", "Last Recovery At"];
     let missing = 0;
     const files = activeTicketFiles().sort();
     for (const file of files) {
         if (!sectionExists(file, "Recovery State")) continue;
         const rel = relPath(file);
         for (const f of fields) {
+            if (f === "Worker Resume Instruction" && fieldInSectionPresent(file, "Recovery State", "Owner Resume Instruction")) {
+                continue;
+            }
             if (!fieldInSectionPresent(file, "Recovery State", f)) {
                 missing += 1;
                 recordWarning(`${rel} Recovery State missing field ${f}`);
@@ -165,6 +168,61 @@ export function checkResolvedTicketWorktrees(): void {
         }
     }
     recordCheck("resolved_ticket_worktrees", stale > 0 ? "warning" : "ok");
+}
+
+export function checkResolvedTicketBranches(): void {
+    try {
+        execFileSync("git", ["-C", PROJECT_ROOT, "rev-parse", "--is-inside-work-tree"], {
+            stdio: ["ignore", "ignore", "ignore"]
+        });
+    } catch {
+        recordCheck("resolved_ticket_branches", "ok");
+        return;
+    }
+
+    const branches = utils.gitOutput(["for-each-ref", "--format=%(refname:short)", "refs/heads/autoflow/tickets_*"], PROJECT_ROOT)
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .sort();
+    if (branches.length === 0) {
+        recordCheck("resolved_ticket_branches", "ok");
+        return;
+    }
+
+    const worktreeBlocks = utils.gitOutput(["worktree", "list", "--porcelain"], PROJECT_ROOT).split(/\n\n+/).filter(Boolean);
+    const checkedOut = new Map<string, string>();
+    for (const block of worktreeBlocks) {
+        const branchMatch = block.match(/^branch refs\/heads\/(.+)$/m);
+        const wtMatch = block.match(/^worktree (.+)$/m);
+        if (branchMatch && wtMatch) checkedOut.set(branchMatch[1], wtMatch[1]);
+    }
+
+    let stale = 0;
+    for (const branch of branches) {
+        const idMatch = branch.match(/tickets_(\d+)$/);
+        const id = idMatch ? idMatch[1] : "";
+        const ticketFile = id ? (ticketFileForId(`tickets_${id}`) || ticketFileForId(`Todo-${id}`)) : "";
+        if (!ticketFile) {
+            stale += 1;
+            recordWarning(`${branch} exists but has no board ticket`);
+            continue;
+        }
+        const state = ticketWorktreeBoardState(ticketFile);
+        if (state === "active") continue;
+        const rel = relPath(ticketFile);
+        const wtPath = checkedOut.get(branch) || "";
+        if (state === "done") {
+            stale += 1;
+            const integration = markdownScalar(ticketFile, "Worktree", "Integration Status");
+            const detail = wtPath ? `checked out at ${wtPath}` : `not checked out`;
+            recordWarning(`${branch} remains after done ticket ${rel} (Integration Status=${integration || "<empty>"}, ${detail})`);
+        } else {
+            stale += 1;
+            recordWarning(`${branch} has ticket branch with unknown board state ${rel}`);
+        }
+    }
+    recordCheck("resolved_ticket_branches", stale > 0 ? "warning" : "ok");
 }
 
 export function checkRogueProjectRootBoardPaths(): void {

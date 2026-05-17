@@ -174,13 +174,21 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
     AUTOFLOW_WORKER_ID: currentRunnerId("worker"),
   };
   const result = spawnTsScript(finishTs, [boardRel(ticket), backendOutcome, message], finishEnv);
+  const stdout = spawnOutputText(result.stdout);
+  const stderr = spawnOutputText(result.stderr);
+  const parsed = parseKeyValueOutput(stdout);
   ok({
+    status: stringValue(parsed.status) || (result.status === 0 ? "ok" : "error"),
     tool: `worker.${command}`,
     path: boardRel(ticket),
     backend: `runners/worker/finish-ticket/index.ts ${backendOutcome}`,
     exit_code: result.status ?? 1,
-    stdout: result.stdout || "",
-    stderr: result.stderr || "",
+    backend_status: stringValue(parsed.status),
+    backend_commit_status: stringValue(parsed.commit_status),
+    backend_next_action: stringValue(parsed.next_action),
+    parsed,
+    stdout,
+    stderr,
   });
   process.exit(result.status === 0 ? 0 : 1);
 }

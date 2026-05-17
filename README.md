@@ -88,6 +88,8 @@ target-project/
 ./app/bin/autoflow tool list <project-root> [board-dir-name]
 ```
 
+`autoflow run wiki`는 결정적 wiki baseline update를 실행한다. 일반 위키 러너 tick은 설치 보드 안에서 `autoflow tool runner-tool wiki tick`으로 시작한다. `autoflow runners start <runner>`는 CLI 단독으로 장기 실행 프로세스를 spawn하지 않고 runner state/config를 준비한다. 실제 장기 실행은 데스크톱 앱의 PTY runner 경로가 담당한다.
+
 자세한 CLI ownership은 [app/docs/cli.md](app/docs/cli.md)를 본다.
 
 ## Repository Layout

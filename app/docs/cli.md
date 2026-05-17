@@ -53,5 +53,9 @@ and exercise the runners there.
   `tickets/prd/`.
 - `autoflow run <role>` invokes the matching physical path under
   `app/runtime/runners/<role>/` with board/project env vars.
+- `autoflow run wiki` is the deterministic wiki baseline update surface. A
+  normal wiki runner turn uses `autoflow tool runner-tool wiki tick`.
+- `autoflow runners start <runner>` records/prepares runner state/config from
+  the CLI. The desktop app's PTY runner path owns long-running process spawn.
 - `autoflow wiki query` performs local markdown retrieval directly in the
   TypeScript CLI; wiki runner scripts live under `app/runtime/runners/wiki/scripts/`.

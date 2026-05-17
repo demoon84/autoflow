@@ -1,6 +1,6 @@
 import {BOARD_ROOT, PROJECT_ROOT} from "./context";
 import {checks, errors, warnings} from "./reporter";
-import {checkActiveSections, checkDuplicateTicketIds, checkRecoveryStateFields, checkRecoveryStateValues, checkResolvedTicketWorktrees, checkRogueProjectRootBoardPaths, checkTodoWorktreeMetadata} from "./checks";
+import {checkActiveSections, checkDuplicateTicketIds, checkRecoveryStateFields, checkRecoveryStateValues, checkResolvedTicketBranches, checkResolvedTicketWorktrees, checkRogueProjectRootBoardPaths, checkTodoWorktreeMetadata} from "./checks";
 
 const args = process.argv.slice(2);
 let strict = false;
@@ -21,6 +21,7 @@ checkActiveSections();
 checkRecoveryStateFields();
 checkRecoveryStateValues();
 checkResolvedTicketWorktrees();
+checkResolvedTicketBranches();
 checkRogueProjectRootBoardPaths();
 
 if (strict && warnings.length > 0) {

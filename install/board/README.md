@@ -74,9 +74,9 @@ worker as an implementation fallback.
 - Codex `$autoflow`: PRD handoff only.
 - `#autoflow`: compatibility alias for PRD handoff only.
 - Claude `/order`, Codex `$order`, `#order`, or `autoflow order create`: quick order intake only.
-- `autoflow runners start planner`: planner runner — order/retry/prd → todo plus markdown recovery for stalled/blocked work.
-- `autoflow run ticket` / `autoflow runners start worker`: worker runner — todo claim → mini-plan → implementation → local verification → verifier pass/revise/replan handling → runner-led merge → done/order-retry. Default Worker execution.
-- `autoflow runners start wiki`: wiki runner — refreshes the deterministic wiki baseline only when source changes require it, then layers AI synthesis.
+- `autoflow runners start planner`: records/prepares planner runner state. CLI `runners start` does not spawn a long-running runner process by itself; the desktop PTY runner owns process execution.
+- `autoflow run ticket` / `autoflow runners start worker`: worker startup/state surfaces. Worker implementation still happens through the worker runner and runner tools: todo claim → mini-plan → implementation → local verification → verifier pass/revise/replan handling → runner-led merge → done/order-retry.
+- `autoflow runners start wiki`: records/prepares wiki runner state. A normal wiki runner turn starts with `autoflow tool runner-tool wiki tick`; `autoflow run wiki` is deterministic baseline update, not the full tick loop.
 - `autoflow guard`: safety-kernel validation for board invariants and leftover ticket worktrees after AI-authored markdown recovery.
 - Desktop worker runner: default worker execution from the UI.
 - `#plan`: legacy planner compatibility trigger (planner runner replaces this).

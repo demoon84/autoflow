@@ -5,7 +5,7 @@ import {resolveTicketFile, cleanupWorktree, clearActiveState} from "./state";
 import {routeToOrderRetry} from "./retry";
 import {recordCodeMetricsWithRunnerTool} from "./metrics";
 import {shouldHandoffToVerifier, handoffToVerifier, removeVerifierMarker, markNeedsAiMerge} from "./verifier";
-import {sanityPreflight, prepareWorktreeForFinalization, archiveDone, commitCompletion} from "./finalize";
+import {sanityPreflight, prepareWorktreeForFinalization, finalizationPreflight, archiveDone, commitCompletion} from "./finalize";
 import {idFromTicketPath} from "./io";
 
 export function main(): void {
@@ -94,9 +94,79 @@ export function main(): void {
     return;
   }
 
+  const finalization = finalizationPreflight(ticketFile);
+  if (finalization.status === "needs_ai_merge") {
+    markNeedsAiMerge(ticketFile, ticketId, finalization.reason);
+    printPairs({
+      status: "needs_ai_merge",
+      outcome: "pass",
+      reason: finalization.reason,
+      detail: finalization.detail,
+      ticket: ticketFile,
+      ticket_id: ticketId,
+      worktree_path: prep.worktreePath,
+      worktree_commit: prep.worktreeCommit,
+      commit_status: "ai_merge_required",
+      next_action: "AI must manually integrate the verified worktree changes into PROJECT_ROOT, rerun verification, and rerun worker finalize-approved.",
+      board_root: boardRoot,
+      project_root: projectRoot,
+    });
+    return;
+  }
+
+  if (finalization.status === "blocked") {
+    appendNote(ticketFile, `Finalize blocked at ${timestamp}: ${finalization.reason}; ${finalization.detail}`);
+    replaceScalar(ticketFile, "Ticket", "Stage", "blocked");
+    replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
+    replaceScalar(ticketFile, "Worktree", "Integration Status", `blocked_${finalization.reason}`);
+    replaceScalar(ticketFile, "Recovery State", "Status", "blocked");
+    replaceScalar(ticketFile, "Recovery State", "Detected By", "finish-ticket.ts finalization preflight");
+    replaceScalar(ticketFile, "Recovery State", "Failure Class", finalization.reason);
+    replaceScalar(ticketFile, "Recovery State", "Evidence", finalization.detail);
+    replaceScalar(ticketFile, "Recovery State", "Worker Resume Instruction", "Fix PROJECT_ROOT merge or verification, rerun verification from PROJECT_ROOT, then rerun worker finalize-approved for this ticket.");
+    replaceScalar(ticketFile, "Recovery State", "Last Recovery At", timestamp);
+    updateGoalRuntime(ticketFile, "blocked", timestamp);
+    replaceSection(ticketFile, "Next Action", `- Next: finalization preflight failed (${finalization.reason}). Worker must fix PROJECT_ROOT merge/verification, rerun verification, then call \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\` again.`);
+    printPairs({
+      status: "blocked",
+      outcome: "pass_refused",
+      failure_class: finalization.reason,
+      reason: finalization.detail,
+      ticket: ticketFile,
+      ticket_id: ticketId,
+      verification_command: finalization.command || "",
+      verification_exit_code: String(finalization.exitCode ?? ""),
+      next_action: "Worker must fix PROJECT_ROOT merge/verification and rerun worker finalize-approved.",
+      board_root: boardRoot,
+      project_root: projectRoot,
+    });
+    process.exit(1);
+    return;
+  }
+
   removeVerifierMarker(ticketId);
   const doneFile = archiveDone(ticketFile, ticketId);
   const commit = commitCompletion(doneFile, ticketId, message || scalar(doneFile, "Result", "Summary") || "complete worker work");
+  const commitOk = ["committed", "already_committed", "skipped_by_env", "not_git_repo", "no_changes"].includes(commit.status);
+  if (!commitOk) {
+    printPairs({
+      status: "blocked",
+      outcome: "completion_commit_failed",
+      failure_class: commit.status,
+      reason: commit.detail,
+      ticket: doneFile,
+      ticket_id: ticketId,
+      worktree_path: prep.worktreePath,
+      worktree_commit: prep.worktreeCommit,
+      commit_status: commit.status,
+      commit_hash: commit.hash,
+      next_action: "Completion commit did not meet the finalization contract; inspect PROJECT_ROOT git status and rerun finalize after fixing it.",
+      board_root: boardRoot,
+      project_root: projectRoot,
+    });
+    process.exit(1);
+    return;
+  }
   cleanupWorktree(doneFile);
   clearActiveState();
 

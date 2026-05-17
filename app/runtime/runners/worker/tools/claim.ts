@@ -139,6 +139,14 @@ export function cmdWorkerClaim(): void {
   try {
     const source = resolveTicketPath(ticketRaw, ["todo"]);
     if (!source) fail(1, `claimable todo ticket not found: ${ticketRaw}`);
+    const sourceItem = readWorkerTicketItem(source, "todo");
+    if (sourceItem.allowed_paths.length === 0) {
+      fail(1, "ticket has no concrete Allowed Paths; planner must narrow scope before worker claim", {
+        reason: "allowed_paths_missing",
+        ticket_id: `Todo-${idFromPath(source)}`,
+        path: boardRel(source),
+      });
+    }
     const activeOwned = listWorkerTicketItems("inprogress").filter((item) => ticketItemOwnedByRunner(item, runnerId));
     if (activeOwned.length > 0) {
       fail(1, "runner already owns an active ticket; resume it before claiming another", {

@@ -166,13 +166,15 @@ export function cmdWorkerTodoSnapshot(): void {
     const conflicts = pathConflictGuardEnabled()
       ? collectTicketConflicts(resolveBoardPath(item.path), inprogress, runnerId)
       : [];
+    const missingAllowedPaths = item.allowed_paths.length === 0;
     return {
       ...item,
       conflicts,
-      claimable: activeOwned.length === 0 && conflicts.length === 0,
+      claimable: activeOwned.length === 0 && conflicts.length === 0 && !missingAllowedPaths,
       blocked_reason:
         activeOwned.length > 0 ? "runner_has_active_ticket" :
         conflicts.length > 0 ? "allowed_path_conflict" :
+        missingAllowedPaths ? "allowed_paths_missing" :
         "",
     };
   });

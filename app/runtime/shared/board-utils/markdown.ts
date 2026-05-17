@@ -5,6 +5,20 @@ import {readFileSafe, writeFileSafe} from "./files";
 // ─── Ticket markdown parsing ────────────────────────────────────────
 const reEscape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+function markdownSectionBodyRange(content: string, sectionTitle: string): {bodyStart: number; bodyEnd: number} | null {
+  const headingRe = new RegExp(`(^|\\n)## ${reEscape(sectionTitle)}\\b[^\\n]*(?:\\n|$)`);
+  const match = headingRe.exec(content);
+  if (!match) return null;
+  const bodyStart = match.index + match[0].length;
+  const nextHeadingRe = /\n## /g;
+  nextHeadingRe.lastIndex = bodyStart;
+  const nextHeading = nextHeadingRe.exec(content);
+  return {
+    bodyStart,
+    bodyEnd: nextHeading ? nextHeading.index : content.length,
+  };
+}
+
 /** Read top-level scalar field "- FieldName: value" anywhere in the file. */
 export function ticketScalarField(file: string, fieldName: string): string {
   const text = readFileSafe(file);
@@ -105,15 +119,16 @@ export function appendNote(file: string, text: string): boolean {
   const content = readFileSafe(file);
   if (!content) return false;
   const audit = `- ${text}`;
-  const m = content.match(/(\n## Notes[ \t]*\n)([\s\S]*?)(?=\n## |\Z)/);
+  const range = markdownSectionBodyRange(content, "Notes");
   let next: string;
-  if (m && typeof m.index === "number") {
-    const before = content.slice(0, m.index + m[1].length);
-    const body = m[2] || "";
-    const after = content.slice(m.index + m[0].length);
-    next = `${before}${body}${body.endsWith("\n") ? "" : "\n"}${audit}\n${after}`;
+  if (range) {
+    const before = content.slice(0, range.bodyStart);
+    const body = content.slice(range.bodyStart, range.bodyEnd).trim();
+    const after = content.slice(range.bodyEnd).replace(/^\n/, "");
+    const bodyLines = body ? `${body}\n${audit}` : audit;
+    next = `${before}\n${bodyLines}\n\n${after}`;
   } else {
-    next = `${content}${content.endsWith("\n") ? "" : "\n"}\n## Notes\n\n${audit}\n`;
+    next = `${content.replace(/\n*$/, "\n")}\n## Notes\n\n${audit}\n`;
   }
   return writeFileSafe(file, next);
 }
@@ -144,11 +159,13 @@ export function extractTicketAllowedPaths(file: string): string[] {
 }
 
 export function allowedPathIsConcreteRepoPath(p: string): boolean {
-  if (!p) return false;
-  if (/^TODO:?/i.test(p)) return false;
-  if (p.startsWith("/")) return false;
-  if (p.startsWith("../") || p.includes("/../")) return false;
-  if (/[*?\[\]]/.test(p)) return false;
+  const clean = p.replace(/`/g, "").trim();
+  if (!clean) return false;
+  if (/^(TBD|TODO:?|N\/A|NA|NONE)$/i.test(clean)) return false;
+  if (/^TODO:?/i.test(clean)) return false;
+  if (clean.startsWith("/")) return false;
+  if (clean.startsWith("../") || clean.includes("/../")) return false;
+  if (/[*?\[\]]/.test(clean)) return false;
   return true;
 }
 

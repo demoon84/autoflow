@@ -4,6 +4,7 @@ import {ensureExpectedRole, setThreadContextRecord, workerRole} from "./role";
 import {boardRelativePath, extractNumericId} from "./ids";
 import {migrateLegacyQueueDirs} from "./files";
 import {selectRetryOrder, selectNonretryOrder} from "./orders";
+import {createGeneratedPrdFromOrder} from "./order-to-prd";
 import {selectOrderGeneratedSpec, promoteSpecToTodoOrExit, selectPopulatedSpec, choosePolicyPick, selectLegacyPlan} from "./specs";
 
 export function main(): void {
@@ -11,7 +12,7 @@ export function main(): void {
     process.stdout.write(
       "autoflow run planner - Autoflow planner runner.\n" +
         "Usage: autoflow run planner [project-root] [board-dir-name] [id]\n" +
-        "Sources: prd-to-todo | order-retry | order | legacy-plan | idle\n"
+        "Sources: prd-to-todo | order-to-prd | order-retry | order | legacy-plan | idle\n"
     );
     return;
   }
@@ -44,14 +45,17 @@ export function main(): void {
   if (policyPick === "spec" && spec) promoteSpecToTodoOrExit(spec);
 
   if (policyPick === "order" && nonretryOrder) {
+    const generated = createGeneratedPrdFromOrder(nonretryOrder);
     emit({
       status: "ok",
-      source: "order",
+      source: "order-to-prd",
       order: nonretryOrder,
       order_id: extractNumericId(nonretryOrder),
+      spec: generated.specFile,
+      archived_order: generated.archivedOrder,
       board_root: BOARD_ROOT,
       project_root: PROJECT_ROOT,
-      next_action: `Generate a PRD from order ${boardRelativePath(nonretryOrder)} per plan-to-ticket-agent.md, then rerun start-plan for PRD-to-todo handoff.`,
+      next_action: `Generated PRD ${boardRelativePath(generated.specFile)} from order ${boardRelativePath(nonretryOrder)}; rerun planner for PRD-to-todo handoff.`,
     });
     return;
   }

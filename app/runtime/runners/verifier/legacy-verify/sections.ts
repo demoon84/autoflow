@@ -1,5 +1,19 @@
 import {read, write, escapeRe} from "./io";
 
+function sectionBodyRange(content: string, section: string): {bodyStart: number; bodyEnd: number} | null {
+  const headingRe = new RegExp(`(^|\\n)## ${escapeRe(section)}\\b[^\\n]*(?:\\n|$)`);
+  const match = headingRe.exec(content);
+  if (!match) return null;
+  const bodyStart = match.index + match[0].length;
+  const nextHeadingRe = /\n## /g;
+  nextHeadingRe.lastIndex = bodyStart;
+  const nextHeading = nextHeadingRe.exec(content);
+  return {
+    bodyStart,
+    bodyEnd: nextHeading ? nextHeading.index : content.length,
+  };
+}
+
 export function scalar(file: string, section: string, field: string): string {
   const lines = read(file).split(/\r?\n/);
   const sectionRe = new RegExp(`^## ${escapeRe(section)}\\b`);
@@ -48,9 +62,9 @@ export function replaceScalar(file: string, section: string, field: string, valu
 
 export function replaceSection(file: string, section: string, body: string): void {
   const content = read(file);
-  const re = new RegExp(`(^## ${escapeRe(section)}\\b[^\\n]*\\n)([\\s\\S]*?)(?=^## |\\Z)`, "m");
-  const next = re.test(content)
-    ? content.replace(re, (_match, heading: string) => `${heading}\n${body.trim()}\n\n`)
+  const range = sectionBodyRange(content, section);
+  const next = range
+    ? `${content.slice(0, range.bodyStart)}\n${body.trim()}\n\n${content.slice(range.bodyEnd).replace(/^\n/, "")}`
     : `${content.replace(/\n*$/, "\n")}\n## ${section}\n\n${body.trim()}\n`;
   write(file, next);
 }
@@ -58,9 +72,9 @@ export function replaceSection(file: string, section: string, body: string): voi
 export function appendNote(file: string, note: string): void {
   const content = read(file);
   const bullet = `- ${note}`;
-  const re = /(^## Notes\b[^\n]*\n)([\s\S]*?)(?=^## |\Z)/m;
-  const next = re.test(content)
-    ? content.replace(re, (_match, heading: string, body: string) => `${heading}${body}${body.endsWith("\n") ? "" : "\n"}${bullet}\n\n`)
+  const range = sectionBodyRange(content, "Notes");
+  const next = range
+    ? `${content.slice(0, range.bodyStart)}\n${[content.slice(range.bodyStart, range.bodyEnd).trim(), bullet].filter(Boolean).join("\n")}\n\n${content.slice(range.bodyEnd).replace(/^\n/, "")}`
     : `${content.replace(/\n*$/, "\n")}\n## Notes\n\n${bullet}\n`;
   write(file, next);
 }

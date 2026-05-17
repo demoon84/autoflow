@@ -33,6 +33,7 @@ const {
   claimToken,
   pathConflictGuardEnabled,
   collectTicketConflicts,
+  isCodeMetricPath,
   pathsOverlap,
   normalizeRelPath,
   requireTicket,
@@ -141,6 +142,16 @@ type CodeMetricNumbers = {
   net: number;
 };
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
+}
+
+function markerCodeFiles(marker: JsonObject): string[] {
+  const explicit = stringArray(marker.code_changed_files);
+  if (explicit.length > 0) return unique(explicit);
+  return unique(stringArray(marker.product_changed_files).filter(isCodeMetricPath));
+}
+
 function statsNumbers(stats: JsonObject): CodeMetricNumbers {
   return {
     files: numberValue(stats.code_files_changed_count),
@@ -151,11 +162,11 @@ function statsNumbers(stats: JsonObject): CodeMetricNumbers {
   };
 }
 
-function readMarkerNumbers(markerPath: string): CodeMetricNumbers {
+function readMarker(markerPath: string): JsonObject {
   try {
-    return statsNumbers(JSON.parse(fs.readFileSync(markerPath, "utf8")) as JsonObject);
+    return JSON.parse(fs.readFileSync(markerPath, "utf8")) as JsonObject;
   } catch {
-    return { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+    return {};
   }
 }
 
@@ -165,6 +176,8 @@ function nonNegative(value: number): number {
 
 function markerTotals(markerDir: string): CodeMetricNumbers {
   const totals: CodeMetricNumbers = { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+  const uniqueFiles = new Set<string>();
+  let fallbackFileCount = 0;
   let entries: string[] = [];
   try {
     entries = fs.readdirSync(markerDir);
@@ -173,14 +186,31 @@ function markerTotals(markerDir: string): CodeMetricNumbers {
   }
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
-    const marker = readMarkerNumbers(path.join(markerDir, entry));
-    totals.files += marker.files;
-    totals.insertions += marker.insertions;
-    totals.deletions += marker.deletions;
-    totals.volume += marker.volume;
-    totals.net += marker.net;
+    const marker = readMarker(path.join(markerDir, entry));
+    const markerNumbers = statsNumbers(marker);
+    const files = markerCodeFiles(marker);
+    if (files.length > 0) {
+      for (const file of files) uniqueFiles.add(file);
+    } else {
+      fallbackFileCount += markerNumbers.files;
+    }
+    totals.insertions += markerNumbers.insertions;
+    totals.deletions += markerNumbers.deletions;
+    totals.volume += markerNumbers.volume;
+    totals.net += markerNumbers.net;
   }
+  totals.files = uniqueFiles.size + fallbackFileCount;
   return totals;
+}
+
+function markerNumbers(markerPath: string): CodeMetricNumbers {
+  const marker = readMarker(markerPath);
+  const numbers = statsNumbers(marker);
+  const files = markerCodeFiles(marker);
+  return {
+    ...numbers,
+    files: files.length > 0 ? files.length : numbers.files,
+  };
 }
 
 function syncWorkerCodeMetricState(runnerId: string, markerDir: string, ticketId: string, currentStats: CodeMetricNumbers, reportedAt: string): void {
@@ -211,7 +241,7 @@ export function recordWorkerCodeMetrics(ticket: string): JsonObject {
   fs.mkdirSync(markerDir, { recursive: true });
 
   const markerExists = fs.existsSync(markerPath);
-  const previous = markerExists ? readMarkerNumbers(markerPath) : { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+  const previous = markerExists ? markerNumbers(markerPath) : { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
   const currentStats = statsNumbers(stats);
   const delta = {
     files: currentStats.files - previous.files,

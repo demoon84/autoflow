@@ -148,6 +148,7 @@ export function diffStats(ticket: string): JsonObject {
     changed_files: changedFiles,
     changed_line_count: lineCount,
     code_files_changed_count: codeFiles.length,
+    code_changed_files: codeFiles,
     code_insertions_count: insertions,
     code_deletions_count: deletions,
     code_volume_count: insertions + deletions,
@@ -222,9 +223,10 @@ export function numstatByFile(raw: string): Map<string, { additions: number; del
     const additions = parts[0] === "-" ? 0 : Number.parseInt(parts[0], 10);
     const deletions = parts[1] === "-" ? 0 : Number.parseInt(parts[1], 10);
     const file = parts.slice(2).join("\t");
+    const previous = out.get(file) || { additions: 0, deletions: 0 };
     out.set(file, {
-      additions: Number.isFinite(additions) ? additions : 0,
-      deletions: Number.isFinite(deletions) ? deletions : 0,
+      additions: previous.additions + (Number.isFinite(additions) ? additions : 0),
+      deletions: previous.deletions + (Number.isFinite(deletions) ? deletions : 0),
     });
   }
   return out;

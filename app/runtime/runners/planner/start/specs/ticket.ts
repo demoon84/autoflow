@@ -2,12 +2,92 @@ import {fs, path, BOARD_ROOT, PROJECT_ROOT, displayId, utils} from "../context";
 import {emit} from "../output";
 import {boardRelativePath, projectKeyFromSpecRef, ticketPath} from "../ids";
 import {nextTicketId} from "../files";
-import {extractBulletSection, extractChecklist} from "../sections";
+import {extractBulletSection, extractChecklist, extractSectionText} from "../sections";
 import {normalizeChangeType, normalizePriority} from "../priority";
 import {archiveSourceOrderForSpec, archiveSpecToDoneIfNeeded, projectKeyHasTicket} from "./archive";
 import {missingRequiredSecrets, runLintTicket} from "./preflight";
 
+function firstHeading(file: string): string {
+  return (utils.readFileSafe(file).match(/^#\s+(.+)$/m)?.[1] || "").trim();
+}
+
+function cleanHeadingTitle(heading: string, projectKey: string): string {
+  return heading
+    .replace(new RegExp(`^PRD\\s+${projectKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:?\\s*`, "i"), "")
+    .replace(/^Project\s+PRD\s*:?/i, "")
+    .replace(/^PRD\s+\d+\s*:\s*/i, "")
+    .trim();
+}
+
+function compactSection(file: string, heading: string): string {
+  return extractSectionText(file, heading)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function specTitle(file: string, projectKey: string): string {
+  return (
+    utils.extractScalarFieldInSection(file, "Project", "Name") ||
+    utils.extractScalarFieldInSection(file, "Project", "Title") ||
+    cleanHeadingTitle(firstHeading(file), projectKey) ||
+    `AI work for ${projectKey}`
+  );
+}
+
+function specGoal(file: string, projectKey: string): string {
+  return (
+    utils.extractScalarFieldInSection(file, "Project", "Goal") ||
+    utils.extractScalarFieldInSection(file, "Core Scope", "Goal") ||
+    compactSection(file, "Goal") ||
+    `Implement the approved spec for ${projectKey}.`
+  );
+}
+
+function stripTicks(value: string): string {
+  return value.replace(/`/g, "").trim();
+}
+
+function specVerificationCommand(file: string): string {
+  const scalar = utils.extractScalarFieldInSection(file, "Verification", "Command");
+  if (scalar) return stripTicks(scalar);
+  return stripTicks(extractBulletSection(file, "Verification")[0] || "");
+}
+
+function checklistOrBullets(file: string, heading: string): string[] {
+  const checklist = extractChecklist(file, heading);
+  if (checklist.length > 0) return checklist;
+  return extractBulletSection(file, heading).map((item) => `- [ ] ${item}`);
+}
+
+function specDoneWhen(file: string): string {
+  return [
+    ...checklistOrBullets(file, "Global Acceptance Criteria"),
+    ...checklistOrBullets(file, "Done When"),
+  ].join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/order-retry";
+}
+
 export function promoteSpecToTodoOrExit(specFile: string): never {
+  const concreteAllowedPaths = extractBulletSection(specFile, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
+  if (concreteAllowedPaths.length === 0) {
+    utils.replaceScalarFieldInSection(specFile, "Project", "Status", "needs_allowed_paths");
+    utils.appendNote(specFile, `Planner preflight blocked PRD-to-todo at ${utils.nowIso()}: Allowed Paths has no concrete repo-relative path.`);
+    emit({
+      status: "blocked",
+      source: "allowed-paths-missing",
+      spec: specFile,
+      failure_class: "ambiguous_scope",
+      recovery_state: "needs_user",
+      board_root: BOARD_ROOT,
+      project_root: PROJECT_ROOT,
+      next_action: `Narrow Allowed Paths in ${boardRelativePath(specFile)} to concrete repo-relative paths, then rerun planner.`,
+    });
+    process.exit(0);
+  }
+
   const missingSecrets = missingRequiredSecrets(specFile);
   if (missingSecrets.length > 0) {
     utils.replaceScalarFieldInSection(specFile, "Project", "Status", "needs_user_secret");
@@ -84,13 +164,14 @@ export function createTodoTicketFromSpec(specFile: string): string {
   const ticketId = nextTicketId();
   const ticketFile = ticketPath("todo", ticketId);
   const timestamp = utils.nowIso();
-  const title = utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Name") || utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Title") || `AI work for ${projectKey}`;
-  const goal = utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Goal") || `Implement the approved spec for ${projectKey}.`;
+  const title = specTitle(archivedSpecFile, projectKey);
+  const goal = specGoal(archivedSpecFile, projectKey);
   const priority = normalizePriority(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Priority"));
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Change Type"));
-  const verificationCommand = utils.extractScalarFieldInSection(archivedSpecFile, "Verification", "Command");
-  const allowedPaths = extractBulletSection(archivedSpecFile, "Allowed Paths").map((p) => `- ${p}`).join("\n") || "- TODO: planner runner must narrow this to concrete repo-relative paths before worker claims.";
-  const doneWhen = extractChecklist(archivedSpecFile, "Global Acceptance Criteria").join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/order-retry";
+  const verificationCommand = specVerificationCommand(archivedSpecFile);
+  const concreteAllowedPaths = extractBulletSection(archivedSpecFile, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
+  const allowedPaths = concreteAllowedPaths.map((p) => `- ${p}`).join("\n");
+  const doneWhen = specDoneWhen(archivedSpecFile);
 
   fs.mkdirSync(path.dirname(ticketFile), { recursive: true });
   fs.writeFileSync(

@@ -1,22 +1,57 @@
 import {fs, path, boardRoot, projectRoot, workerId} from "./context";
-import {normalizeId, read, write} from "./io";
+import {idFromTicketPath, normalizeId, read, stripTicks, write} from "./io";
 import {scalar} from "./ticket-sections";
 import {git, gitOut} from "./git";
+
+function isManagedAutoflowBranch(branch: string): boolean {
+  return /^autoflow\/tickets_\d+$/.test(branch);
+}
 
 function isManagedAutoflowWorktree(worktreePath: string): boolean {
   const resolved = path.resolve(worktreePath);
   if (resolved === path.resolve(projectRoot)) return false;
-  if (resolved.includes(`${path.sep}.autoflow${path.sep}worktrees${path.sep}`)) return true;
-  if (!resolved.includes(`${path.sep}autoflow${path.sep}worktrees${path.sep}`)) return false;
   const branch = gitOut(resolved, ["symbolic-ref", "--short", "HEAD"]);
-  return /^autoflow\/tickets_\d+$/.test(branch);
+  if (isManagedAutoflowBranch(branch)) return true;
+  if (resolved.includes(`${path.sep}.autoflow${path.sep}worktrees${path.sep}`)) return true;
+  return resolved.includes(`${path.sep}autoflow${path.sep}worktrees${path.sep}`);
+}
+
+function ticketBranch(ticketFile: string): string {
+  const recorded = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
+  if (isManagedAutoflowBranch(recorded)) return recorded;
+  const ticketId = idFromTicketPath(ticketFile);
+  return ticketId ? `autoflow/tickets_${ticketId}` : "";
+}
+
+function branchExists(branch: string): boolean {
+  return Boolean(branch) && git(projectRoot, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).status === 0;
+}
+
+function checkedOutWorktreePath(branch: string): string {
+  const blocks = gitOut(projectRoot, ["worktree", "list", "--porcelain"]).split(/\n\n+/).filter(Boolean);
+  for (const block of blocks) {
+    const branchMatch = block.match(/^branch refs\/heads\/(.+)$/m);
+    if (!branchMatch || branchMatch[1] !== branch) continue;
+    const worktreeMatch = block.match(/^worktree (.+)$/m);
+    return worktreeMatch ? worktreeMatch[1] : "";
+  }
+  return "";
+}
+
+function cleanupTicketBranch(ticketFile: string): void {
+  const branch = ticketBranch(ticketFile);
+  if (!branchExists(branch)) return;
+  git(projectRoot, ["worktree", "prune"]);
+  if (checkedOutWorktreePath(branch)) return;
+  git(projectRoot, ["branch", "-D", branch]);
 }
 
 export function cleanupWorktree(ticketFile: string): void {
   const worktreePath = scalar(ticketFile, "Worktree", "Path");
-  if (!worktreePath || !fs.existsSync(worktreePath)) return;
-  if (!isManagedAutoflowWorktree(worktreePath)) return;
-  git(projectRoot, ["worktree", "remove", "--force", worktreePath]);
+  if (worktreePath && fs.existsSync(worktreePath) && isManagedAutoflowWorktree(worktreePath)) {
+    git(projectRoot, ["worktree", "remove", "--force", worktreePath]);
+  }
+  cleanupTicketBranch(ticketFile);
 }
 
 export function clearActiveState(): void {

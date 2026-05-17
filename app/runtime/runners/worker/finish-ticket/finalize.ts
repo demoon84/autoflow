@@ -1,4 +1,4 @@
-import {fs, path, boardRoot, projectRoot, timestamp, workerId} from "./context";
+import {fs, path, boardRoot, projectRoot, spawnSync, timestamp, workerId} from "./context";
 import {boardRel, oneLine, safeSegment, unique} from "./io";
 import {allowedPaths, appendNote, doneWhenItems, normalizedChangeType, replaceScalar, replaceSection, scalar, updateGoalRuntime} from "./ticket-sections";
 import {changedFiles, diffLineCount, git, gitOut, gitRootPath, headContainsCommit, isGitWorktree, pathsOverlap, projectRootPathMatchesWorktree, statusPaths} from "./git";
@@ -96,6 +96,56 @@ export function prepareWorktreeForFinalization(ticketFile: string, ticketId: str
   return { status: "ready", reason: "", worktreePath, worktreeCommit: head };
 }
 
+function verificationCommand(ticketFile: string): string {
+  const command = scalar(ticketFile, "Verification", "Command").trim();
+  if (!command || /^(TBD|TODO:?|N\/A|NA|NONE|none-shell)$/i.test(command)) return "";
+  return command;
+}
+
+export function finalizationPreflight(ticketFile: string): { status: "ok" | "needs_ai_merge" | "blocked"; reason: string; detail: string; command?: string; exitCode?: number } {
+  const worktreePath = scalar(ticketFile, "Worktree", "Path");
+  const allowed = allowedPaths(ticketFile);
+  if (worktreePath && isGitWorktree(worktreePath)) {
+    const mismatched = allowed.filter((relPath) => !projectRootPathMatchesWorktree(worktreePath, relPath));
+    if (mismatched.length > 0) {
+      return {
+        status: "needs_ai_merge",
+        reason: "project_root_not_integrated",
+        detail: `PROJECT_ROOT differs from verified worktree for: ${mismatched.join(",")}`,
+      };
+    }
+  }
+
+  const command = verificationCommand(ticketFile);
+  if (!command || process.env.AUTOFLOW_FINALIZE_RUN_VERIFICATION === "0") {
+    return { status: "ok", reason: command ? "verification_rerun_skipped_by_env" : "verification_command_empty", detail: "" };
+  }
+
+  const timeout = positiveInt(process.env.AUTOFLOW_FINALIZE_VERIFY_TIMEOUT_MS || "", 120000);
+  const result = spawnSync(command, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    shell: true,
+    timeout,
+  });
+  const exitCode = typeof result.status === "number" ? result.status : 1;
+  replaceScalar(ticketFile, "Verification", "Exit Code", String(exitCode));
+  replaceScalar(ticketFile, "Verification", "Last Run", timestamp);
+  replaceScalar(ticketFile, "Verification", "Result", exitCode === 0 ? "pass" : "fail");
+  appendNote(ticketFile, `Project-root verification rerun at ${timestamp}: exit_code=${exitCode} command=${command}`);
+  if (exitCode !== 0 || result.error) {
+    const output = oneLine(`${result.error ? String(result.error) : ""} ${result.stderr || ""} ${result.stdout || ""}`);
+    return {
+      status: "blocked",
+      reason: "project_root_verification_failed",
+      detail: output || `verification command exited ${exitCode}`,
+      command,
+      exitCode,
+    };
+  }
+  return { status: "ok", reason: "project_root_verification_passed", detail: "", command, exitCode };
+}
+
 export function archiveDone(ticketFile: string, ticketId: string): string {
   const projectKey = scalar(ticketFile, "Ticket", "PRD Key") || `ticket_${ticketId}`;
   replaceScalar(ticketFile, "Ticket", "Stage", "done");
@@ -117,14 +167,15 @@ export function archiveDone(ticketFile: string, ticketId: string): string {
   return doneFile;
 }
 
-export function commitCompletion(doneFile: string, ticketId: string, summary: string): { status: string; hash: string } {
-  if (process.env.AUTOFLOW_WORKER_SKIP_COMMIT === "1") return { status: "skipped_by_env", hash: "" };
+export function commitCompletion(doneFile: string, ticketId: string, summary: string): { status: string; hash: string; detail: string } {
+  if (process.env.AUTOFLOW_WORKER_SKIP_COMMIT === "1") return { status: "skipped_by_env", hash: "", detail: "" };
   const gitRoot = gitRootPath(projectRoot);
-  if (!gitRoot) return { status: "not_git_repo", hash: "" };
+  if (!gitRoot) return { status: "not_git_repo", hash: "", detail: "" };
 
   const boardRelPath = path.relative(gitRoot, boardRoot);
   const worktreeCommit = scalar(doneFile, "Worktree", "Worktree Commit");
   const productChangesAreCommitted = worktreeCommit ? headContainsCommit(gitRoot, worktreeCommit) : false;
+  const allowed = allowedPaths(doneFile);
   const candidates = [
     path.relative(gitRoot, doneFile),
     path.join(boardRelPath, "tickets", "todo", `Todo-${ticketId}.md`),
@@ -134,13 +185,30 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
     path.join(boardRelPath, "tickets", "verifier", `Todo-${ticketId}.md`),
     path.join(boardRelPath, "tickets", "verifier", `tickets_${ticketId}.md`),
     path.join(boardRelPath, "logs"),
-    ...(productChangesAreCommitted ? [] : allowedPaths(doneFile)),
+    ...(productChangesAreCommitted ? [] : allowed),
   ].filter((value) => value && !value.startsWith(".."));
   if (candidates.length > 0) git(gitRoot, ["add", "-A", "--", ...unique(candidates)]);
 
-  if (git(gitRoot, ["diff", "--cached", "--quiet"]).status === 0) return { status: "no_changes", hash: "" };
+  if (git(gitRoot, ["diff", "--cached", "--quiet"]).status === 0) {
+    const dirtyAllowed = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+    if (dirtyAllowed.length > 0) {
+      return { status: "dirty_allowed_paths_uncommitted", hash: "", detail: dirtyAllowed.join(",") };
+    }
+    if (productChangesAreCommitted) {
+      return { status: "already_committed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: "" };
+    }
+    if (worktreeCommit && allowed.length > 0) {
+      return { status: "no_completion_changes_for_allowed_paths", hash: "", detail: allowed.join(",") };
+    }
+    return { status: "no_changes", hash: "", detail: "" };
+  }
   const prdKey = scalar(doneFile, "Ticket", "PRD Key");
   const prefix = prdKey ? `[${prdKey.toUpperCase()}][ticket_${ticketId}]` : `[ticket_${ticketId}]`;
   git(gitRoot, ["commit", "-m", `${prefix} ${oneLine(summary) || "complete worker work"}`]);
-  return { status: "committed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]) };
+  const hash = gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]);
+  const dirtyAllowedAfterCommit = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+  if (dirtyAllowedAfterCommit.length > 0) {
+    return { status: "dirty_allowed_paths_after_commit", hash, detail: dirtyAllowedAfterCommit.join(",") };
+  }
+  return { status: "committed", hash, detail: "" };
 }

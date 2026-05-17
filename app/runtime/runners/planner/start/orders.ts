@@ -1,6 +1,7 @@
 import {fs, path, BOARD_ROOT, requestedNormalized, utils} from "./context";
 import {boardRelativePath} from "./ids";
 import {collectFiles, listMatchingFiles} from "./files";
+import {extractSpecSourceOrderRef} from "./sections";
 
 export function orderRefIsAlreadyPromoted(orderRef: string): boolean {
   const roots = [
@@ -11,8 +12,7 @@ export function orderRefIsAlreadyPromoted(orderRef: string): boolean {
     if (!fs.existsSync(root)) continue;
     const files = collectFiles(root, /^(prd|project)_\d+\.md$/);
     for (const file of files) {
-      const text = utils.readFileSafe(file);
-      if (text.includes(`Source: \`${orderRef}\``) || text.includes(`Source: ${orderRef}`)) return true;
+      if (extractSpecSourceOrderRef(file) === orderRef) return true;
     }
   }
   return false;
