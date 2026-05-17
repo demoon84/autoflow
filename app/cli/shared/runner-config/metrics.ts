@@ -82,10 +82,6 @@ function isLegacySessionLogTokenEntry(entry: Record<string, unknown>): boolean {
     return String(entry.note || "").startsWith("host_session_log:");
 }
 
-function isTokenResetEntry(entry: Record<string, unknown>): boolean {
-    return String(entry.note || "").startsWith("token_reset:");
-}
-
 function readTrustedTokenLogEntries(ctx: ProjectContext, runnerId: string): TokenLogReadResult {
     const filePath = tokenLogPath(ctx, runnerId);
     if (!fs.existsSync(filePath)) {
@@ -120,7 +116,7 @@ function readTrustedTokenLogEntries(ctx: ProjectContext, runnerId: string): Toke
         const computedTotal = input + output + cacheRead + cacheCreate;
         const reportedTotal = positiveIntegerValue(parsed.turnTotal);
         const turnTotal = reportedTotal || computedTotal;
-        if (turnTotal <= 0 && !isTokenResetEntry(parsed)) continue;
+        if (turnTotal <= 0) continue;
         if (turnTotal > computedTotal) {
             output += turnTotal - computedTotal;
         }

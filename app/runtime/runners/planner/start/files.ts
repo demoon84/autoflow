@@ -68,7 +68,7 @@ export function collectFiles(root: string, basenameRe: RegExp): string[] {
 
 export function nextTicketId(): string {
   let max = 0;
-  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^(Todo-\d\d\d|tickets_\d\d\d)\.md$/)) {
+  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^(Todo-\d+|tickets_\d+)\.md$/)) {
     const id = Number.parseInt(extractNumericId(file) || "0", 10);
     if (id > max) max = id;
   }

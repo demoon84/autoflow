@@ -1,9 +1,9 @@
-import {path, BOARD_ROOT, PROJECT_ROOT, workerId} from "./context";
+import {BOARD_ROOT, PROJECT_ROOT, workerId} from "./context";
 import {emit} from "./output";
 import {ensureExpectedRole, setThreadContextRecord, workerRole} from "./role";
 import {boardRelativePath, extractNumericId} from "./ids";
 import {migrateLegacyQueueDirs} from "./files";
-import {selectExpressOrder, createExpressTodoFromOrder, selectRetryOrder, selectNonretryOrder} from "./orders";
+import {selectRetryOrder, selectNonretryOrder} from "./orders";
 import {selectOrderGeneratedSpec, promoteSpecToTodoOrExit, selectPopulatedSpec, choosePolicyPick, selectLegacyPlan} from "./specs";
 
 export function main(): void {
@@ -11,7 +11,7 @@ export function main(): void {
     process.stdout.write(
       "autoflow run planner - Autoflow planner runner.\n" +
         "Usage: autoflow run planner [project-root] [board-dir-name] [id]\n" +
-        "Sources: express-order-to-todo | prd-to-todo | order-retry | order | legacy-plan | idle\n"
+        "Sources: prd-to-todo | order-retry | order | legacy-plan | idle\n"
     );
     return;
   }
@@ -19,26 +19,6 @@ export function main(): void {
   ensureExpectedRole("plan");
   migrateLegacyQueueDirs();
   setThreadContextRecord("plan", workerId, "", "", "");
-
-  const expressOrder = selectExpressOrder();
-  if (expressOrder) {
-    const ticket = createExpressTodoFromOrder(expressOrder);
-    if (ticket) {
-      const orderId = extractNumericId(expressOrder);
-      emit({
-        status: "ok",
-        source: "express-order-to-todo",
-        order: `tickets/done/express_${orderId}/${path.basename(expressOrder)}`,
-        todo_ticket: ticket,
-        project_key: `express_${orderId}`,
-        path: "express",
-        board_root: BOARD_ROOT,
-        project_root: PROJECT_ROOT,
-        next_action: `Express ticket ${path.basename(ticket)} ready for worker; PRD authoring skipped.`,
-      });
-      return;
-    }
-  }
 
   const orderGeneratedSpec = selectOrderGeneratedSpec();
   if (orderGeneratedSpec) promoteSpecToTodoOrExit(orderGeneratedSpec);

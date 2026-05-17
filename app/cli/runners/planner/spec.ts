@@ -11,7 +11,7 @@ export function specProject(args: string[]): void {
     ensureBoard(ctx);
     const prdDir = path.join(ctx.boardRoot, "tickets", "prd");
     ensureDir(prdDir);
-    const id = nextNumericId(prdDir, "prd", firstFlag(parsed, "id"));
+    const id = nextNumericId(path.join(ctx.boardRoot, "tickets"), "prd", firstFlag(parsed, "id"));
     const title = firstFlag(parsed, "title") || `PRD ${id}`;
     const goal = firstFlag(parsed, "goal") || readRequestText(parsed, "goal") || title;
     const file = path.join(prdDir, `prd_${id}.md`);

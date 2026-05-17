@@ -17,10 +17,10 @@ Before writing the order, surface relevant prior work so the user can build on p
    - `autoflow wiki query --term "<keyword>" --rag --limit 3` — LLM Wiki prior decisions, learnings, failed/retried approaches, and related done-ticket context. Use multiple `--term` flags when you have multiple strong keywords.
 3. If non-trivial hits return, briefly summarize origin and wiki findings in Korean to the user:
    "비슷한 과거 작업: prd_142 (...), order_88 (...). 그대로 발행할까요?"
-4. Use relevant wiki findings to tighten obvious `--allowed-path`, `--scope`, `--verification`, express eligibility, or `## Notes` hints, but do not invent constraints from weak hits.
+4. Use relevant wiki findings to tighten obvious `--allowed-path`, `--scope`, `--verification`, or `## Notes` hints, but do not decide whether PRD authoring can be skipped; that decision belongs to the planner runner.
 5. Proceed to save the order regardless of lookup outcome — the user's intent is the source of truth, lookup only highlights duplicates or relevant context.
 
-Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable. Express orders MAY skip lookup since they are time-critical.
+Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 
 ## Rules
 
@@ -36,20 +36,20 @@ Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 10. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
 11. Fallback: write the same order format directly under `{{BOARD_DIR}}/tickets/order/`; the first non-empty line must be `# Autoflow Order`, include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
 12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
-13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will promote it into a generated PRD and todo ticket when safe.
+13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will decide whether to write a generated PRD first or create a narrow direct TODO.
 
-## Express Mode
+## Planner PRD Decision Hints
 
-For trivially small, fully-specified orders the planner can skip PRD authoring and create a todo ticket directly. This drastically lowers latency for one-line fixes, doc tweaks, and renames.
+Order intake never decides whether PRD authoring is required. The planner runner reads the saved order, repository context, and prior wiki/origin findings, then decides whether to create a generated PRD first or write a narrow todo ticket directly.
 
-An order is **express-eligible** only when ALL of the following are true:
+For tiny, fully-specified requests, you may add non-authoritative hints only:
 
-- The user explicitly says one of: `express`, `익스프레스`, `즉시`, `1줄 수정`, `trivial`, `간단`, `quick fix` AND the change is clearly tiny.
-- You can name **concrete repo-relative `Allowed Paths`** without guessing (≤3 paths).
-- You can write at least one **observable `Done When`** checkbox without inventing acceptance criteria.
-- You can name a **`Verification Command`** that exists in this repo (or "none-shell" if no shell verify is meaningful — sanity gate still validates Done When).
+- Concrete repo-relative `Allowed Paths` when obvious (≤3 paths).
+- Observable `Done When` checkboxes when they follow directly from the conversation.
+- A `Verification Command` that exists in this repo, or `none-shell` when no shell verification is meaningful.
+- A `## Notes` bullet such as `- Planner hint: likely direct TODO candidate because ...`.
 
-Save express orders with the **order queue layout below** (do not yaml frontmatter). The planner reads `- Express: true` under `## Order` and bypasses PRD creation.
+Do not write `Express: true`, do not pass `--express`, and do not create PRDs or TODO tickets from this skill. The planner runner owns the PRD-vs-direct-TODO decision.
 
 ```
 # Autoflow Order
@@ -57,7 +57,6 @@ Save express orders with the **order queue layout below** (do not yaml frontmatt
 ## Order
 
 - Title: <짧은 한국어 제목>
-- Express: true
 - Priority: normal
 - Status: ready
 - Change Type: code | docs | cleanup | infra
@@ -82,10 +81,8 @@ Save express orders with the **order queue layout below** (do not yaml frontmatt
 
 ## Notes
 
-- Express rationale: <왜 PRD 없이 바로 todo 가능한지 한 줄>
+- Planner hint: <PRD가 필요할지/바로 TODO 가능할지 판단에 도움이 되는 근거, 확실할 때만>
 ```
-
-When unsure, OMIT `Express: true` and let the standard PRD pipeline handle it. The planner refuses express promotion if Allowed Paths or Done When are missing; it falls back to the normal flow gracefully.
 
 `Change Type` defaults to `code` if omitted; the worker finalizer's sanity gate uses this to choose its diff/checklist matrix.
 

@@ -71,12 +71,12 @@ You never call worker execution (`autoflow run ticket`), verifier tools (`autofl
 2. Do not verify.
 3. Do not push. Do not create commits as part of planning; `git push`, `git reset --hard`, `git clean`, branch operations, and PROJECT_ROOT cleanup are forbidden.
 4. Do not modify PRD content except path references during archival.
-5. Quick orders are allowed to become generated PRDs first; otherwise create tickets only from `Execution Candidates`.
+5. Quick orders may become generated PRDs first or narrow direct TODO tickets, but the planner runner must make that decision from order context and repository evidence.
 6. Preserve `Plan Candidate` verbatim in generated tickets for duplicate detection.
 7. Enrich ticket `Title`, `Goal`, `Done When`, and `Verification` from the PRD and plan.
 8. If a retry order exists, read its retry metadata and `## Original Ticket`, then create a safer replacement plan/ticket unless `retry_decision=needs_user`.
-9. Archive consumed order records beside their generated PRD after ticket creation.
-10. Archive consumed retry order records beside their generated PRD after replacement tickets are created.
+9. Archive consumed order records beside their generated PRD or direct TODO ticket evidence after ticket creation.
+10. Archive consumed retry order records beside their generated PRD or replacement ticket evidence after replacement tickets are created.
 11. Before creating more work, check active/todo health signals when any ticket has `Recovery State`, `Goal Runtime` blocked/no-progress, stale todo worktree metadata, or repeated retry evidence.
 12. If a retry order has `retry_decision=needs_user` or the runtime reports max retries reached, treat it as a hard recovery boundary:
     - do not requeue the same replanned ticket to `tickets/todo`.
@@ -105,11 +105,12 @@ You never call worker execution (`autoflow run ticket`), verifier tools (`autofl
 4. Run `autoflow guard` after any markdown recovery edit to confirm board invariants hold.
 5. If a ticket is stalled, blocked, repeatedly retried, or carrying stale todo/worktree metadata, make one recovery decision next: clarify the worker resume instruction, narrow/split/requeue the ticket, or mark `needs_user` when no safe board-only repair exists. After changing ticket markdown, run `autoflow guard`, fix any guard error before doing more planning, and record unresolved guard warnings as recovery context rather than silently ignoring them.
 6. For an order, read the order and run `autoflow wiki query --rag` with terms from its title/request. Treat the order as an implementation directive, infer concrete narrow `Allowed Paths`, observable `Done When`, and a verification command from repository context. Then use planner runner tools to reserve ids, write the generated PRD or todo ticket, archive the consumed order, and run guard. Do not turn order intake into a human-question loop; only refuse ticket creation for unsafe requests.
-7. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or failed/retried approaches that should shape candidate scope.
-8. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
-9. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.
-10. After all candidates have tickets, let the runtime archive the plan and PRD.
-11. Check the PRD queue again only after the active plan is finished.
+7. Do not let intake-side direct-TODO hints (`Planner Direct-TODO Hint`, legacy `Express`, or similar notes) bypass planner judgment. They are context only; you own the PRD-vs-direct-TODO decision.
+8. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or failed/retried approaches that should shape candidate scope.
+9. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
+10. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.
+11. After all candidates have tickets, let the runtime archive the plan and PRD.
+12. Check the PRD queue again only after the active plan is finished.
 
 ## Stop Condition
 

@@ -1,9 +1,10 @@
 import {path, BOARD_ROOT, utils} from "./context";
 
 export function normalizeId(raw: string): string {
-  const digits = raw.replace(/^.*_/, "").replace(/\.md$/i, "").replace(/\D/g, "");
-  if (!digits) return "";
-  return String(Number.parseInt(digits, 10)).padStart(3, "0");
+  const base = path.basename(String(raw || "")).replace(/\.md$/i, "");
+  const match = base.match(/(\d+)/);
+  if (!match) return "";
+  return String(Number.parseInt(match[1], 10)).padStart(3, "0");
 }
 
 export function extractNumericId(file: string): string {

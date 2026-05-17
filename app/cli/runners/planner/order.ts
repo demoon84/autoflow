@@ -13,7 +13,7 @@ Options:
   --allowed-path path         Add an allowed path hint. May be repeated.
   --verification command      Add a verification command hint. May be repeated.
   --priority value            Set priority. Defaults to normal.
-  --express                   Mark the order as express.
+  --express                   Deprecated compatibility flag; records a direct-TODO hint for the planner runner.
   --force                     Overwrite an existing order id.`);
         return;
     }
@@ -26,7 +26,7 @@ Options:
     ensureBoard(ctx);
     const orderDir = path.join(ctx.boardRoot, "tickets", "order");
     ensureDir(orderDir);
-    const id = nextNumericId(orderDir, "order", firstFlag(parsed, "id"));
+    const id = nextNumericId(path.join(ctx.boardRoot, "tickets"), "order", firstFlag(parsed, "id"));
     const title = firstFlag(parsed, "title") || `Order ${id}`;
     const request = readRequestText(parsed, "request") || title;
     const allowedPaths = allFlags(parsed, "allowed-path");
@@ -40,7 +40,8 @@ Options:
         "",
         "## Order",
         `- Priority: ${firstFlag(parsed, "priority") || "normal"}`,
-        hasFlag(parsed, "express") ? "- Express: true" : "- Express: false",
+        "- Express: false",
+        hasFlag(parsed, "express") ? "- Planner Direct-TODO Hint: true" : "- Planner Direct-TODO Hint: false",
         "",
         "## Request",
         request.trim(),

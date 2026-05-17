@@ -139,7 +139,12 @@ export function cmdPlannerReserveId(): void {
   pruneReservations(reservationsDir, ttlSec);
 
   const used = collectUsedIds(kind);
-  for (let i = 1; i < 1000000; i += 1) {
+  let maxUsed = 0;
+  for (const value of used) {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isFinite(parsed) && parsed > maxUsed) maxUsed = parsed;
+  }
+  for (let i = maxUsed + 1; i < 1000000; i += 1) {
     const id = String(i).padStart(3, "0");
     if (used.has(id)) continue;
     const token = `${Date.now()}-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;

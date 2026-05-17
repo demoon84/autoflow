@@ -215,6 +215,7 @@ type AutoflowAppConfig = {
 type AutoflowInstalledAgentProfile = {
   installed: boolean;
   model: string;
+  models?: string[];
   reasoning: string;
   supportsReasoning: boolean;
 };

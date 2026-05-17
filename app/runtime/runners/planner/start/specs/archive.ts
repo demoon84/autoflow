@@ -4,7 +4,7 @@ import {archiveFile, collectFiles, filesEqual} from "../files";
 import {extractSpecSourceOrderRef} from "../sections";
 
 export function projectKeyHasTicket(projectKey: string): boolean {
-  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^(Todo-\d\d\d|tickets_\d\d\d)\.md$/)) {
+  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^(Todo-\d+|tickets_\d+)\.md$/)) {
     const current = utils.ticketScalarField(file, "PRD Key") || projectKeyFromSpecRef(utils.extractScalarFieldInSection(file, "References", "PRD"));
     if (utils.trimSpaces(current) === projectKey) return true;
   }

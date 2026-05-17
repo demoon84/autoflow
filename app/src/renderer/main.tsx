@@ -167,7 +167,7 @@ const fallbackFlowFolder = ".autoflow";
 const runnerAgentOptions = ["codex", "claude", "gemini"] as const;
 const runnerAgentModelOptions: Record<string, string[]> = {
   codex: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"],
-  claude: ["opus", "opus-1m", "sonnet", "haiku"],
+  claude: ["opus", "opus[1m]", "claude-opus-4-6", "claude-opus-4-6[1m]", "sonnet", "sonnet[1m]"],
   gemini: [
     "gemini-3-flash-preview",
     "gemini-2.5-pro",
@@ -177,7 +177,7 @@ const runnerAgentModelOptions: Record<string, string[]> = {
 };
 const runnerAgentReasoningOptions: Record<string, string[]> = {
   codex: ["low", "medium", "high", "xhigh"],
-  claude: ["medium", "high"],
+  claude: ["low", "medium", "high", "xhigh", "max"],
   gemini: []
 };
 const runnerOptionLabels: Record<string, Record<string, string>> = {
@@ -189,9 +189,23 @@ const runnerOptionLabels: Record<string, Record<string, string>> = {
   },
   claude: {
     opus: "Opus 4.7",
+    "opus[1m]": "Opus 4.7 1M",
     "opus-1m": "Opus 4.7 1M",
     sonnet: "Sonnet 4.6",
-    haiku: "Haiku 4.5",
+    "sonnet[1m]": "Sonnet 4.6 1M",
+    "claude-opus-4-7": "Opus 4.7",
+    "claude-opus-4-7[1m]": "Opus 4.7 1M",
+    "claude-opus-4-6": "Opus 4.6",
+    "claude-opus-4-6[1m]": "Opus 4.6 1M",
+    "claude-opus-4-5": "Opus 4.5",
+    "claude-opus-4-1": "Opus 4.1",
+    "claude-opus-4-0": "Opus 4",
+    "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-sonnet-4-6[1m]": "Sonnet 4.6 1M",
+    "claude-sonnet-4-5": "Sonnet 4.5",
+    "claude-sonnet-4-0": "Sonnet 4",
+    "claude-3-7-sonnet": "Claude 3.7 Sonnet",
+    "claude-3-5-sonnet": "Claude 3.5 Sonnet",
     low: "낮음",
     medium: "보통",
     high: "높음",
@@ -592,6 +606,7 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
     codeNetDeltaCount: statusNumber(metrics, "autoflow_code_net_delta_count"),
     tokenUsageCount: statusNumber(metrics, "autoflow_token_usage_count"),
     tokenReportCount: statusNumber(metrics, "autoflow_token_report_count"),
+    tokenCacheReadCount: statusNumber(metrics, "autoflow_token_cache_read_count"),
     tokenUsage1hCount: statusNumber(metrics, "autoflow_token_usage_1h_count"),
     tokenUsage24hCount: statusNumber(metrics, "autoflow_token_usage_24h_count"),
     tokenInput1hCount: statusNumber(metrics, "autoflow_token_input_1h_count"),
@@ -805,9 +820,26 @@ const artifactLabels: Record<string, string> = {
 };
 
 function displayStatus(value: string) {
+  const processExit = value.match(/^exit_(\d+)$/);
+  if (processExit) {
+    return processExit[1] === "0" ? "정상 종료" : "오류로 종료됨";
+  }
+
+  if (value === "loop_stopped") {
+    return "중지됨";
+  }
+
   const adapterExit = value.match(/^adapter_exit_(\d+)$/);
   if (adapterExit) {
-    return adapterExit[1] === "0" ? "정상 종료" : `종료 ${adapterExit[1]}`;
+    return adapterExit[1] === "0" ? "정상 종료" : "오류로 종료됨";
+  }
+
+  const signalExit = value.match(/^signal_(.+)$/);
+  if (signalExit) {
+    const signal = signalExit[1].toUpperCase();
+    if (signal === "9" || signal === "SIGKILL") return "강제 종료됨";
+    if (signal === "15" || signal === "SIGTERM") return "종료됨";
+    return `신호 ${signalExit[1]} 종료`;
   }
 
   const loopExit = value.match(/^loop_waiting_exit_(\d+)$/);
@@ -834,8 +866,48 @@ function uniqueOptions(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function normalizeRunnerModelValue(agent: string, value: string) {
+  const trimmed = value.trim();
+  if (agent !== "claude") {
+    return trimmed;
+  }
+
+  if (trimmed === "opus-1m") {
+    return "opus[1m]";
+  }
+
+  if (trimmed === "sonnet-1m") {
+    return "sonnet[1m]";
+  }
+
+  return trimmed;
+}
+
+function isPreferredClaudeModel(value: string) {
+  const normalized = normalizeRunnerModelValue("claude", value).toLowerCase();
+  return (
+    normalized === "opus" ||
+    normalized === "opus[1m]" ||
+    normalized === "sonnet" ||
+    normalized === "sonnet[1m]" ||
+    normalized.includes("opus") ||
+    normalized.includes("sonnet")
+  );
+}
+
 function displayRunnerOption(agent: string, value: string) {
-  return runnerOptionLabels[agent]?.[value] || value;
+  const mapped = runnerOptionLabels[agent]?.[value];
+  if (mapped) {
+    return mapped;
+  }
+
+  if (agent === "claude" && value.endsWith("[1m]")) {
+    const base = value.slice(0, -4);
+    const baseLabel = runnerOptionLabels.claude?.[base];
+    return baseLabel ? `${baseLabel} 1M` : value;
+  }
+
+  return value;
 }
 
 function runnerProfileForAgent(agent: string, installedAgentProfiles: InstalledAgentProfiles) {
@@ -851,7 +923,12 @@ function runnerProfileForAgent(agent: string, installedAgentProfiles: InstalledA
 
 function runnerModelChoices(agent: string, installedAgentProfiles: InstalledAgentProfiles, currentValue = "") {
   const profile = runnerProfileForAgent(agent, installedAgentProfiles);
-  return uniqueOptions([currentValue, profile.model, ...(runnerAgentModelOptions[agent] || [])]);
+  const discoveredModels = Array.isArray(profile.models) ? profile.models : [];
+  const optionValues = [currentValue, profile.model, ...discoveredModels, ...(runnerAgentModelOptions[agent] || [])];
+  const filteredValues = agent === "claude" ? optionValues.filter(isPreferredClaudeModel) : optionValues;
+  return uniqueOptions(
+    filteredValues.map((value) => normalizeRunnerModelValue(agent, value))
+  );
 }
 
 function runnerReasoningChoices(agent: string, installedAgentProfiles: InstalledAgentProfiles, currentValue = "") {
@@ -861,7 +938,7 @@ function runnerReasoningChoices(agent: string, installedAgentProfiles: Installed
   }
 
   if (agent === "claude") {
-    return uniqueOptions(runnerAgentReasoningOptions.claude || []);
+    return uniqueOptions([currentValue, profile.reasoning, ...(runnerAgentReasoningOptions.claude || [])]);
   }
 
   return uniqueOptions([currentValue, profile.reasoning, ...(runnerAgentReasoningOptions[agent] || [])]);
@@ -2309,7 +2386,7 @@ function App() {
             reasoning: effectiveRunnerConfig.reasoning || "",
             projectRoot: options.projectRoot,
             boardDirName: options.boardDirName,
-            freshSession: isWikiRunner(runner)
+            freshSession: true
           });
           result = { ok: !!spawnRes?.ok, stderr: spawnRes?.error || "", stdout: spawnRes?.stdout || "" };
         } else if (action === "stop") {
@@ -3929,8 +4006,13 @@ function RunnerConsole({
             const canStop = status === "running" || Boolean(runner.pid);
             const canEditConfig = status !== "running";
             const draft = drafts[runner.id] || runnerDraftFromRunner(runner);
-            const runnerEventRaw = runner.activeItem || runner.lastResult || "이벤트 없음";
-            const runnerEvent = isMachineRunnerLog(runnerEventRaw) ? "이벤트 없음" : runnerEventRaw;
+            const runnerEventRaw = runner.activeItem || runner.lastResult || "";
+            const runnerEventValue = runner.activeItem
+              ? displayActiveTicketBadge(runner.activeItem)
+              : runner.lastResult
+                ? displayStatus(runner.lastResult)
+                : "이벤트 없음";
+            const runnerEvent = isMachineRunnerLog(runnerEventRaw) ? "이벤트 없음" : runnerEventValue;
             const selected = selectedRunnerId === runner.id;
             return (
               <article
@@ -4742,9 +4824,10 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
     codeDeletionsCount,
     codeVolumeCount,
     tokenUsageCount,
-    tokenReportCount
+    tokenReportCount,
+    tokenCacheReadCount
   } = getWorkflowMetricCounts(board);
-  const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0;
+  const hasTokenData = tokenUsageCount > 0 || tokenReportCount > 0 || tokenCacheReadCount > 0;
 
   return (
     <div className="workflow-stat-strip" aria-label="작업 흐름 지표 요약">
@@ -4760,7 +4843,7 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
         <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
           <Badge variant="secondary">토큰 사용량</Badge>
           <strong>{formatCount(tokenUsageCount)}</strong>
-          <span>실행 로그 {formatCount(tokenReportCount)}개</span>
+          <span>LLM 요청 {formatCount(tokenReportCount)}개 · cache read {formatCount(tokenCacheReadCount)}</span>
         </div>
       </div>
     </div>
@@ -4866,7 +4949,7 @@ function ReportHero({
         <ReportHeroStat
           label="24h 토큰"
           value={`${formatCompactCount(tokenUsage24hCount)}토큰`}
-          detail="최근 실행 로그 기준"
+          detail="최근 토큰 기록 기준"
           icon={Terminal}
           tone="violet"
         />
@@ -4924,6 +5007,7 @@ function ReportingDashboard({
     codeVolumeCount,
     tokenUsageCount,
     tokenReportCount,
+    tokenCacheReadCount,
     codeInsertionsCount,
     codeDeletionsCount,
     codeNetDeltaCount,
@@ -5005,6 +5089,8 @@ function ReportingDashboard({
     codeTrendPoints.length > 0;
   const hasTokenData =
     tokenUsageCount > 0 ||
+    tokenCacheReadCount > 0 ||
+    tokenReportCount > 0 ||
     tokenUsage1hCount > 0 ||
     tokenUsage24hCount > 0 ||
     runnerBreakdown.length > 0 ||
@@ -5106,10 +5192,10 @@ function ReportingDashboard({
         <ReportMetricCard
           label="토큰 사용량"
           value={`${formatCompactCount(tokenUsageCount)}토큰`}
-          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 실행 로그 · 전체 누적` : "러너 실행 후 채워집니다"}
+          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
           icon={Terminal}
           tone="report-tone-violet"
-          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, 실행 로그 ${formatCount(tokenReportCount)}개, 전체 누적`}
+          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}개, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
         >
           {hasTokenData ? (
             <>
@@ -5117,6 +5203,10 @@ function ReportingDashboard({
                 <div className="report-inline-stat">
                   <span>누적</span>
                   <strong>{formatCount(tokenUsageCount)}</strong>
+                </div>
+                <div className="report-inline-stat">
+                  <span>cache read</span>
+                  <strong>{formatCount(tokenCacheReadCount)}</strong>
                 </div>
                 <div className="report-inline-stat">
                   <span>최근 1h</span>
@@ -5161,7 +5251,7 @@ function ReportingDashboard({
               <MetricTrend points={tokenTrendPoints} yLabel="최근 7일 토큰 사용량 추세" />
             </>
           ) : (
-            <div className="report-fallback">러너 실행 로그가 없어 분해 데이터가 없습니다</div>
+            <div className="report-fallback">러너 토큰 기록이 없어 분해 데이터가 없습니다</div>
           )}
         </ReportMetricCard>
         <ReportMetricCard
@@ -8472,6 +8562,140 @@ function runnerProgressDetail(runner: AutoflowRunner) {
   return runnerIsEnabled(runner.enabled) ? "대기 중 — 처리할 백로그/티켓 없음" : "중지됨";
 }
 
+type RunnerStatusTone = "idle" | "running" | "stopped" | "blocked" | "done" | "error" | "auth" | "pending";
+
+function stageStatusLabel(stageKey: string, stageLabel: string | undefined, role: string) {
+  const normalizedRole = role.toLowerCase();
+  if (stageKey === "idle") return "대기 중";
+  if (stageKey === "planning") return "계획 중";
+  if (stageKey === "generating-todo") return "티켓 생성 중";
+  if (stageKey === "inprogress") return normalizedRole === "verifier" ? "검증 중" : "구현 중";
+  if (stageKey === "merging") return "머지 중";
+  if (stageKey === "syncing") return "위키 작성 중";
+  if (!stageLabel) return "실행 중";
+  return stageLabel.endsWith("중") ? stageLabel : `${stageLabel} 중`;
+}
+
+function compactStatusParts(parts: Array<string | false | null | undefined>) {
+  return parts
+    .map((part) => (part || "").trim())
+    .filter(Boolean)
+    .filter((part, index, all) => all.indexOf(part) === index);
+}
+
+function runnerStatusSummaryTitle(runner: AutoflowRunner, label: string, detail: string, currentKey: string) {
+  return compactStatusParts([
+    detail ? `${label} · ${detail}` : label,
+    runner.stateStatus ? `state_status=${runner.stateStatus}` : "",
+    currentKey ? `stage=${currentKey}` : "",
+    runner.activeStage ? `active_stage=${runner.activeStage}` : "",
+    runner.activeTicketId ? `active_ticket_id=${runner.activeTicketId}` : "",
+    runner.lastResult ? `last_result=${runner.lastResult}` : ""
+  ]).join("\n");
+}
+
+function stoppedStatusLabel(detailText: string) {
+  if (detailText === "오류로 종료됨") return "오류로 중지됨";
+  if (detailText === "강제 종료됨") return "강제 종료됨";
+  if (detailText === "종료됨" || detailText === "정상 종료") return detailText;
+  return "중지됨";
+}
+
+function shouldFoldStoppedDetail(detailText: string) {
+  return (
+    detailText === "오류로 종료됨" ||
+    detailText === "강제 종료됨" ||
+    detailText === "종료됨" ||
+    detailText === "정상 종료" ||
+    detailText === "중지됨"
+  );
+}
+
+function runnerStatusSummary({
+  runner,
+  status,
+  statusLower,
+  currentKey,
+  stageLabel,
+  role,
+  isBlocked,
+  cycleResult,
+  activeTicketLabel,
+  detailText,
+  transitionLabel,
+  isApplyingConfig,
+  showAuthPrompt
+}: {
+  runner: AutoflowRunner;
+  status: string;
+  statusLower: string;
+  currentKey: string;
+  stageLabel?: string;
+  role: string;
+  isBlocked: boolean;
+  cycleResult: "done" | "blocked" | "reject" | "";
+  activeTicketLabel: string;
+  detailText: string;
+  transitionLabel: string;
+  isApplyingConfig: boolean;
+  showAuthPrompt: boolean;
+}) {
+  let label = displayStatus(status);
+  let tone: RunnerStatusTone = "idle";
+  let detailParts: string[] = [];
+
+  if (showAuthPrompt) {
+    label = "인증 필요";
+    tone = "auth";
+    detailParts = compactStatusParts([runnerLoginMessage(runner)]);
+  } else if (transitionLabel) {
+    label = transitionLabel;
+    tone = "pending";
+    detailParts = compactStatusParts([activeTicketLabel]);
+  } else if (isApplyingConfig) {
+    label = "설정 적용 중";
+    tone = "pending";
+    detailParts = compactStatusParts([activeTicketLabel]);
+  } else if (isBlocked || cycleResult === "blocked") {
+    label = "막힘";
+    tone = "blocked";
+    detailParts = compactStatusParts([activeTicketLabel, detailText || "확인 필요"]);
+  } else if (cycleResult === "reject") {
+    label = "반려";
+    tone = "error";
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
+  } else if (cycleResult === "done") {
+    label = "완료";
+    tone = "done";
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
+  } else if (statusLower === "running") {
+    label = stageStatusLabel(currentKey, stageLabel, role);
+    tone = "running";
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
+  } else if (statusLower === "stopped" || statusLower === "user_stopped") {
+    label = stoppedStatusLabel(detailText);
+    tone = "stopped";
+    detailParts = compactStatusParts([shouldFoldStoppedDetail(detailText) ? "" : detailText]);
+  } else if (statusLower === "idle") {
+    label = "대기 중";
+    tone = "idle";
+    detailParts = compactStatusParts([detailText.replace(/^대기 중\s*[—-]\s*/, "")]);
+  } else if (statusLower === "failed" || statusLower === "error") {
+    tone = "error";
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
+  } else {
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
+  }
+
+  const detail = detailParts.join(" · ");
+  return {
+    label,
+    detail,
+    tone,
+    title: runnerStatusSummaryTitle(runner, label, detail, currentKey)
+  };
+}
+
 function timestampFromRunnerLog(value: string) {
   return value.match(/\btimestamp=([^\s]+)/)?.[1] || "";
 }
@@ -8645,15 +8869,61 @@ function displayActiveTicketBadge(value: string) {
   return workflowFileDisplayName(value.endsWith(".md") ? value : `${value}.md`);
 }
 
-function activeTicketSummary(runner: AutoflowRunner) {
-  if (!runner.activeTicketId) {
-    return "";
+function canonicalActiveItemLabel(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return workflowFileDisplayName(trimmed.endsWith(".md") ? trimmed : `${trimmed}.md`).toLowerCase();
+}
+
+function repeatsActiveTicketBadge(value: string, activeTicketId: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  const normalizedTicketId = activeTicketId.trim().toLowerCase();
+  if (!normalizedValue || !normalizedTicketId) return false;
+  return (
+    normalizedValue === normalizedTicketId ||
+    normalizedValue === displayActiveTicketBadge(activeTicketId).toLowerCase() ||
+    canonicalActiveItemLabel(normalizedValue) === canonicalActiveItemLabel(normalizedTicketId)
+  );
+}
+
+function activeItemFileAliases(value: string) {
+  const stem = value.replace(/\.md$/i, "");
+  const aliases = new Set<string>([`${stem}.md`]);
+  const numericMatch = stem.match(/(\d+)/);
+  if (numericMatch) {
+    const id = numericMatch[1];
+    aliases.add(`Todo-${id}.md`);
+    aliases.add(`tickets_${id}.md`);
+  }
+  return [...aliases];
+}
+
+function activeItemPreviewPaths(runner: AutoflowRunner) {
+  const activeId = (runner.activeTicketId || "").trim().replace(/\.md$/i, "");
+  if (!activeId) return [];
+
+  const normalized = activeId.toLowerCase();
+  const paths = new Set<string>();
+  const addFiles = (folders: string[], files: string[]) => {
+    for (const folder of folders) {
+      for (const file of files) {
+        paths.add(`tickets/${folder}/${file}`);
+      }
+    }
+  };
+
+  if (runner.activeSpecRef) {
+    paths.add(runner.activeSpecRef);
+  }
+  if (normalized.startsWith("order_")) {
+    addFiles(["order", "inbox"], [`${activeId}.md`]);
+  }
+  if (normalized.startsWith("prd_") || normalized.startsWith("project_")) {
+    addFiles(["prd", "backlog"], [`${activeId}.md`]);
   }
 
-  const title = runner.activeTicketTitle || runner.activeItem || "제목 없음";
-  const projectKey = projectKeyFromSpecRef(runner.activeSpecRef);
-  const ticketLabel = displayActiveTicketBadge(runner.activeTicketId);
-  return projectKey ? `${ticketLabel} — ${title} (${projectKey})` : `${ticketLabel} — ${title}`;
+  addFiles(["inprogress", "todo"], activeItemFileAliases(activeId));
+  return [...paths];
 }
 
 function activeTicketPath(runner: AutoflowRunner) {
@@ -8707,8 +8977,11 @@ function AiProgressRow({
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
-  const ticketSummary = activeTicketSummary(runner);
-  const detailText = ticketSummary && detail === runner.activeTicketTitle ? "" : displayDetail;
+  const activeTicketLabel = runner.activeTicketId ? displayActiveTicketBadge(runner.activeTicketId) : "";
+  const activeTicketTitle = runner.activeTicketTitle && !repeatsActiveTicketBadge(runner.activeTicketTitle, runner.activeTicketId)
+    ? runner.activeTicketTitle
+    : "";
+  const detailText = displayDetail && !repeatsActiveTicketBadge(displayDetail, runner.activeTicketId) ? displayDetail : "";
   const agentLabel = displayProgressRunnerLabel(runner);
   const agentTitle = displayProgressRoleLabel(runner, options?.allRunners);
   const isRunnerActive =
@@ -8736,6 +9009,21 @@ function AiProgressRow({
   const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
   const canContinueAuth = runnerCanContinueAuth(runner);
+  const statusSummary = runnerStatusSummary({
+    runner,
+    status,
+    statusLower,
+    currentKey,
+    stageLabel: stage?.label,
+    role,
+    isBlocked,
+    cycleResult,
+    activeTicketLabel,
+    detailText,
+    transitionLabel,
+    isApplyingConfig,
+    showAuthPrompt
+  });
   const showAgentConfig =
     runner.role === "wiki-maintainer" ||
     runner.role === "wiki" ||
@@ -8762,22 +9050,9 @@ function AiProgressRow({
     }
     const boardDir = options.boardDirName || ".autoflow";
     const projectRoot = options.projectRoot.replace(/[\\/]+$/, "");
-    const ticketId = runner.activeTicketId;
-    const numericMatch = ticketId.match(/(\d+)/);
-    const ticketFiles = new Set<string>();
-    ticketFiles.add(`${ticketId}.md`);
-    if (numericMatch) {
-      const n = numericMatch[1];
-      ticketFiles.add(`Todo-${n}.md`);
-      ticketFiles.add(`tickets_${n}.md`);
-    }
-    const folders = ["inprogress", "todo"];
-    const candidatePaths: string[] = [];
-    for (const folder of folders) {
-      for (const file of ticketFiles) {
-        candidatePaths.push(`${projectRoot}/${boardDir}/tickets/${folder}/${file}`);
-      }
-    }
+    const candidatePaths = activeItemPreviewPaths(runner).map((filePath) =>
+      filePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(filePath) ? filePath : `${projectRoot}/${boardDir}/${filePath}`
+    );
     setTicketLoading(true);
     try {
       let lastError = "";
@@ -8894,61 +9169,26 @@ function AiProgressRow({
           is the single source of truth for "what is this runner doing". */}
 
       <div className="ai-progress-current">
-        <Badge
-          variant={isBlocked ? "destructive" : "secondary"}
-          className="ai-progress-status-badge"
-        >
-          {isBlocked ? "막힘" : displayStatus(status)}
-        </Badge>
-        {stage?.label ? (
-          <Badge
-            variant="outline"
-            className="ai-progress-stage-badge"
-            aria-label={`현재 단계: ${stage.label}`}
-          >
-            {stage.label}
-          </Badge>
-        ) : null}
         {runner.activeTicketId ? (
           <Button
             variant="ghost"
             type="button"
-            className="ai-progress-active-ticket-button"
+            className="ai-progress-status-summary-button"
             onClick={openTicketDialog}
-            title={`${displayActiveTicketBadge(runner.activeTicketId)} 티켓 보기`}
+            title={statusSummary.title}
+            aria-label={`${statusSummary.label}${statusSummary.detail ? `, ${statusSummary.detail}` : ""} 미리 보기`}
           >
-            <Badge variant="outline" className="ai-progress-active-ticket">
-              {displayActiveTicketBadge(runner.activeTicketId)}
-            </Badge>
+            <span className="ai-progress-status-summary" data-tone={statusSummary.tone}>
+              <span className="ai-progress-status-main">{statusSummary.label}</span>
+              {statusSummary.detail ? <span className="ai-progress-status-detail">{statusSummary.detail}</span> : null}
+            </span>
           </Button>
-        ) : null}
-        {isApplyingConfig ? (
-          <Badge variant="outline" className="ai-progress-config-pending-badge">
-            적용 대기
-          </Badge>
-        ) : null}
-        {transitionLabel ? (
-          <Badge variant="outline" className="runner-transition-inline" role="status" aria-live="polite">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            <span>{transitionLabel}</span>
-          </Badge>
-        ) : null}
-        {/* Hide detailText when it just echoes the active ticket id — the
-            ticket badge next to the status badge is already showing it. */}
-        {detailText && detailText !== displayActiveTicketBadge(runner.activeTicketId) ? (
-          <p title={detailText}>{detailText}</p>
-        ) : null}
-        {cycleResult ? (
-          <Badge
-            key={cycleResult}
-            variant={cycleResult === "done" ? "secondary" : "destructive"}
-            className={`runner-cycle-result-badge runner-cycle-result-${cycleResult}`}
-            role="status"
-            aria-live="polite"
-          >
-            {cycleResult === "done" ? "완료" : cycleResult === "blocked" ? "막힘" : "반려"}
-          </Badge>
-        ) : null}
+        ) : (
+          <span className="ai-progress-status-summary" data-tone={statusSummary.tone} title={statusSummary.title}>
+            <span className="ai-progress-status-main">{statusSummary.label}</span>
+            {statusSummary.detail ? <span className="ai-progress-status-detail">{statusSummary.detail}</span> : null}
+          </span>
+        )}
       </div>
       {canConfigure ? (
         <RunnerConfigControls
@@ -9019,9 +9259,9 @@ function AiProgressRow({
                 <strong>
                   {runner.activeTicketId
                     ? workflowFileDisplayName(`${runner.activeTicketId}.md`)
-                    : "티켓"}
-                  {runner.activeTicketTitle ? (
-                    <span className="ai-ticket-dialog-subtitle"> · {runner.activeTicketTitle}</span>
+                    : "항목"}
+                  {activeTicketTitle ? (
+                    <span className="ai-ticket-dialog-subtitle"> · {activeTicketTitle}</span>
                   ) : null}
                 </strong>
               </DialogTitle>

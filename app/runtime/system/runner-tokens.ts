@@ -376,6 +376,141 @@ function scopedCodexSessionTokenEntries(
   return entries.sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
 }
 
+function projectRootForGeminiLogs(): string {
+  const explicit = process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || "";
+  if (explicit && path.isAbsolute(explicit)) return path.resolve(explicit);
+  if (path.basename(BOARD_ROOT) === ".autoflow") return path.dirname(BOARD_ROOT);
+  return path.dirname(BOARD_ROOT);
+}
+
+function geminiChatRoots(projectRoot: string): string[] {
+  const home = process.env.HOME || "";
+  if (!home) return [];
+  const tmpRoot = path.join(home, ".gemini", "tmp");
+  const roots: string[] = [];
+  const projectName = path.basename(projectRoot);
+  const preferred = path.join(tmpRoot, projectName, "chats");
+  if (fs.existsSync(preferred)) roots.push(preferred);
+
+  try {
+    for (const entry of fs.readdirSync(tmpRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const chats = path.join(tmpRoot, entry.name, "chats");
+      if (chats !== preferred && fs.existsSync(chats)) roots.push(chats);
+    }
+  } catch {}
+
+  return roots;
+}
+
+function textContentIncludes(value: unknown, needles: string[]): boolean {
+  let text = "";
+  if (Array.isArray(value)) {
+    text = value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && typeof (item as any).text === "string") return (item as any).text;
+        return "";
+      })
+      .join("\n");
+  } else if (typeof value === "string") {
+    text = value;
+  }
+  if (!text) return false;
+  return needles.every((needle) => text.includes(needle));
+}
+
+function scopedGeminiSessionTokenEntries(
+  runner: string,
+  knownTicks: Set<string>,
+  afterMs: number,
+): TokenEntry[] {
+  const projectRoot = projectRootForGeminiLogs();
+  const roots = geminiChatRoots(projectRoot);
+  if (roots.length === 0) return [];
+
+  const entries: TokenEntry[] = [];
+  const seenTicks = new Set<string>();
+  const sessionNeedles = [`Project root: ${projectRoot}`, `Runner id:    ${runner}`];
+  for (const root of roots) {
+    for (const filePath of sessionLogFiles(root)) {
+      let raw = "";
+      try {
+        raw = fs.readFileSync(filePath, "utf8");
+      } catch {
+        continue;
+      }
+
+      const lines = raw.split(/\r?\n/);
+      let belongsToRunner = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let parsed: any;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        if (parsed?.type === "user" && textContentIncludes(parsed?.content, sessionNeedles)) {
+          belongsToRunner = true;
+          break;
+        }
+      }
+      if (!belongsToRunner) continue;
+
+      const rel = path.relative(root, filePath);
+      const seenGeminiMessages = new Set<string>();
+      let lineIndex = 0;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        lineIndex += 1;
+        let parsed: any;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+        if (parsed?.type !== "gemini" || !parsed?.tokens || typeof parsed.tokens !== "object") continue;
+        const at = String(parsed?.timestamp || "");
+        const atMs = Date.parse(at);
+        if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
+        const tokens = parsed.tokens;
+        const inputTotal = parseInt0(tokens.input ?? tokens.input_tokens);
+        const cacheRead = parseInt0(tokens.cached ?? tokens.cached_tokens ?? tokens.cache_read_input_tokens);
+        const outputVisible =
+          parseInt0(tokens.output ?? tokens.output_tokens) +
+          parseInt0(tokens.thoughts ?? tokens.thought_tokens) +
+          parseInt0(tokens.tool ?? tokens.tool_tokens);
+        const turnTotal = parseInt0(tokens.total ?? tokens.total_tokens) || inputTotal + outputVisible;
+        if (turnTotal <= 0) continue;
+
+        const messageKey = `${parsed?.id || lineIndex}:total:${turnTotal}:cache:${cacheRead}`;
+        if (seenGeminiMessages.has(messageKey)) continue;
+        seenGeminiMessages.add(messageKey);
+
+        const tickId = `gemini-session:${rel}:${messageKey}`;
+        if (knownTicks.has(tickId) || seenTicks.has(tickId)) continue;
+        seenTicks.add(tickId);
+
+        entries.push({
+          tickId,
+          input: Math.max(0, inputTotal - cacheRead),
+          output: Math.max(0, turnTotal - inputTotal),
+          cacheRead,
+          cacheCreate: 0,
+          turnTotal,
+          at,
+          atMs,
+        });
+      }
+    }
+  }
+
+  return entries.sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
+}
+
 function report(runner: string | undefined, opts: ReportOpts): never {
   if (!runner) { warn("report requires --runner"); process.exit(0); }
   const inputT = parseInt0(opts.input);
@@ -477,7 +612,10 @@ function syncCodexSessions(runner: string | undefined): never {
 
     const trustedLog = trustedLogCumulative(runner);
     const afterMs = trustedLog.last?.atMs || 0;
-    const entries = scopedCodexSessionTokenEntries(runner, map, trustedLog.ticks, afterMs);
+    const entries = [
+      ...scopedCodexSessionTokenEntries(runner, map, trustedLog.ticks, afterMs),
+      ...scopedGeminiSessionTokenEntries(runner, trustedLog.ticks, afterMs),
+    ].sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
     let cumulative = trustedLog.hasLog
       ? trustedLog.total
       : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")) : 0);
@@ -506,7 +644,9 @@ function syncCodexSessions(runner: string | undefined): never {
         turnTotal: entry.turnTotal,
         cumulative,
         cumulativeVisible,
-        note: "codex_session_log:scoped_runner_home",
+        note: entry.tickId.startsWith("gemini-session:")
+          ? "gemini_session_log:project_chat"
+          : "codex_session_log:scoped_runner_home",
         at: entry.at,
       }) + "\n";
     }

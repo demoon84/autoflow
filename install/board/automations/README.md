@@ -55,8 +55,8 @@ Order skill handoff (`/order`, `$order`, `#order`) and
 - Save only a quick order under `tickets/order/order_*.md`.
 - Preserve the original request and optional hints.
 - Do not create PRDs, tickets, code, verification records, commits, or pushes.
-- The planner runner promotes clear orders into generated PRDs and todo
-  tickets.
+- The planner runner decides whether clear orders need generated PRDs first or
+  can become narrow direct TODO tickets.
 
 ## Optional Stop Hook
 

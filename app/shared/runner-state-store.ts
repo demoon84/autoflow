@@ -41,6 +41,11 @@ function isAuthoritativeTokenSource(value: unknown): boolean {
     return String(value || "").trim() === "llm_reported";
 }
 
+function stateTimestampMs(value: unknown): number {
+    const ms = Date.parse(String(value || ""));
+    return Number.isFinite(ms) ? ms : 0;
+}
+
 function copyFreshAccountingFields(
     target: RunnerStateFields,
     latest: RunnerStateFields,
@@ -66,9 +71,15 @@ function preserveFreshAccountingFields(file: string, target: RunnerStateFields):
 
     const latestCodeVolume = positiveStateInt(latest.cumulative_code_volume);
     const targetCodeVolume = positiveStateInt(target.cumulative_code_volume);
+    const latestCodeAt = stateTimestampMs(latest.last_code_reported_at);
+    const targetCodeAt = stateTimestampMs(target.last_code_reported_at);
     if (
         (latest.code_source || "none") !== "none" &&
-        (latestCodeVolume > targetCodeVolume || (target.code_source || "none") === "none")
+        (
+            (target.code_source || "none") === "none" ||
+            latestCodeAt > targetCodeAt ||
+            (latestCodeAt === targetCodeAt && latestCodeVolume > targetCodeVolume)
+        )
     ) {
         copyFreshAccountingFields(target, latest, codeAccountingKeys);
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// promote-order-to-ticket.ts — Allowed Paths 자동 추론 + Express 자동 승격.
+// promote-order-to-ticket.ts — Allowed Paths / Done When hint inference.
 //
 // Usage:
 //   node promote-order-to-ticket.ts <order-file> [--board-root <path>] [--project-root <path>]
@@ -8,13 +8,13 @@
 //   1. Extract keyword candidates from the order body (filenames, module names, function-ish tokens).
 //   2. Query `autoflow wiki query --rag <keywords>` to collect related file paths from wiki.
 //   3. Confirm existence via `git grep -l <keyword>` in the project root.
-//   4. If candidates ≤ 3 with sufficient specificity → Express auto-promote:
-//        - Write Express: true + inferred Allowed Paths + Done When checklist into the order file.
+//   4. If candidates ≤ 3 with sufficient specificity:
+//        - Write inferred Allowed Paths + Done When checklist into the order file.
 //        - Append confidence marker to ## Notes.
-//   5. If candidates > 3 or too broad → exit 2 (planner falls back to PRD flow).
+//   5. If candidates > 3 or too broad → exit 2 (planner decides PRD vs direct TODO).
 //
 // Exit codes:
-//   0  — Express-promoted (order file updated)
+//   0  — Scope hints written (planner still decides PRD vs direct TODO)
 //   1  — Error (file not found, etc.)
 //   2  — Fallback to PRD flow (ambiguous / too many candidates)
 //
@@ -142,11 +142,6 @@ function readOrderSections(content: string): Record<string, string> {
 function injectIntoOrder(filePath: string, allowedPaths: string[], doneWhen: string[]): void {
   let content = fs.readFileSync(filePath, "utf8");
 
-  // Inject Express: true after "## Order" header if present, else after first header
-  if (!content.includes("Express: true")) {
-    content = content.replace(/(^## Order\b.*$)/m, "$1\n- Express: true");
-  }
-
   // Replace or append Allowed Paths section
   const apSection = `## Allowed Paths\n\n${allowedPaths.map((p) => `- \`${p}\``).join("\n")}`;
   if (/^## Allowed Paths$/m.test(content)) {
@@ -164,7 +159,7 @@ function injectIntoOrder(filePath: string, allowedPaths: string[], doneWhen: str
   }
 
   // Append Notes confidence marker
-  const marker = "Express auto-promoted (confidence: high)";
+  const marker = "Planner scope hints inferred (confidence: high; PRD decision remains planner-owned)";
   if (!content.includes(marker)) {
     if (/^## Notes$/m.test(content)) {
       content = content.replace(/^## Notes$/m, `## Notes\n\n- ${marker}`);
@@ -234,7 +229,7 @@ async function main(): Promise<void> {
   injectIntoOrder(orderFile, sorted, doneWhen);
 
   process.stdout.write(
-    `promote_status=promoted allowed_paths=${sorted.join(",")} confidence=high keywords=${keywords.slice(0, 5).join(",")}\n`
+    `promote_status=hints_written allowed_paths=${sorted.join(",")} confidence=high prd_decision=planner_owned keywords=${keywords.slice(0, 5).join(",")}\n`
   );
 }
 

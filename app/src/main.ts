@@ -978,6 +978,63 @@ function listQueueFilesSync(boardRoot, relDir, pattern, limit = 100) {
   }
 }
 
+function markdownScalarInSectionSync(filePath, section, field) {
+  let text = "";
+  try {
+    text = fsSync.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+  let inSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      inSection = heading[1].trim().toLowerCase() === String(section || "").toLowerCase();
+      continue;
+    }
+    if (!inSection) continue;
+    const match = line.match(/^-\s*([^:]+):\s*(.*?)\s*$/);
+    if (match && match[1].trim().toLowerCase() === String(field || "").toLowerCase()) {
+      return match[2].trim();
+    }
+  }
+  return "";
+}
+
+function plannerQueueFileIsActionableSync(filePath) {
+  const status = (
+    markdownScalarInSectionSync(filePath, "Order", "Status") ||
+    markdownScalarInSectionSync(filePath, "Project", "Status")
+  ).toLowerCase();
+  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+}
+
+function workerInprogressFileIsActionableSync(filePath) {
+  let text = "";
+  try {
+    text = fsSync.readFileSync(filePath, "utf8");
+  } catch {
+    return false;
+  }
+  const stage = (
+    markdownScalarInSectionSync(filePath, "Ticket", "Stage") ||
+    markdownScalarInSectionSync(filePath, "Worktree", "Integration Status") ||
+    markdownScalarInSectionSync(filePath, "Goal Runtime", "Status")
+  ).toLowerCase();
+  if (/verified[_ -]?pending[_ -]?merge/.test(stage) || /^-\s*Semantic Decision:\s*pass\s*$/mi.test(text)) {
+    return true;
+  }
+  if (
+    /verify[_ -]?pending/.test(stage) ||
+    /verifier[_ -]?pending/.test(stage) ||
+    /submitted[_ -]?to[_ -]?verifier/.test(stage) ||
+    /awaiting[_ -]?verifier/.test(stage)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function plannerRecoveryFilesSync(boardRoot) {
   const candidates = [
     ...listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/),
@@ -1063,8 +1120,8 @@ function queueHasPendingWork(role, boardRoot) {
     migrateLegacyTicketQueuesSync(boardRoot);
     if (role === "planner") {
       return (
-        listQueueFilesSync(boardRoot, "tickets/order", /^order_.*\.md$/).length > 0 ||
-        listQueueFilesSync(boardRoot, "tickets/prd", /^(prd|project)_\d+\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/order", /^order_.*\.md$/).some(plannerQueueFileIsActionableSync) ||
+        listQueueFilesSync(boardRoot, "tickets/prd", /^(prd|project)_\d+\.md$/).some(plannerQueueFileIsActionableSync) ||
         listQueueFilesSync(boardRoot, "tickets/inbox", /^order_.*\.md$/).length > 0 ||
         listQueueFilesSync(boardRoot, "tickets/backlog", /^(prd|project)_.*\.md$/).length > 0 ||
         plannerRecoveryFilesSync(boardRoot).length > 0
@@ -1072,7 +1129,7 @@ function queueHasPendingWork(role, boardRoot) {
     }
     if (role === "worker") {
       return (
-        listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0 ||
+        listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+)\.md$/).some(workerInprogressFileIsActionableSync) ||
         listQueueFilesSync(boardRoot, "tickets/ready-to-merge", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0 ||
         listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0
       );
@@ -1263,6 +1320,34 @@ function scheduleContextReset(runnerId, meta) {
   }, 3000);
 }
 
+function scheduleRunnerSessionRotation(runnerId, meta, trigger) {
+  const enabled = (process.env.AUTOFLOW_ROTATE_RUNNER_SESSION_AFTER_TURN ?? "1") !== "0";
+  if (!enabled) return;
+  const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
+  const delayMs = Number.parseInt(process.env.AUTOFLOW_ROTATE_RUNNER_SESSION_DELAY_MS || "5000", 10);
+  setTimeout(() => {
+    const mgr = globalThis.__autoflowPtyManager;
+    if (!mgr) return;
+    const runner = mgr.get(runnerId);
+    if (!runner || runner.status !== "running") return;
+    appendRunnerLog(boardRoot, runnerId, {
+      event: "runner_session_rotation",
+      runner_id: runnerId,
+      trigger: String(trigger || "focused_turn_complete")
+    });
+    mgr.stop(runnerId, { force: false });
+    setTimeout(() => {
+      if (!runnerHasActionableAutoSpawnWork(boardRoot, runnerId, meta.role)) return;
+      scheduleRunnerAutoSpawnForWake({
+        runnerId,
+        scope: { projectRoot: meta.projectRoot, boardDirName: meta.boardDirName },
+        boardRoot,
+        reason: `session_rotation:${String(trigger || "focused_turn_complete")}`
+      });
+    }, 500);
+  }, Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 5000);
+}
+
 // Record that a wake was just sent to a runner (resets idle clock).
 function updateWakeActivity(runnerId) {
   const s = wakePollState.get(runnerId) || {};
@@ -1329,6 +1414,46 @@ function runnerWakeQueueHasPending(boardRoot, runnerId) {
   } catch {
     return false;
   }
+}
+
+function advanceRunnerWakePointerToLatest(boardRoot, runnerId) {
+  if (!boardRoot || !runnerId) return false;
+  const queuePath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.queue.jsonl`);
+  const pointerPath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.pointer`);
+  let latest = "";
+  try {
+    const raw = fsSync.readFileSync(queuePath, "utf8");
+    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
+      try {
+        const event = JSON.parse(line);
+        const at = String(event?.at || "");
+        if (at && (!latest || at > latest)) latest = at;
+      } catch {}
+    }
+  } catch {
+    return false;
+  }
+  if (!latest) return false;
+  try {
+    fsSync.writeFileSync(pointerPath, `${latest}\n`, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function runnerHasActionableAutoSpawnWork(boardRoot, runnerId, role) {
+  const hasWork = queueHasPendingWork(role, boardRoot);
+  if (hasWork) return true;
+  if (runnerWakeQueueHasPending(boardRoot, runnerId)) {
+    advanceRunnerWakePointerToLatest(boardRoot, runnerId);
+    appendRunnerLog(boardRoot, runnerId, {
+      event: "wake_queue_stale_ack",
+      runner_id: runnerId,
+      reason: "no_actionable_role_queue_work"
+    });
+  }
+  return false;
 }
 
 function emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind = "fs.watch") {
@@ -1580,7 +1705,7 @@ function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) 
   if (config.id !== runnerId) return;
   if (!runnerConfigBoolean(config.enabled, true) || !runnerConfigBoolean(config.realtime_enabled, true)) return;
   const normalizedRole = normalizeRunnerRole(config.role || inferRunnerRoleFromId(runnerId));
-  if (!runnerWakeQueueHasPending(boardRoot, runnerId) && !queueHasPendingWork(normalizedRole, boardRoot)) return;
+  if (!runnerHasActionableAutoSpawnWork(boardRoot, runnerId, normalizedRole)) return;
   const mgr = globalThis.__autoflowPtyManager;
   const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
   if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot, boardDirName })) return;
@@ -1600,7 +1725,7 @@ function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) 
         role: normalizedRole,
         projectRoot,
         boardDirName,
-        freshSession: normalizedRole === "wiki-maintainer"
+        freshSession: true
       }, "wake");
       appendRunnerLog(boardRoot, runnerId, {
         event: "wake_auto_spawn_result",
@@ -1639,7 +1764,7 @@ function buildAgentCliCommand(agent, model, reasoning, options = {}) {
       break;
     }
     case "gemini": {
-      parts.push("gemini", "--skip-trust", "--approval-mode", "yolo");
+      parts.push("gemini", "--skip-trust", "--approval-mode", "yolo", "--output-format", "stream-json");
       if (model) parts.push("--model", model);
       const boardDirName = options.boardDirName || defaultBoardDirName;
       if (boardDirName) parts.push("--include-directories", boardDirName);
@@ -1648,9 +1773,9 @@ function buildAgentCliCommand(agent, model, reasoning, options = {}) {
     default:
       return "";
   }
-  // Quote args containing spaces / quotes to keep the typed shell command sane.
+  // Quote args containing shell metacharacters so model IDs like opus[1m] work in zsh.
   return parts
-    .map((p) => (/[ \t"'$`\\]/.test(p) ? `'${p.replace(/'/g, "'\\''")}'` : p))
+    .map((p) => (/^[A-Za-z0-9_./:@%+=,-]+$/.test(p) ? p : `'${p.replace(/'/g, "'\\''")}'`))
     .join(" ");
 }
 
@@ -2204,7 +2329,11 @@ function ensureBoardWatcher(scope) {
         const directWakeReason = wakeReasonByRunner.get(rid);
         const roleWakeReason = wakeReasonByRole.get(meta.role);
         if (directWakeReason) {
-          if (!runnerWakeQueueHasPending(boardRoot, rid) && !queueHasPendingWork(meta.role, boardRoot)) continue;
+          if (!runnerHasActionableAutoSpawnWork(boardRoot, rid, meta.role)) continue;
+          const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
+          const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
+          const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
+          const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
           sendRunnerWake({
             mgr,
             runnerId: rid,
@@ -2213,12 +2342,44 @@ function ensureBoardWatcher(scope) {
             boardRoot,
             reason: roleWakeReason || directWakeReason,
             kind: roleWakeReason ? "fs.watch" : "wake.queue",
+            prompt: isQuiet,
             recordQueue: false
           });
+          if (!isQuiet) {
+            appendRunnerLog(boardRoot, rid, {
+              event: "direct_wake_queued_without_prompt",
+              runner_id: rid,
+              reason: directWakeReason,
+              quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
+            });
+          }
           continue;
         }
         if (!roleWakeReason) continue;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
+        const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
+        const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
+        const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
+        const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
+        if (!isQuiet) {
+          sendRunnerWake({
+            mgr,
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason,
+            kind: "fs.watch",
+            prompt: false
+          });
+          appendRunnerLog(boardRoot, rid, {
+            event: "fs_watch_wake_queued_without_prompt",
+            runner_id: rid,
+            reason: roleWakeReason,
+            quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
+          });
+          continue;
+        }
         sendRunnerWake({
           mgr,
           runnerId: rid,
@@ -2262,8 +2423,36 @@ function ensureBoardWatcher(scope) {
           }
         }
       }
+      // Session rotation after handoff/completion keeps each focused LLM turn
+      // from dragging the previous ticket's cached prompt through the next one.
+      for (const candidateReason of reasons) {
+        if (
+          candidateReason.startsWith("tickets/todo/") &&
+          /Todo-\d+\.md$/.test(candidateReason)
+        ) {
+          for (const [rid, meta] of ptyRunnerMeta.entries()) {
+            if (meta.projectRoot !== scope.projectRoot) continue;
+            if (meta.boardDirName !== boardDirName) continue;
+            if (meta.role !== "planner") continue;
+            scheduleRunnerSessionRotation(rid, meta, "planner_created_todo");
+          }
+        }
+        if (
+          candidateReason.startsWith("tickets/verifier/") &&
+          /Todo-\d+\.md$/.test(candidateReason)
+        ) {
+          for (const [rid, meta] of ptyRunnerMeta.entries()) {
+            if (meta.projectRoot !== scope.projectRoot) continue;
+            if (meta.boardDirName !== boardDirName) continue;
+            if (meta.role !== "worker") continue;
+            scheduleRunnerSessionRotation(rid, meta, "worker_handed_to_verifier");
+          }
+        }
+      }
       // Context reset after ticket pass: when a done/*/Todo-*.md appears,
-      // the worker just finished a pass. Schedule compact/clear inject.
+      // the worker/verifier just finished a pass. Prefer session rotation over
+      // in-place /clear because Codex still reports large cached prefixes in a
+      // long-lived PTY process.
       for (const candidateReason of reasons) {
         if (
           candidateReason.startsWith("tickets/done/") &&
@@ -2272,8 +2461,8 @@ function ensureBoardWatcher(scope) {
           for (const [rid, meta] of ptyRunnerMeta.entries()) {
             if (meta.projectRoot !== scope.projectRoot) continue;
             if (meta.boardDirName !== boardDirName) continue;
-            if (meta.role !== "worker") continue;
-            scheduleContextReset(rid, meta);
+            if (meta.role !== "worker" && meta.role !== "verifier") continue;
+            scheduleRunnerSessionRotation(rid, meta, "ticket_done");
           }
         }
       }
@@ -3212,6 +3401,42 @@ async function readJsonIfExists(filePath) {
   }
 }
 
+function uniqueStringValues(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function stringListValue(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string");
+  }
+
+  return typeof value === "string" ? [value] : [];
+}
+
+function settingsEnvValue(settings, key) {
+  const env = settings && typeof settings.env === "object" ? settings.env : null;
+  return typeof env?.[key] === "string" ? env[key] : "";
+}
+
+function normalizeClaudeModelValue(value) {
+  const trimmed = String(value || "").trim();
+  if (trimmed === "opus-1m") return "opus[1m]";
+  if (trimmed === "sonnet-1m") return "sonnet[1m]";
+  return trimmed;
+}
+
+function isPreferredClaudeModel(value) {
+  const normalized = normalizeClaudeModelValue(value).toLowerCase();
+  return (
+    normalized === "opus" ||
+    normalized === "opus[1m]" ||
+    normalized === "sonnet" ||
+    normalized === "sonnet[1m]" ||
+    normalized.includes("opus") ||
+    normalized.includes("sonnet")
+  );
+}
+
 async function readInstalledAgentProfiles() {
   const home = os.homedir();
   const [codexInstalled, claudeInstalled, geminiInstalled] = await Promise.all([
@@ -3250,23 +3475,50 @@ async function readInstalledAgentProfiles() {
     } catch {}
   }
   const codexProfile = supportedCodexProfile(detectedCodexModel, detectedCodexReasoning);
+  const claudeModel = typeof claudeSettings?.model === "string" ? claudeSettings.model : "";
+  const claudeReasoning =
+    typeof claudeSettings?.effortLevel === "string"
+      ? claudeSettings.effortLevel
+      : typeof claudeSettings?.effort === "string"
+        ? claudeSettings.effort
+        : "";
+  const claudeModels = uniqueStringValues(
+    [
+      claudeModel,
+      ...stringListValue(claudeSettings?.availableModels),
+      process.env.ANTHROPIC_MODEL,
+      process.env.ANTHROPIC_DEFAULT_OPUS_MODEL,
+      process.env.ANTHROPIC_DEFAULT_SONNET_MODEL,
+      process.env.ANTHROPIC_CUSTOM_MODEL_OPTION,
+      settingsEnvValue(claudeSettings, "ANTHROPIC_MODEL"),
+      settingsEnvValue(claudeSettings, "ANTHROPIC_DEFAULT_OPUS_MODEL"),
+      settingsEnvValue(claudeSettings, "ANTHROPIC_DEFAULT_SONNET_MODEL"),
+      settingsEnvValue(claudeSettings, "ANTHROPIC_CUSTOM_MODEL_OPTION")
+    ]
+      .map(normalizeClaudeModelValue)
+      .filter(isPreferredClaudeModel)
+  );
+  const geminiModel = typeof geminiSettings?.model === "string" ? geminiSettings.model : "";
 
   return {
     codex: {
       installed: codexInstalled,
       model: codexProfile.model,
+      models: uniqueStringValues([codexProfile.model]),
       reasoning: codexProfile.reasoning,
       supportsReasoning: true
     },
     claude: {
       installed: claudeInstalled,
-      model: typeof claudeSettings?.model === "string" ? claudeSettings.model : "",
-      reasoning: typeof claudeSettings?.effort === "string" ? claudeSettings.effort : "",
+      model: claudeModel,
+      models: claudeModels,
+      reasoning: claudeReasoning,
       supportsReasoning: true
     },
     gemini: {
       installed: geminiInstalled,
-      model: typeof geminiSettings?.model === "string" ? geminiSettings.model : "",
+      model: geminiModel,
+      models: uniqueStringValues([geminiModel]),
       reasoning: "",
       supportsReasoning: false
     }
@@ -3894,7 +4146,7 @@ function usageValue(source, keys) {
 
 function usageReportFromJsonLine(line) {
   const trimmed = String(line || "").trim();
-  if (!trimmed.startsWith("{") || !trimmed.includes("usage")) return null;
+  if (!trimmed.startsWith("{") || (!trimmed.includes("usage") && !trimmed.includes("stats"))) return null;
   let parsed;
   try {
     parsed = JSON.parse(trimmed);
@@ -3931,6 +4183,19 @@ function usageReportFromJsonLine(line) {
   }
 
   // Gemini stream-json / JSON metadata.
+  if (parsed.type === "result" && parsed.stats && typeof parsed.stats === "object") {
+    const stats = parsed.stats;
+    const inputTotal = usageValue(stats, ["input_tokens", "input"]);
+    const cacheRead = usageValue(stats, ["cached", "cached_tokens", "cache_read_input_tokens"]);
+    return {
+      source: "gemini_result_stats",
+      input: Math.max(0, inputTotal - cacheRead),
+      output: usageValue(stats, ["output_tokens", "output"]),
+      cacheRead,
+      cacheCreate: 0
+    };
+  }
+
   const usage = parsed.usageMetadata || parsed.usage_metadata;
   if (usage && typeof usage === "object") {
     const inputTotal = usageValue(usage, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
@@ -4007,7 +4272,7 @@ function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
 
 function runCodexSessionUsageSyncForRunner(runnerId) {
   const meta = ptyRunnerMeta.get(runnerId);
-  if (!meta || meta.agent !== "codex" || !meta.projectRoot || !meta.boardDirName) return;
+  if (!meta || !["codex", "gemini"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
   if (codexSessionUsageSyncInflight.has(runnerId)) {
     codexSessionUsageSyncPending.add(runnerId);
     return;
@@ -4031,10 +4296,10 @@ function runCodexSessionUsageSyncForRunner(runnerId) {
   }, (error, stdout, stderr) => {
     codexSessionUsageSyncInflight.delete(runnerId);
     if (error) {
-      console.warn(`[runner-tokens] codex session sync failed runner=${runnerId}:`, error.message || error);
+      console.warn(`[runner-tokens] session sync failed runner=${runnerId}:`, error.message || error);
       if (stderr) console.warn(stderr);
     } else if (stdout && /imported_count=([1-9]\d*)/.test(stdout)) {
-      console.log(`[runner-tokens] codex session sync runner=${runnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
+      console.log(`[runner-tokens] session sync runner=${runnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
     }
     if (codexSessionUsageSyncPending.has(runnerId)) {
       codexSessionUsageSyncPending.delete(runnerId);
@@ -4045,9 +4310,9 @@ function runCodexSessionUsageSyncForRunner(runnerId) {
 
 function scheduleCodexSessionUsageSyncForRunner(runnerId, delayMs = 5000) {
   const meta = ptyRunnerMeta.get(runnerId);
-  if (!meta || meta.agent !== "codex" || !meta.projectRoot || !meta.boardDirName) return;
+  if (!meta || !["codex", "gemini"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
   const existing = codexSessionUsageSyncTimers.get(runnerId);
-  if (existing) clearTimeout(existing);
+  if (existing) return;
   const timer = setTimeout(() => {
     codexSessionUsageSyncTimers.delete(runnerId);
     runCodexSessionUsageSyncForRunner(runnerId);

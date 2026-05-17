@@ -463,7 +463,8 @@ button:disabled {
 }
 
 .workflow-pin-layer-close,
-.ai-progress-active-ticket-button {
+.ai-progress-active-ticket-button,
+.ai-progress-status-summary-button {
   min-width: 0;
   min-height: 0;
   height: auto;
@@ -3927,6 +3928,21 @@ pre {
   flex-shrink: 0;
 }
 
+.ai-progress-current .ai-progress-status-badge,
+.ai-progress-current .ai-progress-stage-badge,
+.ai-progress-current .ai-progress-active-ticket,
+.ai-progress-current .ai-progress-config-pending-badge,
+.ai-progress-current .runner-transition-inline,
+.ai-progress-current .runner-cycle-result-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 9px;
+  font-size: var(--font-size-meta);
+  line-height: 1;
+}
+
 .ai-progress-current .ai-progress-config-pending-badge {
   flex-shrink: 0;
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
@@ -3936,18 +3952,17 @@ pre {
 
 .ai-progress-current .ai-progress-active-ticket {
   flex-shrink: 0;
-  padding: 0 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: var(--font-size-meta);
   user-select: none;
 }
 
 .ai-progress-current .ai-progress-active-ticket-button {
   display: inline-flex;
+  align-items: center;
   margin: 0 0 0 auto;
   max-width: 100%;
-  min-height: 0;
-  height: auto;
+  min-height: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -3970,6 +3985,107 @@ pre {
   border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
   background: color-mix(in srgb, var(--primary) 12%, var(--card));
   color: var(--primary);
+  box-shadow:
+    0 0 0 2px var(--card),
+    0 0 0 4px color-mix(in srgb, var(--ring) 72%, transparent);
+}
+
+.ai-progress-current .ai-progress-status-summary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  flex: 0 1 auto;
+  user-select: none;
+}
+
+.ai-progress-current .ai-progress-status-summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--font-size-meta);
+  line-height: 1;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.ai-progress-current .ai-progress-status-main {
+  flex: 0 0 auto;
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.ai-progress-current .ai-progress-status-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: currentColor;
+  font-weight: 500;
+}
+
+.ai-progress-current .ai-progress-status-summary[data-tone="running"] {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  color: color-mix(in srgb, var(--primary) 84%, var(--muted-foreground));
+}
+
+.ai-progress-current .ai-progress-status-summary[data-tone="pending"],
+.ai-progress-current .ai-progress-status-summary[data-tone="auth"] {
+  border-color: color-mix(in srgb, #d97706 40%, var(--border));
+  background: color-mix(in srgb, #d97706 10%, var(--card));
+  color: color-mix(in srgb, #d97706 86%, var(--muted-foreground));
+}
+
+.ai-progress-current .ai-progress-status-summary[data-tone="blocked"],
+.ai-progress-current .ai-progress-status-summary[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--destructive) 42%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 12%, var(--card));
+  color: var(--destructive);
+}
+
+.ai-progress-current .ai-progress-status-summary[data-tone="done"] {
+  border-color: color-mix(in srgb, #16a34a 42%, var(--border));
+  background: color-mix(in srgb, #16a34a 10%, var(--card));
+  color: color-mix(in srgb, #16a34a 88%, var(--muted-foreground));
+}
+
+.ai-progress-current .ai-progress-status-summary[data-tone="stopped"],
+.ai-progress-current .ai-progress-status-summary[data-tone="idle"] {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--muted) 65%, var(--card));
+  color: var(--muted-foreground);
+}
+
+.ai-progress-current .ai-progress-status-summary-button:hover .ai-progress-status-summary {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+}
+
+.ai-progress-current .ai-progress-status-summary-button:focus-visible {
+  outline: none;
+}
+
+.ai-progress-current .ai-progress-status-summary-button:focus-visible .ai-progress-status-summary {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--border));
   box-shadow:
     0 0 0 2px var(--card),
     0 0 0 4px color-mix(in srgb, var(--ring) 72%, transparent);
@@ -4073,9 +4189,7 @@ pre {
    "계획", "작성중"). Outline variant to distinguish from the filled status
    badge while staying same height. */
 .ai-progress-stage-badge {
-  font-size: 11px;
   font-weight: 500;
-  padding: 2px 8px;
   letter-spacing: 0;
   border-radius: 999px;
 }
@@ -4559,12 +4673,15 @@ pre {
     min-width: 0;
   }
 
-  .ai-progress-current .ai-progress-active-ticket-button {
+  .ai-progress-current .ai-progress-active-ticket-button,
+  .ai-progress-current .ai-progress-status-summary-button {
     min-width: 0;
     flex-shrink: 1;
   }
 
-  .ai-progress-current .ai-progress-active-ticket {
+  .ai-progress-current .ai-progress-active-ticket,
+  .ai-progress-current .ai-progress-status-summary,
+  .ai-progress-current .ai-progress-status-detail {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

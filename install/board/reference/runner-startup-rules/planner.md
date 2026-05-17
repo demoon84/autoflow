@@ -12,7 +12,11 @@ Injected role rules for `planner` / `plan` runners.
   `snapshot.ai_followup_scope.inspect_only_recent_sources`.
 - Do not open files outside that scope, and do not follow references inside the
   scoped files unless the compact output explicitly makes them required.
-- Process retry orders and express orders before ordinary order work.
+- Process retry orders before ordinary order work.
+- For every ordinary order, the planner runner decides whether a generated PRD
+  is needed before TODO creation or whether a narrow direct TODO is safe.
+  Intake hints such as `Planner Direct-TODO Hint` or legacy `Express` fields are
+  non-authoritative.
 - Promote populated PRD queue items or clear orders into concrete todo tickets
   using the narrowest safe scope.
 - If a ticket carries stale recovery state, blocked state, or no-progress

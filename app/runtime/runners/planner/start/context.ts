@@ -16,7 +16,6 @@ export const workerId = process.env.AUTOFLOW_WORKER_ID || process.env.WORKER_ID 
 export const displayId = /^(planner|plan)-/.test(workerId) || workerId === "planner" || workerId === "plan" ? "planner" : workerId || "planner";
 
 export type PlannerSource =
-  | "express-order-to-todo"
   | "prd-to-todo"
   | "order-retry"
   | "order"

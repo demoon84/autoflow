@@ -72,7 +72,7 @@ At the start of work, read in this order:
 
 1. Do not create plans or tickets without an approved spec or a clear quick order promoted by the planner runner.
 2. Claude `/autoflow`, Codex `$autoflow`, and compatibility alias `#autoflow` are PRD handoff triggers only. They never create plans, tickets, implementation changes, verification records, commits, or pushes.
-3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/order/order_*.md` and never create PRDs, tickets, implementation changes, verification records, commits, or pushes.
+3. Claude `/order`, Codex `$order`, and compatibility alias `#order` are quick intake triggers only. They write `tickets/order/order_*.md` and never decide PRD-vs-direct-TODO, create PRDs, create tickets, implementation changes, verification records, commits, or pushes.
 4. The default execution path uses four runners: `planner` promotes order/prd/retry inputs into todo work and writes `Recovery State` repair instructions, `worker` implements the resulting ticket, `verifier` checks semantic alignment, and `wiki` maintains derived knowledge. Prefer `autoflow run planner` before `autoflow run ticket` for fresh PRD queue items; legacy planner/todo/verifier splitting remains compatibility-only.
 5. A Worker runner claims or creates one `Todo-NNN.md`, writes its mini-plan inside the ticket, implements within `Allowed Paths`, runs verification, records evidence, and requests pass/replan finalization. The verifier runner owns semantic review when the ticket enters the verifier lane and returns pass/revise/replan.
 6. Legacy `#plan`, `#todo`, and `#veri` remain compatibility triggers only.
@@ -139,7 +139,7 @@ Do:
 
 - Preserve the original user request in `tickets/order/order_*.md`.
 - Add scope, Allowed Paths, and verification hints only when obvious.
-- Let the planner runner promote the order note into a generated PRD and todo ticket when safe.
+- Let the planner runner decide whether the order needs a generated PRD first or can become a narrow direct TODO.
 
 Do not:
 
@@ -182,7 +182,7 @@ Do:
 
 - Run one compatibility planner tick or route to the active planner runner wake path.
 - Use `autoflow tool runner-tool planner queue-snapshot` to inspect candidates and choose the next action yourself. Use `autoflow run planner` only for compatibility branches that have not yet been split into runner tools.
-- Treat orders as implementation directives and promote them into generated PRDs and todo tickets with the safest narrow interpretation; do not make ambiguous orders into repeated human-question loops.
+- Treat orders as implementation directives, then decide whether each needs a generated PRD first or can become a narrow direct TODO; do not make ambiguous orders into repeated human-question loops.
 - Create or update `plan_NNN.md` from specs or replan retry orders.
 - Generate todo ticket bodies from `Execution Candidates`.
 - Archive consumed specs/plans/retry orders under `done/<project-key>/`.

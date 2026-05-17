@@ -10,6 +10,11 @@ export function gitRootPath(cwd: string): string {
   return gitOut(cwd, ["rev-parse", "--show-toplevel"]);
 }
 
+export function headContainsCommit(cwd: string, commit: string): boolean {
+  if (!commit) return false;
+  return git(cwd, ["merge-base", "--is-ancestor", commit, "HEAD"]).status === 0;
+}
+
 export function gitLines(cwd: string, args: string[]): string[] {
   return gitOut(cwd, args).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }

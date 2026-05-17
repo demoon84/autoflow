@@ -12,15 +12,14 @@ function buildAgentCliCommand(agent, model, reasoning) {
   switch (String(agent || "").toLowerCase()) {
     case "claude": {
       parts.push("claude", "--dangerously-skip-permissions",
-        "--permission-mode", "bypassPermissions");
+        "--permission-mode", "bypassPermissions",
+        "--plugin-dir", ".claude/autoflow-plugin");
       if (model) parts.push("--model", model);
       if (reasoning) parts.push("--effort", reasoning);
       break;
     }
     case "codex": {
-      parts.push("codex",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--skip-git-repo-check");
+      parts.push("codex", "--dangerously-bypass-approvals-and-sandbox");
       if (model) parts.push("-m", model);
       if (reasoning) parts.push("-c", `model_reasoning_effort="${reasoning}"`);
       break;
@@ -34,15 +33,17 @@ function buildAgentCliCommand(agent, model, reasoning) {
       return "";
   }
   return parts
-    .map((p) => (/[ \t"'$`\\]/.test(p) ? `'${p.replace(/'/g, "'\\''")}'` : p))
+    .map((p) => (/^[A-Za-z0-9_./:@%+=,-]+$/.test(p) ? p : `'${p.replace(/'/g, "'\\''")}'`))
     .join(" ");
 }
 
 const cases = [
   { agent: "claude", model: "opus", reasoning: "medium",
-    expect: "claude --dangerously-skip-permissions --permission-mode bypassPermissions --model opus --effort medium" },
+    expect: "claude --dangerously-skip-permissions --permission-mode bypassPermissions --plugin-dir .claude/autoflow-plugin --model opus --effort medium" },
+  { agent: "claude", model: "opus[1m]", reasoning: "xhigh",
+    expect: "claude --dangerously-skip-permissions --permission-mode bypassPermissions --plugin-dir .claude/autoflow-plugin --model 'opus[1m]' --effort xhigh" },
   { agent: "codex", model: "gpt-5.4", reasoning: "low",
-    expect: `codex --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-5.4 -c 'model_reasoning_effort="low"'` },
+    expect: `codex --dangerously-bypass-approvals-and-sandbox -m gpt-5.4 -c 'model_reasoning_effort="low"'` },
   { agent: "gemini", model: "gemini-2.5-flash-lite", reasoning: "",
     expect: "gemini --skip-trust --approval-mode yolo --model gemini-2.5-flash-lite" },
   { agent: "unknown", model: "", reasoning: "",

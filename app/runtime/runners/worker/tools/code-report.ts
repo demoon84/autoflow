@@ -129,7 +129,7 @@ const {
 } = shared;
 
 export function cmdWorkerCodeReport(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge", "done"]);
   ok(recordWorkerCodeMetrics(ticket));
 }
 
@@ -163,6 +163,45 @@ function nonNegative(value: number): number {
   return Math.max(0, value);
 }
 
+function markerTotals(markerDir: string): CodeMetricNumbers {
+  const totals: CodeMetricNumbers = { files: 0, insertions: 0, deletions: 0, volume: 0, net: 0 };
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(markerDir);
+  } catch {
+    return totals;
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    const marker = readMarkerNumbers(path.join(markerDir, entry));
+    totals.files += marker.files;
+    totals.insertions += marker.insertions;
+    totals.deletions += marker.deletions;
+    totals.volume += marker.volume;
+    totals.net += marker.net;
+  }
+  return totals;
+}
+
+function syncWorkerCodeMetricState(runnerId: string, markerDir: string, ticketId: string, currentStats: CodeMetricNumbers, reportedAt: string): void {
+  const totals = markerTotals(markerDir);
+  utils.updateRunnerState(runnerId, {
+    cumulative_code_files_changed: nonNegative(totals.files),
+    cumulative_code_insertions: nonNegative(totals.insertions),
+    cumulative_code_deletions: nonNegative(totals.deletions),
+    cumulative_code_volume: nonNegative(totals.volume),
+    cumulative_code_net_delta: totals.net,
+    last_code_ticket_id: ticketId,
+    last_code_files_changed: currentStats.files,
+    last_code_insertions: currentStats.insertions,
+    last_code_deletions: currentStats.deletions,
+    last_code_volume: currentStats.volume,
+    last_code_net_delta: currentStats.net,
+    last_code_reported_at: reportedAt,
+    code_source: "worker_diff_report",
+  }, BOARD_ROOT);
+}
+
 export function recordWorkerCodeMetrics(ticket: string): JsonObject {
   const runnerId = currentRunnerId("worker");
   const ticketId = `Todo-${idFromPath(ticket)}`;
@@ -182,16 +221,18 @@ export function recordWorkerCodeMetrics(ticket: string): JsonObject {
     net: currentStats.net - previous.net,
   };
   const hasDelta = Object.values(delta).some((value) => value !== 0);
+  const reportedAt = utils.nowIso();
 
   if (!hasDelta) {
     if (!markerExists) {
       fs.writeFileSync(markerPath, JSON.stringify({
         ticket_id: ticketId,
         runner: runnerId,
-        reported_at: utils.nowIso(),
+        reported_at: reportedAt,
         ...stats,
       }, null, 2) + "\n", "utf8");
     }
+    syncWorkerCodeMetricState(runnerId, markerDir, ticketId, currentStats, reportedAt);
     return {
       tool: "worker.code-report",
       path: boardRel(ticket),
@@ -208,35 +249,13 @@ export function recordWorkerCodeMetrics(ticket: string): JsonObject {
     };
   }
 
-  const state = utils.readRunnerState(runnerId, BOARD_ROOT);
-  const current = (key: string): number => {
-    const parsed = Number.parseInt(state.get(key) || "0", 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-  const reportedAt = utils.nowIso();
-
-  utils.updateRunnerState(runnerId, {
-    cumulative_code_files_changed: nonNegative(current("cumulative_code_files_changed") + delta.files),
-    cumulative_code_insertions: nonNegative(current("cumulative_code_insertions") + delta.insertions),
-    cumulative_code_deletions: nonNegative(current("cumulative_code_deletions") + delta.deletions),
-    cumulative_code_volume: nonNegative(current("cumulative_code_volume") + delta.volume),
-    cumulative_code_net_delta: current("cumulative_code_net_delta") + delta.net,
-    last_code_ticket_id: ticketId,
-    last_code_files_changed: currentStats.files,
-    last_code_insertions: currentStats.insertions,
-    last_code_deletions: currentStats.deletions,
-    last_code_volume: currentStats.volume,
-    last_code_net_delta: currentStats.net,
-    last_code_reported_at: reportedAt,
-    code_source: "worker_diff_report",
-  }, BOARD_ROOT);
-
   fs.writeFileSync(markerPath, JSON.stringify({
     ticket_id: ticketId,
     runner: runnerId,
     reported_at: reportedAt,
     ...stats,
   }, null, 2) + "\n", "utf8");
+  syncWorkerCodeMetricState(runnerId, markerDir, ticketId, currentStats, reportedAt);
 
   return {
     tool: "worker.code-report",

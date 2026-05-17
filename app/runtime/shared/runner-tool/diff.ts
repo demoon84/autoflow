@@ -3,6 +3,75 @@ import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, util
 import { isGitWorktree, normalizeRelPath, pathsOverlap, readWorktreeStatus } from "./worktree";
 import { safeLineCount } from "./wiki";
 
+const nonCodeMetricBasenames = new Set([
+  "package-lock.json",
+  "pnpm-lock.yaml",
+  "yarn.lock",
+  "bun.lockb",
+  "composer.lock",
+  "poetry.lock",
+  "Cargo.lock",
+]);
+
+const nonCodeMetricExtensions = new Set([
+  ".3gp",
+  ".7z",
+  ".aac",
+  ".aiff",
+  ".apk",
+  ".avi",
+  ".avif",
+  ".bin",
+  ".bmp",
+  ".bz2",
+  ".class",
+  ".dmg",
+  ".eot",
+  ".exe",
+  ".flac",
+  ".gif",
+  ".gz",
+  ".heic",
+  ".icns",
+  ".ico",
+  ".jar",
+  ".jpeg",
+  ".jpg",
+  ".m4a",
+  ".m4v",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".mpeg",
+  ".mpg",
+  ".ogg",
+  ".otf",
+  ".pdf",
+  ".png",
+  ".rar",
+  ".so",
+  ".tar",
+  ".tgz",
+  ".tif",
+  ".tiff",
+  ".ttf",
+  ".wav",
+  ".webm",
+  ".webp",
+  ".woff",
+  ".woff2",
+  ".zip",
+]);
+
+export function isCodeMetricPath(file: string): boolean {
+  const normalized = normalizeRelPath(file);
+  const basename = path.basename(normalized);
+  if (nonCodeMetricBasenames.has(basename)) return false;
+  const ext = path.extname(basename).toLowerCase();
+  if (nonCodeMetricExtensions.has(ext)) return false;
+  return true;
+}
+
 export function diffCheck(ticket: string): JsonObject {
   const stats = diffStats(ticket);
   return {
@@ -13,6 +82,11 @@ export function diffCheck(ticket: string): JsonObject {
 
 export function diffStats(ticket: string): JsonObject {
   const status = readWorktreeStatus(ticket);
+  const recordedBase = stringValue(status.base_commit);
+  const recordedWorktreeCommit = stringValue(status.worktree_commit);
+  const hasRecordedWorktreeCommit = Boolean(recordedBase && recordedWorktreeCommit) &&
+    git(["rev-parse", "--verify", `${recordedWorktreeCommit}^{commit}`], PROJECT_ROOT).status === 0;
+  const useRecordedWorktreeCommit = !stringValue(status.working_root) && hasRecordedWorktreeCommit;
   const workingRoot = stringValue(status.working_root) || PROJECT_ROOT;
   if (!isGitWorktree(workingRoot)) {
     return {
@@ -31,26 +105,28 @@ export function diffStats(ticket: string): JsonObject {
       out_of_scope_files: [],
     };
   }
-  const base = stringValue(status.base_commit) || git(["rev-parse", "--verify", "HEAD"], workingRoot).stdout.trim();
+  const base = recordedBase || git(["rev-parse", "--verify", "HEAD"], workingRoot).stdout.trim();
+  const committedRange = useRecordedWorktreeCommit ? `${base}..${recordedWorktreeCommit}` : `${base}..HEAD`;
   const changedFiles = unique([
-    ...gitLines(["diff", "--name-only", `${base}..HEAD`], workingRoot),
-    ...gitLines(["diff", "--name-only"], workingRoot),
-    ...gitLines(["diff", "--cached", "--name-only"], workingRoot),
-    ...statusPorcelainPaths(workingRoot),
+    ...gitLines(["diff", "--name-only", committedRange], workingRoot),
+    ...(useRecordedWorktreeCommit ? [] : gitLines(["diff", "--name-only"], workingRoot)),
+    ...(useRecordedWorktreeCommit ? [] : gitLines(["diff", "--cached", "--name-only"], workingRoot)),
+    ...(useRecordedWorktreeCommit ? [] : statusPorcelainPaths(workingRoot)),
   ]);
   const allowed = utils.ticketConcreteAllowedPaths(ticket);
   const outOfScope = changedFiles.filter((file) => !allowed.some((allowedPath) => pathsOverlap(file, allowedPath)));
   const statsByFile = numstatByFile([
-    git(["diff", "--numstat", `${base}..HEAD`], workingRoot).stdout,
-    git(["diff", "--numstat"], workingRoot).stdout,
-    git(["diff", "--cached", "--numstat"], workingRoot).stdout,
+    git(["diff", "--numstat", committedRange], workingRoot).stdout,
+    useRecordedWorktreeCommit ? "" : git(["diff", "--numstat"], workingRoot).stdout,
+    useRecordedWorktreeCommit ? "" : git(["diff", "--cached", "--numstat"], workingRoot).stdout,
   ].join("\n"));
   const productFiles = changedFiles
     .filter((file) => !normalizeRelPath(file).startsWith(".autoflow/"))
     .filter((file) => allowed.length === 0 || allowed.some((allowedPath) => pathsOverlap(file, allowedPath)));
+  const codeFiles = productFiles.filter(isCodeMetricPath);
   let insertions = 0;
   let deletions = 0;
-  for (const file of productFiles) {
+  for (const file of codeFiles) {
     const stat = statsByFile.get(file);
     if (stat) {
       insertions += stat.additions;
@@ -62,14 +138,16 @@ export function diffStats(ticket: string): JsonObject {
       insertions += safeLineCount(abs);
     }
   }
-  const lineCount = Array.from(statsByFile.values()).reduce((sum, item) => sum + item.additions + item.deletions, 0);
+  const lineCount = insertions + deletions;
   return {
     working_root: workingRoot,
     base_commit: base,
+    worktree_commit: useRecordedWorktreeCommit ? recordedWorktreeCommit : "",
+    diff_source: useRecordedWorktreeCommit ? "recorded_worktree_commit" : "working_root",
     changed_file_count: changedFiles.length,
     changed_files: changedFiles,
     changed_line_count: lineCount,
-    code_files_changed_count: productFiles.length,
+    code_files_changed_count: codeFiles.length,
     code_insertions_count: insertions,
     code_deletions_count: deletions,
     code_volume_count: insertions + deletions,

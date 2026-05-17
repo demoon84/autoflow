@@ -1,7 +1,7 @@
 import {fs, path, boardRoot, projectRoot, timestamp, workerId} from "./context";
 import {boardRel, oneLine, safeSegment, unique} from "./io";
 import {allowedPaths, appendNote, doneWhenItems, normalizedChangeType, replaceScalar, replaceSection, scalar, updateGoalRuntime} from "./ticket-sections";
-import {changedFiles, diffLineCount, git, gitOut, gitRootPath, isGitWorktree, pathsOverlap, projectRootPathMatchesWorktree, statusPaths} from "./git";
+import {changedFiles, diffLineCount, git, gitOut, gitRootPath, headContainsCommit, isGitWorktree, pathsOverlap, projectRootPathMatchesWorktree, statusPaths} from "./git";
 import {writeVerifierLog} from "./verifier";
 import {positiveInt, read} from "./io";
 
@@ -78,6 +78,11 @@ export function prepareWorktreeForFinalization(ticketFile: string, ticketId: str
   const head = gitOut(worktreePath, ["rev-parse", "--verify", "HEAD"]);
   if (head) replaceScalar(ticketFile, "Worktree", "Worktree Commit", head);
 
+  if (head && headContainsCommit(projectRoot, head)) {
+    replaceScalar(ticketFile, "Worktree", "Integration Status", "integrated");
+    return { status: "ready", reason: "worktree_commit_in_project_history", worktreePath, worktreeCommit: head };
+  }
+
   const needsMerge = scopedChanged.some((name) => {
     const relPath = allowed.find((ap) => pathsOverlap(name, ap)) || name;
     return !projectRootPathMatchesWorktree(worktreePath, relPath);
@@ -118,6 +123,8 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
   if (!gitRoot) return { status: "not_git_repo", hash: "" };
 
   const boardRelPath = path.relative(gitRoot, boardRoot);
+  const worktreeCommit = scalar(doneFile, "Worktree", "Worktree Commit");
+  const productChangesAreCommitted = worktreeCommit ? headContainsCommit(gitRoot, worktreeCommit) : false;
   const candidates = [
     path.relative(gitRoot, doneFile),
     path.join(boardRelPath, "tickets", "todo", `Todo-${ticketId}.md`),
@@ -127,7 +134,7 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
     path.join(boardRelPath, "tickets", "verifier", `Todo-${ticketId}.md`),
     path.join(boardRelPath, "tickets", "verifier", `tickets_${ticketId}.md`),
     path.join(boardRelPath, "logs"),
-    ...allowedPaths(doneFile),
+    ...(productChangesAreCommitted ? [] : allowedPaths(doneFile)),
   ].filter((value) => value && !value.startsWith(".."));
   if (candidates.length > 0) git(gitRoot, ["add", "-A", "--", ...unique(candidates)]);
 

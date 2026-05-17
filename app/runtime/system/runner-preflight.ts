@@ -83,6 +83,53 @@ function listFiles(dir: string, pattern: RegExp, limit = 50): string[] {
   return entries.slice(0, limit);
 }
 
+function scalarInSection(filePath: string, section: string, field: string): string {
+  let text = "";
+  try { text = fs.readFileSync(filePath, "utf8"); } catch { return ""; }
+  let inSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      inSection = heading[1].trim().toLowerCase() === section.toLowerCase();
+      continue;
+    }
+    if (!inSection) continue;
+    const match = line.match(/^-\s*([^:]+):\s*(.*?)\s*$/);
+    if (match && match[1].trim().toLowerCase() === field.toLowerCase()) return match[2].trim();
+  }
+  return "";
+}
+
+function plannerQueueFileIsActionable(filePath: string): boolean {
+  const status = (
+    scalarInSection(filePath, "Order", "Status") ||
+    scalarInSection(filePath, "Project", "Status")
+  ).toLowerCase();
+  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+}
+
+function workerInprogressFileIsActionable(filePath: string): boolean {
+  let text = "";
+  try { text = fs.readFileSync(filePath, "utf8"); } catch { return false; }
+  const stage = (
+    scalarInSection(filePath, "Ticket", "Stage") ||
+    scalarInSection(filePath, "Worktree", "Integration Status") ||
+    scalarInSection(filePath, "Goal Runtime", "Status")
+  ).toLowerCase();
+  if (/verified[_ -]?pending[_ -]?merge/.test(stage) || /^-\s*Semantic Decision:\s*pass\s*$/mi.test(text)) {
+    return true;
+  }
+  if (
+    /verify[_ -]?pending/.test(stage) ||
+    /verifier[_ -]?pending/.test(stage) ||
+    /submitted[_ -]?to[_ -]?verifier/.test(stage) ||
+    /awaiting[_ -]?verifier/.test(stage)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function walkMarkdownFiles(dir: string): string[] {
   const out: string[] = [];
   const visit = (current: string): void => {
@@ -125,6 +172,25 @@ function pendingWakeCount(runnerId: string): number {
   } catch {
     return 0;
   }
+}
+
+function advanceWakePointerToLatest(runnerId: string): void {
+  const queuePath = path.join(STATE_DIR, `${runnerId}-wake.queue.jsonl`);
+  const pointerPath = path.join(STATE_DIR, `${runnerId}-wake.pointer`);
+  let latest = "";
+  try {
+    for (const line of fs.readFileSync(queuePath, "utf8").split(/\n/).filter(Boolean)) {
+      try {
+        const parsed = JSON.parse(line);
+        const at = String(parsed.at || "");
+        if (at && (!latest || at > latest)) latest = at;
+      } catch {}
+    }
+  } catch {
+    return;
+  }
+  if (!latest) return;
+  try { fs.writeFileSync(pointerPath, `${latest}\n`); } catch {}
 }
 
 function plannerRecoveryFiles(): string[] {
@@ -178,8 +244,8 @@ function decide(): PreflightDecision {
   const wakes = pendingWakeCount(RUNNER_ID);
 
   if (ROLE === "planner") {
-    const orders = listFiles(path.join(TICKETS_ROOT, "order"), /^order_.*\.md$/);
-    const prds = listFiles(path.join(TICKETS_ROOT, "prd"), /^(prd|project)_\d+\.md$/);
+    const orders = listFiles(path.join(TICKETS_ROOT, "order"), /^order_.*\.md$/).filter(plannerQueueFileIsActionable);
+    const prds = listFiles(path.join(TICKETS_ROOT, "prd"), /^(prd|project)_\d+\.md$/).filter(plannerQueueFileIsActionable);
     const recovery = plannerRecoveryFiles();
     const files = [...orders, ...prds, ...recovery];
     return {
@@ -191,7 +257,8 @@ function decide(): PreflightDecision {
   }
 
   if (ROLE === "worker") {
-    const inprogress = listFiles(path.join(TICKETS_ROOT, "inprogress"), /^(Todo-\d+|tickets_\d+)\.md$/);
+    const inprogress = listFiles(path.join(TICKETS_ROOT, "inprogress"), /^(Todo-\d+|tickets_\d+)\.md$/)
+      .filter(workerInprogressFileIsActionable);
     const readyToMerge = listFiles(path.join(TICKETS_ROOT, "ready-to-merge"), /^(Todo-\d+|tickets_\d+)\.md$/);
     const todo = listFiles(path.join(TICKETS_ROOT, "todo"), /^(Todo-\d+|tickets_\d+)\.md$/);
     const files = [...inprogress, ...readyToMerge, ...todo];
@@ -260,6 +327,7 @@ function writeIdleState(decision: PreflightDecision): void {
 
 const decision = decide();
 if (!decision.actionable && hasFlag("--write-state")) {
+  advanceWakePointerToLatest(RUNNER_ID);
   writeIdleState(decision);
 }
 

@@ -144,11 +144,16 @@ function compactPlannerSource(item: QueueItem): JsonObject {
   };
 }
 
+function plannerQueueItemIsActionable(item: QueueItem): boolean {
+  const status = String(item.status || "").trim().toLowerCase();
+  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+}
+
 export function cmdPlannerQueueSnapshot(): void {
   const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const items: QueueItem[] = [];
-  items.push(...listQueueItems("order", [/^order_.*\.md$/], "order"));
-  items.push(...listQueueItems("prd", [/^(prd|project)_\d+\.md$/], "prd"));
+  items.push(...listQueueItems("order", [/^order_.*\.md$/], "order").filter(plannerQueueItemIsActionable));
+  items.push(...listQueueItems("prd", [/^(prd|project)_\d+\.md$/], "prd").filter(plannerQueueItemIsActionable));
   items.push(...listQueueItems("todo", [/^(Todo-\d+|tickets_\d+)\.md$/], "todo"));
   items.push(...listQueueItems("inprogress", [/^(Todo-\d+|tickets_\d+)\.md$/], "inprogress"));
 
