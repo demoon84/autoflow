@@ -33,7 +33,7 @@ Autoflow 는 Codex, Claude Code, Gemini CLI 같은 코딩 에이전트를 위한
 2. 실제 제품 코드는 프로젝트 루트에서 관리한다.
 3. `Allowed Paths` 는 repo-relative 경로로 해석한다. 워커 러너(`worker`) 는 git 저장소에서 티켓별 worktree 를 사용한다. worktree 생성/확인이 실패하면 구현을 시작하지 않고 ticket 을 blocked 상태로 남긴다.
 4. `{{BOARD_DIR}}/` 밖의 제품 파일도 티켓의 `Allowed Paths` 안에 있으면 수정할 수 있지만, 병렬 작업에서는 티켓별 worktree 안에서 수정한다.
-5. 기본 토폴로지는 **플래너 러너 + 워커 러너 + 검증 러너 + 위키 러너 (4-runner)** 모델이다. 플래너 러너(`planner`) 가 order/prd/retry 를 읽어 generated PRD 를 먼저 만들지, 바로 좁은 todo 로 갈지 결정하면, 워커 러너(`worker`) 가 todo claim, worktree 생성, 구현, 로컬 검증, verifier 제출, verifier 판정 후 처리, PROJECT_ROOT 머지를 담당한다. 검증 러너(`verifier`) 는 의미 검증만 수행하고 pass/revise/replan 중 하나로 worker 를 깨운다. 위키 러너(`wiki`) 는 `tickets/done/` 변동을 감지해 `{{BOARD_DIR}}/wiki/` 의 AI synthesis 를 갱신한다.
+5. 기본 토폴로지는 **플래너 러너 + 워커 러너 + 검증 러너 + 위키 러너 (4-runner)** 모델이다. 플래너 러너(`planner`) 가 order 를 읽으면 기본적으로 generated PRD 를 먼저 만들고, PRD/retry 를 구체 todo 로 내려보낸다. 바로 todo 로 가는 경로는 명시적으로 요청된 단일 파일 기계적 변경에 한정한다. 워커 러너(`worker`) 가 todo claim, worktree 생성, 구현, 로컬 검증, verifier 제출, verifier 판정 후 처리, PROJECT_ROOT 머지를 담당한다. 검증 러너(`verifier`) 는 의미 검증만 수행하고 pass/revise/replan 중 하나로 worker 를 깨운다. 위키 러너(`wiki`) 는 `tickets/done/` 변동을 감지해 `{{BOARD_DIR}}/wiki/` 의 AI synthesis 를 갱신한다.
 6. `#plan`, `#todo`, `#veri` 는 레거시 role-pipeline 호환 트리거다. 새 작업은 역할 분리보다 플래너/워커/검증/위키 러너와 realtime wake 흐름을 우선한다.
 7. 러너 idle 은 종료가 아니라 다음 wake 또는 tick 대기 상태다. 러너 중지는 사용자의 명시적 지시로만 처리한다.
 8. worker 또는 verifier 는 local commit 을 할 수 있고, `git push` 는 어떤 러너/자동 실행에서도 절대 금지다.
@@ -62,14 +62,14 @@ Autoflow 는 Codex, Claude Code, Gemini CLI 같은 코딩 에이전트를 위한
 - `#order` (이전 이름 `#order` 에서 변경됨)
   - Claude `/order`, Codex `$order` 와 같은 quick order handoff alias 다.
   - 단순 수정 요청을 대화창에서 PRD/TODO 로 판단하지 않고 `{{BOARD_DIR}}/tickets/order/order_*.md` 에 저장한다 (파일 이름 prefix `order` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
-  - PRD 작성이 필요한지, 바로 TODO 로 갈 수 있는지는 플래너 러너가 order 를 읽고 판단한다.
+  - 플래너 러너가 order 를 읽고 기본적으로 generated PRD 를 먼저 만든다. 바로 TODO 로 가는 경로는 명시적으로 요청된 단일 파일 기계적 변경에 한정한다.
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
-  - plan / ticket / 구현은 시작하지 않는다. 이후 플래너 러너가 order 의 노트를 구현 지시로 해석해 generated PRD 를 먼저 만들지, 좁은 direct TODO 로 충분한지 결정한다. order 는 반복 질문 루프를 만들지 않는다.
+  - plan / ticket / 구현은 시작하지 않는다. 이후 플래너 러너가 order 의 노트를 구현 지시로 해석해 generated PRD 를 먼저 만든다. 정보 부족은 PRD 의 가정/미정 항목으로 남기며, order 는 반복 질문 루프를 만들지 않는다.
 
 - `#plan`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 plan 작업은 활성 플래너 러너(`planner`) 가 runner tick/wake 마다 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 planner 호환 tick 을 실행하거나 활성 플래너 러너 wake 로 이어간다.
-  - actionable order 또는 populated spec 이 있으면 계속 처리한다. order 는 플래너 러너가 generated PRD / plan 을 먼저 만들지, 좁은 direct TODO 로 충분한지 결정한다.
+  - actionable order 또는 populated spec 이 있으면 계속 처리한다. order 는 플래너 러너가 generated PRD / plan 을 먼저 만들고, 명시적인 단일 파일 기계적 변경만 좁은 direct TODO 예외로 처리한다.
   - 실제 ticket 생성이 끝난 spec 과 plan 은 `{{BOARD_DIR}}/tickets/done/<project-key>/` 로 이동한다.
   - verifier replan 뒤 worker 가 생성한 `{{BOARD_DIR}}/tickets/order/order_*_retry_*.md` 도 일반 order 처럼 처리한다. `retry_decision=needs_user` 인 파일은 order 큐에 그대로 두고 사용자 결정을 기다린다.
   - 현재 plan 이 ticketed 가 됐거나 verifier 가 `{{BOARD_DIR}}/tickets/done/<project-key>/` 으로 넘긴 뒤에도 PRD 큐에 다음 populated spec 이 남아 있으면 계속 다음 plan 으로 이어간다.

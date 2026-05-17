@@ -2417,11 +2417,6 @@ function App() {
         const resultCode = outputValue(result.stdout || "", "result");
         const refreshed = await loadBoard();
         const refreshedRunner = refreshed?.runners?.find((candidate) => candidate.id === runnerId);
-        if (action === "start" && resultCode === "preflight_idle") {
-          setRunnerAction(runnerId, "");
-          pushToast("success", `${displayWorkflowRunnerId(runnerId, refreshed?.runners)} runner는 처리할 작업이 없어 대기 상태로 유지했습니다.`);
-          return;
-        }
         if (
           action === "start" &&
           (resultCode === "already_running" || resultCode === "already_running_adopted") &&

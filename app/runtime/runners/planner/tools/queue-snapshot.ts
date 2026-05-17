@@ -130,6 +130,10 @@ const {
 
 function compactPlannerSource(item: QueueItem): JsonObject {
   const absolutePath = resolveBoardPath(item.path);
+  const blockedReason = utils.extractScalarFieldInSection(absolutePath, "Order", "Blocked Reason") ||
+    utils.extractScalarFieldInSection(absolutePath, "Project", "Blocked Reason") ||
+    "";
+  const isOrdinaryOrder = item.kind === "order" && !item.retry;
   return {
     path: item.path,
     kind: item.kind,
@@ -137,9 +141,9 @@ function compactPlannerSource(item: QueueItem): JsonObject {
     priority: item.priority,
     title: item.title,
     status: item.status || "",
-    blocked_reason: utils.extractScalarFieldInSection(absolutePath, "Order", "Blocked Reason") ||
-      utils.extractScalarFieldInSection(absolutePath, "Project", "Blocked Reason") ||
-      "",
+    blocked_reason: blockedReason,
+    intake_mode: isOrdinaryOrder ? "prd_first" : "",
+    recommended_next_step: isOrdinaryOrder ? "generate_prd_from_order" : "",
     stage: item.stage || "",
     retry: Boolean(item.retry),
     express: Boolean(item.express),
@@ -151,6 +155,18 @@ function compactPlannerSource(item: QueueItem): JsonObject {
 function plannerQueueItemIsActionable(item: QueueItem): boolean {
   const status = String(item.status || "").trim().toLowerCase();
   return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+}
+
+function plannerFollowupReason(item: QueueItem): string {
+  const status = String(item.status || "").trim().toLowerCase();
+  if (item.kind === "order" && !item.retry) {
+    return status === "blocked" || status === "needs-info" || status === "needs_user" || status === "needs-user"
+      ? "planner_order_prd_intake"
+      : "planner_order_pending";
+  }
+  return status === "blocked"
+    ? `planner_${item.kind}_blocked_review`
+    : `planner_${item.kind}_pending`;
 }
 
 export function cmdPlannerQueueSnapshot(): void {
@@ -183,11 +199,7 @@ export function cmdPlannerQueueSnapshot(): void {
     items_truncated: items.length > visibleItems.length,
     items: visibleItems,
     ai_followup_recommended: Boolean(actionable),
-    ai_followup_reason: actionable
-      ? (String(actionable.status || "").trim().toLowerCase() === "blocked"
-        ? `planner_${actionable.kind}_blocked_review`
-        : `planner_${actionable.kind}_pending`)
-      : "no_actionable_plan_input",
+    ai_followup_reason: actionable ? plannerFollowupReason(actionable) : "no_actionable_plan_input",
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
       max_files_to_open: scopedSources.length,

@@ -106,7 +106,7 @@ The agent must:
 1. Preserve the user's original request in `tickets/order/order_NNN.md`.
 2. Add scope, allowed path, and verification hints only when obvious.
 3. Avoid drafting a full PRD in chat.
-4. Let the planner runner decide whether the order needs a generated PRD first or can become a narrow direct TODO.
+4. Let the planner runner write a generated PRD first. Direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.
 5. Treat order requests as directives and infer the safest narrow implementation scope; only unsafe orders should be blocked.
 
 ## Worker Rules

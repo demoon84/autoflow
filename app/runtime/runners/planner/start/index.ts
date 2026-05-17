@@ -51,7 +51,7 @@ export function main(): void {
       order_id: extractNumericId(nonretryOrder),
       board_root: BOARD_ROOT,
       project_root: PROJECT_ROOT,
-      next_action: `Promote order ${boardRelativePath(nonretryOrder)} per plan-to-ticket-agent.md, then rerun start-plan.`,
+      next_action: `Generate a PRD from order ${boardRelativePath(nonretryOrder)} per plan-to-ticket-agent.md, then rerun start-plan for PRD-to-todo handoff.`,
     });
     return;
   }

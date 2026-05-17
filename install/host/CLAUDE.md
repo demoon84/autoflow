@@ -23,4 +23,4 @@ When the user invokes `/order` or `#order`, treat it as an Autoflow quick order 
 2. Save only a short note under `{{BOARD_DIR}}/tickets/order/order_*.md`.
 3. Preserve the original request and add only obvious scope / Allowed Paths / Verification hints.
 4. Do not create a PRD, plan, ticket, implementation, verification, commit, or push.
-5. Tell the user that the planner runner (`autoflow run planner`) will decide whether the order needs a generated PRD first or can become a narrow direct TODO.
+5. Tell the user that the planner runner (`autoflow run planner`) will write a generated PRD first; direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.

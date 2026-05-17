@@ -13,7 +13,7 @@ Options:
   --allowed-path path         Add an allowed path hint. May be repeated.
   --verification command      Add a verification command hint. May be repeated.
   --priority value            Set priority. Defaults to normal.
-  --express                   Deprecated compatibility flag; records a direct-TODO hint for the planner runner.
+  --express                   Deprecated compatibility flag; records a narrow-exception hint for the planner runner.
   --force                     Overwrite an existing order id.`);
         return;
     }

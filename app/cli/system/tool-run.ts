@@ -12,7 +12,6 @@ const runtimeToolPaths: Record<string, string> = {
     "path-conflict-check": "system/path-conflict-check.ts",
     "run-hook": "system/run-hook.ts",
     "runner-stage": "system/runner-stage.ts",
-    "runner-preflight": "system/runner-preflight.ts",
     "runner-tokens": "system/runner-tokens.ts",
     "runner-wake": "system/runner-wake.ts",
     "set-thread-context": "system/set-thread-context.ts",

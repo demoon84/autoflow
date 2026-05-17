@@ -13,10 +13,14 @@ Injected role rules for `planner` / `plan` runners.
 - Do not open files outside that scope, and do not follow references inside the
   scoped files unless the compact output explicitly makes them required.
 - Process retry orders before ordinary order work.
-- For every ordinary order, the planner runner decides whether a generated PRD
-  is needed before TODO creation or whether a narrow direct TODO is safe.
-  Intake hints such as `Planner Direct-TODO Hint` or legacy `Express` fields are
-  non-authoritative.
+- For every ordinary order, the planner runner uses a PRD-first intake flow:
+  read the order, collect repository/wiki evidence, write assumptions and
+  remaining unknowns into a generated PRD, then let the PRD-to-ticket flow
+  create the detailed TODO. Intake hints such as `Planner Direct-TODO Hint` or
+  legacy `Express` fields are non-authoritative. Direct TODO is reserved for an
+  explicitly requested, single-file, mechanically obvious change.
+- Do not leave ordinary order ambiguity as `blocked`, `needs-info`, or
+  `needs_user`. Only unsafe requests may be refused instead of becoming a PRD.
 - Promote populated PRD queue items or clear orders into concrete todo tickets
   using the narrowest safe scope.
 - If a ticket carries stale recovery state, blocked state, or no-progress

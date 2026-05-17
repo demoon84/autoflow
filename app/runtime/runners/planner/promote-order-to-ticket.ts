@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// promote-order-to-ticket.ts — Allowed Paths / Done When hint inference.
+// promote-order-to-ticket.ts — order evidence hint inference.
 //
 // Usage:
 //   node promote-order-to-ticket.ts <order-file> [--board-root <path>] [--project-root <path>]
@@ -11,10 +11,10 @@
 //   4. If candidates ≤ 3 with sufficient specificity:
 //        - Write inferred Allowed Paths + Done When checklist into the order file.
 //        - Append confidence marker to ## Notes.
-//   5. If candidates > 3 or too broad → exit 2 (planner decides PRD vs direct TODO).
+//   5. If candidates > 3 or too broad → exit 2 (planner writes a generated PRD).
 //
 // Exit codes:
-//   0  — Scope hints written (planner still decides PRD vs direct TODO)
+//   0  — Scope hints written (planner still writes PRD-first unless the order is an explicit narrow exception)
 //   1  — Error (file not found, etc.)
 //   2  — Fallback to PRD flow (ambiguous / too many candidates)
 //
@@ -159,7 +159,7 @@ function injectIntoOrder(filePath: string, allowedPaths: string[], doneWhen: str
   }
 
   // Append Notes confidence marker
-  const marker = "Planner scope hints inferred (confidence: high; PRD decision remains planner-owned)";
+  const marker = "Planner scope hints inferred (confidence: high; PRD-first intake remains planner-owned)";
   if (!content.includes(marker)) {
     if (/^## Notes$/m.test(content)) {
       content = content.replace(/^## Notes$/m, `## Notes\n\n- ${marker}`);
@@ -229,7 +229,7 @@ async function main(): Promise<void> {
   injectIntoOrder(orderFile, sorted, doneWhen);
 
   process.stdout.write(
-    `promote_status=hints_written allowed_paths=${sorted.join(",")} confidence=high prd_decision=planner_owned keywords=${keywords.slice(0, 5).join(",")}\n`
+    `promote_status=hints_written allowed_paths=${sorted.join(",")} confidence=high prd_intake=planner_owned keywords=${keywords.slice(0, 5).join(",")}\n`
   );
 }
 

@@ -76,11 +76,11 @@ Verification evidence lives in the ticket markdown (`## Verification`, `## Resul
 ## State Rules
 
 - `order/`
-  - Contains `order_NNN.md` files captured after user conversation. The planner runner decides whether PRD authoring is needed.
+  - Contains `order_NNN.md` files captured after user conversation. Ordinary orders feed generated PRDs first.
   - Contains `order_*_retry_*.md` verifier replan retries with retry metadata and the full replaced ticket body under `## Original Ticket`.
   - Order skills and `autoflow order create` may write here directly after an explicit order request.
-  - The planner runner treats orders as implementation directives and decides whether to create generated PRD queue items first or narrow direct TODO tickets using the safest interpretation.
-  - Unsafe orders stay here with a concrete blocker note; ambiguity alone should not create a repeated human-question loop.
+  - The planner runner treats orders as implementation directives, gathers repository/wiki evidence, and writes generated PRD queue items with assumptions and remaining unknowns. Direct TODO is reserved for explicitly requested, single-file, mechanically obvious changes.
+  - Unsafe orders stay here with a concrete blocker note; ambiguity alone should become PRD content, not a repeated human-question loop or a stuck `blocked`/`needs-info` order.
   - The worker runner never claims directly from this folder.
 - `prd/`
   - Contains project specs before ticket execution starts.

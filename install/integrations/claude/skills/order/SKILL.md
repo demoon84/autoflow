@@ -36,20 +36,20 @@ Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 10. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
 11. Fallback: write the same order format directly under `{{BOARD_DIR}}/tickets/order/`; the first non-empty line must be `# Autoflow Order`, include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
 12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
-13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will decide whether to write a generated PRD first or create a narrow direct TODO.
+13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will write a generated PRD first; direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.
 
-## Planner PRD Decision Hints
+## Planner PRD Intake Hints
 
-Order intake never decides whether PRD authoring is required. The planner runner reads the saved order, repository context, and prior wiki/origin findings, then decides whether to create a generated PRD first or write a narrow todo ticket directly.
+Order intake never decides that PRD authoring can be skipped. The planner runner reads the saved order, repository context, and prior wiki/origin findings, then creates a generated PRD with assumptions and remaining unknowns. A direct todo ticket is reserved for explicitly requested, single-file mechanical changes.
 
 For tiny, fully-specified requests, you may add non-authoritative hints only:
 
 - Concrete repo-relative `Allowed Paths` when obvious (≤3 paths).
 - Observable `Done When` checkboxes when they follow directly from the conversation.
 - A `Verification Command` that exists in this repo, or `none-shell` when no shell verification is meaningful.
-- A `## Notes` bullet such as `- Planner hint: likely direct TODO candidate because ...`.
+- A `## Notes` bullet such as `- Planner hint: PRD scope evidence because ...`.
 
-Do not write `Express: true`, do not pass `--express`, and do not create PRDs or TODO tickets from this skill. The planner runner owns the PRD-vs-direct-TODO decision.
+Do not write `Express: true`, do not pass `--express`, and do not create PRDs or TODO tickets from this skill. The planner runner owns PRD-first intake and the narrow direct-TODO exception.
 
 ```
 # Autoflow Order
@@ -81,7 +81,7 @@ Do not write `Express: true`, do not pass `--express`, and do not create PRDs or
 
 ## Notes
 
-- Planner hint: <PRD가 필요할지/바로 TODO 가능할지 판단에 도움이 되는 근거, 확실할 때만>
+- Planner hint: <generated PRD 범위 판단에 도움이 되는 근거, 확실할 때만>
 ```
 
 `Change Type` defaults to `code` if omitted; the worker finalizer's sanity gate uses this to choose its diff/checklist matrix.

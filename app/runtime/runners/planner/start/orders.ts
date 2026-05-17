@@ -21,8 +21,8 @@ export function orderRefIsAlreadyPromoted(orderRef: string): boolean {
 export function orderFileIsActionable(file: string): boolean {
   if (!fs.existsSync(file)) return false;
   if (orderRefIsAlreadyPromoted(boardRelativePath(file))) return false;
-  const status = utils.trimSpaces(utils.extractScalarFieldInSection(file, "Order", "Status"));
-  return ["", "order", "inbox", "ready", "pending", "needs-info"].includes(status);
+  const status = utils.trimSpaces(utils.extractScalarFieldInSection(file, "Order", "Status")).toLowerCase();
+  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
 export function orderFileIsRetry(file: string): boolean {
