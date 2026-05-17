@@ -909,6 +909,9 @@ function stopPtyRunnersForScope(scope = {}, opts = {}) {
 // appear in the current PTY stream. This watches only live runner output, never
 // local session history files.
 const ptyTokenUsageParseState = new Map();
+const codexSessionUsageSyncTimers = new Map();
+const codexSessionUsageSyncInflight = new Set();
+const codexSessionUsageSyncPending = new Set();
 // Per-runner safety-poll state: idle detection + queue fingerprint cache.
 //   runnerId -> { lastWakeAt: number (ms epoch), queueFingerprint: string }
 const wakePollState = new Map();
@@ -4000,6 +4003,64 @@ function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
       console.log(`[runner-tokens] host PTY report runner=${runnerId}: ${stdout.trim()}`);
     }
   });
+}
+
+function runCodexSessionUsageSyncForRunner(runnerId) {
+  const meta = ptyRunnerMeta.get(runnerId);
+  if (!meta || meta.agent !== "codex" || !meta.projectRoot || !meta.boardDirName) return;
+  if (codexSessionUsageSyncInflight.has(runnerId)) {
+    codexSessionUsageSyncPending.add(runnerId);
+    return;
+  }
+  codexSessionUsageSyncInflight.add(runnerId);
+
+  const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
+  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
+  execFile(autoflowBin, ["tool", "runner-tokens", "sync-codex-sessions", "--runner", runnerId], {
+    cwd: meta.projectRoot,
+    env: {
+      ...process.env,
+      AUTOFLOW_PROJECT_ROOT: meta.projectRoot,
+      PROJECT_ROOT: meta.projectRoot,
+      AUTOFLOW_BOARD_ROOT: boardRoot,
+      BOARD_ROOT: boardRoot,
+      AUTOFLOW_RUNNER_ID: runnerId,
+      RUNNER_ID: runnerId
+    },
+    timeout: 30000
+  }, (error, stdout, stderr) => {
+    codexSessionUsageSyncInflight.delete(runnerId);
+    if (error) {
+      console.warn(`[runner-tokens] codex session sync failed runner=${runnerId}:`, error.message || error);
+      if (stderr) console.warn(stderr);
+    } else if (stdout && /imported_count=([1-9]\d*)/.test(stdout)) {
+      console.log(`[runner-tokens] codex session sync runner=${runnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
+    }
+    if (codexSessionUsageSyncPending.has(runnerId)) {
+      codexSessionUsageSyncPending.delete(runnerId);
+      scheduleCodexSessionUsageSyncForRunner(runnerId, 1000);
+    }
+  });
+}
+
+function scheduleCodexSessionUsageSyncForRunner(runnerId, delayMs = 5000) {
+  const meta = ptyRunnerMeta.get(runnerId);
+  if (!meta || meta.agent !== "codex" || !meta.projectRoot || !meta.boardDirName) return;
+  const existing = codexSessionUsageSyncTimers.get(runnerId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    codexSessionUsageSyncTimers.delete(runnerId);
+    runCodexSessionUsageSyncForRunner(runnerId);
+  }, Math.max(0, Number(delayMs) || 0));
+  if (typeof timer.unref === "function") timer.unref();
+  codexSessionUsageSyncTimers.set(runnerId, timer);
+}
+
+function flushCodexSessionUsageSyncForRunner(runnerId) {
+  const existing = codexSessionUsageSyncTimers.get(runnerId);
+  if (existing) clearTimeout(existing);
+  codexSessionUsageSyncTimers.delete(runnerId);
+  runCodexSessionUsageSyncForRunner(runnerId);
 }
 
 function timestampFromRunnerLogName(value) {
@@ -7181,6 +7242,7 @@ app.whenReady().then(() => {
     for (const usage of ptyUsageReportsFromChunk(runnerId, data)) {
       reportPtyUsageViaRunnerTool(runnerId, usage);
     }
+    scheduleCodexSessionUsageSyncForRunner(runnerId);
   });
   ptyManager.on("status", (payload) => {
     const scopedPayload = ptyRunnerScopedPayload(payload.runnerId, payload);
@@ -7198,8 +7260,10 @@ app.whenReady().then(() => {
     }
     void writePtyRunnerStateFile(payload.runnerId, fields);
     if (payload.status === "stopped") {
+      flushCodexSessionUsageSyncForRunner(payload.runnerId);
       ptyRunnerMeta.delete(payload.runnerId);
       ptyTokenUsageParseState.delete(payload.runnerId);
+      codexSessionUsageSyncPending.delete(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
         try { removePtySessionPid(payload.pid); } catch {}
