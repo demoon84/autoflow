@@ -9,6 +9,10 @@ Autoflow는 로컬 프로젝트에 AI 작업 보드를 설치하고, Codex / Cla
 
 루트에는 설치된 `.autoflow/` 보드를 두지 않는다. 이 저장소는 제품/런타임 소스 저장소이고, 실제 보드는 별도 대상 프로젝트 안에 설치된다.
 
+## Screenshot
+
+![Autoflow desktop runner dashboard](docs/images/autoflow-dashboard.png)
+
 ## Quick Start
 
 ```bash
