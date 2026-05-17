@@ -232,8 +232,8 @@ function parseTomlStringValue(rawValue) {
   return value.split(/\s+/)[0] || "";
 }
 
-function readRunnerConfigBlock(projectRoot, boardDirName, runnerId) {
-  if (!projectRoot || !runnerId) return {};
+function readRunnerConfigBlocks(projectRoot, boardDirName) {
+  if (!projectRoot) return [];
   const configPath = (() => {
     const local = path.join(projectRoot, boardDirName || defaultBoardDirName, "runners", "config.local.toml");
     const base = path.join(projectRoot, boardDirName || defaultBoardDirName, "runners", "config.toml");
@@ -243,9 +243,10 @@ function readRunnerConfigBlock(projectRoot, boardDirName, runnerId) {
   try {
     text = fsSync.readFileSync(configPath, "utf8");
   } catch {
-    return {};
+    return [];
   }
   const blocks = text.split(/\[\[runners\]\]/).slice(1);
+  const runners = [];
   for (const block of blocks) {
     const values = {};
     for (const rawLine of block.split(/\r?\n/)) {
@@ -254,11 +255,24 @@ function readRunnerConfigBlock(projectRoot, boardDirName, runnerId) {
       if (!match) continue;
       values[match[1]] = parseTomlStringValue(match[2]);
     }
+    if (values.id) runners.push(values);
+  }
+  return runners;
+}
+
+function readRunnerConfigBlock(projectRoot, boardDirName, runnerId) {
+  if (!projectRoot || !runnerId) return {};
+  for (const values of readRunnerConfigBlocks(projectRoot, boardDirName)) {
     if (values.id === runnerId) {
       return values;
     }
   }
   return {};
+}
+
+function runnerConfigBoolean(value, fallback = true) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  return !/^(0|false|no|off)$/i.test(String(value).trim());
 }
 
 function inferRunnerRoleFromId(runnerId) {
@@ -827,6 +841,7 @@ function reapPreviousPtySessionPids() {
 // prompts and main can update the runner state file on lifecycle events.
 //   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
+const wakeAutoSpawnInflight = new Set();
 
 function ptyRunnerMatchesRequestedScope(ptyManager, runnerId, scope = {}) {
   const requestedProjectRoot = normalizePtyProjectRoot(scope.projectRoot);
@@ -1281,6 +1296,38 @@ function rolesForBoardChange(relPath) {
   return [];
 }
 
+function runnerIdForWakeQueueChange(relPath) {
+  const match = String(relPath || "").match(/^runners\/state\/([A-Za-z0-9_.-]+)-wake\.queue\.jsonl$/);
+  return match ? match[1] : "";
+}
+
+function runnerWakeQueueHasPending(boardRoot, runnerId) {
+  if (!boardRoot || !runnerId) return false;
+  const queuePath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.queue.jsonl`);
+  const pointerPath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.pointer`);
+  let pointer = "";
+  try {
+    pointer = fsSync.readFileSync(pointerPath, "utf8").trim();
+  } catch {}
+  try {
+    const raw = fsSync.readFileSync(queuePath, "utf8");
+    return raw
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .some((line) => {
+        try {
+          const event = JSON.parse(line);
+          const at = String(event?.at || "");
+          return at && (!pointer || at > pointer);
+        } catch {
+          return false;
+        }
+      });
+  } catch {
+    return false;
+  }
+}
+
 function emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind = "fs.watch") {
   const projectRoot = scope?.projectRoot || "";
   const boardDirName = scope?.boardDirName || defaultBoardDirName;
@@ -1320,7 +1367,7 @@ function runnerInitialPromptWasSent(meta) {
   return Number.isFinite(sentAt) && sentAt > 0;
 }
 
-function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true }) {
+function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true, recordQueue = true }) {
   const paste = meta.agent === "claude" ? "bracketed" : "plain";
   let promptOk = false;
   const canPrompt = prompt && kind !== "safety-poll" && runnerInitialPromptWasSent(meta);
@@ -1329,7 +1376,9 @@ function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = 
       promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
     }
   } catch {}
-  emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
+  if (recordQueue) {
+    emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
+  }
   updateWakeActivity(runnerId);
   return promptOk;
 }
@@ -1398,6 +1447,168 @@ async function writePtyRunnerStateFile(runnerId, fields) {
   } catch (err) {
     // best-effort; UI can fall back to other signals
   }
+}
+
+async function spawnRunnerPtySession(opts = {}, source = "manual") {
+  const ptyManager = globalThis.__autoflowPtyManager;
+  if (!ptyManager || typeof ptyManager.isAvailable !== "function" || !ptyManager.isAvailable()) {
+    return { ok: false, error: "node-pty unavailable (rebuild required)" };
+  }
+  const projectRoot = String(opts.projectRoot || "");
+  const boardDirName = String(opts.boardDirName || ".autoflow");
+  const runnerId = String(opts.runnerId || "");
+  if (!runnerId || !projectRoot) {
+    return { ok: false, error: "runnerId and projectRoot required" };
+  }
+  const diskRunnerConfig = readRunnerConfigBlock(projectRoot, boardDirName, runnerId);
+  const role = String(diskRunnerConfig.role || opts.role || inferRunnerRoleFromId(runnerId));
+  const normalizedRole = normalizeRunnerRole(role);
+  if (normalizedRole === "coordinator") {
+    return { ok: false, error: "coordinator is not a runner; use planner, worker, verifier, or wiki runners." };
+  }
+  const agent = String(diskRunnerConfig.agent || opts.agent || "codex").toLowerCase();
+  const model = String(diskRunnerConfig.model ?? opts.model ?? "");
+  const reasoning = String(diskRunnerConfig.reasoning ?? opts.reasoning ?? "");
+  const codexHistory = normalizeCodexHistoryMode(diskRunnerConfig.codex_history ?? opts.codexHistory ?? "");
+  if (!(await commandExists(agent))) {
+    return { ok: false, error: `${agent} CLI not found in shell PATH` };
+  }
+  const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
+  if (!command) {
+    return { ok: false, error: `unsupported agent: ${agent}` };
+  }
+  try {
+    const existing = ptyManager.get(runnerId);
+    const existingMatchesScope = ptyRunnerMatchesRequestedScope(ptyManager, runnerId, {
+      projectRoot,
+      boardDirName
+    });
+    const freshSessionRequested = Boolean(opts.freshSession) || normalizedRole === "wiki-maintainer";
+    if (
+      existing &&
+      existing.status === "running" &&
+      (freshSessionRequested || !existingMatchesScope || (existing.command && existing.command !== command))
+    ) {
+      if (Number.isInteger(existing.pid) && existing.pid > 0) {
+        killPidForcefully(existing.pid);
+        removePtySessionPid(existing.pid);
+      }
+      ptyManager.stop(runnerId, { force: true });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    const runnerEnv = buildRunnerPtyEnv({
+      agent,
+      runnerId,
+      role: normalizedRole,
+      projectRoot,
+      boardDirName,
+      codexHistory
+    });
+    const runner = ptyManager.start(runnerId, {
+      command,
+      cwd: projectRoot,
+      cols: Number.isFinite(opts.cols) ? opts.cols : 120,
+      rows: Number.isFinite(opts.rows) ? opts.rows : 30,
+      logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
+      env: runnerEnv.env
+    });
+    const startedAt = new Date().toISOString();
+    ptyRunnerMeta.set(runnerId, {
+      role: normalizedRole,
+      agent,
+      projectRoot,
+      boardDirName,
+      codexHome: runnerEnv.codexHome,
+      codexHistory: runnerEnv.codexHistory,
+      startedAt
+    });
+    await writePtyRunnerStateFile(runnerId, {
+      id: runnerId,
+      status: "running",
+      role: normalizedRole,
+      agent,
+      model,
+      reasoning,
+      mode: "pty",
+      pid: String(runner.pid || ""),
+      started_at: startedAt,
+      codex_home: runnerEnv.codexHome || "",
+      codex_history: runnerEnv.codexHistory || "",
+      last_stdout_log: runner.liveStdoutLog || "",
+      last_event_at: startedAt,
+      last_result: "",
+      spawn_source: source
+    });
+    try { addPtySessionPid({ pid: runner.pid, runnerId, role: normalizedRole, agent, spawnedAt: startedAt }); } catch {}
+    const promptDelay = agent === "gemini" ? 10000 : 6000;
+    const initialPrompt = buildInitialPrompt({
+      role: normalizedRole,
+      agent,
+      runnerId,
+      projectRoot,
+      boardDirName
+    });
+    setTimeout(() => {
+      const paste = agent === "claude" ? "bracketed" : "plain";
+      const ok = ptyManager.writePrompt(runnerId, initialPrompt, { paste });
+      if (ok) markRunnerInitialPromptSent(runnerId);
+      console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
+    }, promptDelay);
+    setTimeout(() => {
+      try {
+        const snap = ptyManager.snapshot(runnerId) || "";
+        console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
+      } catch (err) {
+        console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
+      }
+    }, promptDelay + 2500);
+    return { ok: true, runnerId: runner.id, pid: runner.pid, status: runner.status, stdout: "" };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) {
+  if (!safeIdPattern.test(String(runnerId || ""))) return;
+  const projectRoot = scope?.projectRoot || "";
+  const boardDirName = scope?.boardDirName || defaultBoardDirName;
+  if (!projectRoot) return;
+  const config = readRunnerConfigBlock(projectRoot, boardDirName, runnerId);
+  if (config.id !== runnerId) return;
+  if (!runnerConfigBoolean(config.enabled, true) || !runnerConfigBoolean(config.realtime_enabled, true)) return;
+  const normalizedRole = normalizeRunnerRole(config.role || inferRunnerRoleFromId(runnerId));
+  if (!runnerWakeQueueHasPending(boardRoot, runnerId) && !queueHasPendingWork(normalizedRole, boardRoot)) return;
+  const mgr = globalThis.__autoflowPtyManager;
+  const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
+  if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot, boardDirName })) return;
+
+  const key = `${projectRoot}\0${boardDirName}\0${runnerId}`;
+  if (wakeAutoSpawnInflight.has(key)) return;
+  wakeAutoSpawnInflight.add(key);
+  appendRunnerLog(boardRoot, runnerId, {
+    event: "wake_auto_spawn_scheduled",
+    reason: String(reason || "wake.queue"),
+    role: normalizedRole
+  });
+  setTimeout(async () => {
+    try {
+      const result = await spawnRunnerPtySession({
+        runnerId,
+        role: normalizedRole,
+        projectRoot,
+        boardDirName,
+        freshSession: normalizedRole === "wiki-maintainer"
+      }, "wake");
+      appendRunnerLog(boardRoot, runnerId, {
+        event: "wake_auto_spawn_result",
+        ok: result.ok ? "true" : "false",
+        reason: String(reason || "wake.queue"),
+        error: result.ok ? "" : String(result.error || "")
+      });
+    } finally {
+      wakeAutoSpawnInflight.delete(key);
+    }
+  }, 0);
 }
 
 // Build the literal shell command to type into a PTY shell so the agent CLI
@@ -1934,13 +2145,18 @@ function ensureBoardWatcher(scope) {
   const entry = {
     watchers: [],
     debounceTimer: null,
-    lastReason: ""
+    lastReason: "",
+    pendingReasons: new Set()
   };
   boardWatchersByScope.set(key, entry);
 
   const broadcast = () => {
-    const reason = entry.lastReason || "fs.watch";
+    const reasons = entry.pendingReasons.size > 0
+      ? Array.from(entry.pendingReasons)
+      : [entry.lastReason || "fs.watch"];
+    const reason = reasons[reasons.length - 1] || "fs.watch";
     entry.lastReason = "";
+    entry.pendingReasons.clear();
     clearReadBoardCachesForScope({ projectRoot: scope.projectRoot, boardDirName });
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -1965,12 +2181,40 @@ function ensureBoardWatcher(scope) {
     try {
       const mgr = globalThis.__autoflowPtyManager;
       if (!mgr) return;
-      const targetRoles = new Set(rolesForBoardChange(reason));
-      if (targetRoles.size === 0) return;
+      const wakeReasonByRole = new Map();
+      const wakeReasonByRunner = new Map();
+      for (const candidateReason of reasons) {
+        const directRunnerId = runnerIdForWakeQueueChange(candidateReason);
+        if (directRunnerId && !wakeReasonByRunner.has(directRunnerId)) {
+          wakeReasonByRunner.set(directRunnerId, candidateReason);
+        }
+        for (const role of rolesForBoardChange(candidateReason)) {
+          if (!wakeReasonByRole.has(role)) {
+            wakeReasonByRole.set(role, candidateReason);
+          }
+        }
+      }
+      if (wakeReasonByRole.size === 0 && wakeReasonByRunner.size === 0) return;
       for (const [rid, meta] of ptyRunnerMeta.entries()) {
         if (meta.projectRoot !== scope.projectRoot) continue;
         if (meta.boardDirName !== boardDirName) continue;
-        if (!targetRoles.has(meta.role)) continue;
+        const directWakeReason = wakeReasonByRunner.get(rid);
+        const roleWakeReason = wakeReasonByRole.get(meta.role);
+        if (directWakeReason) {
+          if (!runnerWakeQueueHasPending(boardRoot, rid) && !queueHasPendingWork(meta.role, boardRoot)) continue;
+          sendRunnerWake({
+            mgr,
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason || directWakeReason,
+            kind: roleWakeReason ? "fs.watch" : "wake.queue",
+            recordQueue: false
+          });
+          continue;
+        }
+        if (!roleWakeReason) continue;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
         sendRunnerWake({
           mgr,
@@ -1978,37 +2222,56 @@ function ensureBoardWatcher(scope) {
           meta,
           scope: { projectRoot: scope.projectRoot, boardDirName },
           boardRoot,
-          reason,
+          reason: roleWakeReason,
           kind: "fs.watch"
+        });
+      }
+      for (const [directRunnerId, directWakeReason] of wakeReasonByRunner.entries()) {
+        const existing = typeof mgr.get === "function" ? mgr.get(directRunnerId) : null;
+        if (
+          existing?.status === "running" &&
+          ptyRunnerMatchesRequestedScope(mgr, directRunnerId, { projectRoot: scope.projectRoot, boardDirName })
+        ) {
+          continue;
+        }
+        scheduleRunnerAutoSpawnForWake({
+          runnerId: directRunnerId,
+          scope: { projectRoot: scope.projectRoot, boardDirName },
+          boardRoot,
+          reason: directWakeReason
         });
       }
       // Sticky context generation: when a Todo-*.md appears in inprogress/,
       // the worker just claimed it. Write sticky-context.md with the
       // ticket's Allowed Paths / Done When / Acceptance Probe.
-      if (
-        reason.startsWith("tickets/inprogress/") &&
-        /Todo-\d+\.md$/.test(reason)
-      ) {
-        const ticketFile = path.basename(reason);
-        const ticketPath = path.join(boardRoot, "tickets", "inprogress", ticketFile);
-        for (const [rid, meta] of ptyRunnerMeta.entries()) {
-          if (meta.projectRoot !== scope.projectRoot) continue;
-          if (meta.boardDirName !== boardDirName) continue;
-          if (meta.role !== "worker") continue;
-          generateStickyContext(boardRoot, rid, ticketPath);
+      for (const candidateReason of reasons) {
+        if (
+          candidateReason.startsWith("tickets/inprogress/") &&
+          /Todo-\d+\.md$/.test(candidateReason)
+        ) {
+          const ticketFile = path.basename(candidateReason);
+          const ticketPath = path.join(boardRoot, "tickets", "inprogress", ticketFile);
+          for (const [rid, meta] of ptyRunnerMeta.entries()) {
+            if (meta.projectRoot !== scope.projectRoot) continue;
+            if (meta.boardDirName !== boardDirName) continue;
+            if (meta.role !== "worker") continue;
+            generateStickyContext(boardRoot, rid, ticketPath);
+          }
         }
       }
       // Context reset after ticket pass: when a done/*/Todo-*.md appears,
       // the worker just finished a pass. Schedule compact/clear inject.
-      if (
-        reason.startsWith("tickets/done/") &&
-        /\/Todo-\d+\.md$/.test(reason)
-      ) {
-        for (const [rid, meta] of ptyRunnerMeta.entries()) {
-          if (meta.projectRoot !== scope.projectRoot) continue;
-          if (meta.boardDirName !== boardDirName) continue;
-          if (meta.role !== "worker") continue;
-          scheduleContextReset(rid, meta);
+      for (const candidateReason of reasons) {
+        if (
+          candidateReason.startsWith("tickets/done/") &&
+          /\/Todo-\d+\.md$/.test(candidateReason)
+        ) {
+          for (const [rid, meta] of ptyRunnerMeta.entries()) {
+            if (meta.projectRoot !== scope.projectRoot) continue;
+            if (meta.boardDirName !== boardDirName) continue;
+            if (meta.role !== "worker") continue;
+            scheduleContextReset(rid, meta);
+          }
         }
       }
     } catch {
@@ -2017,7 +2280,9 @@ function ensureBoardWatcher(scope) {
   };
 
   const enqueue = (reason) => {
-    entry.lastReason = reason || entry.lastReason || "fs.watch";
+    const normalizedReason = reason || "fs.watch";
+    entry.lastReason = normalizedReason || entry.lastReason || "fs.watch";
+    entry.pendingReasons.add(normalizedReason);
     if (entry.debounceTimer) {
       clearTimeout(entry.debounceTimer);
     }
