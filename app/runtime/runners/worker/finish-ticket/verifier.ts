@@ -1,12 +1,21 @@
 import {fs, path, boardRoot, projectRoot, scriptDir, timestamp, workerId} from "./context";
-import {appendNote, replaceScalar, replaceSection, updateGoalRuntime} from "./ticket-sections";
+import {appendNote, removeScalars, replaceScalar, replaceSection, updateGoalRuntime} from "./ticket-sections";
 import {boardRel, oneLine, printPairs, read, write} from "./io";
 import {spawnOutputText, spawnTsScript} from "./git";
+
+const verifierDecisionFields = [
+  "Semantic Decision",
+  "Semantic Reason",
+  "Semantic Checked At",
+  "Semantic Log",
+  "Semantic Marker",
+];
 
 export function handoffToVerifier(ticketFile: string, ticketId: string): void {
   const verifierDir = path.join(boardRoot, "tickets", "verifier");
   fs.mkdirSync(verifierDir, { recursive: true });
   const verifierTicket = path.join(verifierDir, `Todo-${ticketId}.md`);
+  removeScalars(ticketFile, "Verification", verifierDecisionFields);
   replaceScalar(ticketFile, "Ticket", "Stage", "verify_pending");
   replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
   replaceScalar(ticketFile, "Worktree", "Integration Status", "verify_pending");

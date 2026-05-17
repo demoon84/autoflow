@@ -327,9 +327,9 @@ export class PtyRunnerManager extends EventEmitter {
   // mode='clear': discard context entirely (escalation path).
   // Agent mapping:
   //   claude  compact→/compact  clear→/clear
-  //   codex   compact→/compact  clear→/compact by default
-  //           (set AUTOFLOW_CODEX_CLEAR_MODE=new to opt into /new)
-  //   gemini  compact→/compress clear→/chat new
+  //   codex   compact→/compact  clear→/new
+  //   gemini  compact→/compress clear→/clear
+  //           (set AUTOFLOW_GEMINI_CLEAR_MODE=new to opt into /new)
   // Slash commands are single-line, so no bracketed-paste envelope.
   injectContextReset(runnerId: string, mode: ContextResetMode = "compact") {
     const runner = this.runners.get(runnerId);
@@ -337,10 +337,10 @@ export class PtyRunnerManager extends EventEmitter {
     const cmd = String(runner.command || "").trimStart().toLowerCase();
     let slashCmd;
     if (cmd.startsWith("gemini")) {
-      slashCmd = mode === "clear" ? "/chat new" : "/compress";
+      const geminiClearMode = String(process.env.AUTOFLOW_GEMINI_CLEAR_MODE || "clear").toLowerCase();
+      slashCmd = mode === "clear" && geminiClearMode === "new" ? "/new" : (mode === "clear" ? "/clear" : "/compress");
     } else if (cmd.startsWith("codex")) {
-      const codexClearMode = String(process.env.AUTOFLOW_CODEX_CLEAR_MODE || "compact").toLowerCase();
-      slashCmd = mode === "clear" && codexClearMode === "new" ? "/new" : "/compact";
+      slashCmd = mode === "clear" ? "/new" : "/compact";
     } else {
       // claude (default)
       slashCmd = mode === "clear" ? "/clear" : "/compact";

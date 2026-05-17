@@ -23,6 +23,10 @@ export function readWorkerTicketItem(file: string, kind: string): WorkerTicketIt
     execution_ai: utils.extractScalarFieldInSection(file, "Ticket", "Execution AI"),
     worktree_path: utils.ticketWorktreePathFromFile(file),
     worktree_status: utils.extractScalarFieldInSection(file, "Worktree", "Integration Status"),
+    semantic_decision: utils.extractScalarFieldInSection(file, "Verification", "Semantic Decision"),
+    semantic_reason: utils.extractScalarFieldInSection(file, "Verification", "Semantic Reason"),
+    semantic_checked_at: utils.extractScalarFieldInSection(file, "Verification", "Semantic Checked At"),
+    semantic_log: utils.extractScalarFieldInSection(file, "Verification", "Semantic Log"),
   };
 }
 

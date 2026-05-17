@@ -29,14 +29,15 @@ Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 3. Do not require full PRD approval for explicit order triggers. The user already asked for quick intake.
 4. Preserve the user's original request under `## Request`.
 5. Add `--allowed-path`, `--scope`, and `--verification` hints only when they are obvious from the repo or conversation. Leave inference to the planner runner when unsure.
-6. Prefer `autoflow order create <project-root> <board-dir-name> --from-file <draft-file> --title <short title>` when the CLI is available.
-7. Add `--priority critical` only for host resource exhaustion, board integrity loss, security exposure, data loss, Autoflow self-recovery threats, or explicit critical language such as "critical", "urgent", "fork-bomb", "leak", or "blocker".
-8. Add `--priority high` for urgent user-visible breakage, blocked active work, or explicit high-priority language such as "high priority", "important", or "blocking".
-9. Omit `--priority` for normal planned work so the CLI records `Priority: normal`; use `--priority low` only for cleanup or non-urgent improvements.
-10. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
-11. Fallback: write the order template below directly under `{{BOARD_DIR}}/tickets/order/`; include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
-12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
-13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will write a generated PRD first; direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.
+6. If the order clearly spans multiple independent outcomes, modules, releases, or verification paths, include `## PRD Split Map` hints so the planner runner can generate multiple PRDs.
+7. Prefer `autoflow order create <project-root> <board-dir-name> --from-file <draft-file> --title <short title>` when the CLI is available and no split map is needed. If a split map is needed, write the order template directly.
+8. Add `--priority critical` only for host resource exhaustion, board integrity loss, security exposure, data loss, Autoflow self-recovery threats, or explicit critical language such as "critical", "urgent", "fork-bomb", "leak", or "blocker".
+9. Add `--priority high` for urgent user-visible breakage, blocked active work, or explicit high-priority language such as "high priority", "important", or "blocking".
+10. Omit `--priority` for normal planned work so the CLI records `Priority: normal`; use `--priority low` only for cleanup or non-urgent improvements.
+11. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
+12. Fallback: write the order template below directly under `{{BOARD_DIR}}/tickets/order/`; include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
+13. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
+14. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will write one or more generated PRDs first; direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.
 
 ## Order Template
 
@@ -74,6 +75,14 @@ If `autoflow order create` is used and writes legacy `## Scope`, `## Allowed Pat
 - npm run test
 - none-shell
 - manual: <planner가 검증 계획을 세울 때 참고할 수동 확인>
+
+## PRD Split Map
+
+- Title: <필요할 때만 PRD 단위 제목>
+  - Goal: <독립 outcome>
+  - Scope: <좁은 모듈/릴리즈/검증 경계>
+  - Allowed Paths: path/to/file-or-folder
+  - Verification: npm run test
 
 ## Planner Hints
 

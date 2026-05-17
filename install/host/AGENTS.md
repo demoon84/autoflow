@@ -62,14 +62,14 @@ Autoflow 는 Codex, Claude Code, Gemini CLI 같은 코딩 에이전트를 위한
 - `#order` (이전 이름 `#order` 에서 변경됨)
   - Claude `/order`, Codex `$order` 와 같은 quick order handoff alias 다.
   - 단순 수정 요청을 대화창에서 PRD/TODO 로 판단하지 않고 `{{BOARD_DIR}}/tickets/order/order_*.md` 에 저장한다 (파일 이름 prefix `order` 와 CLI `autoflow order create` 는 호환을 위해 그대로 둠).
-  - 플래너 러너가 order 를 읽고 기본적으로 generated PRD 를 먼저 만든다. 바로 TODO 로 가는 경로는 명시적으로 요청된 단일 파일 기계적 변경에 한정한다.
+  - 플래너 러너가 order 를 읽고 기본적으로 generated PRD 를 먼저 만들며, 독립 outcome/module/release/verification 경계가 있으면 여러 PRD 로 나눌 수 있다. 바로 TODO 로 가는 경로는 명시적으로 요청된 단일 파일 기계적 변경에 한정한다.
   - 원 요청은 `## Request` 에 보존하고, 확실한 경우에만 scope / Allowed Paths / Verification hint 를 적는다.
-  - plan / ticket / 구현은 시작하지 않는다. 이후 플래너 러너가 order 의 노트를 구현 지시로 해석해 generated PRD 를 먼저 만든다. 정보 부족은 PRD 의 가정/미정 항목으로 남기며, order 는 반복 질문 루프를 만들지 않는다.
+  - plan / ticket / 구현은 시작하지 않는다. 이후 플래너 러너가 order 의 노트를 구현 지시로 해석해 generated PRD 작업을 먼저 만든다. 정보 부족은 PRD 의 가정/미정 항목으로 남기며, order 는 반복 질문 루프를 만들지 않는다.
 
 - `#plan`
   - legacy role-pipeline 호환 트리거다. 기본 토폴로지에서 plan 작업은 활성 플래너 러너(`planner`) 가 runner tick/wake 마다 처리하므로 새 작업에서는 사용 권장하지 않는다.
   - 현재 스레드에서 명시적으로 호출하면 planner 호환 tick 을 실행하거나 활성 플래너 러너 wake 로 이어간다.
-  - actionable order 또는 populated spec 이 있으면 계속 처리한다. order 는 플래너 러너가 generated PRD / plan 을 먼저 만들고, 명시적인 단일 파일 기계적 변경만 좁은 direct TODO 예외로 처리한다.
+  - actionable order 또는 populated spec 이 있으면 계속 처리한다. order 는 플래너 러너가 generated PRD 작업을 먼저 만들고, 독립 경계가 있으면 여러 PRD 로 나눌 수 있으며, 명시적인 단일 파일 기계적 변경만 좁은 direct TODO 예외로 처리한다.
   - 실제 ticket 생성이 끝난 spec 과 plan 은 `{{BOARD_DIR}}/tickets/done/<project-key>/` 로 이동한다.
   - verifier replan 뒤 worker 가 생성한 `{{BOARD_DIR}}/tickets/order/order_*_retry_*.md` 도 일반 order 처럼 처리한다. `retry_decision=needs_user` 인 파일은 order 큐에 그대로 두고 사용자 결정을 기다린다.
   - 현재 plan 이 ticketed 가 됐거나 verifier 가 `{{BOARD_DIR}}/tickets/done/<project-key>/` 으로 넘긴 뒤에도 PRD 큐에 다음 populated spec 이 남아 있으면 계속 다음 plan 으로 이어간다.

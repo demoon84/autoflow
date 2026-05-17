@@ -31,7 +31,7 @@ Before drafting any PRD content, surface relevant prior work so the new PRD refe
 7. Save only after a separate explicit save confirmation such as `save`, `저장`, `confirm`, `approved`, or `ready`. A draft trigger is **not** save approval. Multiple drafts need per-PRD approval or a clear `save all` / `전부 저장` confirmation.
 8. Save only PRD queue items. Do not create plans, tickets, code changes, verification records, commits, or pushes.
 9. Prefer `autoflow spec create <project-root> <board-dir-name> --from-file <draft-file> --raw --save-handoff` when the CLI is available. Otherwise write approved markdown to `{{BOARD_DIR}}/tickets/prd/prd_NNN.md`. For multiple PRDs, save separate `prd_NNN.md` files one active slot at a time.
-10. After saving, tell the user the saved path(s), intended order when relevant, and that the planner runner (`autoflow run planner`) will turn the PRD into todo work before the worker runner (`autoflow run ticket`) implements it.
+10. After saving, tell the user the saved path(s), intended order when relevant, and that the planner runner (`autoflow run planner`) will turn each PRD into one or more todo tickets before the worker runner (`autoflow run ticket`) implements them.
 
 ## PRD Draft Template
 

@@ -39,6 +39,10 @@ export interface WorkerTicketItem extends QueueItem {
   execution_ai: string;
   worktree_path: string;
   worktree_status: string;
+  semantic_decision: string;
+  semantic_reason: string;
+  semantic_checked_at: string;
+  semantic_log: string;
   conflicts?: ConflictInfo[];
 }
 
@@ -112,6 +116,39 @@ export function emitRunnerWake(runnerId: string, reason: string, kind: string): 
     stdout: spawnOutputText(result.stdout),
     stderr: spawnOutputText(result.stderr),
   };
+}
+
+export function emitRunnerContextReset(
+  runnerId: string,
+  reason: string,
+  mode = "compact",
+  extra: JsonObject = {}
+): { ok: boolean; status: number; path: string; stderr: string } {
+  const safeRunner = safeSegment(runnerId || "");
+  if (!safeRunner) {
+    return { ok: false, status: 2, path: "", stderr: "runner id required" };
+  }
+  try {
+    const stateDir = path.join(BOARD_ROOT, "runners", "state");
+    fs.mkdirSync(stateDir, { recursive: true });
+    const queuePath = path.join(stateDir, `${safeRunner}-context-reset.queue.jsonl`);
+    const event = {
+      ...extra,
+      at: new Date().toISOString(),
+      runner_id: safeRunner,
+      reason: reason || "ticket_boundary",
+      mode: mode === "clear" ? "clear" : "compact",
+    };
+    fs.appendFileSync(queuePath, `${JSON.stringify(event)}\n`, "utf8");
+    return { ok: true, status: 0, path: boardRel(queuePath), stderr: "" };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 1,
+      path: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export function spawnOutputText(value: string | Buffer | null | undefined): string {

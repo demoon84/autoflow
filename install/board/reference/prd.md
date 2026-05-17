@@ -11,8 +11,8 @@
 ## Rules
 
 - Autoflow skill handoff (`/autoflow`, `$autoflow`) and compatibility alias (`#autoflow`) may create or update one `prd_NNN.md` only after explicit user approval.
-- The planner runner creates a generated `prd_NNN.md` from ordinary `tickets/order/order_*.md` by reading the order, collecting repository/wiki evidence, and recording assumptions plus remaining unknowns. Ambiguity belongs in the PRD; it should not leave the order stuck as `blocked`, `needs-info`, or `needs_user`.
-- The planner runner consumes populated PRDs by archiving them under `tickets/done/<project-key>/` and emitting concrete `tickets/todo/Todo-NNN.md` work.
+- The planner runner creates one or more generated `prd_NNN.md` files from ordinary `tickets/order/order_*.md` by reading the order, collecting repository/wiki evidence, and recording assumptions plus remaining unknowns. Ambiguity belongs in generated PRDs; it should not leave the order stuck as `blocked`, `needs-info`, or `needs_user`.
+- The planner runner consumes populated PRDs by archiving them under `tickets/done/<project-key>/` and emitting one or more concrete `tickets/todo/Todo-NNN.md` files. Use `## Todo Split Map` when one PRD should become multiple worker-owned todo tickets.
 - The worker runner does not claim PRD queue items directly; it only claims todo tickets produced by the planner runner.
 - Legacy `#plan` compatibility uses the same prd-to-todo handoff path.
 - A consumed PRD moves to `tickets/done/<project-key>/`.

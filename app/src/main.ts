@@ -817,6 +817,7 @@ function reapPreviousPtySessionPids() {
 const ptyRunnerMeta = new Map();
 const wakeAutoStartInflight = new Set();
 const deferredWakePromptTimers = new Map();
+const contextResetTimers = new Map();
 
 function ptyRunnerMatchesRequestedScope(ptyManager, runnerId, scope = {}) {
   const requestedProjectRoot = normalizePtyProjectRoot(scope.projectRoot);
@@ -1260,88 +1261,207 @@ function generateStickyContext(boardRoot, runnerId, ticketPath) {
   } catch {}
 }
 
-// Inject a context reset slash command into a PTY runner after ticket pass.
-// Reads cumulative_tokens from the runner state file to decide compact vs clear.
+// Inject a context reset slash command into a PTY runner after a ticket
+// boundary. Default mode is compact; hard clear is opt-in via event/env.
 // Env knobs:
 //   AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS   (default 1 = enabled)
-//   AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD   (default 100000)
+//   AUTOFLOW_CONTEXT_RESET_MODE              (default compact; compact|clear|auto)
+//   AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD   (default 100000; used by mode=auto)
+//   AUTOFLOW_CONTEXT_RESET_DELAY_MS          (default 3000)
+//   AUTOFLOW_CONTEXT_RESET_MIN_IDLE_MS       (default 2500)
+//   AUTOFLOW_CONTEXT_RESET_MAX_ATTEMPTS      (default 24)
+//   AUTOFLOW_CONTEXT_RESET_WAKE_AFTER        (default pending; pending|always|never)
 //   AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK  (default 1)
-//   AUTOFLOW_CONTEXT_RESET_STICKY            (default 1 = inject sticky prelude after reset)
-function scheduleContextReset(runnerId, meta) {
+//   AUTOFLOW_CONTEXT_RESET_STICKY            (default 1; only used when explicitly requested)
+function normalizeContextResetMode(raw) {
+  const mode = String(raw || "").trim().toLowerCase();
+  return ["compact", "clear", "auto"].includes(mode) ? mode : "compact";
+}
+
+function resolveContextResetMode(requestedMode, cumulativeTokens, threshold) {
+  if (requestedMode === "auto") {
+    return cumulativeTokens >= threshold ? "clear" : "compact";
+  }
+  return requestedMode === "clear" ? "clear" : "compact";
+}
+
+function scheduleContextReset(runnerId, meta, opts = {}) {
   const enabled = (process.env.AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS ?? "1") !== "0";
-  if (!enabled) return;
-  const threshold = Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD || "100000", 10);
+  if (!enabled || !runnerId || !meta?.projectRoot) return;
+
+  const boardDirName = meta.boardDirName || defaultBoardDirName;
+  const boardRoot = path.join(meta.projectRoot, boardDirName);
+  const thresholdRaw = Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_TOKEN_THRESHOLD || "100000", 10);
+  const threshold = Number.isFinite(thresholdRaw) ? thresholdRaw : 100000;
   const respawnFallback = (process.env.AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK ?? "1") !== "0";
-  const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
-  // Delay so the LLM's current turn can finish printing before we inject.
-  setTimeout(() => {
-    const mgr = globalThis.__autoflowPtyManager;
-    if (!mgr) return;
-    const runner = mgr.get(runnerId);
-    if (!runner || runner.status !== "running") return;
-    // Read cumulative_tokens from state file to decide mode.
-    let cumulativeTokens = 0;
-    try {
-      const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
-      const raw = fsSync.readFileSync(statePath, "utf8");
-      const m = raw.match(/(?:^|\n)cumulative_tokens=(\d+)/);
-      if (m) cumulativeTokens = Number.parseInt(m[1], 10) || 0;
-    } catch {}
-    const mode = cumulativeTokens >= threshold ? "clear" : "compact";
-    const injected = mgr.injectContextReset(runnerId, mode);
-    if (!injected) return;
-    appendRunnerLog(boardRoot, runnerId, {
-      event: "context_reset",
-      runner_id: runnerId,
-      mode,
-      trigger: "ticket_pass",
-      cumulative_before: cumulativeTokens,
-      threshold,
-    });
-    // Follow up with [wake] fresh-start so the LLM knows to pick up next work.
-    const paste = (meta.agent || "").toLowerCase() === "claude" ? "bracketed" : "plain";
-    setTimeout(() => {
-      if (mgr.get(runnerId)?.status !== "running") return;
-      mgr.writePrompt(runnerId, "[wake] fresh-start", { paste });
-      updateWakeActivity(runnerId);
-      // Inject sticky prelude so Allowed Paths / Done When survive /compact or /clear.
-      const stickyEnabled = (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
-      if (stickyEnabled) {
-        try {
-          const stickyPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
-          const stickyContent = fsSync.readFileSync(stickyPath, "utf8").trim();
-          if (stickyContent) {
-            setTimeout(() => {
-              if (mgr.get(runnerId)?.status !== "running") return;
-              mgr.writePrompt(runnerId, `[sticky-context]\n${stickyContent}`, { paste });
-            }, 1000);
-            appendRunnerLog(boardRoot, runnerId, {
-              event: "context_reset_sticky_inject",
-              runner_id: runnerId,
-              sticky_path: stickyPath,
-            });
-          }
-        } catch {}
+  const requestedMode = normalizeContextResetMode(opts.mode || process.env.AUTOFLOW_CONTEXT_RESET_MODE || "compact");
+  const trigger = String(opts.trigger || opts.reason || "ticket_boundary");
+  const resetReason = String(opts.reason || trigger);
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_DELAY_MS || "3000", 10) || 3000);
+  const minIdleMs = Math.max(0, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MIN_IDLE_MS || "2500", 10) || 2500);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MAX_ATTEMPTS || "24", 10) || 24);
+  const key = `${meta.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const existing = contextResetTimers.get(key);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const entry = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    contextResetTimers.delete(key);
+  };
+
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+
+      const mgr = globalThis.__autoflowPtyManager;
+      const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
+      if (
+        !mgr ||
+        !runner ||
+        runner.status !== "running" ||
+        !ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot: meta.projectRoot, boardDirName })
+      ) {
+        appendRunnerLog(boardRoot, runnerId, {
+          event: "context_reset_cancelled",
+          runner_id: runnerId,
+          trigger,
+          reason: resetReason,
+          cause: "runner_not_running"
+        });
+        clearEntry();
+        return;
       }
-    }, 2000);
-    // Context reset must never own runner process lifecycle. If a reset appears
-    // stuck, record it for UI/diagnostics; the user-owned PTY stays alive.
-    if (respawnFallback) {
-      const beforeData = runner.lastDataAt;
-      setTimeout(() => {
-        const r = mgr.get(runnerId);
-        if (!r || r.status !== "running") return;
-        if (r.lastDataAt === beforeData) {
+
+      const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
+      const idleMs = lastDataAt ? Date.now() - lastDataAt : Number.POSITIVE_INFINITY;
+      if (idleMs < minIdleMs) {
+        if (entry.attempt >= maxAttempts) {
           appendRunnerLog(boardRoot, runnerId, {
-            event: "context_reset_no_output",
+            event: "context_reset_deferred_timeout",
             runner_id: runnerId,
-            mode,
-            threshold,
+            trigger,
+            reason: resetReason,
+            idle_ms: String(Math.max(0, Math.round(idleMs))),
+            attempts: String(entry.attempt)
+          });
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+
+      let cumulativeTokens = 0;
+      try {
+        const statePath = path.join(boardRoot, "runners", "state", `${runnerId}.state`);
+        const raw = fsSync.readFileSync(statePath, "utf8");
+        const m = raw.match(/(?:^|\n)cumulative_tokens=(\d+)/);
+        if (m) cumulativeTokens = Number.parseInt(m[1], 10) || 0;
+      } catch {}
+      const mode = resolveContextResetMode(requestedMode, cumulativeTokens, threshold);
+      const injected = mgr.injectContextReset(runnerId, mode);
+      if (!injected) {
+        appendRunnerLog(boardRoot, runnerId, {
+          event: "context_reset_inject_failed",
+          runner_id: runnerId,
+          mode,
+          trigger,
+          reason: resetReason
+        });
+        clearEntry();
+        return;
+      }
+
+      appendRunnerLog(boardRoot, runnerId, {
+        event: "context_reset",
+        runner_id: runnerId,
+        mode,
+        trigger,
+        reason: resetReason,
+        cumulative_before: cumulativeTokens,
+        threshold,
+      });
+      clearEntry();
+
+      setTimeout(() => {
+        if (mgr.get(runnerId)?.status !== "running") return;
+        const wakePolicy = String(opts.wakeAfterReset || process.env.AUTOFLOW_CONTEXT_RESET_WAKE_AFTER || "pending").toLowerCase();
+        let shouldWake = wakePolicy === "always";
+        if (!shouldWake && wakePolicy !== "never") {
+          try { shouldWake = queueHasPendingWork(meta.role, boardRoot); } catch { shouldWake = false; }
+        }
+        if (shouldWake) {
+          scheduleDeferredRunnerWakePrompt({
+            runnerId,
+            meta: ptyRunnerMeta.get(runnerId) || meta,
+            scope: { projectRoot: meta.projectRoot, boardDirName },
+            boardRoot,
+            reason: "context-reset:fresh-start",
+            kind: "context-reset"
+          });
+          appendRunnerLog(boardRoot, runnerId, {
+            event: "context_reset_wake_deferred",
+            runner_id: runnerId,
+            trigger,
+            reason: resetReason,
+            wake_reason: "context-reset:fresh-start"
           });
         }
-      }, 30000);
-    }
-  }, 3000);
+
+        const paste = (meta.agent || "").toLowerCase() === "claude" ? "bracketed" : "plain";
+        const stickyEnabled = opts.injectSticky === true && (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
+        if (stickyEnabled) {
+          try {
+            const stickyPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
+            const stickyContent = fsSync.readFileSync(stickyPath, "utf8").trim();
+            if (stickyContent) {
+              setTimeout(() => {
+                if (mgr.get(runnerId)?.status !== "running") return;
+                mgr.writePrompt(runnerId, `[sticky-context]\n${stickyContent}`, { paste });
+              }, 1000);
+              appendRunnerLog(boardRoot, runnerId, {
+                event: "context_reset_sticky_inject",
+                runner_id: runnerId,
+                sticky_path: stickyPath,
+              });
+            }
+          } catch {}
+        }
+      }, 2000);
+
+      if (respawnFallback) {
+        const beforeData = runner.lastDataAt;
+        setTimeout(() => {
+          const r = mgr.get(runnerId);
+          if (!r || r.status !== "running") return;
+          if (r.lastDataAt === beforeData) {
+            appendRunnerLog(boardRoot, runnerId, {
+              event: "context_reset_no_output",
+              runner_id: runnerId,
+              mode,
+              threshold,
+            });
+          }
+        }, 30000);
+      }
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+
+  contextResetTimers.set(key, entry);
+  appendRunnerLog(boardRoot, runnerId, {
+    event: "context_reset_scheduled",
+    runner_id: runnerId,
+    mode: requestedMode,
+    trigger,
+    reason: resetReason,
+    delay_ms: String(delayMs),
+    min_idle_ms: String(minIdleMs),
+    max_attempts: String(maxAttempts)
+  });
+  scheduleNext(delayMs);
 }
 
 // Record that a wake was just sent to a runner (resets idle clock).
@@ -1383,6 +1503,51 @@ function rolesForBoardChange(relPath) {
 function runnerIdForWakeQueueChange(relPath) {
   const match = String(relPath || "").match(/^runners\/state\/([A-Za-z0-9_.-]+)-wake\.queue\.jsonl$/);
   return match ? match[1] : "";
+}
+
+function runnerIdForContextResetQueueChange(relPath) {
+  const match = String(relPath || "").match(/^runners\/state\/([A-Za-z0-9_.-]+)-context-reset\.queue\.jsonl$/);
+  return match ? match[1] : "";
+}
+
+function readPendingRunnerContextResetEvents(boardRoot, runnerId) {
+  if (!boardRoot || !runnerId) return [];
+  const queuePath = path.join(boardRoot, "runners", "state", `${runnerId}-context-reset.queue.jsonl`);
+  const pointerPath = path.join(boardRoot, "runners", "state", `${runnerId}-context-reset.pointer`);
+  let pointer = "";
+  try {
+    pointer = fsSync.readFileSync(pointerPath, "utf8").trim();
+  } catch {}
+  const events = [];
+  let latest = pointer;
+  try {
+    const raw = fsSync.readFileSync(queuePath, "utf8");
+    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
+      try {
+        const event = JSON.parse(line);
+        const at = String(event?.at || "");
+        if (!at || (pointer && at <= pointer)) continue;
+        events.push(event);
+        if (!latest || at > latest) latest = at;
+      } catch {}
+    }
+  } catch {
+    return [];
+  }
+  if (latest && latest !== pointer) {
+    try {
+      fsSync.writeFileSync(pointerPath, `${latest}\n`, "utf8");
+    } catch {}
+  }
+  return events;
+}
+
+function contextResetEventIsSchedulable(event) {
+  const tool = String(event?.tool || event?.reason || "");
+  const backendStatus = String(event?.backend_status || "");
+  if (tool === "worker.submit-to-verifier" || backendStatus === "verify_pending") return false;
+  if (tool.startsWith("verifier.")) return false;
+  return true;
 }
 
 function runnerWakeQueueHasPending(boardRoot, runnerId) {
@@ -1494,7 +1659,7 @@ function runnerInitialPromptWasSent(meta) {
 function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true, recordQueue = true }) {
   const paste = meta.agent === "claude" ? "bracketed" : "plain";
   let promptOk = false;
-  const canPrompt = prompt && kind !== "safety-poll" && runnerInitialPromptWasSent(meta);
+  const canPrompt = prompt && runnerInitialPromptWasSent(meta);
   try {
     if (canPrompt) {
       promptOk = Boolean(mgr?.writePrompt(runnerId, `[wake] ${reason}`, { paste }));
@@ -1503,7 +1668,9 @@ function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = 
   if (recordQueue) {
     emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind);
   }
-  updateWakeActivity(runnerId);
+  if (promptOk || recordQueue) {
+    updateWakeActivity(runnerId);
+  }
   return promptOk;
 }
 
@@ -1588,8 +1755,20 @@ function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, re
           prompt: true,
           recordQueue: false
         });
+        if (!promptOk && entry.attempt < maxAttempts) {
+          appendRunnerLog(entry.boardRoot, runnerId, {
+            event: "deferred_wake_prompt_retry",
+            runner_id: runnerId,
+            reason: entry.reason,
+            kind: entry.kind,
+            attempts: String(entry.attempt),
+            cause: "prompt_not_accepted"
+          });
+          scheduleNext(delayMs);
+          return;
+        }
         appendRunnerLog(entry.boardRoot, runnerId, {
-          event: "deferred_wake_prompt_sent",
+          event: promptOk ? "deferred_wake_prompt_sent" : "deferred_wake_prompt_failed",
           runner_id: runnerId,
           reason: entry.reason,
           kind: entry.kind,
@@ -2046,7 +2225,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `  1. Run \`${autoflowBin} tool runner-tool planner queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
           `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
           `  3. If work is needed, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
-          `  4. Create at most one worker-facing todo per focused turn; if an ordinary order becomes a concrete generated PRD, continue directly to PRD-to-ticket before idling.`,
+          `  4. Create the worker-facing todo set for the selected PRD; if an ordinary order becomes concrete generated PRD work, continue directly to PRD-to-ticket before idling.`,
           `  5. Rerun queue-snapshot once after the todo handoff or after confirming there is no actionable PRD/order input, then idle.`
         ].join("\n");
       case "worker":
@@ -2123,8 +2302,8 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused planner startup turn; Desktop tracks PTY state and usage.`,
           `- Use only planner queue-snapshot output and its ai_followup_scope before opening any board file.`,
           `- Do not open or follow references outside snapshot.ai_followup_scope.inspect_only_recent_sources.`,
-          `- After one worker-facing todo is created and queue-snapshot is rerun, after a required board-only recovery decision, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`,
-          `- Do not stop only because an ordinary order was translated into a generated PRD; if that PRD is concrete enough, promote it to todo in this same focused turn.`
+          `- After the selected PRD's worker-facing todo set is created and queue-snapshot is rerun, after a required board-only recovery decision, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`,
+          `- Do not stop only because an ordinary order was translated into generated PRD work; if the first generated PRD is concrete enough, promote it to todo in this same focused turn.`
         ];
       case "worker":
         return [
@@ -2287,9 +2466,17 @@ function ensureBoardWatcher(scope) {
     try {
       const mgr = globalThis.__autoflowPtyManager;
       if (!mgr) return;
+      const contextResetByRunner = new Map();
       const wakeReasonByRole = new Map();
       const wakeReasonByRunner = new Map();
       for (const candidateReason of reasons) {
+        const contextResetRunnerId = runnerIdForContextResetQueueChange(candidateReason);
+        if (contextResetRunnerId) {
+          const events = readPendingRunnerContextResetEvents(boardRoot, contextResetRunnerId);
+          for (const event of events) {
+            contextResetByRunner.set(contextResetRunnerId, event);
+          }
+        }
         const directRunnerId = runnerIdForWakeQueueChange(candidateReason);
         if (directRunnerId && !wakeReasonByRunner.has(directRunnerId)) {
           wakeReasonByRunner.set(directRunnerId, candidateReason);
@@ -2298,6 +2485,39 @@ function ensureBoardWatcher(scope) {
           if (!wakeReasonByRole.has(role)) {
             wakeReasonByRole.set(role, candidateReason);
           }
+        }
+      }
+      if (contextResetByRunner.size > 0) {
+        for (const [rid, event] of contextResetByRunner.entries()) {
+          const meta = ptyRunnerMeta.get(rid);
+          if (!meta) {
+            appendRunnerLog(boardRoot, rid, {
+              event: "context_reset_event_skipped",
+              runner_id: rid,
+              reason: String(event?.reason || "ticket_boundary"),
+              cause: "runner_meta_missing"
+            });
+            continue;
+          }
+          if (meta.projectRoot !== scope.projectRoot || meta.boardDirName !== boardDirName) continue;
+          if (!contextResetEventIsSchedulable(event)) {
+            appendRunnerLog(boardRoot, rid, {
+              event: "context_reset_event_skipped",
+              runner_id: rid,
+              reason: String(event?.reason || "ticket_boundary"),
+              cause: "not_final_ticket_boundary",
+              tool: String(event?.tool || ""),
+              backend_status: String(event?.backend_status || "")
+            });
+            continue;
+          }
+          scheduleContextReset(rid, meta, {
+            mode: event?.mode,
+            trigger: String(event?.reason || "ticket_boundary"),
+            reason: String(event?.tool || event?.reason || "ticket_boundary"),
+            wakeAfterReset: "pending",
+            injectSticky: false
+          });
         }
       }
       if (wakeReasonByRole.size === 0 && wakeReasonByRunner.size === 0) return;
@@ -2312,7 +2532,7 @@ function ensureBoardWatcher(scope) {
           const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
           const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
           const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
-          sendRunnerWake({
+          const promptOk = sendRunnerWake({
             mgr,
             runnerId: rid,
             meta,
@@ -2323,7 +2543,7 @@ function ensureBoardWatcher(scope) {
             prompt: isQuiet,
             recordQueue: false
           });
-          if (!isQuiet) {
+          if (!isQuiet || !promptOk) {
             scheduleDeferredRunnerWakePrompt({
               runnerId: rid,
               meta,
@@ -2333,10 +2553,11 @@ function ensureBoardWatcher(scope) {
               kind: roleWakeReason ? "fs.watch" : "wake.queue"
             });
             appendRunnerLog(boardRoot, rid, {
-              event: "direct_wake_queued_without_prompt",
+              event: !isQuiet ? "direct_wake_queued_without_prompt" : "direct_wake_prompt_failed_deferred",
               runner_id: rid,
               reason: directWakeReason,
-              quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
+              quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000),
+              prompt_ok: String(promptOk)
             });
           }
           continue;
@@ -2396,7 +2617,7 @@ function ensureBoardWatcher(scope) {
           });
           continue;
         }
-        sendRunnerWake({
+        const promptOk = sendRunnerWake({
           mgr,
           runnerId: rid,
           meta,
@@ -2405,6 +2626,22 @@ function ensureBoardWatcher(scope) {
           reason: roleWakeReason,
           kind: "fs.watch"
         });
+        if (!promptOk) {
+          scheduleDeferredRunnerWakePrompt({
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason,
+            kind: "fs.watch"
+          });
+          appendRunnerLog(boardRoot, rid, {
+            event: "fs_watch_wake_prompt_failed_deferred",
+            runner_id: rid,
+            reason: roleWakeReason,
+            quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
+          });
+        }
       }
       for (const [directRunnerId, directWakeReason] of wakeReasonByRunner.entries()) {
         const existing = typeof mgr.get === "function" ? mgr.get(directRunnerId) : null;
@@ -2500,18 +2737,16 @@ function ensureBoardWatcher(scope) {
   ensureWakeSafetyPoller(scope);
 }
 
-// Safety poll: legacy fallback that fires a wake to idle runners when queue work
-// is present. It is disabled by default because periodic polling can create
-// token churn in long-lived runner sessions; file-watch wakes and explicit
-// runner starts are the normal path.
+// Safety poll: fallback that fires a wake to idle runners when queue work is
+// present but no fs.watch prompt reached the live PTY.
 // Env knobs:
-//   AUTOFLOW_WAKE_SAFETY_POLL          — set to 1 to enable this fallback
+//   AUTOFLOW_WAKE_SAFETY_POLL          — set to 0 to disable this fallback
 //   AUTOFLOW_WAKE_POLL_INTERVAL_SEC    — poll tick interval (default 60 s)
 //   AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC   — seconds without a wake → idle (default 30 s)
 //   AUTOFLOW_WAKE_STALL_THRESHOLD_SEC  — seconds without any wake → forced wake (default 1800 s)
 function ensureWakeSafetyPoller(scope) {
   if (!scope || typeof scope.projectRoot !== "string") return;
-  if (process.env.AUTOFLOW_WAKE_SAFETY_POLL !== "1") return;
+  if ((process.env.AUTOFLOW_WAKE_SAFETY_POLL ?? "1") === "0") return;
   const boardDirName = scope.boardDirName || defaultBoardDirName;
   const key = `${scope.projectRoot}::${boardDirName}`;
   if (wakeSafetyPollers.has(key)) return;
@@ -2543,15 +2778,27 @@ function ensureWakeSafetyPoller(scope) {
         if (!fpChanged && !isStall) continue;
 
         const reason = isStall ? "safety-poll-stall" : "safety-poll-queue-change";
-        sendRunnerWake({
+        const promptOk = sendRunnerWake({
           mgr,
           runnerId: rid,
           meta,
           scope: { projectRoot: scope.projectRoot, boardDirName },
           boardRoot,
           reason,
-          kind: "safety-poll"
+          kind: "safety-poll",
+          prompt: true,
+          recordQueue: false
         });
+        if (!promptOk) {
+          scheduleDeferredRunnerWakePrompt({
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason,
+            kind: "safety-poll"
+          });
+        }
         const ps = wakePollState.get(rid) || {};
         ps.queueFingerprint = fp;
         wakePollState.set(rid, ps);
@@ -2563,7 +2810,8 @@ function ensureWakeSafetyPoller(scope) {
           queue_pending: true,
           fingerprint_changed: fpChanged,
           idle_seconds: Math.round(idleSec),
-          stall: isStall
+          stall: isStall,
+          prompt_ok: promptOk
         });
       }
     } catch {}

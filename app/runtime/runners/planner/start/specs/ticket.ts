@@ -2,10 +2,21 @@ import {fs, path, BOARD_ROOT, PROJECT_ROOT, displayId, utils} from "../context";
 import {emit} from "../output";
 import {boardRelativePath, projectKeyFromSpecRef, ticketPath} from "../ids";
 import {nextTicketId} from "../files";
-import {extractBulletSection, extractChecklist, extractSectionText} from "../sections";
+import {SplitMapEntry, extractBulletSection, extractChecklist, extractSectionText, extractSplitMap} from "../sections";
 import {normalizeChangeType, normalizePriority} from "../priority";
-import {archiveSourceOrderForSpec, archiveSpecToDoneIfNeeded, projectKeyHasTicket} from "./archive";
+import {archiveSourceOrderForSpec, archiveSpecToDoneIfNeeded} from "./archive";
 import {missingRequiredSecrets, runLintTicket} from "./preflight";
+
+type TodoSlice = {
+  title: string;
+  goal: string;
+  allowedPaths: string[];
+  doneWhen: string;
+  verificationCommand: string;
+  notes: string[];
+  index: number;
+  count: number;
+};
 
 function firstHeading(file: string): string {
   return (utils.readFileSafe(file).match(/^#\s+(.+)$/m)?.[1] || "").trim();
@@ -63,11 +74,82 @@ function checklistOrBullets(file: string, heading: string): string[] {
   return extractBulletSection(file, heading).map((item) => `- [ ] ${item}`);
 }
 
-function specDoneWhen(file: string): string {
+function specDoneWhenLines(file: string): string[] {
   return [
     ...checklistOrBullets(file, "Global Acceptance Criteria"),
     ...checklistOrBullets(file, "Done When"),
-  ].join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/order-retry";
+  ];
+}
+
+function specDoneWhen(file: string): string {
+  return specDoneWhenLines(file).join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/order-retry";
+}
+
+function splitListValues(values: string[]): string[] {
+  return values
+    .flatMap((value) => value.split(/[;,]/))
+    .map((value) => stripTicks(value))
+    .filter((value) => value && value !== "TBD" && value !== "...");
+}
+
+function splitChecklistValues(values: string[]): string[] {
+  return values
+    .map((value) => value.trim())
+    .filter((value) => value && value !== "TBD" && value !== "...")
+    .map((value) => (/^\s*-\s*\[[ xX]\]/.test(value) ? value : `- [ ] ${value}`));
+}
+
+function firstSplitValue(entry: SplitMapEntry, key: string): string {
+  return (entry.fields[key] || []).find((value) => value.trim()) || "";
+}
+
+function defaultSliceDoneWhen(goal: string, allowedPaths: string[], verificationCommand: string): string {
+  const pathText = allowedPaths.join(", ") || "Allowed Paths";
+  return [
+    `- [ ] \`${pathText}\` 범위 변경이 "${goal}" 결과를 반영한다.`,
+    `- [ ] 검증 명령 \`${verificationCommand || "none-shell"}\` 이 exit 0 으로 끝나거나, \`none-shell\` 인 경우 파일 검토 근거가 남는다.`,
+    `- [ ] 최종 diff가 \`${pathText}\` 밖의 파일을 포함하지 않는다.`,
+  ].join("\n");
+}
+
+function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
+  const baseTitle = specTitle(file, projectKey);
+  const baseGoal = specGoal(file, projectKey);
+  const baseVerificationCommand = specVerificationCommand(file);
+  const concreteAllowedPaths = extractBulletSection(file, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
+  const entries = extractSplitMap(file, ["Todo Split Map", "Todo Splits", "Implementation Slices", "Ticket Split Map"]);
+
+  if (entries.length === 0) {
+    return [{
+      title: baseTitle,
+      goal: baseGoal,
+      allowedPaths: concreteAllowedPaths,
+      doneWhen: specDoneWhen(file),
+      verificationCommand: baseVerificationCommand,
+      notes: [],
+      index: 1,
+      count: 1,
+    }];
+  }
+
+  return entries.map((entry, index) => {
+    const entryTitle = firstSplitValue(entry, "title") || entry.title || `Slice ${index + 1}`;
+    const goal = firstSplitValue(entry, "goal") || firstSplitValue(entry, "scope") || entryTitle;
+    const sliceAllowedPaths = splitListValues(entry.fields.allowed_paths || []).filter((p) => utils.allowedPathIsConcreteRepoPath(p));
+    const allowedPaths = sliceAllowedPaths.length > 0 ? sliceAllowedPaths : concreteAllowedPaths;
+    const verificationCommand = firstSplitValue(entry, "verification").replace(/^Command:\s*/i, "") || baseVerificationCommand;
+    const doneWhenLines = splitChecklistValues(entry.fields.done_when || []);
+    return {
+      title: `${baseTitle} - ${entryTitle}`,
+      goal,
+      allowedPaths,
+      doneWhen: doneWhenLines.length > 0 ? doneWhenLines.join("\n") : defaultSliceDoneWhen(goal, allowedPaths, verificationCommand),
+      verificationCommand,
+      notes: [...(entry.fields.notes || []), ...(entry.fields.depends_on || []).map((item) => `Depends on: ${item}`)],
+      index: index + 1,
+      count: entries.length,
+    };
+  });
 }
 
 export function promoteSpecToTodoOrExit(specFile: string): never {
@@ -124,54 +206,51 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
     process.exit(0);
   }
 
-  const ticket = createTodoTicketFromSpec(specFile);
+  const tickets = createTodoTicketsFromSpec(specFile);
   if (lint.status) {
-    utils.replaceScalarFieldInSection(ticket, "Goal Runtime", "Last Lint Status", lint.status);
-    utils.replaceScalarFieldInSection(ticket, "Goal Runtime", "Last Lint Vagueness Score", lint.score || "0");
+    for (const ticket of tickets) {
+      utils.replaceScalarFieldInSection(ticket, "Goal Runtime", "Last Lint Status", lint.status);
+      utils.replaceScalarFieldInSection(ticket, "Goal Runtime", "Last Lint Vagueness Score", lint.score || "0");
+    }
   }
   emit({
     status: "ok",
     source: "prd-to-todo",
     spec: specFile,
-    todo_ticket: ticket,
+    todo_ticket: tickets[0] || "",
+    todo_tickets: tickets.map((ticket) => boardRelativePath(ticket)).join(","),
+    todo_ticket_count: String(tickets.length),
     lint_status: lint.status,
     lint_vagueness_score: lint.score,
     board_root: BOARD_ROOT,
     project_root: PROJECT_ROOT,
-    next_action: `Todo ${path.basename(ticket)} created from ${boardRelativePath(specFile)}; hand off to worker.`,
+    next_action: `${tickets.length} todo ticket(s) created from ${boardRelativePath(specFile)}; hand off to worker.`,
   });
   process.exit(0);
 }
 
-export function createTodoTicketFromSpec(specFile: string): string {
+export function createTodoTicketsFromSpec(specFile: string): string[] {
   const specRef = boardRelativePath(specFile);
   const projectKey = projectKeyFromSpecRef(specRef);
-  if (projectKeyHasTicket(projectKey)) {
-    emit({
-      status: "blocked",
-      reason: "project_already_has_ticket",
-      project_key: projectKey,
-      spec: specFile,
-      board_root: BOARD_ROOT,
-      project_root: PROJECT_ROOT,
-    });
-    process.exit(0);
-  }
-
   const archivedSpecRef = archiveSpecToDoneIfNeeded(specRef);
   const archivedSpecFile = path.join(BOARD_ROOT, archivedSpecRef);
   archiveSourceOrderForSpec(projectKey, archivedSpecFile);
+  const slices = todoSlicesFromSpec(archivedSpecFile, projectKey);
+  return slices.map((slice) => writeTodoTicketFromSlice(archivedSpecRef, archivedSpecFile, projectKey, slice));
+}
+
+export function createTodoTicketFromSpec(specFile: string): string {
+  return createTodoTicketsFromSpec(specFile)[0] || "";
+}
+
+function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: string, projectKey: string, slice: TodoSlice): string {
   const ticketId = nextTicketId();
   const ticketFile = ticketPath("todo", ticketId);
   const timestamp = utils.nowIso();
-  const title = specTitle(archivedSpecFile, projectKey);
-  const goal = specGoal(archivedSpecFile, projectKey);
   const priority = normalizePriority(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Priority"));
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Change Type"));
-  const verificationCommand = specVerificationCommand(archivedSpecFile);
-  const concreteAllowedPaths = extractBulletSection(archivedSpecFile, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
-  const allowedPaths = concreteAllowedPaths.map((p) => `- ${p}`).join("\n");
-  const doneWhen = specDoneWhen(archivedSpecFile);
+  const allowedPaths = slice.allowedPaths.map((p) => `- ${p}`).join("\n");
+  const sliceRef = slice.count > 1 ? `${archivedSpecRef}#todo-${String(slice.index).padStart(2, "0")}` : archivedSpecRef;
 
   fs.mkdirSync(path.dirname(ticketFile), { recursive: true });
   fs.writeFileSync(
@@ -182,8 +261,9 @@ export function createTodoTicketFromSpec(specFile: string): string {
 
 - ID: Todo-${ticketId}
 - PRD Key: ${projectKey}
-- Plan Candidate: planner-runner handoff from ${archivedSpecRef}
-- Title: ${title}
+- PRD Slice: ${slice.index}/${slice.count}
+- Plan Candidate: planner-runner handoff from ${sliceRef}
+- Title: ${slice.title}
 - Priority: ${priority}
 - Change Type: ${changeType}
 - Stage: todo
@@ -195,7 +275,7 @@ export function createTodoTicketFromSpec(specFile: string): string {
 
 ## Goal
 
-- 이번 작업의 목표: ${goal}
+- 이번 작업의 목표: ${slice.goal}
 
 ## References
 
@@ -249,7 +329,7 @@ ${allowedPaths}
 
 ## Done When
 
-${doneWhen}
+${slice.doneWhen}
 
 ## Next Action
 
@@ -264,10 +344,12 @@ ${doneWhen}
 ## Notes
 
 - Created by ${displayId} (planner runner) from ${archivedSpecRef} at ${timestamp}.
+- PRD slice: ${slice.index}/${slice.count}.
+${slice.notes.length > 0 ? slice.notes.map((item) => `- Slice note: ${item}`).join("\n") : ""}
 
 ## Verification
 
-- Command: ${verificationCommand}
+- Command: ${slice.verificationCommand}
 - Run file:
 - Log file:
 - Result: pending

@@ -12,6 +12,7 @@ Paths`, a non-empty `## Done When` checklist, and verification instructions.
 
 - ID: Todo-NNN
 - PRD Key: prd_NNN
+- PRD Slice: 1/1
 - Plan Candidate:
 - Title: <title>
 - Priority: normal

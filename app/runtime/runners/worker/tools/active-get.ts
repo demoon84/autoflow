@@ -139,8 +139,23 @@ function compactWorkerSource(item: WorkerTicketItem): JsonObject {
     execution_ai: item.execution_ai || "",
     worktree_path: item.worktree_path || "",
     worktree_status: item.worktree_status || "",
+    semantic_decision: item.semantic_decision || "",
+    semantic_reason: item.semantic_reason || "",
+    semantic_checked_at: item.semantic_checked_at || "",
+    semantic_log: item.semantic_log || "",
     allowed_paths: item.allowed_paths || [],
   };
+}
+
+function workerFollowupReason(active?: WorkerTicketItem): string {
+  if (!active) return "no_owned_inprogress_ticket";
+  const stage = (active.stage || "").toLowerCase();
+  const decision = (active.semantic_decision || "").toLowerCase();
+  if (decision === "revise" || stage.includes("revision_requested")) return "verifier_revision_requested";
+  if (decision === "replan" || stage.includes("replan_requested")) return "verifier_replan_requested";
+  if (decision === "pass" || stage.includes("verified_pending_merge")) return "verifier_passed_merge_pending";
+  if (stage === "verify_pending") return "worker_ticket_waiting_for_verifier";
+  return "worker_owned_ticket_pending";
 }
 
 export function cmdWorkerActiveGet(): void {
@@ -165,7 +180,7 @@ export function cmdWorkerActiveGet(): void {
     inprogress_truncated: inprogress.length > visibleInprogress.length,
     inprogress: visibleInprogress,
     ai_followup_recommended: Boolean(active),
-    ai_followup_reason: active ? "worker_owned_ticket_pending" : "no_owned_inprogress_ticket",
+    ai_followup_reason: workerFollowupReason(active),
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
       max_files_to_open: scopedSources.length,

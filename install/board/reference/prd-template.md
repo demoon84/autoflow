@@ -61,6 +61,15 @@ criteria, and verification intent.
 - Command: none-shell
 - Notes: <manual checks, browser checks, evidence expectations, or why no shell command applies>
 
+## Todo Split Map
+
+- Title: <optional todo slice title>
+  - Goal: <one worker-owned implementation outcome>
+  - Scope: <narrow boundary for this todo>
+  - Allowed Paths: path/to/file-or-folder, path/to/other-file
+  - Done When: <observable criterion for this todo>
+  - Verification: npm run test
+
 ## Conversation Handoff
 
 - Source: <conversation/order path>
@@ -77,3 +86,6 @@ criteria, and verification intent.
   ids, paths, commands, code, and runtime formats.
 - PRD acceptance criteria may later become Todo `Done When`; keep them concrete
   enough for `autoflow tool lint-ticket`.
+- `Todo Split Map` is optional. Use it when one PRD should be implemented by
+  multiple worker-owned todo tickets. The planner runner may emit one todo per
+  split item while keeping each todo's `Allowed Paths` and `Done When` concrete.

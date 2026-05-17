@@ -63,6 +63,35 @@ export function replaceScalar(file: string, section: string, field: string, valu
   write(file, `${lines.join("\n").replace(/\n*$/, "\n")}`);
 }
 
+export function removeScalars(file: string, section: string, fields: string[]): void {
+  const fieldNames = new Set(fields.map((field) => field.toLowerCase()));
+  const lines = read(file).split(/\r?\n/);
+  const sectionRe = new RegExp(`^## ${escapeRe(section)}\\b`);
+  const fieldRe = /^-\s*([^:]+?)\s*:/;
+  let inSection = false;
+  let changed = false;
+  const next: string[] = [];
+  for (const line of lines) {
+    if (sectionRe.test(line)) {
+      inSection = true;
+      next.push(line);
+      continue;
+    }
+    if (/^## /.test(line) && inSection) {
+      inSection = false;
+    }
+    const match = inSection ? line.match(fieldRe) : null;
+    if (match && fieldNames.has(match[1].trim().toLowerCase())) {
+      changed = true;
+      continue;
+    }
+    next.push(line);
+  }
+  if (changed) {
+    write(file, `${next.join("\n").replace(/\n*$/, "\n")}`);
+  }
+}
+
 export function replaceSection(file: string, section: string, body: string): void {
   const content = read(file);
   const range = sectionBodyRange(content, section);

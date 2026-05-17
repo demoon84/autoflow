@@ -35,8 +35,8 @@ On each planner tick:
 
 The planner runner may perform these actions directly in markdown:
 
-- Promote a clear memo to a generated PRD.
-- Create todo tickets from a plan or generated PRD.
+- Promote a clear memo to one or more generated PRDs.
+- Create one or more todo tickets from a plan or generated PRD.
 - Fold retry/replan evidence into a new ticket attempt.
 - Add or update `Recovery State` for a stalled or blocked ticket.
 - Rewrite `Next Action`, `Resume Context`, `Notes`, `Allowed Paths`, `Done When`, or `Verification` when the worker needs a clearer next move.

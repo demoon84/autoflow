@@ -78,6 +78,7 @@ const {
   git,
   spawnTsScript,
   emitRunnerWake,
+  emitRunnerContextReset,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -177,15 +178,26 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const stdout = spawnOutputText(result.stdout);
   const stderr = spawnOutputText(result.stderr);
   const parsed = parseKeyValueOutput(stdout);
+  const backendStatus = stringValue(parsed.status);
+  const finalBoundaryStatuses = new Set(["done", "replanned"]);
+  const contextReset = result.status === 0 && finalBoundaryStatuses.has(backendStatus)
+    ? emitRunnerContextReset(currentRunnerId("worker"), `worker.${command}`, "compact", {
+        tool: `worker.${command}`,
+        ticket_id: `Todo-${ticketId}`,
+        backend_status: backendStatus,
+      })
+    : { ok: false, path: "" };
   ok({
-    status: stringValue(parsed.status) || (result.status === 0 ? "ok" : "error"),
+    status: backendStatus || (result.status === 0 ? "ok" : "error"),
     tool: `worker.${command}`,
     path: boardRel(ticket),
     backend: `runners/worker/finish-ticket/index.ts ${backendOutcome}`,
     exit_code: result.status ?? 1,
-    backend_status: stringValue(parsed.status),
+    backend_status: backendStatus,
     backend_commit_status: stringValue(parsed.commit_status),
     backend_next_action: stringValue(parsed.next_action),
+    context_reset: contextReset.ok ? "queued" : "not_queued",
+    context_reset_path: contextReset.path,
     parsed,
     stdout,
     stderr,

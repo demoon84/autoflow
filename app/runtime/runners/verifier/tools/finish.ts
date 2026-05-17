@@ -120,7 +120,6 @@ const {
   positiveInt,
   numberValue,
   safeSegment,
-  currentRunnerId,
   boardRel,
   stringValue,
   safeIsFile,
@@ -172,6 +171,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
       removed_verifier_ticket: !fs.existsSync(ticket),
       worker_wake: wake.ok ? "emitted" : "failed",
       worker_wake_exit_code: wake.status,
+      context_reset: "not_queued",
+      context_reset_path: "",
       next_action: "Worker must merge the verifier-approved worktree into PROJECT_ROOT, rerun verification from PROJECT_ROOT, then call worker finalize-approved.",
     });
     return;
@@ -198,6 +199,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     removed_verifier_ticket: !fs.existsSync(ticket),
     worker_wake: wake.ok ? "emitted" : "failed",
     worker_wake_exit_code: wake.status,
+    context_reset: "not_queued",
+    context_reset_path: "",
     next_action: outcome === "revise"
       ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker submit-to-verifier again."
       : "Worker must run worker create-retry-order so the retry order is created, the worktree is deleted, and the planner runner can create the follow-up TODO.",

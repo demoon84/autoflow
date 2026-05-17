@@ -15,28 +15,32 @@ Injected role rules for `planner` / `plan` runners.
 - Process retry orders before ordinary order work.
 - For every ordinary order, the planner runner uses a PRD-first intake flow:
   read the order, collect repository/wiki evidence, write assumptions and
-  remaining unknowns into a generated PRD, then let the PRD-to-ticket flow
-  create the detailed TODO. Intake hints such as `Planner Direct-TODO Hint` or
+  remaining unknowns into one or more generated PRDs, then let the PRD-to-ticket flow
+  create detailed TODO tickets. Use `## PRD Split Map` when one order needs
+  multiple PRDs. Intake hints such as `Planner Direct-TODO Hint` or
   legacy `Express` fields are non-authoritative. Direct TODO is reserved for an
   explicitly requested, single-file, mechanically obvious change.
-- When an ordinary order is consumed into a generated PRD, preserve the original
-  order as done evidence by moving it from `tickets/order/order_NNN.md` to
-  `tickets/done/<prd-key>/order_NNN.md` after the PRD records the original
-  `tickets/order/order_NNN.md` source path. Do not leave consumed ordinary
-  orders in `tickets/order/`; stale source files make the queue look stuck even
-  though `planner queue-snapshot` suppresses already-promoted orders.
+- When an ordinary order is consumed into generated PRD work, preserve the
+  original order as done evidence by moving it out of
+  `tickets/order/order_NNN.md` after each generated PRD records the original
+  source path. For single-PRD intake, archive beside `tickets/done/<prd-key>/`;
+  for multi-PRD intake, archive under a shared `tickets/done/order_NNN/`
+  evidence folder. Do not leave consumed ordinary orders in `tickets/order/`;
+  stale source files make the queue look stuck even though `planner
+  queue-snapshot` suppresses already-promoted orders.
 - Do not leave ordinary order ambiguity as `blocked`, `needs-info`, or
   `needs_user`. Only unsafe requests may be refused instead of becoming a PRD.
 - Promote populated PRD queue items or clear orders into concrete todo tickets
-  using the narrowest safe scope.
+  using the narrowest safe scope. Use `## Todo Split Map` when one PRD needs
+  multiple worker-owned todo tickets.
 - If a ticket carries stale recovery state, blocked state, or no-progress
   evidence, make a board-only recovery decision before creating more work.
-- Create at most one worker-facing todo per focused startup turn. If the turn
-  first translates an ordinary order into a generated PRD and that PRD is
-  concrete enough to promote, continue directly to the PRD-to-ticket handoff
-  before idling; do not leave a runnable generated PRD waiting for a second
-  wake just to create the todo.
-- After a PRD-backed TODO is written, the source `tickets/prd/prd_NNN.md` must
+- Create the worker-facing todo set for the selected PRD in one focused startup
+  turn. If the turn first translates an ordinary order into generated PRD work
+  and the first generated PRD is concrete enough to promote, continue directly
+  to the PRD-to-ticket handoff before idling; do not leave runnable generated
+  PRD work waiting for a second wake just to create todo tickets.
+- After a PRD-backed TODO set is written, the source `tickets/prd/prd_NNN.md` must
   be gone from the active PRD queue in the same focused turn. Prefer the
   `write-ticket` tool's `archived_prds` result; if it reports missing/empty for
   an existing PRD source, run `item-archive` for that PRD before idling.

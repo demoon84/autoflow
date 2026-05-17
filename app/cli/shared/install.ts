@@ -345,6 +345,30 @@ function scalarInSection(text: string, section: string, field: string): string {
     return "";
 }
 
+function removeScalarFieldsInSectionText(text: string, section: string, fields: string[]): {text: string; changed: boolean} {
+    let inSection = false;
+    let changed = false;
+    const fieldNames = new Set(fields.map((field) => field.toLowerCase()));
+    const headingRe = /^##\s+(.+?)\s*$/;
+    const fieldRe = /^-\s*([^:]+?)\s*:/;
+    const next: string[] = [];
+    for (const line of text.split(/\r?\n/)) {
+        const heading = line.match(headingRe);
+        if (heading) {
+            inSection = heading[1].trim().toLowerCase() === section.toLowerCase();
+            next.push(line);
+            continue;
+        }
+        const field = inSection ? line.match(fieldRe) : null;
+        if (field && fieldNames.has(field[1].trim().toLowerCase())) {
+            changed = true;
+            continue;
+        }
+        next.push(line);
+    }
+    return {text: next.join("\n"), changed};
+}
+
 function safeProjectKey(value: string): string {
     const normalized = value.trim().replace(/^`+|`+$/g, "");
     return /^[A-Za-z0-9._-]+$/.test(normalized) ? normalized : "";
@@ -429,6 +453,44 @@ export function migratePromotedOrderQueueItems(ctx: ProjectContext): string[] {
         fs.mkdirSync(targetDir, {recursive: true});
         fs.renameSync(from, target);
         migrated.push(`${rel}->${boardRel(ctx, target)}`);
+    }
+    return migrated;
+}
+
+const verifierDecisionFields = [
+    "Semantic Decision",
+    "Semantic Reason",
+    "Semantic Checked At",
+    "Semantic Log",
+    "Semantic Marker",
+];
+
+export function migrateStaleVerifyPendingDecisionFields(ctx: ProjectContext): string[] {
+    const migrated: string[] = [];
+    const ticketRoots = [
+        path.join(ctx.boardRoot, "tickets", "inprogress"),
+        path.join(ctx.boardRoot, "tickets", "verifier"),
+    ];
+    for (const root of ticketRoots) {
+        if (!fs.existsSync(root)) continue;
+        let names: string[] = [];
+        try {
+            names = fs.readdirSync(root).filter((name) => /^Todo-\d+\.md$/i.test(name)).sort();
+        } catch {
+            continue;
+        }
+        for (const name of names) {
+            const file = path.join(root, name);
+            const text = safeReadText(file);
+            if (!text) continue;
+            const stage = scalarInSection(text, "Ticket", "Stage").toLowerCase();
+            const decision = scalarInSection(text, "Verification", "Semantic Decision");
+            if (stage !== "verify_pending" || !decision) continue;
+            const stripped = removeScalarFieldsInSectionText(text, "Verification", verifierDecisionFields);
+            if (!stripped.changed) continue;
+            writeFileAtomic(file, stripped.text);
+            migrated.push(boardRel(ctx, file));
+        }
     }
     return migrated;
 }

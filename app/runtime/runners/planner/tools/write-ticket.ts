@@ -78,6 +78,7 @@ const {
   git,
   spawnTsScript,
   emitRunnerWake,
+  emitRunnerContextReset,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -259,6 +260,20 @@ export function cmdPlannerWriteTicket(): void {
   releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
   const archivedSources = archiveConsumedOrderSources(payload.content, id);
   const archivedPrds = archiveConsumedPrdSources(payload.content, id);
+  const contextReset = emitRunnerContextReset(currentRunnerId("planner"), "planner.write-ticket", "compact", {
+    tool: "planner.write-ticket",
+    ticket_id: `Todo-${id}`,
+    path: boardRel(target),
+  });
 
-  ok({ tool: "planner.write-ticket", status: "ok", id: `Todo-${id}`, path: boardRel(target), archived_sources: archivedSources, archived_prds: archivedPrds });
+  ok({
+    tool: "planner.write-ticket",
+    status: "ok",
+    id: `Todo-${id}`,
+    path: boardRel(target),
+    archived_sources: archivedSources,
+    archived_prds: archivedPrds,
+    context_reset: contextReset.ok ? "queued" : "failed",
+    context_reset_path: contextReset.path,
+  });
 }

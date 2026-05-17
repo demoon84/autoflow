@@ -4,7 +4,7 @@ import {ensureExpectedRole, setThreadContextRecord, workerRole} from "./role";
 import {boardRelativePath, extractNumericId} from "./ids";
 import {migrateLegacyQueueDirs} from "./files";
 import {selectRetryOrder, selectNonretryOrder} from "./orders";
-import {createGeneratedPrdFromOrder} from "./order-to-prd";
+import {createGeneratedPrdsFromOrder} from "./order-to-prd";
 import {selectOrderGeneratedSpec, promoteSpecToTodoOrExit, selectPopulatedSpec, choosePolicyPick, selectLegacyPlan} from "./specs";
 
 export function main(): void {
@@ -45,8 +45,9 @@ export function main(): void {
   if (policyPick === "spec" && spec) promoteSpecToTodoOrExit(spec);
 
   if (policyPick === "order" && nonretryOrder) {
-    const generated = createGeneratedPrdFromOrder(nonretryOrder);
-    promoteSpecToTodoOrExit(generated.specFile);
+    const generated = createGeneratedPrdsFromOrder(nonretryOrder);
+    const firstSpec = generated.specFiles[0];
+    if (firstSpec) promoteSpecToTodoOrExit(firstSpec);
   }
 
   const legacyPlan = selectLegacyPlan();

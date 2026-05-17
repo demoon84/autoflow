@@ -10,6 +10,7 @@ const {
   boardDirName,
   boardRel,
   currentRunnerId,
+  emitRunnerContextReset,
   getArg,
   hasFlag,
   hashFiles,
@@ -467,6 +468,15 @@ export function cmdWikiTick(): void {
     output.recent_sources = recent;
   } else {
     output.details_hint = "rerun wiki tick with --verbose for step excerpts and full recent source lists";
+  }
+  if (failedSteps.length === 0 && (!aiFollowupRecommended || skipTelemetry)) {
+    const contextReset = emitRunnerContextReset(currentRunnerId("wiki"), "wiki.tick", "compact", {
+      tool: "wiki.tick",
+      ai_followup_recommended: aiFollowupRecommended,
+      skip_telemetry: skipTelemetry,
+    });
+    output.context_reset = contextReset.ok ? "queued" : "failed";
+    output.context_reset_path = contextReset.path;
   }
 
   ok(output);
