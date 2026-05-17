@@ -129,6 +129,7 @@ const {
 } = shared;
 
 function compactPlannerSource(item: QueueItem): JsonObject {
+  const absolutePath = resolveBoardPath(item.path);
   return {
     path: item.path,
     kind: item.kind,
@@ -136,6 +137,9 @@ function compactPlannerSource(item: QueueItem): JsonObject {
     priority: item.priority,
     title: item.title,
     status: item.status || "",
+    blocked_reason: utils.extractScalarFieldInSection(absolutePath, "Order", "Blocked Reason") ||
+      utils.extractScalarFieldInSection(absolutePath, "Project", "Blocked Reason") ||
+      "",
     stage: item.stage || "",
     retry: Boolean(item.retry),
     express: Boolean(item.express),
@@ -146,7 +150,7 @@ function compactPlannerSource(item: QueueItem): JsonObject {
 
 function plannerQueueItemIsActionable(item: QueueItem): boolean {
   const status = String(item.status || "").trim().toLowerCase();
-  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
 export function cmdPlannerQueueSnapshot(): void {
@@ -179,7 +183,11 @@ export function cmdPlannerQueueSnapshot(): void {
     items_truncated: items.length > visibleItems.length,
     items: visibleItems,
     ai_followup_recommended: Boolean(actionable),
-    ai_followup_reason: actionable ? `planner_${actionable.kind}_pending` : "no_actionable_plan_input",
+    ai_followup_reason: actionable
+      ? (String(actionable.status || "").trim().toLowerCase() === "blocked"
+        ? `planner_${actionable.kind}_blocked_review`
+        : `planner_${actionable.kind}_pending`)
+      : "no_actionable_plan_input",
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
       max_files_to_open: scopedSources.length,

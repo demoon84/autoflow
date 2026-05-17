@@ -1006,7 +1006,7 @@ function plannerQueueFileIsActionableSync(filePath) {
     markdownScalarInSectionSync(filePath, "Order", "Status") ||
     markdownScalarInSectionSync(filePath, "Project", "Status")
   ).toLowerCase();
-  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
 function workerInprogressFileIsActionableSync(filePath) {

@@ -105,7 +105,7 @@ function plannerQueueFileIsActionable(filePath: string): boolean {
     scalarInSection(filePath, "Order", "Status") ||
     scalarInSection(filePath, "Project", "Status")
   ).toLowerCase();
-  return !["blocked", "done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
 function workerInprogressFileIsActionable(filePath: string): boolean {
