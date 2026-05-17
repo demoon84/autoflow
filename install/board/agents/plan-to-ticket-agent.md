@@ -26,8 +26,10 @@ Boundary with Spec Author: Spec Author owns conversation-to-PRD handoff. Planner
 - `tickets/prd/prd_NNN.md`.
 - `tickets/order/order_NNN.md` (also receives `order_<id>_retry_<N>_<ts>.md` verifier replan retries).
 - `tickets/plan/plan_NNN.md` or `tickets/inprogress/plan_NNN.md`.
+- `reference/order-template.md`.
+- `reference/prd-template.md`.
 - `reference/plan-template.md`.
-- `reference/ticket-template.md`.
+- `reference/todo-template.md` (canonical), with `reference/ticket-template.md` as a compatibility template.
 - `protocols/board-orchestration.md`.
 - `protocols/recovery.md`.
 - Prior decisions surfaced via `autoflow wiki query --rag` when planning a non-trivial PRD.
@@ -56,7 +58,8 @@ Runner tools are the preferred direction for new planner work: they are small Ty
 - `autoflow tool runner-tool planner guard` — wrapper around the board guard after planner-authored board changes.
 - `autoflow run planner` — compatibility macro that still selects plan-side work and may create tickets. Use it only for behavior that has not yet been split into runner tools.
 - `autoflow wiki query --term <text> --rag` — surfaces prior decisions/learnings before drafting candidate scope. Use distinctive terms from the PRD Goal/Title. RAG mode returns focused chunks with `chunk_start_line`/`chunk_end_line`, keeping large wiki pages out of the prompt unless needed.
-- `reference/plan-template.md`, `reference/ticket-template.md` — read-only templates for new plan/ticket bodies.
+- `reference/plan-template.md`, `reference/todo-template.md` — read-only templates for new plan/todo bodies.
+- `reference/ticket-template.md` — compatibility template for older boards.
 - `protocols/board-orchestration.md`, `protocols/recovery.md` — authoritative AI-first orchestration and recovery contracts.
 - `autoflow guard` — validates board invariants after AI-authored recovery edits.
 - File reads/writes under `tickets/{order,prd,plan,todo,done}/` — direct edits within your path scope.
@@ -104,13 +107,15 @@ You never call worker execution (`autoflow run ticket`), verifier tools (`autofl
 3. Read `protocols/board-orchestration.md` and `protocols/recovery.md` before making orchestration or recovery edits.
 4. Run `autoflow guard` after any markdown recovery edit to confirm board invariants hold.
 5. If a ticket is stalled, blocked, repeatedly retried, or carrying stale todo/worktree metadata, make one recovery decision next: clarify the worker resume instruction, narrow/split/requeue the ticket, or mark `needs_user` when no safe board-only repair exists. After changing ticket markdown, run `autoflow guard`, fix any guard error before doing more planning, and record unresolved guard warnings as recovery context rather than silently ignoring them.
-6. For an order, read the order and run `autoflow wiki query --rag` with terms from its title/request. Treat the order as an implementation directive. If details are missing, collect repository/wiki evidence, infer the safest bounded interpretation, and write those assumptions plus any remaining unknowns into a generated PRD instead of marking the order `blocked`, `needs-info`, or `needs_user`. Then use planner runner tools to reserve a PRD id, write the generated PRD, archive the consumed order, and run guard. Only refuse PRD creation for unsafe requests.
+6. For an order, read the order and run `autoflow wiki query --rag` with terms from its title/request. Treat the order as an implementation directive. If details are missing, collect repository/wiki evidence, infer the safest bounded interpretation, and write those assumptions plus any remaining unknowns into a generated PRD instead of marking the order `blocked`, `needs-info`, or `needs_user`. Then use planner runner tools to reserve a PRD id, write the generated PRD, archive the consumed order, run guard, and immediately continue into the PRD-to-ticket flow in this same focused turn when the generated PRD is concrete enough. Only refuse PRD creation for unsafe requests.
 7. Do not let intake-side direct-TODO hints (`Planner Direct-TODO Hint`, legacy `Express`, or similar notes) bypass the PRD-first intake flow. They are context only; direct TODO remains a rare exception for explicitly requested, single-file, mechanically obvious changes.
-8. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or failed/retried approaches that should shape candidate scope.
-9. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
-10. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/ticket-template.md`.
-11. After all candidates have tickets, let the runtime archive the plan and PRD.
-12. Check the PRD queue again only after the active plan is finished.
+8. After generating a PRD from an ordinary order, move the consumed source order from `tickets/order/order_NNN.md` to `tickets/done/<prd-key>/order_NNN.md` while keeping the PRD's source reference pointed at the original order path. A consumed order left in `tickets/order/` is stale evidence, not new work, and will confuse queue/metrics observers. Do not end the turn here when the generated PRD can safely become a todo; create the worker-facing todo first, then rerun `planner queue-snapshot` once.
+9. Before drafting a new plan, run `autoflow wiki query --rag` with terms drawn from the PRD Goal or Title to detect prior decisions or failed/retried approaches that should shape candidate scope.
+10. If no actionable plan exists but a populated PRD has no plan, draft `plan_NNN.md` from `reference/plan-template.md` with `Status: draft`. Cite any wiki/ticket findings that constrain candidate scope.
+11. If `status=ok` returns pending ticket blocks, write each ticket body from `reference/todo-template.md`.
+12. After `write-ticket` succeeds for a PRD-backed ticket, confirm the tool result includes the source PRD under `archived_prds` or rerun `item-archive` for the source `tickets/prd/prd_NNN.md` before idling. A runnable PRD left in `tickets/prd/` after its TODO exists is stale queue evidence and will cause an unnecessary planner wake.
+13. After all candidates have tickets, let the runtime archive the plan and PRD.
+14. Check the PRD queue again only after the active plan is finished.
 
 ## Stop Condition
 

@@ -98,7 +98,7 @@ const safeBoardDirNamePattern = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 const boardFileReadLimitBytes = 196 * 1024;
 const metricsHistoryReadLimitBytes = 512 * 1024;
 const runnerTerminalPreviewLimitBytes = 32 * 1024;
-const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl", ".json"]);
+const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl", ".json", ".env"]);
 const runnerAuthNeededPatterns = [
   /\bnot logged in\b/i,
   /\bplease run\s+\/login\b/i,
@@ -136,23 +136,15 @@ const metricSnapshotKeys = [
   "active_ticket_count",
   "retry_order_count",
   "handoff_count",
-  "runner_total_count",
-  "runner_running_count",
-  "runner_idle_count",
-  "runner_stopped_count",
-  "runner_blocked_count",
-  "runner_enabled_count",
-  "runner_disabled_count",
-  "runner_invalid_config_count",
-  "runner_artifact_ok_count",
-  "runner_artifact_warning_count",
-  "runner_artifact_not_applicable_count",
-  "autoflow_commit_count",
   "autoflow_code_files_changed_count",
   "autoflow_code_insertions_count",
   "autoflow_code_deletions_count",
   "autoflow_code_volume_count",
+  "autoflow_code_net_delta_count",
   "autoflow_token_usage_count",
+  "autoflow_token_total_count",
+  "autoflow_token_cache_read_count",
+  "autoflow_token_cache_create_count",
   "autoflow_token_report_count",
   "autoflow_token_usage_1h_count",
   "autoflow_token_usage_24h_count",
@@ -164,32 +156,14 @@ const metricSnapshotKeys = [
   "autoflow_token_cache_24h_count",
   "autoflow_token_runner_breakdown_24h_json",
   "autoflow_token_model_breakdown_24h_json",
-  "autoflow_runner_status_24h_json",
-  "autoflow_code_net_delta_count",
-  "autoflow_commit_count_24h",
-  "autoflow_commit_auto_count_24h",
-  "autoflow_commit_manual_count_24h",
-  "autoflow_commit_recent_subjects_json",
-  "autoflow_code_daily_buckets_14d_json",
-  "autoflow_code_dir_breakdown_json",
-  "autoflow_commit_daily_buckets_14d_json",
   "autoflow_token_hourly_24h_json",
-  "autoflow_runner_tick_timeline_24h_json",
-  "autoflow_runner_avg_tick_seconds_json",
   "completion_rate_percent"
 ];
 
 const metricSnapshotStringKeys = new Set([
   "autoflow_token_runner_breakdown_24h_json",
   "autoflow_token_model_breakdown_24h_json",
-  "autoflow_runner_status_24h_json",
-  "autoflow_commit_recent_subjects_json",
-  "autoflow_code_daily_buckets_14d_json",
-  "autoflow_code_dir_breakdown_json",
-  "autoflow_commit_daily_buckets_14d_json",
   "autoflow_token_hourly_24h_json",
-  "autoflow_runner_tick_timeline_24h_json",
-  "autoflow_runner_avg_tick_seconds_json",
   "project_root",
   "board_root"
 ]);
@@ -841,7 +815,8 @@ function reapPreviousPtySessionPids() {
 // prompts and main can update the runner state file on lifecycle events.
 //   runnerId -> { role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
-const wakeAutoSpawnInflight = new Set();
+const wakeAutoStartInflight = new Set();
+const deferredWakePromptTimers = new Map();
 
 function ptyRunnerMatchesRequestedScope(ptyManager, runnerId, scope = {}) {
   const requestedProjectRoot = normalizePtyProjectRoot(scope.projectRoot);
@@ -1001,12 +976,56 @@ function markdownScalarInSectionSync(filePath, section, field) {
   return "";
 }
 
+function boardRootForQueueFileSync(filePath) {
+  const normalized = String(filePath || "");
+  const marker = `${path.sep}tickets${path.sep}`;
+  const index = normalized.indexOf(marker);
+  return index >= 0 ? normalized.slice(0, index) : "";
+}
+
+function boardRelForQueueFileSync(filePath) {
+  const boardRoot = boardRootForQueueFileSync(filePath);
+  if (!boardRoot) return "";
+  return path.relative(boardRoot, filePath).split(path.sep).join("/");
+}
+
+function sourceOrderRefInFileSync(filePath) {
+  try {
+    return fsSync.readFileSync(filePath, "utf8").match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/)?.[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function orderQueueFileAlreadyPromotedSync(filePath) {
+  const relPath = boardRelForQueueFileSync(filePath);
+  if (!/^tickets\/order\/order_[A-Za-z0-9._-]+\.md$/.test(relPath)) return false;
+  if (/_retry_/i.test(path.basename(filePath))) return false;
+  const boardRoot = boardRootForQueueFileSync(filePath);
+  if (!boardRoot) return false;
+  const roots = [path.join(boardRoot, "tickets", "prd"), path.join(boardRoot, "tickets", "done")];
+  for (const root of roots) {
+    if (!fsSync.existsSync(root)) continue;
+    for (const candidate of walkMarkdownFilesSync(root)) {
+      if (!/^(prd|project)_\d+\.md$/i.test(path.basename(candidate))) continue;
+      if (sourceOrderRefInFileSync(candidate) === relPath) return true;
+    }
+  }
+  return false;
+}
+
 function plannerQueueFileIsActionableSync(filePath) {
   const status = (
     markdownScalarInSectionSync(filePath, "Order", "Status") ||
     markdownScalarInSectionSync(filePath, "Project", "Status")
   ).toLowerCase();
-  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+  if (["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status)) {
+    return false;
+  }
+  if (orderQueueFileAlreadyPromotedSync(filePath)) {
+    return false;
+  }
+  return true;
 }
 
 function workerInprogressFileIsActionableSync(filePath) {
@@ -1305,47 +1324,24 @@ function scheduleContextReset(runnerId, meta) {
         } catch {}
       }
     }, 2000);
-    // Respawn fallback: if PTY shows no output 30 s after inject, respawn.
+    // Context reset must never own runner process lifecycle. If a reset appears
+    // stuck, record it for UI/diagnostics; the user-owned PTY stays alive.
     if (respawnFallback) {
       const beforeData = runner.lastDataAt;
       setTimeout(() => {
         const r = mgr.get(runnerId);
         if (!r || r.status !== "running") return;
         if (r.lastDataAt === beforeData) {
-          // No data since inject — respawn so the agent isn't stuck.
-          mgr.stop(runnerId, { force: false });
+          appendRunnerLog(boardRoot, runnerId, {
+            event: "context_reset_no_output",
+            runner_id: runnerId,
+            mode,
+            threshold,
+          });
         }
       }, 30000);
     }
   }, 3000);
-}
-
-function scheduleRunnerSessionRotation(runnerId, meta, trigger) {
-  const enabled = (process.env.AUTOFLOW_ROTATE_RUNNER_SESSION_AFTER_TURN ?? "1") !== "0";
-  if (!enabled) return;
-  const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
-  const delayMs = Number.parseInt(process.env.AUTOFLOW_ROTATE_RUNNER_SESSION_DELAY_MS || "5000", 10);
-  setTimeout(() => {
-    const mgr = globalThis.__autoflowPtyManager;
-    if (!mgr) return;
-    const runner = mgr.get(runnerId);
-    if (!runner || runner.status !== "running") return;
-    appendRunnerLog(boardRoot, runnerId, {
-      event: "runner_session_rotation",
-      runner_id: runnerId,
-      trigger: String(trigger || "focused_turn_complete")
-    });
-    mgr.stop(runnerId, { force: false });
-    setTimeout(() => {
-      if (!runnerHasActionableAutoSpawnWork(boardRoot, runnerId, meta.role)) return;
-      scheduleRunnerAutoSpawnForWake({
-        runnerId,
-        scope: { projectRoot: meta.projectRoot, boardDirName: meta.boardDirName },
-        boardRoot,
-        reason: `session_rotation:${String(trigger || "focused_turn_complete")}`
-      });
-    }, 500);
-  }, Number.isFinite(delayMs) && delayMs >= 0 ? delayMs : 5000);
 }
 
 // Record that a wake was just sent to a runner (resets idle clock).
@@ -1442,7 +1438,7 @@ function advanceRunnerWakePointerToLatest(boardRoot, runnerId) {
   }
 }
 
-function runnerHasActionableAutoSpawnWork(boardRoot, runnerId, role) {
+function runnerHasActionableWakeWork(boardRoot, runnerId, role) {
   const hasWork = queueHasPendingWork(role, boardRoot);
   if (hasWork) return true;
   if (runnerWakeQueueHasPending(boardRoot, runnerId)) {
@@ -1509,6 +1505,125 @@ function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = 
   }
   updateWakeActivity(runnerId);
   return promptOk;
+}
+
+function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, reason, kind = "fs.watch" }) {
+  if (!runnerId || !meta || !scope?.projectRoot || !boardRoot) return;
+  const boardDirName = scope.boardDirName || defaultBoardDirName;
+  const key = `${scope.projectRoot}\0${boardDirName}\0${runnerId}`;
+  const delayMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_DELAY_MS || "5000", 10) || 5000);
+  const minIdleMs = Math.max(250, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MAX_ATTEMPTS || "12", 10) || 12);
+  const existing = deferredWakePromptTimers.get(key);
+  if (existing) {
+    existing.meta = meta;
+    existing.reason = reason;
+    existing.kind = kind;
+    existing.boardRoot = boardRoot;
+    existing.scope = { projectRoot: scope.projectRoot, boardDirName };
+    return;
+  }
+  const entry = {
+    attempt: 0,
+    meta,
+    reason,
+    kind,
+    boardRoot,
+    scope: { projectRoot: scope.projectRoot, boardDirName },
+    timer: null
+  };
+
+  const clearEntry = () => {
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+    }
+    deferredWakePromptTimers.delete(key);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      try {
+        const mgr = globalThis.__autoflowPtyManager;
+        const currentMeta = ptyRunnerMeta.get(runnerId) || entry.meta;
+        const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
+        if (
+          !mgr ||
+          runner?.status !== "running" ||
+          !ptyRunnerMatchesRequestedScope(mgr, runnerId, entry.scope)
+        ) {
+          appendRunnerLog(entry.boardRoot, runnerId, {
+            event: "deferred_wake_prompt_cancelled",
+            runner_id: runnerId,
+            reason: entry.reason,
+            cause: "runner_not_running"
+          });
+          clearEntry();
+          return;
+        }
+        if (!runnerHasActionableWakeWork(entry.boardRoot, runnerId, currentMeta.role)) {
+          appendRunnerLog(entry.boardRoot, runnerId, {
+            event: "deferred_wake_prompt_cancelled",
+            runner_id: runnerId,
+            reason: entry.reason,
+            cause: "no_actionable_work"
+          });
+          clearEntry();
+          return;
+        }
+        const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
+        const idleMs = lastDataAt ? Date.now() - lastDataAt : Number.POSITIVE_INFINITY;
+        if (idleMs < minIdleMs && entry.attempt < maxAttempts) {
+          scheduleNext(delayMs);
+          return;
+        }
+        const promptOk = sendRunnerWake({
+          mgr,
+          runnerId,
+          meta: currentMeta,
+          scope: entry.scope,
+          boardRoot: entry.boardRoot,
+          reason: entry.reason,
+          kind: entry.kind,
+          prompt: true,
+          recordQueue: false
+        });
+        appendRunnerLog(entry.boardRoot, runnerId, {
+          event: "deferred_wake_prompt_sent",
+          runner_id: runnerId,
+          reason: entry.reason,
+          kind: entry.kind,
+          prompt_ok: String(promptOk),
+          attempts: String(entry.attempt),
+          idle_ms: Number.isFinite(idleMs) ? String(Math.max(0, Math.round(idleMs))) : "unknown"
+        });
+        clearEntry();
+      } catch (error) {
+        appendRunnerLog(entry.boardRoot, runnerId, {
+          event: "deferred_wake_prompt_error",
+          runner_id: runnerId,
+          reason: entry.reason,
+          error: String(error?.message || error || "")
+        });
+        clearEntry();
+      }
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") {
+      entry.timer.unref();
+    }
+  };
+
+  deferredWakePromptTimers.set(key, entry);
+  appendRunnerLog(boardRoot, runnerId, {
+    event: "deferred_wake_prompt_scheduled",
+    runner_id: runnerId,
+    reason,
+    kind,
+    delay_ms: String(delayMs),
+    min_idle_ms: String(minIdleMs),
+    max_attempts: String(maxAttempts)
+  });
+  scheduleNext(delayMs);
 }
 
 // Persist a minimal state file so the renderer's existing UI (slider /
@@ -1696,7 +1811,11 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
   }
 }
 
-function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) {
+function scheduleRunnerAutoStartForWake({ runnerId, scope, boardRoot, reason }) {
+  // Normal PTY lifecycle is user-owned: the start button creates a long-lived
+  // process and the stop button ends it. Auto-start is an explicit legacy
+  // compatibility mode, not the default wake path.
+  const autoStartOnWake = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_AUTO_START_STOPPED_RUNNER_ON_WAKE || "");
   if (!safeIdPattern.test(String(runnerId || ""))) return;
   const projectRoot = scope?.projectRoot || "";
   const boardDirName = scope?.boardDirName || defaultBoardDirName;
@@ -1705,16 +1824,25 @@ function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) 
   if (config.id !== runnerId) return;
   if (!runnerConfigBoolean(config.enabled, true) || !runnerConfigBoolean(config.realtime_enabled, true)) return;
   const normalizedRole = normalizeRunnerRole(config.role || inferRunnerRoleFromId(runnerId));
-  if (!runnerHasActionableAutoSpawnWork(boardRoot, runnerId, normalizedRole)) return;
+  if (!runnerHasActionableWakeWork(boardRoot, runnerId, normalizedRole)) return;
   const mgr = globalThis.__autoflowPtyManager;
   const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerId) : null;
   if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerId, { projectRoot, boardDirName })) return;
+  if (!autoStartOnWake) {
+    appendRunnerLog(boardRoot, runnerId, {
+      event: "wake_auto_start_suppressed",
+      reason: String(reason || "wake.queue"),
+      role: normalizedRole,
+      policy: "user_start_required"
+    });
+    return;
+  }
 
   const key = `${projectRoot}\0${boardDirName}\0${runnerId}`;
-  if (wakeAutoSpawnInflight.has(key)) return;
-  wakeAutoSpawnInflight.add(key);
+  if (wakeAutoStartInflight.has(key)) return;
+  wakeAutoStartInflight.add(key);
   appendRunnerLog(boardRoot, runnerId, {
-    event: "wake_auto_spawn_scheduled",
+    event: "wake_auto_start_scheduled",
     reason: String(reason || "wake.queue"),
     role: normalizedRole
   });
@@ -1728,13 +1856,13 @@ function scheduleRunnerAutoSpawnForWake({ runnerId, scope, boardRoot, reason }) 
         freshSession: true
       }, "wake");
       appendRunnerLog(boardRoot, runnerId, {
-        event: "wake_auto_spawn_result",
+        event: "wake_auto_start_result",
         ok: result.ok ? "true" : "false",
         reason: String(reason || "wake.queue"),
         error: result.ok ? "" : String(result.error || "")
       });
     } finally {
-      wakeAutoSpawnInflight.delete(key);
+      wakeAutoStartInflight.delete(key);
     }
   }, 0);
 }
@@ -1918,7 +2046,8 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `  1. Run \`${autoflowBin} tool runner-tool planner queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
           `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
           `  3. If work is needed, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
-          `  4. Create or update at most one planner-owned board item, rerun queue-snapshot once, then idle.`
+          `  4. Create at most one worker-facing todo per focused turn; if an ordinary order becomes a concrete generated PRD, continue directly to PRD-to-ticket before idling.`,
+          `  5. Rerun queue-snapshot once after the todo handoff or after confirming there is no actionable PRD/order input, then idle.`
         ].join("\n");
       case "worker":
         return [
@@ -1994,7 +2123,8 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused planner startup turn; Desktop tracks PTY state and usage.`,
           `- Use only planner queue-snapshot output and its ai_followup_scope before opening any board file.`,
           `- Do not open or follow references outside snapshot.ai_followup_scope.inspect_only_recent_sources.`,
-          `- Stop after one focused planner board update and one queue-snapshot rerun, or immediately if the snapshot is idle.`
+          `- After one worker-facing todo is created and queue-snapshot is rerun, after a required board-only recovery decision, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`,
+          `- Do not stop only because an ordinary order was translated into a generated PRD; if that PRD is concrete enough, promote it to todo in this same focused turn.`
         ];
       case "worker":
         return [
@@ -2003,7 +2133,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `- Use worker active-get first, then todo-snapshot only when there is no owned ticket.`,
           `- Do not open or follow references outside the selected ticket scope before claim/worktree-ensure.`,
           `- Product file inspection starts only after worktree-ensure succeeds and must stay inside Allowed Paths.`,
-          `- Stop after the current ticket reaches a wait state, verifier handoff, blocker, or finalization; do not roll into a second ticket in the same context.`
+          `- After the current ticket reaches a wait state, verifier handoff, blocker, or finalization, summarize briefly and idle for the next wake; do not roll into a second ticket in the same focused turn.`
         ];
       case "verifier":
         return [
@@ -2011,7 +2141,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
           `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused verifier startup turn; Desktop tracks PTY state and usage.`,
           `- Use only verifier queue-snapshot output and its ai_followup_scope before opening any verifier ticket.`,
           `- Gather evidence for one scoped verifier ticket and do not inspect unrelated project files outside the evidence/Allowed Paths boundary.`,
-          `- Stop after one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot is idle.`
+          `- After one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`
         ];
       case "wiki-maintainer":
         return [
@@ -2019,7 +2149,7 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
         `- Do not call runner-wake or runner-stage during this focused wiki turn; Desktop tracks the PTY state.`,
         `- Do not run date. If no exact timestamp is already in scope, keep the existing frontmatter timestamp.`,
         `- Do not open or follow references outside tick.ai_followup_scope.inspect_only_recent_sources.`,
-        `- Stop after one focused summary once the rerun tick finishes.`
+        `- After one focused summary once the rerun tick finishes, idle for the next wake.`
         ];
       default:
         return [
@@ -2177,7 +2307,7 @@ function ensureBoardWatcher(scope) {
         const directWakeReason = wakeReasonByRunner.get(rid);
         const roleWakeReason = wakeReasonByRole.get(meta.role);
         if (directWakeReason) {
-          if (!runnerHasActionableAutoSpawnWork(boardRoot, rid, meta.role)) continue;
+          if (!runnerHasActionableWakeWork(boardRoot, rid, meta.role)) continue;
           const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
           const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
           const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
@@ -2194,6 +2324,14 @@ function ensureBoardWatcher(scope) {
             recordQueue: false
           });
           if (!isQuiet) {
+            scheduleDeferredRunnerWakePrompt({
+              runnerId: rid,
+              meta,
+              scope: { projectRoot: scope.projectRoot, boardDirName },
+              boardRoot,
+              reason: roleWakeReason || directWakeReason,
+              kind: roleWakeReason ? "fs.watch" : "wake.queue"
+            });
             appendRunnerLog(boardRoot, rid, {
               event: "direct_wake_queued_without_prompt",
               runner_id: rid,
@@ -2206,6 +2344,28 @@ function ensureBoardWatcher(scope) {
         if (!roleWakeReason) continue;
         if (!queueHasPendingWork(meta.role, boardRoot)) continue;
         const runner = typeof mgr.get === "function" ? mgr.get(rid) : null;
+        if (
+          runner?.status !== "running" ||
+          !ptyRunnerMatchesRequestedScope(mgr, rid, { projectRoot: scope.projectRoot, boardDirName })
+        ) {
+          sendRunnerWake({
+            mgr,
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason,
+            kind: "fs.watch",
+            prompt: false
+          });
+          scheduleRunnerAutoStartForWake({
+            runnerId: rid,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason
+          });
+          continue;
+        }
         const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
         const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
         const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
@@ -2225,6 +2385,14 @@ function ensureBoardWatcher(scope) {
             runner_id: rid,
             reason: roleWakeReason,
             quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
+          });
+          scheduleDeferredRunnerWakePrompt({
+            runnerId: rid,
+            meta,
+            scope: { projectRoot: scope.projectRoot, boardDirName },
+            boardRoot,
+            reason: roleWakeReason,
+            kind: "fs.watch"
           });
           continue;
         }
@@ -2246,7 +2414,7 @@ function ensureBoardWatcher(scope) {
         ) {
           continue;
         }
-        scheduleRunnerAutoSpawnForWake({
+        scheduleRunnerAutoStartForWake({
           runnerId: directRunnerId,
           scope: { projectRoot: scope.projectRoot, boardDirName },
           boardRoot,
@@ -2268,49 +2436,6 @@ function ensureBoardWatcher(scope) {
             if (meta.boardDirName !== boardDirName) continue;
             if (meta.role !== "worker") continue;
             generateStickyContext(boardRoot, rid, ticketPath);
-          }
-        }
-      }
-      // Session rotation after handoff/completion keeps each focused LLM turn
-      // from dragging the previous ticket's cached prompt through the next one.
-      for (const candidateReason of reasons) {
-        if (
-          candidateReason.startsWith("tickets/todo/") &&
-          /Todo-\d+\.md$/.test(candidateReason)
-        ) {
-          for (const [rid, meta] of ptyRunnerMeta.entries()) {
-            if (meta.projectRoot !== scope.projectRoot) continue;
-            if (meta.boardDirName !== boardDirName) continue;
-            if (meta.role !== "planner") continue;
-            scheduleRunnerSessionRotation(rid, meta, "planner_created_todo");
-          }
-        }
-        if (
-          candidateReason.startsWith("tickets/verifier/") &&
-          /Todo-\d+\.md$/.test(candidateReason)
-        ) {
-          for (const [rid, meta] of ptyRunnerMeta.entries()) {
-            if (meta.projectRoot !== scope.projectRoot) continue;
-            if (meta.boardDirName !== boardDirName) continue;
-            if (meta.role !== "worker") continue;
-            scheduleRunnerSessionRotation(rid, meta, "worker_handed_to_verifier");
-          }
-        }
-      }
-      // Context reset after ticket pass: when a done/*/Todo-*.md appears,
-      // the worker/verifier just finished a pass. Prefer session rotation over
-      // in-place /clear because Codex still reports large cached prefixes in a
-      // long-lived PTY process.
-      for (const candidateReason of reasons) {
-        if (
-          candidateReason.startsWith("tickets/done/") &&
-          /\/Todo-\d+\.md$/.test(candidateReason)
-        ) {
-          for (const [rid, meta] of ptyRunnerMeta.entries()) {
-            if (meta.projectRoot !== scope.projectRoot) continue;
-            if (meta.boardDirName !== boardDirName) continue;
-            if (meta.role !== "worker" && meta.role !== "verifier") continue;
-            scheduleRunnerSessionRotation(rid, meta, "ticket_done");
           }
         }
       }
@@ -5091,7 +5216,7 @@ async function readBoard({ projectRoot, boardDirName }) {
   });
   const metricsFiles = await listTextFiles(
     path.join(boardRoot, "metrics"),
-    [".jsonl", ".json"],
+    [".jsonl", ".json", ".env"],
     true,
     { limit: 8, orderBy: "mtime" }
   );
@@ -5330,7 +5455,7 @@ async function runnerResourceUsage(options = {}) {
 // ticket from the board so the UI reflects the current inprogress/prd
 // source of truth instead of stale runner state.
 //   worker    → first Todo-*.md in tickets/inprogress/
-//   planner         → first order_*.md in tickets/order/, else first prd_*.md in tickets/prd/
+//   planner         → first actionable order_*.md in tickets/order/, else first actionable prd_*.md in tickets/prd/
 //   wiki-maintainer → leave blank (no per-ticket active item)
 function canonicalWorkerRunnerId(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -5383,10 +5508,17 @@ function runnerClaimsTicketFromMeta(runner, ticketMeta) {
 async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
   if (!Array.isArray(runners) || runners.length === 0) return;
   const ticketsRoot = path.join(boardRoot, "tickets");
-  const readFirstMatch = async (dir, prefix) => {
+  const readFirstMatch = async (dir, prefix, predicate = null) => {
     try {
       const entries = await fs.readdir(dir);
-      return entries.filter((n) => n.startsWith(prefix) && n.endsWith(".md")).sort()[0] || "";
+      for (const name of entries.filter((n) => n.startsWith(prefix) && n.endsWith(".md")).sort()) {
+        const filePath = path.join(dir, name);
+        if (typeof predicate === "function" && !predicate(filePath)) {
+          continue;
+        }
+        return name;
+      }
+      return "";
     } catch { return ""; }
   };
   const readTitle = async (filePath) => {
@@ -5418,6 +5550,7 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
     }
   };
   const inprogressTickets = [];
+  const verifierTickets = [];
   try {
     const entries = (await fs.readdir(path.join(ticketsRoot, "inprogress")))
       .filter((name) => /^Todo-\d+\.md$/i.test(name))
@@ -5425,6 +5558,19 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
     for (const file of entries) {
       const ticketPath = path.join(ticketsRoot, "inprogress", file);
       inprogressTickets.push({
+        id: file.replace(/\.md$/, ""),
+        path: ticketPath,
+        meta: await readTicketMeta(ticketPath)
+      });
+    }
+  } catch {}
+  try {
+    const entries = (await fs.readdir(path.join(ticketsRoot, "verifier")))
+      .filter((name) => /^Todo-\d+\.md$/i.test(name))
+      .sort();
+    for (const file of entries) {
+      const ticketPath = path.join(ticketsRoot, "verifier", file);
+      verifierTickets.push({
         id: file.replace(/\.md$/, ""),
         path: ticketPath,
         meta: await readTicketMeta(ticketPath)
@@ -5445,6 +5591,7 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
     runner.activeTicketTitle = "";
     runner.activeItem = "";
     runner.activeStage = "";
+    runner.activeSpecRef = "";
   };
   for (const runner of runners) {
     if (isWorkerRunner(runner)) {
@@ -5458,6 +5605,13 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
         clearActiveTicket(runner);
       }
     } else if (runner.role === "verifier") {
+      const queuedByState = verifierTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
+      const queued = queuedByState || verifierTickets[0];
+      if (queued) {
+        await assignTicketToRunner(runner, queued, "verifying");
+        runner.activeStage = "verifying";
+        continue;
+      }
       const byClaim = inprogressTickets.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
       const byState = inprogressTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
       const blockedVerifierTicket = inprogressTickets.find((ticket) => {
@@ -5471,8 +5625,8 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
         clearActiveTicket(runner);
       }
     } else if (runner.role === "planner") {
-      const order = await readFirstMatch(path.join(ticketsRoot, "order"), "order_");
-      const prd = order ? "" : await readFirstMatch(path.join(ticketsRoot, "prd"), "prd_");
+      const order = await readFirstMatch(path.join(ticketsRoot, "order"), "order_", plannerQueueFileIsActionableSync);
+      const prd = order ? "" : await readFirstMatch(path.join(ticketsRoot, "prd"), "prd_", plannerQueueFileIsActionableSync);
       const file = order || prd;
       if (file) {
         const id = file.replace(/\.md$/, "");
@@ -6259,24 +6413,6 @@ async function browseWikiDatabase(options = {}) {
   }
 }
 
-function writeMetricsSnapshot(options = {}) {
-  if (!options.projectRoot) {
-    return Promise.resolve({
-      ok: false,
-      command: "metrics",
-      code: -1,
-      stdout: "",
-      stderr: "Project root is required."
-    });
-  }
-
-  const boardDirName = options.boardDirName || defaultBoardDirName;
-  return runAutoflowArgs(["metrics", options.projectRoot, boardDirName, "--write"], options).then((result) => {
-    clearReadBoardDiagnosticCache("metrics", { projectRoot: options.projectRoot, boardDirName });
-    return result;
-  });
-}
-
 function controlStopHook(options = {}) {
   if (!options.projectRoot) {
     return Promise.resolve({
@@ -6632,6 +6768,7 @@ async function sweepStaleRunnersForScope(scope) {
     }
 
     values.status = "stopped";
+    values.runner_status = "stopped";
     values.pid = "";
     values.stopped_by = "";
     values.last_stop_reason = `startup_${action}`;
@@ -6646,6 +6783,7 @@ async function sweepStaleRunnersForScope(scope) {
       "active_ticket_title",
       "active_stage",
       "active_spec_ref",
+      "active_ticket_path",
       "active_recovery_reason",
       "active_recovery_status",
       "active_recovery_failure_class",
@@ -7188,16 +7326,11 @@ app.whenReady().then(() => {
   ipcMain.handle("autoflow:continueRunnerAuth", withScopeMemory(continueRunnerAuth));
   ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
   ipcMain.handle("autoflow:browseWikiDatabase", withTimeout(withScopeMemory(browseWikiDatabase), 30000));
-  ipcMain.handle("autoflow:writeMetricsSnapshot", withScopeMemory(writeMetricsSnapshot));
   ipcMain.handle("autoflow:controlStopHook", withScopeMemory(controlStopHook));
   ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
   ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
   ipcMain.handle("autoflow:readStartupRules", withTimeout(withScopeMemory(readStartupRules), 10000));
   ipcMain.handle("autoflow:writeStartupRules", withTimeout(withScopeMemory(writeStartupRules), 10000));
-  // ArrivalGauge (PRD_285, 2026-05-12): the renderer computes arrival metrics
-  // directly from the board snapshot's tickets.order array (retry order filenames).
-  // No extra IPC handler is needed; readBoard already delivers the order file list.
-  // board-watcher fires on every tickets/ change so the gauge refreshes in real time.
   // manual_order_196 (2026-05-09): live stdout tail. Reads the LAST maxBytes
   // of a board file (default 16KB) so a polling renderer can show a real-time
   // terminal view of a runner's adapter stdout without stale 196KB head.
@@ -7370,13 +7503,38 @@ app.whenReady().then(() => {
     // Mirror status into runner state file so legacy UI bindings keep working.
     const fields = {
       status: payload.status === "running" ? "running" : "stopped",
+      runner_status: payload.status === "running" ? "running" : "stopped",
       pid: payload.status === "running" ? String(payload.pid || "") : "",
       last_event_at: new Date().toISOString()
     };
     if (payload.status === "stopped") {
-      fields.last_result = payload.signal
-        ? `signal_${payload.signal}`
-        : (typeof payload.exitCode === "number" ? `exit_${payload.exitCode}` : "user_stopped");
+      Object.assign(fields, {
+        active_item: "",
+        active_ticket_id: "",
+        active_ticket_title: "",
+        active_stage: "",
+        active_spec_ref: "",
+        active_ticket_path: "",
+        active_recovery_reason: "",
+        active_recovery_status: "",
+        active_recovery_failure_class: "",
+        active_recovery_worktree_path: "",
+        active_recovery_worktree_status: "",
+        active_recovery_board_state: ""
+      });
+      if (payload.signal) {
+        fields.last_result = `signal_${payload.signal}`;
+        fields.last_process_result = `signal_${payload.signal}`;
+      } else if (typeof payload.exitCode === "number") {
+        // Agent CLIs can exit non-zero after a successful turn because their
+        // stop hooks failed or the PTY closed after completion. Keep that as
+        // process telemetry instead of overwriting the last semantic runner
+        // result with noisy values like exit_1.
+        fields.last_process_result = `exit_${payload.exitCode}`;
+      } else {
+        fields.last_result = "user_stopped";
+        fields.last_process_result = "user_stopped";
+      }
     }
     void writePtyRunnerStateFile(payload.runnerId, fields);
     if (payload.status === "stopped") {

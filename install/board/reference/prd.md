@@ -4,6 +4,7 @@
 
 ## Templates
 
+- `reference/prd-template.md`
 - `reference/project-spec-template.md`
 - `reference/feature-spec-template.md`
 

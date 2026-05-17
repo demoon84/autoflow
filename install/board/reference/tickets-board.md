@@ -88,6 +88,7 @@ Verification evidence lives in the ticket markdown (`## Verification`, `## Resul
 - `todo/`
   - Contains ready work that has not started.
   - Requires clear `Goal`, `References`, `Allowed Paths`, and `Done When`.
+  - Use `reference/todo-template.md` for new Todo tickets. `reference/ticket-template.md` remains a compatibility template for older boards.
   - If a file is in `todo/`, treat it as implementation work even when the title or acceptance criteria mention review or verification.
   - Worker Mode or legacy `start-todo.ts` claims one file by moving it to `inprogress/`.
 - `inprogress/`

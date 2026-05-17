@@ -46,18 +46,7 @@ export function main(): void {
 
   if (policyPick === "order" && nonretryOrder) {
     const generated = createGeneratedPrdFromOrder(nonretryOrder);
-    emit({
-      status: "ok",
-      source: "order-to-prd",
-      order: nonretryOrder,
-      order_id: extractNumericId(nonretryOrder),
-      spec: generated.specFile,
-      archived_order: generated.archivedOrder,
-      board_root: BOARD_ROOT,
-      project_root: PROJECT_ROOT,
-      next_action: `Generated PRD ${boardRelativePath(generated.specFile)} from order ${boardRelativePath(nonretryOrder)}; rerun planner for PRD-to-todo handoff.`,
-    });
-    return;
+    promoteSpecToTodoOrExit(generated.specFile);
   }
 
   const legacyPlan = selectLegacyPlan();

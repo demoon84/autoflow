@@ -36,6 +36,28 @@ function requireRunnerRole(role: string): string {
     return normalized;
 }
 
+function inactiveRunnerState(status: "idle" | "stopped", stoppedBy = ""): Record<string, string> {
+    return {
+        status,
+        runner_status: status,
+        pid: "",
+        stopped_by: stoppedBy,
+        active_item: "",
+        active_ticket_id: "",
+        active_ticket_title: "",
+        active_stage: "",
+        active_spec_ref: "",
+        active_ticket_path: "",
+        active_recovery_reason: "",
+        active_recovery_status: "",
+        active_recovery_failure_class: "",
+        active_recovery_worktree_path: "",
+        active_recovery_worktree_status: "",
+        active_recovery_board_state: "",
+        last_result: status === "idle" ? "runner_started" : "runner_stopped",
+    };
+}
+
 function printRunnersUsage(): void {
     out(`Autoflow runners
 
@@ -78,19 +100,13 @@ export function runnersProject(args: string[]): void {
     switch (subcmd) {
         case "start":
         case "restart":
-            writeRunnerState(ctx, requiredRunnerId, {
-                status: "idle",
-                stopped_by: "",
-            });
+            writeRunnerState(ctx, requiredRunnerId, inactiveRunnerState("idle"));
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
             out("runner_status=idle");
             break;
         case "stop":
-            writeRunnerState(ctx, requiredRunnerId, {
-                status: "stopped",
-                stopped_by: "user",
-            });
+            writeRunnerState(ctx, requiredRunnerId, inactiveRunnerState("stopped", "user"));
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
             out("runner_status=stopped");

@@ -27,8 +27,21 @@ export function gitOut(cwd: string, args: string[]): string {
   }
 }
 
+function gitRawOut(cwd: string, args: string[]): string {
+  try {
+    return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return "";
+  }
+}
+
 export function git(cwd: string, args: string[]): { status: number } {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return { status: typeof result.status === "number" ? result.status : 1 };
+}
+
+export function gitWithInput(cwd: string, args: string[], input: string): { status: number } {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8", input });
   return { status: typeof result.status === "number" ? result.status : 1 };
 }
 
@@ -99,4 +112,22 @@ export function projectRootPathMatchesWorktree(worktreePath: string, relPath: st
   } catch {
     return false;
   }
+}
+
+export function projectRootContainsWorktreeChange(worktreePath: string, baseCommit: string, relPath: string): boolean {
+  if (!baseCommit) return projectRootPathMatchesWorktree(worktreePath, relPath);
+  const patch = gitRawOut(worktreePath, ["diff", "--binary", `${baseCommit}..HEAD`, "--", relPath]);
+  if (!patch.trim()) return projectRootPathMatchesWorktree(worktreePath, relPath);
+
+  const reverseCheckArgs = ["apply", "--reverse", "--check", "--3way", "--whitespace=nowarn"];
+  if (gitWithInput(projectRoot, reverseCheckArgs, patch).status === 0) return true;
+
+  const plainReverseCheckArgs = ["apply", "--reverse", "--check", "--whitespace=nowarn"];
+  if (gitWithInput(projectRoot, plainReverseCheckArgs, patch).status === 0) return true;
+
+  const zeroContextPatch = gitRawOut(worktreePath, ["diff", "--binary", "--unified=0", `${baseCommit}..HEAD`, "--", relPath]);
+  const zeroContextReverseCheckArgs = ["apply", "--reverse", "--check", "--unidiff-zero", "--whitespace=nowarn"];
+  if (zeroContextPatch.trim() && gitWithInput(projectRoot, zeroContextReverseCheckArgs, zeroContextPatch).status === 0) return true;
+
+  return projectRootPathMatchesWorktree(worktreePath, relPath);
 }

@@ -28,6 +28,10 @@ Default 4-runner topology:
 Wake sources:
 
 - Desktop `fs.watch` pushes `[wake] <path>` into matching live PTY runners.
+  Wake does not own runner process lifecycle; if a runner was stopped by the
+  user, queued work waits until the user starts that runner again.
+  `AUTOFLOW_AUTO_START_STOPPED_RUNNER_ON_WAKE=1` is a legacy compatibility
+  escape hatch and is off by default.
 - Desktop safety polling sends a wake when queue work is pending and a runner
   appears idle or stalled.
 - Runner tools can emit durable wake queue events through
@@ -35,7 +39,10 @@ Wake sources:
 - Each runner must still scan its queues at startup before waiting for a wake.
 
 Idle is valid. It means no actionable board item was available for this tick,
-not that the workflow is permanently finished.
+not that the workflow is permanently finished. Runner PIDs are long-lived:
+Autoflow should not terminate a PTY merely because a focused tick completed or
+the board is temporarily idle. The normal lifecycle is start button -> live idle
+loop -> stop button.
 
 ## Trigger Contract
 
@@ -60,8 +67,8 @@ Order skill handoff (`/order`, `$order`, `#order`) and
 
 ## Optional Stop Hook
 
-The stop hook checks for unfinished worker or legacy work before an agent exits
-too early.
+The stop hook checks for unfinished role-owned work before a focused tick is
+allowed to idle.
 
 It may block exit when:
 
@@ -71,7 +78,8 @@ It may block exit when:
 - retry orders require planning,
 - active context says work remains.
 
-The stop hook supplements runner wakeups. It does not replace the runner loop.
+The stop hook supplements runner wakeups. It does not replace the runner loop
+and it must not terminate or restart runner PIDs.
 
 ## Legacy File-Watch Mode
 

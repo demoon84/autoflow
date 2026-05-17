@@ -1,5 +1,5 @@
 import * as shared from "../shared";
-const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, migrateQueueDirectoryNames, syncBoardInstallAssets, syncProjectHostInstallAssets, detectHostGuidanceDrift, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
+const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, migrateQueueDirectoryNames, migratePromotedOrderQueueItems, syncBoardInstallAssets, syncProjectHostInstallAssets, detectHostGuidanceDrift, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
 import {buildWikiVectorIndex} from "../runners/wiki/wiki";
 
 function hasInstallHelpFlag(args: string[]): boolean {
@@ -35,6 +35,7 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     })();
     const obsoleteRemoved = cleanupObsoleteBoardFiles(ctx);
     const queueDirectoryMigrated = migrateQueueDirectoryNames(ctx);
+    const promotedOrderMigrated = migratePromotedOrderQueueItems(ctx);
     const terminologyMigrated = migrateWorkerTerminology(ctx);
     const hostAssets = (() => {
         try {
@@ -86,6 +87,10 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     out(`queue_dir_migrated_count=${queueDirectoryMigrated.length}`);
     if (queueDirectoryMigrated.length > 0) {
         out(`queue_dir_migrated=${queueDirectoryMigrated.join(",")}`);
+    }
+    out(`promoted_order_migrated_count=${promotedOrderMigrated.length}`);
+    if (promotedOrderMigrated.length > 0) {
+        out(`promoted_order_migrated=${promotedOrderMigrated.join(",")}`);
     }
     out(`terminology_migrated_count=${terminologyMigrated.length}`);
     if (terminologyMigrated.length > 0) {

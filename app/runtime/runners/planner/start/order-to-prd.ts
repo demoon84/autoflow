@@ -29,6 +29,14 @@ function bulletValues(file: string, heading: string): string[] {
     .filter((item) => item && item !== "TBD" && !/^TODO\b/i.test(item));
 }
 
+function firstNonEmptyBullets(file: string, headings: string[]): string[] {
+  for (const heading of headings) {
+    const values = bulletValues(file, heading);
+    if (values.length > 0) return values;
+  }
+  return [];
+}
+
 function orderTitle(orderFile: string): string {
   const explicit = utils.extractScalarFieldInSection(orderFile, "Order", "Title");
   if (explicit) return explicit;
@@ -44,7 +52,9 @@ function orderRequest(orderFile: string): string {
 function orderVerificationCommand(orderFile: string): string {
   const scalar = utils.extractScalarFieldInSection(orderFile, "Verification", "Command");
   if (scalar && scalar !== "TBD") return scalar;
-  const first = bulletValues(orderFile, "Verification")[0] || "";
+  const hintScalar = utils.extractScalarFieldInSection(orderFile, "Verification Hints", "Command");
+  if (hintScalar && hintScalar !== "TBD") return hintScalar;
+  const first = firstNonEmptyBullets(orderFile, ["Verification", "Verification Hints"])[0] || "";
   return first && first !== "TBD" ? first : "none-shell";
 }
 
@@ -67,8 +77,16 @@ function orderDoneWhen(orderFile: string, request: string, allowedPaths: string[
 }
 
 function orderAllowedPaths(orderFile: string): string[] {
-  const paths = bulletValues(orderFile, "Allowed Paths");
+  const paths = firstNonEmptyBullets(orderFile, ["Allowed Paths", "Allowed Paths Hints"]);
   return paths.length > 0 ? paths : ["TBD"];
+}
+
+function orderScopeHints(orderFile: string): string[] {
+  return firstNonEmptyBullets(orderFile, ["Scope Hints", "Scope"]);
+}
+
+function orderPlannerHints(orderFile: string): string[] {
+  return firstNonEmptyBullets(orderFile, ["Planner Hints", "Notes"]);
 }
 
 export function createGeneratedPrdFromOrder(orderFile: string): { specFile: string; archivedOrder: string } {
@@ -82,6 +100,8 @@ export function createGeneratedPrdFromOrder(orderFile: string): { specFile: stri
   const allowedPaths = orderAllowedPaths(orderFile);
   const verificationCommand = orderVerificationCommand(orderFile);
   const doneWhen = orderDoneWhen(orderFile, request, allowedPaths, verificationCommand);
+  const scopeHints = orderScopeHints(orderFile);
+  const plannerHints = orderPlannerHints(orderFile);
   const priority = normalizePriority(utils.extractScalarFieldInSection(orderFile, "Order", "Priority"));
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(orderFile, "Order", "Change Type"));
   const timestamp = utils.nowIso();
@@ -106,7 +126,7 @@ export function createGeneratedPrdFromOrder(orderFile: string): { specFile: stri
 ## Core Scope
 
 - Goal: order 요청을 가장 좁고 안전한 구현 범위로 해석해 실행 가능한 티켓으로 넘긴다.
-- In Scope: ${oneLine(request)}
+- In Scope: ${scopeHints.length > 0 ? oneLine(scopeHints.join(" ")) : oneLine(request)}
 - Out of Scope: order에 명시되지 않은 독립 기능, 대규모 리팩터링, 외부 배포 작업.
 
 ## Main Screens / Modules
@@ -136,7 +156,7 @@ ${doneWhen.join("\n")}
 - Generated from quick order by ${displayId} at ${timestamp}.
 - Consumed order archive target: \`${boardRelativePath(archivedOrder)}\`.
 - Project root: \`${PROJECT_ROOT}\`.
-`,
+${plannerHints.length > 0 ? plannerHints.map((item) => `- Order planner hint: ${item}`).join("\n") + "\n" : ""}`,
     "utf8"
   );
 

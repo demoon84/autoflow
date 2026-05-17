@@ -14,7 +14,7 @@ Before writing the order, surface relevant prior work so the user can build on p
 1. Identify 1–3 distinctive keywords from the user's request: feature noun, file path basename, error string, UI element name, etc.
 2. Run, best-effort (any error → treat as "no hits", continue):
    - `autoflow origin search "<keyword>"` — past PRDs/orders matching prompt, prd_path, ticket title, or commit subject.
-   - `autoflow wiki query --term "<keyword>" --rag --limit 3` — LLM Wiki prior decisions, learnings, failed/retried approaches, and related done-ticket context. Use multiple `--term` flags when you have multiple strong keywords.
+   - `autoflow wiki query --term "<keyword>" --rag --limit 3` — 위키의 prior decisions, learnings, failed/retried approaches, and related done-ticket context. Use multiple `--term` flags when you have multiple strong keywords.
 3. If non-trivial hits return, briefly summarize origin and wiki findings in Korean to the user:
    "비슷한 과거 작업: prd_142 (...), order_88 (...). 그대로 발행할까요?"
 4. Use relevant wiki findings to tighten obvious `--allowed-path`, `--scope`, `--verification`, or `## Notes` hints, but do not decide whether PRD authoring can be skipped; that decision belongs to the planner runner.
@@ -34,54 +34,50 @@ Skip lookup for very short requests (≤ 8 chars) where keywords are unreliable.
 8. Add `--priority high` for urgent user-visible breakage, blocked active work, or explicit high-priority language such as "high priority", "important", or "blocking".
 9. Omit `--priority` for normal planned work so the CLI records `Priority: normal`; use `--priority low` only for cleanup or non-urgent improvements.
 10. If the user explicitly states a priority, that explicit value wins over automatic keyword inference.
-11. Fallback: write the same order format directly under `{{BOARD_DIR}}/tickets/order/`; the first non-empty line must be `# Autoflow Order`, include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
+11. Fallback: write the order template below directly under `{{BOARD_DIR}}/tickets/order/`; include `## Order` and one `## Request` section, and must not use yaml frontmatter (`---`).
 12. Do not create PRDs, todo tickets, code changes, verification records, commits, or pushes.
 13. After saving, tell the user the order path and that the planner runner (`autoflow run planner`) will write a generated PRD first; direct TODO is only a narrow exception for explicitly requested, single-file mechanical changes.
 
-## Planner PRD Intake Hints
+## Order Template
 
-Order intake never decides that PRD authoring can be skipped. The planner runner reads the saved order, repository context, and prior wiki/origin findings, then creates a generated PRD with assumptions and remaining unknowns. A direct todo ticket is reserved for explicitly requested, single-file mechanical changes.
+Use this exact shape when writing an order directly. Keep it lightweight: orders are intake notes, not acceptance contracts.
 
-For tiny, fully-specified requests, you may add non-authoritative hints only:
+Do **not** include `## Done When`, `## Acceptance Criteria`, or final completion checklists in an ordinary order. Put tentative implementation clues under `## Planner Hints`; the generated PRD and Todo own the authoritative acceptance criteria.
 
-- Concrete repo-relative `Allowed Paths` when obvious (≤3 paths).
-- Observable `Done When` checkboxes when they follow directly from the conversation.
-- A `Verification Command` that exists in this repo, or `none-shell` when no shell verification is meaningful.
-- A `## Notes` bullet such as `- Planner hint: PRD scope evidence because ...`.
-
-Do not write `Express: true`, do not pass `--express`, and do not create PRDs or TODO tickets from this skill. The planner runner owns PRD-first intake and the narrow direct-TODO exception.
+If `autoflow order create` is used and writes legacy `## Scope`, `## Allowed Paths`, or `## Verification` sections, treat those sections as hints equivalent to the template sections below.
 
 ```
-# Autoflow Order
+# Order NNN: <짧은 한국어 제목>
 
 ## Order
 
-- Title: <짧은 한국어 제목>
 - Priority: normal
-- Status: ready
+- Express: false
+- Planner Direct-TODO Hint: false
 - Change Type: code | docs | cleanup | infra
 
 ## Request
 
 <사용자의 원 요청 본문 그대로>
 
-## Allowed Paths
+## Scope Hints
 
-- src/foo.ts
-- src/bar.ts
+- <확실할 때만 좁은 해석을 적는다>
+- <사용자가 명확히 제외한 범위가 있으면 적는다>
 
-## Done When
+## Allowed Paths Hints
 
-- [ ] <관찰 가능한 완료 조건 1>
-- [ ] <관찰 가능한 완료 조건 2>
+- path/to/file-or-folder
 
-## Verification
+## Verification Hints
 
-- Command: <repo-relative shell command>
+- npm run test
+- none-shell
+- manual: <planner가 검증 계획을 세울 때 참고할 수동 확인>
 
-## Notes
+## Planner Hints
 
-- Planner hint: <generated PRD 범위 판단에 도움이 되는 근거, 확실할 때만>
+- <관련 wiki/ticket/order, 위험, 가정, 미정 사항, direct TODO 가능성/불가 사유>
 ```
 
 `Change Type` defaults to `code` if omitted; the worker finalizer's sanity gate uses this to choose its diff/checklist matrix.

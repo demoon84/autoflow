@@ -32,7 +32,8 @@ export function metricsProject(args: string[]): void {
     if (hasFlag(parsed, "write")) {
         const metricsFile = path.join(ctx.boardRoot, "metrics", "snapshot.env");
         writeFile(metricsFile, [
-            `tickets_total=${total}`,
+            ...Object.entries(counts).map(([key, value]) => `tickets.${key}=${value}`),
+            `tickets.total=${total}`,
             ...Object.entries(workflowMetrics).map(([key, value]) => `${key}=${value}`),
             `autoflow_code_files_changed_count=${codeTotals.files}`,
             `autoflow_code_insertions_count=${codeTotals.insertions}`,
@@ -44,5 +45,6 @@ export function metricsProject(args: string[]): void {
             "",
         ].join("\n"), true);
         out(`metrics_file=${metricsFile}`);
+        out(`snapshot_file=${metricsFile}`);
     }
 }

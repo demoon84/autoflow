@@ -9,7 +9,7 @@
 //   2. Query `autoflow wiki query --rag <keywords>` to collect related file paths from wiki.
 //   3. Confirm existence via `git grep -l <keyword>` in the project root.
 //   4. If candidates ≤ 3 with sufficient specificity:
-//        - Write inferred Allowed Paths + Done When checklist into the order file.
+//        - Write inferred Allowed Paths Hints + Planner Hints into the order file.
 //        - Append confidence marker to ## Notes.
 //   5. If candidates > 3 or too broad → exit 2 (planner writes a generated PRD).
 //
@@ -103,7 +103,7 @@ function gitGrepCandidates(projectRoot: string, keywords: string[]): string[] {
   return [...found];
 }
 
-function buildDoneWhen(text: string): string[] {
+function buildPlannerHints(text: string): string[] {
   const items: string[] = [];
   // Extract observable verbs with their objects
   const verbPatterns = [
@@ -118,7 +118,7 @@ function buildDoneWhen(text: string): string[] {
     }
     if (items.length >= 3) break;
   }
-  if (!items.length) items.push("변경 사항이 의도한 대로 동작함");
+  if (!items.length) items.push("Planner should derive concrete PRD acceptance criteria from the request.");
   return items.slice(0, 3);
 }
 
@@ -139,23 +139,23 @@ function readOrderSections(content: string): Record<string, string> {
   return sections;
 }
 
-function injectIntoOrder(filePath: string, allowedPaths: string[], doneWhen: string[]): void {
+function injectIntoOrder(filePath: string, allowedPaths: string[], plannerHints: string[]): void {
   let content = fs.readFileSync(filePath, "utf8");
 
-  // Replace or append Allowed Paths section
-  const apSection = `## Allowed Paths\n\n${allowedPaths.map((p) => `- \`${p}\``).join("\n")}`;
-  if (/^## Allowed Paths$/m.test(content)) {
-    content = content.replace(/^## Allowed Paths\n[\s\S]*?(?=\n## |\s*$)/m, `${apSection}\n\n`);
+  // Replace or append Allowed Paths Hints section
+  const apSection = `## Allowed Paths Hints\n\n${allowedPaths.map((p) => `- \`${p}\``).join("\n")}`;
+  if (/^## Allowed Paths Hints$/m.test(content)) {
+    content = content.replace(/^## Allowed Paths Hints\n[\s\S]*?(?=\n## |\s*$)/m, `${apSection}\n\n`);
   } else {
     content += `\n\n${apSection}`;
   }
 
-  // Replace or append Done When section
-  const dwSection = `## Done When\n\n${doneWhen.map((d) => `- [ ] ${d}`).join("\n")}`;
-  if (/^## Done When$/m.test(content)) {
-    content = content.replace(/^## Done When\n[\s\S]*?(?=\n## |\s*$)/m, `${dwSection}\n\n`);
+  // Replace or append Planner Hints section. Orders must not carry Done When.
+  const hintsSection = `## Planner Hints\n\n${plannerHints.map((d) => `- ${d}`).join("\n")}`;
+  if (/^## Planner Hints$/m.test(content)) {
+    content = content.replace(/^## Planner Hints\n[\s\S]*?(?=\n## |\s*$)/m, `${hintsSection}\n\n`);
   } else {
-    content += `\n\n${dwSection}`;
+    content += `\n\n${hintsSection}`;
   }
 
   // Append Notes confidence marker
@@ -182,8 +182,8 @@ async function main(): Promise<void> {
   const raw = fs.readFileSync(orderFile, "utf8");
   const sections = readOrderSections(raw);
 
-  // If order already has Allowed Paths, skip inference
-  const existing = sections["Allowed Paths"] || "";
+  // If order already has Allowed Paths or Allowed Paths Hints, skip inference
+  const existing = sections["Allowed Paths"] || sections["Allowed Paths Hints"] || "";
   if (existing.trim().length > 10) {
     process.stdout.write(`promote_status=skip reason=already_has_allowed_paths\n`);
     process.exit(2);
@@ -224,9 +224,9 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
-  const doneWhen = buildDoneWhen(requestText);
+  const plannerHints = buildPlannerHints(requestText);
 
-  injectIntoOrder(orderFile, sorted, doneWhen);
+  injectIntoOrder(orderFile, sorted, plannerHints);
 
   process.stdout.write(
     `promote_status=hints_written allowed_paths=${sorted.join(",")} confidence=high prd_intake=planner_owned keywords=${keywords.slice(0, 5).join(",")}\n`

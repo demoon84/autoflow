@@ -290,6 +290,149 @@ export function migrateQueueDirectoryNames(ctx: ProjectContext): string[] {
     ];
 }
 
+function boardRel(ctx: ProjectContext, file: string): string {
+    return path.relative(ctx.boardRoot, file).split(path.sep).join("/");
+}
+
+function safeReadText(file: string): string {
+    try {
+        return fs.readFileSync(file, "utf8");
+    } catch {
+        return "";
+    }
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectMarkdownFiles(root: string): string[] {
+    const files: string[] = [];
+    const visit = (current: string): void => {
+        let entries: fs.Dirent[] = [];
+        try {
+            entries = fs.readdirSync(current, {withFileTypes: true});
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            const next = path.join(current, entry.name);
+            if (entry.isDirectory()) {
+                visit(next);
+            } else if (entry.isFile() && entry.name.endsWith(".md")) {
+                files.push(next);
+            }
+        }
+    };
+    visit(root);
+    return files.sort();
+}
+
+function scalarInSection(text: string, section: string, field: string): string {
+    let inSection = false;
+    const headingRe = /^##\s+(.+?)\s*$/;
+    const fieldRe = new RegExp(`^-\\s*${escapeRegExp(field)}\\s*:\\s*(.*?)\\s*$`, "i");
+    for (const line of text.split(/\r?\n/)) {
+        const heading = line.match(headingRe);
+        if (heading) {
+            inSection = heading[1].trim().toLowerCase() === section.toLowerCase();
+            continue;
+        }
+        if (!inSection) continue;
+        const match = line.match(fieldRe);
+        if (match) return match[1].trim();
+    }
+    return "";
+}
+
+function safeProjectKey(value: string): string {
+    const normalized = value.trim().replace(/^`+|`+$/g, "");
+    return /^[A-Za-z0-9._-]+$/.test(normalized) ? normalized : "";
+}
+
+function projectKeyForPromotedOrderEvidence(ctx: ProjectContext, evidenceFile: string, text: string): string {
+    const rel = boardRel(ctx, evidenceFile);
+    const doneMatch = rel.match(/^tickets\/done\/([^/]+)\//);
+    if (doneMatch && safeProjectKey(doneMatch[1])) {
+        return doneMatch[1];
+    }
+    return (
+        safeProjectKey(scalarInSection(text, "Project", "Project Key")) ||
+        safeProjectKey(scalarInSection(text, "Project", "PRD Key")) ||
+        safeProjectKey(scalarInSection(text, "Ticket", "PRD Key")) ||
+        safeProjectKey(path.basename(evidenceFile, ".md"))
+    );
+}
+
+function promotedOrderRefs(ctx: ProjectContext): Map<string, string> {
+    const refs = new Map<string, string>();
+    const evidenceRoots = [
+        path.join(ctx.boardRoot, "tickets", "prd"),
+        path.join(ctx.boardRoot, "tickets", "done"),
+    ];
+    const refRe = /tickets\/order\/order_[A-Za-z0-9._-]+\.md/g;
+    for (const root of evidenceRoots) {
+        if (!fs.existsSync(root)) continue;
+        for (const file of collectMarkdownFiles(root)) {
+            const name = path.basename(file);
+            const rel = boardRel(ctx, file);
+            const isPrdEvidence = /^(prd|project)_\d+\.md$/i.test(name);
+            const isDoneTicketEvidence = /^tickets\/done\/[^/]+\/(?:Todo-\d+|tickets_\d+)\.md$/i.test(rel);
+            if (!isPrdEvidence && !isDoneTicketEvidence) continue;
+            const text = safeReadText(file);
+            const key = projectKeyForPromotedOrderEvidence(ctx, file, text);
+            if (!key) continue;
+            for (const match of text.matchAll(refRe)) {
+                if (!refs.has(match[0])) {
+                    refs.set(match[0], key);
+                }
+            }
+        }
+    }
+    return refs;
+}
+
+export function migratePromotedOrderQueueItems(ctx: ProjectContext): string[] {
+    const orderDir = path.join(ctx.boardRoot, "tickets", "order");
+    if (!fs.existsSync(orderDir)) {
+        return [];
+    }
+    const refs = promotedOrderRefs(ctx);
+    if (refs.size === 0) {
+        return [];
+    }
+    const migrated: string[] = [];
+    let orderNames: string[] = [];
+    try {
+        orderNames = fs.readdirSync(orderDir)
+            .filter((name) => /^order_[A-Za-z0-9._-]+\.md$/i.test(name) && !/_retry_/i.test(name))
+            .sort();
+    } catch {
+        return [];
+    }
+    for (const name of orderNames) {
+        const from = path.join(orderDir, name);
+        const rel = `tickets/order/${name}`;
+        const projectKey = refs.get(rel);
+        if (!projectKey) continue;
+        const targetDir = path.join(ctx.boardRoot, "tickets", "done", projectKey);
+        const target = path.join(targetDir, name);
+        if (fs.existsSync(target)) {
+            if (safeReadText(target) === safeReadText(from)) {
+                fs.rmSync(from, {force: true});
+                migrated.push(`removed-duplicate:${rel}`);
+                continue;
+            }
+            migrated.push(`conflict:${rel}->${boardRel(ctx, target)}`);
+            continue;
+        }
+        fs.mkdirSync(targetDir, {recursive: true});
+        fs.renameSync(from, target);
+        migrated.push(`${rel}->${boardRel(ctx, target)}`);
+    }
+    return migrated;
+}
+
 function rewriteQueuePathReferences(ctx: ProjectContext): string[] {
     if (!fs.existsSync(ctx.boardRoot)) {
         return [];

@@ -10,6 +10,9 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     const configFingerprint = runnerConfigFingerprint(runner);
     const tokenAccounting = runnerTokenAccounting(ctx, runner.id || "");
     const field = (key: string, fallback = "") => runner[key] ?? fallback;
+    const activeField = (key: string) => (
+        stateStatus === "idle" || stateStatus === "stopped" ? "" : state[key] || ""
+    );
 
     out(`${prefix}id=${field("id")}`);
     out(`${prefix}role=${field("role")}`);
@@ -32,14 +35,14 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}started_at=${state.started_at || ""}`);
     out(`${prefix}last_event_at=${state.last_event_at || state.updated_at || ""}`);
     out(`${prefix}last_adapter_chunk_at=${state.last_adapter_chunk_at || ""}`);
-    out(`${prefix}active_item=${state.active_item || ""}`);
-    out(`${prefix}active_ticket_id=${state.active_ticket_id || ""}`);
-    out(`${prefix}active_ticket_title=${state.active_ticket_title || ""}`);
-    out(`${prefix}active_stage=${state.active_stage || ""}`);
-    out(`${prefix}active_spec_ref=${state.active_spec_ref || ""}`);
-    out(`${prefix}active_recovery_reason=${state.active_recovery_reason || ""}`);
-    out(`${prefix}active_recovery_status=${state.active_recovery_status || ""}`);
-    out(`${prefix}active_recovery_failure_class=${state.active_recovery_failure_class || ""}`);
+    out(`${prefix}active_item=${activeField("active_item")}`);
+    out(`${prefix}active_ticket_id=${activeField("active_ticket_id")}`);
+    out(`${prefix}active_ticket_title=${activeField("active_ticket_title")}`);
+    out(`${prefix}active_stage=${activeField("active_stage")}`);
+    out(`${prefix}active_spec_ref=${activeField("active_spec_ref")}`);
+    out(`${prefix}active_recovery_reason=${activeField("active_recovery_reason")}`);
+    out(`${prefix}active_recovery_status=${activeField("active_recovery_status")}`);
+    out(`${prefix}active_recovery_failure_class=${activeField("active_recovery_failure_class")}`);
     out(`${prefix}last_result=${state.last_result || ""}`);
     out(`${prefix}last_runtime_log=${state.last_runtime_log || ""}`);
     out(`${prefix}last_prompt_log=${state.last_prompt_log || ""}`);

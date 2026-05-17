@@ -30,7 +30,7 @@ Merge Bot does not decide pass/revise/replan verification and does not merge pro
 ## Procedure
 
 1. Run `autoflow tool merge-ready-ticket [ticket-id-or-path]`.
-2. If it reports `status=done`, stop after one finalization.
+2. If it reports `status=done`, summarize the single finalization and idle.
 3. If it reports `status=needs_ai_merge`, return control to the worker AI; do not rebase, cherry-pick, or resolve conflicts.
 4. If it reports `status=blocked`, read the `reason`, ticket `Notes`, and `Worktree` section. Do not make a verification decision.
 5. Never edit unrelated product files.

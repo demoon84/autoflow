@@ -136,12 +136,44 @@ function scalarFromTicketContent(content: string, fieldName: string): string {
 
 function sourceOrderRefsFromTicketContent(content: string): string[] {
   const source = scalarFromTicketContent(content, "Source");
-  if (!source) return [];
   return unique(
-    source
-      .split(/[, ]+/)
+    [
+      ...source.split(/[, ]+/),
+      ...(String(content || "").match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/g) || []),
+    ]
       .map((part) => stripTicks(part).trim())
       .filter((part) => /^tickets\/order\/[A-Za-z0-9._-]+\.md$/.test(part))
+  );
+}
+
+function sectionTextFromTicketContent(content: string, heading: string): string {
+  const escaped = escapeRe(heading);
+  const match = String(content || "").match(new RegExp(`^##\\s+${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|\\s*$)`, "m"));
+  return match ? match[1].trim() : "";
+}
+
+function firstPlainSectionLine(content: string, heading: string): string {
+  return sectionTextFromTicketContent(content, heading)
+    .split(/\r?\n/)
+    .map((line) => stripTicks(line).trim())
+    .filter((line) => line && !line.startsWith("-"))[0] || "";
+}
+
+function projectKeyFromTicketContent(content: string, ticketId: string): string {
+  return safeSegment(
+    scalarFromTicketContent(content, "Project key") ||
+    scalarFromTicketContent(content, "Project Key") ||
+    firstPlainSectionLine(content, "Project") ||
+    scalarFromTicketContent(content, "PRD Key") ||
+    `ticket_${ticketId}`
+  );
+}
+
+function sourcePrdRefsFromTicketContent(content: string): string[] {
+  return unique(
+    (String(content || "").match(/tickets\/prd\/prd_[A-Za-z0-9._-]+\.md/g) || [])
+      .map((part) => stripTicks(part).trim())
+      .filter(Boolean)
   );
 }
 
@@ -163,7 +195,7 @@ function archiveConsumedOrderSources(content: string, ticketId: string): JsonObj
   const refs = sourceOrderRefsFromTicketContent(content);
   if (refs.length === 0) return [];
 
-  const projectKey = safeSegment(scalarFromTicketContent(content, "PRD Key") || `ticket_${ticketId}`);
+  const projectKey = projectKeyFromTicketContent(content, ticketId);
   const doneDir = path.join(TICKETS_ROOT, "done", projectKey);
   fs.mkdirSync(doneDir, { recursive: true });
 
@@ -172,6 +204,34 @@ function archiveConsumedOrderSources(content: string, ticketId: string): JsonObj
     const source = resolveBoardPath(ref);
     const orderRoot = path.resolve(path.join(TICKETS_ROOT, "order"));
     if (!source || !path.resolve(source).startsWith(orderRoot + path.sep)) {
+      archived.push({ source: ref, status: "skipped_unsafe_source" });
+      continue;
+    }
+    if (!safeIsFile(source)) {
+      archived.push({ source: ref, status: "missing" });
+      continue;
+    }
+
+    const target = uniqueArchiveTarget(doneDir, path.basename(source));
+    fs.renameSync(source, target);
+    archived.push({ source: ref, status: "archived", path: boardRel(target), project_key: projectKey });
+  }
+  return archived;
+}
+
+function archiveConsumedPrdSources(content: string, ticketId: string): JsonObject[] {
+  const refs = sourcePrdRefsFromTicketContent(content);
+  if (refs.length === 0) return [];
+
+  const projectKey = projectKeyFromTicketContent(content, ticketId);
+  const doneDir = path.join(TICKETS_ROOT, "done", projectKey);
+  fs.mkdirSync(doneDir, { recursive: true });
+
+  const archived: JsonObject[] = [];
+  for (const ref of refs) {
+    const source = resolveBoardPath(ref);
+    const prdRoot = path.resolve(path.join(TICKETS_ROOT, "prd"));
+    if (!source || !path.resolve(source).startsWith(prdRoot + path.sep)) {
       archived.push({ source: ref, status: "skipped_unsafe_source" });
       continue;
     }
@@ -198,6 +258,7 @@ export function cmdPlannerWriteTicket(): void {
   writeAtomic(target, payload.content);
   releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
   const archivedSources = archiveConsumedOrderSources(payload.content, id);
+  const archivedPrds = archiveConsumedPrdSources(payload.content, id);
 
-  ok({ tool: "planner.write-ticket", status: "ok", id: `Todo-${id}`, path: boardRel(target), archived_sources: archivedSources });
+  ok({ tool: "planner.write-ticket", status: "ok", id: `Todo-${id}`, path: boardRel(target), archived_sources: archivedSources, archived_prds: archivedPrds });
 }

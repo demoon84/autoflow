@@ -1,4 +1,4 @@
-import {fs, path, boardRoot, projectRoot, workerId} from "./context";
+import {fs, path, boardRoot, projectRoot, timestamp, workerId} from "./context";
 import {idFromTicketPath, normalizeId, read, stripTicks, write} from "./io";
 import {scalar} from "./ticket-sections";
 import {git, gitOut} from "./git";
@@ -54,14 +54,27 @@ export function cleanupWorktree(ticketFile: string): void {
   cleanupTicketBranch(ticketFile);
 }
 
-export function clearActiveState(): void {
+export function clearActiveState(lastResult = ""): void {
   const stateFile = path.join(boardRoot, "runners", "state", `${workerId}.state`);
   if (fs.existsSync(stateFile)) {
-    const keys = new Set(["active_item", "active_ticket_id", "active_ticket_title", "active_stage", "active_spec_ref", "active_recovery_reason", "active_recovery_status", "active_recovery_failure_class", "active_recovery_worktree_path", "active_recovery_worktree_status", "active_recovery_board_state"]);
+    const keys = new Set(["active_item", "active_ticket_id", "active_ticket_title", "active_stage", "active_spec_ref", "active_ticket_path", "active_recovery_reason", "active_recovery_status", "active_recovery_failure_class", "active_recovery_worktree_path", "active_recovery_worktree_status", "active_recovery_board_state"]);
+    const updates = new Map<string, string>();
+    if (lastResult) {
+      updates.set("last_result", lastResult);
+      updates.set("updated_at", timestamp);
+    }
+    const seen = new Set<string>();
     const lines = read(stateFile).split(/\r?\n/).filter(Boolean).map((line) => {
       const key = line.split("=")[0];
+      if (updates.has(key)) {
+        seen.add(key);
+        return `${key}=${updates.get(key)}`;
+      }
       return keys.has(key) ? `${key}=` : line;
     });
+    for (const [key, value] of updates) {
+      if (!seen.has(key)) lines.push(`${key}=${value}`);
+    }
     write(stateFile, `${lines.join("\n")}\n`);
   }
 }

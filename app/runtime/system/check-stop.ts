@@ -30,6 +30,7 @@ process.stdout.write(JSON.stringify({
 function reasonFor(role: string, workerId: string): string {
   if (["worker", "ticket", "todo", "merge", "merge-bot"].includes(role)) {
     const owned = listTickets("inprogress").find((file) => {
+      if (!workerTicketIsActionable(file)) return false;
       const worker = scalar(file, "Ticket", "AI");
       const claimed = scalar(file, "Ticket", "Claimed By");
       const execution = scalar(file, "Ticket", "Execution AI");
@@ -43,9 +44,11 @@ function reasonFor(role: string, workerId: string): string {
   }
 
   if (["plan", "planner"].includes(role)) {
-    const prd = listFiles(path.join(boardRoot, "tickets", "prd"), /^(prd|project)_\d+\.md$/)[0];
+    const prd = listFiles(path.join(boardRoot, "tickets", "prd"), /^(prd|project)_\d+\.md$/)
+      .find(plannerFileIsActionable);
     if (prd) return `planner work remains: populated PRD ${path.basename(prd)} still needs planner runner processing.`;
-    const order = listFiles(path.join(boardRoot, "tickets", "order"), /^order_.*\.md$/)[0];
+    const order = listFiles(path.join(boardRoot, "tickets", "order"), /^order_.*\.md$/)
+      .find(plannerFileIsActionable);
     if (order) return `planner work remains: order ${path.basename(order)} still needs planner runner processing.`;
   }
 
@@ -81,6 +84,84 @@ function listFiles(dir: string, pattern: RegExp): string[] {
   } catch {
     return [];
   }
+}
+
+function plannerFileIsActionable(file: string): boolean {
+  const status = (
+    scalar(file, "Order", "Status") ||
+    scalar(file, "Project", "Status")
+  ).toLowerCase();
+  if (["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status)) {
+    return false;
+  }
+  if (orderAlreadyPromoted(file)) {
+    return false;
+  }
+  return true;
+}
+
+function orderAlreadyPromoted(file: string): boolean {
+  const rel = boardRel(file);
+  if (!/^tickets\/order\/order_[A-Za-z0-9._-]+\.md$/.test(rel)) return false;
+  if (/_retry_/i.test(path.basename(file))) return false;
+  for (const root of [path.join(boardRoot, "tickets", "prd"), path.join(boardRoot, "tickets", "done")]) {
+    for (const candidate of walkMarkdownFiles(root)) {
+      if (!/^(prd|project)_\d+\.md$/i.test(path.basename(candidate))) continue;
+      if (sourceOrderRef(candidate) === rel) return true;
+    }
+  }
+  return false;
+}
+
+function workerTicketIsActionable(file: string): boolean {
+  const text = read(file);
+  const stage = (
+    scalar(file, "Ticket", "Stage") ||
+    scalar(file, "Worktree", "Integration Status") ||
+    scalar(file, "Goal Runtime", "Status")
+  ).toLowerCase();
+  if (/verified[_ -]?pending[_ -]?merge/.test(stage) || /^-\s*Semantic Decision:\s*pass\s*$/mi.test(text)) {
+    return true;
+  }
+  if (
+    /verify[_ -]?pending/.test(stage) ||
+    /verifier[_ -]?pending/.test(stage) ||
+    /submitted[_ -]?to[_ -]?verifier/.test(stage) ||
+    /awaiting[_ -]?verifier/.test(stage)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function sourceOrderRef(file: string): string {
+  return read(file).match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/)?.[0] || "";
+}
+
+function boardRel(file: string): string {
+  return path.relative(boardRoot, file).split(path.sep).join("/");
+}
+
+function walkMarkdownFiles(dir: string): string[] {
+  const out: string[] = [];
+  const visit = (current: string) => {
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const next = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        visit(next);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        out.push(next);
+      }
+    }
+  };
+  visit(dir);
+  return out.sort();
 }
 
 function scalar(file: string, section: string, field: string): string {

@@ -1,11 +1,11 @@
 import {boardRoot, projectRoot, timestamp} from "./context";
 import {printPairs} from "./io";
-import {failureClass, replaceScalar, replaceSection, updateGoalRuntime, scalar, appendNote} from "./ticket-sections";
+import {failureClass, replaceScalar, replaceSection, updateGoalRuntime, scalar, appendNote, markRecoveryResolved} from "./ticket-sections";
 import {resolveTicketFile, cleanupWorktree, clearActiveState} from "./state";
 import {routeToOrderRetry} from "./retry";
 import {recordCodeMetricsWithRunnerTool} from "./metrics";
 import {shouldHandoffToVerifier, handoffToVerifier, removeVerifierMarker, markNeedsAiMerge} from "./verifier";
-import {sanityPreflight, prepareWorktreeForFinalization, finalizationPreflight, archiveDone, commitCompletion} from "./finalize";
+import {sanityPreflight, prepareWorktreeForFinalization, finalizationPreflight, archiveDone, commitCompletion, restoreDoneAfterCommitFailure} from "./finalize";
 import {idFromTicketPath} from "./io";
 
 export function main(): void {
@@ -68,6 +68,7 @@ export function main(): void {
     return;
   }
 
+  markRecoveryResolved(ticketFile, "finish-ticket.ts pass sanity gate", "Sanity gate passed after worker recovery; stale recovery block cleared before handoff/finalization.");
   recordCodeMetricsWithRunnerTool(ticketFile, ticketId);
 
   if (shouldHandoffToVerifier(ticketId)) {
@@ -149,18 +150,19 @@ export function main(): void {
   const commit = commitCompletion(doneFile, ticketId, message || scalar(doneFile, "Result", "Summary") || "complete worker work");
   const commitOk = ["committed", "already_committed", "skipped_by_env", "not_git_repo", "no_changes"].includes(commit.status);
   if (!commitOk) {
+    const restoredTicket = restoreDoneAfterCommitFailure(doneFile, ticketId, commit.status, commit.detail);
     printPairs({
       status: "blocked",
       outcome: "completion_commit_failed",
       failure_class: commit.status,
       reason: commit.detail,
-      ticket: doneFile,
+      ticket: restoredTicket,
       ticket_id: ticketId,
       worktree_path: prep.worktreePath,
       worktree_commit: prep.worktreeCommit,
       commit_status: commit.status,
       commit_hash: commit.hash,
-      next_action: "Completion commit did not meet the finalization contract; inspect PROJECT_ROOT git status and rerun finalize after fixing it.",
+      next_action: "Completion commit did not meet the finalization contract; ticket was restored to inprogress/blocked. Inspect PROJECT_ROOT git status and rerun finalize after fixing it.",
       board_root: boardRoot,
       project_root: projectRoot,
     });
@@ -168,7 +170,7 @@ export function main(): void {
     return;
   }
   cleanupWorktree(doneFile);
-  clearActiveState();
+  clearActiveState("done");
 
   printPairs({
     status: "done",

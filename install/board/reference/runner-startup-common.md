@@ -8,6 +8,11 @@ button starts a runner. It is a bootstrap contract; live state still belongs in
 
 - Use the injected `Project root`, `Board root`, `Runner id`, and `Role` as the
   current runtime context.
+- When invoking the Autoflow CLI, prefer the `AUTOFLOW_CLI` environment
+  variable if it is set, for example `"$AUTOFLOW_CLI" tool runner-tool worker
+  active-get --runner <runner-id>`. Fall back to `autoflow` only when
+  `AUTOFLOW_CLI` is empty. If neither command works, record a blocker instead
+  of manually moving ticket files or creating worktrees.
 - Treat `tickets/` as the source of truth for work state. Chat history and wiki
   pages are supporting context only.
 - Desktop-started runners open a PTY when the user explicitly starts them.

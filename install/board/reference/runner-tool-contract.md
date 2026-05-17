@@ -50,7 +50,7 @@ But a tool must not decide:
 - "verification passed semantically",
 - "the merge conflict should be resolved this way",
 - "this wiki summary is the right meaning",
-- "the runner should stop".
+- "the runner process should start, stop, or restart".
 
 If a tool detects ambiguity or danger, it returns structured evidence and a non-success status. The runner interprets it and records the next safe action in board files.
 

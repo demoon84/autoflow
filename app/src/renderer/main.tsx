@@ -1,6 +1,8 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import AnsiToHtml from "ansi-to-html";
+import Chart from "chart.js/auto";
+import type { ChartConfiguration } from "chart.js";
 import { Terminal as XTermTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -15,6 +17,7 @@ import {
   Asterisk,
   ClipboardList,
   Clock3,
+  Computer,
   Database,
   FolderOpen,
   FolderPlus,
@@ -62,7 +65,6 @@ import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
 import geminiAppIcon from "./assets/agent-icons/gemini.png";
-import { ArrivalGauge, type ArrivalMetrics } from "./components/ArrivalGauge";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
@@ -218,10 +220,10 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "progress", label: "AI Autoflow", icon: Workflow },
+  { key: "progress", label: "AI", icon: Computer },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
-  { key: "knowledge", label: "LLM Wiki", icon: BookOpenText },
-  { key: "snapshot", label: "통계", icon: BarChart3 }
+  { key: "knowledge", label: "위키", icon: BookOpenText },
+  { key: "snapshot", label: "운영 통계", icon: BarChart3 }
 ] as const;
 
 type SettingsSection = (typeof settingsNavigation)[number]["key"];
@@ -614,15 +616,8 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
     tokenCache1hCount: statusNumber(metrics, "autoflow_token_cache_1h_count"),
     tokenInput24hCount: statusNumber(metrics, "autoflow_token_input_24h_count"),
     tokenOutput24hCount: statusNumber(metrics, "autoflow_token_output_24h_count"),
-    tokenCache24hCount: statusNumber(metrics, "autoflow_token_cache_24h_count"),
-    commit24hCount: statusNumber(metrics, "autoflow_commit_count_24h"),
-    commitAuto24hCount: statusNumber(metrics, "autoflow_commit_auto_count_24h"),
-    commitManual24hCount: statusNumber(metrics, "autoflow_commit_manual_count_24h")
+    tokenCache24hCount: statusNumber(metrics, "autoflow_token_cache_24h_count")
   };
-}
-
-function formatPercentValue(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : "0.0"}%`;
 }
 
 function parseMetricJsonObject(value: string) {
@@ -638,22 +633,6 @@ function parseMetricJsonObject(value: string) {
     return parsed as Record<string, unknown>;
   } catch {
     return {};
-  }
-}
-
-function parseMetricJsonStringList(value: string) {
-  if (!value) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 5);
-  } catch {
-    return [];
   }
 }
 
@@ -678,56 +657,9 @@ function safeNumber(value: unknown): number {
   return Number.isFinite(num) ? num : 0;
 }
 
-function formatUnixDate(value: number | string) {
-  const safe = Number(value);
-  if (!Number.isFinite(safe) || safe <= 0) {
-    return "-";
-  }
-
-  const date = new Date(safe * 1000);
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(date);
-}
-
-function metricDateLabel(value: string) {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "short",
-    day: "numeric"
-  }).format(date);
-}
-
 function toNumber(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function metricHistoryPoints(history: AutoflowBoardSnapshot["metricsHistory"] | undefined, key: string, maxPoints = 7) {
-  const rows = (history || []).slice(-maxPoints);
-  const points = [];
-
-  for (const row of rows as Array<Record<string, unknown>>) {
-    const value = toNumber(row?.[key], 0);
-    const timestamp = typeof row?.timestamp === "string" ? row.timestamp : "";
-    if (!timestamp || !Number.isFinite(value)) {
-      continue;
-    }
-    points.push({ timestamp, value });
-  }
-
-  return points.slice(-maxPoints);
 }
 
 function buildSortedBreakdown(raw: Record<string, unknown>, fallbackCount = 8) {
@@ -736,6 +668,21 @@ function buildSortedBreakdown(raw: Record<string, unknown>, fallbackCount = 8) {
     .filter((item) => Number.isFinite(item.value))
     .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label))
     .slice(0, fallbackCount);
+}
+
+type ReportBreakdownItem = { label: string; value: number };
+
+function mergeBreakdownLabels(items: ReportBreakdownItem[], labelFor: (label: string) => string): ReportBreakdownItem[] {
+  const totals = new Map<string, number>();
+
+  for (const item of items) {
+    const label = labelFor(item.label);
+    totals.set(label, (totals.get(label) || 0) + item.value);
+  }
+
+  return Array.from(totals.entries())
+    .map(([label, value]) => ({ label, value }))
+    .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, "ko-KR"));
 }
 
 function formatDate(value: string) {
@@ -768,7 +715,30 @@ const statusLabels: Record<string, string> = {
   error: "오류",
   planning: "계획 중",
   executing: "구현 중",
+  claimed: "작업 확보됨",
+  inprogress: "진행 중",
+  verifying: "검증 중",
+  verify_pending: "검증 대기",
+  verifier_pending: "검증 대기",
+  verifier_pass: "검증 통과",
+  verifier_passed: "검증 통과",
+  verifier_passed_merge_pending: "검증 통과 · 머지 대기",
+  verifier_revise: "수정 요청",
+  verifier_replan: "재계획 요청",
+  verifier_reject: "검증 반려",
+  verifier_rejected: "검증 반려",
+  verified_pending_merge: "검증 통과 · 머지 대기",
+  needs_ai_merge: "AI 머지 필요",
+  ai_merge_required: "AI 머지 필요",
+  ready_to_merge: "머지 대기",
+  "ready-to-merge": "머지 대기",
+  revision_requested: "수정 요청",
+  replan_requested: "재계획 요청",
+  merging: "머지 중",
   done: "완료",
+  completed: "완료",
+  complete: "완료",
+  committed_via_completion_finalizer: "완료 커밋 생성됨",
   rejected: "반려",
   disabled: "꺼짐",
   not_applicable: "해당 없음",
@@ -820,21 +790,23 @@ const artifactLabels: Record<string, string> = {
 };
 
 function displayStatus(value: string) {
-  const processExit = value.match(/^exit_(\d+)$/);
+  const raw = (value || "").trim();
+  const normalized = raw.toLowerCase();
+  const processExit = normalized.match(/^exit_(\d+)$/);
   if (processExit) {
     return processExit[1] === "0" ? "정상 종료" : "오류로 종료됨";
   }
 
-  if (value === "loop_stopped") {
+  if (normalized === "loop_stopped") {
     return "중지됨";
   }
 
-  const adapterExit = value.match(/^adapter_exit_(\d+)$/);
+  const adapterExit = normalized.match(/^adapter_exit_(\d+)$/);
   if (adapterExit) {
     return adapterExit[1] === "0" ? "정상 종료" : "오류로 종료됨";
   }
 
-  const signalExit = value.match(/^signal_(.+)$/);
+  const signalExit = normalized.match(/^signal_(.+)$/);
   if (signalExit) {
     const signal = signalExit[1].toUpperCase();
     if (signal === "9" || signal === "SIGKILL") return "강제 종료됨";
@@ -842,12 +814,30 @@ function displayStatus(value: string) {
     return `신호 ${signalExit[1]} 종료`;
   }
 
-  const loopExit = value.match(/^loop_waiting_exit_(\d+)$/);
+  const loopExit = normalized.match(/^loop_waiting_exit_(\d+)$/);
   if (loopExit) {
     return loopExit[1] === "0" ? "다음 실행 대기" : `종료 ${loopExit[1]} 후 대기`;
   }
 
-  return statusLabels[value] || value || "-";
+  const stageResult = normalized.match(/^stage_(.+)$/);
+  if (stageResult) {
+    return displayStatus(stageResult[1]);
+  }
+
+  const verifierDecision = normalized.match(/^verifier_(pass|revise|replan|reject)$/);
+  if (verifierDecision) {
+    return statusLabels[`verifier_${verifierDecision[1]}`] || raw;
+  }
+
+  return statusLabels[normalized] || raw || "-";
+}
+
+function displayActiveItemLabel(value: string) {
+  const displayedStatus = displayStatus(value);
+  if (displayedStatus !== (value || "").trim() && displayedStatus !== "-") {
+    return displayedStatus;
+  }
+  return displayActiveTicketBadge(value);
 }
 
 function displayRunnerRole(value: string) {
@@ -1533,8 +1523,6 @@ function App() {
   } | null>(null);
   const wikiQueryInvocationIdRef = React.useRef<string>("");
   const installInvocationIdRef = React.useRef<string>("");
-  const [metricsActionKey, setMetricsActionKey] = React.useState("");
-  const [metricsError, setMetricsError] = React.useState("");
   const [lastUpdated, setLastUpdated] = React.useState("");
   const [projectTabs, setProjectTabs] = React.useState(() => readProjectTabs(projectRoot));
   const [isRefreshingProjectTabs, setIsRefreshingProjectTabs] = React.useState(false);
@@ -1597,10 +1585,6 @@ function App() {
   React.useEffect(() => {
     if (wikiError) pushToast("error", wikiError);
   }, [wikiError, pushToast]);
-  React.useEffect(() => {
-    if (metricsError) pushToast("error", metricsError);
-  }, [metricsError, pushToast]);
-
   React.useEffect(() => {
     const authRunner = (board?.runners || []).find((runner) => runnerNeedsLogin(runner));
     if (!authRunner) {
@@ -1707,7 +1691,6 @@ function App() {
         setSetupError("");
         setRunnerError("");
         setWikiError("");
-        setMetricsError("");
         return null;
       }
 
@@ -2838,30 +2821,6 @@ function App() {
     [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
   );
 
-  const writeMetricsSnapshot = React.useCallback(async () => {
-    if (!options.projectRoot || metricsActionKey) {
-      return;
-    }
-
-    setMetricsActionKey("write");
-    setMetricsError("");
-    try {
-      const result = await window.autoflow.writeMetricsSnapshot(options);
-      if (!result.ok) {
-        setMetricsError(result.stderr || result.stdout || "지표 스냅샷 저장에 실패했습니다.");
-        return;
-      }
-
-      await loadBoard();
-      const snapshotFile = outputValue(result.stdout, "snapshot_file");
-      if (snapshotFile) {
-        await readLog(snapshotFile);
-      }
-    } finally {
-      setMetricsActionKey("");
-    }
-  }, [loadBoard, metricsActionKey, options, readLog]);
-
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options.projectRoot && board && !boardInitialized);
   const runnerCount = (board?.runners || []).filter(
@@ -3094,7 +3053,7 @@ function App() {
 	                            }
 	                          }}
 	                        >
-	                          <TabsList className="knowledge-page-tabs" aria-label="LLM Wiki 보기">
+	                          <TabsList className="knowledge-page-tabs" aria-label="위키 보기">
 	                            <TabsTrigger value="database">
 	                              <Database className="h-4 w-4" />
 	                              <span>DB</span>
@@ -3161,36 +3120,7 @@ function App() {
             {!setupRequired && visibleSettingsSection === "snapshot" && (
               <section className="dashboard-area" aria-label="통계">
                 <section className="board-section board-section-flush" aria-label="통계 본문">
-                  <PageLayout
-                    className="snapshot-page"
-                    header={
-                      <div className="snapshot-page-toolbar">
-                        <div className="workflow-pin-layer-heading">
-                          <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                          <strong>통계</strong>
-                        </div>
-                        <div className="snapshot-actions">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="snapshot-action-button"
-                            aria-label="지표 스냅샷 저장"
-                            disabled={!boardInitialized || Boolean(metricsActionKey)}
-                            onClick={writeMetricsSnapshot}
-                          >
-                            {metricsActionKey === "write" ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <ClipboardCheck className="h-4 w-4" />
-                            )}
-                          </Button>
-                          <Badge variant={boardInitialized ? "default" : options.projectRoot ? "destructive" : "secondary"}>
-                            {boardInitialized ? "추적 중" : "없음"}
-                          </Badge>
-                        </div>
-                      </div>
-                    }
-                  >
+                  <PageLayout className="snapshot-page">
                     <div className="snapshot-panel report-panel">
                       <ReportingDashboard board={board} lastUpdated={lastUpdated} ticketTotal={ticketTotal} />
                     </div>
@@ -4003,7 +3933,7 @@ function RunnerConsole({
             const draft = drafts[runner.id] || runnerDraftFromRunner(runner);
             const runnerEventRaw = runner.activeItem || runner.lastResult || "";
             const runnerEventValue = runner.activeItem
-              ? displayActiveTicketBadge(runner.activeItem)
+              ? displayActiveItemLabel(runner.activeItem)
               : runner.lastResult
                 ? displayStatus(runner.lastResult)
                 : "이벤트 없음";
@@ -4460,7 +4390,7 @@ function ReportMetricCard({
   children?: React.ReactNode;
 }) {
   return (
-    <Card className={`report-metric-card ${tone} ${className}`.trim()} title={title || `${label}: ${value}, ${detail}`}>
+    <Card className={`report-metric-card ${tone} ${className}`.trim()} aria-label={title || `${label}: ${value}, ${detail}`}>
       <CardContent className="report-metric-card-content">
         <div className="report-metric-icon">
           <Icon className="h-4 w-4" />
@@ -4476,339 +4406,569 @@ function ReportMetricCard({
   );
 }
 
-function MetricTrend({
-  points,
-  yLabel = "값"
-}: {
-  points: { timestamp: string; value: number }[];
-  yLabel?: string;
-}) {
-  if (points.length < 2) {
-    return (
-      <div className="report-fallback" role="status" aria-label="데이터 부족으로 추세 미생성">
-        {points.length === 1 ? "최근 1건 데이터" : "최근 7일 추세 데이터를 기다리는 중"}
-      </div>
-    );
-  }
+type ReportChartPalette = {
+  text: string;
+  muted: string;
+  grid: string;
+  chart1: string;
+  chart2: string;
+  chart3: string;
+  chart4: string;
+  chart5: string;
+};
 
-  const chartWidth = 100;
-  const chartHeight = 80;
-  const leftPadding = 6;
-  const rightPadding = 6;
-  const topPadding = 8;
-  const bottomPadding = 18;
-  const values = points.map((point) => point.value);
-  const maxValue = Math.max(...values, 0);
-  const minValue = Math.min(...values, 0);
-  const span = Math.max(1, maxValue - minValue);
-  const stepX = (chartWidth - leftPadding - rightPadding) / (points.length - 1);
-  const mapY = (value: number) => topPadding + ((maxValue - value) / span) * (chartHeight - topPadding - bottomPadding);
+function readReportChartPalette(canvas: HTMLCanvasElement): ReportChartPalette {
+  const styles = getComputedStyle(canvas);
+  const color = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
 
-  const polylinePoints = points
-    .map((point, index) => `${(leftPadding + stepX * index).toFixed(1)},${mapY(point.value).toFixed(1)}`)
-    .join(" ");
-  const firstValue = formatCount(points[0].value);
-  const lastValue = formatCount(points[points.length - 1].value);
-  const firstLabel = metricDateLabel(points[0].timestamp);
-  const lastLabel = metricDateLabel(points[points.length - 1].timestamp);
-
-  return (
-    <div className="report-trend" aria-label={`최근 추세 ${yLabel}`}>
-      <div>
-        <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-hidden="true">
-          <line x1={leftPadding} y1={chartHeight - bottomPadding} x2={chartWidth - rightPadding} y2={chartHeight - bottomPadding} />
-          <polyline points={polylinePoints} />
-          {points.map((point, index) => (
-            <circle
-              key={point.timestamp}
-              cx={leftPadding + stepX * index}
-              cy={mapY(point.value)}
-              r={1.8}
-              aria-label={`${point.timestamp} ${formatCount(point.value)}`}
-            />
-          ))}
-        </svg>
-      </div>
-      <div className="report-trend-caption">
-        <span>{yLabel}</span>
-        <strong>{`${firstValue} → ${lastValue}`}</strong>
-        <em>
-          {firstLabel} ~ {lastLabel}
-        </em>
-      </div>
-    </div>
-  );
+  return {
+    text: color("--foreground", "#d1d3d9"),
+    muted: color("--muted-foreground", "#8b8e94"),
+    grid: color("--border", "#33353b"),
+    chart1: color("--chart-1", "#71a1fe"),
+    chart2: color("--chart-2", "#6db083"),
+    chart3: color("--chart-3", "#ecbc7b"),
+    chart4: color("--chart-4", "#f57e84"),
+    chart5: color("--chart-5", "#538af9")
+  };
 }
 
-function ReportSplitBars({
+function reportChartColors(palette: ReportChartPalette) {
+  return [palette.chart1, palette.chart2, palette.chart3, palette.chart4, palette.chart5, palette.muted];
+}
+
+function truncateChartLabel(label: string, maxLength = 22) {
+  return label.length > maxLength ? `${label.slice(0, maxLength - 3)}...` : label;
+}
+
+function formatHourChartLabel(hour: number, includeDate = false) {
+  const date = new Date(hour * 1000);
+  const hourLabel = `${String(date.getHours()).padStart(2, "0")}시`;
+  if (!includeDate) {
+    return hourLabel;
+  }
+  return `${date.getMonth() + 1}/${date.getDate()} ${hourLabel}`;
+}
+
+function ReportHorizontalBarChart({
   title,
-  items
+  items,
+  unit = "토큰"
 }: {
   title: string;
-  items: { label: string; value: number }[];
+  items: ReportBreakdownItem[];
+  unit?: string;
 }) {
-  const total = items.reduce((sum, item) => sum + item.value, 0);
-  if (!items.length || total <= 0) {
+  const itemsSignature = items.map((item) => `${item.label}:${item.value}`).join("|");
+  const chartItems = React.useMemo(() => items.filter((item) => item.value > 0), [itemsSignature]);
+  const chartSignature = chartItems.map((item) => `${item.label}:${item.value}`).join("|");
+  const total = chartItems.reduce((sum, item) => sum + item.value, 0);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const chartHeight = Math.max(190, Math.min(360, chartItems.length * 44 + 76));
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !chartItems.length || total <= 0) {
+      return undefined;
+    }
+
+    const palette = readReportChartPalette(canvas);
+    const labels = chartItems.map((item) => item.label);
+    const values = chartItems.map((item) => item.value);
+    const maxValue = Math.max(...values, 1);
+    const config: ChartConfiguration<"bar", number[], string> = {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: title,
+            data: values,
+            backgroundColor: palette.chart1,
+            borderColor: palette.chart1,
+            borderRadius: 7,
+            borderSkipped: false,
+            maxBarThickness: 18
+          }
+        ]
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        layout: {
+          padding: { right: 8 }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const value = Number(context.parsed.x || context.raw || 0);
+                const ratio = total > 0 ? ` · ${((value / total) * 100).toFixed(1)}%` : "";
+                return `${formatCount(value)}${unit ? ` ${unit}` : ""}${ratio}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            suggestedMax: maxValue * 1.08,
+            border: { display: false },
+            grid: { color: palette.grid },
+            ticks: {
+              color: palette.muted,
+              callback: (value) => formatCompactCount(Number(value))
+            }
+          },
+          y: {
+            border: { display: false },
+            grid: { display: false },
+            ticks: {
+              color: palette.text,
+              callback: (value) => truncateChartLabel(labels[Number(value)] || String(value))
+            }
+          }
+        }
+      }
+    };
+    const chart = new Chart(canvas, config);
+    return () => chart.destroy();
+  }, [chartSignature, title, total, unit]);
+
+  if (!chartItems.length || total <= 0) {
     return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
   }
 
   return (
-    <div className="report-split-layout" aria-label={title}>
-      {items.map((item) => {
-        const ratio = (item.value / total) * 100;
-        return (
-          <div key={item.label} className="report-bar-row">
-            <div className="report-bar-row-label">
-              <span>{item.label}</span>
-              <strong>{formatCount(item.value)}</strong>
-            </div>
-            <div className="report-split-track">
-              <span style={{ width: `${ratio.toFixed(2)}%`, backgroundColor: "var(--accent)" }} />
-            </div>
-            <em>{ratio.toFixed(1)}%</em>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ReportStackedDailyBars({
-  title,
-  data
-}: {
-  title: string;
-  data: Array<{ date: string; insertions: number; deletions: number }>;
-}) {
-  const items = data.filter((entry) => entry && typeof entry.date === "string");
-  if (!items.length) {
-    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
-  }
-  const totals = items.map((entry) => Math.max(safeNumber(entry.insertions) + safeNumber(entry.deletions), 0));
-  const maxTotal = Math.max(...totals, 1);
-  const allZero = totals.every((value) => value <= 0);
-
-  return (
-    <div className="report-chart-block" aria-label={title}>
+    <div className="report-chart-shell" aria-label={title}>
       <div className="report-chart-title">{title}</div>
-      {allZero ? (
-        <div className="report-fallback">최근 14일 추가/삭제 라인이 없습니다</div>
-      ) : (
-        <div className="report-stacked-bars">
-          {items.map((entry) => {
-            const ins = Math.max(safeNumber(entry.insertions), 0);
-            const del = Math.max(safeNumber(entry.deletions), 0);
-            const total = ins + del;
-            const heightPct = (total / maxTotal) * 100;
-            const insPct = total > 0 ? (ins / total) * 100 : 0;
-            const delPct = total > 0 ? (del / total) * 100 : 0;
-            const md = entry.date.slice(5);
-            return (
-              <div key={entry.date} className="report-stacked-bar-col" title={`${entry.date} +${ins} / -${del}`}>
-                <div className="report-stacked-bar-track">
-                  <div className="report-stacked-bar-fill" style={{ height: `${heightPct.toFixed(2)}%` }}>
-                    <span className="report-stacked-seg-add" style={{ height: `${insPct.toFixed(2)}%` }} />
-                    <span className="report-stacked-seg-del" style={{ height: `${delPct.toFixed(2)}%` }} />
-                  </div>
-                </div>
-                <em className="report-stacked-bar-label">{md}</em>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="report-chart-canvas-wrap" style={{ height: chartHeight }}>
+        <canvas ref={canvasRef} role="img" aria-label={`${title} 차트`} />
+      </div>
+      <div className="report-chart-summary" aria-label={`${title} 상위 항목`}>
+        {chartItems.slice(0, 4).map((item) => {
+          const ratio = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <span key={item.label}>
+              <strong>{item.label}</strong>
+              <em>{formatCount(item.value)}{unit ? ` ${unit}` : ""} · {ratio.toFixed(1)}%</em>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function ReportHourlyAreaTrend({
+function ReportDoughnutChart({
+  title,
+  items,
+  unit = "개"
+}: {
+  title: string;
+  items: ReportBreakdownItem[];
+  unit?: string;
+}) {
+  const itemsSignature = items.map((item) => `${item.label}:${item.value}`).join("|");
+  const chartItems = React.useMemo(() => items.filter((item) => item.value > 0), [itemsSignature]);
+  const chartSignature = chartItems.map((item) => `${item.label}:${item.value}`).join("|");
+  const total = chartItems.reduce((sum, item) => sum + item.value, 0);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !chartItems.length || total <= 0) {
+      return undefined;
+    }
+
+    const palette = readReportChartPalette(canvas);
+    const labels = chartItems.map((item) => item.label);
+    const config: ChartConfiguration<"doughnut", number[], string> = {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [
+          {
+            data: chartItems.map((item) => item.value),
+            backgroundColor: reportChartColors(palette),
+            borderColor: palette.grid,
+            borderWidth: 1,
+            hoverOffset: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "68%",
+        animation: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              color: palette.muted,
+              padding: 12,
+              usePointStyle: true
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const value = Number(context.raw || 0);
+                const ratio = total > 0 ? ` · ${((value / total) * 100).toFixed(1)}%` : "";
+                return `${context.label}: ${formatCount(value)}${unit ? ` ${unit}` : ""}${ratio}`;
+              }
+            }
+          }
+        }
+      }
+    };
+    const chart = new Chart(canvas, config);
+    return () => chart.destroy();
+  }, [chartSignature, title, total, unit]);
+
+  if (!chartItems.length || total <= 0) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+
+  return (
+    <div className="report-chart-shell" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      <div className="report-chart-canvas-wrap report-chart-canvas-wrap-doughnut">
+        <canvas ref={canvasRef} role="img" aria-label={`${title} 차트`} />
+      </div>
+      <div className="report-chart-summary" aria-label={`${title} 항목`}>
+        {chartItems.slice(0, 4).map((item) => {
+          const ratio = total > 0 ? (item.value / total) * 100 : 0;
+          return (
+            <span key={item.label}>
+              <strong>{item.label}</strong>
+              <em>{formatCount(item.value)}{unit ? ` ${unit}` : ""} · {ratio.toFixed(1)}%</em>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportCodeImpactChart({
+  title,
+  insertions,
+  deletions
+}: {
+  title: string;
+  insertions: number;
+  deletions: number;
+}) {
+  const chartItems = React.useMemo(
+    () => [
+      { label: "추가", value: Math.max(insertions, 0) },
+      { label: "삭제", value: Math.max(deletions, 0) }
+    ],
+    [insertions, deletions]
+  );
+  const total = chartItems.reduce((sum, item) => sum + item.value, 0);
+  const chartSignature = chartItems.map((item) => `${item.label}:${item.value}`).join("|");
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || total <= 0) {
+      return undefined;
+    }
+
+    const palette = readReportChartPalette(canvas);
+    const labels = chartItems.map((item) => item.label);
+    const config: ChartConfiguration<"bar", number[], string> = {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "라인",
+            data: chartItems.map((item) => item.value),
+            backgroundColor: [palette.chart2, palette.chart4],
+            borderColor: [palette.chart2, palette.chart4],
+            borderRadius: 7,
+            borderSkipped: false,
+            maxBarThickness: 46
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => `${context.label}: ${formatCount(Number(context.raw || 0))} 라인`
+            }
+          }
+        },
+        scales: {
+          x: {
+            border: { display: false },
+            grid: { display: false },
+            ticks: { color: palette.text }
+          },
+          y: {
+            beginAtZero: true,
+            border: { display: false },
+            grid: { color: palette.grid },
+            ticks: {
+              color: palette.muted,
+              callback: (value) => formatCompactCount(Number(value))
+            }
+          }
+        }
+      }
+    };
+    const chart = new Chart(canvas, config);
+    return () => chart.destroy();
+  }, [chartItems, chartSignature, title, total]);
+
+  if (total <= 0) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
+
+  return (
+    <div className="report-chart-shell" aria-label={title}>
+      <div className="report-chart-title">{title}</div>
+      <div className="report-chart-canvas-wrap report-chart-canvas-wrap-compact">
+        <canvas ref={canvasRef} role="img" aria-label={`${title} 차트`} />
+      </div>
+    </div>
+  );
+}
+
+function ReportHourlyTokenChart({
   title,
   data
 }: {
   title: string;
   data: Array<{ hour: number; input: number; output: number; cache: number }>;
 }) {
-  const items = data
-    .map((entry) => ({
-      hour: safeNumber(entry?.hour),
-      total: Math.max(safeNumber(entry?.input) + safeNumber(entry?.output) + safeNumber(entry?.cache), 0)
-    }))
-    .filter((entry) => entry.hour > 0)
-    .sort((a, b) => a.hour - b.hour);
+  const dataSignature = data.map((entry) => `${entry.hour}:${entry.input}:${entry.output}:${entry.cache}`).join("|");
+  const currentHour = Math.floor(Date.now() / 3_600_000) * 3600;
+  const chartData = React.useMemo(() => {
+    const normalized = data
+      .map((entry) => ({
+        hour: Math.floor(safeNumber(entry?.hour) / 3600) * 3600,
+        input: Math.max(safeNumber(entry?.input), 0),
+        output: Math.max(safeNumber(entry?.output), 0),
+        cache: Math.max(safeNumber(entry?.cache), 0)
+      }))
+      .filter((entry) => entry.hour > 0);
+    const buckets = new Map(normalized.map((entry) => [entry.hour, entry]));
+    const endHour = Math.max(currentHour, ...normalized.map((entry) => entry.hour));
 
-  if (!items.length) {
-    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
-  }
-  const max = Math.max(...items.map((entry) => entry.total), 1);
-
-  return (
-    <div className="report-chart-block" aria-label={title}>
-      <div className="report-chart-title">{title}</div>
-      <div className="report-hourly-bars">
-        {items.map((entry) => {
-          const heightPct = (entry.total / max) * 100;
-          const dt = new Date(entry.hour * 1000);
-          const hh = String(dt.getHours()).padStart(2, "0");
-          return (
-            <div key={entry.hour} className="report-hourly-bar-col" title={`${hh}시 ${formatCount(entry.total)} 토큰`}>
-              <div className="report-hourly-bar-track">
-                <div className="report-hourly-bar-fill" style={{ height: `${heightPct.toFixed(2)}%` }} />
-              </div>
-              <em>{hh}</em>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ReportRunnerTimeline({
-  title,
-  data,
-  runners
-}: {
-  title: string;
-  data: Array<{ hour: number; runner_id: string; success: number; failure: number; timeout: number }>;
-  runners: Array<{ id: string; label: string }>;
-}) {
-  if (!runners.length || !data.length) {
-    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const startHour = Math.floor((now - 86400) / 3600) * 3600;
-  const buckets: number[] = [];
-  for (let h = startHour; h <= now; h += 3600) {
-    buckets.push(h);
-  }
-  const cellMap = new Map<string, { success: number; failure: number; timeout: number }>();
-  data.forEach((entry) => {
-    const hour = safeNumber(entry?.hour);
-    const runnerId = String(entry?.runner_id || "");
-    if (!hour || !runnerId) return;
-    const key = `${hour}|${runnerId}`;
-    cellMap.set(key, {
-      success: safeNumber(entry.success),
-      failure: safeNumber(entry.failure),
-      timeout: safeNumber(entry.timeout)
+    return Array.from({ length: 24 }, (_, index) => {
+      const hour = endHour - (23 - index) * 3600;
+      return buckets.get(hour) || { hour, input: 0, output: 0, cache: 0 };
     });
-  });
+  }, [currentHour, dataSignature]);
+  const chartSignature = chartData.map((entry) => `${entry.hour}:${entry.input}:${entry.output}:${entry.cache}`).join("|");
+  const usageTotal = chartData.reduce((sum, entry) => sum + entry.input + entry.output, 0);
+  const cacheTotal = chartData.reduce((sum, entry) => sum + entry.cache, 0);
+  const usageCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const cacheCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  React.useEffect(() => {
+    const canvas = usageCanvasRef.current;
+    if (!canvas || usageTotal <= 0) {
+      return undefined;
+    }
+
+    const palette = readReportChartPalette(canvas);
+    const labels = chartData.map((entry) => formatHourChartLabel(entry.hour));
+    const fullLabels = chartData.map((entry) => formatHourChartLabel(entry.hour, true));
+    const config: ChartConfiguration<"bar", number[], string> = {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "입력",
+            data: chartData.map((entry) => entry.input),
+            backgroundColor: palette.chart1,
+            borderColor: palette.chart1,
+            borderRadius: 4,
+            stack: "tokens",
+            maxBarThickness: 20
+          },
+          {
+            label: "출력",
+            data: chartData.map((entry) => entry.output),
+            backgroundColor: palette.chart2,
+            borderColor: palette.chart2,
+            borderRadius: 4,
+            stack: "tokens",
+            maxBarThickness: 20
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              color: palette.muted,
+              usePointStyle: true
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title: (contexts) => fullLabels[contexts[0]?.dataIndex || 0] || title,
+              label: (context) => `${context.dataset.label}: ${formatCount(Number(context.raw || 0))} 토큰`,
+              footer: (contexts) => {
+                const index = contexts[0]?.dataIndex ?? 0;
+                const entry = chartData[index];
+                const sum = entry ? entry.input + entry.output : 0;
+                return `합계 ${formatCount(sum)} 토큰`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            border: { display: false },
+            grid: { display: false },
+            ticks: {
+              color: palette.muted,
+              maxRotation: 0,
+              callback: (_value, index) => (index % 4 === 0 || index === labels.length - 1 ? labels[index] : "")
+            }
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            border: { display: false },
+            grid: { color: palette.grid },
+            ticks: {
+              color: palette.muted,
+              callback: (value) => formatCompactCount(Number(value))
+            }
+          }
+        }
+      }
+    };
+    const chart = new Chart(canvas, config);
+    return () => chart.destroy();
+  }, [chartSignature, title, usageTotal]);
+
+  React.useEffect(() => {
+    const canvas = cacheCanvasRef.current;
+    if (!canvas || cacheTotal <= 0) {
+      return undefined;
+    }
+
+    const palette = readReportChartPalette(canvas);
+    const labels = chartData.map((entry) => formatHourChartLabel(entry.hour));
+    const fullLabels = chartData.map((entry) => formatHourChartLabel(entry.hour, true));
+    const cacheTitle = "최근 24시간 캐시 토큰 추세";
+    const config: ChartConfiguration<"bar", number[], string> = {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "캐시",
+            data: chartData.map((entry) => entry.cache),
+            backgroundColor: palette.chart3,
+            borderColor: palette.chart3,
+            borderRadius: 4,
+            borderSkipped: false,
+            maxBarThickness: 20
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: {
+              boxHeight: 8,
+              boxWidth: 8,
+              color: palette.muted,
+              usePointStyle: true
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title: (contexts) => fullLabels[contexts[0]?.dataIndex || 0] || cacheTitle,
+              label: (context) => `캐시: ${formatCount(Number(context.raw || 0))} 토큰`
+            }
+          }
+        },
+        scales: {
+          x: {
+            border: { display: false },
+            grid: { display: false },
+            ticks: {
+              color: palette.muted,
+              maxRotation: 0,
+              callback: (_value, index) => (index % 4 === 0 || index === labels.length - 1 ? labels[index] : "")
+            }
+          },
+          y: {
+            beginAtZero: true,
+            border: { display: false },
+            grid: { color: palette.grid },
+            ticks: {
+              color: palette.muted,
+              callback: (value) => formatCompactCount(Number(value))
+            }
+          }
+        }
+      }
+    };
+    const chart = new Chart(canvas, config);
+    return () => chart.destroy();
+  }, [cacheTotal, chartSignature]);
+
+  if (usageTotal <= 0 && cacheTotal <= 0) {
+    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
+  }
 
   return (
-    <div className="report-chart-block" aria-label={title}>
-      <div className="report-chart-title">{title}</div>
-      <div className="report-timeline-grid">
-        {runners.map((runner) => (
-          <div key={runner.id} className="report-timeline-row">
-            <span className="report-timeline-label">{runner.label}</span>
-            <div className="report-timeline-cells">
-              {buckets.map((hour) => {
-                const cell = cellMap.get(`${hour}|${runner.id}`);
-                let cls = "report-timeline-cell-empty";
-                let title2 = `${new Date(hour * 1000).getHours()}시 데이터 없음`;
-                if (cell) {
-                  const total = cell.success + cell.failure + cell.timeout;
-                  if (total > 0) {
-                    if (cell.failure > 0 || cell.timeout > 0) {
-                      cls = cell.success >= cell.failure + cell.timeout ? "report-timeline-cell-warn" : "report-timeline-cell-fail";
-                    } else {
-                      cls = "report-timeline-cell-ok";
-                    }
-                    title2 = `${new Date(hour * 1000).getHours()}시 성공 ${cell.success} / 실패 ${cell.failure} / timeout ${cell.timeout}`;
-                  }
-                }
-                return <span key={hour} className={`report-timeline-cell ${cls}`} title={title2} />;
-              })}
-            </div>
+    <>
+      {usageTotal > 0 ? (
+        <div className="report-chart-shell" aria-label={title}>
+          <div className="report-chart-title">{title}</div>
+          <div className="report-chart-canvas-wrap report-chart-canvas-wrap-hourly">
+            <canvas ref={usageCanvasRef} role="img" aria-label={`${title} 차트`} />
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReportSimpleBars({
-  title,
-  items,
-  unit
-}: {
-  title: string;
-  items: Array<{ label: string; value: number }>;
-  unit?: string;
-}) {
-  const filtered = items.filter((item) => Number.isFinite(item.value) && item.value > 0);
-  if (!filtered.length) {
-    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
-  }
-  const max = Math.max(...filtered.map((item) => item.value), 1);
-
-  return (
-    <div className="report-chart-block" aria-label={title}>
-      <div className="report-chart-title">{title}</div>
-      <div className="report-split-layout">
-        {filtered.map((item) => {
-          const ratio = (item.value / max) * 100;
-          return (
-            <div key={item.label} className="report-bar-row">
-              <div className="report-bar-row-label">
-                <span>{item.label}</span>
-                <strong>
-                  {item.value % 1 === 0 ? formatCount(item.value) : item.value.toFixed(1)}
-                  {unit ? ` ${unit}` : ""}
-                </strong>
-              </div>
-              <div className="report-split-track">
-                <span style={{ width: `${ratio.toFixed(2)}%`, backgroundColor: "var(--accent)" }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ReportDailyCountBars({
-  title,
-  data
-}: {
-  title: string;
-  data: Array<{ date: string; count: number }>;
-}) {
-  const items = data.filter((entry) => entry && typeof entry.date === "string");
-  if (!items.length) {
-    return <div className="report-fallback">{`${title}: 데이터 없음`}</div>;
-  }
-  const counts = items.map((entry) => Math.max(safeNumber(entry.count), 0));
-  const max = Math.max(...counts, 1);
-  const allZero = counts.every((value) => value <= 0);
-
-  return (
-    <div className="report-chart-block" aria-label={title}>
-      <div className="report-chart-title">{title}</div>
-      {allZero ? (
-        <div className="report-fallback">최근 14일 커밋이 없습니다</div>
-      ) : (
-        <div className="report-stacked-bars">
-          {items.map((entry) => {
-            const count = Math.max(safeNumber(entry.count), 0);
-            const heightPct = (count / max) * 100;
-            const md = entry.date.slice(5);
-            return (
-              <div key={entry.date} className="report-stacked-bar-col" title={`${entry.date} ${count}개 커밋`}>
-                <div className="report-stacked-bar-track">
-                  <div
-                    className="report-stacked-bar-fill report-daily-count-fill"
-                    style={{ height: `${heightPct.toFixed(2)}%` }}
-                  />
-                </div>
-                <em className="report-stacked-bar-label">{md}</em>
-              </div>
-            );
-          })}
         </div>
-      )}
-    </div>
+      ) : null}
+      {cacheTotal > 0 ? (
+        <div className="report-chart-shell" aria-label="최근 24시간 캐시 토큰 추세">
+          <div className="report-chart-title">최근 24시간 캐시 토큰 추세</div>
+          <div className="report-chart-canvas-wrap report-chart-canvas-wrap-hourly">
+            <canvas ref={cacheCanvasRef} role="img" aria-label="최근 24시간 캐시 토큰 추세 차트" />
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -4845,26 +5005,6 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
   );
 }
 
-function computeArrivalMetrics(board: AutoflowBoardSnapshot | null): ArrivalMetrics {
-  const orderFiles = board?.tickets?.order ?? [];
-  const retryFiles = orderFiles.filter((f) => /order_.*_retry_.*\.md$/i.test(f.name));
-  // Count retries grouped by origin ticket id (extracted from filename)
-  const ticketRetryCounts = new Map<string, number>();
-  for (const f of retryFiles) {
-    const m = f.name.match(/^order_(\d+)_retry_/);
-    const key = m ? m[1] : f.name;
-    ticketRetryCounts.set(key, (ticketRetryCounts.get(key) ?? 0) + 1);
-  }
-  const maxRepeat = ticketRetryCounts.size ? Math.max(...ticketRetryCounts.values()) : 0;
-  return {
-    uniqueFingerprintCount: ticketRetryCounts.size,
-    maxFingerprintRepeat: maxRepeat,
-    timeoutRatio: 0,
-    avgPassMinutes: 0,
-    retryOrderCount: retryFiles.length,
-  };
-}
-
 function ReportHeroStat({
   label,
   value,
@@ -4898,20 +5038,16 @@ function ReportHero({
   ticketTotal,
   codeVolumeCount,
   tokenUsage24hCount,
-  commit24hCount,
   runnerRunning,
-  runnerBlocked,
-  metrics
+  runnerBlocked
 }: {
   boardExists: boolean;
   lastUpdatedLabel: string;
   ticketTotal: number;
   codeVolumeCount: number;
   tokenUsage24hCount: number;
-  commit24hCount: number;
   runnerRunning: number;
   runnerBlocked: number;
-  metrics: ArrivalMetrics;
 }) {
   return (
     <section className="report-hero" aria-label="운영 통계 요약">
@@ -4925,7 +5061,6 @@ function ReportHero({
           마지막 업데이트 <strong>{lastUpdatedLabel}</strong>
         </p>
       </div>
-      <ArrivalGauge metrics={metrics} className="report-hero-gauge" />
       <div className="report-hero-stats">
         <ReportHeroStat
           label="티켓 총량"
@@ -4949,10 +5084,10 @@ function ReportHero({
           tone="violet"
         />
         <ReportHeroStat
-          label="24h 커밋"
-          value={`${formatCount(commit24hCount)}개`}
-          detail={`${formatCount(runnerRunning)}개 실행 · ${formatCount(runnerBlocked)}개 막힘`}
-          icon={CheckCircle2}
+          label="러너 실행"
+          value={`${formatCount(runnerRunning)}개`}
+          detail={`${formatCount(runnerBlocked)}개 막힘`}
+          icon={Activity}
           tone="amber"
         />
       </div>
@@ -4964,13 +5099,13 @@ function displayReportRunnerLabel(value: string, runners?: AutoflowRunner[]) {
   const label = displayWorkflowRunnerId(value, runners);
   const normalized = (label || value || "").toLowerCase();
   const workerMatch = normalized.match(/^worker-(\d+)$/);
-  const wikiMatch = label.match(/^LLM Wiki-(\d+)$/);
+  const wikiMatch = label.match(/^위키-(\d+)$/);
 
   if (normalized === "planner") return "플래너 러너";
   if (normalized === "verifier") return "검증 러너";
   if (normalized === "worker") return "워커 러너";
   if (workerMatch) return `워커 러너 ${workerMatch[1]}`;
-  if (label === "LLM Wiki") return "위키 러너";
+  if (label === "위키") return "위키 러너";
   if (wikiMatch) return `위키 러너 ${wikiMatch[1]}`;
 
   return label;
@@ -4995,8 +5130,7 @@ function ReportingDashboard({
   ticketTotal: number;
 }) {
   const metrics = board?.metrics || {};
-  const metricHistory = board?.metricsHistory || [];
-  const commitCount = statusNumber(metrics, "autoflow_commit_count");
+  const runners = board?.runners || [];
   const {
     codeFilesChangedCount,
     codeVolumeCount,
@@ -5013,41 +5147,19 @@ function ReportingDashboard({
     tokenCache1hCount,
     tokenInput24hCount,
     tokenOutput24hCount,
-    tokenCache24hCount,
-    commit24hCount,
-    commitAuto24hCount,
-    commitManual24hCount
+    tokenCache24hCount
   } = getWorkflowMetricCounts(board);
-  const runnerRunning = statusNumber(metrics, "runner_running_count");
-  const runnerBlocked = statusNumber(metrics, "runner_blocked_count");
-  const runnerEnabled = statusNumber(metrics, "runner_enabled_count", board?.runners?.length || 0);
-  const commitSubjects = parseMetricJsonStringList(statusValue(metrics, "autoflow_commit_recent_subjects_json", "[]"));
-  const codeTrendPoints = metricHistoryPoints(metricHistory, "autoflow_code_volume_count", 7);
-  const tokenTrendPoints = metricHistoryPoints(metricHistory, "autoflow_token_usage_count", 7);
-  const runnerTrendPoints = metricHistoryPoints(metricHistory, "runner_running_count", 7);
-  const commitTrendPoints = metricHistoryPoints(metricHistory, "autoflow_commit_count", 14);
-  const codeDailyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_code_daily_buckets_14d_json", "[]"))
-    .map((entry) => ({
-      date: String(entry.date || ""),
-      insertions: safeNumber(entry.insertions),
-      deletions: safeNumber(entry.deletions)
-    }))
-    .filter((entry) => entry.date);
-  const codeDirBreakdownObj = parseMetricJsonObject(statusValue(metrics, "autoflow_code_dir_breakdown_json", "{}"));
-  const codeDirItems = Object.entries(codeDirBreakdownObj)
-    .map(([label, raw]) => {
-      const obj = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Record<string, unknown>;
-      return {
-        label,
-        value: safeNumber(obj.insertions) + safeNumber(obj.deletions)
-      };
-    })
-    .filter((item) => item.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
-  const commitDailyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_commit_daily_buckets_14d_json", "[]"))
-    .map((entry) => ({ date: String(entry.date || ""), count: safeNumber(entry.count) }))
-    .filter((entry) => entry.date);
+  const runnerRunning = runners.filter((runner) => {
+    const status = (runner.stateStatus || "").toLowerCase();
+    return status === "running" || Boolean(runner.pid);
+  }).length;
+  const runnerBlocked = runners.filter((runner) => {
+    const status = (runner.stateStatus || "").toLowerCase();
+    const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
+    const activeStage = (runner.activeStage || "").toLowerCase();
+    return status === "blocked" || status === "failed" || recoveryStatus === "needs_user" || activeStage === "blocked";
+  }).length;
+  const runnerEnabled = runners.filter((runner) => runnerIsEnabled(runner.enabled)).length;
   const tokenHourlyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_token_hourly_24h_json", "[]"))
     .map((entry) => ({
       hour: safeNumber(entry.hour),
@@ -5055,33 +5167,35 @@ function ReportingDashboard({
       output: safeNumber(entry.output),
       cache: safeNumber(entry.cache)
     }));
-  const runnerTickTimeline = parseMetricJsonArray(statusValue(metrics, "autoflow_runner_tick_timeline_24h_json", "[]"))
-    .map((entry) => ({
-      hour: safeNumber(entry.hour),
-      runner_id: String(entry.runner_id || ""),
-      success: safeNumber(entry.success),
-      failure: safeNumber(entry.failure),
-      timeout: safeNumber(entry.timeout)
-    }));
-  const runnerAvgTickSecondsObj = parseMetricJsonObject(statusValue(metrics, "autoflow_runner_avg_tick_seconds_json", "{}"));
-  const runnerStatus24hMap = parseMetricJsonObject(statusValue(metrics, "autoflow_runner_status_24h_json", "{}"));
-  const runnerBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}")));
+  const runnerBreakdown = mergeBreakdownLabels(
+    buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}"))),
+    (label) => displayReportRunnerLabel(label, runners)
+  );
   const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
-  const runnerNeedUser = (board?.runners || []).filter((runner) => {
+  const runnerNeedUser = runners.filter((runner) => {
     const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
     return recoveryStatus === "needs_user" || activeStage === "blocked";
   }).length;
-  const commitRatioTotal = commit24hCount > 0 ? commit24hCount : 1;
-  const commitAutoRatio = (commitAuto24hCount / commitRatioTotal) * 100;
-  const commitManualRatio = (commitManual24hCount / commitRatioTotal) * 100;
+  const ticketBreakdown = [
+    { label: "주문", value: board?.tickets.order?.length || 0 },
+    { label: "PRD", value: board?.tickets.prd?.length || 0 },
+    { label: "대기", value: board?.tickets.todo?.length || 0 },
+    { label: "진행", value: board?.tickets.inprogress?.length || 0 },
+    { label: "검증", value: board?.tickets.verifier?.length || 0 },
+    { label: "완료", value: board?.tickets.done?.length || 0 }
+  ];
+  const runnerStatusBreakdown = [
+    { label: "실행 중", value: runnerRunning },
+    { label: "막힘", value: runnerBlocked },
+    { label: "대기/중지", value: Math.max(runners.length - runnerRunning - runnerBlocked, 0) }
+  ];
 
   const hasCodeImpactData =
     codeVolumeCount > 0 ||
     codeFilesChangedCount > 0 ||
     codeInsertionsCount > 0 ||
-    codeDeletionsCount > 0 ||
-    codeTrendPoints.length > 0;
+    codeDeletionsCount > 0;
   const hasTokenData =
     tokenUsageCount > 0 ||
     tokenCacheReadCount > 0 ||
@@ -5090,51 +5204,27 @@ function ReportingDashboard({
     tokenUsage24hCount > 0 ||
     runnerBreakdown.length > 0 ||
     modelBreakdown.length > 0;
-  const hasRunnerData = (board?.runners?.length || 0) > 0;
-  const hasCommitData =
-    commitCount > 0 ||
-    commit24hCount > 0 ||
-    commitAuto24hCount > 0 ||
-    commitManual24hCount > 0 ||
-    commitSubjects.length > 0;
+  const hasRunnerData = runners.length > 0;
 
   const runnerRows = React.useMemo(() => {
-    const rows = new Map<string, { id: string; label: string }>();
-
-    (board?.runners || []).forEach((runner) => {
-      rows.set(runner.id, { id: runner.id, label: displayReportRunnerLabel(runner.id, board?.runners) });
-    });
-
-    Object.keys(runnerStatus24hMap).forEach((runnerId) => {
-      if (!rows.has(runnerId)) {
-        rows.set(runnerId, { id: runnerId, label: displayReportRunnerLabel(runnerId, board?.runners) });
-      }
-    });
-
-    return Array.from(rows.values())
-      .map((item) => {
-        const raw = runnerStatus24hMap[item.id] as Record<string, unknown> | undefined;
-        return {
-          ...item,
-          success: toNumber(raw?.success),
-          failure: toNumber(raw?.failure),
-          timeout: toNumber(raw?.timeout),
-          lastActivity: formatUnixDate((raw?.last_activity as number | string) || 0)
-        };
-      })
+    return runners
+      .map((runner) => ({
+        id: runner.id,
+        label: displayReportRunnerLabel(runner.id, runners),
+        status: displayStatus(runner.stateStatus || "idle"),
+        lastEvent: runner.lastEventAt ? formatDate(runner.lastEventAt) : "-"
+      }))
       .sort(
         (left, right) =>
           reportRunnerSortWeight(left.id) - reportRunnerSortWeight(right.id) || left.label.localeCompare(right.label, "ko-KR")
       );
-  }, [board?.runners, runnerStatus24hMap]);
+  }, [runners]);
 
   const totalTickets = formatCount(ticketTotal);
   const lastUpdatedLabel = lastUpdated ? formatDate(lastUpdated) : "미확인";
   const runnerStatusNote =
     `${formatCount(runnerRunning)}개 실행 / ${formatCount(runnerBlocked)}개 막힘` +
     (runnerNeedUser > 0 ? ` / ${formatCount(runnerNeedUser)}개 needs_user` : "");
-
-  const arrivalMetrics = React.useMemo(() => computeArrivalMetrics(board), [board]);
 
   return (
     <div className="report-dashboard" aria-label={`통계 카드 ${totalTickets}개 · 마지막 업데이트 ${lastUpdatedLabel}`}>
@@ -5144,18 +5234,28 @@ function ReportingDashboard({
         ticketTotal={ticketTotal}
         codeVolumeCount={codeVolumeCount}
         tokenUsage24hCount={tokenUsage24hCount}
-        commit24hCount={commit24hCount}
         runnerRunning={runnerRunning}
         runnerBlocked={runnerBlocked}
-        metrics={arrivalMetrics}
       />
       <div className="report-metric-grid report-metric-grid-primary" aria-label="핵심 보드 상태 요약">
+        <ReportMetricCard
+          label="티켓 흐름"
+          value={`${formatCompactCount(ticketTotal)}개`}
+          detail="보드 원장 상태별 분포"
+          icon={Database}
+          tone="report-tone-amber"
+          className="report-metric-card-tickets"
+          title={`티켓 흐름 ${formatCount(ticketTotal)}개`}
+        >
+          <ReportHorizontalBarChart title="티켓 상태 분포" items={ticketBreakdown} unit="개" />
+        </ReportMetricCard>
         <ReportMetricCard
           label="코드 영향"
           value={`${formatCompactCount(codeFilesChangedCount)}개`}
           detail={hasCodeImpactData ? "변경 파일/추가/삭제/순변동" : "완료 커밋 후 채워집니다"}
           icon={FolderPlus}
           tone="report-tone-green"
+          className="report-metric-card-code"
           title={`코드 영향 ${formatCount(codeFilesChangedCount)}개 파일, ${formatCount(codeVolumeCount)}줄 변경`}
         >
           <div className="report-inline-stats">
@@ -5176,13 +5276,9 @@ function ReportingDashboard({
               <strong>{formatSignedCount(codeNetDeltaCount)}</strong>
             </div>
           </div>
-          <MetricTrend points={codeTrendPoints} yLabel="최근 7일 변경량 추세" />
-          <ReportStackedDailyBars title="최근 14일 추가/삭제 라인" data={codeDailyBuckets} />
-          {codeDirItems.length ? (
-            <ReportSplitBars title="디렉터리별 변경량 분포" items={codeDirItems} />
-          ) : (
-            <div className="report-fallback">디렉터리별 변경량이 없습니다</div>
-          )}
+          {hasCodeImpactData ? (
+            <ReportCodeImpactChart title="코드 라인 변경" insertions={codeInsertionsCount} deletions={codeDeletionsCount} />
+          ) : null}
         </ReportMetricCard>
         <ReportMetricCard
           label="토큰 사용량"
@@ -5190,6 +5286,7 @@ function ReportingDashboard({
           detail={hasTokenData ? `${formatCount(tokenReportCount)}개 LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
           icon={Terminal}
           tone="report-tone-violet"
+          className="report-metric-card-token"
           title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}개, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
         >
           {hasTokenData ? (
@@ -5205,11 +5302,11 @@ function ReportingDashboard({
                 </div>
                 <div className="report-inline-stat">
                   <span>최근 1h</span>
-                  <strong>{formatCount(tokenUsage1hCount)} 토큰</strong>
+                  <strong>{formatCount(tokenUsage1hCount)}</strong>
                 </div>
                 <div className="report-inline-stat">
                   <span>최근 24h</span>
-                  <strong>{formatCount(tokenUsage24hCount)} 토큰</strong>
+                  <strong>{formatCount(tokenUsage24hCount)}</strong>
                 </div>
                 <div className="report-inline-stat">
                   <span>입력</span>
@@ -5240,10 +5337,9 @@ function ReportingDashboard({
                   </em>
                 </div>
               ) : null}
-              <ReportSplitBars title="러너별 24h 토큰" items={runnerBreakdown} />
-              {modelBreakdown.length ? <ReportSplitBars title="모델별 24h 토큰" items={modelBreakdown} /> : null}
-              <ReportHourlyAreaTrend title="최근 24시간 시간별 토큰 추세" data={tokenHourlyBuckets} />
-              <MetricTrend points={tokenTrendPoints} yLabel="최근 7일 토큰 사용량 추세" />
+              <ReportHorizontalBarChart title="러너별 24h 토큰" items={runnerBreakdown} />
+              {modelBreakdown.length ? <ReportHorizontalBarChart title="모델별 24h 토큰" items={modelBreakdown} /> : null}
+              <ReportHourlyTokenChart title="최근 24시간 입력/출력 토큰 추세" data={tokenHourlyBuckets} />
             </>
           ) : (
             <div className="report-fallback">러너 토큰 기록이 없어 분해 데이터가 없습니다</div>
@@ -5255,92 +5351,36 @@ function ReportingDashboard({
           detail={runnerStatusNote}
           icon={Activity}
           tone="report-tone-blue"
+          className="report-metric-card-runners"
           title={`러너 상태 ${formatCount(runnerRunning)}개 실행 중, ${formatCount(runnerBlocked)}개 막힘`}
         >
           <div className="report-inline-stats">
             <div className="report-inline-stat">
               <span>러너 총 수</span>
-              <strong>{formatCount((board?.runners || []).length)}</strong>
+              <strong>{formatCount(runners.length)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>활성화</span>
+              <strong>{formatCount(runnerEnabled)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>실행 중</span>
+              <strong>{formatCount(runnerRunning)}</strong>
+            </div>
+            <div className="report-inline-stat">
+              <span>막힘</span>
+              <strong>{formatCount(runnerBlocked)}</strong>
             </div>
             {runnerRows.map((runner) => (
               <div key={runner.id} className="report-inline-stat">
                 <span>{runner.label}</span>
-                <strong>{runner.lastActivity}</strong>
-                <em>
-                  성공 {formatCount(runner.success)} · 실패 {formatCount(runner.failure)} · 타임아웃 {formatCount(runner.timeout)}
-                </em>
+                <strong>{runner.status}</strong>
+                <em>마지막 이벤트 {runner.lastEvent}</em>
               </div>
             ))}
-            {!hasRunnerData ? <div className="report-fallback">최근 24h 러너 상태가 없습니다</div> : null}
+            {!hasRunnerData ? <div className="report-fallback">러너 설정이 없습니다</div> : null}
           </div>
-          <ReportRunnerTimeline
-            title="최근 24시간 러너 실행 결과"
-            data={runnerTickTimeline}
-            runners={runnerRows.map((row) => ({ id: row.id, label: row.label }))}
-          />
-          <ReportSimpleBars
-            title="러너별 평균 실행 시간"
-            items={runnerRows
-              .map((row) => ({
-                label: row.label,
-                value: safeNumber((runnerAvgTickSecondsObj[row.id] as number | string | undefined) ?? 0)
-              }))
-              .filter((item) => item.value > 0)}
-            unit="초"
-          />
-          <MetricTrend points={runnerTrendPoints} yLabel="최근 7일 활성 러너 수 추세" />
-        </ReportMetricCard>
-        <ReportMetricCard
-          label="완료 커밋"
-          value={`${formatCompactCount(commitCount)}개`}
-          detail={hasCommitData ? `${formatCount(commitCount)}개 완료 커밋 누적` : "완료 커밋 후 채워집니다"}
-          icon={CheckCircle2}
-          tone="report-tone-green"
-          title={`완료 커밋 ${formatCount(commitCount)}개`}
-        >
-          {hasCommitData ? (
-            <div className="report-inline-stats">
-              <div className="report-inline-stat">
-                <span>누적 커밋</span>
-                <strong>{formatCount(commitCount)}개</strong>
-              </div>
-              <div className="report-inline-stat">
-                <span>24h 커밋</span>
-                <strong>{formatCount(commit24hCount)}개</strong>
-              </div>
-              <div className="report-inline-stat">
-                <span>자동 / 수동</span>
-                <strong>{formatPercentValue(commitAutoRatio)} / {formatPercentValue(commitManualRatio)}</strong>
-              </div>
-              <div className="report-inline-stat">
-                <span>최근 subject (최대 5건)</span>
-              </div>
-              <div className="report-bar-list">
-                {commitSubjects.length > 0 ? (
-                  commitSubjects.map((subject) => (
-                    <div key={subject} className="report-bar-row">
-                      <em style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{subject}</em>
-                    </div>
-                  ))
-                ) : (
-                  <div className="report-bar-row">
-                    <em>최근 커밋 데이터가 없습니다</em>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="report-fallback">완료 커밋 데이터가 없습니다</div>
-          )}
-          <MetricTrend points={commitTrendPoints} yLabel="최근 14일 커밋 수 추세" />
-          <ReportDailyCountBars title="최근 14일 일자별 커밋 수" data={commitDailyBuckets} />
-          <ReportSplitBars
-            title="자동 / 수동 작성자 분포 (24h)"
-            items={[
-              { label: "Autoflow 자동", value: commitAuto24hCount },
-              { label: "사용자 수동", value: commitManual24hCount }
-            ].filter((item) => item.value > 0)}
-          />
+          {hasRunnerData ? <ReportDoughnutChart title="러너 상태 분포" items={runnerStatusBreakdown} unit="개" /> : null}
         </ReportMetricCard>
       </div>
     </div>
@@ -5451,16 +5491,18 @@ function MetricsHistory({
 function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
   const status = board?.status || {};
   const metrics = board?.metrics || {};
+  const runners = board?.runners || [];
   const handoffCount = statusValue(metrics, "handoff_count", String(board?.conversationFiles?.length || 0));
-  const runnerRunningCount = statusValue(metrics, "runner_running_count", "0");
-  const runnerTotalCount = statusValue(metrics, "runner_total_count", String(board?.runners?.length || 0));
-  const runnerEnabledCount = statusValue(metrics, "runner_enabled_count", runnerTotalCount);
+  const runnerRunningCount = runners.filter((runner) => {
+    const state = (runner.stateStatus || "").toLowerCase();
+    return state === "running" || Boolean(runner.pid);
+  }).length;
+  const runnerEnabledCount = runners.filter((runner) => runnerIsEnabled(runner.enabled)).length;
   const workerActiveCount = statusValue(
     metrics,
     "ticket_worker_active_count",
     statusValue(status, "ticket_worker_active_count", String(board?.tickets.inprogress?.length || 0))
   );
-  const planningCount = statusValue(metrics, "ticket_planning_count", statusValue(status, "ticket_planning_count", "0"));
   const cards = [
     {
       label: "PRD",
@@ -5479,7 +5521,7 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
     {
       label: "AI",
       value: workerActiveCount,
-      detail: `계획 ${planningCount}개 / AI ${runnerRunningCount}/${runnerEnabledCount}`,
+      detail: `AI ${formatCount(runnerRunningCount)}/${formatCount(runnerEnabledCount)} 실행`,
       icon: Activity,
       tone: "metric-teal"
     },
@@ -5516,7 +5558,7 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketWorkspaceTabKey = "prd" | "order" | "issued";
+type TicketWorkspaceTabKey = "prd" | "order" | "todo";
 type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done";
 type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
 type TicketKanbanFolderKey = string;
@@ -5551,7 +5593,7 @@ const ticketWorkspaceTabs: Array<{
 }> = [
   { key: "order", label: "Order", description: "빠른 오더 intake" },
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
-  { key: "issued", label: "Ticket", description: "발급된 작업 티켓" }
+  { key: "todo", label: "TODO", description: "TODO 작업 티켓" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
   label: string;
@@ -5589,7 +5631,7 @@ function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
 }
 
 function numericIdFromBoardFile(file: AutoflowFilePreview) {
-  const match = file.name.match(/_(\d+)\.md$/);
+  const match = file.name.match(/^(?:Todo-|tickets_|order_|prd_|project_)(\d+)(?:_retry_.*)?\.md$/i);
   return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
 }
 
@@ -5650,6 +5692,12 @@ function extractMarkdownPriority(content: string): TicketPriority {
 }
 
 function compareTicketWorkspaceItems(left: TicketWorkspaceItem, right: TicketWorkspaceItem) {
+  const leftId = numericIdFromBoardFile(left);
+  const rightId = numericIdFromBoardFile(right);
+  if (leftId !== rightId) {
+    return rightId - leftId;
+  }
+
   if (left.priorityRank !== right.priorityRank) {
     return left.priorityRank - right.priorityRank;
   }
@@ -5657,12 +5705,6 @@ function compareTicketWorkspaceItems(left: TicketWorkspaceItem, right: TicketWor
   const modified = right.modifiedAt.localeCompare(left.modifiedAt);
   if (modified !== 0) {
     return modified;
-  }
-
-  const leftId = numericIdFromBoardFile(left);
-  const rightId = numericIdFromBoardFile(right);
-  if (leftId !== rightId) {
-    return leftId - rightId;
   }
 
   return left.filePath.localeCompare(right.filePath);
@@ -5675,10 +5717,6 @@ function boardPath(value: string) {
 function ticketFolderKeyFromFile(file: AutoflowFilePreview) {
   const match = boardPath(file.filePath).match(/\/tickets\/([^/]+)/);
   return match?.[1] || "";
-}
-
-function isTicketWorkspaceBoardFile(file: AutoflowFilePreview) {
-  return isPrdBoardFile(file) || isTicketBoardFile(file);
 }
 
 function isPrdBoardFile(file: AutoflowFilePreview) {
@@ -5823,9 +5861,9 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
   };
 }
 
-function ticketWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
+function todoWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
   const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
-    folderFiles.filter(isTicketWorkspaceBoardFile)
+    folderFiles.filter(isTicketBoardFile)
   );
 
   return sortFilesByModifiedAt(files);
@@ -5849,7 +5887,8 @@ function orderWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
 
 function ticketWorkspaceTabFromStorage(value: string | null): TicketWorkspaceTabKey {
   if (value === "inbox") return "order";
-  return ticketWorkspaceTabs.some((tab) => tab.key === value) ? (value as TicketWorkspaceTabKey) : "issued";
+  if (value === "issued") return "todo";
+  return ticketWorkspaceTabs.some((tab) => tab.key === value) ? (value as TicketWorkspaceTabKey) : "todo";
 }
 
 function ticketKanbanFolderForItem(item: TicketWorkspaceItem): TicketKanbanFolderKey {
@@ -6309,7 +6348,6 @@ function TicketWorkspaceKanbanView({
                     </div>
                     <Badge variant="secondary">{columnItems.length}</Badge>
                   </header>
-                  <div className="ticket-kanban-column-note">{column.description}</div>
                   {columnItems.length === 0 ? (
                     <div className="ticket-kanban-column-empty">비어 있음</div>
                   ) : (
@@ -6658,16 +6696,18 @@ function WorkflowPinLayer({
                           aria-pressed={isActive}
                           title={file.title || file.name}
                         >
-                          <strong className="workflow-pin-item-id">{workflowFileDisplayName(file.name)}</strong>
+                          <span className="workflow-pin-item-side">
+                            <strong className="workflow-pin-item-id">{workflowFileDisplayName(file.name)}</strong>
+                            {file.stateLabel ? (
+                              <Badge
+                                variant={file.stateTone === "destructive" ? "destructive" : file.stateTone === "success" ? "default" : "secondary"}
+                                className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
+                              >
+                                {file.stateLabel}
+                              </Badge>
+                            ) : null}
+                          </span>
                           {file.title ? <span className="workflow-pin-item-title">{file.title}</span> : null}
-                          {file.stateLabel ? (
-                            <Badge
-                              variant={file.stateTone === "destructive" ? "destructive" : file.stateTone === "success" ? "default" : "secondary"}
-                              className={`workflow-pin-item-badge workflow-pin-item-badge-${file.stateTone || "neutral"}`}
-                            >
-                              {file.stateLabel}
-                            </Badge>
-                          ) : null}
                           <time>{formatDate(file.modifiedAt)}</time>
                         </Button>
                         {canDelete ? (
@@ -6797,7 +6837,7 @@ function TicketWorkspaceDetailPane({
   detailContent: AutoflowFileContentResult | null;
 }) {
   const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "order" ? Inbox : ClipboardList;
-  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "order" ? "Order" : "Ticket";
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "order" ? "Order" : "TODO";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -6870,7 +6910,7 @@ function TicketKanban({
   onActionToast?: (severity: AlertSeverity, message: string) => void;
   onRequestRefresh?: () => Promise<void> | void;
 }) {
-  const issuedFiles = React.useMemo(() => ticketWorkspaceFiles(board), [board]);
+  const todoFiles = React.useMemo(() => todoWorkspaceFiles(board), [board]);
   const prdFiles = React.useMemo(() => prdWorkspaceFiles(board), [board]);
   const orderFiles = React.useMemo(() => orderWorkspaceFiles(board), [board]);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = React.useState<TicketWorkspaceTabKey>(() =>
@@ -6925,14 +6965,14 @@ function TicketKanban({
               onRequestRefresh={onRequestRefresh}
             />
           ) : null}
-          {activeWorkspaceTab === "issued" ? (
+          {activeWorkspaceTab === "todo" ? (
             <TicketWorkspaceKanbanView
-              key="issued"
-              files={issuedFiles}
+              key="todo"
+              files={todoFiles}
               options={options}
               runners={board?.runners}
               defaultFolders={["todo", "inprogress", "done"]}
-              ariaLabel="폴더 기준 티켓 칸반"
+              ariaLabel="폴더 기준 TODO 칸반"
             />
           ) : null}
         </div>
@@ -7001,22 +7041,22 @@ function TicketBoard({
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneOrders = (board?.tickets.done || [])
     .filter(isOrderBoardFile)
-    .map((file) => ({ ...file } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => {
       const name = file?.name || "";
       return name.startsWith("prd_") || name.startsWith("project_");
     })
-    .map((file) => ({ ...file } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const todoTickets = (board?.tickets.todo || [])
     .filter(isTicketBoardFile)
-    .map((file) => ({ ...file, stateLabel: "TODO", stateTone: "neutral" } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
   const doneTickets = (board?.tickets.done || [])
     .filter(isTicketBoardFile)
-    .map((file) => ({ ...file } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const inprogressTickets = (board?.tickets.inprogress || [])
     .filter(isTicketBoardFile)
-    .map((file) => ({ ...file } as WorkflowFileEntry));
+    .map((file) => ({ ...file, stateLabel: "진행 중", stateTone: "neutral" } as WorkflowFileEntry));
   const specNumericId = (name: string) => {
     const match = name.match(/(?:prd|project)_(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
@@ -7053,12 +7093,6 @@ function TicketBoard({
   const prdPinTitle = `PRD (${prdSpecs.length}/${specFiles.length})`;
   const orderPinTitle = `ORDER (${orderQueueItems.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
-  const todoPinSubtitle =
-    todoTickets.length === 0 && inprogressTickets.length > 0
-      ? `새 todo 없음 / 기존 ticket 구현 중 (${inprogressTickets.length}건)`
-      : inprogressTickets.length > 0
-      ? `대기 ${todoTickets.length}건 / 진행중 ${inprogressTickets.length}건`
-      : `대기 ${todoTickets.length}건`;
   const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
@@ -7096,7 +7130,6 @@ function TicketBoard({
                   files={todoFiles}
                   options={options}
                   pinTitle={todoPinTitle}
-                  pinSubtitle={todoPinSubtitle}
                   pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
                   variant="default"
                   layerHeading={todoPinTitle}
@@ -8420,7 +8453,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
-  const runnerActiveTicket = Boolean(runner.activeTicketId);
+  const runnerActiveTicket = runnerHasActiveWorkContext(runner);
   const stateSignalText = [
     runner.activeItem,
     runner.activeRecoveryReason,
@@ -8491,9 +8524,27 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (hasWorkerIdleSignal) return "idle";
 
-  if (/\bdone\b|\bpass\b|\bcomplete\b/.test(stateText)) return "done";
+  if (runnerActiveTicket && /\bdone\b|\bpass\b|\bcomplete\b/.test(stateText)) return "done";
 
   return "idle";
+}
+
+function runnerHasActiveWorkContext(runner: AutoflowRunner) {
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  const activeStageCarriesWork =
+    /^(planning|generating-todo|claimed|executing|inprogress|verifying|verify_pending|verifier_pending|merging|ready_to_merge|ready-to-merge|revision_requested|replan_requested)$/.test(activeStage);
+  return Boolean(
+    runner.activeTicketId ||
+    runner.activeItem ||
+    runner.activeTicketTitle ||
+    runner.activeSpecRef ||
+    activeStageCarriesWork
+  );
+}
+
+function runnerSuccessSignalIsStale(runner: AutoflowRunner, value: string) {
+  if (runnerHasActiveWorkContext(runner)) return false;
+  return /\b(done|pass|complete|completed|committed_via_completion_finalizer|verifier_pass|verifier_passed)\b/i.test(value || "");
 }
 
 function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject" | "" {
@@ -8519,7 +8570,10 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
     return "blocked";
   }
 
-  if (/\bdone\b|\bpass\b|\bcomplete\b|\bcompleted\b|\bcommitted_via_completion_finalizer\b/.test(stateSignalText)) {
+  if (
+    runnerHasActiveWorkContext(runner) &&
+    /\bdone\b|\bpass\b|\bcomplete\b|\bcompleted\b|\bcommitted_via_completion_finalizer\b/.test(stateSignalText)
+  ) {
     return "done";
   }
 
@@ -8539,18 +8593,18 @@ function runnerProgressDetail(runner: AutoflowRunner) {
   }
 
   if (runner.activeItem) {
-    return runner.activeItem;
+    return displayActiveItemLabel(runner.activeItem);
   }
 
   if ((runner.lastResult || "").toLowerCase() === "adapter_auth_required") {
     return runnerLoginMessage(runner);
   }
 
-  if (runner.lastResult) {
+  if (runner.lastResult && !runnerSuccessSignalIsStale(runner, runner.lastResult)) {
     return displayStatus(runner.lastResult);
   }
 
-  if (runner.lastLogLine) {
+  if (runner.lastLogLine && !runnerSuccessSignalIsStale(runner, runner.lastLogLine)) {
     return runner.lastLogLine;
   }
 
@@ -8578,6 +8632,10 @@ function compactStatusParts(parts: Array<string | false | null | undefined>) {
     .filter((part, index, all) => all.indexOf(part) === index);
 }
 
+function idleStatusDetailText(value: string) {
+  return (value || "").replace(/^대기\s*중(?:\s*[—–-]\s*)?/u, "").trim();
+}
+
 function runnerStatusSummaryTitle(runner: AutoflowRunner, label: string, detail: string, currentKey: string) {
   return compactStatusParts([
     detail ? `${label} · ${detail}` : label,
@@ -8585,25 +8643,8 @@ function runnerStatusSummaryTitle(runner: AutoflowRunner, label: string, detail:
     currentKey ? `stage=${currentKey}` : "",
     runner.activeStage ? `active_stage=${runner.activeStage}` : "",
     runner.activeTicketId ? `active_ticket_id=${runner.activeTicketId}` : "",
-    runner.lastResult ? `last_result=${runner.lastResult}` : ""
+    runner.lastResult && !runnerSuccessSignalIsStale(runner, runner.lastResult) ? `last_result=${runner.lastResult}` : ""
   ]).join("\n");
-}
-
-function stoppedStatusLabel(detailText: string) {
-  if (detailText === "오류로 종료됨") return "오류로 중지됨";
-  if (detailText === "강제 종료됨") return "강제 종료됨";
-  if (detailText === "종료됨" || detailText === "정상 종료") return detailText;
-  return "중지됨";
-}
-
-function shouldFoldStoppedDetail(detailText: string) {
-  return (
-    detailText === "오류로 종료됨" ||
-    detailText === "강제 종료됨" ||
-    detailText === "종료됨" ||
-    detailText === "정상 종료" ||
-    detailText === "중지됨"
-  );
 }
 
 function runnerStatusSummary({
@@ -8651,6 +8692,10 @@ function runnerStatusSummary({
     label = "설정 적용 중";
     tone = "pending";
     detailParts = compactStatusParts([activeTicketLabel]);
+  } else if (statusLower === "stopped" || statusLower === "user_stopped") {
+    label = "중지됨";
+    tone = "stopped";
+    detailParts = [];
   } else if (isBlocked || cycleResult === "blocked") {
     label = "막힘";
     tone = "blocked";
@@ -8666,15 +8711,14 @@ function runnerStatusSummary({
   } else if (statusLower === "running") {
     label = stageStatusLabel(currentKey, stageLabel, role);
     tone = "running";
-    detailParts = compactStatusParts([activeTicketLabel, detailText]);
-  } else if (statusLower === "stopped" || statusLower === "user_stopped") {
-    label = stoppedStatusLabel(detailText);
-    tone = "stopped";
-    detailParts = compactStatusParts([shouldFoldStoppedDetail(detailText) ? "" : detailText]);
+    detailParts = compactStatusParts([
+      activeTicketLabel,
+      currentKey === "idle" ? idleStatusDetailText(detailText) : detailText
+    ]);
   } else if (statusLower === "idle") {
     label = "대기 중";
     tone = "idle";
-    detailParts = compactStatusParts([detailText.replace(/^대기 중\s*[—-]\s*/, "")]);
+    detailParts = compactStatusParts([idleStatusDetailText(detailText)]);
   } else if (statusLower === "failed" || statusLower === "error") {
     tone = "error";
     detailParts = compactStatusParts([activeTicketLabel, detailText]);
@@ -8761,9 +8805,9 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (/^planner-\d+$/.test(value) || /^plan-\d+$/.test(value)) {
     return singleton ? "planner" : value.replace(/^plan-/, "planner-");
   }
-  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "LLM Wiki" : "LLM Wiki-1";
-  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "LLM Wiki-");
-  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "LLM Wiki-");
+  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "위키" : "위키-1";
+  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키-");
+  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키-");
   if (value === "coordinator-1") return "coordinator";
   return value;
 }
@@ -8788,7 +8832,7 @@ function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunn
   if (role === "worker" || role === "ticket" || role === "merge" || role === "merge-bot" || /^merge-/.test(role)) {
     return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
   }
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "위키";
   if (role === "verifier") return "Verifier";
 
   const metaLabel = displayWorkflowRunnerId(runner.id, runners);

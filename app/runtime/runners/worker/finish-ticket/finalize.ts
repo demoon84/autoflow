@@ -1,7 +1,7 @@
 import {fs, path, boardRoot, projectRoot, spawnSync, timestamp, workerId} from "./context";
 import {boardRel, oneLine, safeSegment, unique} from "./io";
 import {allowedPaths, appendNote, doneWhenItems, normalizedChangeType, replaceScalar, replaceSection, scalar, updateGoalRuntime} from "./ticket-sections";
-import {changedFiles, diffLineCount, git, gitOut, gitRootPath, headContainsCommit, isGitWorktree, pathsOverlap, projectRootPathMatchesWorktree, statusPaths} from "./git";
+import {changedFiles, diffLineCount, git, gitOut, gitRootPath, headContainsCommit, isGitWorktree, pathsOverlap, projectRootContainsWorktreeChange, statusPaths} from "./git";
 import {writeVerifierLog} from "./verifier";
 import {positiveInt, read} from "./io";
 
@@ -83,10 +83,7 @@ export function prepareWorktreeForFinalization(ticketFile: string, ticketId: str
     return { status: "ready", reason: "worktree_commit_in_project_history", worktreePath, worktreeCommit: head };
   }
 
-  const needsMerge = scopedChanged.some((name) => {
-    const relPath = allowed.find((ap) => pathsOverlap(name, ap)) || name;
-    return !projectRootPathMatchesWorktree(worktreePath, relPath);
-  });
+  const needsMerge = scopedChanged.some((name) => !projectRootContainsWorktreeChange(worktreePath, baseCommit, name));
   if (needsMerge) {
     replaceScalar(ticketFile, "Worktree", "Integration Status", "needs_ai_merge");
     return { status: "needs_ai_merge", reason: "ai_merge_required", worktreePath, worktreeCommit: head };
@@ -105,8 +102,11 @@ function verificationCommand(ticketFile: string): string {
 export function finalizationPreflight(ticketFile: string): { status: "ok" | "needs_ai_merge" | "blocked"; reason: string; detail: string; command?: string; exitCode?: number } {
   const worktreePath = scalar(ticketFile, "Worktree", "Path");
   const allowed = allowedPaths(ticketFile);
+  const baseCommit = scalar(ticketFile, "Worktree", "Base Commit");
   if (worktreePath && isGitWorktree(worktreePath)) {
-    const mismatched = allowed.filter((relPath) => !projectRootPathMatchesWorktree(worktreePath, relPath));
+    const changed = baseCommit ? changedFiles(worktreePath, baseCommit) : statusPaths(worktreePath);
+    const scopedChanged = changed.filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+    const mismatched = scopedChanged.filter((relPath) => !projectRootContainsWorktreeChange(worktreePath, baseCommit, relPath));
     if (mismatched.length > 0) {
       return {
         status: "needs_ai_merge",
@@ -167,6 +167,31 @@ export function archiveDone(ticketFile: string, ticketId: string): string {
   return doneFile;
 }
 
+export function restoreDoneAfterCommitFailure(doneFile: string, ticketId: string, failureStatus: string, detail: string): string {
+  const restoredFile = path.join(boardRoot, "tickets", "inprogress", path.basename(doneFile));
+  fs.mkdirSync(path.dirname(restoredFile), { recursive: true });
+  if (path.resolve(doneFile) !== path.resolve(restoredFile)) {
+    if (fs.existsSync(restoredFile)) fs.unlinkSync(restoredFile);
+    fs.renameSync(doneFile, restoredFile);
+  }
+
+  replaceScalar(restoredFile, "Ticket", "Stage", "blocked");
+  replaceScalar(restoredFile, "Ticket", "Claimed By", workerId);
+  replaceScalar(restoredFile, "Ticket", "Execution AI", workerId);
+  replaceScalar(restoredFile, "Ticket", "Last Updated", timestamp);
+  replaceScalar(restoredFile, "Worktree", "Integration Status", `blocked_${failureStatus}`);
+  replaceScalar(restoredFile, "Recovery State", "Status", "blocked");
+  replaceScalar(restoredFile, "Recovery State", "Detected By", "finish-ticket.ts completion commit");
+  replaceScalar(restoredFile, "Recovery State", "Failure Class", failureStatus);
+  replaceScalar(restoredFile, "Recovery State", "Evidence", detail);
+  replaceScalar(restoredFile, "Recovery State", "Worker Resume Instruction", "Inspect PROJECT_ROOT git status and rerun worker finalize-approved after fixing the completion commit failure.");
+  replaceScalar(restoredFile, "Recovery State", "Last Recovery At", timestamp);
+  updateGoalRuntime(restoredFile, "blocked", timestamp);
+  appendNote(restoredFile, `Completion commit failed at ${timestamp}: ${failureStatus}; ${detail}`);
+  replaceSection(restoredFile, "Next Action", `- Next: completion commit failed (${failureStatus}). Inspect PROJECT_ROOT git status, fix the commit blocker, then rerun \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`. The ticket was restored from done to inprogress because finalization is not complete.`);
+  return restoredFile;
+}
+
 export function commitCompletion(doneFile: string, ticketId: string, summary: string): { status: string; hash: string; detail: string } {
   if (process.env.AUTOFLOW_WORKER_SKIP_COMMIT === "1") return { status: "skipped_by_env", hash: "", detail: "" };
   const gitRoot = gitRootPath(projectRoot);
@@ -187,7 +212,19 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
     path.join(boardRelPath, "logs"),
     ...(productChangesAreCommitted ? [] : allowed),
   ].filter((value) => value && !value.startsWith(".."));
-  if (candidates.length > 0) git(gitRoot, ["add", "-A", "--", ...unique(candidates)]);
+  const stageFailures: string[] = [];
+  for (const candidate of unique(candidates)) {
+    const result = spawnSync("git", ["add", "-A", "--", candidate], {
+      cwd: gitRoot,
+      encoding: "utf8",
+    });
+    if (result.status !== 0 && allowed.some((ap) => pathsOverlap(candidate, ap))) {
+      stageFailures.push(oneLine(`${candidate}: ${result.stderr || ""} ${result.stdout || ""}`));
+    }
+  }
+  if (stageFailures.length > 0) {
+    return { status: "stage_failed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: stageFailures.join("; ") };
+  }
 
   if (git(gitRoot, ["diff", "--cached", "--quiet"]).status === 0) {
     const dirtyAllowed = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
@@ -204,7 +241,14 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
   }
   const prdKey = scalar(doneFile, "Ticket", "PRD Key");
   const prefix = prdKey ? `[${prdKey.toUpperCase()}][ticket_${ticketId}]` : `[ticket_${ticketId}]`;
-  git(gitRoot, ["commit", "-m", `${prefix} ${oneLine(summary) || "complete worker work"}`]);
+  const commitResult = spawnSync("git", ["commit", "-m", `${prefix} ${oneLine(summary) || "complete worker work"}`], {
+    cwd: gitRoot,
+    encoding: "utf8",
+  });
+  if (commitResult.status !== 0) {
+    const detail = oneLine(`${commitResult.stderr || ""} ${commitResult.stdout || ""}`) || `git commit exited ${commitResult.status ?? 1}`;
+    return { status: "commit_failed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail };
+  }
   const hash = gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]);
   const dirtyAllowedAfterCommit = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
   if (dirtyAllowedAfterCommit.length > 0) {

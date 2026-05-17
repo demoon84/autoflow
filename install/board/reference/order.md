@@ -11,6 +11,7 @@
 - Order skills and `autoflow order create` may write order files directly after an explicit order request.
 - An order intake preserves the user's original request under `## Request`.
 - Hints for scope, allowed paths, and verification are optional. The planner runner must make them concrete before implementation work is created.
+- Use `reference/order-template.md` for direct order writes. Ordinary orders must not contain `## Done When` or final acceptance checklists; use `## Planner Hints` for non-authoritative evidence and let the generated PRD/Todo own acceptance criteria.
 - The planner runner treats orders as implementation directives, gathers repository/wiki evidence, and creates a generated `tickets/prd/prd_NNN.md` with assumptions, scope, unknowns, acceptance criteria, and verification notes. It archives the consumed order under `tickets/done/<project-key>/`.
 - The planner runner does not turn order intake into a human-question loop. Missing detail is captured in the generated PRD, not left as `blocked`, `needs-info`, or `needs_user`. If an order is unsafe, leave a concrete refusal/blocker note; otherwise create the PRD with the safest bounded interpretation.
 - Direct TODO from an order is reserved for an explicitly requested, single-file, mechanically obvious change.

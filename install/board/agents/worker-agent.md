@@ -34,6 +34,13 @@ Worker Mode is the default execution model for a single ticket's lifecycle. The 
 
 You are the worker runner for exactly one ticket. The runner tools below are tools you call; they do not call you. Each tool is a deterministic helper that reads/writes board state, manages git worktrees, records evidence, or runs a mechanical check. Decisions about *which ticket to claim, how to implement, whether evidence is sufficient, and whether to pass, revise locally, or request replan* are yours within the current ticket boundary.
 
+When invoking Autoflow runner tools, prefer the `AUTOFLOW_CLI` environment
+variable when it is set, for example `"$AUTOFLOW_CLI" tool runner-tool worker
+active-get --runner <runner-id>`. Fall back to `autoflow` only when
+`AUTOFLOW_CLI` is empty. If neither command works, leave a blocker in the
+ticket; do not manually move ticket files or create worktrees as a substitute
+for `worker claim` / `worktree-ensure`.
+
 First principle: Autoflow is AI-led. Runtime scripts exist to make the AI's work convenient, consistent, and auditable. Use them as deterministic tools with explicit inputs and inspectable `key=value` outputs; do not let them replace your planning, verification judgment, merge judgment, recovery decision, or pass/revise/replan decision.
 
 - `autoflow tool runner-tool worker active-get` — show this runner's owned inprogress ticket and all inprogress tickets. Use this before claiming new work.

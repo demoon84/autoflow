@@ -4,18 +4,11 @@ Metrics are derived snapshots. They do not control board state.
 
 Typical values:
 
-- spec count,
-- handoff archive count,
-- ticket count by state,
-- active ticket count,
-- done count,
-- replan retry count,
-- runner counts by state,
-- verifier pass/revise/replan counts,
-- Autoflow completion commit count,
-- product-code files changed, insertions, deletions, and total changed lines,
+- PRD/ticket totals and ticket count by state,
+- active ticket count, done count, retry order count, and verifier handoff count,
+- product-code files changed, insertions, deletions, net delta, and total changed lines,
 - observed AI token usage from runner adapter logs,
-- pass rate,
+- recent 1h/24h token totals plus runner/model/hourly token breakdowns,
 - completion rate.
 
-The runtime may append daily snapshots as generated JSONL files in this directory. Generated metrics files are intentionally ignored by git.
+Generated metrics files such as `snapshot.env` are intentionally ignored by git.

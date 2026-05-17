@@ -1,20 +1,20 @@
 import {fs, path, boardRoot, projectRoot, scriptDir, timestamp, workerId} from "./context";
 import {appendNote, replaceScalar, replaceSection, updateGoalRuntime} from "./ticket-sections";
-import {boardRel, oneLine, printPairs, write} from "./io";
+import {boardRel, oneLine, printPairs, read, write} from "./io";
 import {spawnOutputText, spawnTsScript} from "./git";
 
 export function handoffToVerifier(ticketFile: string, ticketId: string): void {
   const verifierDir = path.join(boardRoot, "tickets", "verifier");
   fs.mkdirSync(verifierDir, { recursive: true });
   const verifierTicket = path.join(verifierDir, `Todo-${ticketId}.md`);
-  fs.copyFileSync(ticketFile, verifierTicket);
-  replaceScalar(verifierTicket, "Ticket", "Stage", "verify_pending");
   replaceScalar(ticketFile, "Ticket", "Stage", "verify_pending");
   replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
   replaceScalar(ticketFile, "Worktree", "Integration Status", "verify_pending");
   updateGoalRuntime(ticketFile, "verify_pending", timestamp);
   replaceSection(ticketFile, "Next Action", `- Next: verifier must review tickets/verifier/Todo-${ticketId}.md before any PROJECT_ROOT merge. Worker waits for verifier pass/revise/replan wake: pass allows merge/finalization, revise keeps this worktree for correction, replan creates a retry order and deletes this worktree.`);
   appendNote(ticketFile, `Worker pass handed off to verifier at ${timestamp}; PROJECT_ROOT merge is blocked until verifier pass.`);
+  fs.copyFileSync(ticketFile, verifierTicket);
+  replaceScalar(verifierTicket, "Ticket", "Stage", "verify_pending");
   const stateDir = path.join(boardRoot, "runners", "state");
   fs.mkdirSync(stateDir, { recursive: true });
   write(path.join(stateDir, "verifier.verifier-realtime-wakeup.pending"), `triggered_at=${timestamp}\nticket_id=${ticketId}\n`);
@@ -68,6 +68,29 @@ export function verifierMarker(ticketId: string): string {
   return path.join(boardRoot, "runners", "state", `verifier-ok-${ticketId}.marker`);
 }
 
+function updateWorkerMergeState(ticketFile: string, ticketId: string): void {
+  const stateFile = path.join(boardRoot, "runners", "state", `${workerId}.state`);
+  if (!fs.existsSync(stateFile)) return;
+  const updates = new Map([
+    ["active_ticket_id", `Todo-${ticketId}`],
+    ["active_stage", "merging"],
+    ["active_ticket_path", boardRel(ticketFile)],
+    ["last_result", "needs_ai_merge"],
+    ["updated_at", timestamp],
+  ]);
+  const seen = new Set<string>();
+  const lines = read(stateFile).split(/\r?\n/).filter(Boolean).map((line) => {
+    const key = line.split("=")[0];
+    if (!updates.has(key)) return line;
+    seen.add(key);
+    return `${key}=${updates.get(key)}`;
+  });
+  for (const [key, value] of updates) {
+    if (!seen.has(key)) lines.push(`${key}=${value}`);
+  }
+  write(stateFile, `${lines.join("\n")}\n`);
+}
+
 export function markNeedsAiMerge(ticketFile: string, ticketId: string, reason: string): void {
   replaceScalar(ticketFile, "Ticket", "Stage", "merging");
   replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
@@ -75,6 +98,7 @@ export function markNeedsAiMerge(ticketFile: string, ticketId: string, reason: s
   updateGoalRuntime(ticketFile, "merging", timestamp);
   replaceSection(ticketFile, "Next Action", `- Next: verifier has approved this worktree. Worker must now integrate verified worktree changes into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun required verification from PROJECT_ROOT, then run \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`. Do not claim another ticket or call merge-ready-ticket directly.`);
   appendNote(ticketFile, `Finish paused at ${timestamp}: ${reason}. AI must integrate worktree changes into PROJECT_ROOT before finalization.`);
+  updateWorkerMergeState(ticketFile, ticketId);
 }
 
 export function writeVerifierLog(ticketFile: string, ticketId: string): string {
