@@ -19,7 +19,7 @@ export function countFiles(dir: string, pattern: RegExp): number {
 
 export function countTicketDirs(ctx: ProjectContext): Record<string, number> {
     const root = path.join(ctx.boardRoot, "tickets");
-    const names = ["order", "prd", "todo", "inprogress", "verifier", "done"];
+    const names = ["prd", "todo", "inprogress", "verifier", "done"];
     const counts: Record<string, number> = {};
     for (const name of names) {
         counts[name] = countFiles(path.join(root, name), /\.md$/);
@@ -61,7 +61,7 @@ export function countTicketStage(dir: string, wantedStage: string): number {
         return 0;
     }
     return fs.readdirSync(dir)
-        .filter((name) => /^(Todo-\d+|tickets_\d+)\.md$/.test(name))
+        .filter((name) => /^TODO-\d+\.md$/.test(name))
         .filter((name) => fileContainsTicketStage(path.join(dir, name), wantedStage))
         .length;
 }

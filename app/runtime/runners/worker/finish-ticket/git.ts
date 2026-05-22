@@ -96,8 +96,8 @@ export function diffLineCount(cwd: string, baseCommit: string): number {
   return total;
 }
 
-export function projectRootPathMatchesWorktree(worktreePath: string, relPath: string): boolean {
-  const rootPath = path.join(projectRoot, relPath);
+export function rootPathMatchesWorktree(targetRoot: string, worktreePath: string, relPath: string): boolean {
+  const rootPath = path.join(targetRoot, relPath);
   const workPath = path.join(worktreePath, relPath);
   const rootExists = fs.existsSync(rootPath);
   const workExists = fs.existsSync(workPath);
@@ -114,20 +114,28 @@ export function projectRootPathMatchesWorktree(worktreePath: string, relPath: st
   }
 }
 
-export function projectRootContainsWorktreeChange(worktreePath: string, baseCommit: string, relPath: string): boolean {
-  if (!baseCommit) return projectRootPathMatchesWorktree(worktreePath, relPath);
+export function rootContainsWorktreeChange(targetRoot: string, worktreePath: string, baseCommit: string, relPath: string): boolean {
+  if (!baseCommit) return rootPathMatchesWorktree(targetRoot, worktreePath, relPath);
   const patch = gitRawOut(worktreePath, ["diff", "--binary", `${baseCommit}..HEAD`, "--", relPath]);
-  if (!patch.trim()) return projectRootPathMatchesWorktree(worktreePath, relPath);
+  if (!patch.trim()) return rootPathMatchesWorktree(targetRoot, worktreePath, relPath);
 
   const reverseCheckArgs = ["apply", "--reverse", "--check", "--3way", "--whitespace=nowarn"];
-  if (gitWithInput(projectRoot, reverseCheckArgs, patch).status === 0) return true;
+  if (gitWithInput(targetRoot, reverseCheckArgs, patch).status === 0) return true;
 
   const plainReverseCheckArgs = ["apply", "--reverse", "--check", "--whitespace=nowarn"];
-  if (gitWithInput(projectRoot, plainReverseCheckArgs, patch).status === 0) return true;
+  if (gitWithInput(targetRoot, plainReverseCheckArgs, patch).status === 0) return true;
 
   const zeroContextPatch = gitRawOut(worktreePath, ["diff", "--binary", "--unified=0", `${baseCommit}..HEAD`, "--", relPath]);
   const zeroContextReverseCheckArgs = ["apply", "--reverse", "--check", "--unidiff-zero", "--whitespace=nowarn"];
-  if (zeroContextPatch.trim() && gitWithInput(projectRoot, zeroContextReverseCheckArgs, zeroContextPatch).status === 0) return true;
+  if (zeroContextPatch.trim() && gitWithInput(targetRoot, zeroContextReverseCheckArgs, zeroContextPatch).status === 0) return true;
 
-  return projectRootPathMatchesWorktree(worktreePath, relPath);
+  return rootPathMatchesWorktree(targetRoot, worktreePath, relPath);
+}
+
+export function projectRootPathMatchesWorktree(worktreePath: string, relPath: string): boolean {
+  return rootPathMatchesWorktree(projectRoot, worktreePath, relPath);
+}
+
+export function projectRootContainsWorktreeChange(worktreePath: string, baseCommit: string, relPath: string): boolean {
+  return rootContainsWorktreeChange(projectRoot, worktreePath, baseCommit, relPath);
 }

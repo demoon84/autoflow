@@ -120,17 +120,6 @@ for (const root of scanRoots) {
 }
 
 if (findings.length > 0) {
-  console.error(`install_doc_drift_status=fail`);
-  console.error(`install_doc_drift_count=${findings.length}`);
-  findings.slice(0, 50).forEach((finding, index) => {
-    console.error(
-      `install_doc_drift.${index + 1}=${finding.check}:${finding.file}:${finding.line}:${finding.match}`
-    );
-  });
-  if (findings.length > 50) {
-    console.error(`install_doc_drift.truncated=${findings.length - 50}`);
-  }
   process.exit(1);
 }
 
-console.log("install_doc_drift_status=ok");

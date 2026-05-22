@@ -5,6 +5,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -22,9 +23,13 @@ const PROJECT_ROOT = path.resolve(
   process.env.AUTOFLOW_PROJECT_ROOT ||
   path.join(BOARD_ROOT, "..")
 );
+const SHARE_ROOT = path.resolve(
+  (process.env.AUTOFLOW_SHARE_ROOT && process.env.AUTOFLOW_SHARE_ROOT.trim()) ||
+  path.join(os.homedir(), ".autoflow", "share")
+);
 
 const STATE_DB = path.join(BOARD_ROOT, "state.db");
-const SCHEMA_PATH = path.join(BOARD_ROOT, "state-schema", "v1.sql");
+const SCHEMA_PATH = path.join(SHARE_ROOT, "state-schema", "v1.sql");
 const STATE_DIR = path.join(BOARD_ROOT, "runners", "state");
 
 function nowIsoUtc(): string {
@@ -164,7 +169,7 @@ VALUES ('${sqlEsc(runnerId)}','${sqlEsc(lastResult)}',${timeoutCount === "" ? "N
     }
   }
 
-  for (const bucket of ["order", "prd", "todo", "inprogress"]) {
+  for (const bucket of ["prd", "todo", "inprogress"]) {
     const dir = path.join(BOARD_ROOT, "tickets", bucket);
     let count = 0;
     try {
@@ -181,7 +186,7 @@ VALUES ('${sqlEsc(runnerId)}','${sqlEsc(lastResult)}',${timeoutCount === "" ? "N
     for (const p of projects) {
       const subDir = path.join(doneDir, p.name);
       try {
-        doneTickets += fs.readdirSync(subDir).filter((n) => /^Todo-.+\.md$/.test(n)).length;
+        doneTickets += fs.readdirSync(subDir).filter((n) => /^TODO-.+\.md$/.test(n)).length;
       } catch {}
     }
   } catch {}
@@ -233,7 +238,7 @@ function cmdOriginSync(extraArgs: string[]): void {
     return;
   }
   if (!fs.existsSync(STATE_DB)) cmdInit();
-  const result = spawnSync("python3", [extractor, "--board-root", BOARD_ROOT, "--project-root", PROJECT_ROOT, ...extraArgs], {
+  const result = spawnSync("python3", [extractor, "--board-root", BOARD_ROOT, "--project-root", PROJECT_ROOT, "--share-root", SHARE_ROOT, ...extraArgs], {
     stdio: "inherit"
   });
   if (result.error) {

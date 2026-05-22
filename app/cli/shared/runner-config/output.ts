@@ -3,10 +3,19 @@ import {readRunnerState, runnerEffectiveStateStatus} from "./state";
 import {runnerTokenAccounting} from "./metrics";
 import {runnerConfigFingerprint, runnerStringFieldDefaults} from "./serialize";
 
+function lastResultForOutput(state: Record<string, string>, effectiveStatus: string): string {
+    const value = state.last_result || "";
+    if (effectiveStatus === "stopped" && /^signal_/i.test(value)) {
+        return "loop_stopped";
+    }
+    return value;
+}
+
 export function outputRunner(index: number, ctx: ProjectContext, runner: Record<string, string>): void {
     const prefix = `runner.${index}.`;
     const state = readRunnerState(ctx, runner.id || "");
     const stateStatus = runnerEffectiveStateStatus(state);
+    const lastResult = lastResultForOutput(state, stateStatus);
     const configFingerprint = runnerConfigFingerprint(runner);
     const tokenAccounting = runnerTokenAccounting(ctx, runner.id || "");
     const field = (key: string, fallback = "") => runner[key] ?? fallback;
@@ -24,7 +33,6 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}interval_seconds=${field("interval_seconds", "")}`);
     out(`${prefix}interval_effective_seconds=${field("interval_seconds", "")}`);
     out(`${prefix}enabled=${field("enabled", runnerStringFieldDefaults.enabled)}`);
-    out(`${prefix}realtime_enabled=${field("realtime_enabled", runnerStringFieldDefaults.realtime_enabled)}`);
     out(`${prefix}command=${field("command", "")}`);
     out(`${prefix}command_preview=${field("command", "")}`);
     out(`${prefix}config_fingerprint=${configFingerprint}`);
@@ -40,14 +48,7 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}active_ticket_title=${activeField("active_ticket_title")}`);
     out(`${prefix}active_stage=${activeField("active_stage")}`);
     out(`${prefix}active_spec_ref=${activeField("active_spec_ref")}`);
-    out(`${prefix}active_recovery_reason=${activeField("active_recovery_reason")}`);
-    out(`${prefix}active_recovery_status=${activeField("active_recovery_status")}`);
-    out(`${prefix}active_recovery_failure_class=${activeField("active_recovery_failure_class")}`);
-    out(`${prefix}last_result=${state.last_result || ""}`);
-    out(`${prefix}last_runtime_log=${state.last_runtime_log || ""}`);
-    out(`${prefix}last_prompt_log=${state.last_prompt_log || ""}`);
-    out(`${prefix}last_stdout_log=${state.last_stdout_log || ""}`);
-    out(`${prefix}last_stderr_log=${state.last_stderr_log || ""}`);
+    out(`${prefix}last_result=${lastResult}`);
     out(`${prefix}artifact_status=${state.artifact_status || ""}`);
     out(`${prefix}artifact_runtime_status=${state.artifact_runtime_status || ""}`);
     out(`${prefix}artifact_prompt_status=${state.artifact_prompt_status || ""}`);
@@ -82,5 +83,4 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}last_code_reported_at=${state.last_code_reported_at || ""}`);
     out(`${prefix}code_source=${state.code_source || "none"}`);
     out(`${prefix}state_path=${path.join(ctx.boardRoot, "runners", "state", `${runner.id}.state`)}`);
-    out(`${prefix}log_path=${path.join(ctx.boardRoot, "runners", "logs")}`);
 }

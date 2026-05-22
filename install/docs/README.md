@@ -1,4 +1,4 @@
-# Install Level
+# 설치 레벨
 
 이 폴더는 **설치 레벨** 영역이다. `autoflow init` / `autoflow upgrade` 가 대상 프로젝트의 보드 디렉터리로 복사하는 **데이터/구조** source 가 `install/` 아래에 있다. 실행 코드는 여기에 없다 — runner 실행 코드는 [../../app/runtime/](../../app/runtime/) (앱 영역) 에 있고 앱/CLI 가 직접 실행한다.
 
@@ -9,21 +9,24 @@ install/
   docs/             설치 레벨 설명 문서
   manifest.toml     설치 매핑 (default board dir, sources)
   board/            보드로 복사되는 문서, 규칙, 템플릿
-    agents/           plan-to-ticket, worker, verifier, wiki 등 runner 계약
-    automations/      stop hook, realtime wake, runner context 계약
-    reference/        runner-startup, runner-tool-contract 등
-    rules/            wiki 린트 등 보드 운영 규칙
-    protocols/        worker-contract, recovery, board-orchestration
+    automations/      stop hook, runner context 계약
     runners/          runner config 템플릿
+    tickets/          설치 후 실행 원장
+    wiki/             프로젝트별 파생 지식
     AGENTS.md / README.md
+  share/            사용자 단위 share root 로 복사되는 공통 문서
+    agents/           plan-to-ticket, worker, verifier, wiki 등 runner 계약
+    reference/        runner-startup, runner-tool-contract 등
+    rules/            verifier/wiki 운영 규칙
+    protocols/        worker-contract, board-orchestration
+    state-schema/     sqlite schema
   host/             설치 대상 프로젝트 루트에 놓이는 host 가이드
     AGENTS.md
     CLAUDE.md
-  integrations/     Claude/Codex/Gemini 호스트 통합
-    claude/skills/    /autoflow, /order skill
+  integrations/     Claude/Codex 호스트 통합
+    claude/skills/    /autoflow, /aprd, /atodo skills
     claude/plugin/    autoflow-plugin
     codex/skills/     codex 동등 skill + agents/openai.yaml
-    gemini/skills/    Gemini workspace skill
 ```
 
 ## 문서 인덱스
@@ -31,9 +34,10 @@ install/
 | 문서/영역 | 내용 | 위치 |
 |---|---|---|
 | [README.md](README.md) | 설치 레벨 구조와 manifest 계약 | `install/docs/` |
-| [../board/](../board/) | 설치 보드에 복사되는 runner 계약, reference, rules, wiki 템플릿 | 설치 산출물 source 라서 원위치 유지 |
+| [../board/](../board/) | 설치 보드에 복사되는 프로젝트별 보드 scaffold와 runtime state 폴더 | 설치 산출물 source 라서 원위치 유지 |
+| [../share/](../share/) | 모든 프로젝트가 공유하는 runner 계약, reference, rules, protocols, schema | user-scope share source |
 | [../host/](../host/) | 설치 대상 프로젝트 루트에 놓이는 host `AGENTS.md` / `CLAUDE.md` 템플릿 | 설치 산출물 source 라서 원위치 유지 |
-| [../integrations/](../integrations/) | Codex/Claude/Gemini skill 및 plugin 템플릿 | 설치 산출물 source 라서 원위치 유지 |
+| [../integrations/](../integrations/) | Codex/Claude skill 및 plugin 템플릿 (`autoflow`, `aprd`, `atodo`) | 설치 산출물 source 라서 원위치 유지 |
 
 ## 설치 매핑
 
@@ -93,12 +97,6 @@ type = "host"
 overwrite = "upgrade"
 template = true
 
-[sources.gemini_skills]
-path = "install/integrations/gemini/skills"
-target = ".gemini/skills"
-type = "host"
-overwrite = "upgrade"
-template = true
 # runtime_scripts 는 여기 없다. 실행 코드는 app/runtime/ 에 있고 보드에 복사되지 않는다.
 ```
 
@@ -106,16 +104,16 @@ template = true
 
 설치 보드 디렉터리 이름(`default_board_dir`) 은 **설정값**이지 source 폴더 이름이 아니다. 보드 이름을 바꾸고 싶어도 `install/` 안 폴더는 그대로 둔다.
 
-## 보드는 데이터, 실행은 앱
+## 보드는 데이터, 공통 문서는 share, 실행은 앱
 
-보드는 데이터만 갖는다 (`tickets/`, `logs/`, `state/`, `wiki/`). 보드 안에는 더 이상 `scripts/` 폴더가 만들어지지 않는다. runner 실행은 항상 autoflow 저장소의 [../../app/runtime/](../../app/runtime/) 코드가 한다. 호출 시 `BOARD_ROOT`/`PROJECT_ROOT` 환경변수로 대상 보드를 알려준다. 결과:
+보드는 데이터만 갖는다(`tickets/`, `runners/state/`, `metrics/`, `conversations/`, `wiki/`). 공통 문서와 role prompt는 보드마다 복제하지 않고 user-scope share root에 둔다. 보드 안에는 더 이상 `scripts/`, `agents/`, `reference/`, `rules/`, `protocols/`, `state-schema/`, `logs/` 폴더가 만들어지지 않는다. runner 실행은 항상 autoflow 저장소의 [../../app/runtime/](../../app/runtime/) 코드가 한다. 호출 시 `BOARD_ROOT`/`PROJECT_ROOT` 환경변수로 대상 보드를 알려준다. 결과:
 
 - autoflow 한 곳을 업데이트하면 모든 보드에 즉시 반영
-- 보드마다 159개 파일 중복 없음
+- 보드마다 공통 문서 파일 중복 없음
 - 보드는 autoflow 저장소가 있어야 동작 (어차피 사용자도 `git clone <this-repo>` 가 전제라 무관)
-- `autoflow upgrade` 는 옛 보드의 stale `<board>/scripts/` 폴더를 자동 제거
+- `autoflow upgrade` 는 옛 보드의 stale `<board>/scripts/`, `<board>/agents/`, `<board>/reference/`, `<board>/rules/`, `<board>/protocols/`, `<board>/state-schema/` 폴더를 자동 제거
 
-## Template Tokens
+## Template Token
 
 install source 텍스트가 보드 디렉터리를 참조해야 하면 직접 박지 않고 `{{BOARD_DIR}}` 토큰을 쓴다. [manifest.toml](../manifest.toml) 에서 `template = true` 인 source 는 설치 시 `default_board_dir` 값으로 치환된다 (기본 `.autoflow`). `template = false` 인 board source 는 자동화 템플릿처럼 런타임에 다시 처리할 토큰을 그대로 보존한다.
 

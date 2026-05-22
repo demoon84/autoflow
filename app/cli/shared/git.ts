@@ -83,16 +83,53 @@ export function boardGitignorePattern(ctx: ProjectContext): string | undefined {
     return rel.endsWith("/") ? rel : `${rel}/`;
 }
 
+/**
+ * Detect whether the project's root .gitignore still ignores the entire board
+ * directory. Returns the matching line if present, empty string otherwise.
+ * Used by `autoflow upgrade` to surface a migration hint without rewriting the
+ * user's .gitignore automatically (their comments and formatting are preserved).
+ */
+export function detectLegacyBoardIgnore(ctx: ProjectContext): string {
+    const file = path.join(ctx.projectRoot, ".gitignore");
+    if (!fs.existsSync(file)) return "";
+    let raw = "";
+    try {
+        raw = fs.readFileSync(file, "utf8");
+    } catch {
+        return "";
+    }
+    const expected = boardGitignorePattern(ctx);
+    const candidates = new Set<string>();
+    if (expected) {
+        candidates.add(expected);
+        candidates.add(expected.replace(/\/+$/, ""));
+    }
+    candidates.add(".autoflow/");
+    candidates.add(".autoflow");
+    for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        if (candidates.has(trimmed)) return trimmed;
+    }
+    return "";
+}
+
 export function ensureInstallGitignore(ctx: ProjectContext): boolean {
+    // The board directory itself is NOT added to .gitignore: PRDs, tickets, wiki,
+    // reference, and policy documents are meant to be tracked alongside product
+    // code so the PRD-branch squash merge to main carries the full
+    // implementation context. Machine-local runtime state (runner pid/lock,
+    // metrics, logs, automation state) is already filtered by inner
+    // .gitignore files under .autoflow/runners/, .autoflow/metrics/, and
+    // .autoflow/automations/state/.
     const patterns = [
-        boardGitignorePattern(ctx),
         ".autoflow-worktrees/",
         "node_modules/",
         "dist/",
         ".DS_Store",
         "*.local",
         "npm-debug.log*",
-    ].filter((value): value is string => Boolean(value));
+    ];
     return appendGitignorePatterns(path.join(ctx.projectRoot, ".gitignore"), patterns);
 }
 

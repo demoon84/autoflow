@@ -48,10 +48,6 @@ export function runnerStateDir(boardRoot = runnerBoardRoot()): string {
     return path.join(boardRoot, "runners", "state");
 }
 
-export function runnerLogDir(boardRoot = runnerBoardRoot()): string {
-    return path.join(boardRoot, "runners", "logs");
-}
-
 export function runnerPidIsRunning(pid: string | number | undefined): boolean {
     return autoflowPidIsRunning(pid);
 }

@@ -1,7 +1,7 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { cleanSectionLines, replaceSectionBlock } from "./sections";
-import { diffCheck, diffPatch, diffStats } from "./diff";
+import { diffCheck, diffPatch } from "./diff";
 import { readTitle } from "./queue";
 import { updateWorkerState } from "./tickets";
 import { readWorktreeStatus } from "./worktree";
@@ -17,7 +17,7 @@ export function readVerifierEvidence(ticket: string, patchBytes: number): JsonOb
   const allowed = utils.ticketConcreteAllowedPaths(ticket);
   const patch = diffPatch(workingRoot, baseCommit, allowed, patchBytes);
   return {
-    ticket_id: `Todo-${idFromPath(ticket)}`,
+    ticket_id: `TODO-${idFromPath(ticket)}`,
     title: readTitle(ticket, text),
     stage: utils.extractScalarFieldInSection(ticket, "Ticket", "Stage"),
     goal_lines: cleanSectionLines(text, "Goal"),
@@ -62,21 +62,21 @@ export function recordVerifierDecision(ticket: string, decision: VerifierDecisio
     fs.mkdirSync(path.dirname(markerPath), { recursive: true });
     fs.writeFileSync(
       markerPath,
-      `ticket_id=Todo-${idFromPath(ticket)}\ndecision=pass\nreason=${oneLine(reason, 500)}\ncreated_at=${now}\nrunner=${runnerId}\n`,
+      `ticket_id=TODO-${idFromPath(ticket)}\ndecision=pass\nreason=${oneLine(reason, 500)}\ncreated_at=${now}\nrunner=${runnerId}\n`,
       "utf8"
     );
   }
   utils.updateRunnerState(runnerId, {
     runner_status: "running",
     active_role: "verifier",
-    active_ticket_id: `Todo-${idFromPath(ticket)}`,
+    active_ticket_id: `TODO-${idFromPath(ticket)}`,
     active_ticket_path: boardRel(ticket),
     active_stage: `verifier_${decision}`,
     last_result: `verifier_${decision}`,
   }, BOARD_ROOT);
 
   return {
-    log_path: boardRel(logPath),
+    log_path: logPath ? boardRel(logPath) : "",
     marker_path: markerPath ? boardRel(markerPath) : "",
   };
 }
@@ -85,7 +85,7 @@ export function findTicketById(states: string[], ticketId: string): string {
   const normalized = normalizeId(ticketId);
   if (!normalized) return "";
   for (const state of states) {
-    for (const name of [`Todo-${normalized}.md`, `tickets_${normalized}.md`]) {
+    for (const name of [`TODO-${normalized}.md`, `TODO-${normalized}.md`]) {
       const candidate = path.join(TICKETS_ROOT, state, name);
       if (safeIsFile(candidate)) return candidate;
     }
@@ -105,8 +105,30 @@ export function workerRunnerIdFromTicket(ticket: string): string {
   return "worker";
 }
 
+function prdBranchForTicket(ticket: string): string {
+  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
+  if (!/^PRD-\d+$/i.test(prdKey)) return "";
+  const candidates = [
+    path.join(TICKETS_ROOT, "prd", `${prdKey}.md`),
+    path.join(TICKETS_ROOT, "done", prdKey, `${prdKey}.md`),
+  ];
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    const branch = stripTicks(utils.extractScalarFieldInSection(candidate, "Project", "Branch"));
+    if (branch) return branch;
+  }
+  return "";
+}
+
+function mergeTargetDescription(ticket: string): string {
+  const prdBranch = prdBranchForTicket(ticket);
+  if (prdBranch) return `${prdBranch} PRD branch`;
+  return "main (atodo 또는 Branch 없는 legacy PRD)";
+}
+
 export function markWorkerTicketVerified(ticket: string, ticketId: string, reason: string, logPath: string, markerPath: string): void {
   const now = utils.nowIso();
+  const mergeTarget = mergeTargetDescription(ticket);
   utils.replaceScalarFieldInSection(ticket, "Verification", "Semantic Decision", "pass");
   utils.replaceScalarFieldInSection(ticket, "Verification", "Semantic Reason", oneLine(reason, 500));
   utils.replaceScalarFieldInSection(ticket, "Verification", "Semantic Checked At", now);
@@ -116,18 +138,18 @@ export function markWorkerTicketVerified(ticket: string, ticketId: string, reaso
   utils.replaceScalarFieldInSection(ticket, "Ticket", "Last Updated", now);
   utils.replaceScalarFieldInSection(ticket, "Worktree", "Integration Status", "verified_pending_merge");
   replaceSectionBlock(
-    ticket,
-    "Next Action",
-    `- Next: verifier approved this worktree. Worker must merge the verified worktree into PROJECT_ROOT/main inside Allowed Paths, resolve conflicts if needed, rerun verification from PROJECT_ROOT, then call \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`.`
+	    ticket,
+	    "Next Action",
+	    `- Next: 검증 러너가 이 worktree를 승인했다. 워커 러너는 검증된 worktree를 Allowed Paths 안에서 ${mergeTarget}에 merge하고, 필요한 conflict를 해결하고, 해당 merge target에서 검증을 다시 실행한 뒤 \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`를 호출해야 한다.`
   );
   replaceSectionBlock(
     ticket,
     "Resume Context",
-    `- Current state: verifier semantic pass recorded; PROJECT_ROOT merge is still pending.
-- Last completed action: verifier pass at ${now}.
-- First thing to inspect on resume: Worktree, Verification, Allowed Paths, and the verifier semantic decision.`
+	    `- Current state: 검증 러너의 semantic pass가 기록되었고 ${mergeTarget} merge는 아직 대기 중이다.
+	- Last completed action: ${now}에 verifier pass를 기록했다.
+	- First thing to inspect on resume: Worktree, Verification, Allowed Paths, verifier semantic decision.`
   );
-  utils.appendNote(ticket, `Verifier pass recorded at ${now}: worker merge is now allowed but not yet complete.`);
+  utils.appendNote(ticket, `${now}에 verifier pass를 기록했다. worker merge는 이제 허용되었지만 아직 완료되지 않았다.`);
   updateWorkerState(workerRunnerIdFromTicket(ticket), ticket, "verified_pending_merge", "verifier_passed_merge_pending");
 }
 
@@ -141,18 +163,18 @@ export function markWorkerTicketRevisionRequested(ticket: string, ticketId: stri
   utils.replaceScalarFieldInSection(ticket, "Ticket", "Last Updated", now);
   utils.replaceScalarFieldInSection(ticket, "Worktree", "Integration Status", "revision_requested");
   replaceSectionBlock(
-    ticket,
-    "Next Action",
-    `- Next: verifier requested revise for ${ticketId}. Worker must keep the same worktree, fix the verifier notes inside Allowed Paths, rerun local verification, then call \`autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>"\` to submit the revised work back to verifier.`
+	    ticket,
+	    "Next Action",
+	    `- Next: 검증 러너가 ${ticketId} revise를 요청했다. 워커 러너는 같은 worktree를 유지하고 Allowed Paths 안에서 검증 노트를 반영해 수정한 뒤, local verification을 다시 실행하고 \`autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>"\`를 호출해 수정된 작업을 검증 러너에게 다시 제출해야 한다.`
   );
   replaceSectionBlock(
     ticket,
     "Resume Context",
-    `- Current state: verifier requested revise; same worktree remains active.
-- Last completed action: verifier revise decision at ${now}.
-- First thing to inspect on resume: Verification Semantic Reason, Done When, diff, and the current worktree.`
+	    `- Current state: 검증 러너가 revise를 요청했고 같은 worktree가 계속 active 상태다.
+	- Last completed action: ${now}에 verifier revise decision을 기록했다.
+	- First thing to inspect on resume: Verification Semantic Reason, Done When, diff, 현재 worktree.`
   );
-  utils.appendNote(ticket, `Verifier revise requested at ${now}: ${oneLine(reason, 500)}`);
+  utils.appendNote(ticket, `${now}에 verifier revise가 요청되었다: ${oneLine(reason, 500)}`);
   updateWorkerState(workerRunnerIdFromTicket(ticket), ticket, "revision_requested", "verifier_revise_requested");
 }
 
@@ -166,45 +188,27 @@ export function markWorkerTicketReplanRequested(ticket: string, ticketId: string
   utils.replaceScalarFieldInSection(ticket, "Ticket", "Last Updated", now);
   utils.replaceScalarFieldInSection(ticket, "Worktree", "Integration Status", "replan_requested");
   replaceSectionBlock(
-    ticket,
-    "Next Action",
-    `- Next: verifier requested replan for ${ticketId}. Worker must run \`autoflow tool runner-tool worker create-retry-order --ticket ${ticketId} --reason "<reason>"\`; that creates a retry order, deletes the ticket worktree, removes this inprogress ticket, and lets the planner runner create the follow-up TODO. Do not claim unrelated todo work until the follow-up path is handled.`
+	    ticket,
+	    "Next Action",
+	    `- Next: 검증 러너가 ${ticketId} replan을 요청했다. 워커 러너는 \`autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>"\`를 실행해야 한다. 이 명령은 워크트리를 정리하고, 이 inprogress ticket을 tickets/todo/ 로 복귀시키며 (Replan Count/Decision 누적), 워커가 새 워크트리에서 재시도할 수 있게 한다. follow-up 경로를 처리하기 전에는 관련 없는 todo 작업을 claim하지 않는다.`
   );
   replaceSectionBlock(
     ticket,
     "Resume Context",
-`- Current state: verifier requested replan; original work should not be merged.
-- Last completed action: verifier replan decision at ${now}.
-- First thing to inspect on resume: Verification Semantic Reason and then run worker create-retry-order.`
+	`- Current state: 검증 러너가 replan을 요청했으며 원래 작업은 merge하면 안 된다.
+	- Last completed action: ${now}에 verifier replan decision을 기록했다.
+	- First thing to inspect on resume: Verification Semantic Reason을 확인한 뒤 worker request-replan을 실행한다.`
   );
-  utils.appendNote(ticket, `Verifier replan requested at ${now}: ${oneLine(reason, 500)}`);
+  utils.appendNote(ticket, `${now}에 verifier replan이 요청되었다: ${oneLine(reason, 500)}`);
   updateWorkerState(workerRunnerIdFromTicket(ticket), ticket, "replan_requested", "verifier_replan_requested");
 }
 
 export function writeVerifierLog(ticket: string, decision: VerifierDecision, reason: string, decidedAt: string): string {
-  const ticketId = idFromPath(ticket);
-  const diff = diffCheck(ticket);
-  const startedAt = getArg("--started-at") ||
-    utils.extractScalarFieldInSection(ticket, "Ticket", "Last Updated") ||
-    fileMtimeIso(ticket);
-  const latency = isoLatencySeconds(startedAt, decidedAt);
-  const logDir = path.join(BOARD_ROOT, "logs");
-  fs.mkdirSync(logDir, { recursive: true });
-  const logPath = path.join(logDir, `verifier_${ticketId}_${compactIso(decidedAt)}_${decision}.md`);
-  const body = [
-    `ticket_id=Todo-${ticketId}`,
-    `verifier_decision=${decision}`,
-    `started_at=${startedAt}`,
-    `decided_at=${decidedAt}`,
-    `latency_seconds=${latency}`,
-    `diff_files=${diff.changed_file_count ?? 0}`,
-    `diff_lines=${diff.changed_line_count ?? 0}`,
-    `reason=${oneLine(reason, 1000)}`,
-    `ticket=${boardRel(ticket)}`,
-    "",
-  ].join("\n");
-  fs.writeFileSync(logPath, body, "utf8");
-  return logPath;
+  void ticket;
+  void decision;
+  void reason;
+  void decidedAt;
+  return "";
 }
 
 export function verifierOkMarkerPath(ticketId: string): string {

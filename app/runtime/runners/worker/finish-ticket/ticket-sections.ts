@@ -126,23 +126,6 @@ export function normalizedChangeType(ticketFile: string): string {
   return ["docs", "cleanup", "infra"].includes(value) ? value : "code";
 }
 
-export function failureClass(ticketFile: string): string {
-  return scalar(ticketFile, "Recovery State", "Failure Class");
-}
-
-export function markRecoveryResolved(ticketFile: string, detectedBy: string, evidence: string): void {
-  const status = scalar(ticketFile, "Recovery State", "Status");
-  const failure = scalar(ticketFile, "Recovery State", "Failure Class");
-  if (!status && !failure) return;
-  replaceSection(ticketFile, "Recovery State", `- Status: resolved
-- Detected By: ${detectedBy}
-- Failure Class:
-- Evidence: ${evidence}
-- Planner Decision:
-- Worker Resume Instruction: Continue normal worker flow.
-- Last Recovery At: ${new Date().toISOString()}`);
-}
-
 export function doneWhenItems(text: string): string[] {
   const items: string[] = [];
   let inSection = false;

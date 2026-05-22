@@ -1,11 +1,11 @@
 # Automation State
 
-Runtime state for stop hooks, runner identity, and wake continuity.
+Stop hook, runner identity, context continuity를 위한 runtime state를 보관한다.
 
-Rules:
+세부 문서는 다음 파일로 나누어 둔다.
 
-- `threads/<thread-key>.context` stores per-thread role and worker identity.
-- `current.context` is a fallback when no thread ID is available.
-- Prefer `set-thread-context.*` and `clear-thread-context.*` over manual edits.
-- Worker, legacy todo, and legacy verifier clear active ticket context at tick end but may keep role/worker context.
-- Resume from tickets, references, logs, and `Resume Context`, not from chat history.
+- [context-lifecycle.md](context-lifecycle.md): context file 위치와 tick 종료 처리
+- [worker-identity.md](worker-identity.md): runner identity environment variable
+
+Runtime state는 resume의 보조 자료다. 실제 작업 재개는 chat history가 아니라 ticket,
+reference, log, `Resume Context`를 기준으로 한다.

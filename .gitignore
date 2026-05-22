@@ -25,6 +25,7 @@ output/
 app/build/
 app/dist/
 dist/
+dist-installer/
 
 # token-cache 등 metrics 도구가 만드는 임시 백업 (.bak.* timestamps)
 .autoflow/metrics/token-cache.tsv.bak.*

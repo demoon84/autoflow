@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -78,7 +77,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -97,7 +95,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -234,7 +231,7 @@ function syncWorkerCodeMetricState(runnerId: string, markerDir: string, ticketId
 
 export function recordWorkerCodeMetrics(ticket: string): JsonObject {
   const runnerId = currentRunnerId("worker");
-  const ticketId = `Todo-${idFromPath(ticket)}`;
+  const ticketId = `TODO-${idFromPath(ticket)}`;
   const stats = diffStats(ticket);
   const markerDir = path.join(BOARD_ROOT, "runners", "state", "code-metrics", safeSegment(runnerId));
   const markerPath = path.join(markerDir, `${safeSegment(ticketId)}.json`);

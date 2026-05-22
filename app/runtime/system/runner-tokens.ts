@@ -21,28 +21,33 @@ function arg(name: string, fallback?: string): string | undefined {
 }
 
 function help(): void {
-  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show|sync-codex-sessions|reset> [args]
+  process.stdout.write(`Usage: tsx runner-tokens.ts <report|show|import-session-token-usage|reset> [args]
   report  --runner <id> [--tick-id <id>] --input <N> --output <N>
           [--cache-read <N>] [--cache-create <N>] [--note <text>]
   show    --runner <id>
-  sync-codex-sessions --runner <id>
+  import-session-token-usage --runner <id>
   reset   --runner <id> [--note <text>]
 `);
 }
 
-if (!SUBCMD || SUBCMD === "--help" || SUBCMD === "-h") {
+const RUNNING_AS_CLI = !!process.argv[1] && /runner-tokens\.(ts|js|cjs|mjs)$/.test(process.argv[1]);
+if (RUNNING_AS_CLI && (!SUBCMD || SUBCMD === "--help" || SUBCMD === "-h")) {
   help();
   process.exit(0);
 }
 
-const BOARD_ROOT = path.resolve(
+let BOARD_ROOT = path.resolve(
   process.env.AUTOFLOW_BOARD_ROOT ||
   process.env.BOARD_ROOT ||
   path.join(SCRIPT_DIR_HERE, "..")
 );
-const STATE_DIR = path.join(BOARD_ROOT, "runners", "state");
-const LOG_DIR = path.join(BOARD_ROOT, "runners", "logs");
+let STATE_DIR = path.join(BOARD_ROOT, "runners", "state");
 const NOW = (): string => new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+export function setBoardRoot(boardRoot: string): void {
+  BOARD_ROOT = path.resolve(boardRoot);
+  STATE_DIR = path.join(BOARD_ROOT, "runners", "state");
+}
 
 function warn(msg: string): void {
   process.stderr.write(`[runner-tokens] ${msg}\n`);
@@ -50,17 +55,68 @@ function warn(msg: string): void {
 
 function ensureDirs(): void {
   try { fs.mkdirSync(STATE_DIR, { recursive: true }); } catch {}
-  try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
 }
 
 function statePath(runner: string): string {
   return path.join(STATE_DIR, `${runner}.state`);
 }
-function tokenLogPath(runner: string): string {
-  return path.join(LOG_DIR, `${runner}-tokens.log`);
-}
 function stateLockPath(runner: string): string {
   return `${statePath(runner)}.lock`;
+}
+function sessionCursorPath(runner: string): string {
+  return path.join(STATE_DIR, `${runner}.session-cursor.json`);
+}
+
+type SessionFileCursor = {
+  mtimeMs: number;
+  size: number;
+  belongsToRunner?: boolean;
+};
+type SessionCursorMap = Record<string, SessionFileCursor>;
+type SessionCursorAll = {
+  codex?: SessionCursorMap;
+  claude?: SessionCursorMap;
+};
+
+function loadSessionCursor(runner: string): SessionCursorAll {
+  try {
+    const raw = fs.readFileSync(sessionCursorPath(runner), "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed as SessionCursorAll;
+  } catch {}
+  return {};
+}
+
+function saveSessionCursor(runner: string, cursor: SessionCursorAll): void {
+  try {
+    const target = sessionCursorPath(runner);
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cursor));
+    fs.renameSync(tmp, target);
+  } catch (err: any) {
+    warn(`session cursor write failed: ${err?.message || err}`);
+  }
+}
+
+function readSliceUtf8(filePath: string, fromOffset: number, toSize: number): string {
+  if (toSize <= fromOffset) return "";
+  const length = toSize - fromOffset;
+  const buf = Buffer.allocUnsafe(length);
+  let fd = -1;
+  try {
+    fd = fs.openSync(filePath, "r");
+    let read = 0;
+    while (read < length) {
+      const n = fs.readSync(fd, buf, read, length - read, fromOffset + read);
+      if (n <= 0) break;
+      read += n;
+    }
+    return buf.slice(0, read).toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (fd >= 0) try { fs.closeSync(fd); } catch {}
+  }
 }
 
 function sleepSync(ms: number): void {
@@ -144,82 +200,6 @@ function parseInt0(s: unknown): number {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
-type TrustedTokenLogState = {
-  hasLog: boolean;
-  total: number;
-  visibleTotal: number;
-  cacheReadTotal: number;
-  cacheCreateTotal: number;
-  ticks: Set<string>;
-  last?: {
-    tickId: string;
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheCreate: number;
-    turnTotal: number;
-    at: string;
-    atMs: number;
-  };
-};
-
-function trustedLogCumulative(runner: string): TrustedTokenLogState {
-  const file = tokenLogPath(runner);
-  if (!fs.existsSync(file)) return { hasLog: false, total: 0, visibleTotal: 0, cacheReadTotal: 0, cacheCreateTotal: 0, ticks: new Set<string>() };
-  const seen = new Set<string>();
-  let total = 0;
-  let visibleTotal = 0;
-  let cacheReadTotal = 0;
-  let cacheCreateTotal = 0;
-  let last: TrustedTokenLogState["last"];
-  let lineIndex = 0;
-  try {
-    for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      lineIndex += 1;
-      let parsed: any;
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        continue;
-      }
-      if (String(parsed?.note || "").startsWith("host_session_log:")) continue;
-      const tickId = String(parsed?.tickId || `line:${lineIndex}`);
-      if (seen.has(tickId)) continue;
-      seen.add(tickId);
-      const turnTotal =
-        parseInt0(parsed?.turnTotal) ||
-        parseInt0(parsed?.input) +
-          parseInt0(parsed?.output) +
-          parseInt0(parsed?.cacheRead) +
-          parseInt0(parsed?.cacheCreate);
-      total += turnTotal;
-      const cacheRead = parseInt0(parsed?.cacheRead);
-      const cacheCreate = parseInt0(parsed?.cacheCreate);
-      visibleTotal += Math.max(0, turnTotal - cacheRead);
-      cacheReadTotal += cacheRead;
-      cacheCreateTotal += cacheCreate;
-      const at = String(parsed?.at || "");
-      const atMs = Date.parse(at);
-      const entry = {
-        tickId,
-        input: parseInt0(parsed?.input),
-        output: parseInt0(parsed?.output),
-        cacheRead,
-        cacheCreate,
-        turnTotal,
-        at,
-        atMs: Number.isFinite(atMs) ? atMs : 0,
-      };
-      if (!last || entry.atMs >= last.atMs) {
-        last = entry;
-      }
-    }
-  } catch {}
-  return { hasLog: true, total, visibleTotal, cacheReadTotal, cacheCreateTotal, ticks: seen, last };
-}
-
 const tokenDefaults = new Map<string, string>([
   ["cumulative_tokens", "0"],
   ["cumulative_total_tokens", "0"],
@@ -270,36 +250,40 @@ type TokenEntry = {
   atMs: number;
 };
 
-function sessionLogFiles(root: string, limit = 500): string[] {
-  const out: string[] = [];
+type SessionFileEntry = { filePath: string; mtimeMs: number; size: number };
+
+function sessionLogFileEntries(root: string, limit = 40): SessionFileEntry[] {
+  const out: SessionFileEntry[] = [];
   const visit = (dir: string): void => {
-    if (out.length >= limit) return;
-    let entries: string[];
+    let entries: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir);
+      entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
-    for (const name of entries) {
-      if (out.length >= limit) return;
-      const filePath = path.join(dir, name);
+    for (const ent of entries) {
+      const filePath = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        visit(filePath);
+        continue;
+      }
+      if (!ent.isFile() || !ent.name.endsWith(".jsonl")) continue;
       let stat;
       try {
         stat = fs.statSync(filePath);
       } catch {
         continue;
       }
-      if (stat.isDirectory()) {
-        visit(filePath);
-        continue;
-      }
-      if (stat.isFile() && name.endsWith(".jsonl")) {
-        out.push(filePath);
-      }
+      out.push({ filePath, mtimeMs: stat.mtimeMs, size: stat.size });
     }
   };
   visit(root);
-  return out.sort();
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return out.slice(0, Math.max(1, limit));
+}
+
+function sessionLogFiles(root: string, limit = 40): string[] {
+  return sessionLogFileEntries(root, limit).map((e) => e.filePath);
 }
 
 function scopedCodexSessionTokenEntries(
@@ -307,21 +291,32 @@ function scopedCodexSessionTokenEntries(
   state: Map<string, string>,
   knownTicks: Set<string>,
   afterMs: number,
+  cursorAll: SessionCursorAll,
 ): TokenEntry[] {
   const codexHome = state.get("codex_home") || "";
   if (!path.isAbsolute(codexHome)) return [];
   const sessionsRoot = path.join(codexHome, "sessions");
   if (!fs.existsSync(sessionsRoot)) return [];
+  const projectRoot = projectRootForSessionLogs();
+  const sessionNeedles = [`Project root: ${projectRoot}`, `Runner id:    ${runner}`];
 
   const entries: TokenEntry[] = [];
   const seen = new Set<string>();
-  for (const filePath of sessionLogFiles(sessionsRoot)) {
-    let raw = "";
-    try {
-      raw = fs.readFileSync(filePath, "utf8");
-    } catch {
-      continue;
+  const cursor: SessionCursorMap = cursorAll.codex || (cursorAll.codex = {});
+  for (const fileEntry of sessionLogFileEntries(sessionsRoot)) {
+    const filePath = fileEntry.filePath;
+    const prev = cursor[filePath];
+    if (prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) continue;
+    const fromOffset = prev && prev.size <= fileEntry.size ? prev.size : 0;
+    const raw = readSliceUtf8(filePath, fromOffset, fileEntry.size);
+    let belongsToRunner = prev?.belongsToRunner === true;
+    if (!belongsToRunner) {
+      const head = fromOffset === 0 ? raw : readSliceUtf8(filePath, 0, Math.min(fileEntry.size, 512 * 1024));
+      belongsToRunner = sessionNeedles.every((needle) => head.includes(needle));
     }
+    cursor[filePath] = { mtimeMs: fileEntry.mtimeMs, size: fileEntry.size, belongsToRunner };
+    if (!belongsToRunner) continue;
+    if (!raw) continue;
     const rel = path.relative(sessionsRoot, filePath);
     let lineIndex = 0;
     let lastSessionTotal = 0;
@@ -376,31 +371,11 @@ function scopedCodexSessionTokenEntries(
   return entries.sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
 }
 
-function projectRootForGeminiLogs(): string {
+function projectRootForSessionLogs(): string {
   const explicit = process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || "";
   if (explicit && path.isAbsolute(explicit)) return path.resolve(explicit);
   if (path.basename(BOARD_ROOT) === ".autoflow") return path.dirname(BOARD_ROOT);
   return path.dirname(BOARD_ROOT);
-}
-
-function geminiChatRoots(projectRoot: string): string[] {
-  const home = process.env.HOME || "";
-  if (!home) return [];
-  const tmpRoot = path.join(home, ".gemini", "tmp");
-  const roots: string[] = [];
-  const projectName = path.basename(projectRoot);
-  const preferred = path.join(tmpRoot, projectName, "chats");
-  if (fs.existsSync(preferred)) roots.push(preferred);
-
-  try {
-    for (const entry of fs.readdirSync(tmpRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const chats = path.join(tmpRoot, entry.name, "chats");
-      if (chats !== preferred && fs.existsSync(chats)) roots.push(chats);
-    }
-  } catch {}
-
-  return roots;
 }
 
 function textContentIncludes(value: unknown, needles: string[]): boolean {
@@ -420,30 +395,73 @@ function textContentIncludes(value: unknown, needles: string[]): boolean {
   return needles.every((needle) => text.includes(needle));
 }
 
-function scopedGeminiSessionTokenEntries(
+function claudeProjectChatRoot(projectRoot: string): string {
+  const home = process.env.HOME || "";
+  if (!home || !projectRoot) return "";
+  // Claude Code stores per-project sessions under ~/.claude/projects/<encoded>
+  // where <encoded> is the absolute project root path with every `/` replaced
+  // by `-` (leading slash becomes a leading dash).
+  const encoded = projectRoot.replace(/\//g, "-");
+  return path.join(home, ".claude", "projects", encoded);
+}
+
+function currentClaudeSessionIdsForRunner(state: Map<string, string>, projectRoot: string): Set<string> {
+  const ids = new Set<string>();
+  const home = process.env.HOME || "";
+  const pid = parseInt0(state.get("pid"));
+  if (!home || pid <= 0) return ids;
+
+  const sessionFile = path.join(home, ".claude", "sessions", `${pid}.json`);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+  } catch {
+    return ids;
+  }
+
+  const cwd = String(parsed?.cwd || "");
+  const sessionId = String(parsed?.sessionId || "");
+  if (sessionId && path.resolve(cwd || projectRoot) === path.resolve(projectRoot)) {
+    ids.add(sessionId);
+  }
+  return ids;
+}
+
+function scopedClaudeSessionTokenEntries(
   runner: string,
+  projectRoot: string,
+  state: Map<string, string>,
   knownTicks: Set<string>,
   afterMs: number,
+  cursorAll: SessionCursorAll,
 ): TokenEntry[] {
-  const projectRoot = projectRootForGeminiLogs();
-  const roots = geminiChatRoots(projectRoot);
-  if (roots.length === 0) return [];
+  const root = claudeProjectChatRoot(projectRoot);
+  if (!root || !fs.existsSync(root)) return [];
 
   const entries: TokenEntry[] = [];
   const seenTicks = new Set<string>();
+  // Match the same anchor lines that buildInitialPrompt writes into the very
+  // first user message, so we can attribute each session jsonl to a runner.
   const sessionNeedles = [`Project root: ${projectRoot}`, `Runner id:    ${runner}`];
-  for (const root of roots) {
-    for (const filePath of sessionLogFiles(root)) {
-      let raw = "";
-      try {
-        raw = fs.readFileSync(filePath, "utf8");
-      } catch {
-        continue;
-      }
+  const currentSessionIds = currentClaudeSessionIdsForRunner(state, projectRoot);
+  const cursor: SessionCursorMap = cursorAll.claude || (cursorAll.claude = {});
 
-      const lines = raw.split(/\r?\n/);
-      let belongsToRunner = false;
-      for (const line of lines) {
+  for (const fileEntry of sessionLogFileEntries(root)) {
+    const filePath = fileEntry.filePath;
+    const sessionId = path.basename(filePath, ".jsonl");
+    const isCurrent = currentSessionIds.has(sessionId);
+    const prev = cursor[filePath];
+    if (!isCurrent && prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) {
+      continue;
+    }
+    const fromOffset = prev && prev.size <= fileEntry.size ? prev.size : 0;
+    const raw = readSliceUtf8(filePath, fromOffset, fileEntry.size);
+    const lines = raw ? raw.split(/\r?\n/) : [];
+
+    let belongsToRunner = isCurrent || prev?.belongsToRunner === true;
+    if (!belongsToRunner) {
+      const headRaw = fromOffset === 0 ? raw : readSliceUtf8(filePath, 0, Math.min(fileEntry.size, 512 * 1024));
+      for (const line of (headRaw ? headRaw.split(/\r?\n/) : [])) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         let parsed: any;
@@ -452,80 +470,66 @@ function scopedGeminiSessionTokenEntries(
         } catch {
           continue;
         }
-        if (parsed?.type === "user" && textContentIncludes(parsed?.content, sessionNeedles)) {
+        if (parsed?.type !== "user") continue;
+        const msg = parsed?.message;
+        const content = msg && typeof msg === "object" ? (msg as any).content : parsed?.content;
+        if (textContentIncludes(content, sessionNeedles)) {
           belongsToRunner = true;
           break;
         }
       }
-      if (!belongsToRunner) continue;
+    }
+    cursor[filePath] = {
+      mtimeMs: fileEntry.mtimeMs,
+      size: fileEntry.size,
+      belongsToRunner,
+    };
+    if (!belongsToRunner) continue;
 
-      const rel = path.relative(root, filePath);
-      const seenGeminiMessages = new Set<string>();
-      let lineIndex = 0;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        lineIndex += 1;
-        let parsed: any;
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
-        if (parsed?.type !== "gemini" || !parsed?.tokens || typeof parsed.tokens !== "object") continue;
-        const at = String(parsed?.timestamp || "");
-        const atMs = Date.parse(at);
-        if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
-        const tokens = parsed.tokens;
-        const inputTotal = parseInt0(tokens.input ?? tokens.input_tokens);
-        const cacheRead = parseInt0(tokens.cached ?? tokens.cached_tokens ?? tokens.cache_read_input_tokens);
-        const outputVisible =
-          parseInt0(tokens.output ?? tokens.output_tokens) +
-          parseInt0(tokens.thoughts ?? tokens.thought_tokens) +
-          parseInt0(tokens.tool ?? tokens.tool_tokens);
-        const turnTotal = parseInt0(tokens.total ?? tokens.total_tokens) || inputTotal + outputVisible;
-        if (turnTotal <= 0) continue;
-
-        const messageKey = `${parsed?.id || lineIndex}:total:${turnTotal}:cache:${cacheRead}`;
-        if (seenGeminiMessages.has(messageKey)) continue;
-        seenGeminiMessages.add(messageKey);
-
-        const tickId = `gemini-session:${rel}:${messageKey}`;
-        if (knownTicks.has(tickId) || seenTicks.has(tickId)) continue;
-        seenTicks.add(tickId);
-
-        entries.push({
-          tickId,
-          input: Math.max(0, inputTotal - cacheRead),
-          output: Math.max(0, turnTotal - inputTotal),
-          cacheRead,
-          cacheCreate: 0,
-          turnTotal,
-          at,
-          atMs,
-        });
+    let lineIndex = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      lineIndex += 1;
+      let parsed: any;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        continue;
       }
+      if (parsed?.type !== "assistant") continue;
+      const usage = parsed?.message?.usage;
+      if (!usage || typeof usage !== "object") continue;
+      const at = String(parsed?.timestamp || "");
+      const atMs = Date.parse(at);
+      if (!Number.isFinite(atMs) || atMs <= afterMs) continue;
+      const input = parseInt0(usage.input_tokens);
+      const output = parseInt0(usage.output_tokens);
+      const cacheRead = parseInt0(usage.cache_read_input_tokens);
+      const cacheCreate = parseInt0(usage.cache_creation_input_tokens);
+      const turnTotal = input + output + cacheRead + cacheCreate;
+      if (turnTotal <= 0) continue;
+      const msgId = String(parsed?.message?.id || `line:${lineIndex}`);
+      const tickId = `claude-session:${sessionId}:${msgId}`;
+      if (knownTicks.has(tickId) || seenTicks.has(tickId)) continue;
+      seenTicks.add(tickId);
+      entries.push({ tickId, input, output, cacheRead, cacheCreate, turnTotal, at, atMs });
     }
   }
 
   return entries.sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
 }
 
-function report(runner: string | undefined, opts: ReportOpts): never {
-  if (!runner) { warn("report requires --runner"); process.exit(0); }
+export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; message: string } {
   const inputT = parseInt0(opts.input);
   const outputT = parseInt0(opts.output);
   const cacheR = parseInt0(opts.cacheRead);
   const cacheC = parseInt0(opts.cacheCreate);
   const turnTotal = inputT + outputT + cacheR + cacheC;
   const inputSideTotal = inputT + cacheR + cacheC;
-  if (turnTotal <= 0) {
-    warn("report ignored: total tokens 0");
-    process.exit(0);
-  }
+  if (turnTotal <= 0) return { ok: false, message: "report ignored: total tokens 0" };
   if (inputSideTotal <= 0 && outputT > 0) {
-    warn("report ignored: output-only token report is incomplete; pass exact input/cache tokens or skip the report");
-    process.exit(0);
+    return { ok: false, message: "report ignored: output-only token report is incomplete; pass exact input/cache tokens or skip the report" };
   }
 
   ensureDirs();
@@ -540,21 +544,18 @@ function report(runner: string | undefined, opts: ReportOpts): never {
     }
 
     const tickId = String(opts.tickId || "");
-    const trustedLog = trustedLogCumulative(runner);
     const lastTickId = map.get("last_turn_tick_id") || "";
-    if (tickId && (tickId === lastTickId || trustedLog.ticks.has(tickId))) {
+    if (tickId && tickId === lastTickId) {
       return `[runner-tokens] duplicate tick-id ${tickId}, skipped\n`;
     }
 
     const visible = Math.max(0, turnTotal - cacheR);
-    const prevVisible = trustedLog.hasLog
-      ? trustedLog.visibleTotal
-      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0);
-    const prevTotal = trustedLog.hasLog
-      ? trustedLog.total
-      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")) : 0);
-    const prevCacheRead = trustedLog.hasLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens"));
-    const prevCacheCreate = trustedLog.hasLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens"));
+    const prevVisible = map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0;
+    const prevTotal = map.get("token_source") === "llm_reported"
+      ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens"))
+      : 0;
+    const prevCacheRead = parseInt0(map.get("cumulative_cache_read_tokens"));
+    const prevCacheCreate = parseInt0(map.get("cumulative_cache_create_tokens"));
     const newVisible = prevVisible + visible;
     const newTotal = prevTotal + turnTotal;
     map.set("last_turn_tokens", String(visible));
@@ -578,27 +579,35 @@ function report(runner: string | undefined, opts: ReportOpts): never {
       message = `[runner-tokens] ${runner}: +${visible} (total=${turnTotal}, cum=${newVisible})\n`;
     }
 
-    try {
-      const entry = JSON.stringify({
-        runner, tickId,
-        input: inputT, output: outputT, cacheRead: cacheR, cacheCreate: cacheC,
-        turnTotal, cumulative: newTotal, cumulativeVisible: newVisible,
-        note: String(opts.note || ""),
-        at: NOW()
-      }) + "\n";
-      fs.appendFileSync(tokenLogPath(runner), entry);
-    } catch {}
-
     return message;
   });
 
-  if (result) process.stdout.write(result);
+  return { ok: true, message: result || "" };
+}
 
+function report(runner: string | undefined, opts: ReportOpts): never {
+  if (!runner) { warn("report requires --runner"); process.exit(0); }
+  const result = reportCore(runner, opts);
+  if (!result.ok) {
+    if (result.message) warn(result.message);
+    process.exit(0);
+  }
+  if (result.message) process.stdout.write(result.message);
   process.exit(0);
 }
 
-function syncCodexSessions(runner: string | undefined): never {
-  if (!runner) { warn("sync-codex-sessions requires --runner"); process.exit(0); }
+export type ImportSessionResult = {
+  ok: true;
+  imported: number;
+  cumulativeTokens: number;
+  cumulativeTotalTokens: number;
+  lastTurnTickId: string;
+  lastTurnTotalTokens: number;
+  lastTurnTokens: number;
+  lastTurnAt: string;
+};
+
+export function importSessionTokenUsageCore(runner: string): ImportSessionResult {
   ensureDirs();
   const result = withStateLock(runner, () => {
     const state = readState(runner);
@@ -610,47 +619,33 @@ function syncCodexSessions(runner: string | undefined): never {
       if (!map.has(key)) map.set(key, value);
     }
 
-    const trustedLog = trustedLogCumulative(runner);
-    const afterMs = trustedLog.last?.atMs || 0;
+    const lastTurnAt = String(map.get("last_turn_at") || "");
+    const afterMs = lastTurnAt ? Date.parse(lastTurnAt) || 0 : 0;
+    const projectRoot = projectRootForSessionLogs();
+    const cursorAll = loadSessionCursor(runner);
+    const agent = String(map.get("agent") || "").toLowerCase();
+    const emptyTicks = new Set<string>();
     const entries = [
-      ...scopedCodexSessionTokenEntries(runner, map, trustedLog.ticks, afterMs),
-      ...scopedGeminiSessionTokenEntries(runner, trustedLog.ticks, afterMs),
+      ...(agent === "codex"  ? scopedCodexSessionTokenEntries(runner, map, emptyTicks, afterMs, cursorAll) : []),
+      ...(agent === "claude" ? scopedClaudeSessionTokenEntries(runner, projectRoot, map, emptyTicks, afterMs, cursorAll) : []),
     ].sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
-    let cumulative = trustedLog.hasLog
-      ? trustedLog.total
-      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")) : 0);
-    let cumulativeVisible = trustedLog.hasLog
-      ? trustedLog.visibleTotal
-      : (map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0);
-    let cumulativeCacheRead = trustedLog.hasLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens"));
-    let cumulativeCacheCreate = trustedLog.hasLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens"));
+    saveSessionCursor(runner, cursorAll);
+    let cumulative = map.get("token_source") === "llm_reported"
+      ? parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens"))
+      : 0;
+    let cumulativeVisible = map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0;
+    let cumulativeCacheRead = parseInt0(map.get("cumulative_cache_read_tokens"));
+    let cumulativeCacheCreate = parseInt0(map.get("cumulative_cache_create_tokens"));
     if (entries.length === 0) {
-      return { imported: 0, cumulative, cumulativeVisible, last: trustedLog.last };
+      return { imported: 0, cumulative, cumulativeVisible, last: undefined };
     }
 
-    let payload = "";
     for (const entry of entries) {
       cumulative += entry.turnTotal;
       cumulativeVisible += Math.max(0, entry.turnTotal - entry.cacheRead);
       cumulativeCacheRead += entry.cacheRead;
       cumulativeCacheCreate += entry.cacheCreate;
-      payload += JSON.stringify({
-        runner,
-        tickId: entry.tickId,
-        input: entry.input,
-        output: entry.output,
-        cacheRead: entry.cacheRead,
-        cacheCreate: entry.cacheCreate,
-        turnTotal: entry.turnTotal,
-        cumulative,
-        cumulativeVisible,
-        note: entry.tickId.startsWith("gemini-session:")
-          ? "gemini_session_log:project_chat"
-          : "codex_session_log:scoped_runner_home",
-        at: entry.at,
-      }) + "\n";
     }
-    fs.appendFileSync(tokenLogPath(runner), payload, "utf8");
 
     const last = entries[entries.length - 1];
     map.set("last_turn_tokens", String(Math.max(0, last.turnTotal - last.cacheRead)));
@@ -672,17 +667,31 @@ function syncCodexSessions(runner: string | undefined): never {
     return { imported: entries.length, cumulative, cumulativeVisible, last };
   });
 
-  const imported = result?.imported || 0;
-  const cumulative = result?.cumulative || 0;
+  const last = result?.last;
+  return {
+    ok: true,
+    imported: result?.imported || 0,
+    cumulativeTokens: result?.cumulativeVisible || 0,
+    cumulativeTotalTokens: result?.cumulative || 0,
+    lastTurnTickId: last?.tickId || "",
+    lastTurnTotalTokens: last?.turnTotal || 0,
+    lastTurnTokens: last ? Math.max(0, (last.turnTotal || 0) - (last.cacheRead || 0)) : 0,
+    lastTurnAt: last?.at || "",
+  };
+}
+
+function importSessionTokenUsage(runner: string | undefined): never {
+  if (!runner) { warn("import-session-token-usage requires --runner"); process.exit(0); }
+  const r = importSessionTokenUsageCore(runner);
   process.stdout.write([
     "status=ok",
     `runner=${runner}`,
-    `imported_count=${imported}`,
-    `cumulative_tokens=${result?.cumulativeVisible || 0}`,
-    `cumulative_total_tokens=${cumulative}`,
-    `last_turn_tokens=${result?.last ? Math.max(0, (result.last.turnTotal || 0) - (result.last.cacheRead || 0)) : 0}`,
-    `last_turn_total_tokens=${result?.last?.turnTotal || 0}`,
-    `last_turn_at=${result?.last?.at || ""}`,
+    `imported_count=${r.imported}`,
+    `cumulative_tokens=${r.cumulativeTokens}`,
+    `cumulative_total_tokens=${r.cumulativeTotalTokens}`,
+    `last_turn_tokens=${r.lastTurnTokens}`,
+    `last_turn_total_tokens=${r.lastTurnTotalTokens}`,
+    `last_turn_at=${r.lastTurnAt}`,
     "",
   ].join("\n"));
   process.exit(0);
@@ -703,32 +712,9 @@ function reset(runner: string | undefined, note?: string): never {
 
     const at = NOW();
     const stamp = compactStamp(new Date(at));
-    const file = tokenLogPath(runner);
-    let backup = "";
-    try {
-      if (fs.existsSync(file) && fs.statSync(file).size > 0) {
-        backup = `${file}.${stamp}.bak`;
-        fs.renameSync(file, backup);
-      }
-    } catch (error: any) {
-      warn(`token log backup failed: ${error?.message || error}`);
-    }
-
     const tickId = `reset:${stamp}`;
-    const entry = JSON.stringify({
-      runner,
-      tickId,
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheCreate: 0,
-      turnTotal: 0,
-      cumulative: 0,
-      cumulativeVisible: 0,
-      note: `token_reset:${String(note || "manual")}`,
-      at,
-    }) + "\n";
-    fs.writeFileSync(file, entry, "utf8");
+    void note;
+    try { fs.rmSync(sessionCursorPath(runner), { force: true }); } catch {}
 
     map.set("last_turn_tokens", "0");
     map.set("last_turn_total_tokens", "0");
@@ -746,7 +732,7 @@ function reset(runner: string | undefined, note?: string): never {
     map.set("last_token_usage_source", "none");
     map.set("updated_at", at);
     writeState(runner, serializeStateLines(map));
-    return { backup, tickId, at };
+    return { tickId, at };
   });
 
   process.stdout.write([
@@ -756,7 +742,6 @@ function reset(runner: string | undefined, note?: string): never {
     "cumulative_total_tokens=0",
     `last_turn_tick_id=${result?.tickId || ""}`,
     `reset_at=${result?.at || ""}`,
-    `backup=${result?.backup || ""}`,
     "",
   ].join("\n"));
   process.exit(0);
@@ -770,50 +755,49 @@ function show(runner: string | undefined): never {
     process.exit(0);
   }
   const map = parseStateLines(state);
-  const trustedLog = trustedLogCumulative(runner);
-  const useTrustedLog = trustedLog.hasLog;
-  const last = trustedLog.last;
   const out = {
     runner,
-    cumulative_tokens: useTrustedLog ? trustedLog.visibleTotal : parseInt0(map.get("cumulative_tokens")),
-    cumulative_total_tokens: useTrustedLog ? trustedLog.total : parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")),
-    cumulative_cache_read_tokens: useTrustedLog ? trustedLog.cacheReadTotal : parseInt0(map.get("cumulative_cache_read_tokens")) || parseInt0(map.get("last_turn_cache_read_tokens")),
-    cumulative_cache_create_tokens: useTrustedLog ? trustedLog.cacheCreateTotal : parseInt0(map.get("cumulative_cache_create_tokens")) || parseInt0(map.get("last_turn_cache_create_tokens")),
-    last_turn_tokens: useTrustedLog ? Math.max(0, (last?.turnTotal || 0) - (last?.cacheRead || 0)) : parseInt0(map.get("last_turn_tokens")),
-    last_turn_total_tokens: useTrustedLog ? (last?.turnTotal || 0) : parseInt0(map.get("last_turn_total_tokens")) || parseInt0(map.get("last_turn_tokens")),
-    last_turn_input_tokens: useTrustedLog ? (last?.input || 0) : parseInt0(map.get("last_turn_input_tokens")),
-    last_turn_output_tokens: useTrustedLog ? (last?.output || 0) : parseInt0(map.get("last_turn_output_tokens")),
-    last_turn_cache_read_tokens: useTrustedLog ? (last?.cacheRead || 0) : parseInt0(map.get("last_turn_cache_read_tokens")),
-    last_turn_cache_create_tokens: useTrustedLog ? (last?.cacheCreate || 0) : parseInt0(map.get("last_turn_cache_create_tokens")),
-    last_turn_at: useTrustedLog ? (last?.at || "") : (map.get("last_turn_at") || ""),
-    last_turn_tick_id: useTrustedLog ? (last?.tickId || "") : (map.get("last_turn_tick_id") || ""),
+    cumulative_tokens: parseInt0(map.get("cumulative_tokens")),
+    cumulative_total_tokens: parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")),
+    cumulative_cache_read_tokens: parseInt0(map.get("cumulative_cache_read_tokens")) || parseInt0(map.get("last_turn_cache_read_tokens")),
+    cumulative_cache_create_tokens: parseInt0(map.get("cumulative_cache_create_tokens")) || parseInt0(map.get("last_turn_cache_create_tokens")),
+    last_turn_tokens: parseInt0(map.get("last_turn_tokens")),
+    last_turn_total_tokens: parseInt0(map.get("last_turn_total_tokens")) || parseInt0(map.get("last_turn_tokens")),
+    last_turn_input_tokens: parseInt0(map.get("last_turn_input_tokens")),
+    last_turn_output_tokens: parseInt0(map.get("last_turn_output_tokens")),
+    last_turn_cache_read_tokens: parseInt0(map.get("last_turn_cache_read_tokens")),
+    last_turn_cache_create_tokens: parseInt0(map.get("last_turn_cache_create_tokens")),
+    last_turn_at: map.get("last_turn_at") || "",
+    last_turn_tick_id: map.get("last_turn_tick_id") || "",
     token_source: map.get("token_source") || ""
   };
   process.stdout.write(JSON.stringify(out, null, 2) + "\n");
   process.exit(0);
 }
 
-switch (SUBCMD) {
-  case "report":
-    report(arg("--runner"), {
-      tickId: arg("--tick-id"),
-      input: arg("--input"),
-      output: arg("--output"),
-      cacheRead: arg("--cache-read"),
-      cacheCreate: arg("--cache-create"),
-      note: arg("--note")
-    });
-    break;
-  case "show":
-    show(arg("--runner"));
-    break;
-  case "sync-codex-sessions":
-    syncCodexSessions(arg("--runner"));
-    break;
-  case "reset":
-    reset(arg("--runner"), arg("--note"));
-    break;
-  default:
-    help();
-    process.exit(0);
+if (RUNNING_AS_CLI) {
+  switch (SUBCMD) {
+    case "report":
+      report(arg("--runner"), {
+        tickId: arg("--tick-id"),
+        input: arg("--input"),
+        output: arg("--output"),
+        cacheRead: arg("--cache-read"),
+        cacheCreate: arg("--cache-create"),
+        note: arg("--note")
+      });
+      break;
+    case "show":
+      show(arg("--runner"));
+      break;
+    case "import-session-token-usage":
+      importSessionTokenUsage(arg("--runner"));
+      break;
+    case "reset":
+      reset(arg("--runner"), arg("--note"));
+      break;
+    default:
+      help();
+      process.exit(0);
+  }
 }

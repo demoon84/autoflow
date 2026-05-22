@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -79,7 +78,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -98,7 +96,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -138,6 +135,22 @@ function commandForOutcome(outcome: VerifierDecision): VerifierCompletionCommand
   return "request-replan";
 }
 
+function inprogressTicketPath(ticketId: string): string {
+  return path.join(TICKETS_ROOT, "inprogress", `TODO-${ticketId}.md`);
+}
+
+function restoreVerifierTicketToInprogress(ticket: string, ticketId: string): string {
+  const target = inprogressTicketPath(ticketId);
+  if (path.resolve(ticket) === path.resolve(target)) return target;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (safeIsFile(target)) {
+    try { fs.unlinkSync(ticket); } catch {}
+    return target;
+  }
+  fs.renameSync(ticket, target);
+  return target;
+}
+
 export function cmdVerifierComplete(outcome: VerifierDecision): void {
   const ticket = requireTicket(["verifier"]);
   const message = outcome === "pass" ? getArg("--summary") : getArg("--reason");
@@ -146,63 +159,57 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
   const decisionReason = message;
   const ticketId = idFromPath(ticket);
   const original = findTicketById(["inprogress"], ticketId);
-  if (!original) {
-    fail(1, `original inprogress ticket not found for verifier ${outcome}`, {
-      ticket_id: `Todo-${ticketId}`,
-      verifier_ticket: boardRel(ticket),
-    });
-  }
 
   if (outcome === "pass") {
     const record = recordVerifierDecision(ticket, outcome, decisionReason, true);
-    const workerRunner = workerRunnerIdFromTicket(original);
-    markWorkerTicketVerified(original, ticketId, decisionReason, stringValue(record.log_path), stringValue(record.marker_path));
-    try { fs.unlinkSync(ticket); } catch {}
-    const wake = emitRunnerWake(workerRunner, `tickets/inprogress/Todo-${ticketId}.md`, "verifier.pass.worker-wake");
+    const workerTicket = original || restoreVerifierTicketToInprogress(ticket, ticketId);
+    const workerRunner = workerRunnerIdFromTicket(workerTicket);
+    markWorkerTicketVerified(workerTicket, ticketId, decisionReason, stringValue(record.log_path), stringValue(record.marker_path));
+    if (original) {
+      try { fs.unlinkSync(ticket); } catch {}
+    }
     ok({
       tool: `verifier.${command}`,
-      ticket_id: `Todo-${ticketId}`,
+      ticket_id: `TODO-${ticketId}`,
       verifier_ticket: boardRel(ticket),
-      worker_ticket: boardRel(original),
+      worker_ticket: boardRel(workerTicket),
       worker_runner: workerRunner,
       decision: outcome,
       log_path: stringValue(record.log_path),
       marker_path: stringValue(record.marker_path),
       removed_verifier_ticket: !fs.existsSync(ticket),
-      worker_wake: wake.ok ? "emitted" : "failed",
-      worker_wake_exit_code: wake.status,
       context_reset: "not_queued",
       context_reset_path: "",
-      next_action: "Worker must merge the verifier-approved worktree into PROJECT_ROOT, rerun verification from PROJECT_ROOT, then call worker finalize-approved.",
+      next_action: "Worker must run worker active-get, merge the verifier-approved worktree into the ticket merge target (PRD branch when PRD Key+Branch exists, otherwise main), rerun verification from that merge target, then call worker finalize-approved.",
     });
     return;
   }
 
   const record = recordVerifierDecision(ticket, outcome, decisionReason, false);
-  const workerRunner = workerRunnerIdFromTicket(original);
+  const workerTicket = original || restoreVerifierTicketToInprogress(ticket, ticketId);
+  const workerRunner = workerRunnerIdFromTicket(workerTicket);
   if (outcome === "revise") {
-    markWorkerTicketRevisionRequested(original, ticketId, decisionReason, stringValue(record.log_path));
+    markWorkerTicketRevisionRequested(workerTicket, ticketId, decisionReason, stringValue(record.log_path));
   } else {
-    markWorkerTicketReplanRequested(original, ticketId, decisionReason, stringValue(record.log_path));
+    markWorkerTicketReplanRequested(workerTicket, ticketId, decisionReason, stringValue(record.log_path));
   }
-  try { fs.unlinkSync(ticket); } catch {}
-  const wake = emitRunnerWake(workerRunner, `tickets/inprogress/Todo-${ticketId}.md`, `verifier.${outcome}.worker-wake`);
+  if (original) {
+    try { fs.unlinkSync(ticket); } catch {}
+  }
   ok({
     tool: `verifier.${command}`,
-    ticket_id: `Todo-${ticketId}`,
+    ticket_id: `TODO-${ticketId}`,
     verifier_ticket: boardRel(ticket),
-    worker_ticket: boardRel(original),
+    worker_ticket: boardRel(workerTicket),
     worker_runner: workerRunner,
     decision: outcome,
     log_path: stringValue(record.log_path),
     marker_path: stringValue(record.marker_path),
     removed_verifier_ticket: !fs.existsSync(ticket),
-    worker_wake: wake.ok ? "emitted" : "failed",
-    worker_wake_exit_code: wake.status,
     context_reset: "not_queued",
     context_reset_path: "",
     next_action: outcome === "revise"
       ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker submit-to-verifier again."
-      : "Worker must run worker create-retry-order so the retry order is created, the worktree is deleted, and the planner runner can create the follow-up TODO.",
+      : "Worker must run worker request-replan so the worktree is cleaned up and this ticket is moved back to tickets/todo/ for a fresh worker attempt.",
   });
 }

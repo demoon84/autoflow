@@ -182,7 +182,7 @@ export function ticketWorktreePathFromFile(file: string): string {
   return stripMarkdownCodeTicks(ticketWorktreeField(file, "Path"));
 }
 
-/** Pull NNN from "Todo-NNN.md" filename or content "- ID: Todo-NNN". */
+/** Pull NNN from "TODO-NNN.md" filename or content "- ID: TODO-NNN". */
 export function extractNumericId(file: string): string {
   const base = path.basename(file).replace(/\.md$/i, "");
   const m = base.match(/(\d+)$/);

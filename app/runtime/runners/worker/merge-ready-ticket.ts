@@ -63,7 +63,7 @@ function resolveTicketFile(ref: string): string {
   }
   const id = normalizeId(ref);
   for (const state of ["ready-to-merge", "inprogress", "verifier", "todo"]) {
-    for (const name of [`Todo-${id}.md`, `tickets_${id}.md`]) {
+    for (const name of [`TODO-${id}.md`, `TODO-${id}.md`]) {
       const candidate = path.join(boardRoot, "tickets", state, name);
       if (fs.existsSync(candidate)) return candidate;
     }

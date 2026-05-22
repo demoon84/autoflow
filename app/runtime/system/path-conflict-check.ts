@@ -14,6 +14,7 @@
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 const argv = process.argv.slice(2);
 if (argv.length !== 2) {
@@ -60,6 +61,68 @@ function concretePaths(file: string): string[] {
   return [...new Set(paths)].sort();
 }
 
+function normalizeRelPath(raw: string): string {
+  return String(raw || "").replace(/`/g, "").replace(/^[.][/]/, "").replace(/\/+$/, "").trim();
+}
+
+function pathConflictMode(): "files" | "strict" | "off" {
+  const explicitMode = String(process.env.AUTOFLOW_PATH_CONFLICT_MODE || "").trim().toLowerCase();
+  const raw = explicitMode || String(process.env.AUTOFLOW_PATH_CONFLICT_CHECK || "").trim().toLowerCase();
+  if (["off", "0", "false", "no", "disabled", "none"].includes(raw)) return "off";
+  if (["strict", "legacy", "directory", "directories", "dir"].includes(raw)) return "strict";
+  return "files";
+}
+
+function projectRoot(): string {
+  return path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || process.cwd());
+}
+
+function boardPathPrefix(): string {
+  const boardRoot = process.env.BOARD_ROOT || process.env.AUTOFLOW_BOARD_ROOT || path.join(projectRoot(), ".autoflow");
+  return path.basename(boardRoot) || ".autoflow";
+}
+
+function isBoardSidecarPath(raw: string): boolean {
+  const rel = normalizeRelPath(raw);
+  const prefix = boardPathPrefix();
+  return rel === prefix || rel.startsWith(`${prefix}/`) || rel === ".autoflow" || rel.startsWith(".autoflow/");
+}
+
+function pathLooksDirectoryScope(raw: string): boolean {
+  const text = String(raw || "").replace(/`/g, "").trim();
+  const rel = normalizeRelPath(text);
+  if (!rel) return false;
+  if (/[\/\\]$/.test(text)) return true;
+  try {
+    return fs.statSync(path.join(projectRoot(), rel)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function conflictComparablePath(raw: string): string {
+  const rel = normalizeRelPath(raw);
+  if (!rel || isBoardSidecarPath(rel)) return "";
+  if (pathConflictMode() === "files" && pathLooksDirectoryScope(raw)) return "";
+  return rel;
+}
+
+function pathsOverlap(aRaw: string, bRaw: string): boolean {
+  const a = normalizeRelPath(aRaw);
+  const b = normalizeRelPath(bRaw);
+  if (!a || !b) return false;
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+function allowedPathsConflict(aRaw: string, bRaw: string): boolean {
+  const mode = pathConflictMode();
+  if (mode === "off") return false;
+  if (mode === "strict") return pathsOverlap(aRaw, bRaw);
+  const a = conflictComparablePath(aRaw);
+  const b = conflictComparablePath(bRaw);
+  return Boolean(a && b && a === b);
+}
+
 const aPaths = concretePaths(a);
 const bPaths = concretePaths(b);
 
@@ -70,10 +133,8 @@ if (aPaths.length === 0 || bPaths.length === 0) {
 
 let conflict = false;
 for (const ap of aPaths) {
-  const apNorm = ap.replace(/\/+$/, "");
   for (const bp of bPaths) {
-    const bpNorm = bp.replace(/\/+$/, "");
-    if (apNorm === bpNorm || apNorm.startsWith(bpNorm + "/") || bpNorm.startsWith(apNorm + "/")) {
+    if (allowedPathsConflict(ap, bp)) {
       process.stdout.write(`${ap} <-> ${bp}\n`);
       conflict = true;
     }

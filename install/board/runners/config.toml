@@ -1,19 +1,22 @@
 # Autoflow runner configuration.
 #
 # Default 4-runner topology:
-#   planner : planner runner — promotes tickets/order/ orders + tickets/prd/
-#               PRDs into tickets/todo/ work. Worker fail re-emits order retry
-#               orders that planner re-plans like any other order — there is
-#               no separate reject queue.
+#   planner : planner runner — promotes tickets/prd/ PRDs into tickets/todo/
+#               work. Verifier-replanned tickets return to tickets/todo/ in
+#               place with Replan Count metadata; planner reviews replan
+#               metadata when the same fingerprint repeats. There is no separate
+#               retry queue.
 #   worker  : worker runner — todo claim → worktree create → code edit → local
 #               verification evidence → finalizer mechanical gate. Single
-#               live worktree at a time.
+#               live worktree at a time. /atodo skill and `autoflow todo
+#               create` can write tickets directly to tickets/todo/ when no
+#               PRD is needed. Default installs keep a single worker runner.
 #   verifier: verifier runner — semantic review of finished diff vs Title/Goal/
 #               Done When before done routing.
 #   wiki    : wiki runner — refreshes wiki/ when tickets/done/ or wiki/ source
 #               changes. Path-disjoint from planner/worker.
 #
-# Change agent/model fields to claude, gemini, shell, or a custom
+# Change agent/model fields to claude, shell, or a custom
 # command when Codex CLI is not the desired local runner.
 #
 # Legacy `coordinator-1` is no longer scaffolded. Existing boards that opted

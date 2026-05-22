@@ -1,5 +1,5 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { isGitWorktree, normalizeRelPath, pathsOverlap, readWorktreeStatus } from "./worktree";
 import { safeLineCount } from "./wiki";
 
@@ -74,10 +74,87 @@ export function isCodeMetricPath(file: string): boolean {
 
 export function diffCheck(ticket: string): JsonObject {
   const stats = diffStats(ticket);
+  const hasChangedEvidence = Boolean(stats.board_only)
+    ? numberValue(stats.board_changed_file_count) > 0
+    : numberValue(stats.changed_file_count) > 0;
   return {
-    passed: numberValue(stats.changed_file_count) > 0 && Boolean(stats.in_scope),
+    passed: hasChangedEvidence && Boolean(stats.in_scope),
     ...stats,
   };
+}
+
+function boardPathPrefix(): string {
+  return path.basename(BOARD_ROOT) || ".autoflow";
+}
+
+function isBoardSidecarPath(raw: string): boolean {
+  const rel = normalizeRelPath(raw);
+  const prefix = boardPathPrefix();
+  return rel === prefix || rel.startsWith(`${prefix}/`) || rel === ".autoflow" || rel.startsWith(".autoflow/");
+}
+
+function boardPathToAbsolute(raw: string): string {
+  const rel = normalizeRelPath(raw);
+  const prefixes = unique([boardPathPrefix(), ".autoflow"]);
+  for (const prefix of prefixes) {
+    if (rel === prefix) return BOARD_ROOT;
+    if (rel.startsWith(`${prefix}/`)) return path.join(BOARD_ROOT, rel.slice(prefix.length + 1));
+  }
+  return "";
+}
+
+function ticketStartedAtMs(ticket: string): number {
+  const explicit = Date.parse(utils.extractScalarFieldInSection(ticket, "Goal Runtime", "Started At"));
+  if (Number.isFinite(explicit)) return explicit;
+  const claimedBy = utils.extractScalarFieldInSection(ticket, "Ticket", "Claimed By");
+  const match = claimedBy.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/);
+  const claimed = match ? Date.parse(match[1]) : Number.NaN;
+  return Number.isFinite(claimed) ? claimed : 0;
+}
+
+function collectBoardFiles(root: string, maxFiles = 200): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    if (out.length >= maxFiles) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (out.length >= maxFiles) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) out.push(full);
+    }
+  };
+  try {
+    if (fs.statSync(root).isFile()) return [root];
+  } catch {
+    return [];
+  }
+  walk(root);
+  return out;
+}
+
+function boardRelPath(file: string): string {
+  return normalizeRelPath(path.join(boardPathPrefix(), path.relative(BOARD_ROOT, file)));
+}
+
+function boardEvidenceFiles(ticket: string, allowed: string[]): string[] {
+  const startedAt = ticketStartedAtMs(ticket);
+  const ticketPath = path.resolve(ticket);
+  const evidence = new Set<string>();
+  for (const allowedPath of allowed) {
+    const abs = boardPathToAbsolute(allowedPath);
+    if (!abs) continue;
+    for (const file of collectBoardFiles(abs)) {
+      const resolved = path.resolve(file);
+      if (resolved === ticketPath) continue;
+      let mtime = 0;
+      try { mtime = fs.statSync(file).mtimeMs; } catch { continue; }
+      if (startedAt > 0 && mtime + 1000 < startedAt) continue;
+      evidence.add(boardRelPath(file));
+    }
+  }
+  return unique([...evidence]);
 }
 
 export function diffStats(ticket: string): JsonObject {
@@ -114,6 +191,9 @@ export function diffStats(ticket: string): JsonObject {
     ...(useRecordedWorktreeCommit ? [] : statusPorcelainPaths(workingRoot)),
   ]);
   const allowed = utils.ticketConcreteAllowedPaths(ticket);
+  const boardOnly = allowed.length > 0 && allowed.every(isBoardSidecarPath);
+  const boardChangedFiles = boardOnly ? boardEvidenceFiles(ticket, allowed) : [];
+  const allChangedFiles = unique([...changedFiles, ...boardChangedFiles]);
   const outOfScope = changedFiles.filter((file) => !allowed.some((allowedPath) => pathsOverlap(file, allowedPath)));
   const statsByFile = numstatByFile([
     git(["diff", "--numstat", committedRange], workingRoot).stdout,
@@ -121,7 +201,7 @@ export function diffStats(ticket: string): JsonObject {
     useRecordedWorktreeCommit ? "" : git(["diff", "--cached", "--numstat"], workingRoot).stdout,
   ].join("\n"));
   const productFiles = changedFiles
-    .filter((file) => !normalizeRelPath(file).startsWith(".autoflow/"))
+    .filter((file) => !isBoardSidecarPath(file))
     .filter((file) => allowed.length === 0 || allowed.some((allowedPath) => pathsOverlap(file, allowedPath)));
   const codeFiles = productFiles.filter(isCodeMetricPath);
   let insertions = 0;
@@ -138,14 +218,18 @@ export function diffStats(ticket: string): JsonObject {
       insertions += safeLineCount(abs);
     }
   }
-  const lineCount = insertions + deletions;
+  const boardLineCount = boardChangedFiles.reduce((total, file) => {
+    const abs = boardPathToAbsolute(file);
+    return total + (abs ? safeLineCount(abs) : 0);
+  }, 0);
+  const lineCount = insertions + deletions + (boardOnly ? boardLineCount : 0);
   return {
     working_root: workingRoot,
     base_commit: base,
     worktree_commit: useRecordedWorktreeCommit ? recordedWorktreeCommit : "",
     diff_source: useRecordedWorktreeCommit ? "recorded_worktree_commit" : "working_root",
-    changed_file_count: changedFiles.length,
-    changed_files: changedFiles,
+    changed_file_count: allChangedFiles.length,
+    changed_files: allChangedFiles,
     changed_line_count: lineCount,
     code_files_changed_count: codeFiles.length,
     code_changed_files: codeFiles,
@@ -154,6 +238,9 @@ export function diffStats(ticket: string): JsonObject {
     code_volume_count: insertions + deletions,
     code_net_delta_count: insertions - deletions,
     product_changed_files: productFiles,
+    board_only: boardOnly,
+    board_changed_file_count: boardChangedFiles.length,
+    board_changed_files: boardChangedFiles,
     allowed_paths: allowed,
     in_scope: outOfScope.length === 0,
     out_of_scope_files: outOfScope,

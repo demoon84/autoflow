@@ -26,6 +26,8 @@ type AutoflowFilePreview = {
   title: string;
   modifiedAt: string;
   createdAt?: string;
+  prdKey?: string;
+  stage?: string;
 };
 
 type AutoflowRunner = {
@@ -47,14 +49,10 @@ type AutoflowRunner = {
   activeTicketTitle: string;
   activeStage: string;
   activeSpecRef: string;
-  activeRecoveryReason: string;
-  activeRecoveryStatus: string;
-  activeRecoveryFailureClass: string;
   pid: string;
   startedAt: string;
   lastEventAt: string;
   lastAdapterChunkAt: string;
-  wakeStaleThresholdSeconds: string;
   lastResult: string;
   lastRuntimeLog: string;
   lastPromptLog: string;
@@ -71,6 +69,17 @@ type AutoflowRunner = {
   authMessage: string;
   authUrl: string;
   authProviderBlocked?: boolean;
+  backgroundTask?: string;
+  backgroundTaskLabel?: string;
+  backgroundTaskPid?: string;
+  backgroundTaskStartedAt?: string;
+  backgroundTaskLogPath?: string;
+  queueStatus?: string;
+  queueStatusLabel?: string;
+  queueStatusDetail?: string;
+  queueClaimableCount?: number;
+  queueBlockedCount?: number;
+  queuePendingCount?: number;
   statePath: string;
   logPath: string;
   tokenUsage?: number;
@@ -126,18 +135,6 @@ type AutoflowMetricSnapshot = {
   autoflow_token_total_count: number;
   autoflow_token_cache_read_count: number;
   autoflow_token_cache_create_count: number;
-  autoflow_token_report_count: number;
-  autoflow_token_usage_1h_count: number;
-  autoflow_token_usage_24h_count: number;
-  autoflow_token_input_1h_count: number;
-  autoflow_token_output_1h_count: number;
-  autoflow_token_cache_1h_count: number;
-  autoflow_token_input_24h_count: number;
-  autoflow_token_output_24h_count: number;
-  autoflow_token_cache_24h_count: number;
-  autoflow_token_runner_breakdown_24h_json: string;
-  autoflow_token_model_breakdown_24h_json: string;
-  autoflow_token_hourly_24h_json: string;
   completion_rate_percent: number;
 };
 
@@ -172,14 +169,6 @@ type AutoflowFileContentResult = {
   truncated: boolean;
   modifiedAt: string;
   size: number;
-  stderr: string;
-};
-
-type AutoflowInboxOrderDeleteResult = {
-  ok: boolean;
-  filePath: string;
-  name: string;
-  message: string;
   stderr: string;
 };
 
@@ -359,11 +348,6 @@ interface Window {
       filePath: string;
       maxBytes?: number;
     }) => Promise<AutoflowFileContentResult>;
-    deleteOrderFile: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      filePath: string;
-    }) => Promise<AutoflowInboxOrderDeleteResult>;
     projectExists: (projectRoot: string) => Promise<{ exists: boolean }>;
     cancelInvocation: (
       invocationId: string

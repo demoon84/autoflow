@@ -12,7 +12,6 @@ export const runnerConfigFieldOrder = [
     "mode",
     "interval_seconds",
     "enabled",
-    "realtime_enabled",
     "command",
 ];
 
@@ -24,7 +23,6 @@ export const runnerStringFieldDefaults: Record<string, string> = {
     mode: "loop",
     interval_seconds: "60",
     enabled: "true",
-    realtime_enabled: "true",
     command: "",
 };
 
@@ -41,7 +39,7 @@ export function runnerConfigFingerprint(runner: Record<string, string>): string 
 }
 
 export function formatTomlValue(key: string, value: string): string {
-    if ((key === "enabled" || key === "realtime_enabled") && /^(true|false)$/i.test(value)) {
+    if (key === "enabled" && /^(true|false)$/i.test(value)) {
         return value.toLowerCase();
     }
     if (key === "interval_seconds" && /^\d+$/.test(value)) {

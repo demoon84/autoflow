@@ -1,4 +1,4 @@
-import {fs, path, REPO_ROOT, type ProjectContext} from "./context";
+import {fs, path, REPO_ROOT, SHARE_ROOT, type ProjectContext} from "./context";
 import {readInstallSourceEntries, type InstallSourceEntry} from "./manifest";
 import {writeFileAtomic} from "./fs";
 
@@ -15,6 +15,16 @@ export type HostGuidanceDrift = {
     status: "missing" | "ok" | "custom" | "stale";
     templateDrift: boolean;
     staleMatches: string[];
+};
+
+export type ViteSidecarWatchIgnoreStatus = "not_detected" | "created" | "updated" | "unchanged" | "skipped" | "error";
+
+export type ViteSidecarWatchIgnoreSummary = {
+    status: ViteSidecarWatchIgnoreStatus;
+    files: string[];
+    skipped: string[];
+    patterns: string[];
+    reason: string;
 };
 
 function emptyInstallAssetSummary(): InstallAssetSummary {
@@ -36,7 +46,9 @@ function mergeInstallAssetSummary(target: InstallAssetSummary, source: InstallAs
 }
 
 function renderInstallTemplate(content: string, ctx: ProjectContext): string {
-    return content.replaceAll("{{BOARD_DIR}}", ctx.boardDirName);
+    return content
+        .replaceAll("{{BOARD_DIR}}", ctx.boardDirName)
+        .replaceAll("{{SHARE_ROOT}}", SHARE_ROOT);
 }
 
 function hostGuidanceStaleMatches(text: string): string[] {
@@ -125,7 +137,13 @@ function targetPath(ctx: ProjectContext, entry: InstallSourceEntry): string {
     if (entry.target === "{{BOARD_ROOT}}") {
         return ctx.boardRoot;
     }
+    if (entry.target === "{{USER_SHARE_ROOT}}") {
+        return SHARE_ROOT;
+    }
     const renderedTarget = renderInstallTemplate(entry.target, ctx);
+    if (entry.type === "user_share") {
+        return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(SHARE_ROOT, renderedTarget);
+    }
     const base = entry.type === "board" ? ctx.boardRoot : ctx.projectRoot;
     return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(base, renderedTarget);
 }
@@ -190,6 +208,27 @@ export function syncBoardInstallAssets(ctx: ProjectContext, options: {overwrite?
     return summary;
 }
 
+export function syncUserShareInstallAssets(ctx: ProjectContext, options: {overwrite?: boolean} = {}): InstallAssetSummary {
+    const summary = emptyInstallAssetSummary();
+    const shareEntries = readInstallSourceEntries().filter((entry) => entry.type === "user_share");
+    if (shareEntries.length === 0) {
+        return summary;
+    }
+    const upgrade = Boolean(options.overwrite);
+    fs.mkdirSync(SHARE_ROOT, {recursive: true});
+    for (const entry of shareEntries) {
+        mergeInstallAssetSummary(
+            summary,
+            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell)
+        );
+    }
+    return summary;
+}
+
+export function userShareRoot(): string {
+    return SHARE_ROOT;
+}
+
 function isHostGuidanceEntry(entry: InstallSourceEntry): boolean {
     return entry.type === "host" && (entry.target === "AGENTS.md" || entry.target === "CLAUDE.md");
 }
@@ -209,23 +248,543 @@ export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {over
     return summary;
 }
 
+const viteConfigFileNames = [
+    "vite.config.ts",
+    "vite.config.mts",
+    "vite.config.cts",
+    "vite.config.js",
+    "vite.config.mjs",
+    "vite.config.cjs",
+];
+
+type PropertyValueSpan = {
+    valueStart: number;
+    valueEnd: number;
+};
+
+type ConfigObjectSpan = {
+    start: number;
+    end: number;
+};
+
+function uniqueStrings(values: string[]): string[] {
+    return [...new Set(values.filter(Boolean))];
+}
+
+function viteSidecarWatchIgnorePatterns(ctx: ProjectContext): string[] {
+    const boardDirName = ctx.boardDirName.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    return uniqueStrings([
+        boardDirName ? `**/${boardDirName}/**` : "",
+        "**/.agents/**",
+        "**/.claude/**",
+        "**/.codex/**",
+    ]);
+}
+
+function projectUsesVite(ctx: ProjectContext): boolean {
+    const packageJson = path.join(ctx.projectRoot, "package.json");
+    if (!fs.existsSync(packageJson)) return false;
+    try {
+        const parsed = JSON.parse(fs.readFileSync(packageJson, "utf8")) as {
+            scripts?: Record<string, unknown>;
+            dependencies?: Record<string, unknown>;
+            devDependencies?: Record<string, unknown>;
+            optionalDependencies?: Record<string, unknown>;
+            peerDependencies?: Record<string, unknown>;
+        };
+        for (const deps of [parsed.dependencies, parsed.devDependencies, parsed.optionalDependencies, parsed.peerDependencies]) {
+            if (deps && Object.prototype.hasOwnProperty.call(deps, "vite")) return true;
+        }
+        return Object.values(parsed.scripts || {}).some((value) => /\bvite\b/.test(String(value || "")));
+    } catch {
+        return false;
+    }
+}
+
+function jsSingleQuoted(value: string): string {
+    return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+function lineIndentAt(text: string, index: number): string {
+    const lineStart = text.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
+    const match = text.slice(lineStart, index).match(/^\s*/);
+    return match ? match[0] : "";
+}
+
+function skipSpaceAndComments(text: string, index: number, boundary: number): number {
+    let i = index;
+    for (;;) {
+        while (i < boundary && /\s/.test(text[i])) i += 1;
+        if (text[i] === "/" && text[i + 1] === "/") {
+            i += 2;
+            while (i < boundary && text[i] !== "\n") i += 1;
+            continue;
+        }
+        if (text[i] === "/" && text[i + 1] === "*") {
+            const close = text.indexOf("*/", i + 2);
+            i = close >= 0 && close < boundary ? close + 2 : boundary;
+            continue;
+        }
+        return i;
+    }
+}
+
+function readQuotedToken(text: string, index: number): {value: string; end: number} | null {
+    const quote = text[index];
+    if (quote !== "\"" && quote !== "'" && quote !== "`") return null;
+    let value = "";
+    let escaped = false;
+    for (let i = index + 1; i < text.length; i += 1) {
+        const ch = text[i];
+        if (escaped) {
+            value += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === "\\") {
+            escaped = true;
+            continue;
+        }
+        if (ch === quote) {
+            return {value, end: i + 1};
+        }
+        value += ch;
+    }
+    return null;
+}
+
+function readIdentifierToken(text: string, index: number): {value: string; end: number} | null {
+    if (!/[$A-Za-z_]/.test(text[index] || "")) return null;
+    let end = index + 1;
+    while (end < text.length && /[$0-9A-Za-z_]/.test(text[end])) end += 1;
+    return {value: text.slice(index, end), end};
+}
+
+function findMatchingBracket(text: string, openIndex: number, openChar: string, closeChar: string): number {
+    let depth = 0;
+    let state: "code" | "single" | "double" | "template" | "line" | "block" = "code";
+    let escaped = false;
+    for (let i = openIndex; i < text.length; i += 1) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (state === "line") {
+            if (ch === "\n") state = "code";
+            continue;
+        }
+        if (state === "block") {
+            if (ch === "*" && next === "/") {
+                state = "code";
+                i += 1;
+            }
+            continue;
+        }
+        if (state === "single" || state === "double" || state === "template") {
+            const quote = state === "single" ? "'" : state === "double" ? "\"" : "`";
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (ch === quote) state = "code";
+            continue;
+        }
+        if (ch === "/" && next === "/") {
+            state = "line";
+            i += 1;
+            continue;
+        }
+        if (ch === "/" && next === "*") {
+            state = "block";
+            i += 1;
+            continue;
+        }
+        if (ch === "'") {
+            state = "single";
+            continue;
+        }
+        if (ch === "\"") {
+            state = "double";
+            continue;
+        }
+        if (ch === "`") {
+            state = "template";
+            continue;
+        }
+        if (ch === openChar) depth += 1;
+        if (ch === closeChar) {
+            depth -= 1;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
+}
+
+function findValueEnd(text: string, valueStart: number, boundary: number): number {
+    let state: "code" | "single" | "double" | "template" | "line" | "block" = "code";
+    let escaped = false;
+    let curly = 0;
+    let square = 0;
+    let paren = 0;
+    for (let i = valueStart; i < boundary; i += 1) {
+        const ch = text[i];
+        const next = text[i + 1];
+        if (state === "line") {
+            if (ch === "\n") state = "code";
+            continue;
+        }
+        if (state === "block") {
+            if (ch === "*" && next === "/") {
+                state = "code";
+                i += 1;
+            }
+            continue;
+        }
+        if (state === "single" || state === "double" || state === "template") {
+            const quote = state === "single" ? "'" : state === "double" ? "\"" : "`";
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (ch === quote) state = "code";
+            continue;
+        }
+        if (ch === "/" && next === "/") {
+            state = "line";
+            i += 1;
+            continue;
+        }
+        if (ch === "/" && next === "*") {
+            state = "block";
+            i += 1;
+            continue;
+        }
+        if (ch === "'") {
+            state = "single";
+            continue;
+        }
+        if (ch === "\"") {
+            state = "double";
+            continue;
+        }
+        if (ch === "`") {
+            state = "template";
+            continue;
+        }
+        if (ch === "{") curly += 1;
+        else if (ch === "}") {
+            if (curly === 0 && square === 0 && paren === 0) return i;
+            curly -= 1;
+        } else if (ch === "[") square += 1;
+        else if (ch === "]") square -= 1;
+        else if (ch === "(") paren += 1;
+        else if (ch === ")") paren -= 1;
+        else if (ch === "," && curly === 0 && square === 0 && paren === 0) return i;
+    }
+    return boundary;
+}
+
+function findTopLevelPropertyValue(text: string, objectStart: number, objectEnd: number, propertyName: string): PropertyValueSpan | null {
+    let index = objectStart + 1;
+    while (index < objectEnd) {
+        index = skipSpaceAndComments(text, index, objectEnd);
+        const quoted = readQuotedToken(text, index);
+        const identifier = quoted ? null : readIdentifierToken(text, index);
+        const token = quoted || identifier;
+        if (!token) {
+            index += 1;
+            continue;
+        }
+        let cursor = skipSpaceAndComments(text, token.end, objectEnd);
+        if (text[cursor] !== ":") {
+            index = token.end;
+            continue;
+        }
+        cursor = skipSpaceAndComments(text, cursor + 1, objectEnd);
+        const valueEnd = findValueEnd(text, cursor, objectEnd);
+        if (token.value === propertyName) {
+            return {valueStart: cursor, valueEnd};
+        }
+        index = valueEnd + 1;
+    }
+    return null;
+}
+
+function findConfigObject(text: string): ConfigObjectSpan | null {
+    for (const marker of ["export default defineConfig", "module.exports = defineConfig"]) {
+        const markerIndex = text.indexOf(marker);
+        if (markerIndex < 0) continue;
+        const parenIndex = text.indexOf("(", markerIndex + marker.length);
+        if (parenIndex < 0) continue;
+        const objectStart = text.indexOf("{", parenIndex + 1);
+        if (objectStart < 0) continue;
+        const objectEnd = findMatchingBracket(text, objectStart, "{", "}");
+        if (objectEnd > objectStart) return {start: objectStart, end: objectEnd};
+    }
+
+    for (const marker of ["export default", "module.exports ="]) {
+        const markerIndex = text.indexOf(marker);
+        if (markerIndex < 0) continue;
+        const objectStart = text.indexOf("{", markerIndex + marker.length);
+        if (objectStart < 0) continue;
+        if (text.slice(markerIndex + marker.length, objectStart).trim() !== "") continue;
+        const objectEnd = findMatchingBracket(text, objectStart, "{", "}");
+        if (objectEnd > objectStart) return {start: objectStart, end: objectEnd};
+    }
+
+    return null;
+}
+
+function objectNeedsCommaBeforeInsert(text: string, objectStart: number, objectEnd: number): boolean {
+    const body = text.slice(objectStart + 1, objectEnd).trim();
+    return body.length > 0 && !body.endsWith(",");
+}
+
+function trailingWhitespaceStart(text: string, start: number, end: number): number {
+    const body = text.slice(start, end);
+    const match = body.match(/\s*$/);
+    return end - (match ? match[0].length : 0);
+}
+
+function renderIgnoredProperty(patterns: string[], indent: string): string {
+    const itemIndent = `${indent}  `;
+    return [
+        `${indent}ignored: [`,
+        ...patterns.map((pattern) => `${itemIndent}${jsSingleQuoted(pattern)},`),
+        `${indent}],`,
+    ].join("\n");
+}
+
+function renderWatchProperty(patterns: string[], indent: string): string {
+    return [
+        `${indent}watch: {`,
+        renderIgnoredProperty(patterns, `${indent}  `),
+        `${indent}},`,
+    ].join("\n");
+}
+
+function renderServerProperty(patterns: string[], indent: string): string {
+    return [
+        `${indent}server: {`,
+        renderWatchProperty(patterns, `${indent}  `),
+        `${indent}},`,
+    ].join("\n");
+}
+
+function patternAlreadyPresent(text: string, pattern: string): boolean {
+    return text.includes(jsSingleQuoted(pattern)) || text.includes(`"${pattern.replace(/"/g, "\\\"")}"`) || text.includes(`\`${pattern.replace(/`/g, "\\`")}\``);
+}
+
+function insertIntoObject(text: string, objectStart: number, objectEnd: number, renderedProperty: string): string {
+    const closingIndent = lineIndentAt(text, objectEnd);
+    const insertAt = trailingWhitespaceStart(text, objectStart + 1, objectEnd);
+    const prefix = text.slice(objectStart + 1, insertAt).trim().length > 0 && !text.slice(objectStart + 1, insertAt).trim().endsWith(",") ? "," : "";
+    return `${text.slice(0, insertAt)}${prefix}\n${renderedProperty}\n${closingIndent}${text.slice(objectEnd)}`;
+}
+
+function patchIgnoredArray(text: string, arrayStart: number, arrayEnd: number, patterns: string[]): {text: string; changed: boolean} {
+    const missing = patterns.filter((pattern) => !patternAlreadyPresent(text.slice(arrayStart, arrayEnd), pattern));
+    if (missing.length === 0) return {text, changed: false};
+    const closingIndent = lineIndentAt(text, arrayEnd);
+    const itemIndent = `${closingIndent}  `;
+    const insertAt = trailingWhitespaceStart(text, arrayStart + 1, arrayEnd);
+    const body = text.slice(arrayStart + 1, insertAt).trim();
+    const prefix = body.length > 0 && !body.endsWith(",") ? "," : "";
+    const insert = `${prefix}\n${missing.map((pattern) => `${itemIndent}${jsSingleQuoted(pattern)},`).join("\n")}\n${closingIndent}`;
+    return {text: `${text.slice(0, insertAt)}${insert}${text.slice(arrayEnd)}`, changed: true};
+}
+
+function patchViteConfigText(text: string, patterns: string[]): {text: string; status: "updated" | "unchanged" | "skipped"; reason: string} {
+    const configObject = findConfigObject(text);
+    if (!configObject) {
+        return {text, status: "skipped", reason: "unsupported_config_shape"};
+    }
+
+    const server = findTopLevelPropertyValue(text, configObject.start, configObject.end, "server");
+    if (!server) {
+        const propertyIndent = `${lineIndentAt(text, configObject.end)}  `;
+        return {
+            text: insertIntoObject(text, configObject.start, configObject.end, renderServerProperty(patterns, propertyIndent)),
+            status: "updated",
+            reason: "added_server_watch_ignored",
+        };
+    }
+    if (text[server.valueStart] !== "{") {
+        return {text, status: "skipped", reason: "server_not_object_literal"};
+    }
+    const serverEnd = findMatchingBracket(text, server.valueStart, "{", "}");
+    if (serverEnd < 0) return {text, status: "skipped", reason: "server_object_unclosed"};
+
+    const watch = findTopLevelPropertyValue(text, server.valueStart, serverEnd, "watch");
+    if (!watch) {
+        const propertyIndent = `${lineIndentAt(text, serverEnd)}  `;
+        return {
+            text: insertIntoObject(text, server.valueStart, serverEnd, renderWatchProperty(patterns, propertyIndent)),
+            status: "updated",
+            reason: "added_watch_ignored",
+        };
+    }
+    if (text[watch.valueStart] !== "{") {
+        return {text, status: "skipped", reason: "watch_not_object_literal"};
+    }
+    const watchEnd = findMatchingBracket(text, watch.valueStart, "{", "}");
+    if (watchEnd < 0) return {text, status: "skipped", reason: "watch_object_unclosed"};
+
+    const ignored = findTopLevelPropertyValue(text, watch.valueStart, watchEnd, "ignored");
+    if (!ignored) {
+        const propertyIndent = `${lineIndentAt(text, watchEnd)}  `;
+        return {
+            text: insertIntoObject(text, watch.valueStart, watchEnd, renderIgnoredProperty(patterns, propertyIndent)),
+            status: "updated",
+            reason: "added_ignored",
+        };
+    }
+    if (text[ignored.valueStart] !== "[") {
+        return {text, status: "skipped", reason: "ignored_not_array_literal"};
+    }
+    const ignoredEnd = findMatchingBracket(text, ignored.valueStart, "[", "]");
+    if (ignoredEnd < 0) return {text, status: "skipped", reason: "ignored_array_unclosed"};
+    const patched = patchIgnoredArray(text, ignored.valueStart, ignoredEnd, patterns);
+    if (!patched.changed) return {text, status: "unchanged", reason: "patterns_present"};
+    return {text: patched.text, status: "updated", reason: "merged_ignored_patterns"};
+}
+
+function renderDefaultViteConfig(patterns: string[]): string {
+    return [
+        "export default {",
+        renderServerProperty(patterns, "  "),
+        "};",
+        "",
+    ].join("\n");
+}
+
+export function ensureViteSidecarWatchIgnores(ctx: ProjectContext): ViteSidecarWatchIgnoreSummary {
+    const patterns = viteSidecarWatchIgnorePatterns(ctx);
+    const configFiles = viteConfigFileNames
+        .map((name) => path.join(ctx.projectRoot, name))
+        .filter((file) => fs.existsSync(file));
+
+    if (configFiles.length === 0) {
+        if (!projectUsesVite(ctx)) {
+            return {status: "not_detected", files: [], skipped: [], patterns, reason: "vite_not_detected"};
+        }
+        const file = path.join(ctx.projectRoot, "vite.config.mjs");
+        writeFileAtomic(file, renderDefaultViteConfig(patterns));
+        return {status: "created", files: ["vite.config.mjs"], skipped: [], patterns, reason: "created_vite_config"};
+    }
+
+    const changed: string[] = [];
+    const unchanged: string[] = [];
+    const skipped: string[] = [];
+    for (const file of configFiles) {
+        const rel = path.relative(ctx.projectRoot, file).split(path.sep).join("/");
+        try {
+            const original = fs.readFileSync(file, "utf8");
+            const patched = patchViteConfigText(original, patterns);
+            if (patched.status === "updated" && patched.text !== original) {
+                writeFileAtomic(file, patched.text);
+                changed.push(`${rel}:${patched.reason}`);
+            } else if (patched.status === "unchanged") {
+                unchanged.push(`${rel}:${patched.reason}`);
+            } else {
+                skipped.push(`${rel}:${patched.reason}`);
+            }
+        } catch (error) {
+            skipped.push(`${rel}:error:${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    if (changed.length > 0) {
+        return {status: "updated", files: changed, skipped, patterns, reason: "vite_config_updated"};
+    }
+    if (unchanged.length > 0 && skipped.length === 0) {
+        return {status: "unchanged", files: unchanged, skipped: [], patterns, reason: "patterns_present"};
+    }
+    if (unchanged.length > 0) {
+        return {status: "unchanged", files: unchanged, skipped, patterns, reason: "patterns_present_with_skips"};
+    }
+    return {status: "skipped", files: [], skipped, patterns, reason: "no_supported_vite_config"};
+}
+
 export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
-    const previousSuffix = ["ticket", ["own", "er"].join("")].join("-");
-    const oldAgent = [previousSuffix, "agent.md"].join("-");
-    const oldProtocol = [[["own", "er"].join(""), "contract"].join("-"), "md"].join(".");
+    const removedSignalName = ["wa", "ke"].join("");
+    const removedSignalModel = `${removedSignalName}-model.md`;
+    const removedRealtimeMarker = new RegExp(`\\.verifier-realtime-${removedSignalName}up\\.pending$`);
+    const removedSignalState = new RegExp(`-${removedSignalName}\\.(queue\\.jsonl|pointer)$`);
     const obsolete = [
         path.join(ctx.boardRoot, "scripts"),
-        path.join(ctx.boardRoot, "agents", "adapters", "README.md"),
-        path.join(ctx.boardRoot, "agents", "adapters", "opencode.md"),
-        path.join(ctx.boardRoot, "agents", "coordinator-agent.md"),
-        path.join(ctx.boardRoot, "agents", "merge-bot-agent.md"),
-        path.join(ctx.boardRoot, "agents", "todo-queue-agent.md"),
-        path.join(ctx.boardRoot, "agents", oldAgent),
         path.join(ctx.boardRoot, "automations", ["heart", "beat-set.toml"].join("")),
+        path.join(ctx.boardRoot, "automations", removedSignalModel),
         path.join(ctx.boardRoot, "automations", "templates"),
-        path.join(ctx.boardRoot, "protocols", oldProtocol),
-        path.join(ctx.boardRoot, "reference", "backlog.md"),
-        path.join(ctx.boardRoot, "reference", "backlog-processed.md"),
+        // PRD: extracted to ~/.autoflow/share/. Remove the per-board copies on upgrade.
+        path.join(ctx.boardRoot, "agents"),
+        path.join(ctx.boardRoot, "protocols"),
+        path.join(ctx.boardRoot, "reference"),
+        path.join(ctx.boardRoot, "rules"),
+        path.join(ctx.boardRoot, "state-schema"),
+        // Completion and verifier evidence now lives in ticket markdown, not board-level logs/.
+        path.join(ctx.boardRoot, "logs"),
+        // Runner runtime logs are no longer written. Drop the whole directory on upgrade.
+        path.join(ctx.boardRoot, "runners", "logs"),
+        // wiki/ pages are DB-only (wiki-search.db). Drop legacy on-disk trees on upgrade.
+        path.join(ctx.boardRoot, "wiki"),
+        path.join(ctx.boardRoot, "runners", "state", "wiki-baseline.history"),
+        // Sticky-context per-runner caches no longer used.
+        // (handled below via state-dir scan)
+        // Project-local generated-data folders do not need nested boilerplate docs.
+        path.join(ctx.boardRoot, "metrics", "README.md"),
+        path.join(ctx.boardRoot, "runners", "state", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "architecture", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "decisions", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "features", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "learnings", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "skills", "README.md"),
+        path.join(ctx.boardRoot, "wiki", "skills", "skill-template.md"),
+        path.join(ctx.boardRoot, "wiki", "skills-local", "README.md"),
+        // Former telemetry summaries now live under metrics/wiki/ instead of wiki/.
+        path.join(ctx.boardRoot, "wiki", "agents", "prompt-evolution.md"),
+        path.join(ctx.boardRoot, "wiki", "operations", "runner-health.md"),
+        path.join(ctx.boardRoot, "wiki", "operations", "runner-timing.md"),
+    ];
+    const stateDir = path.join(ctx.boardRoot, "runners", "state");
+    try {
+        for (const entry of fs.readdirSync(stateDir)) {
+            if (removedSignalState.test(entry) || removedRealtimeMarker.test(entry)) {
+                obsolete.push(path.join(stateDir, entry));
+                continue;
+            }
+            // Trusted token log caches are stale after the token log itself was removed.
+            if (entry.endsWith(".trusted-log-cache.json")) {
+                obsolete.push(path.join(stateDir, entry));
+                continue;
+            }
+            // Sticky context caches are stale: ticket markdown is the source of truth.
+            if (entry.endsWith("-sticky-context.md")) {
+                obsolete.push(path.join(stateDir, entry));
+                continue;
+            }
+            // Semantic-lint per-page fingerprint directories are stale (semantic lint removed).
+            if (entry.endsWith(".semantic-lint.pages.d")) {
+                obsolete.push(path.join(stateDir, entry));
+            }
+        }
+    } catch {}
+    const obsoleteEmptyDirs = [
+        path.join(ctx.boardRoot, "wiki", "agents"),
+        path.join(ctx.boardRoot, "wiki", "answers"),
+        path.join(ctx.boardRoot, "wiki", "architecture"),
+        path.join(ctx.boardRoot, "wiki", "decisions"),
+        path.join(ctx.boardRoot, "wiki", "features"),
+        path.join(ctx.boardRoot, "wiki", "learnings"),
+        path.join(ctx.boardRoot, "wiki", "operations"),
+        path.join(ctx.boardRoot, "wiki", "skills"),
+        path.join(ctx.boardRoot, "wiki", "skills-local"),
     ];
     const removed: string[] = [];
     for (const file of obsolete) {
@@ -234,6 +793,42 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
         }
         fs.rmSync(file, {recursive: true, force: true});
         removed.push(path.relative(ctx.boardRoot, file));
+    }
+    for (const dir of obsoleteEmptyDirs) {
+        if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+            continue;
+        }
+        const entries = fs.readdirSync(dir).filter((entry) => entry !== ".gitkeep" && entry !== ".DS_Store");
+        if (entries.length > 0) {
+            continue;
+        }
+        fs.rmSync(dir, {recursive: true, force: true});
+        removed.push(path.relative(ctx.boardRoot, dir));
+    }
+    return removed;
+}
+
+export function cleanupObsoleteHostFiles(ctx: ProjectContext): string[] {
+    const obsolete = [
+        path.join(ctx.projectRoot, ".claude", "skills", "agoal"),
+        path.join(ctx.projectRoot, ".claude", "skills", "order"),
+        path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "agoal"),
+        path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "order"),
+        path.join(ctx.projectRoot, ".codex", "skills", "agoal"),
+        path.join(ctx.projectRoot, ".codex", "skills", "order"),
+        // Older autoflow installs also dropped skills under `.agents/skills/`;
+        // current installers no longer write there but legacy boards still
+        // carry the folders, so clean them on every upgrade.
+        path.join(ctx.projectRoot, ".agents", "skills", "aprd"),
+        path.join(ctx.projectRoot, ".agents", "skills", "atodo"),
+        path.join(ctx.projectRoot, ".agents", "skills", "autoflow"),
+        path.join(ctx.projectRoot, ".agents", "skills", "order"),
+    ];
+    const removed: string[] = [];
+    for (const file of obsolete) {
+        if (!fs.existsSync(file)) continue;
+        fs.rmSync(file, { recursive: true, force: true });
+        removed.push(path.relative(ctx.projectRoot, file));
     }
     return removed;
 }
@@ -278,7 +873,6 @@ function moveLegacyTicketDir(ctx: ProjectContext, fromName: string, toName: stri
 
 export function migrateQueueDirectoryNames(ctx: ProjectContext): string[] {
     const moved = [
-        ...moveLegacyTicketDir(ctx, "inbox", "order"),
         ...moveLegacyTicketDir(ctx, "backlog", "prd"),
     ];
     const rewritten = rewriteQueuePathReferences(ctx);
@@ -369,92 +963,36 @@ function removeScalarFieldsInSectionText(text: string, section: string, fields: 
     return {text: next.join("\n"), changed};
 }
 
-function safeProjectKey(value: string): string {
-    const normalized = value.trim().replace(/^`+|`+$/g, "");
-    return /^[A-Za-z0-9._-]+$/.test(normalized) ? normalized : "";
-}
 
-function projectKeyForPromotedOrderEvidence(ctx: ProjectContext, evidenceFile: string, text: string): string {
-    const rel = boardRel(ctx, evidenceFile);
-    const doneMatch = rel.match(/^tickets\/done\/([^/]+)\//);
-    if (doneMatch && safeProjectKey(doneMatch[1])) {
-        return doneMatch[1];
-    }
-    return (
-        safeProjectKey(scalarInSection(text, "Project", "Project Key")) ||
-        safeProjectKey(scalarInSection(text, "Project", "PRD Key")) ||
-        safeProjectKey(scalarInSection(text, "Ticket", "PRD Key")) ||
-        safeProjectKey(path.basename(evidenceFile, ".md"))
-    );
-}
-
-function promotedOrderRefs(ctx: ProjectContext): Map<string, string> {
-    const refs = new Map<string, string>();
-    const evidenceRoots = [
-        path.join(ctx.boardRoot, "tickets", "prd"),
-        path.join(ctx.boardRoot, "tickets", "done"),
-    ];
-    const refRe = /tickets\/order\/order_[A-Za-z0-9._-]+\.md/g;
-    for (const root of evidenceRoots) {
-        if (!fs.existsSync(root)) continue;
-        for (const file of collectMarkdownFiles(root)) {
-            const name = path.basename(file);
-            const rel = boardRel(ctx, file);
-            const isPrdEvidence = /^(prd|project)_\d+\.md$/i.test(name);
-            const isDoneTicketEvidence = /^tickets\/done\/[^/]+\/(?:Todo-\d+|tickets_\d+)\.md$/i.test(rel);
-            if (!isPrdEvidence && !isDoneTicketEvidence) continue;
-            const text = safeReadText(file);
-            const key = projectKeyForPromotedOrderEvidence(ctx, file, text);
-            if (!key) continue;
-            for (const match of text.matchAll(refRe)) {
-                if (!refs.has(match[0])) {
-                    refs.set(match[0], key);
-                }
-            }
-        }
-    }
-    return refs;
-}
-
-export function migratePromotedOrderQueueItems(ctx: ProjectContext): string[] {
+export function archiveLegacyOrderQueue(ctx: ProjectContext): string[] {
     const orderDir = path.join(ctx.boardRoot, "tickets", "order");
-    if (!fs.existsSync(orderDir)) {
-        return [];
-    }
-    const refs = promotedOrderRefs(ctx);
-    if (refs.size === 0) {
-        return [];
-    }
-    const migrated: string[] = [];
-    let orderNames: string[] = [];
+    if (!fs.existsSync(orderDir)) return [];
+    let names: string[] = [];
     try {
-        orderNames = fs.readdirSync(orderDir)
-            .filter((name) => /^order_[A-Za-z0-9._-]+\.md$/i.test(name) && !/_retry_/i.test(name))
-            .sort();
+        names = fs.readdirSync(orderDir).filter((name) => name.endsWith(".md")).sort();
     } catch {
         return [];
     }
-    for (const name of orderNames) {
+    if (names.length === 0) {
+        try { fs.rmdirSync(orderDir); } catch {}
+        return [];
+    }
+    const archiveDir = path.join(ctx.boardRoot, "tickets", "done", ".legacy-orders");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const archived: string[] = [];
+    for (const name of names) {
         const from = path.join(orderDir, name);
-        const rel = `tickets/order/${name}`;
-        const projectKey = refs.get(rel);
-        if (!projectKey) continue;
-        const targetDir = path.join(ctx.boardRoot, "tickets", "done", projectKey);
-        const target = path.join(targetDir, name);
-        if (fs.existsSync(target)) {
-            if (safeReadText(target) === safeReadText(from)) {
-                fs.rmSync(from, {force: true});
-                migrated.push(`removed-duplicate:${rel}`);
-                continue;
-            }
-            migrated.push(`conflict:${rel}->${boardRel(ctx, target)}`);
+        const to = path.join(archiveDir, name);
+        if (fs.existsSync(to)) {
+            fs.rmSync(from, { force: true });
+            archived.push(`removed-duplicate:tickets/order/${name}`);
             continue;
         }
-        fs.mkdirSync(targetDir, {recursive: true});
-        fs.renameSync(from, target);
-        migrated.push(`${rel}->${boardRel(ctx, target)}`);
+        fs.renameSync(from, to);
+        archived.push(`tickets/order/${name}->tickets/done/.legacy-orders/${name}`);
     }
-    return migrated;
+    try { fs.rmdirSync(orderDir); } catch {}
+    return archived;
 }
 
 const verifierDecisionFields = [
@@ -475,7 +1013,7 @@ export function migrateStaleVerifyPendingDecisionFields(ctx: ProjectContext): st
         if (!fs.existsSync(root)) continue;
         let names: string[] = [];
         try {
-            names = fs.readdirSync(root).filter((name) => /^Todo-\d+\.md$/i.test(name)).sort();
+            names = fs.readdirSync(root).filter((name) => /^TODO-\d+\.md$/i.test(name)).sort();
         } catch {
             continue;
         }
@@ -500,15 +1038,11 @@ function rewriteQueuePathReferences(ctx: ProjectContext): string[] {
         return [];
     }
     const replacements: Array<[RegExp, string]> = [
-        [/tickets\/inbox/g, "tickets/order"],
         [/tickets\/backlog/g, "tickets/prd"],
-        [/\binbox\//g, "order/"],
         [/\bbacklog\//g, "prd/"],
         [/reference\/backlog\.md/g, "reference/prd.md"],
         [/backlog-first-stuck\.json/g, "prd-first-stuck.json"],
         [/source=backlog-to-todo/g, "source=prd-to-todo"],
-        [/source=order-inbox-retry/g, "source=order-retry"],
-        [/source=order-inbox/g, "source=order"],
         [/AUTOFLOW_BACKLOG_FIRST_STUCK_LIMIT/g, "AUTOFLOW_PRD_FIRST_STUCK_LIMIT"],
     ];
     const changed: string[] = [];
@@ -549,13 +1083,9 @@ function rewriteQueuePathReferences(ctx: ProjectContext): string[] {
 
 function rewriteHostQueueReferences(ctx: ProjectContext): string[] {
     const replacements: Array<[RegExp, string]> = [
-        [/tickets\/inbox/g, "tickets/order"],
         [/tickets\/backlog/g, "tickets/prd"],
-        [/\binbox\//g, "order/"],
         [/\bbacklog\//g, "prd/"],
         [/reference\/backlog\.md/g, "reference/prd.md"],
-        [/\binbox retry\b/g, "order retry"],
-        [/\binbox\b/g, "order"],
         [/\bbacklog PRDs\b/g, "PRD queue items"],
         [/\bbacklog PRD\b/g, "PRD queue item"],
         [/\bbacklog\b/g, "prd"],
@@ -629,6 +1159,203 @@ export function isTextMigrationTarget(file: string): boolean {
         ".yml",
         ".yaml",
     ].includes(ext) || name.startsWith(".");
+}
+
+// ----------------------------------------------------------------------------
+// Ticket naming migration: PRD-NNN.md / Todo-NNN.md / project_NNN / tickets_NNN
+// → PRD-NNN.md / TODO-NNN.md. Runs on every `autoflow upgrade` so a board can
+// catch up to the new convention without a one-shot script. Idempotent: once
+// every file/dir/reference is in the new form the function detects no work
+// and returns empty arrays.
+// ----------------------------------------------------------------------------
+
+export type TicketNamingMigrationSummary = {
+    visited: number;
+    contentChanged: string[];
+    replacements: number;
+    filesRenamed: Array<{from: string; to: string}>;
+    dirsRenamed: Array<{from: string; to: string}>;
+};
+
+const TICKET_NAMING_CONTENT_RULES: ReadonlyArray<{pattern: RegExp; replacement: string}> = [
+    // Regex alternation flattening must come first so the generic prefix
+    // swaps below don't end up with PRD-\d+|tickets_\d+ in the same group.
+    {pattern: /\(Todo-\\d\+\|tickets_\\d\+\)/g, replacement: "TODO-\\d+"},
+    {pattern: /\(\?:Todo-\|tickets_\)/g, replacement: "TODO-"},
+    {pattern: /\(\?:prd\|project\)_/g, replacement: "PRD-"},
+    {pattern: /\(prd\|project\)_/g, replacement: "(PRD)-"},
+    // Digit-bearing identifiers, including slug ids like `prd_198_some_slug`.
+    {pattern: /\bprd_(\d+)(?=_|[^A-Za-z0-9_])/g, replacement: "PRD-$1"},
+    {pattern: /\bproject_(\d+)(?=_|[^A-Za-z0-9_])/g, replacement: "PRD-$1"},
+    {pattern: /\bprd_(\d+)$/gm, replacement: "PRD-$1"},
+    {pattern: /\bproject_(\d+)$/gm, replacement: "PRD-$1"},
+    {pattern: /\bTodo-(\d+)\b/g, replacement: "TODO-$1"},
+    {pattern: /\btickets_(\d+)\b/g, replacement: "TODO-$1"},
+    // Template-literal placeholders: `prd_${id}.md`, `Todo-${id}.md`.
+    {pattern: /\bprd_\$\{/g, replacement: "PRD-${"},
+    {pattern: /\bproject_\$\{/g, replacement: "PRD-${"},
+    {pattern: /\bTodo-\$\{/g, replacement: "TODO-${"},
+    {pattern: /\btickets_\$\{/g, replacement: "TODO-${"},
+    // Regex anchors: /^prd_…/, /^Todo-…/
+    {pattern: /\^prd_(?=[\\(0-9])/g, replacement: "^PRD-"},
+    {pattern: /\^project_(?=[\\(0-9])/g, replacement: "^PRD-"},
+    {pattern: /\^Todo-(?=[\\(0-9])/g, replacement: "^TODO-"},
+    {pattern: /\^tickets_(?=[\\(0-9])/g, replacement: "^TODO-"},
+    {pattern: /\bprd_(?=\\d)/g, replacement: "PRD-"},
+    {pattern: /\bproject_(?=\\d)/g, replacement: "PRD-"},
+    {pattern: /\bTodo-(?=\\d)/g, replacement: "TODO-"},
+    {pattern: /\btickets_(?=\\d)/g, replacement: "TODO-"},
+    // Frontmatter / ID lines.
+    {pattern: /(PRD Key:\s*)prd_(\d+)/g, replacement: "$1PRD-$2"},
+    {pattern: /(PRD Key:\s*)project_(\d+)/g, replacement: "$1PRD-$2"},
+    {pattern: /(ID:\s*)prd_(\d+)/g, replacement: "$1PRD-$2"},
+    {pattern: /(ID:\s*)project_(\d+)/g, replacement: "$1PRD-$2"},
+    {pattern: /(ID:\s*)Todo-(\d+)/g, replacement: "$1TODO-$2"},
+    {pattern: /(ID:\s*)tickets_(\d+)/g, replacement: "$1TODO-$2"},
+];
+
+const TICKET_NAMING_FILE_RULES: ReadonlyArray<{pattern: RegExp; replacement: string}> = [
+    {pattern: /^prd_(\d+)(\.md)$/, replacement: "PRD-$1$2"},
+    {pattern: /^project_(\d+)(\.md)$/, replacement: "PRD-$1$2"},
+    {pattern: /^Todo-(\d+)(\.md)$/, replacement: "TODO-$1$2"},
+    {pattern: /^tickets_(\d+)(\.md)$/, replacement: "TODO-$1$2"},
+];
+
+const TICKET_NAMING_DIR_RULES: ReadonlyArray<{pattern: RegExp; replacement: string}> = [
+    {pattern: /^prd_(\d+)$/, replacement: "PRD-$1"},
+    {pattern: /^project_(\d+)$/, replacement: "PRD-$1"},
+    {pattern: /^Todo-(\d+)$/, replacement: "TODO-$1"},
+    {pattern: /^tickets_(\d+)$/, replacement: "TODO-$1"},
+];
+
+function rewriteTicketNamingContent(raw: string): {next: string; replacements: number} {
+    let next = raw;
+    let count = 0;
+    for (const rule of TICKET_NAMING_CONTENT_RULES) {
+        next = next.replace(rule.pattern, (...args) => {
+            count += 1;
+            return rule.replacement.replace(/\$(\d)/g, (_, idx) => {
+                const groupIdx = Number(idx);
+                const value = args[groupIdx];
+                return typeof value === "string" ? value : "";
+            });
+        });
+    }
+    return {next, replacements: count};
+}
+
+function shouldVisitTicketNamingPath(name: string): boolean {
+    // Always skip noisy entries; do NOT skip dot-prefixed folders like
+    // `.legacy-orders/` because the board uses them for archives.
+    if (name === ".git" || name === ".DS_Store") return false;
+    return true;
+}
+
+function isTicketNamingContentTarget(file: string): boolean {
+    const ext = path.extname(file).toLowerCase();
+    return [".md", ".toml", ".json", ".jsonl", ".txt", ".sql", ".state", ".context", ".log", ".pointer", ".history"].includes(ext);
+}
+
+export function migrateTicketNaming(ctx: ProjectContext): TicketNamingMigrationSummary {
+    const summary: TicketNamingMigrationSummary = {
+        visited: 0,
+        contentChanged: [],
+        replacements: 0,
+        filesRenamed: [],
+        dirsRenamed: [],
+    };
+    if (!fs.existsSync(ctx.boardRoot)) return summary;
+
+    // Pass 1 — content rewrite. Walk first so file IO uses the original paths.
+    const rewriteVisit = (current: string): void => {
+        const entries = fs.readdirSync(current, {withFileTypes: true});
+        for (const entry of entries) {
+            if (!shouldVisitTicketNamingPath(entry.name)) continue;
+            const full = path.join(current, entry.name);
+            if (entry.isDirectory()) {
+                rewriteVisit(full);
+                continue;
+            }
+            if (!entry.isFile()) continue;
+            if (!isTicketNamingContentTarget(full)) continue;
+            summary.visited += 1;
+            let raw: string;
+            try {
+                raw = fs.readFileSync(full, "utf8");
+            } catch {
+                continue;
+            }
+            const {next, replacements} = rewriteTicketNamingContent(raw);
+            if (next === raw) continue;
+            try {
+                writeFileAtomic(full, next);
+            } catch {
+                continue;
+            }
+            summary.contentChanged.push(path.relative(ctx.boardRoot, full));
+            summary.replacements += replacements;
+        }
+    };
+    rewriteVisit(ctx.boardRoot);
+
+    // Pass 2 — rename files. Walk depth-first.
+    const renameFileVisit = (current: string): void => {
+        const entries = fs.readdirSync(current, {withFileTypes: true});
+        for (const entry of entries) {
+            if (!shouldVisitTicketNamingPath(entry.name)) continue;
+            const full = path.join(current, entry.name);
+            if (entry.isDirectory()) {
+                renameFileVisit(full);
+                continue;
+            }
+            if (!entry.isFile()) continue;
+            for (const rule of TICKET_NAMING_FILE_RULES) {
+                const newName = entry.name.replace(rule.pattern, rule.replacement);
+                if (newName === entry.name) continue;
+                const newPath = path.join(current, newName);
+                try {
+                    fs.renameSync(full, newPath);
+                    summary.filesRenamed.push({
+                        from: path.relative(ctx.boardRoot, full),
+                        to: path.relative(ctx.boardRoot, newPath),
+                    });
+                } catch {
+                    // ignore — concurrent installer, permission issue, etc.
+                }
+                break;
+            }
+        }
+    };
+    renameFileVisit(ctx.boardRoot);
+
+    // Pass 3 — rename directories. Bottom-up so children remain valid paths.
+    const renameDirVisit = (current: string): void => {
+        const entries = fs.readdirSync(current, {withFileTypes: true});
+        for (const entry of entries) {
+            if (!shouldVisitTicketNamingPath(entry.name)) continue;
+            if (!entry.isDirectory()) continue;
+            const full = path.join(current, entry.name);
+            renameDirVisit(full);
+            for (const rule of TICKET_NAMING_DIR_RULES) {
+                const newName = entry.name.replace(rule.pattern, rule.replacement);
+                if (newName === entry.name) continue;
+                const newPath = path.join(current, newName);
+                try {
+                    fs.renameSync(full, newPath);
+                    summary.dirsRenamed.push({
+                        from: path.relative(ctx.boardRoot, full),
+                        to: path.relative(ctx.boardRoot, newPath),
+                    });
+                } catch {
+                    // ignore
+                }
+                break;
+            }
+        }
+    };
+    renameDirVisit(ctx.boardRoot);
+
+    return summary;
 }
 
 export function migrateWorkerTerminology(ctx: ProjectContext): string[] {

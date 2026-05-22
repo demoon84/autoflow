@@ -39,7 +39,6 @@ contextBridge.exposeInMainWorld("autoflow", {
   readStartupRules: (options: unknown) => ipcRenderer.invoke("autoflow:readStartupRules", options),
   writeStartupRules: (options: unknown) => ipcRenderer.invoke("autoflow:writeStartupRules", options),
   tailBoardFile: (options: unknown) => ipcRenderer.invoke("autoflow:tailBoardFile", options),
-  deleteOrderFile: (options: unknown) => ipcRenderer.invoke("autoflow:deleteOrderFile", options),
   projectExists: (projectRoot: unknown) => ipcRenderer.invoke("autoflow:projectExists", projectRoot),
   cancelInvocation: (invocationId: unknown) => ipcRenderer.invoke("autoflow:cancelInvocation", invocationId),
   // PRD 10 (2026-05-09): origin ledger bridge.
@@ -47,16 +46,16 @@ contextBridge.exposeInMainWorld("autoflow", {
   // Returns: { ok, command, code, stdout, stderr } where stdout is the
   // raw `autoflow origin <sub>` output (sqlite -header -column table).
   origin: (options: unknown) => ipcRenderer.invoke("autoflow:origin", options),
-  // Subscribe to fs.watch-driven board change notifications. Returns an
+  // Subscribe to @parcel/watcher-driven board change notifications. Returns an
   // unsubscribe function. The handler is called with `{ projectRoot,
   // boardDirName, reason }` after the main process debounces a burst of
   // file events.
   onBoardChange: (handler: unknown) => subscribe("autoflow:boardChange", handler),
   onInstallProgress: (handler: unknown) => subscribe("autoflow:installProgress", handler),
   // ----- PTY runner manager (vibe-terminal pattern) -----
-  // Renderer can send scoped stdin bytes only to an existing runner PTY.
+  // Renderer observes runner PTYs but must not send user stdin bytes.
   // The bridge intentionally stays narrow: spawn / stop / resize / snapshot /
-  // status-bytes subscription / raw stdin write.
+  // status-bytes subscription. runnerPtyInput remains as a rejected legacy IPC.
   runnerPtyStart: () => ipcRenderer.invoke("autoflow:runnerPtyStart"),
   runnerPtySpawn: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtySpawn", options),
   runnerPtyStop: (options: unknown) => ipcRenderer.invoke("autoflow:runnerPtyStop", options),

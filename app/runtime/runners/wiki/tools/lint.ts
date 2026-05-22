@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +94,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -129,8 +126,9 @@ const {
 } = shared;
 
 export function cmdWikiLint(): void {
+  // Semantic lint (LLM contradiction/stale-claim/missing-link pass) removed:
+  // expensive AI-on-AI verification with marginal value for AI-only wiki.
   const cliArgs = ["wiki", "lint", PROJECT_ROOT, boardDirName()];
-  if (hasFlag("--semantic")) cliArgs.push("--semantic");
   cliArgs.push("--runner", currentRunnerId("wiki"));
   emitAutoflowResult("wiki.lint", cliArgs);
 }

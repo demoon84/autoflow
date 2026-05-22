@@ -4,7 +4,6 @@ import { recordWorkerCodeMetrics } from "./code-report";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -78,7 +77,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -97,7 +95,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,

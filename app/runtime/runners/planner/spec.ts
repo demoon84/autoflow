@@ -4,15 +4,20 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 const scriptDir = path.dirname(path.resolve(process.argv[1] || __filename));
 const boardRoot = path.resolve(process.env.AUTOFLOW_BOARD_ROOT || process.env.BOARD_ROOT || path.join(scriptDir, ".."));
 const projectRoot = path.resolve(process.env.PROJECT_ROOT || process.env.AUTOFLOW_PROJECT_ROOT || path.join(boardRoot, ".."));
+const shareRoot = path.resolve(
+  (process.env.AUTOFLOW_SHARE_ROOT && process.env.AUTOFLOW_SHARE_ROOT.trim()) ||
+  path.join(os.homedir(), ".autoflow", "share")
+);
 const workerId = process.env.RUNNER_ID || process.env.AUTOFLOW_RUNNER_ID || process.env.AUTOFLOW_WORKER_ID || "spec";
 const requestedId = process.argv[2] || "";
 const specDir = path.join(boardRoot, "tickets", "prd");
-const specTemplate = path.join(boardRoot, "reference", "project-spec-template.md");
+const specTemplate = path.join(shareRoot, "reference", "project-spec-template.md");
 
 if (!fs.existsSync(specTemplate)) {
   process.stderr.write(`Spec template not found: ${specTemplate}\n`);
@@ -42,7 +47,7 @@ if (active) {
 }
 
 const specId = requestedId ? normalizeId(requestedId) : nextSpecId();
-const specFile = path.join(specDir, `prd_${specId}.md`);
+const specFile = path.join(specDir, `PRD-${specId}.md`);
 setContext(specId, specFile);
 printSpec("ready_for_input", specId, specFile);
 
@@ -66,7 +71,7 @@ function activeSpecFile(): string {
   const context = readContext();
   if (context.role !== "spec" || !context.active_ticket_id) return "";
   if (context.active_ticket_path) return path.join(boardRoot, context.active_ticket_path);
-  return path.join(specDir, `prd_${normalizeId(context.active_ticket_id)}.md`);
+  return path.join(specDir, `PRD-${normalizeId(context.active_ticket_id)}.md`);
 }
 
 function readContext(): Record<string, string> {
@@ -88,7 +93,7 @@ function setContext(specId: string, specFile: string): void {
 
 function nextSpecId(): string {
   let max = 0;
-  for (const file of listFiles(path.join(boardRoot, "tickets"), /^prd_\d+\.md$/)) {
+  for (const file of listFiles(path.join(boardRoot, "tickets"), /^PRD-\d+\.md$/)) {
     if (isPlaceholder(file)) continue;
     max = Math.max(max, Number.parseInt(idFromPath(file), 10) || 0);
   }

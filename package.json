@@ -9,12 +9,14 @@
     "postinstall": "node app/scripts/fix-node-pty-permissions.mjs",
     "dev": "node app/scripts/dev.mjs",
     "build": "node app/scripts/build-main.mjs && vite build --config app/vite.config.ts",
+    "package:mac": "npm run build && electron-builder --mac dmg --arm64",
     "check": "node app/scripts/check-syntax.mjs && node app/scripts/check-install-doc-drift.mjs && tsc -p app/tsconfig.json --noEmit && tsc -p app/tsconfig.main.json --noEmit && npm run build",
     "typecheck": "npm run typecheck:runtime && npm run typecheck:cli",
     "typecheck:runtime": "tsc -p app/runtime/tsconfig.json --noEmit",
     "typecheck:cli": "tsc -p app/cli/tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@parcel/watcher": "^2.5.6",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ansi-to-html": "^0.7.2",
@@ -36,7 +38,43 @@
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^41.3.0",
+    "electron-builder": "^26.8.1",
     "typescript": "^5.9.3",
     "vite": "^6.0.7"
+  },
+  "build": {
+    "appId": "com.autoflow.desktop",
+    "productName": "Autoflow",
+    "asar": false,
+    "extraMetadata": {
+      "main": "app/dist/main/main.cjs"
+    },
+    "directories": {
+      "buildResources": "app/build",
+      "output": "dist-installer"
+    },
+    "files": [
+      "VERSION",
+      "package.json",
+      "app/bin/**/*",
+      "app/bootstrap/**/*",
+      "app/cli/**/*",
+      "app/dist/**/*",
+      "app/runtime/**/*",
+      "app/shared/**/*",
+      "app/src/renderer/assets/app/app-icon.png",
+      "install/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "app/build/app-icon.icns",
+      "identity": null,
+      "target": [
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   }
 }

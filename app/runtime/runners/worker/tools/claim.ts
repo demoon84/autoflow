@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +94,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -133,7 +130,7 @@ export function cmdWorkerClaim(): void {
   if (!ticketRaw) fail(2, "worker claim requires --ticket");
   const runnerId = currentRunnerId("worker");
   const token = claimToken(runnerId);
-  const lock = acquireDispatchLock();
+  const lock = acquireDispatchLock({ waitMs: 30000 });
   if (!lock.acquired) fail(1, "dispatch lock is held by another worker", { reason: "dispatch_lock_busy" });
 
   try {
@@ -143,7 +140,7 @@ export function cmdWorkerClaim(): void {
     if (sourceItem.allowed_paths.length === 0) {
       fail(1, "ticket has no concrete Allowed Paths; planner must narrow scope before worker claim", {
         reason: "allowed_paths_missing",
-        ticket_id: `Todo-${idFromPath(source)}`,
+        ticket_id: `TODO-${idFromPath(source)}`,
         path: boardRel(source),
       });
     }
@@ -158,12 +155,6 @@ export function cmdWorkerClaim(): void {
     const conflicts = pathConflictGuardEnabled()
       ? collectTicketConflicts(source, listWorkerTicketItems("inprogress"), runnerId)
       : [];
-    if (conflicts.length > 0) {
-      fail(1, "ticket conflicts with another inprogress ticket Allowed Paths", {
-        reason: "allowed_path_conflict",
-        conflicts,
-      });
-    }
 
     const target = path.join(TICKETS_ROOT, "inprogress", path.basename(source));
     if (fs.existsSync(target)) fail(1, `inprogress target already exists: ${boardRel(target)}`);
@@ -186,15 +177,18 @@ export function cmdWorkerClaim(): void {
     utils.replaceScalarFieldInSection(target, "Goal Runtime", "Status", "active");
     utils.replaceScalarFieldInSection(target, "Goal Runtime", "Updated At", now);
     utils.replaceScalarFieldInSection(target, "Goal Runtime", "Tick Count", String(previousTickCount + 1));
-    replaceSectionBlock(target, "Next Action", "- 다음에 바로 이어서 할 일: worker runner-tool worktree-ensure로 작업 루트를 준비한 뒤 Allowed Paths 안에서 구현을 진행한다.");
+    replaceSectionBlock(target, "Next Action", "- 다음 즉시 작업: `worker worktree-ensure`로 작업 루트를 준비한 뒤 Allowed Paths 안에서 구현한다.");
     replaceSectionBlock(
       target,
       "Resume Context",
-      `- Current state: worker runner-tool claimed this ticket and moved it to inprogress.
-- Last completed action: claim by ${runnerId} at ${now}.
-- First thing to inspect on resume: Worktree, Goal, Allowed Paths, Done When, Notes.`
+      `- 현재 상태: worker runner-tool이 이 ticket을 claim하고 inprogress로 이동했다.
+	- 마지막 완료 작업: ${runnerId}가 ${now}에 claim했다.
+	- 재개 시 먼저 확인할 것: Worktree, Goal, Allowed Paths, Done When, Notes.`
     );
     utils.appendNote(target, `Worker runner-tool claimed ticket at ${now}: runner=${runnerId}`);
+    if (conflicts.length > 0) {
+      utils.appendNote(target, `Worker claim allowed with Allowed Paths overlap warning at ${now}: ${JSON.stringify(conflicts)}`);
+    }
     const worktree = ensureWorkerTicketWorktree(target);
     if (!isReadyWorktree(worktree)) {
       const reason = String(worktree.worktree_status || "worktree_not_ready");
@@ -202,26 +196,15 @@ export function cmdWorkerClaim(): void {
       utils.replaceScalarFieldInSection(target, "Ticket", "Last Updated", utils.nowIso());
       replaceSectionBlock(
         target,
-        "Recovery State",
-        `- Status: blocked
-- Detected By: runner-tool worker claim
-- Failure Class: worktree_not_ready
-- Evidence: worktree_status=${reason}; worker must not implement in PROJECT_ROOT fallback
-- Planner Decision:
-- Worker Resume Instruction: Fix git/worktree setup, then rerun worker runner-tool worktree-ensure for this ticket before implementation.
-- Last Recovery At: ${utils.nowIso()}`
-      );
-      replaceSectionBlock(
-        target,
         "Next Action",
-        "- 다음에 바로 이어서 할 일: git/worktree 준비 상태를 복구한 뒤 `worker worktree-ensure`를 다시 실행한다. worktree가 ready가 되기 전에는 구현을 시작하지 않는다."
+	        "- 다음 즉시 작업: git/worktree 준비 상태를 복구한 뒤 `worker worktree-ensure`를 다시 실행한다. worktree가 준비되기 전에는 구현을 시작하지 않는다."
       );
-      utils.appendNote(target, `Worker claim blocked before implementation at ${utils.nowIso()}: worktree_status=${reason}`);
+      utils.appendNote(target, `Worker claim blocked before implementation at ${utils.nowIso()}: worktree_status=${reason} reason=worktree_not_ready`);
       updateWorkerState(runnerId, target, "blocked", `worktree_not_ready:${reason}`);
       fail(1, "worker claim blocked before implementation because worktree is not ready", {
         reason: "worktree_not_ready",
         runner: runnerId,
-        ticket_id: `Todo-${idFromPath(target)}`,
+        ticket_id: `TODO-${idFromPath(target)}`,
         path: boardRel(target),
         ...worktree,
       });
@@ -233,11 +216,12 @@ export function cmdWorkerClaim(): void {
       tool: "worker.claim",
       status: "ok",
       runner: runnerId,
-      ticket_id: `Todo-${idFromPath(target)}`,
+      ticket_id: `TODO-${idFromPath(target)}`,
       from: boardRel(source),
       path: boardRel(target),
       claimed_by: token,
       stage: "executing",
+      conflict_warnings: conflicts,
       ...worktree,
       next_action: "Implement only inside the returned working_root.",
     });

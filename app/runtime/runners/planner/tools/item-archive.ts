@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +94,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -128,6 +125,33 @@ const {
   fail
 } = shared;
 
+function todoReferencesPrdKey(file: string, prdKey: string): boolean {
+  const re = new RegExp(`^-\\s*PRD Key\\s*:\\s*${prdKey.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\b`, "im");
+  return re.test(utils.readFileSafe(file));
+}
+
+function findTodosForPrdKey(prdKey: string): string[] {
+  const matches: string[] = [];
+  const buckets = ["todo", "inprogress", "verifier"];
+  for (const bucket of buckets) {
+    const dir = path.join(TICKETS_ROOT, bucket);
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (!/^TODO-\d+\.md$/.test(name)) continue;
+      const full = path.join(dir, name);
+      if (todoReferencesPrdKey(full, prdKey)) matches.push(boardRel(full));
+    }
+  }
+  const doneProjectDir = path.join(TICKETS_ROOT, "done", prdKey);
+  if (fs.existsSync(doneProjectDir)) {
+    for (const name of fs.readdirSync(doneProjectDir)) {
+      if (!/^TODO-\d+\.md$/.test(name)) continue;
+      matches.push(boardRel(path.join(doneProjectDir, name)));
+    }
+  }
+  return matches;
+}
+
 export function cmdPlannerItemArchive(): void {
   const fromRaw = getArg("--from");
   const projectKey = getArg("--project-key");
@@ -138,10 +162,36 @@ export function cmdPlannerItemArchive(): void {
   if (!from || !fs.existsSync(from) || !fs.statSync(from).isFile()) fail(1, `archive source not found: ${fromRaw}`);
   const targetName = getArg("--as") || path.basename(from);
   if (!/^[A-Za-z0-9._-]+\.md$/.test(targetName)) fail(2, "archive target filename must be a safe markdown filename");
+
+  // Enforce: archiving a PRD requires at least one Todo to reference it.
+  // Use --force-archive-orphan when intentionally closing a no-implementation PRD
+  // (research/audit/policy only). Without that override the planner refuses to
+  // strand a done PRD with zero children.
+  const sourceName = path.basename(from);
+  const isPrdSource = /^(PRD)-\d+\.md$/i.test(sourceName);
+  const allowOrphan = hasFlag("--force-archive-orphan");
+  if (isPrdSource && !allowOrphan) {
+    const matches = findTodosForPrdKey(projectKey);
+    if (matches.length === 0) {
+      fail(2, `PRD ${sourceName} has no Todo referencing PRD Key=${projectKey}; refuse to archive a PRD without ≥1 Todo. Pass --force-archive-orphan to override for an intentional no-implementation PRD.`, {
+        project_key: projectKey,
+        source: boardRel(from),
+        rule: "prd_archive_requires_at_least_one_todo",
+      });
+    }
+  }
+
   const target = path.join(TICKETS_ROOT, "done", projectKey, targetName);
   validateNoUnsafeWrite(target, false);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.renameSync(from, target);
 
-  ok({ tool: "planner.item-archive", status: "ok", from: boardRel(from), path: boardRel(target), project_key: projectKey });
+  ok({
+    tool: "planner.item-archive",
+    status: "ok",
+    from: boardRel(from),
+    path: boardRel(target),
+    project_key: projectKey,
+    orphan_archive: isPrdSource && allowOrphan ? "true" : "false",
+  });
 }

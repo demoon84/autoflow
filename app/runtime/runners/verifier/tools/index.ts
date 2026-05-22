@@ -3,7 +3,6 @@ import { cmdVerifierQueueSnapshot } from "./queue-snapshot";
 import { cmdVerifierEvidence } from "./evidence";
 import { cmdVerifierDecisionRecord } from "./decision-record";
 import { cmdVerifierComplete } from "./finish";
-import { cmdVerifierWake } from "./wake";
 
 export function dispatchVerifier(command: string): void {
   switch (command) {
@@ -24,9 +23,6 @@ export function dispatchVerifier(command: string): void {
       return;
     case "request-replan":
       cmdVerifierComplete("replan");
-      return;
-    case "wake":
-      cmdVerifierWake();
       return;
     default:
       fail(2, `unknown verifier command: ${command}`);

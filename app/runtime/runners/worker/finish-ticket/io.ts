@@ -23,8 +23,10 @@ export function stripTicks(value: string): string {
   return value.replace(/^`+|`+$/g, "").trim();
 }
 
-export function oneLine(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
+export function oneLine(value: string, maxLen = 1000): string {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (!Number.isFinite(maxLen) || maxLen <= 0 || clean.length <= maxLen) return clean;
+  return `${clean.slice(0, Math.max(0, maxLen - 24)).trimEnd()}... [truncated]`;
 }
 
 export function parseJsonObject(value: string): Record<string, unknown> {

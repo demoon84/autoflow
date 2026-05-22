@@ -4,13 +4,13 @@
  *
  * Sets up AUTOFLOW_WIKI_EMBEDDING_PROVIDER → wiki-embed.ts, AUTOFLOW_WIKI_VECTOR_DIM=1024,
  * then delegates to autoflow wiki query. Emits rag_backend=hybrid
- * when the BM25+vector index and embedding provider are ready.
+ * when the source-scan lexical+vector index and embedding provider are ready.
  *
  * Usage:
  *   npx tsx wiki-query.ts --term <text> [--term <text>...] [--rag] [options]
  *
  * All options are forwarded to autoflow wiki query. Extra flag:
- *   --rag          Enable BM25+vector RAG mode (passed through).
+ *   --rag          Enable source-scan lexical+vector RAG mode (passed through).
  *   --synth        Enable synthesis (passed through).
  *   --limit N      Result limit (passed through).
  *
@@ -60,7 +60,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
     "Usage: npx tsx wiki-query.ts --term <text> [--term <text>...] [--rag] [options]",
     "",
     "Sets AUTOFLOW_WIKI_EMBEDDING_PROVIDER=wiki-embed.ts, AUTOFLOW_WIKI_VECTOR_DIM=1024,",
-    "then calls autoflow wiki query. rag_backend=hybrid when BM25+vector index is ready.",
+    "then calls autoflow wiki query. rag_backend=hybrid when source-scan lexical+vector index is ready.",
     "",
     "Options are forwarded to autoflow wiki query unchanged.",
   ].join("\n") + "\n");

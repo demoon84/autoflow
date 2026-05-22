@@ -1,5 +1,5 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { requireSection, extractBulletSectionFromText, extractChecklistFromText, extractSectionLines } from "./sections";
 
 export function readWritePayload(): { id?: JsonValue; reservation?: JsonValue; content: string } {
@@ -44,8 +44,8 @@ export function validateTicketContent(content: string, id: string): void {
   }
   const contentId = extractIdFromContent(content, "ticket");
   if (contentId && contentId !== id) fail(2, `content ticket id ${contentId} does not match target id ${id}`);
-  if (!new RegExp(`^-\\s*ID:\\s*Todo-${id}\\s*$`, "m").test(content)) {
-    fail(2, `ticket content must contain "- ID: Todo-${id}"`);
+  if (!new RegExp(`^-\\s*ID:\\s*(?:TODO|Todo)-${id}\\s*$`, "m").test(content)) {
+    fail(2, `ticket content must contain "- ID: TODO-${id}"`);
   }
   if (extractBulletSectionFromText(content, "Allowed Paths").length === 0) {
     fail(2, "ticket content must include non-empty ## Allowed Paths bullets");
@@ -89,7 +89,7 @@ export function writeAtomic(target: string, content: string): void {
 }
 
 export function extractIdFromContent(content: string, kind: "prd" | "ticket"): string {
-  const pattern = kind === "ticket" ? /\bTodo-(\d+)\b/ : /\bprd_(\d+)\b/i;
+  const pattern = kind === "ticket" ? /\bTODO-(\d+)\b/ : /\bPRD-(\d+)\b/;
   const m = content.match(pattern);
   return m ? normalizeId(m[1]) : "";
 }

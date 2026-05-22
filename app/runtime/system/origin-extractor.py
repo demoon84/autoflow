@@ -2,7 +2,7 @@
 """
 PRD 9 Origin Extractor (2026-05-09)
 
-Reads Claude Code and Codex session jsonl files, identifies PRD/order
+Reads Claude Code and Codex session jsonl files, identifies PRD/todo
 trigger records, and builds the origin_chain in .autoflow/state.db.
 
 NOTE: uses `from __future__ import annotations` so the modern PEP 604 /
@@ -11,11 +11,11 @@ on Python 3.7+ as well.
 
 Chain shape (one row per trigger event):
 
-    session(jsonl) --(#autoflow|#order|/autoflow|/order)--> prd_path
-                                                              ↓
-                                                          ticket_id
-                                                              ↓
-                                                          commit_hash
+    session(jsonl) --(#aprd|#atodo|/aprd|/atodo)--> prd_path
+                                                       ↓
+                                                   ticket_id
+                                                       ↓
+                                                   commit_hash
 
 Idempotent: running multiple times rebuilds the snapshot tables. Read-only
 on Claude Code / Codex jsonl files; writes only to .autoflow/state.db.
@@ -43,31 +43,30 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Iterable
 
-# PRD/order trigger detection.
+# PRD/todo trigger detection.
 #
 # Real-world shapes observed in Claude Code & Codex jsonl:
 #   1. Slash command (most common):
-#        <command-name>/order</command-name>
-#        <command-name>/autoflow</command-name>
-#   2. Hash trigger in prose:           "#order ..."
-#   3. Codex dollar trigger in prose:   "$order ..."
+#        <command-name>/aprd</command-name>
+#        <command-name>/atodo</command-name>
+#   2. Hash trigger in prose:           "#aprd ..." / "#atodo ..."
+#   3. Codex dollar trigger in prose:   "$aprd ..." / "$atodo ..."
 #
-# A bare token "order/autoflow skill ..." (no leading # or /) is NOT a
+# A bare token "aprd/atodo skill ..." (no leading # or /) is NOT a
 # trigger — only the prefixed forms count.
 TRIGGER_RE = re.compile(
     # 1. <command-name>/X</command-name> form
-    r'<command-name>/?(?P<cmd>autoflow|order|plan|todo)</command-name>'
+    r'<command-name>/?(?P<cmd>aprd|atodo|plan|todo)</command-name>'
     # 2. word-boundary #X form
-    r'|(?<![A-Za-z0-9_])#(?P<hash>autoflow|order|plan|todo)\b'
+    r'|(?<![A-Za-z0-9_])#(?P<hash>aprd|atodo|plan|todo)\b'
     # 3. word-boundary $X form (Codex)
-    r'|(?<![A-Za-z0-9_])\$(?P<dollar>autoflow|order|plan|todo)\b',
+    r'|(?<![A-Za-z0-9_])\$(?P<dollar>aprd|atodo|plan|todo)\b',
     re.MULTILINE,
 )
 
-ORDER_REL_PATTERN = re.compile(r'tickets/order/order_\d{3}.*\.md$')
-PRD_REL_PATTERN = re.compile(r'tickets/prd/(?:prd|project)_\d{3}\.md$')
-PRD_KEY_PATTERN = re.compile(r'(?:^|/)((?:prd|project|express|order)_\d{3})')
-TODO_NNN_PATTERN = re.compile(r'tickets/(?:todo|inprogress|done(?:/[^/]+)?)/Todo-(\d{3})\.md$')
+PRD_REL_PATTERN = re.compile(r'tickets/prd/(?:PRD-\d{3}|(?:prd|project)_\d{3})\.md', re.IGNORECASE)
+PRD_KEY_PATTERN = re.compile(r'(?:^|/)((?:PRD-\d{3})|(?:(?:prd|project)_\d{3}))', re.IGNORECASE)
+TODO_NNN_PATTERN = re.compile(r'tickets/(?:todo|inprogress|done(?:/[^/]+)?)/(?:TODO|Todo)-(\d{3})\.md$', re.IGNORECASE)
 
 
 def now_utc_iso() -> str:
@@ -83,7 +82,7 @@ def safe_load_json(line: str):
 
 # When the user invokes a slash command, the actual prompt body lives in
 # <command-args>...</command-args>. Skill activation alone (no args) means the
-# user did NOT issue a real PRD/order request — those are skipped.
+# user did NOT issue a real PRD/todo request — those are skipped.
 ARGS_RE = re.compile(r'<command-args>(.*?)</command-args>', re.DOTALL)
 
 
@@ -92,7 +91,7 @@ def detect_trigger_with_args(text: str) -> tuple[str | None, str | None]:
     A real trigger is one that carries <command-args>...</command-args> with
     non-empty body. Without args, the trigger word almost always comes from
     the skill body itself being injected into user content (e.g. "Base
-    directory for this skill: .../skills/order ... 1. Treat `#order`...")
+    directory for this skill: .../skills/atodo ... 1. Treat `#atodo`...")
     which is not an actionable invocation. Skipping those removes the
     skill-activation noise entirely.
     """
@@ -147,7 +146,14 @@ def prd_key_from_path(path: str | None) -> str | None:
     if not path:
         return None
     m = PRD_KEY_PATTERN.search(path)
-    return m.group(1) if m else None
+    return normalize_prd_key(m.group(1)) if m else None
+
+
+def normalize_prd_key(value: str) -> str:
+    m = re.match(r'(?:PRD[-_]|prd_|project_)(\d{3,})$', value.strip(), re.IGNORECASE)
+    if m:
+        return f'PRD-{m.group(1)}'
+    return value.strip().upper().replace('_', '-')
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -399,9 +405,9 @@ def extract_claude_session(path: pathlib.Path, board_root: pathlib.Path,
                     fp = tool_input.get('file_path') or tool_input.get('filePath')
                     if fp:
                         file_touches.append((ts or '', name, fp))
-                        # Match order/prd creation back to the most recent trigger.
+                        # Match prd creation back to the most recent trigger.
                         rel = relative_to_board(fp, board_root)
-                        if rel and (ORDER_REL_PATTERN.search(rel) or PRD_REL_PATTERN.search(rel)):
+                        if rel and PRD_REL_PATTERN.search(rel):
                             target = pending_trigger or (triggers[-1] if triggers else None)
                             if target and 'prd_path' not in target:
                                 target['prd_path'] = rel
@@ -498,13 +504,8 @@ def extract_codex_session(path: pathlib.Path, board_root: pathlib.Path,
                         if isinstance(cmd, list):
                             cmd = ' '.join(cmd)
                         file_touches.append((ts or '', name, str(cmd)[:200]))
-                        # Heuristic: if a '.autoflow/tickets/order/order_*.md' write
+                        # Heuristic: if a '.autoflow/tickets/prd/PRD-*.md' write
                         # operation appears, attribute back to the recent trigger.
-                        for m in ORDER_REL_PATTERN.finditer(cmd):
-                            target = pending_trigger or (triggers[-1] if triggers else None)
-                            if target and 'prd_path' not in target:
-                                target['prd_path'] = m.group(0)
-                                target['prd_key'] = prd_key_from_path(m.group(0))
                         for m in PRD_REL_PATTERN.finditer(cmd):
                             target = pending_trigger or (triggers[-1] if triggers else None)
                             if target and 'prd_path' not in target:
@@ -553,12 +554,12 @@ def extract_codex_session(path: pathlib.Path, board_root: pathlib.Path,
 # ───────────────────────────────────────────────────────────────────────
 
 def find_prd_files(board_root: pathlib.Path) -> dict[str, str]:
-    """Return {prd_key: relative_path} for every PRD/order file currently
-    in order/prd/done. The same key may exist in multiple stages over
-    time; this returns the latest one we can find."""
+    """Return {prd_key: relative_path} for every PRD file currently in
+    prd/done. The same key may exist in multiple stages over time; this
+    returns the latest one we can find."""
     out: dict[str, str] = {}
     candidates = []
-    for sub in ['tickets/order', 'tickets/prd']:
+    for sub in ['tickets/prd']:
         d = board_root / sub
         if d.exists():
             candidates.extend(d.glob('*.md'))
@@ -576,21 +577,21 @@ def find_prd_files(board_root: pathlib.Path) -> dict[str, str]:
 
 
 def list_tickets(board_root: pathlib.Path) -> list[tuple[str, str, str]]:
-    """Return (ticket_id, status, rel_path) for every Todo-NNN.md found."""
+    """Return (ticket_id, status, rel_path) for every TODO-NNN.md found."""
     rows = []
     for stage in ['todo', 'inprogress']:
         d = board_root / 'tickets' / stage
         if d.exists():
-            for tf in d.glob('Todo-*.md'):
-                m = re.search(r'Todo-(\d{3})', tf.name)
+            for tf in d.glob('*.md'):
+                m = re.search(r'(?:TODO|Todo)-(\d{3})', tf.name, re.IGNORECASE)
                 if m:
                     rows.append((m.group(1), stage, str(tf.relative_to(board_root))))
     done = board_root / 'tickets/done'
     if done.exists():
         for sub in done.iterdir():
             if sub.is_dir():
-                for tf in sub.glob('Todo-*.md'):
-                    m = re.search(r'Todo-(\d{3})', tf.name)
+                for tf in sub.glob('*.md'):
+                    m = re.search(r'(?:TODO|Todo)-(\d{3})', tf.name, re.IGNORECASE)
                     if m:
                         rows.append((m.group(1), 'done', str(tf.relative_to(board_root))))
     return rows
@@ -638,8 +639,9 @@ def parse_ticket_md(path: pathlib.Path) -> dict:
 
 def fetch_ticket_commits(project_root: pathlib.Path) -> dict[str, tuple[str, str, str]]:
     """git log scan: return {ticket_id: (commit_hash, commit_ts_iso, subject)}.
-    Matches commit subjects of the shape '[PRD_NNN][ticket_NNN] ...' or
-    '[ticket_NNN] ...'. The latest commit per ticket wins.
+    Matches commit subjects of the shape '[PRD-NNN][TODO-NNN] ...',
+    '[TODO-NNN] ...', and legacy '[ticket_NNN] ...'. The latest commit per
+    ticket wins.
     """
     out: dict[str, tuple[str, str, str]] = {}
     try:
@@ -652,7 +654,7 @@ def fetch_ticket_commits(project_root: pathlib.Path) -> dict[str, tuple[str, str
         return out
     if proc.returncode != 0:
         return out
-    pat = re.compile(r'\[ticket_(\d{3})\]', re.IGNORECASE)
+    pat = re.compile(r'\[(?:TODO-|ticket_)(\d{3})\]', re.IGNORECASE)
     for line in proc.stdout.splitlines():
         parts = line.split('\t', 2)
         if len(parts) != 3:
@@ -679,7 +681,7 @@ def enrich_chains(conn: sqlite3.Connection, board_root: pathlib.Path,
         if prd_key:
             ticket_by_prd[prd_key].append((tid, status, rel))
         # Path-based reverse index: chain.prd_path basename → ticket.
-        for ref_field in ('ref_prd', 'ref_order', 'ref_plan'):
+        for ref_field in ('ref_prd', 'ref_plan'):
             ref = meta.get(ref_field)
             if not ref:
                 continue
@@ -687,7 +689,7 @@ def enrich_chains(conn: sqlite3.Connection, board_root: pathlib.Path,
             base = os.path.basename(ref)
             if base:
                 ticket_by_origin_basename[base].append((tid, status, rel))
-            # If reference points into tickets/done/<key>/..., archived order
+            # If reference points into tickets/done/<key>/..., archived PRD
             # files in the same directory should also map back to this ticket.
             if 'tickets/done/' in ref:
                 done_dir = board_root / os.path.dirname(ref)
@@ -760,7 +762,7 @@ def enrich_chains(conn: sqlite3.Connection, board_root: pathlib.Path,
 
         # Match priority:
         # 1. prd_path basename appears in any ticket's References.PRD/Order/Plan
-        # 2. chain.prd_key matches ticket.prd_key (e.g. prd prd_142)
+        # 2. chain.prd_key matches ticket.prd_key (e.g. PRD-142)
         candidates: list[tuple[str, str, str]] = []
         if prd_path:
             base = os.path.basename(prd_path)
@@ -802,10 +804,20 @@ def encoded_project_dir(project_root: pathlib.Path) -> str:
     return abs_path.replace('/', '-')
 
 
+def default_share_root() -> str:
+    override = os.environ.get('AUTOFLOW_SHARE_ROOT', '').strip()
+    if override:
+        return override
+    return os.path.expanduser('~/.autoflow/share')
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description='Autoflow PRD 9 origin extractor')
     ap.add_argument('--board-root', required=True)
     ap.add_argument('--project-root', required=True)
+    ap.add_argument('--share-root', default=default_share_root(),
+                    help='User-scope share root holding state-schema/v1.sql '
+                         '(default: $AUTOFLOW_SHARE_ROOT or ~/.autoflow/share)')
     ap.add_argument('--claude-projects-dir',
                     default=os.path.expanduser('~/.claude/projects'))
     ap.add_argument('--codex-archived-dir',
@@ -817,8 +829,9 @@ def main(argv=None):
 
     board_root = pathlib.Path(args.board_root).resolve()
     project_root = pathlib.Path(args.project_root).resolve()
+    share_root = pathlib.Path(args.share_root).resolve()
     db_path = board_root / 'state.db'
-    schema_path = board_root / 'state-schema/v1.sql'
+    schema_path = share_root / 'state-schema/v1.sql'
 
     sync_ts = now_utc_iso()
     conn = open_db(db_path, schema_path)

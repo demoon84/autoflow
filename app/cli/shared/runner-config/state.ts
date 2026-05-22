@@ -33,7 +33,8 @@ export const runnerTokenStateDefaults: Record<string, string> = {
 
 export function readRunnerState(ctx: ProjectContext, runnerId: string): Record<string, string> {
     const stateFile = path.join(ctx.boardRoot, "runners", "state", `${runnerId}.state`);
-    return readRunnerStateFile(stateFile);
+    const state = readRunnerStateFile(stateFile);
+    return normalizeStaleRunnerState(stateFile, runnerId, state);
 }
 
 export function serializeRunnerState(state: Record<string, string>): string {
@@ -56,6 +57,49 @@ export function writeRunnerState(ctx: ProjectContext, runnerId: string, updates:
 
 export function pidIsRunning(pidValue: string): boolean {
     return isRunnerProcessAlive(pidValue);
+}
+
+function normalizeStaleRunnerState(
+    stateFile: string,
+    runnerId: string,
+    state: Record<string, string>,
+): Record<string, string> {
+    if ((state.status || "idle") !== "running" || pidIsRunning(state.pid || "")) {
+        return state;
+    }
+
+    const timestamp = new Date().toISOString();
+    const next: Record<string, string> = {
+        ...runnerTokenStateDefaults,
+        ...state,
+        id: state.id || runnerId,
+        runner_id: state.runner_id || runnerId,
+        status: "stopped",
+        runner_status: "stopped",
+        pid: "",
+        stopped_by: "",
+        last_stop_reason: state.pid ? "stale_dead_pid" : "stale_no_pid",
+        last_result: "loop_stopped",
+        last_event_at: timestamp,
+        updated_at: timestamp,
+    };
+    for (const key of [
+        "active_item",
+        "active_ticket_id",
+        "active_ticket_title",
+        "active_stage",
+        "active_spec_ref",
+        "active_ticket_path",
+    ]) {
+        next[key] = "";
+    }
+
+    try {
+        writeRunnerStateFile(stateFile, next);
+    } catch {
+        // A read path should still return the repaired view even if disk write fails.
+    }
+    return next;
 }
 
 export function intState(state: Record<string, string>, key: string): number {

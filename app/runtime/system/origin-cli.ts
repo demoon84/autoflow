@@ -133,15 +133,14 @@ function titleFromMarkdown(text: string): string {
 }
 
 function ticketIdFromRelPath(relPath: string): string {
-  const match = relPath.match(/Todo-(\d+)\.md$/i);
-  return match ? `Todo-${match[1]}` : "";
+  const match = relPath.match(/TODO-(\d+)\.md$/);
+  return match ? `TODO-${match[1]}` : "";
 }
 
 function fallbackRows(): OriginRow[] {
   const roots = [
     path.join(boardRoot, "tickets", "done"),
     path.join(boardRoot, "tickets", "prd"),
-    path.join(boardRoot, "tickets", "order"),
     path.join(boardRoot, "tickets", "todo"),
     path.join(boardRoot, "tickets", "inprogress"),
     path.join(boardRoot, "tickets", "verifier")
@@ -161,10 +160,10 @@ function fallbackRows(): OriginRow[] {
         mtimeMs,
         row: {
           source: "markdown",
-          trigger_kind: rel.includes("/order/") ? "order" : rel.includes("/prd/") ? "autoflow" : "todo",
+          trigger_kind: rel.includes("/prd/") ? "aprd" : "atodo",
           prd_path: rel,
           path: rel,
-          prd_key: rel.match(/(?:prd|project|order)_\d+/i)?.[0] || "",
+          prd_key: rel.match(/PRD-\d+/i)?.[0] || "",
           ticket_id: ticketIdFromRelPath(rel),
           ticket_status: rel.includes("tickets/done/") ? "done" : rel.split("/")[1] || "",
           title: titleFromMarkdown(text),
@@ -257,7 +256,7 @@ function rowsOfTicket(ticketId: string, limit: number): OriginRow[] {
            ticket_id, ticket_status, commit_hash, commit_subject, done_at
     FROM origin_chain
     WHERE ticket_id = ${sqlString(normalized)}
-       OR ticket_id = ${sqlString(`Todo-${normalized}`)}
+       OR ticket_id = ${sqlString(`TODO-${normalized}`)}
     ORDER BY COALESCE(done_at, trigger_ts) DESC
     LIMIT ${limit}
   `);

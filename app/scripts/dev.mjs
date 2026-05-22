@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
-import { watch } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import parcelWatcher from "@parcel/watcher";
 import { createServer } from "vite";
 import { buildMainProcess } from "./build-main.mjs";
 
@@ -27,7 +27,7 @@ const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const { fixNodePtySpawnHelperPermissions } = nodePtyPermissions;
 
 fixNodePtySpawnHelperPermissions({
-  log: (message) => console.log(`[desktop dev] ${message}`)
+  log: () => {}
 });
 await buildMainProcess();
 
@@ -94,7 +94,6 @@ function scheduleElectronRestart(filePath) {
     try {
       await buildMainProcess();
     } catch (error) {
-      console.error("[desktop dev] Failed to rebuild Electron main process", error);
       return;
     }
 
@@ -104,7 +103,6 @@ function scheduleElectronRestart(filePath) {
     }
 
     restartingElectron = true;
-    console.log(`[desktop dev] Reloading Electron main process: ${path.relative(desktopRoot, filePath)}`);
     electron.kill();
   }, 100);
 }
@@ -112,35 +110,38 @@ function scheduleElectronRestart(filePath) {
 const mainProcessRootFiles = new Set(["main.ts", "preload.ts"]);
 const mainProcessHelperExtensions = new Set([".ts", ".js"]);
 // Auto-restart on main.ts / preload.ts / main-process helper changes is
-// convenient for renderer hot-reload, but extremely disruptive when PTY
-// runners are running — the worker AI sometimes edits PROJECT_ROOT/main.ts
-// (instead of its worktree) during ticket work, which triggers electron.kill()
-// and ends up killing the very worker that made the edit. Set
-// AUTOFLOW_DESKTOP_AUTO_RESTART=0 to disable auto-restart and require an
-// explicit Cmd+R / restart.
-const AUTO_RESTART_ENABLED = process.env.AUTOFLOW_DESKTOP_AUTO_RESTART !== "0";
-const mainProcessWatchers = AUTO_RESTART_ENABLED
-  ? [
-      watch(path.join(desktopRoot, "src"), { persistent: true }, (_eventType, filename) => {
-        const changedFile = filename ? filename.toString() : "";
-        if (!mainProcessRootFiles.has(changedFile)) {
-          return;
-        }
+// convenient for renderer-only work, but disruptive when PTY runners or native
+// board watchers are active: killing Electron mid-turn can orphan runners and
+// can trip @parcel/watcher native cleanup during process teardown. Keep it
+// opt-in and require an explicit dev restart by default.
+const AUTO_RESTART_ENABLED = process.env.AUTOFLOW_DESKTOP_AUTO_RESTART === "1";
+const mainProcessWatchers = [];
+if (AUTO_RESTART_ENABLED) {
+  const srcRoot = path.join(desktopRoot, "src");
+  mainProcessWatchers.push(await parcelWatcher.subscribe(srcRoot, (err, events) => {
+    if (err) {
+      return;
+    }
 
-        scheduleElectronRestart(path.join(desktopRoot, "src", changedFile));
-      }),
-      watch(path.join(desktopRoot, "src", "main"), { persistent: true }, (_eventType, filename) => {
-        const changedFile = filename ? filename.toString() : "";
-        if (!mainProcessHelperExtensions.has(path.extname(changedFile))) {
-          return;
-        }
-
-        scheduleElectronRestart(path.join(desktopRoot, "src", "main", changedFile));
-      })
-    ]
-  : [];
+    for (const event of events || []) {
+      const changedFile = path.relative(srcRoot, event.path).split(path.sep).join("/");
+      if (!changedFile || changedFile.startsWith("..")) {
+        continue;
+      }
+      if (mainProcessRootFiles.has(changedFile)) {
+        scheduleElectronRestart(path.join(srcRoot, changedFile));
+        continue;
+      }
+      if (
+        changedFile.startsWith("main/") &&
+        mainProcessHelperExtensions.has(path.extname(changedFile))
+      ) {
+        scheduleElectronRestart(path.join(srcRoot, changedFile));
+      }
+    }
+  }));
+}
 if (!AUTO_RESTART_ENABLED) {
-  console.log("[desktop dev] AUTOFLOW_DESKTOP_AUTO_RESTART=0 — main.ts/preload.ts auto-restart disabled. Use Cmd+R or kill the dev process to restart.");
 }
 
 startElectron();
@@ -155,9 +156,7 @@ async function shutdown(exitCode = 0) {
     clearTimeout(restartTimer);
   }
 
-  for (const watcher of mainProcessWatchers) {
-    watcher.close();
-  }
+  await Promise.all(mainProcessWatchers.map((watcher) => watcher.unsubscribe().catch(() => {})));
 
   if (electron && !electron.killed) {
     electron.kill();

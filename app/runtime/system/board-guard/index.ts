@@ -1,6 +1,6 @@
 import {BOARD_ROOT, PROJECT_ROOT} from "./context";
 import {checks, errors, warnings} from "./reporter";
-import {checkActiveSections, checkDuplicateTicketIds, checkRecoveryStateFields, checkRecoveryStateValues, checkResolvedTicketBranches, checkResolvedTicketWorktrees, checkRogueProjectRootBoardPaths, checkTodoWorktreeMetadata} from "./checks";
+import {checkActiveSections, checkDonePrdHasTodo, checkDuplicateTicketIds, checkResolvedTicketBranches, checkResolvedTicketWorktrees, checkRogueProjectRootBoardPaths, checkTodoWorktreeMetadata} from "./checks";
 
 const args = process.argv.slice(2);
 let strict = false;
@@ -18,11 +18,10 @@ for (const a of args) {
 checkDuplicateTicketIds();
 checkTodoWorktreeMetadata();
 checkActiveSections();
-checkRecoveryStateFields();
-checkRecoveryStateValues();
 checkResolvedTicketWorktrees();
 checkResolvedTicketBranches();
 checkRogueProjectRootBoardPaths();
+checkDonePrdHasTodo();
 
 if (strict && warnings.length > 0) {
     for (const w of warnings) errors.push(`strict mode: ${w}`);

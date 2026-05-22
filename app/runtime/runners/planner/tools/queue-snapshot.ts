@@ -3,7 +3,9 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
+type PlannerQueueItem = QueueItem & {
+  branch?: string;
+};
 
 const {
   crypto,
@@ -77,7 +79,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,11 +97,11 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
   collectFiles,
+  conversationHandoffLinksForBoardPath,
   resolveBoardPath,
   validateNoUnsafeWrite,
   writeAtomic,
@@ -124,16 +125,15 @@ const {
   safeIsFile,
   ensureTrailingNewline,
   escapeRe,
+  scopedSourceFileCount,
   ok,
   fail
 } = shared;
 
-function compactPlannerSource(item: QueueItem): JsonObject {
+function compactPlannerSource(item: PlannerQueueItem): JsonObject {
   const absolutePath = resolveBoardPath(item.path);
-  const blockedReason = utils.extractScalarFieldInSection(absolutePath, "Order", "Blocked Reason") ||
-    utils.extractScalarFieldInSection(absolutePath, "Project", "Blocked Reason") ||
-    "";
-  const isOrdinaryOrder = item.kind === "order" && !item.retry;
+  const blockedReason = utils.extractScalarFieldInSection(absolutePath, "Project", "Blocked Reason") || "";
+  const handoffLinks = conversationHandoffLinksForBoardPath(item.path, 4);
   return {
     path: item.path,
     kind: item.kind,
@@ -142,43 +142,27 @@ function compactPlannerSource(item: QueueItem): JsonObject {
     title: item.title,
     status: item.status || "",
     blocked_reason: blockedReason,
-    intake_mode: isOrdinaryOrder ? "prd_first" : "",
-    recommended_next_step: isOrdinaryOrder ? "generate_prd_from_order" : "",
     stage: item.stage || "",
-    retry: Boolean(item.retry),
-    express: Boolean(item.express),
-    recovery_status: item.recovery_status || "",
-    failure_class: item.failure_class || "",
+    branch: item.branch || "",
+    handoff_links: handoffLinks,
+    handoff_link_count: handoffLinks.length,
   };
 }
 
-function plannerQueueItemIsActionable(item: QueueItem): boolean {
+function plannerQueueItemIsActionable(item: PlannerQueueItem): boolean {
   const status = String(item.status || "").trim().toLowerCase();
   return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
 }
 
-function sourceOrderRef(file: string): string {
-  return utils.readFileSafe(file).match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/)?.[0] || "";
+function planSelectionRank(item: PlannerQueueItem): number {
+  if (item.kind === "prd") return 1;
+  if (item.kind === "todo") return 2;
+  if (item.kind === "inprogress") return 3;
+  return 9;
 }
 
-function orderItemIsAlreadyPromoted(item: QueueItem): boolean {
-  if (item.kind !== "order" || item.retry) return false;
-  for (const root of [path.join(TICKETS_ROOT, "prd"), path.join(TICKETS_ROOT, "done")]) {
-    if (!fs.existsSync(root)) continue;
-    for (const file of collectFiles(root, /^(prd|project)_\d+\.md$/, 4)) {
-      if (sourceOrderRef(file) === item.path) return true;
-    }
-  }
-  return false;
-}
-
-function plannerFollowupReason(item: QueueItem): string {
+function plannerFollowupReason(item: PlannerQueueItem): string {
   const status = String(item.status || "").trim().toLowerCase();
-  if (item.kind === "order" && !item.retry) {
-    return status === "blocked" || status === "needs-info" || status === "needs_user" || status === "needs-user"
-      ? "planner_order_prd_intake"
-      : "planner_order_pending";
-  }
   return status === "blocked"
     ? `planner_${item.kind}_blocked_review`
     : `planner_${item.kind}_pending`;
@@ -186,15 +170,22 @@ function plannerFollowupReason(item: QueueItem): string {
 
 export function cmdPlannerQueueSnapshot(): void {
   const maxItems = positiveInt(getArg("--max-items") || "", 12);
-  const items: QueueItem[] = [];
-  items.push(...listQueueItems("order", [/^order_.*\.md$/], "order")
-    .filter(plannerQueueItemIsActionable)
-    .filter((item) => !orderItemIsAlreadyPromoted(item)));
-  items.push(...listQueueItems("prd", [/^(prd|project)_\d+\.md$/], "prd").filter(plannerQueueItemIsActionable));
-  items.push(...listQueueItems("todo", [/^(Todo-\d+|tickets_\d+)\.md$/], "todo"));
-  items.push(...listQueueItems("inprogress", [/^(Todo-\d+|tickets_\d+)\.md$/], "inprogress"));
+  const items: PlannerQueueItem[] = [];
+  items.push(...listQueueItems("prd", [/^PRD[-_].+\.md$/i], "prd").filter(plannerQueueItemIsActionable));
+  items.push(...listQueueItems("todo", [/^TODO-\d+\.md$/], "todo"));
+  items.push(...listQueueItems("inprogress", [/^TODO-\d+\.md$/], "inprogress"));
 
   items.sort((a, b) => {
+    // Critical (rank 0) preempts everything else regardless of kind: that is
+    // reserved for board-integrity / host-resource / security emergencies.
+    if (a.priority_rank === 0 && b.priority_rank !== 0) return -1;
+    if (b.priority_rank === 0 && a.priority_rank !== 0) return 1;
+
+    const ar = planSelectionRank(a);
+    const br = planSelectionRank(b);
+    if (ar !== br) return ar - br;
+
+    // Within the same kind, the original priority + FIFO order applies.
     if (a.priority_rank !== b.priority_rank) return a.priority_rank - b.priority_rank;
     const ai = Number.parseInt(a.id || "999999", 10);
     const bi = Number.parseInt(b.id || "999999", 10);
@@ -203,7 +194,7 @@ export function cmdPlannerQueueSnapshot(): void {
   });
 
   const visibleItems = items.slice(0, maxItems);
-  const actionable = visibleItems[0];
+  const actionable = items.find(plannerQueueItemIsActionable);
   const scopedSources = actionable ? [compactPlannerSource(actionable)] : [];
 
   ok({
@@ -219,7 +210,7 @@ export function cmdPlannerQueueSnapshot(): void {
     ai_followup_reason: actionable ? plannerFollowupReason(actionable) : "no_actionable_plan_input",
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
-      max_files_to_open: scopedSources.length,
+      max_files_to_open: scopedSourceFileCount(scopedSources),
       max_board_items_to_edit: actionable ? 1 : 0,
       do_not_follow_references_outside_scope: true,
       avoid_routine_tools_already_run: true,

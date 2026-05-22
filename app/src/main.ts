@@ -1,11 +1,13 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen: electronScreen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, powerMonitor, screen: electronScreen } = require("electron");
 const { spawn, execFile, spawnSync } = require("node:child_process");
 const nodeCrypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
+const parcelWatcher = require("@parcel/watcher");
 const os = require("node:os");
 const path = require("node:path");
 const { PtyRunnerManager } = require("./main/runner-pty-manager");
+const runnerTokensApi = require("../runtime/system/runner-tokens");
 
 function ignoreBrokenPipe(stream) {
   if (!stream || typeof stream.on !== "function") return;
@@ -25,11 +27,230 @@ const repoRoot = process.env.AUTOFLOW_REPO_ROOT || (() => {
   ];
   return candidates.find((candidate) => fsSync.existsSync(path.join(candidate, "package.json"))) || candidates[0];
 })();
+// Propagate the resolved repoRoot so CLI helpers loaded in-process (via
+// runAutoflowInProcess below) compute REPO_ROOT/CLI_DIR from the desktop's
+// argv chain rather than from a path that points at app/src.
+process.env.AUTOFLOW_REPO_ROOT = repoRoot;
 const scaffoldManifestPath = path.join(repoRoot, "install", "manifest.toml");
 const desktopRoot = path.join(repoRoot, "app");
 const appIconPath = path.join(desktopRoot, "src", "renderer", "assets", "app", "app-icon.png");
 const windowStateFileName = "window-state.json";
 const desktopSessionStateFileName = "desktop-session-state.json";
+
+function autoflowBinPath() {
+  return path.join(repoRoot, "app", "bin", "autoflow");
+}
+
+function useElectronAsNodeRuntime() {
+  return Boolean(process.versions && process.versions.electron);
+}
+
+function cliInvocation(args) {
+  const cliArgs = args.map((arg) => String(arg));
+  if (useElectronAsNodeRuntime()) {
+    return {
+      command: process.execPath,
+      args: [autoflowBinPath(), ...cliArgs],
+      env: { ELECTRON_RUN_AS_NODE: "1" }
+    };
+  }
+
+  return {
+    command: autoflowBinPath(),
+    args: cliArgs,
+    env: {}
+  };
+}
+
+function requiredTsxCliPath() {
+  try {
+    return require.resolve("tsx/cli", { paths: [repoRoot] });
+  } catch {
+    return "";
+  }
+}
+
+function runtimeTsInvocation(relativeScriptPath, args) {
+  const tsxCli = requiredTsxCliPath();
+  if (!tsxCli) {
+    return cliInvocation(["tool", "runner-tokens", ...args]);
+  }
+  const scriptPath = path.join(repoRoot, "app", "runtime", relativeScriptPath);
+  return {
+    command: process.execPath,
+    args: [tsxCli, scriptPath, ...args.map((arg) => String(arg))],
+    env: useElectronAsNodeRuntime() ? { ELECTRON_RUN_AS_NODE: "1" } : {}
+  };
+}
+
+function runnerTokensInvocation(args) {
+  return runtimeTsInvocation("system/runner-tokens.ts", args);
+}
+
+function sessionTokenUsageImportDelayMs() {
+  const configured = Number(process.env.AUTOFLOW_SESSION_TOKEN_USAGE_IMPORT_DEBOUNCE_MS || "");
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  return 60000;
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function shellScriptSingleQuote(value) {
+  return shellQuote(value);
+}
+
+function uniquePathEntries(entries) {
+  const seen = new Set();
+  const out = [];
+  for (const entry of entries) {
+    const value = String(entry || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function existingDirEntries(entries) {
+  return entries.filter((entry) => {
+    try {
+      return entry && fsSync.existsSync(entry) && fsSync.statSync(entry).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function nvmNodeBinEntries(homeDir) {
+  const versionsRoot = path.join(homeDir, ".nvm", "versions", "node");
+  try {
+    return fsSync
+      .readdirSync(versionsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(versionsRoot, entry.name, "bin"));
+  } catch {
+    return [];
+  }
+}
+
+function augmentedPathValue(basePath = process.env.PATH || "") {
+  const homeDir = os.homedir();
+  const baseEntries = String(basePath || "").split(path.delimiter).filter(Boolean);
+  const candidateEntries = [
+    ...baseEntries,
+    ...nvmNodeBinEntries(homeDir),
+    path.join(homeDir, ".local", "bin"),
+    path.join(homeDir, ".npm-global", "bin"),
+    path.join(homeDir, ".npm", "bin"),
+    path.join(homeDir, ".yarn", "bin"),
+    path.join(homeDir, ".config", "yarn", "global", "node_modules", ".bin"),
+    path.join(homeDir, ".bun", "bin"),
+    path.join(homeDir, ".volta", "bin"),
+    path.join(homeDir, "Library", "pnpm"),
+    path.join(homeDir, ".local", "share", "pnpm"),
+    path.join(homeDir, ".local", "share", "mise", "shims"),
+    path.join(homeDir, ".asdf", "shims"),
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin"
+  ];
+  return uniquePathEntries(existingDirEntries(candidateEntries)).join(path.delimiter);
+}
+
+function pathWithPrependedEntries(entries, basePath = process.env.PATH || "") {
+  const baseEntries = String(basePath || "").split(path.delimiter).filter(Boolean);
+  return uniquePathEntries(existingDirEntries([...entries, ...baseEntries])).join(path.delimiter);
+}
+
+function ensureAutoflowCliShim({ projectRoot, boardDirName }) {
+  const boardRoot = path.join(projectRoot, boardDirName);
+  const binDir = path.join(boardRoot, "runners", "state", "bin");
+  const shimPath = path.join(binDir, "autoflow");
+  const nodeRuntime = useElectronAsNodeRuntime() ? process.execPath : "";
+  const cliEntry = autoflowBinPath();
+  const needsElectron = useElectronAsNodeRuntime() ? "1" : "0";
+  const content = [
+    "#!/bin/sh",
+    "# Generated by Autoflow Desktop. Do not edit.",
+    "set -eu",
+    `AUTOFLOW_NODE_RUNTIME=${shellScriptSingleQuote(nodeRuntime)}`,
+    `AUTOFLOW_CLI_ENTRY=${shellScriptSingleQuote(cliEntry)}`,
+    `AUTOFLOW_CLI_NEEDS_ELECTRON=${shellScriptSingleQuote(needsElectron)}`,
+    'if [ "$AUTOFLOW_CLI_NEEDS_ELECTRON" = "1" ]; then',
+    '  ELECTRON_RUN_AS_NODE=1 exec "$AUTOFLOW_NODE_RUNTIME" "$AUTOFLOW_CLI_ENTRY" "$@"',
+    "fi",
+    'if [ -x "$AUTOFLOW_CLI_ENTRY" ]; then',
+    '  exec "$AUTOFLOW_CLI_ENTRY" "$@"',
+    "fi",
+    'if [ -n "$AUTOFLOW_NODE_RUNTIME" ]; then',
+    '  exec "$AUTOFLOW_NODE_RUNTIME" "$AUTOFLOW_CLI_ENTRY" "$@"',
+    "fi",
+    'echo "Autoflow CLI entry is not executable: $AUTOFLOW_CLI_ENTRY" >&2',
+    "exit 127",
+    ""
+  ].join("\n");
+  try {
+    fsSync.mkdirSync(binDir, { recursive: true });
+    let existing = "";
+    try {
+      existing = fsSync.readFileSync(shimPath, "utf8");
+    } catch {}
+    if (existing !== content) {
+      fsSync.writeFileSync(shimPath, content, "utf8");
+    }
+    fsSync.chmodSync(shimPath, 0o755);
+    return { binDir, shimPath, ok: true, error: "" };
+  } catch (error) {
+    return {
+      binDir,
+      shimPath: "",
+      ok: false,
+      error: error && error.message ? String(error.message) : String(error)
+    };
+  }
+}
+
+function executableOnPath(command, env = process.env) {
+  const value = String(command || "").trim();
+  if (!value) return "";
+  const candidates = value.includes("/") || value.includes("\\")
+    ? [value]
+    : String(env.PATH || "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, value));
+  for (const candidate of candidates) {
+    try {
+      fsSync.accessSync(candidate, fsSync.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return "";
+}
+
+function userLoginShell() {
+  if (process.env.SHELL) return process.env.SHELL;
+  try {
+    return os.userInfo().shell || "/bin/zsh";
+  } catch {
+    return "/bin/zsh";
+  }
+}
+
+function loginShellCommandArgs(shellPath, command) {
+  const shellName = path.basename(String(shellPath || ""));
+  if (["bash", "zsh", "fish"].includes(shellName)) {
+    return ["-lic", command];
+  }
+  return ["-lc", command];
+}
+
+function autoflowShellCommand(args) {
+  return [`"$AUTOFLOW_CLI"`, ...args.map((arg) => shellQuote(arg))].join(" ");
+}
 
 if (process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA) {
   app.setPath("userData", process.env.AUTOFLOW_DESKTOP_DEV_USER_DATA);
@@ -98,6 +319,7 @@ const safeBoardDirNamePattern = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 const boardFileReadLimitBytes = 196 * 1024;
 const metricsHistoryReadLimitBytes = 512 * 1024;
 const runnerTerminalPreviewLimitBytes = 32 * 1024;
+const runnerLogPreviewReadLimitBytes = 16 * 1024;
 const allowedBoardFileExtensions = new Set([".md", ".log", ".jsonl", ".json", ".env"]);
 const runnerAuthNeededPatterns = [
   /\bnot logged in\b/i,
@@ -115,8 +337,6 @@ const runnerAuthNeededPatterns = [
   /\badapter_auth_required\b/i,
   /Opening authentication page in your browser/i,
   /Attempting to open authentication page in your browser/i,
-  /\bmust specify the GEMINI_API_KEY\b/i,
-  /\bGEMINI_API_KEY\b.*\b(GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_GENAI_USE_GCA)\b/i,
   /\bsign in required\b/i,
   /로그인(?:이)? 필요/i
 ];
@@ -125,8 +345,7 @@ const claudeSubscriptionDisabledPattern =
 const authUrlPattern = /https?:\/\/[^\s<>"'`)\]]+/gi;
 const agentDisplayLabels = {
   codex: "Codex",
-  claude: "Claude",
-  gemini: "Gemini"
+  claude: "Claude"
 };
 const codexRunnerHistoryModes = new Set(["isolated", "shared"]);
 const metricSnapshotKeys = [
@@ -145,25 +364,10 @@ const metricSnapshotKeys = [
   "autoflow_token_total_count",
   "autoflow_token_cache_read_count",
   "autoflow_token_cache_create_count",
-  "autoflow_token_report_count",
-  "autoflow_token_usage_1h_count",
-  "autoflow_token_usage_24h_count",
-  "autoflow_token_input_1h_count",
-  "autoflow_token_output_1h_count",
-  "autoflow_token_cache_1h_count",
-  "autoflow_token_input_24h_count",
-  "autoflow_token_output_24h_count",
-  "autoflow_token_cache_24h_count",
-  "autoflow_token_runner_breakdown_24h_json",
-  "autoflow_token_model_breakdown_24h_json",
-  "autoflow_token_hourly_24h_json",
   "completion_rate_percent"
 ];
 
 const metricSnapshotStringKeys = new Set([
-  "autoflow_token_runner_breakdown_24h_json",
-  "autoflow_token_model_breakdown_24h_json",
-  "autoflow_token_hourly_24h_json",
   "project_root",
   "board_root"
 ]);
@@ -462,6 +666,8 @@ const defaultMacOsDesktopSpaceNumber = (() => {
 const readBoardDiagnosticCacheTtlMs = 60 * 1000;
 const readBoardDiagnosticTimeoutMs = 15 * 1000;
 const readBoardDiagnosticCache = new Map();
+const readBoardSnapshotCacheTtlMs = 1000;
+const readBoardSnapshotCache = new Map();
 const readBoardRunnerListCacheTtlMs = 15 * 1000;
 const standaloneRunnerListCacheTtlMs = 2 * 1000;
 const selfHealStoppedRunnersCooldownMs = 15 * 1000;
@@ -470,7 +676,7 @@ const readBoardRunnerListCache = new Map();
 const knownProjectScopes = new Map();
 const lastSelfHealByScope = new Map();
 const selfHealInFlightScopes = new Set();
-// scopeKey → { watchers: FSWatcher[], debounceTimer, lastReason }
+// scopeKey -> { subscription, debounceTimer, lastReason }
 const boardWatchersByScope = new Map();
 const boardWatchDebounceMs = 250;
 const activeChildProcesses = new Set();
@@ -478,13 +684,11 @@ const activeChildProcesses = new Set();
 // CLI call (runRole / controlWiki --synth / installBoard / etc.) by id.
 const cancellableInvocations = new Map();
 const agentAuthStatusCache = new Map();
-const runnerAuthProcesses = new Map();
 let runnerShutdownInProgress = false;
 let appQuitInProgress = false;
-const DEFAULT_MEMORY_CEILING_MB = 1500;
+const DEFAULT_MEMORY_CEILING_MB = 4096;
 const DEFAULT_MEMORY_CHECK_INTERVAL_SECONDS = 30;
 const DEFAULT_MEMORY_RESTART_COOLDOWN_SECONDS = 300;
-const DEFAULT_WAKE_STALE_THRESHOLD_SECONDS = 600;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 let memoryCeilingIntervalId = null;
 let lastMemoryCeilingRestartAt = 0;
@@ -499,6 +703,8 @@ function parsePositiveIntegerOrDefault(value, fallback) {
 }
 
 function readMemoryCeilingConfig() {
+  const explicitlyEnabled = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_ENABLED || "");
+  const explicitlyDisabled = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_DISABLED || "");
   const ceilingMb = parsePositiveIntegerOrDefault(process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_MB, DEFAULT_MEMORY_CEILING_MB);
   const checkIntervalSeconds = parsePositiveIntegerOrDefault(
     process.env.AUTOFLOW_DESKTOP_MEMORY_CHECK_INTERVAL_SECONDS,
@@ -513,15 +719,8 @@ function readMemoryCeilingConfig() {
     ceilingMb,
     checkIntervalSeconds,
     restartCooldownSeconds,
-    disabled: process.env.AUTOFLOW_DESKTOP_MEMORY_CEILING_DISABLED === "1"
+    disabled: explicitlyDisabled || !explicitlyEnabled
   };
-}
-
-function readWakeStaleThresholdSeconds() {
-  return parsePositiveIntegerOrDefault(
-    process.env.AUTOFLOW_WAKE_STALE_THRESHOLD_SECONDS,
-    DEFAULT_WAKE_STALE_THRESHOLD_SECONDS
-  );
 }
 
 function bytesToMegabytes(value) {
@@ -529,12 +728,6 @@ function bytesToMegabytes(value) {
     return 0;
   }
   return value / BYTES_PER_MEGABYTE;
-}
-
-function logMemoryCeilingRestart(rssMb, heapUsedMb, ceilingMb) {
-  console.warn(
-    `[autoflow][memory-ceiling] reason=threshold_exceeded rss_mb=${rssMb.toFixed(2)} heapUsed_mb=${heapUsedMb.toFixed(2)} ceiling_mb=${ceilingMb}`
-  );
 }
 
 async function performMemoryCeilingRestart() {
@@ -594,7 +787,6 @@ function startMemoryCeilingMonitor() {
     const rssMb = bytesToMegabytes(usage.rss);
     const heapUsedMb = bytesToMegabytes(usage.heapUsed);
     if (rssMb >= config.ceilingMb || heapUsedMb >= config.ceilingMb) {
-      logMemoryCeilingRestart(rssMb, heapUsedMb, config.ceilingMb);
       lastMemoryCeilingRestartAt = now;
       await performMemoryCeilingRestart();
     }
@@ -651,7 +843,8 @@ function isPathInside(rootPath, targetPath) {
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
 }
 
-async function resolveExistingPathInside(rootPath, targetPath) {
+async function resolveExistingPathInside(rootPath, targetPath, options = {}) {
+  const rootLabel = options.rootLabel || "Autoflow 보드";
   const resolvedRoot = path.resolve(rootPath);
   const resolvedTarget = path.resolve(targetPath);
   const relativePath = path.relative(resolvedRoot, resolvedTarget);
@@ -660,7 +853,7 @@ async function resolveExistingPathInside(rootPath, targetPath) {
       ok: false,
       targetPath: resolvedTarget,
       relativePath,
-      stderr: "File must be inside the Autoflow board."
+      stderr: `${rootLabel} 안의 파일만 열 수 있습니다.`
     };
   }
   try {
@@ -673,7 +866,7 @@ async function resolveExistingPathInside(rootPath, targetPath) {
         ok: false,
         targetPath: resolvedTarget,
         relativePath,
-        stderr: "File must be inside the Autoflow board."
+        stderr: `${rootLabel} 안의 파일만 열 수 있습니다.`
       };
     }
     return { ok: true, targetPath: resolvedTarget, relativePath, stderr: "" };
@@ -779,13 +972,11 @@ function reapPreviousPtySessionPids() {
   const survivors = readPtySessionPids();
   if (survivors.length === 0) return 0;
   let killed = 0;
-  console.log(`[startup-reaper] previous session left ${survivors.length} PTY pid(s)`);
   for (const { pid, runnerId, agent } of survivors) {
     try { process.kill(pid, 0); } catch {
       // already dead — skip
       continue;
     }
-    console.log(`[startup-reaper]   killing pty pid=${pid} runnerId=${runnerId} agent=${agent}`);
     try { process.kill(-pid, "SIGTERM"); } catch {}
     try { process.kill(pid, "SIGTERM"); } catch {}
     killed += 1;
@@ -811,15 +1002,56 @@ function reapPreviousPtySessionPids() {
   return killed;
 }
 
-// Per-live-PTY metadata captured at spawn time so fs.watch can route wake
-// prompts and main can update the runner state file on lifecycle events.
+// Per-live-PTY metadata captured at spawn time so prompts and main can update
+// the runner state file on lifecycle events.
 // Internal PTY keys include the project scope; board-facing runnerId remains
 // the stable runner id (`planner`, `worker`, etc.).
 //   ptyRunnerKey -> { runnerId, role, agent, projectRoot, boardDirName, startedAt }
 const ptyRunnerMeta = new Map();
-const wakeAutoStartInflight = new Set();
-const deferredWakePromptTimers = new Map();
 const contextResetTimers = new Map();
+const contextResetLastInjected = new Map();
+const plannerHandoffTurnTimers = new Map();
+const plannerHandoffLastInjected = new Map();
+const verifierHandoffTurnTimers = new Map();
+const verifierHandoffLastInjected = new Map();
+const wikiHandoffTurnTimers = new Map();
+const wikiHandoffLastInjected = new Map();
+const workerTodoHandoffTurnTimers = new Map();
+const workerTodoHandoffLastInjected = new Map();
+const workerVerifierDecisionTurnTimers = new Map();
+const workerVerifierDecisionLastInjected = new Map();
+const codexHookTrustPromptAccepted = new Set();
+const codexHookTrustPromptAttempts = new Map();
+const codexHookTrustPromptTimers = new Map();
+const codexHookTrustPromptWatchdogs = new Map();
+
+function clearVerifierHandoffTurnTimers() {
+  for (const entry of plannerHandoffTurnTimers.values()) {
+    if (entry?.timer) clearTimeout(entry.timer);
+  }
+  plannerHandoffTurnTimers.clear();
+  plannerHandoffLastInjected.clear();
+  for (const entry of verifierHandoffTurnTimers.values()) {
+    if (entry?.timer) clearTimeout(entry.timer);
+  }
+  verifierHandoffTurnTimers.clear();
+  verifierHandoffLastInjected.clear();
+  for (const entry of wikiHandoffTurnTimers.values()) {
+    if (entry?.timer) clearTimeout(entry.timer);
+  }
+  wikiHandoffTurnTimers.clear();
+  wikiHandoffLastInjected.clear();
+  for (const entry of workerTodoHandoffTurnTimers.values()) {
+    if (entry?.timer) clearTimeout(entry.timer);
+  }
+  workerTodoHandoffTurnTimers.clear();
+  workerTodoHandoffLastInjected.clear();
+  for (const entry of workerVerifierDecisionTurnTimers.values()) {
+    if (entry?.timer) clearTimeout(entry.timer);
+  }
+  workerVerifierDecisionTurnTimers.clear();
+  workerVerifierDecisionLastInjected.clear();
+}
 
 function ptyRunnerKey(projectRoot, boardDirName, runnerId) {
   const normalizedProjectRoot = normalizePtyProjectRoot(projectRoot);
@@ -838,6 +1070,1099 @@ function ptyRunnerKeyForScope(scope = {}, runnerId) {
 function ptyRunnerPublicId(runnerKey) {
   const meta = ptyRunnerMeta.get(runnerKey);
   return String(meta?.runnerId || runnerKey || "");
+}
+
+function stripTerminalControlSequences(text) {
+  return String(text || "")
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[>=][0-9;?]*/g, "");
+}
+
+function hasActiveCodexHookTrustPrompt(text) {
+  const clean = stripTerminalControlSequences(text).replace(/\s+/g, " ");
+  const promptIndex = clean.lastIndexOf("Hooks need review");
+  if (promptIndex < 0) return false;
+  const tail = clean.slice(promptIndex);
+  if (
+    !/Trust\s*all\s*and\s*continue/i.test(tail) ||
+    !/(Press\s*enter\s*to\s*(?:confirm|continue)|esc\s*to\s*go\s*back)/i.test(tail)
+  ) {
+    return false;
+  }
+  return !/(Use \/skills|Working|Ran |exec codex)/.test(tail);
+}
+
+function scheduleCodexHookTrustPromptAccept(ptyManager, runnerKey, chunk = "") {
+  if (codexHookTrustPromptAccepted.has(runnerKey) || codexHookTrustPromptTimers.has(runnerKey)) return;
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (String(meta?.agent || "").toLowerCase() !== "codex") return;
+  if ((codexHookTrustPromptAttempts.get(runnerKey) || 0) >= 4) return;
+
+  const snapshot = typeof ptyManager.snapshot === "function" ? ptyManager.snapshot(runnerKey) || "" : "";
+  const candidate = `${snapshot.slice(-3000)}\n${String(chunk || "")}`;
+  if (!hasActiveCodexHookTrustPrompt(candidate)) return;
+
+  const promptVisible = () => {
+    const live = typeof ptyManager.snapshot === "function" ? ptyManager.snapshot(runnerKey) || "" : "";
+    return hasActiveCodexHookTrustPrompt(live.slice(-3000));
+  };
+
+  const send = (sequence) => {
+    try { ptyManager.writeInput(runnerKey, sequence); } catch {}
+  };
+
+  // Force option 2 first. Codex versions parse selection input differently, so
+  // keep fallback navigation variants and verify the prompt actually disappears.
+  const variants = [
+    () => { send("2"); setTimeout(() => send("\r"), 80); },        // digit + enter (most common)
+    () => { send("\x1b[B"); setTimeout(() => send("\r"), 80); },   // down arrow + enter
+    () => { send("j"); setTimeout(() => send("\r"), 80); },         // vim-style down + enter
+    () => { send("2\r"); },                                          // combined (legacy)
+  ];
+
+  const timer = setTimeout(() => {
+    codexHookTrustPromptTimers.delete(runnerKey);
+    if (codexHookTrustPromptAccepted.has(runnerKey)) return;
+    if (!promptVisible()) return;
+    codexHookTrustPromptAttempts.set(runnerKey, (codexHookTrustPromptAttempts.get(runnerKey) || 0) + 1);
+
+    let attempt = 0;
+    const tryNext = () => {
+      if (attempt >= variants.length) {
+        // Let the startup watchdog retry. The TUI can miss a burst while it is
+        // still painting the hook review view.
+        return;
+      }
+      const idx = attempt;
+      attempt += 1;
+      variants[idx]();
+      setTimeout(() => {
+        if (!promptVisible()) {
+          codexHookTrustPromptAccepted.add(runnerKey);
+          const currentMeta = ptyRunnerMeta.get(runnerKey) || meta;
+          const publicRunnerId = currentMeta?.runnerId || ptyRunnerPublicId(runnerKey);
+          if (currentMeta?.projectRoot) {
+            const boardRoot = path.join(currentMeta.projectRoot, currentMeta.boardDirName || defaultBoardDirName);
+            appendRunnerLog(boardRoot, publicRunnerId, {
+              event: "codex_hook_trust_prompt_auto_accepted",
+              runner_id: publicRunnerId,
+              variant: String(idx)
+            });
+          }
+          return;
+        }
+        tryNext();
+      }, 1500);
+    };
+    tryNext();
+  }, 200);
+  codexHookTrustPromptTimers.set(runnerKey, timer);
+}
+
+function startCodexHookTrustPromptWatchdog(ptyManager, runnerKey) {
+  if (codexHookTrustPromptWatchdogs.has(runnerKey)) return;
+  let ticks = 0;
+  const interval = setInterval(() => {
+    ticks += 1;
+    const runner = typeof ptyManager.get === "function" ? ptyManager.get(runnerKey) : null;
+    if (
+      ticks > 60 ||
+      codexHookTrustPromptAccepted.has(runnerKey) ||
+      !runner ||
+      runner.status !== "running"
+    ) {
+      clearInterval(interval);
+      codexHookTrustPromptWatchdogs.delete(runnerKey);
+      return;
+    }
+    scheduleCodexHookTrustPromptAccept(ptyManager, runnerKey);
+  }, 500);
+  codexHookTrustPromptWatchdogs.set(runnerKey, interval);
+}
+
+function clearCodexHookTrustPromptAutomation(runnerKey) {
+  codexHookTrustPromptAccepted.delete(runnerKey);
+  codexHookTrustPromptAttempts.delete(runnerKey);
+  const trustPromptTimer = codexHookTrustPromptTimers.get(runnerKey);
+  if (trustPromptTimer) clearTimeout(trustPromptTimer);
+  codexHookTrustPromptTimers.delete(runnerKey);
+  const watchdog = codexHookTrustPromptWatchdogs.get(runnerKey);
+  if (watchdog) clearInterval(watchdog);
+  codexHookTrustPromptWatchdogs.delete(runnerKey);
+}
+
+function boardRelPath(boardRoot, filePath) {
+  const rel = path.relative(boardRoot, filePath).split(path.sep).join("/");
+  return rel && !rel.startsWith("..") ? rel : filePath;
+}
+
+function readMarkdownTitleSync(filePath) {
+  try {
+    const text = fsSync.readFileSync(filePath, "utf8");
+    const titleScalar = text.match(/^- Title:\s*(.+)$/m);
+    if (titleScalar) return titleScalar[1].trim();
+    const first = text.split(/\r?\n/, 1)[0] || "";
+    return first.replace(/^#\s+/, "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function writeRunnerHandoffPromptFile({ boardRoot, runnerId, kind, prompt }) {
+  const stateDir = path.join(boardRoot, "runners", "state");
+  fsSync.mkdirSync(stateDir, { recursive: true });
+  const promptPath = path.join(
+    stateDir,
+    `${runnerPromptFileSegment(runnerId)}-${runnerPromptFileSegment(kind)}-handoff-prompt.md`
+  );
+  const tmpPath = `${promptPath}.${process.pid}.${Date.now()}.tmp`;
+  fsSync.writeFileSync(tmpPath, String(prompt || "").replace(/[\r\n]+$/, "") + "\n", "utf8");
+  fsSync.renameSync(tmpPath, promptPath);
+  return promptPath;
+}
+
+function buildInjectedHandoffPrompt({ agent, boardRoot, runnerId, kind, prompt }) {
+  const normalizedAgent = String(agent || "").toLowerCase();
+  if (normalizedAgent === "codex") {
+    const promptPath = writeRunnerHandoffPromptFile({ boardRoot, runnerId, kind, prompt });
+    return {
+      prompt: `Autoflow handoff: read ${JSON.stringify(promptPath)} and follow it exactly now. Execute the single runner turn it describes, then summarize and idle.`,
+      paste: "plain",
+      promptPath
+    };
+  }
+  return {
+    prompt,
+    paste: normalizedAgent === "claude" ? "bracketed" : "plain",
+    promptPath: ""
+  };
+}
+
+function verifierQueueChangeReasons(reasons) {
+  return (reasons || []).some((reason) => {
+    const value = String(reason || "");
+    return value === "boot-catchup" || value === "tickets/verifier" || /^tickets\/verifier\/TODO-\d+\.md$/i.test(value);
+  });
+}
+
+function verifierPromptLooksReady(snapshot, agent) {
+  const clean = stripTerminalControlSequences(snapshot)
+    .replace(/\r/g, "\n")
+    .replace(/\u001b/g, "");
+  const lines = clean
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const tailLines = lines.slice(-16);
+  const tail = tailLines.join("\n");
+  const compactTail = tail.replace(/\s+/g, " ").trim();
+  if (/\b(Working|Running command|Thinking|Compacting|Booting MCP server)\b/i.test(compactTail)) return false;
+  if (/Hooks need review/i.test(tail)) return false;
+  if (/(Trust\s*all\s*and\s*continue|Continue\s*without\s*trusting|hooks\s*won'?t\s*run)/i.test(compactTail)) {
+    return false;
+  }
+  if (runnerPromptNeedsContinue(snapshot, agent)) return false;
+  const promptPattern = /^[›>]\s*(?:$|gpt-|claude|sonnet|opus|haiku|.*[~/][^ ]*)/i;
+  const promptLine = tailLines.slice(-8).find((line) => promptPattern.test(line));
+  if (promptLine) return true;
+  if (/(?:^|\s)[›>]\s*(?:gpt-|claude|sonnet|opus|haiku|[~/])/i.test(compactTail)) return true;
+  if (String(agent || "").toLowerCase() !== "codex") {
+    if (/bypass\s+permissions\s+on/i.test(compactTail)) return true;
+    return tailLines.slice(-3).some((line) => /^[›>]\s*$/.test(line));
+  }
+  return /(?:^|\s)›\s*$/.test(compactTail);
+}
+
+function runnerPromptNeedsContinue(snapshot, agent) {
+  if (String(agent || "").toLowerCase() !== "codex") return false;
+  const clean = stripTerminalControlSequences(snapshot)
+    .replace(/\r/g, "\n")
+    .replace(/\u001b/g, "");
+  const compactTail = clean
+    .split(/\n/)
+    .slice(-20)
+    .join("\n")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /press\s+enter\s+to\s+continue|esc\s+to\s+go\s+back/i.test(compactTail);
+}
+
+function runnerSnapshotLooksBusy(snapshot) {
+  const clean = stripTerminalControlSequences(snapshot)
+    .replace(/\r/g, "\n")
+    .replace(/\u001b/g, "");
+  const compactTail = clean
+    .split(/\n/)
+    .slice(-24)
+    .join("\n")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!compactTail) return false;
+  if (/\b(Working|Running command|Thinking|Compacting|Booting MCP server)\b/i.test(compactTail)) return true;
+  if (/Hooks need review/i.test(compactTail)) return true;
+  if (/(Trust\s*all\s*and\s*continue|Continue\s*without\s*trusting|hooks\s*won'?t\s*run)/i.test(compactTail)) return true;
+  return false;
+}
+
+function runnerPromptAcceptsInjectedTurn(snapshot, agent, idleMs) {
+  if (verifierPromptLooksReady(snapshot, agent)) return true;
+  const fallbackIdleMs = Math.max(
+    1000,
+    Number.parseInt(process.env.AUTOFLOW_HANDOFF_READY_FALLBACK_IDLE_MS || "8000", 10) || 8000
+  );
+  if (!Number.isFinite(idleMs) || idleMs < fallbackIdleMs) return false;
+  if (runnerSnapshotLooksBusy(snapshot)) return false;
+  if (runnerPromptNeedsContinue(snapshot, agent)) return false;
+  return true;
+}
+
+function handoffRetryDedupMs(envName, fallbackMs, dedupMs) {
+  const parsed = Number.parseInt(process.env[envName] || "", 10);
+  const configured = Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+  return Math.max(1000, Math.min(dedupMs, configured));
+}
+
+function handoffDedupBlocks(last, fingerprint, now, dedupMs, retryMs, force) {
+  if (force || !last || last.fingerprint !== fingerprint) return false;
+  return now - last.at < Math.max(1000, Math.min(dedupMs, retryMs));
+}
+
+function handoffIdleStateFields(lastResult, promptPath = "") {
+  return {
+    last_result: lastResult,
+    active_item: "",
+    active_stage: "idle",
+    active_ticket_id: "",
+    active_ticket_path: "",
+    active_ticket_title: "",
+    active_spec_ref: "",
+    last_handoff_prompt_path: promptPath || ""
+  };
+}
+
+function pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, snapshot, agent) {
+  if (!runnerPromptNeedsContinue(snapshot, agent)) return false;
+  if (!mgr || typeof mgr.writeInput !== "function") return false;
+  return Boolean(mgr.writeInput(runnerKey, "\r"));
+}
+
+function workerVerifierDecisionChangeReasons(reasons) {
+  return (reasons || []).some((reason) => {
+    const value = String(reason || "");
+    return value === "boot-catchup" || value === "tickets/inprogress" || /^tickets\/inprogress\/TODO-\d+\.md$/i.test(value);
+  });
+}
+
+function verifierDecisionStageForWorkerTurn(ticketPath) {
+  const stage = (
+    markdownScalarInSectionSync(ticketPath, "Ticket", "Stage") ||
+    markdownScalarInSectionSync(ticketPath, "Worktree", "Integration Status") ||
+    markdownScalarInSectionSync(ticketPath, "Goal Runtime", "Status")
+  ).toLowerCase();
+  if (/verified[_ -]?pending[_ -]?merge/.test(stage)) return "verified_pending_merge";
+  if (/revision[_ -]?requested/.test(stage)) return "revision_requested";
+  if (/replan[_ -]?requested/.test(stage)) return "replan_requested";
+  return "";
+}
+
+function workerRunnerIdFromTicketSync(ticketPath) {
+  for (const value of [
+    markdownScalarInSectionSync(ticketPath, "Ticket", "Execution AI"),
+    markdownScalarInSectionSync(ticketPath, "Ticket", "Claimed By"),
+    markdownScalarInSectionSync(ticketPath, "Ticket", "AI")
+  ]) {
+    const token = canonicalWorkerRunnerId(String(value || "").split(":")[0]);
+    if (token && !/^verifier(?:-\d+)?$/i.test(token)) return token;
+  }
+  return "worker";
+}
+
+function workerDecisionFingerprint(boardRoot, ticketPath, stage) {
+  let mtimeMs = 0;
+  try { mtimeMs = fsSync.statSync(ticketPath).mtimeMs || 0; } catch {}
+  return `${boardRelPath(boardRoot, ticketPath)}:${stage}:${Math.round(mtimeMs)}`;
+}
+
+function buildWorkerVerifierDecisionTurnPrompt({ projectRoot, boardRoot, runnerId, ticketPath, stage }) {
+  const relTicket = boardRelPath(boardRoot, ticketPath);
+  const title = readMarkdownTitleSync(ticketPath);
+  const stageGuidance = stage === "verified_pending_merge"
+    ? `Verifier pass is recorded. Merge the approved worktree into the ticket merge target inside Allowed Paths, rerun required verification from that target, then call worker finalize-approved.`
+    : stage === "revision_requested"
+      ? `Verifier requested revision. Keep the same worktree, apply the verifier notes inside Allowed Paths, rerun local verification, then submit to verifier again.`
+      : `Verifier requested replan. Run worker request-replan for this ticket before claiming anything else.`;
+  return [
+    `Autoflow worker verifier-decision handoff detected by Desktop.`,
+    `This is a one-shot worker turn for a verifier decision that returned a ticket to tickets/inprogress/; it is not a recurring wake loop.`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    `Ticket:       ${relTicket}${title ? ` — ${title}` : ""}`,
+    `Stage:        ${stage}`,
+    ``,
+    stageGuidance,
+    ``,
+    `Run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "active-get", "--runner", runnerId, "--max-items", "12"])}\` once.`,
+    `Inspect only active-get.ai_followup_scope.inspect_only_recent_sources for this ticket, then perform the next worker action recorded in the ticket.`,
+    `Do not run todo-snapshot or claim another ticket while this returned verifier decision is active.`
+  ].join("\n");
+}
+
+function scheduleWorkerVerifierDecisionTurn({ projectRoot, boardDirName, boardRoot, runnerId, ticketPath, stage, reason, force = false }) {
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function" || typeof mgr.writePrompt !== "function") return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (!meta || meta.projectRoot !== projectRoot || meta.boardDirName !== boardDirName) return;
+  const runner = mgr.get(runnerKey);
+  if (!runner || runner.status !== "running") return;
+  if (!ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
+
+  const fingerprint = workerDecisionFingerprint(boardRoot, ticketPath, stage);
+  const now = Date.now();
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WORKER_VERIFIER_DECISION_DEDUP_MS || "300000", 10) || 300000);
+  const last = workerVerifierDecisionLastInjected.get(runnerKey);
+  if (!force && last?.fingerprint === fingerprint && now - last.at < dedupMs) return;
+
+  const existing = workerVerifierDecisionTurnTimers.get(runnerKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WORKER_VERIFIER_DECISION_DELAY_MS || "1500", 10) || 1500);
+  const minIdleMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WORKER_VERIFIER_DECISION_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WORKER_VERIFIER_DECISION_MAX_ATTEMPTS || "40", 10) || 40);
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null } = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    workerVerifierDecisionTurnTimers.delete(runnerKey);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      const live = mgr.get(runnerKey);
+      if (!live || live.status !== "running" || !safeIsFileSync(ticketPath)) {
+        clearEntry();
+        return;
+      }
+      const currentStage = verifierDecisionStageForWorkerTurn(ticketPath);
+      if (!currentStage) {
+        clearEntry();
+        return;
+      }
+      const currentOwner = workerRunnerIdFromTicketSync(ticketPath);
+      if (canonicalWorkerRunnerId(currentOwner) !== canonicalWorkerRunnerId(runnerId)) {
+        clearEntry();
+        return;
+      }
+      const idleMs = Number.isFinite(live.lastDataAt) && live.lastDataAt > 0
+        ? Date.now() - live.lastDataAt
+        : Number.POSITIVE_INFINITY;
+      const snapshot = typeof mgr.snapshot === "function" ? mgr.snapshot(runnerKey) || "" : "";
+      const promptTail = snapshot.slice(-6000);
+      if (idleMs >= minIdleMs && pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, promptTail, meta.agent)) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const promptReady = runnerPromptAcceptsInjectedTurn(promptTail, meta.agent, idleMs);
+      if (idleMs < minIdleMs || !promptReady) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const prompt = buildWorkerVerifierDecisionTurnPrompt({
+        projectRoot,
+        boardRoot,
+        runnerId,
+        ticketPath,
+        stage: currentStage
+      });
+      const injectedPrompt = buildInjectedHandoffPrompt({
+        agent: meta.agent,
+        boardRoot,
+        runnerId,
+        kind: "worker-verifier-decision",
+        prompt
+      });
+      const injected = mgr.writePrompt(runnerKey, injectedPrompt.prompt, { paste: injectedPrompt.paste });
+      if (injected) {
+        workerVerifierDecisionLastInjected.set(runnerKey, {
+          at: Date.now(),
+          fingerprint: workerDecisionFingerprint(boardRoot, ticketPath, currentStage),
+          reason
+        });
+        void writePtyRunnerStateFile(runnerKey, {
+          last_result: currentStage === "verified_pending_merge"
+            ? "verifier_passed_merge_pending"
+            : currentStage === "revision_requested"
+              ? "verifier_revise_requested"
+              : "verifier_replan_requested",
+          active_stage: currentStage,
+          active_ticket_id: path.basename(ticketPath, ".md"),
+          active_ticket_path: boardRelPath(boardRoot, ticketPath),
+          active_ticket_title: readMarkdownTitleSync(ticketPath),
+          last_handoff_prompt_path: injectedPrompt.promptPath || ""
+        });
+      }
+      clearEntry();
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+  workerVerifierDecisionTurnTimers.set(runnerKey, entry);
+  scheduleNext(delayMs);
+}
+
+function safeIsFileSync(filePath) {
+  try {
+    return fsSync.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function scheduleWorkerVerifierDecisionTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons }) {
+  if (!workerVerifierDecisionChangeReasons(reasons)) return;
+  const candidates = listQueueFilesSync(boardRoot, "tickets/inprogress", /^TODO-\d+\.md$/i, 1000)
+    .map((ticketPath) => ({
+      ticketPath,
+      stage: verifierDecisionStageForWorkerTurn(ticketPath),
+      runnerId: workerRunnerIdFromTicketSync(ticketPath)
+    }))
+    .filter((item) => item.stage && item.runnerId);
+  if (candidates.length === 0) return;
+  const enabledWorkers = new Set(
+    readRunnerConfigBlocks(projectRoot, boardDirName)
+      .filter((runner) => normalizeRunnerRole(runner.role || inferRunnerRoleFromId(runner.id)) === "worker")
+      .filter((runner) => runnerConfigBoolean(runner.enabled, true))
+      .map((runner) => canonicalWorkerRunnerId(runner.id))
+  );
+  for (const item of candidates) {
+    if (!enabledWorkers.has(canonicalWorkerRunnerId(item.runnerId))) continue;
+    scheduleWorkerVerifierDecisionTurn({
+      projectRoot,
+      boardDirName,
+      boardRoot,
+      runnerId: item.runnerId,
+      ticketPath: item.ticketPath,
+      stage: item.stage,
+      reason: (reasons || []).join(",")
+    });
+  }
+}
+
+function buildVerifierHandoffTurnPrompt({ projectRoot, boardRoot, boardDirName, runnerId, ticketPath }) {
+  const relTicket = boardRelPath(boardRoot, ticketPath);
+  const title = readMarkdownTitleSync(ticketPath);
+  return [
+    `Autoflow verifier handoff detected by Desktop.`,
+    `This is a one-shot verifier turn for a ticket that just entered tickets/verifier/; it is not a recurring wake loop.`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    `Pending verifier ticket: ${relTicket}${title ? ` — ${title}` : ""}`,
+    ``,
+    `Run \`${autoflowShellCommand(["tool", "runner-tool", "verifier", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once.`,
+    `If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+    `If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, run verifier evidence for that one ticket, make exactly one pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then idle.`,
+    `Do not open full AGENTS, rule docs, or unrelated project files unless the compact verifier tool fails or the scoped verifier ticket directly requires them.`
+  ].join("\n");
+}
+
+function scheduleVerifierHandoffTurn({ projectRoot, boardDirName, boardRoot, runnerId, reason, force = false }) {
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function" || typeof mgr.writePrompt !== "function") return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (!meta || meta.projectRoot !== projectRoot || meta.boardDirName !== boardDirName) return;
+  const runner = mgr.get(runnerKey);
+  if (!runner || runner.status !== "running") return;
+  if (!ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
+
+  const pendingTickets = listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/i, 1000);
+  if (pendingTickets.length === 0) return;
+
+  const fingerprint = computeQueueFingerprint("verifier", boardRoot);
+  const now = Date.now();
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_VERIFIER_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
+  const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_VERIFIER_HANDOFF_RETRY_MS", 30000, dedupMs);
+  const last = verifierHandoffLastInjected.get(runnerKey);
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
+
+  const existing = verifierHandoffTurnTimers.get(runnerKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_VERIFIER_HANDOFF_DELAY_MS || "1500", 10) || 1500);
+  const minIdleMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_VERIFIER_HANDOFF_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_VERIFIER_HANDOFF_MAX_ATTEMPTS || "40", 10) || 40);
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null } = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    verifierHandoffTurnTimers.delete(runnerKey);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      const live = mgr.get(runnerKey);
+      if (!live || live.status !== "running") {
+        clearEntry();
+        return;
+      }
+      const currentPending = listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/i, 1000);
+      if (currentPending.length === 0) {
+        clearEntry();
+        return;
+      }
+      const idleMs = Number.isFinite(live.lastDataAt) && live.lastDataAt > 0
+        ? Date.now() - live.lastDataAt
+        : Number.POSITIVE_INFINITY;
+      const snapshot = typeof mgr.snapshot === "function" ? mgr.snapshot(runnerKey) || "" : "";
+      const promptTail = snapshot.slice(-6000);
+      if (idleMs >= minIdleMs && pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, promptTail, meta.agent)) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const promptReady = runnerPromptAcceptsInjectedTurn(promptTail, meta.agent, idleMs);
+      if (idleMs < minIdleMs || !promptReady) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const prompt = buildVerifierHandoffTurnPrompt({
+        projectRoot,
+        boardRoot,
+        boardDirName,
+        runnerId,
+        ticketPath: currentPending[0]
+      });
+      const injectedPrompt = buildInjectedHandoffPrompt({
+        agent: meta.agent,
+        boardRoot,
+        runnerId,
+        kind: "verifier",
+        prompt
+      });
+      const injected = mgr.writePrompt(runnerKey, injectedPrompt.prompt, { paste: injectedPrompt.paste });
+      if (injected) {
+        const currentFingerprint = computeQueueFingerprint("verifier", boardRoot);
+        verifierHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
+        void writePtyRunnerStateFile(
+          runnerKey,
+          handoffIdleStateFields("verifier_handoff_turn_requested", injectedPrompt.promptPath)
+        );
+      }
+      clearEntry();
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+  verifierHandoffTurnTimers.set(runnerKey, entry);
+  scheduleNext(delayMs);
+}
+
+function scheduleVerifierHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons }) {
+  if (!verifierQueueChangeReasons(reasons)) return;
+  if (listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/i, 1).length === 0) return;
+  const verifierRunners = readRunnerConfigBlocks(projectRoot, boardDirName)
+    .filter((runner) => normalizeRunnerRole(runner.role || inferRunnerRoleFromId(runner.id)) === "verifier")
+    .filter((runner) => runnerConfigBoolean(runner.enabled, true));
+  for (const runner of verifierRunners) {
+    scheduleVerifierHandoffTurn({
+      projectRoot,
+      boardDirName,
+      boardRoot,
+      runnerId: runner.id,
+      reason: (reasons || []).join(",")
+    });
+  }
+}
+
+function plannerQueueChangeReasons(reasons) {
+  return (reasons || []).some((reason) => {
+    const value = String(reason || "");
+    return value === "boot-catchup" || value === "tickets/prd" || /^tickets\/prd\/PRD[-_].+\.md$/i.test(value);
+  });
+}
+
+function buildPlannerHandoffTurnPrompt({ projectRoot, boardRoot, runnerId, prdPath }) {
+  const relPrd = boardRelPath(boardRoot, prdPath);
+  const title = readMarkdownTitleSync(prdPath);
+  return [
+    `Autoflow planner PRD handoff detected by Desktop.`,
+    `This is a one-shot planner turn for an actionable PRD in tickets/prd/; it is not a recurring wake loop.`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    `Pending PRD:  ${relPrd}${title ? ` — ${title}` : ""}`,
+    ``,
+    `Run \`${autoflowShellCommand(["tool", "runner-tool", "planner", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once.`,
+    `If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+    `If a PRD exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, create the worker-facing TODO set for that one PRD, rerun queue-snapshot once, then idle.`,
+    `Do not open unrelated PRDs, tickets, AGENTS, or rule docs unless the compact planner tool fails or the scoped PRD directly requires them.`
+  ].join("\n");
+}
+
+function schedulePlannerHandoffTurn({ projectRoot, boardDirName, boardRoot, runnerId, reason, force = false }) {
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function" || typeof mgr.writePrompt !== "function") return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (!meta || meta.projectRoot !== projectRoot || meta.boardDirName !== boardDirName) return;
+  const runner = mgr.get(runnerKey);
+  if (!runner || runner.status !== "running") return;
+  if (!ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
+
+  const pendingPrds = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000)
+    .filter(plannerQueueFileIsActionableSync);
+  if (pendingPrds.length === 0) return;
+
+  const fingerprint = computeQueueFingerprint("planner", boardRoot);
+  const now = Date.now();
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_PLANNER_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
+  const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_PLANNER_HANDOFF_RETRY_MS", 30000, dedupMs);
+  const last = plannerHandoffLastInjected.get(runnerKey);
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
+
+  const existing = plannerHandoffTurnTimers.get(runnerKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_PLANNER_HANDOFF_DELAY_MS || "1500", 10) || 1500);
+  const minIdleMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_PLANNER_HANDOFF_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_PLANNER_HANDOFF_MAX_ATTEMPTS || "40", 10) || 40);
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null } = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    plannerHandoffTurnTimers.delete(runnerKey);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      const live = mgr.get(runnerKey);
+      if (!live || live.status !== "running") {
+        clearEntry();
+        return;
+      }
+      const currentPending = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000)
+        .filter(plannerQueueFileIsActionableSync);
+      if (currentPending.length === 0) {
+        clearEntry();
+        return;
+      }
+      const idleMs = Number.isFinite(live.lastDataAt) && live.lastDataAt > 0
+        ? Date.now() - live.lastDataAt
+        : Number.POSITIVE_INFINITY;
+      const snapshot = typeof mgr.snapshot === "function" ? mgr.snapshot(runnerKey) || "" : "";
+      const promptTail = snapshot.slice(-6000);
+      if (idleMs >= minIdleMs && pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, promptTail, meta.agent)) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const promptReady = runnerPromptAcceptsInjectedTurn(promptTail, meta.agent, idleMs);
+      if (idleMs < minIdleMs || !promptReady) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const prompt = buildPlannerHandoffTurnPrompt({
+        projectRoot,
+        boardRoot,
+        runnerId,
+        prdPath: currentPending[0]
+      });
+      const injectedPrompt = buildInjectedHandoffPrompt({
+        agent: meta.agent,
+        boardRoot,
+        runnerId,
+        kind: "planner",
+        prompt
+      });
+      const injected = mgr.writePrompt(runnerKey, injectedPrompt.prompt, { paste: injectedPrompt.paste });
+      if (injected) {
+        const currentFingerprint = computeQueueFingerprint("planner", boardRoot);
+        plannerHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
+        void writePtyRunnerStateFile(
+          runnerKey,
+          handoffIdleStateFields("planner_handoff_turn_requested", injectedPrompt.promptPath)
+        );
+      }
+      clearEntry();
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+  plannerHandoffTurnTimers.set(runnerKey, entry);
+  scheduleNext(delayMs);
+}
+
+function schedulePlannerHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons }) {
+  if (!plannerQueueChangeReasons(reasons)) return;
+  if (listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000).filter(plannerQueueFileIsActionableSync).length === 0) return;
+  const plannerRunners = readRunnerConfigBlocks(projectRoot, boardDirName)
+    .filter((runner) => normalizeRunnerRole(runner.role || inferRunnerRoleFromId(runner.id)) === "planner")
+    .filter((runner) => runnerConfigBoolean(runner.enabled, true));
+  for (const runner of plannerRunners) {
+    schedulePlannerHandoffTurn({
+      projectRoot,
+      boardDirName,
+      boardRoot,
+      runnerId: runner.id,
+      reason: (reasons || []).join(",")
+    });
+  }
+}
+
+function workerTodoQueueChangeReasons(reasons) {
+  return (reasons || []).some((reason) => {
+    const value = String(reason || "");
+    return value === "boot-catchup" || value === "tickets/todo" || /^tickets\/todo\/TODO-\d+\.md$/i.test(value);
+  });
+}
+
+function workerTodoQueueFingerprint(boardRoot) {
+  const parts = [];
+  for (const filePath of listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/i, 1000)) {
+    if (!workerTodoFileIsClaimableSync(filePath)) continue;
+    try {
+      const stat = fsSync.statSync(filePath);
+      parts.push(`${boardRelPath(boardRoot, filePath)}:${stat.size}:${stat.mtimeMs}`);
+    } catch {}
+  }
+  return nodeCrypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 12);
+}
+
+function workerRunnerHasOwnedActiveTicketSync(boardRoot, runnerId) {
+  const normalizedRunnerId = canonicalWorkerRunnerId(runnerId);
+  if (!normalizedRunnerId) return false;
+
+  const stateRel = runnerStateFieldSync(boardRoot, normalizedRunnerId, "active_ticket_path")
+    .split(path.sep)
+    .join("/");
+  if (/^tickets\/(?:inprogress|verifier|ready-to-merge)\/TODO-\d+\.md$/i.test(stateRel)) {
+    const statePath = path.join(boardRoot, stateRel);
+    if (safeIsFileSync(statePath)) {
+      const claimedBy = canonicalWorkerRunnerId(ticketClaimedByRunnerIdSync(statePath));
+      if (!claimedBy || claimedBy === normalizedRunnerId) return true;
+    }
+  }
+
+  const stateTicketId = runnerActiveTicketIdSync(boardRoot, normalizedRunnerId);
+  if (stateTicketId) {
+    for (const relDir of ["tickets/inprogress", "tickets/verifier", "tickets/ready-to-merge"]) {
+      const candidatePath = path.join(boardRoot, relDir, `${stateTicketId}.md`);
+      if (!safeIsFileSync(candidatePath)) continue;
+      const claimedBy = canonicalWorkerRunnerId(ticketClaimedByRunnerIdSync(candidatePath));
+      if (!claimedBy || claimedBy === normalizedRunnerId) return true;
+    }
+  }
+
+  for (const relDir of ["tickets/inprogress", "tickets/verifier", "tickets/ready-to-merge"]) {
+    for (const ticketPath of listQueueFilesSync(boardRoot, relDir, /^TODO-\d+\.md$/i, 1000)) {
+      const claimedBy = canonicalWorkerRunnerId(ticketClaimedByRunnerIdSync(ticketPath));
+      if (claimedBy && claimedBy === normalizedRunnerId) return true;
+    }
+  }
+  return false;
+}
+
+function buildWorkerTodoHandoffTurnPrompt({ projectRoot, boardRoot, runnerId, ticketPath }) {
+  const relTicket = boardRelPath(boardRoot, ticketPath);
+  const title = readMarkdownTitleSync(ticketPath);
+  return [
+    `Autoflow worker todo handoff detected by Desktop.`,
+    `This is a one-shot worker turn for a ticket that just entered tickets/todo/; it is not a recurring wake loop.`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    `Pending todo candidate: ${relTicket}${title ? ` — ${title}` : ""}`,
+    ``,
+    `Run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "active-get", "--runner", runnerId, "--max-items", "12"])}\` once.`,
+    `If active-get reports an owned active ticket, handle that ticket first and do not claim another ticket.`,
+    `If no owned active ticket exists, run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "todo-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once before deciding idle.`,
+    `If todo-snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+    `If a candidate exists, inspect only todo-snapshot.ai_followup_scope.inspect_only_recent_sources, choose exactly one ticket, run worker claim, then run worker worktree-ensure before any product edits.`
+  ].join("\n");
+}
+
+function scheduleWorkerTodoHandoffTurn({ projectRoot, boardDirName, boardRoot, runnerId, reason, force = false }) {
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function" || typeof mgr.writePrompt !== "function") return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (!meta || meta.projectRoot !== projectRoot || meta.boardDirName !== boardDirName) return;
+  const runner = mgr.get(runnerKey);
+  if (!runner || runner.status !== "running") return;
+  if (!ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
+  if (workerRunnerHasOwnedActiveTicketSync(boardRoot, runnerId)) return;
+
+  const pendingTodos = listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/i, 1000)
+    .filter(workerTodoFileIsClaimableSync);
+  if (pendingTodos.length === 0) return;
+
+  const fingerprint = workerTodoQueueFingerprint(boardRoot);
+  const now = Date.now();
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WORKER_TODO_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
+  const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_WORKER_TODO_HANDOFF_RETRY_MS", 15000, dedupMs);
+  const last = workerTodoHandoffLastInjected.get(runnerKey);
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
+
+  const existing = workerTodoHandoffTurnTimers.get(runnerKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WORKER_TODO_HANDOFF_DELAY_MS || "1500", 10) || 1500);
+  const minIdleMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WORKER_TODO_HANDOFF_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WORKER_TODO_HANDOFF_MAX_ATTEMPTS || "40", 10) || 40);
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null } = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    workerTodoHandoffTurnTimers.delete(runnerKey);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      const live = mgr.get(runnerKey);
+      if (!live || live.status !== "running") {
+        clearEntry();
+        return;
+      }
+      if (workerRunnerHasOwnedActiveTicketSync(boardRoot, runnerId)) {
+        clearEntry();
+        return;
+      }
+      const currentPending = listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/i, 1000)
+        .filter(workerTodoFileIsClaimableSync);
+      if (currentPending.length === 0) {
+        clearEntry();
+        return;
+      }
+      const idleMs = Number.isFinite(live.lastDataAt) && live.lastDataAt > 0
+        ? Date.now() - live.lastDataAt
+        : Number.POSITIVE_INFINITY;
+      const snapshot = typeof mgr.snapshot === "function" ? mgr.snapshot(runnerKey) || "" : "";
+      const promptTail = snapshot.slice(-6000);
+      if (idleMs >= minIdleMs && pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, promptTail, meta.agent)) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const promptReady = runnerPromptAcceptsInjectedTurn(promptTail, meta.agent, idleMs);
+      if (idleMs < minIdleMs || !promptReady) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const prompt = buildWorkerTodoHandoffTurnPrompt({
+        projectRoot,
+        boardRoot,
+        runnerId,
+        ticketPath: currentPending[0]
+      });
+      const injectedPrompt = buildInjectedHandoffPrompt({
+        agent: meta.agent,
+        boardRoot,
+        runnerId,
+        kind: "worker-todo",
+        prompt
+      });
+      const injected = mgr.writePrompt(runnerKey, injectedPrompt.prompt, { paste: injectedPrompt.paste });
+      if (injected) {
+        const currentFingerprint = workerTodoQueueFingerprint(boardRoot);
+        workerTodoHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
+        void writePtyRunnerStateFile(
+          runnerKey,
+          handoffIdleStateFields("worker_todo_handoff_turn_requested", injectedPrompt.promptPath)
+        );
+      }
+      clearEntry();
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+  workerTodoHandoffTurnTimers.set(runnerKey, entry);
+  scheduleNext(delayMs);
+}
+
+function scheduleWorkerTodoHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons }) {
+  if (!workerTodoQueueChangeReasons(reasons)) return;
+  const pendingTodos = listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/i, 1000)
+    .filter(workerTodoFileIsClaimableSync);
+  if (pendingTodos.length === 0) return;
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function") return;
+  const workerRunners = readRunnerConfigBlocks(projectRoot, boardDirName)
+    .filter((runner) => normalizeRunnerRole(runner.role || inferRunnerRoleFromId(runner.id)) === "worker")
+    .filter((runner) => runnerConfigBoolean(runner.enabled, true));
+  let scheduled = 0;
+  for (const runner of workerRunners) {
+    const runnerId = canonicalWorkerRunnerId(runner.id);
+    if (!runnerId || workerRunnerHasOwnedActiveTicketSync(boardRoot, runnerId)) continue;
+    const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+    const live = mgr.get(runnerKey);
+    if (!live || live.status !== "running") continue;
+    scheduleWorkerTodoHandoffTurn({
+      projectRoot,
+      boardDirName,
+      boardRoot,
+      runnerId,
+      reason: (reasons || []).join(",")
+    });
+    scheduled += 1;
+    if (scheduled >= pendingTodos.length) break;
+  }
+}
+
+function wikiQueueChangeReasons(reasons) {
+  return (reasons || []).some((reason) => {
+    const value = String(reason || "");
+    return value === "boot-catchup" || value === "wiki" || value.startsWith("wiki/") || value === "tickets/done" || value.startsWith("tickets/done/");
+  });
+}
+
+function buildWikiHandoffTurnPrompt({ projectRoot, boardRoot, runnerId }) {
+  return [
+    `Autoflow wiki handoff detected by Desktop.`,
+    `This is a one-shot wiki turn for board wiki/done changes; it is not a recurring wake loop.`,
+    `Project root: ${projectRoot}`,
+    `Board root:   ${boardRoot}`,
+    `Runner id:    ${runnerId}`,
+    ``,
+    `Run \`${autoflowShellCommand(["tool", "runner-tool", "wiki", "tick", "--runner", runnerId, "--max-items", "12"])}\` once and let it complete.`,
+    `If tick.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+    `If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources, write or update at most one focused wiki page through wiki write-page (DB upsert; do not create .autoflow/wiki markdown), then rerun wiki tick once with --skip-telemetry.`,
+    `If the rerun tick still reports ai_followup_recommended=true or recent_done_pending_review_count > 0, summarize the page you updated and the remaining count, then let the Stop hook continue the next focused wiki turn. Only idle when no follow-up remains.`,
+    `Do not open unrelated tickets, full AGENTS, or broad project files unless the compact wiki tool fails or the scoped source directly requires them.`
+  ].join("\n");
+}
+
+function scheduleWikiHandoffTurn({ projectRoot, boardDirName, boardRoot, runnerId, reason, force = false }) {
+  const mgr = globalThis.__autoflowPtyManager;
+  if (!mgr || typeof mgr.get !== "function" || typeof mgr.writePrompt !== "function") return;
+  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
+  const meta = ptyRunnerMeta.get(runnerKey);
+  if (!meta || meta.projectRoot !== projectRoot || meta.boardDirName !== boardDirName) return;
+  const runner = mgr.get(runnerKey);
+  if (!runner || runner.status !== "running") return;
+  if (!ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
+  if (!wikiHasPendingRunnerWorkSync(boardRoot)) return;
+
+  const fingerprint = computeQueueFingerprint("wiki-maintainer", boardRoot);
+  const now = Date.now();
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WIKI_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
+  const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_WIKI_HANDOFF_RETRY_MS", 30000, dedupMs);
+  const last = wikiHandoffLastInjected.get(runnerKey);
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
+
+  const existing = wikiHandoffTurnTimers.get(runnerKey);
+  if (existing?.timer) clearTimeout(existing.timer);
+
+  const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WIKI_HANDOFF_DELAY_MS || "1500", 10) || 1500);
+  const minIdleMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_WIKI_HANDOFF_MIN_IDLE_MS || "2000", 10) || 2000);
+  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WIKI_HANDOFF_MAX_ATTEMPTS || "40", 10) || 40);
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null } = { attempt: 0, timer: null };
+  const clearEntry = () => {
+    if (entry.timer) clearTimeout(entry.timer);
+    wikiHandoffTurnTimers.delete(runnerKey);
+  };
+  const scheduleNext = (waitMs) => {
+    entry.timer = setTimeout(() => {
+      entry.timer = null;
+      entry.attempt += 1;
+      const live = mgr.get(runnerKey);
+      if (!live || live.status !== "running") {
+        clearEntry();
+        return;
+      }
+      if (!wikiHasPendingRunnerWorkSync(boardRoot)) {
+        clearEntry();
+        return;
+      }
+      const idleMs = Number.isFinite(live.lastDataAt) && live.lastDataAt > 0
+        ? Date.now() - live.lastDataAt
+        : Number.POSITIVE_INFINITY;
+      const snapshot = typeof mgr.snapshot === "function" ? mgr.snapshot(runnerKey) || "" : "";
+      const promptTail = snapshot.slice(-6000);
+      if (idleMs >= minIdleMs && pokeRunnerContinuePromptIfNeeded(mgr, runnerKey, promptTail, meta.agent)) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const promptReady = runnerPromptAcceptsInjectedTurn(promptTail, meta.agent, idleMs);
+      if (idleMs < minIdleMs || !promptReady) {
+        if (entry.attempt >= maxAttempts) {
+          clearEntry();
+          return;
+        }
+        scheduleNext(delayMs);
+        return;
+      }
+      const prompt = buildWikiHandoffTurnPrompt({ projectRoot, boardRoot, runnerId });
+      const injectedPrompt = buildInjectedHandoffPrompt({
+        agent: meta.agent,
+        boardRoot,
+        runnerId,
+        kind: "wiki",
+        prompt
+      });
+      const injected = mgr.writePrompt(runnerKey, injectedPrompt.prompt, { paste: injectedPrompt.paste });
+      if (injected) {
+        const currentFingerprint = computeQueueFingerprint("wiki-maintainer", boardRoot);
+        wikiHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
+        void writePtyRunnerStateFile(
+          runnerKey,
+          handoffIdleStateFields("wiki_handoff_turn_requested", injectedPrompt.promptPath)
+        );
+      }
+      clearEntry();
+    }, waitMs);
+    if (typeof entry.timer?.unref === "function") entry.timer.unref();
+  };
+  wikiHandoffTurnTimers.set(runnerKey, entry);
+  scheduleNext(delayMs);
+}
+
+function scheduleWikiHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons }) {
+  if (!wikiQueueChangeReasons(reasons)) return;
+  if (!wikiHasPendingRunnerWorkSync(boardRoot)) return;
+  const wikiRunners = readRunnerConfigBlocks(projectRoot, boardDirName)
+    .filter((runner) => normalizeRunnerRole(runner.role || inferRunnerRoleFromId(runner.id)) === "wiki-maintainer")
+    .filter((runner) => runnerConfigBoolean(runner.enabled, true));
+  for (const runner of wikiRunners) {
+    scheduleWikiHandoffTurn({
+      projectRoot,
+      boardDirName,
+      boardRoot,
+      runnerId: runner.id,
+      reason: (reasons || []).join(",")
+    });
+  }
 }
 
 function ptyRunnerMetaForScope(runnerId, scope = {}) {
@@ -939,15 +2264,9 @@ function stopPtyRunnersForScope(scope = {}, opts = {}) {
 // appear in the current PTY stream. This watches only live runner output, never
 // local session history files.
 const ptyTokenUsageParseState = new Map();
-const codexSessionUsageSyncTimers = new Map();
-const codexSessionUsageSyncInflight = new Set();
-const codexSessionUsageSyncPending = new Set();
-// Per-runner safety-poll state: idle detection + queue fingerprint cache.
-//   runnerId -> { lastWakeAt: number (ms epoch), queueFingerprint: string }
-const wakePollState = new Map();
-
-// Safety poller handles per scope key — prevents duplicate setIntervals.
-const wakeSafetyPollers = new Map();
+const sessionTokenUsageImportTimers = new Map();
+const sessionTokenUsageImportInflight = new Set();
+const sessionTokenUsageImportPending = new Set();
 
 function migrateLegacyTicketQueueSync(boardRoot, fromName, toName) {
   try {
@@ -1044,41 +2363,18 @@ function boardRelForQueueFileSync(filePath) {
   return path.relative(boardRoot, filePath).split(path.sep).join("/");
 }
 
-function sourceOrderRefInFileSync(filePath) {
-  try {
-    return fsSync.readFileSync(filePath, "utf8").match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/)?.[0] || "";
-  } catch {
-    return "";
-  }
-}
-
-function orderQueueFileAlreadyPromotedSync(filePath) {
-  const relPath = boardRelForQueueFileSync(filePath);
-  if (!/^tickets\/order\/order_[A-Za-z0-9._-]+\.md$/.test(relPath)) return false;
-  if (/_retry_/i.test(path.basename(filePath))) return false;
-  const boardRoot = boardRootForQueueFileSync(filePath);
-  if (!boardRoot) return false;
-  const roots = [path.join(boardRoot, "tickets", "prd"), path.join(boardRoot, "tickets", "done")];
-  for (const root of roots) {
-    if (!fsSync.existsSync(root)) continue;
-    for (const candidate of walkMarkdownFilesSync(root)) {
-      if (!/^(prd|project)_\d+\.md$/i.test(path.basename(candidate))) continue;
-      if (sourceOrderRefInFileSync(candidate) === relPath) return true;
-    }
-  }
-  return false;
-}
-
 function plannerQueueFileIsActionableSync(filePath) {
-  const status = (
-    markdownScalarInSectionSync(filePath, "Order", "Status") ||
-    markdownScalarInSectionSync(filePath, "Project", "Status")
-  ).toLowerCase();
+  const status = markdownScalarInSectionSync(filePath, "Project", "Status").toLowerCase();
   if (["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status)) {
     return false;
   }
-  if (orderQueueFileAlreadyPromotedSync(filePath)) {
-    return false;
+  // If the file lacks the canonical PRD scalar fields (Project section with
+  // Status / Goal), it is not a real PRD body but author hint/reference
+  // material parked in tickets/prd/. Treat it as not actionable so planner
+  // does not waste cycles on it.
+  if (!status) {
+    const title = markdownScalarInSectionSync(filePath, "Project", "Title");
+    if (!title) return false;
   }
   return true;
 }
@@ -1107,25 +2403,6 @@ function workerInprogressFileIsActionableSync(filePath) {
     return false;
   }
   return true;
-}
-
-function plannerRecoveryFilesSync(boardRoot) {
-  const candidates = [
-    ...listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/),
-    ...listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+|plan_\d+)\.md$/),
-  ];
-  return candidates.filter((filePath) => {
-    let text = "";
-    try {
-      text = fsSync.readFileSync(filePath, "utf8");
-    } catch {
-      return false;
-    }
-    if (!/## Recovery State/i.test(text)) return false;
-    const status = text.match(/^-\s*Status:\s*(.*?)\s*$/mi)?.[1]?.trim().toLowerCase() || "";
-    if (status && !["clear", "cleared", "none", "resolved", "idle", "ok"].includes(status)) return true;
-    return /Failure Class:|Planner Decision:|Worker Resume Instruction:/i.test(text);
-  });
 }
 
 function walkMarkdownFilesSync(dir) {
@@ -1168,13 +2445,210 @@ function computeWikiSourceHashSync(boardRoot) {
   return { hash: hash.digest("hex"), count: files.length };
 }
 
-function readWikiIndexSourceHashSync(boardRoot) {
-  const dbPath = path.join(boardRoot, "runners", "state", "wiki-search.db");
-  if (!fsSync.existsSync(dbPath)) return "";
+function wikiPendingReviewPathsSync(boardRoot) {
+  const statePath = path.join(boardRoot, "runners", "state", "wiki-focused-review.json");
+  const state = readJsonFileSync(statePath) || {};
+  const reviewed = new Set(
+    Array.isArray(state.reviewed_done_paths)
+      ? state.reviewed_done_paths.map((item) => String(item || "")).filter(Boolean)
+      : []
+  );
+  const pending = new Set(
+    Array.isArray(state.pending_done_paths)
+      ? state.pending_done_paths.map((item) => String(item || "")).filter(Boolean)
+      : []
+  );
+
+  for (const filePath of walkMarkdownFilesSync(path.join(boardRoot, "tickets", "done"))) {
+    const relPath = boardRelPath(boardRoot, filePath);
+    if (relPath && !reviewed.has(relPath)) {
+      pending.add(relPath);
+    }
+  }
+
+  return [...pending].sort((left, right) => left.localeCompare(right));
+}
+
+function wikiHasPendingRunnerWorkSync(boardRoot) {
+  return wikiPendingReviewPathsSync(boardRoot).length > 0;
+}
+
+// Quick scan of an inprogress ticket file for the "Claimed By:" runner id.
+function ticketClaimedByRunnerIdSync(filePath) {
   try {
-    const result = spawnSync("sqlite3", [dbPath, "SELECT value FROM wiki_index_meta WHERE key='source_hash' LIMIT 1;"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
+    const text = fsSync.readFileSync(filePath, "utf8");
+    const match = text.match(/^- Claimed By:\s*(.+)$/m);
+    if (!match) return "";
+    const raw = match[1].trim();
+    const tokenRunner = raw.includes(":") ? raw.split(":")[0] : raw;
+    return tokenRunner.trim().toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeTodoIdSync(value) {
+  const match = String(value || "").match(/(?:TODO[-_])?(\d+)/i);
+  if (!match) return "";
+  return `TODO-${String(Number.parseInt(match[1], 10)).padStart(3, "0")}`;
+}
+
+function runnerActiveTicketIdSync(boardRoot, runnerId) {
+  try {
+    const raw = fsSync.readFileSync(path.join(boardRoot, "runners", "state", `${runnerId}.state`), "utf8");
+    const match = raw.match(/(?:^|\n)active_ticket_id=([^\n]*)/);
+    return normalizeTodoIdSync(match ? match[1].trim() : "");
+  } catch {
+    return "";
+  }
+}
+
+function runnerStateFieldSync(boardRoot, runnerId, field) {
+  try {
+    const raw = fsSync.readFileSync(path.join(boardRoot, "runners", "state", `${runnerId}.state`), "utf8");
+    const match = raw.match(new RegExp(`(?:^|\\n)${String(field).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=([^\\n]*)`));
+    return match ? String(match[1] || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function blockedActiveTicketFromPathSync(boardRoot, normalizedRunnerId, ticketPath, stateStage = "") {
+  if (!ticketPath || !fsSync.existsSync(ticketPath)) return null;
+  const claimedBy = ticketClaimedByRunnerIdSync(ticketPath);
+  if (claimedBy && claimedBy !== normalizedRunnerId) return null;
+
+  const ticketId = normalizeTodoIdSync(path.basename(ticketPath));
+  if (!ticketId) return null;
+  const ticketStage = markdownScalarInSectionSync(ticketPath, "Ticket", "Stage").toLowerCase();
+  const blocked = stateStage === "blocked" || ticketStage === "blocked";
+  if (!blocked) return null;
+
+  let mtimeMs = "";
+  try {
+    mtimeMs = String(fsSync.statSync(ticketPath).mtimeMs || "");
+  } catch {}
+  const fingerprint = nodeCrypto.createHash("sha256")
+    .update([ticketId, stateStage, ticketStage, mtimeMs].join("\0"))
+    .digest("hex")
+    .slice(0, 12);
+
+  return {
+    ticketId,
+    path: `tickets/inprogress/${ticketId}.md`,
+    fingerprint
+  };
+}
+
+function runnerBlockedActiveTicketSync(boardRoot, runnerId, role = "") {
+  if (role && normalizeRunnerRole(role) !== "worker") return null;
+  const normalizedRunnerId = String(runnerId || "").trim().toLowerCase();
+  if (!normalizedRunnerId) return null;
+  const ticketId = runnerActiveTicketIdSync(boardRoot, normalizedRunnerId);
+  const stateStage = runnerStateFieldSync(boardRoot, normalizedRunnerId, "active_stage").toLowerCase();
+  if (ticketId) {
+    const ticketPath = path.join(boardRoot, "tickets", "inprogress", `${ticketId}.md`);
+    const blockedActive = blockedActiveTicketFromPathSync(boardRoot, normalizedRunnerId, ticketPath, stateStage);
+    if (blockedActive) return blockedActive;
+  }
+
+  // If a runner restarted or active-get has not yet persisted state, the state
+  // file can be empty while an inprogress ticket is still claimed by this runner.
+  // Recover from the ticket ledger itself so blocked workers are still nudged.
+  const claimedInprogress = listQueueFilesSync(boardRoot, "tickets/inprogress", /^TODO-\d+\.md$/, 1000)
+    .filter((filePath) => ticketClaimedByRunnerIdSync(filePath) === normalizedRunnerId);
+  for (const filePath of claimedInprogress) {
+    const blockedActive = blockedActiveTicketFromPathSync(boardRoot, normalizedRunnerId, filePath, stateStage);
+    if (blockedActive) return blockedActive;
+  }
+  return null;
+}
+
+function ticketAllowedPathsSync(filePath) {
+  let text = "";
+  try {
+    text = fsSync.readFileSync(filePath, "utf8");
+  } catch {
+    return [];
+  }
+  const out = [];
+  let inSection = false;
+  for (const raw of text.split(/\r?\n/)) {
+    if (/^## Allowed Paths\b/.test(raw)) {
+      inSection = true;
+      continue;
+    }
+    if (/^## /.test(raw) && inSection) {
+      inSection = false;
+      continue;
+    }
+    if (!inSection) continue;
+    const match = raw.match(/^\s*[-*]\s+(.+?)\s*$/);
+    if (!match) continue;
+    const value = String(match[1] || "").replace(/`/g, "").trim();
+    if (!allowedPathIsConcreteRepoPathSync(value)) continue;
+    out.push(normalizeRelPathSync(value));
+  }
+  return [...new Set(out)].sort();
+}
+
+function allowedPathIsConcreteRepoPathSync(raw) {
+  const clean = String(raw || "").replace(/`/g, "").trim();
+  if (!clean) return false;
+  if (/^(TBD|TODO:?|N\/A|NA|NONE)$/i.test(clean)) return false;
+  if (/^TODO:?/i.test(clean)) return false;
+  if (clean.startsWith("/")) return false;
+  if (clean.startsWith("../") || clean.includes("/../")) return false;
+  if (/[*?\[\]]/.test(clean)) return false;
+  return true;
+}
+
+function normalizeRelPathSync(raw) {
+  return String(raw || "").replace(/`/g, "").replace(/^[.][/]/, "").replace(/\/+$/, "").trim();
+}
+
+function workerTodoFileIsClaimableSync(filePath) {
+  const candidatePaths = ticketAllowedPathsSync(filePath);
+  return candidatePaths.length > 0;
+}
+
+function stripMarkdownTicksSync(value) {
+  return String(value || "").replace(/^`+|`+$/g, "").trim();
+}
+
+function gitBranchExistsSync(projectRoot, branch) {
+  const branchName = stripMarkdownTicksSync(branch);
+  if (!projectRoot || !branchName) return false;
+  try {
+    const result = spawnSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
+      cwd: projectRoot,
+      encoding: "utf8"
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function gitTrackedDirtySummarySync(projectRoot) {
+  if (!projectRoot) return "";
+  try {
+    const result = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+      cwd: projectRoot,
+      encoding: "utf8"
+    });
+    return String(result.stdout || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function gitOutputSync(projectRoot, args) {
+  if (!projectRoot) return "";
+  try {
+    const result = spawnSync("git", args, {
+      cwd: projectRoot,
+      encoding: "utf8"
     });
     return result.status === 0 ? String(result.stdout || "").trim() : "";
   } catch {
@@ -1182,64 +2656,117 @@ function readWikiIndexSourceHashSync(boardRoot) {
   }
 }
 
-function wikiHasPendingWorkSync(boardRoot) {
-  const current = computeWikiSourceHashSync(boardRoot);
-  const indexed = readWikiIndexSourceHashSync(boardRoot);
-  return current.count > 0 && (!indexed || indexed !== current.hash);
+function gitStatusOkSync(projectRoot, args) {
+  if (!projectRoot) return false;
+  try {
+    return spawnSync("git", args, { cwd: projectRoot, encoding: "utf8" }).status === 0;
+  } catch {
+    return false;
+  }
 }
 
 // Return true if the role has actionable work in its queue directories.
-function queueHasPendingWork(role, boardRoot) {
+// When runnerId is given (and role is worker), narrow the check to work the
+// specific worker can actually pick up: owned actionable inprogress work, or
+// any remaining todo with concrete Allowed Paths. Allowed Paths overlap is a
+// merge warning, not a worker claim blocker.
+function queueHasPendingWork(role, boardRoot, runnerId = "") {
   try {
     migrateLegacyTicketQueuesSync(boardRoot);
     if (role === "planner") {
-      return (
-        listQueueFilesSync(boardRoot, "tickets/order", /^order_.*\.md$/).some(plannerQueueFileIsActionableSync) ||
-        listQueueFilesSync(boardRoot, "tickets/prd", /^(prd|project)_\d+\.md$/).some(plannerQueueFileIsActionableSync) ||
-        listQueueFilesSync(boardRoot, "tickets/inbox", /^order_.*\.md$/).length > 0 ||
-        listQueueFilesSync(boardRoot, "tickets/backlog", /^(prd|project)_.*\.md$/).length > 0 ||
-        plannerRecoveryFilesSync(boardRoot).length > 0
-      );
+      return listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i).some(plannerQueueFileIsActionableSync);
     }
     if (role === "worker") {
+      const inprogress = listQueueFilesSync(boardRoot, "tickets/inprogress", /^TODO-\d+\.md$/);
+      const readyToMerge = listQueueFilesSync(boardRoot, "tickets/ready-to-merge", /^TODO-\d+\.md$/);
+      const verifier = listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/);
+      const todo = listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/);
+      const normalizedRunnerId = String(runnerId || "").trim().toLowerCase();
+      if (normalizedRunnerId) {
+        const ownedInProgress = inprogress.filter((file) =>
+          ticketClaimedByRunnerIdSync(file) === normalizedRunnerId
+        );
+        const ownedReadyToMerge = readyToMerge.filter((file) =>
+          ticketClaimedByRunnerIdSync(file) === normalizedRunnerId
+        );
+        const ownedVerifier = verifier.filter((file) =>
+          ticketClaimedByRunnerIdSync(file) === normalizedRunnerId
+        );
+        if (ownedInProgress.some(workerInprogressFileIsActionableSync)) return true;
+        if (ownedReadyToMerge.length > 0) return true;
+        if (ownedVerifier.length > 0) return true;
+        if (ownedInProgress.length > 0) return false;
+        return todo.some((file) => workerTodoFileIsClaimableSync(file));
+      }
       return (
-        listQueueFilesSync(boardRoot, "tickets/inprogress", /^(Todo-\d+|tickets_\d+)\.md$/).some(workerInprogressFileIsActionableSync) ||
-        listQueueFilesSync(boardRoot, "tickets/ready-to-merge", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0 ||
-        listQueueFilesSync(boardRoot, "tickets/todo", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0
+        inprogress.some(workerInprogressFileIsActionableSync) ||
+        readyToMerge.length > 0 ||
+        verifier.length > 0 ||
+        todo.some((file) => workerTodoFileIsClaimableSync(file))
       );
     }
     if (role === "verifier") {
-      return listQueueFilesSync(boardRoot, "tickets/verifier", /^(Todo-\d+|tickets_\d+)\.md$/).length > 0;
+      return listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/).length > 0;
     }
     if (role === "wiki-maintainer") {
-      return wikiHasPendingWorkSync(boardRoot);
+      return wikiHasPendingRunnerWorkSync(boardRoot);
     }
   } catch {
-    // best-effort; return true to avoid suppressing wakes on errors
+    // best-effort; return true so callers do not miss pending board work on errors
     return true;
   }
   return false;
 }
 
-// Compute a 12-char SHA256 fingerprint of queue file names + mtimes for a role.
+// Compute a 12-char SHA256 fingerprint of a role's queue state.
+//
+// Per directory, callers pick between two modes:
+//   - "mtime": hash filename + mtime. Sensitive to in-place edits (e.g. a
+//     worker updating Notes inside its own ticket). Use for directories the
+//     role actually reads content from.
+//   - "names": hash filenames only. Insensitive to in-place edits. Use for
+//     "gate lane" directories the role only watches for file
+//     additions/removals (lane busy vs cleared).
+//
+// Mixing the two modes per role lets callers catch the events that matter
+// (new PRD lands, lane clears, ticket promoted) while ignoring high-frequency
+// no-op churn (worker edits Notes mid-ticket).
 function computeQueueFingerprint(role, boardRoot) {
-  const dirs = [];
+  /** @type {{ dir: string, mode: "mtime" | "names" }[]} */
+  const entries = [];
   if (role === "planner") {
     migrateLegacyTicketQueuesSync(boardRoot);
-    dirs.push("tickets/order", "tickets/prd", "tickets/inbox", "tickets/backlog");
+    // PRD body content matters (status/title can change in place).
+    entries.push({ dir: "tickets/prd", mode: "mtime" });
+    // Final PRD merge is still planner-owned after all TODOs move under
+    // tickets/done/PRD-NNN. Track directory names so the runner can notice
+    // that boundary instead of reporting an empty PRD queue.
+    entries.push({ dir: "tickets/done", mode: "names" });
+    // Worker/verifier lanes are gate signals only — planner cares when a
+    // file is moved in/out, not when the worker types into Notes.
+    entries.push({ dir: "tickets/todo", mode: "names" });
+    entries.push({ dir: "tickets/inprogress", mode: "names" });
+    entries.push({ dir: "tickets/verifier", mode: "names" });
   } else if (role === "worker") {
-    dirs.push("tickets/inprogress", "tickets/todo");
+    // Worker reads/writes the bodies of its own tickets, so mtime matters.
+    entries.push({ dir: "tickets/inprogress", mode: "mtime" });
+    entries.push({ dir: "tickets/verifier", mode: "mtime" });
+    entries.push({ dir: "tickets/todo", mode: "mtime" });
   } else if (role === "verifier") {
-    dirs.push("tickets/verifier");
+    entries.push({ dir: "tickets/verifier", mode: "mtime" });
   } else if (role === "wiki-maintainer") {
     return computeWikiSourceHashSync(boardRoot).hash.slice(0, 12);
   }
   const parts = [];
-  for (const dir of dirs) {
+  for (const { dir, mode } of entries) {
     const full = path.join(boardRoot, dir);
     if (!fsSync.existsSync(full)) continue;
     try {
       for (const f of fsSync.readdirSync(full).sort()) {
+        if (mode === "names") {
+          parts.push(`${dir}/${f}`);
+          continue;
+        }
         try {
           const st = fsSync.statSync(path.join(full, f));
           parts.push(`${dir}/${f}:${st.mtimeMs}`);
@@ -1250,72 +2777,11 @@ function computeQueueFingerprint(role, boardRoot) {
   return nodeCrypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 12);
 }
 
-// Append a JSONL entry to the wake-poll log (best-effort, non-blocking).
-function appendWakePollLog(boardRoot, entry) {
-  try {
-    const logDir = path.join(boardRoot, "runners", "logs");
-    fsSync.mkdirSync(logDir, { recursive: true });
-    const line = JSON.stringify({ ...entry, at: new Date().toISOString() }) + "\n";
-    fsSync.appendFileSync(path.join(logDir, "wake-poll.log"), line, "utf8");
-  } catch {}
+function appendRunnerLog(_boardRoot, _runnerId, _fields) {
+  // Disabled: Autoflow no longer writes per-runner event logs.
 }
 
-// Append a key-value event line to <runner>.log (matches shell runner_append_log format).
-function appendRunnerLog(boardRoot, runnerId, fields) {
-  try {
-    const logDir = path.join(boardRoot, "runners", "logs");
-    fsSync.mkdirSync(logDir, { recursive: true });
-    const ts = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-    const kv = Object.entries(fields || {})
-      .map(([k, v]) => `${k}=${v}`)
-      .join(" ");
-    fsSync.appendFileSync(
-      path.join(logDir, `${runnerId}.log`),
-      `timestamp=${ts} ${kv}\n`,
-      "utf8"
-    );
-  } catch {}
-}
-
-// Generate (or refresh) a sticky-context.md file from the current inprogress
-// ticket. Extracts Allowed Paths, Done When, and Acceptance Probe sections.
-// Written to .autoflow/runners/state/<runnerId>-sticky-context.md.
-// Env knob: AUTOFLOW_CONTEXT_RESET_STICKY (default 1 = enabled)
-function generateStickyContext(boardRoot, runnerId, ticketPath) {
-  const stickyEnabled = (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
-  if (!stickyEnabled) return;
-  try {
-    const raw = fsSync.readFileSync(ticketPath, "utf8");
-    const sections = {};
-    const sectionRe = /^## (.+)$/gm;
-    let match;
-    const positions = [];
-    while ((match = sectionRe.exec(raw)) !== null) {
-      positions.push({ name: match[1].trim(), start: match.index + match[0].length });
-    }
-    for (let i = 0; i < positions.length; i++) {
-      const end = i + 1 < positions.length ? positions[i + 1].start - positions[i + 1].name.length - 4 : raw.length;
-      sections[positions[i].name] = raw.slice(positions[i].start, end).trim();
-    }
-    const parts = [];
-    const ticketId = path.basename(ticketPath, ".md");
-    parts.push(`# Sticky Context — ${ticketId}`);
-    parts.push(`# (auto-generated at claim — re-injected after /compact or /clear)`);
-    parts.push("");
-    for (const key of ["Allowed Paths", "Done When", "Acceptance Probe"]) {
-      if (sections[key]) {
-        parts.push(`## ${key}`);
-        parts.push(sections[key]);
-        parts.push("");
-      }
-    }
-    const outPath = path.join(boardRoot, "runners", "state", `${runnerId}-sticky-context.md`);
-    fsSync.mkdirSync(path.dirname(outPath), { recursive: true });
-    fsSync.writeFileSync(outPath, parts.join("\n"), "utf8");
-  } catch {}
-}
-
-// Inject a context reset slash command into a PTY runner after a ticket
+// Inject a context compaction slash command into a PTY runner after a ticket
 // boundary. Default mode is compact; hard clear is opt-in via event/env.
 // Env knobs:
 //   AUTOFLOW_CONTEXT_RESET_BETWEEN_TICKETS   (default 1 = enabled)
@@ -1324,9 +2790,8 @@ function generateStickyContext(boardRoot, runnerId, ticketPath) {
 //   AUTOFLOW_CONTEXT_RESET_DELAY_MS          (default 3000)
 //   AUTOFLOW_CONTEXT_RESET_MIN_IDLE_MS       (default 2500)
 //   AUTOFLOW_CONTEXT_RESET_MAX_ATTEMPTS      (default 24)
-//   AUTOFLOW_CONTEXT_RESET_WAKE_AFTER        (default pending; pending|always|never)
+//   AUTOFLOW_CONTEXT_RESET_DEDUP_MS          (default 60000)
 //   AUTOFLOW_CONTEXT_RESET_RESPAWN_FALLBACK  (default 1)
-//   AUTOFLOW_CONTEXT_RESET_STICKY            (default 1; only used when explicitly requested)
 function normalizeContextResetMode(raw) {
   const mode = String(raw || "").trim().toLowerCase();
   return ["compact", "clear", "auto"].includes(mode) ? mode : "compact";
@@ -1356,11 +2821,53 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
   const delayMs = Math.max(500, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_DELAY_MS || "3000", 10) || 3000);
   const minIdleMs = Math.max(0, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MIN_IDLE_MS || "2500", 10) || 2500);
   const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_MAX_ATTEMPTS || "24", 10) || 24);
+  const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_DEDUP_MS || "300000", 10) || 300000);
   const key = runnerKey;
   const existing = contextResetTimers.get(key);
+
+  // In-flight guard: if a compact reset is already scheduled (timer pending,
+  // waiting for the PTY to idle), don't restart its attempt counter. A "clear"
+  // request still wins so we can escalate from compact to clear when token
+  // pressure spikes. Otherwise drop the new request and let the existing
+  // schedule fire on its own.
+  if (existing?.timer && requestedMode !== "clear") {
+    appendRunnerLog(boardRoot, publicRunnerId, {
+      event: "context_reset_already_scheduled",
+      runner_id: publicRunnerId,
+      mode: requestedMode,
+      trigger,
+      reason: resetReason,
+      existing_trigger: existing.trigger || "",
+      existing_attempts: String(existing.attempt || 0)
+    });
+    return;
+  }
   if (existing?.timer) clearTimeout(existing.timer);
 
-  const entry = { attempt: 0, timer: null };
+  const now = Date.now();
+  const recent = contextResetLastInjected.get(key);
+  if (recent?.at && now - recent.at < dedupMs && requestedMode !== "clear") {
+    appendRunnerLog(boardRoot, publicRunnerId, {
+      event: "context_reset_deduped",
+      runner_id: publicRunnerId,
+      mode: requestedMode,
+      trigger,
+      reason: resetReason,
+      last_mode: recent.mode || "",
+      last_trigger: recent.trigger || "",
+      last_reason: recent.reason || "",
+      age_ms: String(Math.max(0, now - recent.at)),
+      dedup_ms: String(dedupMs)
+    });
+    return;
+  }
+
+  const entry: { attempt: number; timer: ReturnType<typeof setTimeout> | null; trigger: string; mode: string } = {
+    attempt: 0,
+    timer: null,
+    trigger,
+    mode: requestedMode
+  };
   const clearEntry = () => {
     if (entry.timer) clearTimeout(entry.timer);
     contextResetTimers.delete(key);
@@ -1439,53 +2946,16 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
         cumulative_before: cumulativeTokens,
         threshold,
       });
+      contextResetLastInjected.set(key, {
+        at: Date.now(),
+        mode,
+        trigger,
+        reason: resetReason
+      });
       clearEntry();
 
-      setTimeout(() => {
-        if (mgr.get(runnerKey)?.status !== "running") return;
-        const wakePolicy = String(opts.wakeAfterReset || process.env.AUTOFLOW_CONTEXT_RESET_WAKE_AFTER || "pending").toLowerCase();
-        let shouldWake = wakePolicy === "always";
-        if (!shouldWake && wakePolicy !== "never") {
-          try { shouldWake = queueHasPendingWork(meta.role, boardRoot); } catch { shouldWake = false; }
-        }
-        if (shouldWake) {
-          scheduleDeferredRunnerWakePrompt({
-            runnerId: runnerKey,
-            meta: ptyRunnerMeta.get(runnerKey) || meta,
-            scope: { projectRoot: meta.projectRoot, boardDirName },
-            boardRoot,
-            reason: "context-reset:fresh-start",
-            kind: "context-reset"
-          });
-          appendRunnerLog(boardRoot, publicRunnerId, {
-            event: "context_reset_wake_deferred",
-            runner_id: publicRunnerId,
-            trigger,
-            reason: resetReason,
-            wake_reason: "context-reset:fresh-start"
-          });
-        }
-
-        const paste = (meta.agent || "").toLowerCase() === "claude" ? "bracketed" : "plain";
-        const stickyEnabled = opts.injectSticky === true && (process.env.AUTOFLOW_CONTEXT_RESET_STICKY ?? "1") !== "0";
-        if (stickyEnabled) {
-          try {
-            const stickyPath = path.join(boardRoot, "runners", "state", `${publicRunnerId}-sticky-context.md`);
-            const stickyContent = fsSync.readFileSync(stickyPath, "utf8").trim();
-            if (stickyContent) {
-              setTimeout(() => {
-                if (mgr.get(runnerKey)?.status !== "running") return;
-                mgr.writePrompt(runnerKey, `[sticky-context]\n${stickyContent}`, { paste });
-              }, 1000);
-              appendRunnerLog(boardRoot, publicRunnerId, {
-                event: "context_reset_sticky_inject",
-                runner_id: publicRunnerId,
-                sticky_path: stickyPath,
-              });
-            }
-          } catch {}
-        }
-      }, 2000);
+      void meta;
+      void publicRunnerId;
 
       if (respawnFallback) {
         const beforeData = runner.lastDataAt;
@@ -1518,47 +2988,6 @@ function scheduleContextReset(runnerId, meta, opts = {}) {
     max_attempts: String(maxAttempts)
   });
   scheduleNext(delayMs);
-}
-
-// Record that a wake was just sent to a runner (resets idle clock).
-function updateWakeActivity(runnerId) {
-  const s = wakePollState.get(runnerId) || {};
-  s.lastWakeAt = Date.now();
-  wakePollState.set(runnerId, s);
-}
-
-// Map a board-relative change path to the role that owns it.
-//   tickets/order/  / tickets/prd/      -> planner
-//   legacy tickets/inbox/ / tickets/backlog/ -> planner migration fallback
-//   tickets/todo/                       -> worker
-//   tickets/verifier/                   -> verifier
-//   tickets/done/   / wiki/             -> wiki-maintainer
-function rolesForBoardChange(relPath) {
-  const p = String(relPath || "");
-  if (!p) return [];
-  if (
-    p.startsWith("tickets/order/") ||
-    p.startsWith("tickets/prd/") ||
-    p.startsWith("tickets/inbox/") ||
-    p.startsWith("tickets/backlog/")
-  ) {
-    return ["planner"];
-  }
-  if (p.startsWith("tickets/todo/") || p.startsWith("tickets/inprogress/")) {
-    return ["worker"];
-  }
-  if (p.startsWith("tickets/verifier/")) {
-    return ["verifier"];
-  }
-  if (p.startsWith("tickets/done/") || p.startsWith("wiki/")) {
-    return ["wiki-maintainer"];
-  }
-  return [];
-}
-
-function runnerIdForWakeQueueChange(relPath) {
-  const match = String(relPath || "").match(/^runners\/state\/([A-Za-z0-9_.-]+)-wake\.queue\.jsonl$/);
-  return match ? match[1] : "";
 }
 
 function runnerIdForContextResetQueueChange(relPath) {
@@ -1606,101 +3035,6 @@ function contextResetEventIsSchedulable(event) {
   return true;
 }
 
-function runnerWakeQueueHasPending(boardRoot, runnerId) {
-  if (!boardRoot || !runnerId) return false;
-  const queuePath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.queue.jsonl`);
-  const pointerPath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.pointer`);
-  let pointer = "";
-  try {
-    pointer = fsSync.readFileSync(pointerPath, "utf8").trim();
-  } catch {}
-  try {
-    const raw = fsSync.readFileSync(queuePath, "utf8");
-    return raw
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .some((line) => {
-        try {
-          const event = JSON.parse(line);
-          const at = String(event?.at || "");
-          return at && (!pointer || at > pointer);
-        } catch {
-          return false;
-        }
-      });
-  } catch {
-    return false;
-  }
-}
-
-function advanceRunnerWakePointerToLatest(boardRoot, runnerId) {
-  if (!boardRoot || !runnerId) return false;
-  const queuePath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.queue.jsonl`);
-  const pointerPath = path.join(boardRoot, "runners", "state", `${runnerId}-wake.pointer`);
-  let latest = "";
-  try {
-    const raw = fsSync.readFileSync(queuePath, "utf8");
-    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
-      try {
-        const event = JSON.parse(line);
-        const at = String(event?.at || "");
-        if (at && (!latest || at > latest)) latest = at;
-      } catch {}
-    }
-  } catch {
-    return false;
-  }
-  if (!latest) return false;
-  try {
-    fsSync.writeFileSync(pointerPath, `${latest}\n`, "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function runnerHasActionableWakeWork(boardRoot, runnerId, role) {
-  const hasWork = queueHasPendingWork(role, boardRoot);
-  if (hasWork) return true;
-  if (runnerWakeQueueHasPending(boardRoot, runnerId)) {
-    advanceRunnerWakePointerToLatest(boardRoot, runnerId);
-    appendRunnerLog(boardRoot, runnerId, {
-      event: "wake_queue_stale_ack",
-      runner_id: runnerId,
-      reason: "no_actionable_role_queue_work"
-    });
-  }
-  return false;
-}
-
-function emitRunnerWakeEvent(scope, runnerId, boardRoot, reason, kind = "fs.watch") {
-  const projectRoot = scope?.projectRoot || "";
-  const boardDirName = scope?.boardDirName || defaultBoardDirName;
-  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  if (!projectRoot || !runnerId || !fsSync.existsSync(autoflowBin)) {
-    return;
-  }
-  try {
-    require("node:child_process").spawn(
-      autoflowBin,
-      ["tool", "runner-wake", "emit", "--runner", runnerId, "--reason", String(reason), "--kind", kind],
-      {
-        cwd: projectRoot,
-        env: {
-          ...process.env,
-          AUTOFLOW_PROJECT_ROOT: projectRoot,
-          PROJECT_ROOT: projectRoot,
-          AUTOFLOW_BOARD_ROOT: boardRoot,
-          BOARD_ROOT: boardRoot,
-          AUTOFLOW_BOARD_DIR_NAME: boardDirName
-        },
-        stdio: "ignore",
-        detached: true
-      }
-    ).unref();
-  } catch {}
-}
-
 function markRunnerInitialPromptSent(runnerId) {
   const meta = ptyRunnerMeta.get(runnerId);
   if (!meta) return;
@@ -1712,158 +3046,67 @@ function runnerInitialPromptWasSent(meta) {
   return Number.isFinite(sentAt) && sentAt > 0;
 }
 
-function sendRunnerWake({ mgr, runnerId, meta, scope, boardRoot, reason, kind = "fs.watch", prompt = true, recordQueue = true }) {
-  const runnerKey = ptyRunnerMeta.has(runnerId) ? runnerId : ptyRunnerKeyForScope(scope, runnerId);
-  const currentMeta = ptyRunnerMeta.get(runnerKey) || meta;
-  const publicRunnerId = currentMeta?.runnerId || runnerId;
-  const paste = currentMeta?.agent === "claude" ? "bracketed" : "plain";
-  let promptOk = false;
-  const canPrompt = prompt && runnerInitialPromptWasSent(currentMeta);
-  try {
-    if (canPrompt) {
-      promptOk = Boolean(mgr?.writePrompt(runnerKey, `[wake] ${reason}`, { paste }));
-    }
-  } catch {}
-  if (recordQueue) {
-    emitRunnerWakeEvent(scope, publicRunnerId, boardRoot, reason, kind);
-  }
-  if (promptOk || recordQueue) {
-    updateWakeActivity(runnerKey);
-  }
-  return promptOk;
+function runnerPromptFileSegment(value) {
+  return String(value || "runner").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 80) || "runner";
 }
 
-function scheduleDeferredRunnerWakePrompt({ runnerId, meta, scope, boardRoot, reason, kind = "fs.watch" }) {
-  if (!runnerId || !meta || !scope?.projectRoot || !boardRoot) return;
-  const boardDirName = scope.boardDirName || defaultBoardDirName;
-  const runnerKey = ptyRunnerMeta.has(runnerId) ? runnerId : ptyRunnerKeyForScope({ projectRoot: scope.projectRoot, boardDirName }, runnerId);
-  const publicRunnerId = meta.runnerId || runnerId;
-  const key = runnerKey;
-  const delayMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_DELAY_MS || "5000", 10) || 5000);
-  const minIdleMs = Math.max(250, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MIN_IDLE_MS || "2000", 10) || 2000);
-  const maxAttempts = Math.max(1, Number.parseInt(process.env.AUTOFLOW_WAKE_DEFERRED_PROMPT_MAX_ATTEMPTS || "12", 10) || 12);
-  const existing = deferredWakePromptTimers.get(key);
-  if (existing) {
-    existing.meta = meta;
-    existing.reason = reason;
-    existing.kind = kind;
-    existing.boardRoot = boardRoot;
-    existing.scope = { projectRoot: scope.projectRoot, boardDirName };
-    return;
+function writeRunnerStartupPromptFile({ projectRoot, boardDirName, runnerId, prompt }) {
+  const stateDir = path.join(projectRoot, boardDirName || defaultBoardDirName, "runners", "state");
+  fsSync.mkdirSync(stateDir, { recursive: true });
+  const promptPath = path.join(stateDir, `${runnerPromptFileSegment(runnerId)}-startup-prompt.md`);
+  const tmpPath = `${promptPath}.${process.pid}.${Date.now()}.tmp`;
+  fsSync.writeFileSync(tmpPath, String(prompt || "").replace(/[\r\n]+$/, "") + "\n", "utf8");
+  fsSync.renameSync(tmpPath, promptPath);
+  return promptPath;
+}
+
+function buildRunnerStartupScan({ role, runnerId }) {
+	switch (normalizeRunnerRole(role)) {
+    case "planner":
+      return [
+        `Startup scan:`,
+        `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "planner", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once and let it complete.`,
+        `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+        `  3. If work is needed, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
+        `  4. Create the worker-facing todo set for the selected PRD; every archived PRD must produce ≥1 Todo before idling.`,
+        `  5. Rerun queue-snapshot once after the todo handoff or after confirming there is no actionable PRD input, then idle.`
+      ].join("\n");
+    case "worker":
+      return [
+        `Atomic rule: at most ONE active ticket at any moment.`,
+        `Worktree cwd lock: after worker claim/worktree-ensure returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
+        `Startup scan order:`,
+        `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "active-get", "--runner", runnerId, "--max-items", "12"])}\` once.`,
+        `  2. If active-get.active_get_terminal=true or active-get.ai_followup_reason=worker_ticket_waiting_for_verifier, summarize the compact result and idle without opening source files or running todo-snapshot.`,
+        `  3. If active-get.ai_followup_reason=verifier_passed_merge_pending, do not idle and do not run todo-snapshot. Inspect only active-get.ai_followup_scope.inspect_only_recent_sources, merge the verifier-approved worktree into the ticket merge target, rerun required verification from that target, then run worker finalize-approved.`,
+        `  4. If active-get.ai_followup_reason=verifier_revision_requested, do not idle and do not claim another ticket. Inspect only the scoped ticket/worktree, fix the verifier reason inside Allowed Paths, rerun local verification, then submit-to-verifier again.`,
+        `  5. If active-get.ai_followup_reason=verifier_replan_requested, do not idle and do not claim another ticket. Inspect only the scoped ticket, then run worker request-replan for that ticket.`,
+        `  6. If active-get.ai_followup_recommended=true, inspect only active-get.ai_followup_scope.inspect_only_recent_sources and resume that ticket. If the ticket is blocked, do one runner-owned blocked-handling pass (Allowed Paths 안 수정, 좁은 Done When/Allowed Paths 보정, verifier/replan 라우팅) before any idle decision.`,
+        `  7. If no owned ticket exists, always run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "todo-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once before deciding idle; active-get=false is not an idle decision.`,
+        `  8. If todo-snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+        `  9. If a candidate exists, inspect only todo-snapshot.ai_followup_scope.inspect_only_recent_sources, then claim/worktree-ensure that one ticket before product edits.`,
+        `  10. Do not inspect unrelated tickets or project files outside the selected ticket's Allowed Paths.`
+      ].join("\n");
+    case "verifier":
+      return [
+        `Startup scan:`,
+        `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "verifier", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once and let it complete.`,
+        `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
+        `  3. If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, then run verifier evidence for that one ticket.`,
+        `  4. Make exactly one semantic pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then idle.`
+      ].join("\n");
+    case "wiki-maintainer":
+      return [
+        `Startup scan:`,
+        `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "wiki", "tick", "--runner", runnerId, "--max-items", "12"])}\` first and let it complete; do not poll it at one-second intervals.`,
+        `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle without opening source files.`,
+        `  3. If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
+        `  4. Write or update at most one focused wiki page per turn via wiki write-page (DB upsert; no .autoflow/wiki markdown), then run \`${autoflowShellCommand(["tool", "runner-tool", "wiki", "tick", "--runner", runnerId, "--skip-telemetry", "--max-items", "12"])}\` once.`,
+        `  5. If the rerun tick still reports ai_followup_recommended=true or recent_done_pending_review_count > 0, summarize the focused update and remaining count, then let the Stop hook continue the next wiki turn. Only idle when no follow-up remains.`
+      ].join("\n");
+    default:
+      return "";
   }
-  const entry = {
-    attempt: 0,
-    meta,
-    reason,
-    kind,
-    boardRoot,
-    scope: { projectRoot: scope.projectRoot, boardDirName },
-    timer: null
-  };
-
-  const clearEntry = () => {
-    if (entry.timer) {
-      clearTimeout(entry.timer);
-    }
-    deferredWakePromptTimers.delete(key);
-  };
-  const scheduleNext = (waitMs) => {
-    entry.timer = setTimeout(() => {
-      entry.timer = null;
-      entry.attempt += 1;
-      try {
-        const mgr = globalThis.__autoflowPtyManager;
-        const currentMeta = ptyRunnerMeta.get(runnerKey) || entry.meta;
-        const runner = mgr && typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
-        if (
-          !mgr ||
-          runner?.status !== "running" ||
-          !ptyRunnerMatchesRequestedScope(mgr, runnerKey, entry.scope)
-        ) {
-          appendRunnerLog(entry.boardRoot, publicRunnerId, {
-            event: "deferred_wake_prompt_cancelled",
-            runner_id: publicRunnerId,
-            reason: entry.reason,
-            cause: "runner_not_running"
-          });
-          clearEntry();
-          return;
-        }
-        if (!runnerHasActionableWakeWork(entry.boardRoot, publicRunnerId, currentMeta.role)) {
-          appendRunnerLog(entry.boardRoot, publicRunnerId, {
-            event: "deferred_wake_prompt_cancelled",
-            runner_id: publicRunnerId,
-            reason: entry.reason,
-            cause: "no_actionable_work"
-          });
-          clearEntry();
-          return;
-        }
-        const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
-        const idleMs = lastDataAt ? Date.now() - lastDataAt : Number.POSITIVE_INFINITY;
-        if (idleMs < minIdleMs && entry.attempt < maxAttempts) {
-          scheduleNext(delayMs);
-          return;
-        }
-        const promptOk = sendRunnerWake({
-          mgr,
-          runnerId: runnerKey,
-          meta: currentMeta,
-          scope: entry.scope,
-          boardRoot: entry.boardRoot,
-          reason: entry.reason,
-          kind: entry.kind,
-          prompt: true,
-          recordQueue: false
-        });
-        if (!promptOk && entry.attempt < maxAttempts) {
-          appendRunnerLog(entry.boardRoot, publicRunnerId, {
-            event: "deferred_wake_prompt_retry",
-            runner_id: publicRunnerId,
-            reason: entry.reason,
-            kind: entry.kind,
-            attempts: String(entry.attempt),
-            cause: "prompt_not_accepted"
-          });
-          scheduleNext(delayMs);
-          return;
-        }
-        appendRunnerLog(entry.boardRoot, publicRunnerId, {
-          event: promptOk ? "deferred_wake_prompt_sent" : "deferred_wake_prompt_failed",
-          runner_id: publicRunnerId,
-          reason: entry.reason,
-          kind: entry.kind,
-          prompt_ok: String(promptOk),
-          attempts: String(entry.attempt),
-          idle_ms: Number.isFinite(idleMs) ? String(Math.max(0, Math.round(idleMs))) : "unknown"
-        });
-        clearEntry();
-      } catch (error) {
-        appendRunnerLog(entry.boardRoot, publicRunnerId, {
-          event: "deferred_wake_prompt_error",
-          runner_id: publicRunnerId,
-          reason: entry.reason,
-          error: String(error?.message || error || "")
-        });
-        clearEntry();
-      }
-    }, waitMs);
-    if (typeof entry.timer?.unref === "function") {
-      entry.timer.unref();
-    }
-  };
-
-  deferredWakePromptTimers.set(key, entry);
-  appendRunnerLog(boardRoot, publicRunnerId, {
-    event: "deferred_wake_prompt_scheduled",
-    runner_id: publicRunnerId,
-    reason,
-    kind,
-    delay_ms: String(delayMs),
-    min_idle_ms: String(minIdleMs),
-    max_attempts: String(maxAttempts)
-  });
-  scheduleNext(delayMs);
 }
 
 // Persist a minimal state file so the renderer's existing UI (slider /
@@ -1886,7 +3129,7 @@ async function writePtyRunnerStateFile(runnerId, fields) {
       lines.set(line.slice(0, eq), line.slice(eq + 1));
     }
     // Defensive merge — when the existing file is missing the core spawn
-    // identity fields (race against token watcher's first publish, sleep/wake
+    // identity fields (race against token watcher's first publish, system resume
     // wipes, manual edits) inject what we know from ptyRunnerMeta so the UI
     // never reports a live PTY runner as stopped just because the state file
     // is partial. PTY-level liveness is the truth source — state file just
@@ -1895,13 +3138,24 @@ async function writePtyRunnerStateFile(runnerId, fields) {
     const ptyRunner = ptyMgr ? ptyMgr.get(runnerId) : null;
     const isPtyAlive = ptyRunner && ptyRunner.status === "running";
     if (isPtyAlive) {
-      if (!lines.has("id")) lines.set("id", publicRunnerId);
-      if (!lines.has("role") && meta.role) lines.set("role", meta.role);
-      if (!lines.has("agent") && meta.agent) lines.set("agent", meta.agent);
-      if (!lines.has("mode")) lines.set("mode", "pty");
-      if (!lines.has("status")) lines.set("status", "running");
-      if (!lines.has("pid") && ptyRunner.pid) lines.set("pid", String(ptyRunner.pid));
-      if (!lines.has("started_at") && meta.startedAt) lines.set("started_at", meta.startedAt);
+      lines.set("id", publicRunnerId);
+      if (meta.role) lines.set("role", meta.role);
+      if (meta.agent) lines.set("agent", meta.agent);
+      lines.set("mode", "pty");
+      lines.set("status", "running");
+      lines.set("runner_status", "running");
+      if (ptyRunner.pid) lines.set("pid", String(ptyRunner.pid));
+      if (meta.startedAt) lines.set("started_at", meta.startedAt);
+      lines.set("stopped_by", "");
+      if ((lines.get("last_stop_reason") || "").startsWith("startup_")) {
+        lines.set("last_stop_reason", "");
+      }
+      if (/^(signal_|exit_)/i.test(lines.get("last_process_result") || "") || /^(user_stopped|loop_stopped)$/i.test(lines.get("last_process_result") || "")) {
+        lines.set("last_process_result", "");
+      }
+      if (/^(user_stopped|loop_stopped)$/i.test(lines.get("last_result") || "")) {
+        lines.set("last_result", "");
+      }
     }
     for (const [key, value] of Object.entries(runnerTokenStateDefaults)) {
       if (!lines.has(key)) lines.set(key, value);
@@ -1933,6 +3187,23 @@ async function writePtyRunnerStateFile(runnerId, fields) {
   }
 }
 
+function mirrorExistingPtyRunnerRunningState(runnerKey, existing, fields = {}) {
+  if (!existing || existing.status !== "running") return false;
+  void writePtyRunnerStateFile(runnerKey, {
+    status: "running",
+    runner_status: "running",
+    mode: "pty",
+    pid: String(existing.pid || ""),
+    started_at: existing.startedAt || fields.started_at || "",
+    last_event_at: new Date().toISOString(),
+    stopped_by: "",
+    last_stop_reason: "",
+    last_process_result: "",
+    ...fields
+  });
+  return true;
+}
+
 async function spawnRunnerPtySession(opts = {}, source = "manual") {
   const ptyManager = globalThis.__autoflowPtyManager;
   if (!ptyManager || typeof ptyManager.isAvailable !== "function" || !ptyManager.isAvailable()) {
@@ -1957,7 +3228,17 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
   if (!(await commandExists(agent))) {
     return { ok: false, error: `${agent} CLI not found in shell PATH` };
   }
-  const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
+  const initialPrompt = buildInitialPrompt({
+    role: normalizedRole,
+    agent,
+    runnerId,
+    projectRoot,
+    boardDirName
+  });
+  const initialPromptFile = agent === "codex"
+    ? writeRunnerStartupPromptFile({ projectRoot, boardDirName, runnerId, prompt: initialPrompt })
+    : "";
+  const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName, initialPromptFile });
   if (!command) {
     return { ok: false, error: `unsupported agent: ${agent}` };
   }
@@ -1991,11 +3272,10 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
     });
     const runner = ptyManager.start(runnerKey, {
       command,
+      execCommand: true,
       cwd: projectRoot,
       cols: Number.isFinite(opts.cols) ? opts.cols : 120,
       rows: Number.isFinite(opts.rows) ? opts.rows : 30,
-      logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
-      logSegment: runnerId,
       env: runnerEnv.env
     });
     const startedAt = new Date().toISOString();
@@ -2009,6 +3289,8 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
       codexHistory: runnerEnv.codexHistory,
       startedAt
     });
+    rememberProjectScope({ projectRoot, boardDirName });
+    startCodexHookTrustPromptWatchdog(ptyManager, runnerKey);
     await writePtyRunnerStateFile(runnerKey, {
       id: runnerId,
       status: "running",
@@ -2021,32 +3303,29 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
       started_at: startedAt,
       codex_home: runnerEnv.codexHome || "",
       codex_history: runnerEnv.codexHistory || "",
-      last_stdout_log: runner.liveStdoutLog || "",
       last_event_at: startedAt,
       last_result: "",
+      runner_status: "running",
+      stopped_by: "",
+      last_stop_reason: "",
+      last_process_result: "",
       spawn_source: source
     });
     try { addPtySessionPid({ pid: runner.pid, runnerId, role: normalizedRole, agent, spawnedAt: startedAt }); } catch {}
-    const promptDelay = agent === "gemini" ? 10000 : 6000;
-    const initialPrompt = buildInitialPrompt({
-      role: normalizedRole,
-      agent,
-      runnerId,
-      projectRoot,
-      boardDirName
-    });
-    setTimeout(() => {
-      const paste = agent === "claude" ? "bracketed" : "plain";
-      const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
-      if (ok) markRunnerInitialPromptSent(runnerKey);
-      console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
-    }, promptDelay);
+    const promptDelay = 6000;
+    if (agent === "codex" && initialPromptFile) {
+      markRunnerInitialPromptSent(runnerKey);
+    } else {
+      setTimeout(() => {
+        const paste = agent === "claude" ? "bracketed" : "plain";
+        const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+        if (ok) markRunnerInitialPromptSent(runnerKey);
+      }, promptDelay);
+    }
     setTimeout(() => {
       try {
         const snap = ptyManager.snapshot(runnerKey) || "";
-        console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
       } catch (err) {
-        console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
       }
     }, promptDelay + 2500);
     return { ok: true, runnerId, pid: runner.pid, status: runner.status, stdout: "" };
@@ -2055,69 +3334,13 @@ async function spawnRunnerPtySession(opts = {}, source = "manual") {
   }
 }
 
-function scheduleRunnerAutoStartForWake({ runnerId, scope, boardRoot, reason }) {
-  // Normal PTY lifecycle is user-owned: the start button creates a long-lived
-  // process and the stop button ends it. Auto-start is an explicit legacy
-  // compatibility mode, not the default wake path.
-  const autoStartOnWake = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_AUTO_START_STOPPED_RUNNER_ON_WAKE || "");
-  if (!safeIdPattern.test(String(runnerId || ""))) return;
-  const projectRoot = scope?.projectRoot || "";
-  const boardDirName = scope?.boardDirName || defaultBoardDirName;
-  if (!projectRoot) return;
-  const config = readRunnerConfigBlock(projectRoot, boardDirName, runnerId);
-  if (config.id !== runnerId) return;
-  if (!runnerConfigBoolean(config.enabled, true) || !runnerConfigBoolean(config.realtime_enabled, true)) return;
-  const normalizedRole = normalizeRunnerRole(config.role || inferRunnerRoleFromId(runnerId));
-  if (!runnerHasActionableWakeWork(boardRoot, runnerId, normalizedRole)) return;
-  const mgr = globalThis.__autoflowPtyManager;
-  const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
-  const existing = mgr && typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
-  if (existing?.status === "running" && ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot, boardDirName })) return;
-  if (!autoStartOnWake) {
-    appendRunnerLog(boardRoot, runnerId, {
-      event: "wake_auto_start_suppressed",
-      reason: String(reason || "wake.queue"),
-      role: normalizedRole,
-      policy: "user_start_required"
-    });
-    return;
-  }
-
-  const key = `${projectRoot}\0${boardDirName}\0${runnerId}`;
-  if (wakeAutoStartInflight.has(key)) return;
-  wakeAutoStartInflight.add(key);
-  appendRunnerLog(boardRoot, runnerId, {
-    event: "wake_auto_start_scheduled",
-    reason: String(reason || "wake.queue"),
-    role: normalizedRole
-  });
-  setTimeout(async () => {
-    try {
-      const result = await spawnRunnerPtySession({
-        runnerId,
-        role: normalizedRole,
-        projectRoot,
-        boardDirName,
-        freshSession: true
-      }, "wake");
-      appendRunnerLog(boardRoot, runnerId, {
-        event: "wake_auto_start_result",
-        ok: result.ok ? "true" : "false",
-        reason: String(reason || "wake.queue"),
-        error: result.ok ? "" : String(result.error || "")
-      });
-    } finally {
-      wakeAutoStartInflight.delete(key);
-    }
-  }, 0);
-}
-
 // Build the literal shell command to type into a PTY shell so the agent CLI
 // runs in interactive (long-lived) mode. The user will see this exactly as
 // if they typed it themselves. Disable destructive prompts via per-CLI flags
 // so the agent can act without blocking on (y/n) prompts.
 function buildAgentCliCommand(agent, model, reasoning, options = {}) {
   const parts = [];
+  const rawSuffix = [];
   switch (String(agent || "").toLowerCase()) {
     case "claude": {
       parts.push("claude", "--dangerously-skip-permissions",
@@ -2130,25 +3353,27 @@ function buildAgentCliCommand(agent, model, reasoning, options = {}) {
     case "codex": {
       // Modern codex CLI no longer accepts --skip-git-repo-check; it errors
       // out and dumps to the shell, leaking the initial prompt as raw text.
-      // The remaining flags suffice (sandbox bypass + approval bypass).
-      parts.push("codex", "--dangerously-bypass-approvals-and-sandbox");
+      // Autoflow PTY runners are unattended automation. Bypass Codex's hook
+      // trust review prompt so runner startup cannot stall before the first
+      // turn; Autoflow still installs and audits the concrete Stop hook.
+      parts.push(
+        "codex",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--dangerously-bypass-hook-trust"
+      );
       if (model) parts.push("-m", model);
       if (reasoning) parts.push("-c", `model_reasoning_effort="${reasoning}"`);
-      break;
-    }
-    case "gemini": {
-      parts.push("gemini", "--skip-trust", "--approval-mode", "yolo", "--output-format", "stream-json");
-      if (model) parts.push("--model", model);
-      const boardDirName = options.boardDirName || defaultBoardDirName;
-      if (boardDirName) parts.push("--include-directories", boardDirName);
+      if (options.initialPromptFile) rawSuffix.push(`"$(cat ${shellQuote(options.initialPromptFile)})"`);
       break;
     }
     default:
       return "";
   }
-  // Quote args containing shell metacharacters so model IDs like opus[1m] work in zsh.
-  return parts
-    .map((p) => (/^[A-Za-z0-9_./:@%+=,-]+$/.test(p) ? p : `'${p.replace(/'/g, "'\\''")}'`))
+  // Quote args containing shell metacharacters so model IDs with brackets work in zsh.
+  return [
+    ...parts.map((p) => (/^[A-Za-z0-9_./:@%+=,-]+$/.test(p) ? p : shellQuote(p))),
+    ...rawSuffix
+  ]
     .join(" ");
 }
 
@@ -2164,6 +3389,11 @@ function normalizeRunnerRole(role) {
 }
 
 function buildRunnerPtyEnv({ agent, runnerId, role, projectRoot, boardDirName, codexHistory }) {
+  const cliShim = ensureAutoflowCliShim({ projectRoot, boardDirName });
+  const runnerPath = pathWithPrependedEntries(
+    cliShim.ok ? [cliShim.binDir] : [],
+    augmentedPathValue(process.env.PATH || "")
+  );
   const env = {
     // Pin the autoflow-side stable runner id so worker helpers
     // picks this instead of codex's per-session UUID. Without this,
@@ -2174,7 +3404,25 @@ function buildRunnerPtyEnv({ agent, runnerId, role, projectRoot, boardDirName, c
     AUTOFLOW_RUNNER_ID: runnerId,
     AUTOFLOW_ROLE: role,
     RUNNER_ID: runnerId,
-    AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName)
+    AUTOFLOW_PROJECT_ROOT: projectRoot,
+    PROJECT_ROOT: projectRoot,
+    AUTOFLOW_BOARD_ROOT: path.join(projectRoot, boardDirName),
+    BOARD_ROOT: path.join(projectRoot, boardDirName),
+    AUTOFLOW_BOARD_DIR_NAME: boardDirName,
+    // Hooks (claude plugin, codex Stop, etc.) need to invoke the autoflow CLI
+    // without hardcoding repo paths. The CLI normally runs via Electron's
+    // node runtime; expose both halves so a hook wrapper can call
+    // `ELECTRON_RUN_AS_NODE=1 "$AUTOFLOW_NODE_RUNTIME" "$AUTOFLOW_CLI_ENTRY" ...`.
+    AUTOFLOW_NODE_RUNTIME: useElectronAsNodeRuntime() ? process.execPath : autoflowBinPath(),
+    AUTOFLOW_CLI_ENTRY: autoflowBinPath(),
+    AUTOFLOW_CLI_NEEDS_ELECTRON: useElectronAsNodeRuntime() ? "1" : "0",
+    // Runner prompts use "$AUTOFLOW_CLI" as a single executable path. The
+    // generated shim also sits at the front of PATH, so plain `autoflow`
+    // resolves even on hosts where the CLI was never globally installed.
+    AUTOFLOW_CLI: cliShim.ok ? cliShim.shimPath : autoflowBinPath(),
+    AUTOFLOW_CLI_SHIM_ERROR: cliShim.ok ? "" : cliShim.error,
+    PATH: runnerPath,
+    SHELL: userLoginShell()
   };
   let codexHome = "";
   const effectiveCodexHistory =
@@ -2188,69 +3436,55 @@ function buildRunnerPtyEnv({ agent, runnerId, role, projectRoot, boardDirName, c
     env.AUTOFLOW_CODEX_HOME = codexHome;
     env.AUTOFLOW_CODEX_HISTORY = effectiveCodexHistory;
     if (!prepared.authOk) {
-      console.warn(`[codex-runner-home] auth.json was not copied from ${prepared.sourceHome}; runner may require login`);
     }
   }
   return { env, codexHome, codexHistory: effectiveCodexHistory || "" };
 }
 
-function roleInstructionPath(boardRoot, role) {
+function userShareRoot() {
+  const override = process.env.AUTOFLOW_SHARE_ROOT;
+  if (override && override.trim()) return path.resolve(override);
+  return path.join(os.homedir(), ".autoflow", "share");
+}
+
+function roleInstructionPath(_boardRoot, role) {
+  const shareRoot = userShareRoot();
   switch (normalizeRunnerRole(role)) {
     case "planner":
-      return path.join(boardRoot, "agents", "plan-to-ticket-agent.md");
+      return path.join(shareRoot, "agents", "plan-to-ticket-agent.md");
     case "worker":
-      return path.join(boardRoot, "agents", "worker-agent.md");
+      return path.join(shareRoot, "agents", "worker-agent.md");
     case "verifier":
-      return path.join(boardRoot, "agents", "verifier-agent.md");
+      return path.join(shareRoot, "agents", "verifier-agent.md");
     case "wiki-maintainer":
-      return path.join(boardRoot, "agents", "wiki-maintainer-agent.md");
+      return path.join(shareRoot, "agents", "wiki-maintainer-agent.md");
     case "todo":
-      return path.join(boardRoot, "agents", "legacy", "todo-queue-agent.md");
+      return path.join(shareRoot, "agents", "worker-agent.md");
     case "coordinator":
-      return path.join(boardRoot, "agents", "legacy", "coordinator-agent.md");
+      return path.join(shareRoot, "agents", "plan-to-ticket-agent.md");
     default:
-      return path.join(boardRoot, "agents", "legacy", "coordinator-agent.md");
+      return path.join(shareRoot, "agents", "plan-to-ticket-agent.md");
   }
 }
 
-function startupRulesPath(boardRoot, role) {
+function startupRulesPath(_boardRoot, role) {
+  const shareRoot = userShareRoot();
   switch (normalizeRunnerRole(role)) {
     case "planner":
-      return path.join(boardRoot, "reference", "runner-startup-rules", "planner.md");
+      return path.join(shareRoot, "reference", "runner-startup-rules", "planner.md");
     case "worker":
-      return path.join(boardRoot, "reference", "runner-startup-rules", "worker.md");
+      return path.join(shareRoot, "reference", "runner-startup-rules", "worker.md");
     case "verifier":
-      return path.join(boardRoot, "reference", "runner-startup-rules", "verifier.md");
+      return path.join(shareRoot, "reference", "runner-startup-rules", "verifier.md");
     case "wiki-maintainer":
-      return path.join(boardRoot, "reference", "runner-startup-rules", "wiki-maintainer.md");
+      return path.join(shareRoot, "reference", "runner-startup-rules", "wiki-maintainer.md");
     default:
       return "";
   }
 }
 
-function commonStartupRulesPath(boardRoot) {
-  return path.join(boardRoot, "reference", "runner-startup-common.md");
-}
-
-function readPromptDoc(filePath, maxChars = 16000) {
-  if (!filePath) return "";
-  try {
-    const content = fsSync.readFileSync(filePath, "utf8").trim();
-    if (!content) return "";
-    if (content.length <= maxChars) return content;
-    return `${content.slice(0, maxChars)}\n\n[... truncated by Desktop runner startup prompt at ${maxChars} chars ...]`;
-  } catch {
-    return "";
-  }
-}
-
-function injectedDocBlock(label, filePath, content) {
-  if (!filePath) return "";
-  return [
-    `--- ${label}: ${filePath} ---`,
-    content || `[missing or empty: ${filePath}]`,
-    `--- end ${label} ---`
-  ].join("\n");
+function commonStartupRulesPath(_boardRoot) {
+  return path.join(userShareRoot(), "reference", "runner-startup-common.md");
 }
 
 function uniquePaths(paths) {
@@ -2262,9 +3496,140 @@ function uniquePaths(paths) {
   });
 }
 
+function markdownFileLink(label, filePath) {
+  const safeLabel = String(label || filePath || "").replace(/[\]\n\r]/g, " ").trim() || String(filePath || "");
+  const safeTarget = String(filePath || "").replace(/>/g, "%3E");
+  return `[${safeLabel}](<${safeTarget}>)`;
+}
+
+function normalizeStartupPrdKey(raw) {
+  const match = String(raw || "").match(/\bPRD[-_]?(\d+)\b/i);
+  if (!match) return "";
+  return `PRD-${String(Number.parseInt(match[1], 10)).padStart(3, "0")}`;
+}
+
+function startupPrdKeysFromText(text) {
+  const keys = new Set();
+  const re = /\bPRD[-_]?(\d+)\b/gi;
+  let match;
+  while ((match = re.exec(String(text || ""))) !== null) {
+    const key = normalizeStartupPrdKey(match[0]);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
+function startupPrdKeyFromHandoffFile(boardRoot, filePath) {
+  const rel = path.relative(path.join(boardRoot, "conversations"), filePath).split(path.sep).join("/");
+  const fromPath = normalizeStartupPrdKey(rel);
+  if (fromPath) return fromPath;
+  try {
+    return Array.from(startupPrdKeysFromText(fsSync.readFileSync(filePath, "utf8")))[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function startupRelevantPrdKeys(boardRoot, role) {
+  const keys = new Set();
+  const addFromFile = (filePath) => {
+    try {
+      for (const key of startupPrdKeysFromText(fsSync.readFileSync(filePath, "utf8"))) {
+        keys.add(key);
+      }
+    } catch {}
+  };
+  const addTicketBucket = (bucket) => {
+    for (const filePath of listQueueFilesSync(boardRoot, `tickets/${bucket}`, /^TODO-\d+\.md$/i, 200)) {
+      addFromFile(filePath);
+    }
+  };
+
+  switch (normalizeRunnerRole(role)) {
+    case "planner":
+      for (const filePath of listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 200)) {
+        const key = normalizeStartupPrdKey(path.basename(filePath, ".md"));
+        if (key) keys.add(key);
+      }
+      addTicketBucket("todo");
+      addTicketBucket("inprogress");
+      break;
+    case "worker":
+      addTicketBucket("todo");
+      addTicketBucket("inprogress");
+      addTicketBucket("verifier");
+      break;
+    case "verifier":
+      addTicketBucket("verifier");
+      break;
+    case "wiki-maintainer":
+      // Wiki startup already scans conversations, so keep this list recent
+      // rather than role-filtered.
+      break;
+    default:
+      break;
+  }
+  return keys;
+}
+
+function collectStartupHandoffLinks({ role, projectRoot, boardDirName }, limit = 8) {
+  const boardRoot = path.join(projectRoot, boardDirName || defaultBoardDirName);
+  const conversationsRoot = path.join(boardRoot, "conversations");
+  if (!fsSync.existsSync(conversationsRoot)) return [];
+  const relevantPrdKeys = startupRelevantPrdKeys(boardRoot, role);
+  const allFiles = walkMarkdownFilesSync(conversationsRoot)
+    .filter((filePath) => path.basename(filePath).toLowerCase() !== "readme.md")
+    .map((filePath) => {
+      let stat = null;
+      try { stat = fsSync.statSync(filePath); } catch {}
+      const prdKey = startupPrdKeyFromHandoffFile(boardRoot, filePath);
+      return {
+        filePath,
+        rel: path.relative(boardRoot, filePath).split(path.sep).join("/"),
+        prdKey,
+        mtimeMs: stat?.mtimeMs || 0
+      };
+    })
+    .filter((entry) => entry.filePath && (!relevantPrdKeys.size || relevantPrdKeys.has(entry.prdKey)));
+  return allFiles
+    .sort((a, b) => b.mtimeMs - a.mtimeMs || a.rel.localeCompare(b.rel))
+    .slice(0, Math.max(0, limit));
+}
+
+function buildStartupHandoffLinksBlock(options) {
+  const links = collectStartupHandoffLinks(options, 8);
+  if (!links.length) return [];
+  return [
+    `Startup handoff links:`,
+    `- These links are supporting context. Do not open them until the startup scan selects the matching PRD/Todo scope.`,
+    `- The PRD or ticket file remains the source of truth; handoff files preserve conversation context.`,
+    ...links.map((entry) => {
+      const prdSuffix = entry.prdKey ? ` (${entry.prdKey})` : "";
+      return `- ${markdownFileLink(entry.rel, entry.filePath)}${prdSuffix}`;
+    })
+  ];
+}
+
+function startupRuleLinksBlock({ commonRulesPath, roleRulesPath }) {
+  const links = [
+    { label: "common runner startup rules", filePath: commonRulesPath },
+    roleRulesPath ? { label: "role runner startup rules", filePath: roleRulesPath } : null
+  ].filter(Boolean);
+  if (!links.length) return [];
+  return [
+    `Startup rule links:`,
+    `- These rule files are linked, not inlined. Use the compact startup tool output and the scan order below first.`,
+    `- Open a linked rule file only if the compact tool fails or the selected scoped work directly requires expanded contract text.`,
+    ...links.map((entry) => {
+      const status = fsSync.existsSync(entry.filePath) ? "" : " (missing on disk; report this and continue with the scan order below)";
+      return `- ${markdownFileLink(entry.label, entry.filePath)}${status}`;
+    })
+  ];
+}
+
 // Initial prompt sent once after the agent CLI is up. The Desktop start button
-// always opens the runner PTY for explicit user starts, then injects compact
-// common + role startup rules so the runner can do visible startup checks.
+// opens the runner PTY for explicit user starts, then injects compact startup
+// commands plus links to the expanded rule files instead of pasting them.
 function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }) {
   const boardRoot = path.join(projectRoot, boardDirName);
   const ticketsRoot = path.join(boardRoot, "tickets");
@@ -2274,61 +3639,16 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
   const roleInstruction = roleInstructionPath(boardRoot, role);
   const commonRulesPath = commonStartupRulesPath(boardRoot);
   const roleRulesPath = startupRulesPath(boardRoot, role);
-  const injectStartupDocs = normalizedRole !== "wiki-maintainer";
-  const commonRules = injectStartupDocs ? readPromptDoc(commonRulesPath) : "";
-  const roleRules = injectStartupDocs ? readPromptDoc(roleRulesPath) : "";
-  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  const runnerWakeCmd = `${autoflowBin} tool runner-wake`;
-  const runnerStageCmd = `${autoflowBin} tool runner-stage`;
-  const runnerTokensCmd = `${autoflowBin} tool runner-tokens`;
+  const startupRuleLinks = startupRuleLinksBlock({ commonRulesPath, roleRulesPath });
+  const startupHandoffLinks = buildStartupHandoffLinksBlock({ role: normalizedRole, projectRoot, boardDirName });
+  const runnerStageCmd = autoflowShellCommand(["tool", "runner-stage"]);
+  const runnerTokensCmd = autoflowShellCommand(["tool", "runner-tokens"]);
   // Role-specific "what to scan FIRST" so the runner picks up pre-existing
-  // pending work instead of idling until a fresh fs.watch event.
-  const startupScan = (() => {
-    switch (normalizedRole) {
-      case "planner":
-        return [
-          `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Run \`${autoflowBin} tool runner-tool planner queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
-          `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
-          `  3. If work is needed, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
-          `  4. Create the worker-facing todo set for the selected PRD; if an ordinary order becomes concrete generated PRD work, continue directly to PRD-to-ticket before idling.`,
-          `  5. Rerun queue-snapshot once after the todo handoff or after confirming there is no actionable PRD/order input, then idle.`
-        ].join("\n");
-      case "worker":
-        return [
-          `Atomic rule: at most ONE active ticket at any moment.`,
-          `Worktree cwd lock: after worker claim/worktree-ensure returns a worktree path, cd into it BEFORE any Edit/Write. Editing PROJECT_ROOT files mid-ticket clobbers other runners' working trees.`,
-          `Startup scan order:`,
-          `  1. Run \`${autoflowBin} tool runner-tool worker active-get --runner ${runnerId} --max-items 12\` once.`,
-          `  2. If active-get.ai_followup_recommended=true, inspect only active-get.ai_followup_scope.inspect_only_recent_sources and resume that ticket.`,
-          `  3. If no owned ticket exists, run \`${autoflowBin} tool runner-tool worker todo-snapshot --runner ${runnerId} --max-items 12\` once.`,
-          `  4. If todo-snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
-          `  5. If a candidate exists, inspect only todo-snapshot.ai_followup_scope.inspect_only_recent_sources, then claim/worktree-ensure that one ticket before product edits.`,
-          `  6. Do not inspect unrelated tickets or project files outside the selected ticket's Allowed Paths.`
-        ].join("\n");
-      case "verifier":
-        return [
-          `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Run \`${autoflowBin} tool runner-tool verifier queue-snapshot --runner ${runnerId} --max-items 12\` once and let it complete.`,
-          `  2. If snapshot.ai_followup_recommended=false, summarize the compact result and idle without opening source files.`,
-          `  3. If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, then run verifier evidence for that one ticket.`,
-          `  4. Make exactly one semantic pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then idle.`
-        ].join("\n");
-      case "wiki-maintainer":
-        return [
-          `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  1. Run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --max-items 12\` first and let it complete; do not poll it at one-second intervals.`,
-          `  2. If tick.ai_followup_recommended is false, summarize the tick result and idle without opening source files.`,
-          `  3. If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources; do not open or follow references outside that scope.`,
-          `  4. Edit at most one focused wiki page per turn, then run \`${autoflowBin} tool runner-tool wiki tick --runner ${runnerId} --skip-telemetry --max-items 12\` once and idle.`
-        ].join("\n");
-      default:
-        return [
-          `Startup scan (do this BEFORE waiting for any [wake] message):`,
-          `  - List ${ticketsRoot} subfolders and pick up anything pending for this role.`
-        ].join("\n");
-    }
-  })();
+  // pending work during the visible startup turn.
+  const startupScan = buildRunnerStartupScan({ role, runnerId }) || [
+    `Startup scan:`,
+    `  - List ${ticketsRoot} subfolders and pick up anything pending for this role.`
+  ].join("\n");
   const projectAgents = path.join(projectRoot, "AGENTS.md");
   const boardAgents = path.join(boardRoot, "AGENTS.md");
   const fullContractFiles = uniquePaths(
@@ -2346,70 +3666,63 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
         `Read these full contract files once before planning, editing board state, or`,
         `making role judgments:`
       ];
-  const injectedStartupRules = injectStartupDocs
+  const injectedStartupRules = normalizedRole === "wiki-maintainer"
     ? [
-        `Injected startup rules from the Desktop start button:`,
-        injectedDocBlock("common runner startup rules", commonRulesPath, commonRules),
-        roleRulesPath ? injectedDocBlock("role runner startup rules", roleRulesPath, roleRules) : null
-      ]
-    : [
         `Compact wiki startup rules from the Desktop start button:`,
         `- Run the wiki tick command below once inside this visible turn.`,
         `- If tick.ai_followup_recommended=false, summarize the compact result and idle.`,
         `- If follow-up is needed, inspect only tick.ai_followup_scope.inspect_only_recent_sources.`,
         `- Do not open or follow references outside the inspect_only_recent_sources list.`,
-        `- Edit at most one focused wiki page, rerun tick with --skip-telemetry once, then idle.`
-      ];
+        `- Write or update at most one focused wiki page via wiki write-page (DB upsert; no .autoflow/wiki markdown), then rerun tick with --skip-telemetry once.`,
+        `- If the rerun tick still reports ai_followup_recommended=true or recent_done_pending_review_count > 0, summarize the focused update and let the Stop hook continue. Only idle when no follow-up remains.`
+      ]
+    : startupRuleLinks;
   const runnerTail = (() => {
     switch (normalizedRole) {
       case "planner":
         return [
           `Planner turn boundaries:`,
-          `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused planner startup turn; Desktop tracks PTY state and usage.`,
+          `- Do not call runner-stage, runner-tokens, or date during this focused planner startup turn; Desktop tracks PTY state and usage.`,
           `- Use only planner queue-snapshot output and its ai_followup_scope before opening any board file.`,
           `- Do not open or follow references outside snapshot.ai_followup_scope.inspect_only_recent_sources.`,
-          `- After the selected PRD's worker-facing todo set is created and queue-snapshot is rerun, after a required board-only recovery decision, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`,
-          `- Do not stop only because an ordinary order was translated into generated PRD work; if the first generated PRD is concrete enough, promote it to todo in this same focused turn.`
+          `- After the selected PRD's worker-facing todo set is created and queue-snapshot is rerun, after a required board-only blocked/replan decision, or immediately if the snapshot is idle, summarize briefly and idle.`,
+          `- Every PRD must produce ≥1 Todo before being archived. The runtime slicer guarantees this on the normal path; do not idle before the slice is materialized.`
         ];
       case "worker":
         return [
           `Worker turn boundaries:`,
-          `- Do not call runner-wake, generic runner-stage, runner-tokens, or date during this focused worker startup turn; Desktop tracks PTY state and usage.`,
-          `- Use worker active-get first, then todo-snapshot only when there is no owned ticket.`,
+          `- Do not call generic runner-stage, runner-tokens, or date during this focused worker startup turn; Desktop tracks PTY state and usage.`,
+          `- Use worker active-get first. When active-get reports no owned ticket, always run todo-snapshot before any idle decision.`,
           `- Do not open or follow references outside the selected ticket scope before claim/worktree-ensure.`,
           `- Product file inspection starts only after worktree-ensure succeeds and must stay inside Allowed Paths.`,
-          `- After the current ticket reaches a wait state, verifier handoff, blocker, or finalization, summarize briefly and idle for the next wake; do not roll into a second ticket in the same focused turn.`
+          `- After the current ticket reaches a wait state, verifier handoff, blocker, or finalization, summarize briefly and idle. If Desktop compacts the runner context later, immediately re-scan active-get plus todo-snapshot for remaining tickets.`
         ];
       case "verifier":
         return [
           `Verifier turn boundaries:`,
-          `- Do not call runner-wake, runner-stage, runner-tokens, or date during this focused verifier startup turn; Desktop tracks PTY state and usage.`,
+          `- Do not call runner-stage, runner-tokens, or date during this focused verifier startup turn; Desktop tracks PTY state and usage.`,
           `- Use only verifier queue-snapshot output and its ai_followup_scope before opening any verifier ticket.`,
           `- Gather evidence for one scoped verifier ticket and do not inspect unrelated project files outside the evidence/Allowed Paths boundary.`,
-          `- After one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot is idle, summarize briefly and idle for the next wake.`
+          `- After one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot is idle, summarize briefly and idle.`
         ];
       case "wiki-maintainer":
         return [
         `Wiki turn boundaries:`,
-        `- Do not call runner-wake or runner-stage during this focused wiki turn; Desktop tracks the PTY state.`,
+        `- Do not call runner-stage during this focused wiki turn; Desktop tracks the PTY state.`,
         `- Do not run date. If no exact timestamp is already in scope, keep the existing frontmatter timestamp.`,
         `- Do not open or follow references outside tick.ai_followup_scope.inspect_only_recent_sources.`,
-        `- After one focused summary once the rerun tick finishes, idle for the next wake.`
+        `- After one focused summary once the rerun tick finishes, idle only if the rerun tick reports no follow-up. If follow-up remains, let the Stop hook continue another focused wiki turn.`
         ];
       default:
         return [
         `After the startup scan, continue this role's normal Autoflow work.`,
-        `When new files appear in the board (orders, tickets, etc.), I will push a`,
-        `wake message of the form '[wake] <path>'. Treat each [wake] as a hint to`,
-        `re-scan the relevant queue, not as the only signal — keep working as long`,
-        `as anything is pending.`,
+        `Keep working as long as anything is pending in the relevant queue.`,
         ``,
         `Hard rules: no git push; stay within the active ticket's Allowed Paths;`,
         `record durable progress in board files; do not re-read the full startup`,
         `contract files again within this session unless this runner process restarts.`,
         ``,
         `Active reporting (every turn — required):`,
-        `  - Start of turn: \`${runnerWakeCmd} poll --runner ${runnerId}\``,
         `  - On stage change: \`${runnerStageCmd} <stage> --runner ${runnerId} [--ticket <Todo-NNN>]\``,
         `  - End of turn: Desktop records provider usage automatically when exact live usage metadata is emitted.`,
         `    Do not also run \`${runnerTokensCmd} report\` for the same Desktop PTY turn.`,
@@ -2427,7 +3740,11 @@ function buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName }
     `Board root:   ${boardRoot}`,
     `Runner id:    ${runnerId}`,
     `Role:         ${normalizedRole}`,
+    `Autoflow CLI: "$AUTOFLOW_CLI" is injected as a runnable shim, and its directory is first on PATH as "autoflow".`,
+    `If plain "autoflow" or npx autoflow fails, use "$AUTOFLOW_CLI"; do not idle because the global CLI is missing.`,
     ``,
+    ...startupHandoffLinks,
+    startupHandoffLinks.length ? `` : null,
     ...injectedStartupRules,
     ``,
     `Desktop opened this PTY because the user explicitly started the runner.`,
@@ -2467,14 +3784,15 @@ function clearReadBoardDiagnosticCacheForScope(scope = {}) {
 function clearReadBoardCachesForScope(scope = {}) {
   clearReadBoardRunnerListCache(scope);
   clearReadBoardDiagnosticCacheForScope(scope);
+  readBoardSnapshotCache.delete(readBoardSnapshotCacheKey(scope));
 }
 
-// Install fs.watch handlers for the directories that should retrigger the
-// renderer's `readBoard` snapshot:
+// Install @parcel/watcher handlers for the directories that should retrigger the
+// renderer's `readBoard` snapshot. @parcel/watcher is the only board watcher:
+// it avoids lossy recursive watching and supports snapshot catch-up.
 //   - tickets/* (queue moves: planner / worker / manual)
 //   - runners/config*.toml (agent/model/reasoning changes)
 //   - runners/state/* (status flips)
-//   - wiki/skills-local/* (skill counter / list changes)
 // Coalesces bursts (e.g. planner moving 6 files in one tick) into a single
 // IPC push debounced by `boardWatchDebounceMs`. Replaces the renderer's
 // 5s polling so the UI no longer reads the entire board every 5 seconds
@@ -2494,18 +3812,53 @@ function ensureBoardWatcher(scope) {
   }
 
   const entry = {
-    watchers: [],
+    subscription: null,
+    snapshotRefreshTimer: null,
+    handoffSweepTimer: null,
     debounceTimer: null,
     lastReason: "",
     pendingReasons: new Set()
   };
   boardWatchersByScope.set(key, entry);
 
+  const scheduleBoardRunnerHandoffs = (reasons) => {
+    schedulePlannerHandoffTurnsForScope({
+      projectRoot: scope.projectRoot,
+      boardDirName,
+      boardRoot,
+      reasons
+    });
+    scheduleVerifierHandoffTurnsForScope({
+      projectRoot: scope.projectRoot,
+      boardDirName,
+      boardRoot,
+      reasons
+    });
+    scheduleWorkerTodoHandoffTurnsForScope({
+      projectRoot: scope.projectRoot,
+      boardDirName,
+      boardRoot,
+      reasons
+    });
+    scheduleWorkerVerifierDecisionTurnsForScope({
+      projectRoot: scope.projectRoot,
+      boardDirName,
+      boardRoot,
+      reasons
+    });
+    scheduleWikiHandoffTurnsForScope({
+      projectRoot: scope.projectRoot,
+      boardDirName,
+      boardRoot,
+      reasons
+    });
+  };
+
   const broadcast = () => {
     const reasons = entry.pendingReasons.size > 0
       ? Array.from(entry.pendingReasons)
-      : [entry.lastReason || "fs.watch"];
-    const reason = reasons[reasons.length - 1] || "fs.watch";
+      : [entry.lastReason || "board-change"];
+    const reason = reasons[reasons.length - 1] || "board-change";
     entry.lastReason = "";
     entry.pendingReasons.clear();
     clearReadBoardCachesForScope({ projectRoot: scope.projectRoot, boardDirName });
@@ -2522,34 +3875,17 @@ function ensureBoardWatcher(scope) {
         }
       }
     }
-    // PTY runner wake — dual signal:
-    //   1) Push `[wake] <path>` text into the PTY (immediate visual cue,
-    //      kept for backward compatibility / human readability).
-    //   2) Append the same event into the runner's wake queue file via
-    //      `autoflow tool runner-wake emit`. The LLM polls this queue at turn boundaries
-    //      so wakes that arrive during paste/thinking aren't lost.
-    // Gate: only wake roles that actually have pending work in their queue.
+    // PTY side effects are narrowly event-driven: queue handoff turns for
+    // newly queued work, plus context compaction at final ticket boundaries.
     try {
-      const mgr = globalThis.__autoflowPtyManager;
-      if (!mgr) return;
+      scheduleBoardRunnerHandoffs(reasons);
       const contextResetByRunner = new Map();
-      const wakeReasonByRole = new Map();
-      const wakeReasonByRunner = new Map();
       for (const candidateReason of reasons) {
         const contextResetRunnerId = runnerIdForContextResetQueueChange(candidateReason);
         if (contextResetRunnerId) {
           const events = readPendingRunnerContextResetEvents(boardRoot, contextResetRunnerId);
           for (const event of events) {
             contextResetByRunner.set(contextResetRunnerId, event);
-          }
-        }
-        const directRunnerId = runnerIdForWakeQueueChange(candidateReason);
-        if (directRunnerId && !wakeReasonByRunner.has(directRunnerId)) {
-          wakeReasonByRunner.set(directRunnerId, candidateReason);
-        }
-        for (const role of rolesForBoardChange(candidateReason)) {
-          if (!wakeReasonByRole.has(role)) {
-            wakeReasonByRole.set(role, candidateReason);
           }
         }
       }
@@ -2582,178 +3918,15 @@ function ensureBoardWatcher(scope) {
             mode: event?.mode,
             trigger: String(event?.reason || "ticket_boundary"),
             reason: String(event?.tool || event?.reason || "ticket_boundary"),
-            wakeAfterReset: "pending",
-            injectSticky: false
           });
         }
       }
-      if (wakeReasonByRole.size === 0 && wakeReasonByRunner.size === 0) return;
-      for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
-        if (meta.projectRoot !== scope.projectRoot) continue;
-        if (meta.boardDirName !== boardDirName) continue;
-        const rid = meta.runnerId || runnerKey;
-        const directWakeReason = wakeReasonByRunner.get(rid);
-        const roleWakeReason = wakeReasonByRole.get(meta.role);
-        if (directWakeReason) {
-          if (!runnerHasActionableWakeWork(boardRoot, rid, meta.role)) continue;
-          const runner = typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
-          const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
-          const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
-          const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
-          const promptOk = sendRunnerWake({
-            mgr,
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason || directWakeReason,
-            kind: roleWakeReason ? "fs.watch" : "wake.queue",
-            prompt: isQuiet,
-            recordQueue: false
-          });
-          if (!isQuiet || !promptOk) {
-            scheduleDeferredRunnerWakePrompt({
-              runnerId: runnerKey,
-              meta,
-              scope: { projectRoot: scope.projectRoot, boardDirName },
-              boardRoot,
-              reason: roleWakeReason || directWakeReason,
-              kind: roleWakeReason ? "fs.watch" : "wake.queue"
-            });
-            appendRunnerLog(boardRoot, rid, {
-              event: !isQuiet ? "direct_wake_queued_without_prompt" : "direct_wake_prompt_failed_deferred",
-              runner_id: rid,
-              reason: directWakeReason,
-              quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000),
-              prompt_ok: String(promptOk)
-            });
-          }
-          continue;
-        }
-        if (!roleWakeReason) continue;
-        if (!queueHasPendingWork(meta.role, boardRoot)) continue;
-        const runner = typeof mgr.get === "function" ? mgr.get(runnerKey) : null;
-        if (
-          runner?.status !== "running" ||
-          !ptyRunnerMatchesRequestedScope(mgr, runnerKey, { projectRoot: scope.projectRoot, boardDirName })
-        ) {
-          sendRunnerWake({
-            mgr,
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason,
-            kind: "fs.watch",
-            prompt: false
-          });
-          scheduleRunnerAutoStartForWake({
-            runnerId: rid,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason
-          });
-          continue;
-        }
-        const quietMs = Number.parseInt(process.env.AUTOFLOW_FS_WAKE_PROMPT_QUIET_MS || "30000", 10);
-        const lastDataAt = Number.isFinite(runner?.lastDataAt) ? runner.lastDataAt : 0;
-        const isQuiet = !lastDataAt || Date.now() - lastDataAt >= (Number.isFinite(quietMs) ? quietMs : 30000);
-        if (!isQuiet) {
-          sendRunnerWake({
-            mgr,
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason,
-            kind: "fs.watch",
-            prompt: false
-          });
-          appendRunnerLog(boardRoot, rid, {
-            event: "fs_watch_wake_queued_without_prompt",
-            runner_id: rid,
-            reason: roleWakeReason,
-            quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
-          });
-          scheduleDeferredRunnerWakePrompt({
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason,
-            kind: "fs.watch"
-          });
-          continue;
-        }
-        const promptOk = sendRunnerWake({
-          mgr,
-          runnerId: runnerKey,
-          meta,
-          scope: { projectRoot: scope.projectRoot, boardDirName },
-          boardRoot,
-          reason: roleWakeReason,
-          kind: "fs.watch"
-        });
-        if (!promptOk) {
-          scheduleDeferredRunnerWakePrompt({
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason: roleWakeReason,
-            kind: "fs.watch"
-          });
-          appendRunnerLog(boardRoot, rid, {
-            event: "fs_watch_wake_prompt_failed_deferred",
-            runner_id: rid,
-            reason: roleWakeReason,
-            quiet_ms: String(Number.isFinite(quietMs) ? quietMs : 30000)
-          });
-        }
-      }
-      for (const [directRunnerId, directWakeReason] of wakeReasonByRunner.entries()) {
-        const directRunnerKey = ptyRunnerKey(scope.projectRoot, boardDirName, directRunnerId);
-        const existing = typeof mgr.get === "function" ? mgr.get(directRunnerKey) : null;
-        if (
-          existing?.status === "running" &&
-          ptyRunnerMatchesRequestedScope(mgr, directRunnerKey, { projectRoot: scope.projectRoot, boardDirName })
-        ) {
-          continue;
-        }
-        scheduleRunnerAutoStartForWake({
-          runnerId: directRunnerId,
-          scope: { projectRoot: scope.projectRoot, boardDirName },
-          boardRoot,
-          reason: directWakeReason
-        });
-      }
-      // Sticky context generation: when a Todo-*.md appears in inprogress/,
-      // the worker just claimed it. Write sticky-context.md with the
-      // ticket's Allowed Paths / Done When / Acceptance Probe.
-      for (const candidateReason of reasons) {
-        if (
-          candidateReason.startsWith("tickets/inprogress/") &&
-          /Todo-\d+\.md$/.test(candidateReason)
-        ) {
-          const ticketFile = path.basename(candidateReason);
-          const ticketPath = path.join(boardRoot, "tickets", "inprogress", ticketFile);
-          for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
-            if (meta.projectRoot !== scope.projectRoot) continue;
-            if (meta.boardDirName !== boardDirName) continue;
-            if (meta.role !== "worker") continue;
-            const rid = meta.runnerId || runnerKey;
-            generateStickyContext(boardRoot, rid, ticketPath);
-          }
-        }
-      }
-    } catch {
-      // wake is best-effort; log churn would dwarf any real signal
-    }
+    } catch {}
   };
 
   const enqueue = (reason) => {
-    const normalizedReason = reason || "fs.watch";
-    entry.lastReason = normalizedReason || entry.lastReason || "fs.watch";
+    const normalizedReason = reason || "board-change";
+    entry.lastReason = normalizedReason || entry.lastReason || "board-change";
     entry.pendingReasons.add(normalizedReason);
     if (entry.debounceTimer) {
       clearTimeout(entry.debounceTimer);
@@ -2764,131 +3937,96 @@ function ensureBoardWatcher(scope) {
     }, boardWatchDebounceMs);
   };
 
-  const watchDir = (relPath, recursive) => {
-    const target = path.join(boardRoot, relPath);
-    if (!fsSync.existsSync(target)) return;
+  // Translate an absolute path returned by @parcel/watcher into the
+  // board-relative slug we feed downstream routing (`tickets/prd/PRD-001.md`).
+  // Events outside the watched scope (or that we explicitly ignore) return "".
+  const watchedRelPrefixes = ["tickets/", "runners/", "wiki/"];
+  const toBoardRel = (absolutePath) => {
+    const rel = path.relative(boardRoot, String(absolutePath || "")).split(path.sep).join("/");
+    if (!rel || rel.startsWith("..")) return "";
+    if (rel === "tickets" || rel === "runners" || rel === "wiki") return rel;
+    if (!watchedRelPrefixes.some((prefix) => rel.startsWith(prefix))) return "";
+    if (rel === "runners/logs" || rel.startsWith("runners/logs/") || rel === "logs" || rel.startsWith("logs/")) return "";
+    const base = path.basename(rel);
+    if (base.endsWith(".tmp") || base.endsWith(".swp") || base.endsWith("~") || base.startsWith(".#") || base.startsWith(".!")) return "";
+    return rel;
+  };
+
+  const snapshotPath = path.join(boardRoot, "runners", "state", "parcel-watcher.snapshot");
+  const refreshSnapshot = async () => {
     try {
-      const watcher = fsSync.watch(
-        target,
-        { persistent: false, recursive: Boolean(recursive) },
-        (_eventType, filename) => {
-          // Filter out tmp/lock noise that doesn't affect the board snapshot.
-          const name = String(filename || "");
-          if (name && (
-            name.endsWith(".tmp") ||
-            name.endsWith(".swp") ||
-            name.startsWith(".#") ||
-            name.endsWith("~")
-          )) {
-            return;
-          }
-          enqueue(`${relPath}/${name || "*"}`);
-        }
-      );
-      watcher.on("error", () => {
-        // Best-effort. fs.watch can throw on some FS edge cases (NFS,
-        // permission, deleted dirs). Drop silently — polling backup remains.
-      });
-      entry.watchers.push(watcher);
+      fsSync.mkdirSync(path.dirname(snapshotPath), { recursive: true });
+      await parcelWatcher.writeSnapshot(boardRoot, snapshotPath, { ignore: parcelIgnore });
     } catch {
-      // Same as above; do not crash the desktop process.
+      // best-effort
     }
   };
 
-  // recursive: true is supported on macOS + Windows. On Linux the option is
-  // a no-op and only the top-level directory is watched, which is good
-  // enough for the queue folders since we only care about file-level adds
-  // and removes one level deep.
-  watchDir("tickets", true);
-  watchDir("runners", false);
-  watchDir("runners/state", false);
-  watchDir("wiki/skills-local", true);
+  const parcelIgnore = [
+    "**/.git/**",
+    "**/node_modules/**",
+    "**/runners/logs/**",
+    "**/logs/**",
+    "**/*.tmp",
+    "**/*.swp",
+    "**/.#*",
+    "**/*~"
+  ];
 
-  ensureWakeSafetyPoller(scope);
-}
-
-// Safety poll: fallback that fires a wake to idle runners when queue work is
-// present but no fs.watch prompt reached the live PTY.
-// Env knobs:
-//   AUTOFLOW_WAKE_SAFETY_POLL          — set to 0 to disable this fallback
-//   AUTOFLOW_WAKE_POLL_INTERVAL_SEC    — poll tick interval (default 60 s)
-//   AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC   — seconds without a wake → idle (default 30 s)
-//   AUTOFLOW_WAKE_STALL_THRESHOLD_SEC  — seconds without any wake → forced wake (default 1800 s)
-function ensureWakeSafetyPoller(scope) {
-  if (!scope || typeof scope.projectRoot !== "string") return;
-  if ((process.env.AUTOFLOW_WAKE_SAFETY_POLL ?? "1") === "0") return;
-  const boardDirName = scope.boardDirName || defaultBoardDirName;
-  const key = `${scope.projectRoot}::${boardDirName}`;
-  if (wakeSafetyPollers.has(key)) return;
-
-  const pollIntervalMs = Number(process.env.AUTOFLOW_WAKE_POLL_INTERVAL_SEC || 60) * 1000;
-  const idleThresholdMs = Number(process.env.AUTOFLOW_WAKE_IDLE_THRESHOLD_SEC || 30) * 1000;
-  const stallThresholdMs = Number(process.env.AUTOFLOW_WAKE_STALL_THRESHOLD_SEC || 1800) * 1000;
-  const boardRoot = path.join(scope.projectRoot, boardDirName);
-
-  const timerId = setInterval(() => {
+  // Boot catch-up: if a previous snapshot exists, replay every event that
+  // happened while the desktop was closed.
+  // @parcel/watcher tracks file mtime+size via native FSEvents/inotify state,
+  // so this catches manual file edits, external sync, or watcher gaps.
+  const catchUpFromSnapshot = async () => {
+    if (!fsSync.existsSync(snapshotPath)) return;
     try {
-      const mgr = globalThis.__autoflowPtyManager;
-      if (!mgr) return;
-      const now = Date.now();
-      for (const [runnerKey, meta] of ptyRunnerMeta.entries()) {
-        if (meta.projectRoot !== scope.projectRoot) continue;
-        if (meta.boardDirName !== boardDirName) continue;
-        const rid = meta.runnerId || runnerKey;
-        if (!queueHasPendingWork(meta.role, boardRoot)) continue;
-
-        const s = wakePollState.get(runnerKey) || {};
-        const lastWake = s.lastWakeAt || 0;
-        const idleSec = (now - lastWake) / 1000;
-        const isIdle = (now - lastWake) >= idleThresholdMs;
-        if (!isIdle) continue;
-
-        const fp = computeQueueFingerprint(meta.role, boardRoot);
-        const fpChanged = fp !== s.queueFingerprint;
-        const isStall = (now - lastWake) >= stallThresholdMs;
-        if (!fpChanged && !isStall) continue;
-
-        const reason = isStall ? "safety-poll-stall" : "safety-poll-queue-change";
-        const promptOk = sendRunnerWake({
-          mgr,
-          runnerId: runnerKey,
-          meta,
-          scope: { projectRoot: scope.projectRoot, boardDirName },
-          boardRoot,
-          reason,
-          kind: "safety-poll",
-          prompt: true,
-          recordQueue: false
-        });
-        if (!promptOk) {
-          scheduleDeferredRunnerWakePrompt({
-            runnerId: runnerKey,
-            meta,
-            scope: { projectRoot: scope.projectRoot, boardDirName },
-            boardRoot,
-            reason,
-            kind: "safety-poll"
-          });
-        }
-        const ps = wakePollState.get(runnerKey) || {};
-        ps.queueFingerprint = fp;
-        wakePollState.set(runnerKey, ps);
-
-        appendWakePollLog(boardRoot, {
-          runner: rid,
-          role: meta.role,
-          reason,
-          queue_pending: true,
-          fingerprint_changed: fpChanged,
-          idle_seconds: Math.round(idleSec),
-          stall: isStall,
-          prompt_ok: promptOk
-        });
+      const events = await parcelWatcher.getEventsSince(boardRoot, snapshotPath, { ignore: parcelIgnore });
+      for (const event of events || []) {
+        const rel = toBoardRel(event.path);
+        if (rel) enqueue(rel || "boot-catchup");
       }
-    } catch {}
-  }, pollIntervalMs);
+      if (events && events.length > 0) {
+        enqueue("boot-catchup");
+      }
+    } catch {
+      // Snapshot corrupt or incompatible — drop it and restart fresh.
+      try { fsSync.rmSync(snapshotPath, { force: true }); } catch {}
+    }
+  };
 
-  wakeSafetyPollers.set(key, timerId);
+  (async () => {
+    await catchUpFromSnapshot();
+    try {
+      entry.subscription = await parcelWatcher.subscribe(
+        boardRoot,
+        (err, events) => {
+          if (err) return; // best-effort; renderer can refresh on next read
+          for (const event of events || []) {
+            const rel = toBoardRel(event.path);
+            if (rel) enqueue(rel);
+          }
+        },
+        { ignore: parcelIgnore }
+      );
+    } catch {
+      // If subscription fails (e.g., permissions), keep the entry alive and do
+      // not crash the main process.
+    }
+    await refreshSnapshot();
+    try {
+      scheduleBoardRunnerHandoffs(["boot-catchup"]);
+    } catch {}
+    // Refresh snapshot every 10 minutes so a fresh boot has a recent baseline.
+    entry.snapshotRefreshTimer = setInterval(() => { void refreshSnapshot(); }, 10 * 60 * 1000);
+    const handoffSweepMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_BOARD_HANDOFF_SWEEP_MS || "5000", 10) || 5000);
+    entry.handoffSweepTimer = setInterval(() => {
+      try {
+        scheduleBoardRunnerHandoffs(["boot-catchup"]);
+      } catch {}
+    }, handoffSweepMs);
+    if (typeof entry.handoffSweepTimer?.unref === "function") entry.handoffSweepTimer.unref();
+  })();
+
 }
 
 function disposeBoardWatcherForScope(scope) {
@@ -2901,17 +4039,23 @@ function disposeBoardWatcherForScope(scope) {
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
   }
-  for (const watcher of entry.watchers) {
-    try {
-      watcher.close();
-    } catch {
-      // ignore
-    }
+  if (entry.snapshotRefreshTimer) {
+    clearInterval(entry.snapshotRefreshTimer);
+    entry.snapshotRefreshTimer = null;
+  }
+  if (entry.handoffSweepTimer) {
+    clearInterval(entry.handoffSweepTimer);
+    entry.handoffSweepTimer = null;
+  }
+  if (entry.subscription) {
+    void entry.subscription.unsubscribe().catch(() => {});
+    entry.subscription = null;
   }
   boardWatchersByScope.delete(key);
 }
 
-function disposeAllBoardWatchers() {
+function drainBoardWatcherEntries() {
+  const unsubscribes = [];
   for (const key of [...boardWatchersByScope.keys()]) {
     const entry = boardWatchersByScope.get(key);
     if (!entry) continue;
@@ -2919,15 +4063,29 @@ function disposeAllBoardWatchers() {
       clearTimeout(entry.debounceTimer);
       entry.debounceTimer = null;
     }
-    for (const watcher of entry.watchers) {
-      try {
-        watcher.close();
-      } catch {
-        // ignore
-      }
+    if (entry.snapshotRefreshTimer) {
+      clearInterval(entry.snapshotRefreshTimer);
+      entry.snapshotRefreshTimer = null;
+    }
+    if (entry.handoffSweepTimer) {
+      clearInterval(entry.handoffSweepTimer);
+      entry.handoffSweepTimer = null;
+    }
+    if (entry.subscription) {
+      unsubscribes.push(entry.subscription.unsubscribe().catch(() => {}));
+      entry.subscription = null;
     }
     boardWatchersByScope.delete(key);
   }
+  return unsubscribes;
+}
+
+function disposeAllBoardWatchers() {
+  void Promise.all(drainBoardWatcherEntries());
+}
+
+async function disposeAllBoardWatchersAsync() {
+  await Promise.all(drainBoardWatcherEntries());
 }
 
 function rememberProjectScope(options) {
@@ -2945,7 +4103,7 @@ function rememberProjectScope(options) {
     // crash or red-X close. Runs once per scope per session.
     void sweepStaleRunnersForScope(scope).catch(() => 0);
   }
-  // Make sure the fs.watch board listener is alive whenever the renderer
+  // Make sure the board listener is alive whenever the renderer
   // touches a scope. Idempotent — bails immediately if a watcher is already
   // running for this scope.
   ensureBoardWatcher(scope);
@@ -3130,18 +4288,10 @@ function setupMacOsDockIcon() {
 
   const appIcon = nativeImage.createFromPath(appIconPath);
   if (appIcon.isEmpty()) {
-    console.warn(`[Autoflow Desktop] macOS dock icon image is empty: ${appIconPath}`);
     return;
   }
 
   app.dock.setIcon(appIcon);
-}
-
-function cliInvocation(args) {
-  return {
-    command: path.join(repoRoot, "app", "bin", "autoflow"),
-    args: args.map((arg) => String(arg))
-  };
 }
 
 function commandLabel(args) {
@@ -3163,7 +4313,115 @@ function scopedArgs(command, options = {}) {
   return args;
 }
 
+// Pure-read CLI commands the desktop polls on every readBoard cycle. Each of
+// these handlers reads board markdown + state files and emits a key=value
+// dump on stdout; they do not spawn child processes, mutate state, or wait
+// for IPC. Running them in-process avoids paying an Electron-as-node startup
+// cost (~100-200ms per spawn × 5 commands × every cache TTL window) which
+// otherwise shows up as continuous fan-spin while the desktop is open.
+const inProcessCliCommands = new Set([
+  "status",
+  "metrics",
+  "runners list"
+]);
+
+let cachedInProcessCliModules: any = null;
+function inProcessCliModules() {
+  if (cachedInProcessCliModules) return cachedInProcessCliModules;
+  cachedInProcessCliModules = {
+    statusProject: require("../cli/system/status").statusProject,
+    metricsProject: require("../cli/system/metrics").metricsProject,
+    runnersProject: require("../cli/system/runners").runnersProject
+  };
+  return cachedInProcessCliModules;
+}
+
+function inProcessCliKey(args) {
+  if (!args.length) return "";
+  if (args[0] === "runners") {
+    return args[1] ? `runners ${args[1]}` : "runners";
+  }
+  return args[0];
+}
+
+function canRunInProcess(args) {
+  return inProcessCliCommands.has(inProcessCliKey(args));
+}
+
+function runAutoflowInProcess(args, label) {
+  const key = inProcessCliKey(args);
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  const origStdoutWrite = process.stdout.write.bind(process.stdout);
+  const origStderrWrite = process.stderr.write.bind(process.stderr);
+  const origExit = process.exit;
+  let capturedExit = 0;
+  const exitSentinel = new Error("__autoflow_inprocess_exit__");
+
+  process.stdout.write = ((chunk) => {
+    stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk) => {
+    stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+    return true;
+  }) as typeof process.stderr.write;
+  (process as any).exit = (code) => {
+    capturedExit = typeof code === "number" ? code : 0;
+    throw exitSentinel;
+  };
+
+  let thrown: any = null;
+  try {
+    const mods = inProcessCliModules();
+    if (key === "status") {
+      mods.statusProject(args.slice(1));
+    } else if (key === "metrics") {
+      mods.metricsProject(args.slice(1));
+    } else if (key === "runners list") {
+      mods.runnersProject(args.slice(1));
+    } else {
+      throw new Error(`runAutoflowInProcess: unsupported command ${key}`);
+    }
+  } catch (error) {
+    if (error !== exitSentinel) {
+      thrown = error;
+    }
+  } finally {
+    process.stdout.write = origStdoutWrite;
+    process.stderr.write = origStderrWrite;
+    (process as any).exit = origExit;
+  }
+
+  if (thrown) {
+    return Promise.resolve({
+      ok: false,
+      command: label,
+      code: typeof thrown?.code === "number" ? thrown.code : 1,
+      signal: "",
+      stdout: stdoutChunks.join(""),
+      stderr: `${stderrChunks.join("")}${thrown?.stack || thrown?.message || String(thrown)}`,
+      cancelled: false,
+      cacheStatus: "in-process-error"
+    });
+  }
+
+  return Promise.resolve({
+    ok: capturedExit === 0,
+    command: label,
+    code: capturedExit,
+    signal: "",
+    stdout: stdoutChunks.join(""),
+    stderr: stderrChunks.join(""),
+    cancelled: false,
+    cacheStatus: "in-process"
+  });
+}
+
 function runAutoflowArgs(args, options = {}) {
+  if (canRunInProcess(args)) {
+    return runAutoflowInProcess(args, commandLabel(args));
+  }
   const invocation = cliInvocation(args);
   const label = commandLabel(args);
 
@@ -3172,6 +4430,7 @@ function runAutoflowArgs(args, options = {}) {
       cwd: repoRoot,
       env: {
         ...process.env,
+        ...invocation.env,
         ...(options.env || {})
       }
     });
@@ -3596,6 +4855,12 @@ async function ensureProjectHostSkills(options = {}) {
 
 function commandExists(command) {
   return new Promise((resolve) => {
+    const env = sanitizedProcessEnv();
+    if (executableOnPath(command, env)) {
+      resolve(true);
+      return;
+    }
+
     let settled = false;
     const finish = (exists) => {
       if (settled) {
@@ -3605,14 +4870,15 @@ function commandExists(command) {
       clearTimeout(timeout);
       resolve(exists);
     };
-    const child = spawn("bash", ["-lc", `command -v ${command}`], {
+    const shell = userLoginShell();
+    const child = spawn(shell, loginShellCommandArgs(shell, `command -v ${shellQuote(command)}`), {
       cwd: repoRoot,
-      env: sanitizedProcessEnv()
+      env
     });
     const timeout = setTimeout(() => {
       child.kill();
       finish(false);
-    }, 5000);
+    }, 10000);
 
     child.on("error", () => finish(false));
     child.on("close", (code) => finish(code === 0));
@@ -3664,18 +4930,9 @@ function sanitizedProcessEnv() {
   const env = { ...process.env };
   delete env.npm_config_prefix;
   delete env.NPM_CONFIG_PREFIX;
-  return env;
-}
-
-function browserAuthProcessEnv() {
-  const env = sanitizedProcessEnv();
-  delete env.CI;
-  delete env.GITHUB_ACTIONS;
-  delete env.DEBIAN_FRONTEND;
-  delete env.NO_BROWSER;
-  delete env.SSH_CONNECTION;
-  if (env.BROWSER === "www-browser") {
-    delete env.BROWSER;
+  env.PATH = augmentedPathValue(env.PATH);
+  if (!env.SHELL) {
+    env.SHELL = userLoginShell();
   }
   return env;
 }
@@ -3712,39 +4969,35 @@ function settingsEnvValue(settings, key) {
 
 function normalizeClaudeModelValue(value) {
   const trimmed = String(value || "").trim();
-  if (trimmed === "opus-1m") return "opus[1m]";
-  if (trimmed === "sonnet-1m") return "sonnet[1m]";
   return trimmed;
 }
 
 function isPreferredClaudeModel(value) {
   const normalized = normalizeClaudeModelValue(value).toLowerCase();
+  if (!normalized || normalized.includes("[1m]") || normalized.endsWith("-1m")) {
+    return false;
+  }
+  const officialFullName =
+    /^claude-(?:opus|sonnet)-\d+(?:-\d+)?-\d{8}$/.test(normalized) ||
+    /^claude-3-(?:5|7)-sonnet-\d{8}$/.test(normalized);
   return (
     normalized === "opus" ||
-    normalized === "opus[1m]" ||
     normalized === "sonnet" ||
-    normalized === "sonnet[1m]" ||
-    normalized.includes("opus") ||
-    normalized.includes("sonnet")
+    officialFullName
   );
 }
 
 async function readInstalledAgentProfiles() {
   const home = os.homedir();
-  const [codexInstalled, claudeInstalled, geminiInstalled] = await Promise.all([
+  const [codexInstalled, claudeInstalled] = await Promise.all([
     commandExists("codex"),
-    commandExists("claude"),
-    commandExists("gemini")
+    commandExists("claude")
   ]);
 
   const codexConfigPath = path.join(home, ".codex", "config.toml");
   const claudeSettingsPath = path.join(home, ".claude", "settings.json");
-  const geminiSettingsPath = path.join(home, ".gemini", "settings.json");
 
-  const [claudeSettings, geminiSettings] = await Promise.all([
-    readJsonIfExists(claudeSettingsPath),
-    readJsonIfExists(geminiSettingsPath)
-  ]);
+  const claudeSettings = await readJsonIfExists(claudeSettingsPath);
 
   let detectedCodexModel = "";
   let detectedCodexReasoning = "";
@@ -3790,8 +5043,6 @@ async function readInstalledAgentProfiles() {
       .map(normalizeClaudeModelValue)
       .filter(isPreferredClaudeModel)
   );
-  const geminiModel = typeof geminiSettings?.model === "string" ? geminiSettings.model : "";
-
   return {
     codex: {
       installed: codexInstalled,
@@ -3806,13 +5057,6 @@ async function readInstalledAgentProfiles() {
       models: claudeModels,
       reasoning: claudeReasoning,
       supportsReasoning: true
-    },
-    gemini: {
-      installed: geminiInstalled,
-      model: geminiModel,
-      models: uniqueStringValues([geminiModel]),
-      reasoning: "",
-      supportsReasoning: false
     }
   };
 }
@@ -3855,14 +5099,10 @@ function parseRunnerListOutput(output) {
       activeTicketTitle: values[`${prefix}active_ticket_title`] || "",
       activeStage: values[`${prefix}active_stage`] || "",
       activeSpecRef: values[`${prefix}active_spec_ref`] || "",
-      activeRecoveryReason: values[`${prefix}active_recovery_reason`] || "",
-      activeRecoveryStatus: values[`${prefix}active_recovery_status`] || "",
-      activeRecoveryFailureClass: values[`${prefix}active_recovery_failure_class`] || "",
       pid: values[`${prefix}pid`] || "",
       startedAt: values[`${prefix}started_at`] || "",
       lastEventAt: values[`${prefix}last_event_at`] || "",
       lastAdapterChunkAt: values[`${prefix}last_adapter_chunk_at`] || "",
-      wakeStaleThresholdSeconds: String(readWakeStaleThresholdSeconds()),
       lastResult,
       lastBudgetSkipReason,
       lastBudgetSource: values[`${prefix}last_budget_source`] || "",
@@ -3873,10 +5113,6 @@ function parseRunnerListOutput(output) {
       lastPreflightSkipAt: values[`${prefix}last_preflight_skip_at`] || "",
       preflightSkipCircuitBreakerUntil: values[`${prefix}preflight_skip_circuit_breaker_until`] || "",
       preflightSkipCircuitBreakerThreshold: values[`${prefix}preflight_skip_circuit_breaker_threshold`] || "",
-      lastRuntimeLog: values[`${prefix}last_runtime_log`] || "",
-      lastPromptLog: values[`${prefix}last_prompt_log`] || "",
-      lastStdoutLog: values[`${prefix}last_stdout_log`] || "",
-      lastStderrLog: values[`${prefix}last_stderr_log`] || "",
       cumulativeTokens: positiveIntegerValue(values[`${prefix}cumulative_tokens`]),
       cumulativeTotalTokens: positiveIntegerValue(values[`${prefix}cumulative_total_tokens`]),
       cumulativeCacheReadTokens: positiveIntegerValue(values[`${prefix}cumulative_cache_read_tokens`]),
@@ -3960,19 +5196,12 @@ async function readTailText(filePath, limitBytes = runnerTerminalPreviewLimitByt
   }
 }
 
-function runnerLiveLogPaths(runner, boardRoot) {
-  if (!runner.id || !safeIdPattern.test(runner.id)) {
-    return [];
-  }
-
-  return [
-    path.join(boardRoot, "runners", "logs", `${runner.id}.loop.stdout.log`),
-    path.join(boardRoot, "runners", "logs", `${runner.id}.loop.stderr.log`)
-  ];
+function runnerLiveLogPaths(_runner, _boardRoot) {
+  return [];
 }
 
-function runnerArtifactLogPaths(runner) {
-  return [runner.lastStdoutLog, runner.lastStderrLog, runner.lastRuntimeLog, runner.logPath].filter(Boolean);
+function runnerArtifactLogPaths(_runner) {
+  return [];
 }
 
 function runnerQuotaInfoFromText(text) {
@@ -4108,223 +5337,17 @@ async function continueRunnerAuth(options = {}) {
     };
   }
 
-  const agent = normalizeAgentKey(options.agent);
-  if (agent !== "gemini") {
-    return {
-      ok: false,
-      command: "runner auth",
-      code: -1,
-      stdout: "",
-      stderr: `Runner auth prompt is not supported for agent=${options.agent || ""}.`
-    };
-  }
-
-  if (!(await commandExists("gemini"))) {
-    return {
-      ok: false,
-      command: "gemini --prompt <auth-check>",
-      code: 127,
-      stdout: "",
-      stderr: "Gemini CLI is not installed or not on PATH."
-    };
-  }
-
-  const runnerId = String(options.runnerId || "gemini").trim() || "gemini";
-  const existing = runnerAuthProcesses.get(runnerId);
-  if (existing && !existing.killed) {
-    return {
-      ok: true,
-      command: "gemini --prompt <auth-check>",
-      code: 0,
-      stdout: "status=ok\nresult=auth_flow_already_running\n",
-      stderr: ""
-    };
-  }
-
-  return new Promise((resolve) => {
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    let consentSent = false;
-    let browserOpenStarted = false;
-
-    const child = spawn(
-      "gemini",
-      [
-        "--skip-trust",
-        "--approval-mode",
-        "yolo",
-        "--prompt",
-        "Autoflow authentication check. Reply with OK only."
-      ],
-      {
-        cwd: options.projectRoot,
-        env: browserAuthProcessEnv(),
-        stdio: ["pipe", "pipe", "pipe"]
-      }
-    );
-
-    runnerAuthProcesses.set(runnerId, child);
-
-    const finish = (payload) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(initialTimeout);
-      resolve(payload);
-    };
-
-    const cleanup = () => {
-      if (runnerAuthProcesses.get(runnerId) === child) {
-        runnerAuthProcesses.delete(runnerId);
-      }
-      clearTimeout(authTimeout);
-      agentAuthStatusCache.delete(agent);
-    };
-
-    const maybeContinuePrompt = () => {
-      if (consentSent) return;
-      const combined = `${stdout}\n${stderr}`;
-      if (!/Opening authentication page in your browser/i.test(combined)) {
-        return;
-      }
-
-      consentSent = true;
-      try {
-        child.stdin.write("Y\n");
-        child.stdin.end();
-      } catch {}
-    };
-
-    const maybeOpenAuthUrl = () => {
-      if (browserOpenStarted) return;
-      const authUrl = extractAuthUrl(`${stdout}\n${stderr}`);
-      if (!authUrl) return;
-
-      browserOpenStarted = true;
-      shell.openExternal(authUrl)
-        .then(() => {
-          finish({
-            ok: true,
-            command: "gemini --prompt <auth-check>",
-            code: 0,
-            stdout: `status=ok\nresult=auth_browser_opened\nauth_url=${authUrl}\n`,
-            stderr
-          });
-        })
-        .catch((error) => {
-          finish({
-            ok: false,
-            command: "gemini --prompt <auth-check>",
-            code: -1,
-            stdout,
-            stderr: `${stderr}\nFailed to open auth URL: ${error.message || String(error)}`
-          });
-        });
-    };
-
-    const handleOutput = (chunk, target) => {
-      if (target === "stdout") {
-        stdout += chunk.toString();
-      } else {
-        stderr += chunk.toString();
-      }
-      maybeContinuePrompt();
-      maybeOpenAuthUrl();
-    };
-
-    const initialTimeout = setTimeout(() => {
-      if (browserOpenStarted) return;
-      try {
-        child.kill("SIGTERM");
-      } catch {}
-      finish({
-        ok: false,
-        command: "gemini --prompt <auth-check>",
-        code: -1,
-        stdout,
-        stderr: `${stderr}\nGemini authentication URL was not produced within 30 seconds.`
-      });
-    }, 30 * 1000);
-
-    const authTimeout = setTimeout(() => {
-      try {
-        child.kill("SIGTERM");
-      } catch {}
-    }, 6 * 60 * 1000);
-    authTimeout.unref?.();
-
-    child.stdout.on("data", (chunk) => handleOutput(chunk, "stdout"));
-    child.stderr.on("data", (chunk) => handleOutput(chunk, "stderr"));
-    child.stdin.on("error", () => {});
-    child.on("error", (error) => {
-      cleanup();
-      finish({
-        ok: false,
-        command: "gemini --prompt <auth-check>",
-        code: -1,
-        stdout,
-        stderr: `${stderr}${error.message || String(error)}`
-      });
-    });
-    child.on("close", (code) => {
-      cleanup();
-      if (code === 0 && !settled) {
-        finish({
-          ok: true,
-          command: "gemini --prompt <auth-check>",
-          code,
-          stdout: `${stdout}\nstatus=ok\nresult=auth_check_completed\n`,
-          stderr
-        });
-      } else if (!settled) {
-        finish({
-          ok: false,
-          command: "gemini --prompt <auth-check>",
-          code,
-          stdout,
-          stderr: stderr || "Gemini authentication helper exited before opening a browser."
-        });
-      }
-    });
-  });
+  return {
+    ok: false,
+    command: "runner auth",
+    code: -1,
+    stdout: "",
+    stderr: `Runner auth prompt is not supported for agent=${options.agent || ""}.`
+  };
 }
 
-async function recentRunnerArtifactLogPaths(runner, boardRoot, maxFiles = 10) {
-  if (!runner.id || !safeIdPattern.test(runner.id)) {
-    return [];
-  }
-
-  const logsDir = path.join(boardRoot, "runners", "logs");
-  let entries;
-  try {
-    entries = await fs.readdir(logsDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-
-  const prefix = `${runner.id}_`;
-  const candidates = [];
-  await Promise.all(
-    entries.map(async (entry) => {
-      if (!entry.isFile()) return;
-      if (!entry.name.startsWith(prefix)) return;
-      if (!/_(?:stdout|stderr)\.log$/.test(entry.name)) return;
-      if (/_live_(?:stdout|stderr)\.log$/.test(entry.name)) return;
-
-      const filePath = path.join(logsDir, entry.name);
-      try {
-        const stat = await fs.stat(filePath);
-        if (stat.isFile()) {
-          candidates.push({ filePath, modifiedMs: stat.mtimeMs });
-        }
-      } catch {}
-    })
-  );
-
-  return candidates
-    .sort((a, b) => b.modifiedMs - a.modifiedMs)
-    .slice(0, maxFiles)
-    .map((candidate) => candidate.filePath);
+async function recentRunnerArtifactLogPaths(_runner, _boardRoot, _maxFiles = 10) {
+  return [];
 }
 
 async function runnerQuotaInfo(runner, boardRoot) {
@@ -4427,18 +5450,9 @@ function positiveIntegerValue(value) {
   return Number.isFinite(parsed) && Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function usageValue(source, keys) {
-  if (!source || typeof source !== "object") return 0;
-  for (const key of keys) {
-    const value = positiveIntegerValue(source[key]);
-    if (value > 0) return value;
-  }
-  return 0;
-}
-
 function usageReportFromJsonLine(line) {
   const trimmed = String(line || "").trim();
-  if (!trimmed.startsWith("{") || (!trimmed.includes("usage") && !trimmed.includes("stats"))) return null;
+  if (!trimmed.startsWith("{") || !trimmed.includes("usage")) return null;
   let parsed;
   try {
     parsed = JSON.parse(trimmed);
@@ -4474,33 +5488,6 @@ function usageReportFromJsonLine(line) {
     };
   }
 
-  // Gemini stream-json / JSON metadata.
-  if (parsed.type === "result" && parsed.stats && typeof parsed.stats === "object") {
-    const stats = parsed.stats;
-    const inputTotal = usageValue(stats, ["input_tokens", "input"]);
-    const cacheRead = usageValue(stats, ["cached", "cached_tokens", "cache_read_input_tokens"]);
-    return {
-      source: "gemini_result_stats",
-      input: Math.max(0, inputTotal - cacheRead),
-      output: usageValue(stats, ["output_tokens", "output"]),
-      cacheRead,
-      cacheCreate: 0
-    };
-  }
-
-  const usage = parsed.usageMetadata || parsed.usage_metadata;
-  if (usage && typeof usage === "object") {
-    const inputTotal = usageValue(usage, ["promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count"]);
-    const cacheRead = usageValue(usage, ["cachedContentTokenCount", "cached_content_token_count"]);
-    return {
-      source: "gemini_usage_metadata",
-      input: Math.max(0, inputTotal - cacheRead),
-      output: usageValue(usage, ["candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count"]),
-      cacheRead,
-      cacheCreate: 0
-    };
-  }
-
   return null;
 }
 
@@ -4528,179 +5515,87 @@ function reportPtyUsageViaRunnerTool(runnerId, usage, options = {}) {
   if (!meta || !meta.projectRoot || !meta.boardDirName) return;
   const publicRunnerId = meta.runnerId || runnerId;
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
-  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
   const tickId = options.tickId || `${publicRunnerId}-${Math.floor(Date.now() / 1000)}-${nodeCrypto.randomBytes(2).toString("hex")}`;
-  const args = [
-    "tool", "runner-tokens",
-    "report",
-    "--runner", publicRunnerId,
-    "--tick-id", tickId,
-    "--input", String(usage.input || 0),
-    "--output", String(usage.output || 0),
-    "--cache-read", String(usage.cacheRead || 0),
-    "--cache-create", String(usage.cacheCreate || 0),
-    "--note", options.note || `host_pty_stream:${usage.source || "usage"}`
-  ];
-  execFile(autoflowBin, args, {
-    cwd: meta.projectRoot,
-    env: {
-      ...process.env,
-      AUTOFLOW_BOARD_ROOT: boardRoot,
-      BOARD_ROOT: boardRoot,
-      AUTOFLOW_RUNNER_ID: publicRunnerId,
-      RUNNER_ID: publicRunnerId
-    },
-    timeout: 30000
-  }, (error, stdout, stderr) => {
-    if (error) {
-      console.warn(`[runner-tokens] host PTY report failed runner=${publicRunnerId}:`, error.message || error);
-      if (stderr) console.warn(stderr);
-      return;
+  try {
+    runnerTokensApi.setBoardRoot(boardRoot);
+    const result = runnerTokensApi.reportCore(publicRunnerId, {
+      tickId,
+      input: String(usage.input || 0),
+      output: String(usage.output || 0),
+      cacheRead: String(usage.cacheRead || 0),
+      cacheCreate: String(usage.cacheCreate || 0),
+      note: options.note || `host_pty_stream:${usage.source || "usage"}`,
+    });
+    if (!result.ok && result.message) {
+    } else if (result.message) {
     }
-    if (stdout && stdout.trim()) {
-      console.log(`[runner-tokens] host PTY report runner=${publicRunnerId}: ${stdout.trim()}`);
-    }
-  });
+  } catch (error) {
+  }
 }
 
-function runCodexSessionUsageSyncForRunner(runnerId) {
+function runSessionTokenUsageImportForRunner(runnerId) {
   const meta = ptyRunnerMeta.get(runnerId);
-  if (!meta || !["codex", "gemini"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
+  if (!meta || !["codex", "claude"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
   const publicRunnerId = meta.runnerId || runnerId;
-  if (codexSessionUsageSyncInflight.has(runnerId)) {
-    codexSessionUsageSyncPending.add(runnerId);
+  if (sessionTokenUsageImportInflight.has(runnerId)) {
+    sessionTokenUsageImportPending.add(runnerId);
     return;
   }
-  codexSessionUsageSyncInflight.add(runnerId);
+  sessionTokenUsageImportInflight.add(runnerId);
 
   const boardRoot = path.join(meta.projectRoot, meta.boardDirName);
-  const autoflowBin = path.join(repoRoot, "app", "bin", "autoflow");
-  execFile(autoflowBin, ["tool", "runner-tokens", "sync-codex-sessions", "--runner", publicRunnerId], {
-    cwd: meta.projectRoot,
-    env: {
-      ...process.env,
-      AUTOFLOW_PROJECT_ROOT: meta.projectRoot,
-      PROJECT_ROOT: meta.projectRoot,
-      AUTOFLOW_BOARD_ROOT: boardRoot,
-      BOARD_ROOT: boardRoot,
-      AUTOFLOW_RUNNER_ID: publicRunnerId,
-      RUNNER_ID: publicRunnerId
-    },
-    timeout: 30000
-  }, (error, stdout, stderr) => {
-    codexSessionUsageSyncInflight.delete(runnerId);
-    if (error) {
-      console.warn(`[runner-tokens] session sync failed runner=${publicRunnerId}:`, error.message || error);
-      if (stderr) console.warn(stderr);
-    } else if (stdout && /imported_count=([1-9]\d*)/.test(stdout)) {
-      console.log(`[runner-tokens] session sync runner=${publicRunnerId}: ${stdout.trim().replace(/\n/g, " ")}`);
+  try {
+    const prevProjectRoot = process.env.AUTOFLOW_PROJECT_ROOT;
+    process.env.AUTOFLOW_PROJECT_ROOT = meta.projectRoot;
+    try {
+      runnerTokensApi.setBoardRoot(boardRoot);
+      const result = runnerTokensApi.importSessionTokenUsageCore(publicRunnerId);
+      if (result.imported > 0) {
+      }
+    } finally {
+      if (prevProjectRoot === undefined) delete process.env.AUTOFLOW_PROJECT_ROOT;
+      else process.env.AUTOFLOW_PROJECT_ROOT = prevProjectRoot;
     }
-    if (codexSessionUsageSyncPending.has(runnerId)) {
-      codexSessionUsageSyncPending.delete(runnerId);
-      scheduleCodexSessionUsageSyncForRunner(runnerId, 1000);
+  } catch (error) {
+  } finally {
+    sessionTokenUsageImportInflight.delete(runnerId);
+    if (sessionTokenUsageImportPending.has(runnerId)) {
+      sessionTokenUsageImportPending.delete(runnerId);
+      scheduleSessionTokenUsageImportForRunner(runnerId);
     }
-  });
+  }
 }
 
-function scheduleCodexSessionUsageSyncForRunner(runnerId, delayMs = 5000) {
+function scheduleSessionTokenUsageImportForRunner(runnerId, delayMs = sessionTokenUsageImportDelayMs()) {
   const meta = ptyRunnerMeta.get(runnerId);
-  if (!meta || !["codex", "gemini"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
-  const existing = codexSessionUsageSyncTimers.get(runnerId);
+  if (!meta || !["codex", "claude"].includes(meta.agent) || !meta.projectRoot || !meta.boardDirName) return;
+  const existing = sessionTokenUsageImportTimers.get(runnerId);
   if (existing) return;
   const timer = setTimeout(() => {
-    codexSessionUsageSyncTimers.delete(runnerId);
-    runCodexSessionUsageSyncForRunner(runnerId);
+    sessionTokenUsageImportTimers.delete(runnerId);
+    runSessionTokenUsageImportForRunner(runnerId);
   }, Math.max(0, Number(delayMs) || 0));
   if (typeof timer.unref === "function") timer.unref();
-  codexSessionUsageSyncTimers.set(runnerId, timer);
+  sessionTokenUsageImportTimers.set(runnerId, timer);
 }
 
-function flushCodexSessionUsageSyncForRunner(runnerId) {
-  const existing = codexSessionUsageSyncTimers.get(runnerId);
+function flushSessionTokenUsageImportForRunner(runnerId) {
+  const existing = sessionTokenUsageImportTimers.get(runnerId);
   if (existing) clearTimeout(existing);
-  codexSessionUsageSyncTimers.delete(runnerId);
-  runCodexSessionUsageSyncForRunner(runnerId);
-}
-
-function timestampFromRunnerLogName(value) {
-  if (!value) return 0;
-  const normalized = value.replace(
-    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z$/,
-    "$1T$2:$3:$4Z"
-  );
-  const parsed = Date.parse(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
+  sessionTokenUsageImportTimers.delete(runnerId);
+  runSessionTokenUsageImportForRunner(runnerId);
 }
 
 function isRunnerTokenSourceAuthoritative(source) {
   return String(source || "").trim() === "llm_reported";
 }
 
-function isLegacySessionLogTokenEntry(entry) {
-  return String(entry?.note || "").startsWith("host_session_log:");
-}
-
-async function readTrustedRunnerTokenLogTotal(boardRoot, runnerId) {
-  const result = { hasTokenLog: false, trustedCount: 0, total: 0 };
-  const logPath = path.join(boardRoot, "runners", "logs", `${runnerId}-tokens.log`);
-  let raw = "";
-  try {
-    raw = await fs.readFile(logPath, "utf8");
-    result.hasTokenLog = true;
-  } catch {
-    return result;
-  }
-
-  const seen = new Set();
-  let lineIndex = 0;
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    lineIndex += 1;
-    let entry;
-    try {
-      entry = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-    if (isLegacySessionLogTokenEntry(entry)) continue;
-    const tickId = String(entry.tickId || `line:${lineIndex}`);
-    const key = `${runnerId}:${tickId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const turnTotal =
-      positiveIntegerValue(entry.turnTotal) ||
-      positiveIntegerValue(entry.input) +
-        positiveIntegerValue(entry.output) +
-        positiveIntegerValue(entry.cacheRead) +
-        positiveIntegerValue(entry.cacheCreate);
-    const visibleTotal = Math.max(0, turnTotal - positiveIntegerValue(entry.cacheRead));
-    if (visibleTotal <= 0) continue;
-    result.trustedCount += 1;
-    result.total += visibleTotal;
-  }
-
-  return result;
-}
-
 async function readRunnerTokenUsage(boardRoot, runners = []) {
   const totals = new Map();
-
-  // Runner-reported usage is the only authoritative monotonic counter across
-  // turns. Do not derive runner totals from session files, live stdout, token
-  // caches, or telemetry rows; those sources can include pasted prompts,
-  // partial output, or stale historical runs.
   const stateDir = path.join(boardRoot, "runners", "state");
   for (const runner of runners) {
     const rid = runner && runner.id;
     if (!rid) continue;
-    const trustedLog = await readTrustedRunnerTokenLogTotal(boardRoot, rid);
-    if (trustedLog.hasTokenLog) {
-      if (trustedLog.total > 0) {
-        totals.set(rid, trustedLog.total);
-      }
-      continue;
-    }
     try {
       const raw = await fs.readFile(path.join(stateDir, `${rid}.state`), "utf8");
       let tokenSource = "";
@@ -4724,47 +5619,162 @@ async function readRunnerTokenUsage(boardRoot, runners = []) {
 
 async function enrichRunnerTerminalPreviews(runners, boardRoot) {
   const tokenUsageByRunner = await readRunnerTokenUsage(boardRoot, runners);
-  // Find the freshest live_stdout.log per runner so the renderer can tail the
-  // active tick even when the state file's last_stdout_log was not written.
-  const logsDir = path.join(boardRoot, "runners", "logs");
-  const liveStdoutByRunner = new Map();
-  try {
-    const entries = await fs.readdir(logsDir);
-    for (const name of entries) {
-      const m = runnerLiveLogNamePattern.exec(name);
-      if (!m) continue;
-      const rid = m[1];
-      const ts = timestampFromRunnerLogName(m[2]);
-      const prev = liveStdoutByRunner.get(rid);
-      if (!prev || ts > prev.ts) {
-        liveStdoutByRunner.set(rid, { name, ts });
-      }
-    }
-  } catch {}
   return Promise.all(
     runners.map(async (runner) => {
       const conversationPreview = await runnerConversationPreview(runner, boardRoot);
       const quotaInfo = await runnerQuotaInfo({ ...runner, conversationPreview }, boardRoot);
       const authInfo = await runnerAuthInfo({ ...runner, conversationPreview }, boardRoot);
-      let lastStdoutLog = runner.lastStdoutLog || "";
-      if (!lastStdoutLog) {
-        const fresh = liveStdoutByRunner.get(runner.id);
-        if (fresh) lastStdoutLog = path.join(logsDir, fresh.name);
-      }
       return {
         ...runner,
         ...quotaInfo,
         ...authInfo,
         conversationPreview,
-        tokenUsage: tokenUsageByRunner.get(runner.id) || 0,
-        lastStdoutLog
+        tokenUsage: tokenUsageByRunner.get(runner.id) || 0
       };
     })
   );
 }
 
+async function enrichWikiRunnerBackgroundTasks(runners, boardRoot) {
+  if (!Array.isArray(runners) || runners.length === 0) return;
+  const wikiRunner = runners.find((runner) => String(runner?.role || "").toLowerCase().includes("wiki"));
+  if (!wikiRunner) return;
+
+  const stateDir = path.join(boardRoot, "runners", "state");
+  const indexState = await readJsonIfExists(path.join(stateDir, "wiki-index-refresh.json")) || {};
+  let pid = positiveIntegerValue(indexState.pid);
+  if (!pid) {
+    try {
+      pid = positiveIntegerValue((await fs.readFile(path.join(stateDir, "wiki-index-refresh.lock", "pid"), "utf8")).trim());
+    } catch {}
+  }
+  if (!pid) return;
+
+  const identity = inspectPidIdentity(pid);
+  if (!identity.alive || !commandLooksLikeAutoflowRunner(identity.command)) return;
+
+  wikiRunner.backgroundTask = "wiki_index_refresh";
+  wikiRunner.backgroundTaskLabel = "위키 인덱스 갱신 중";
+  wikiRunner.backgroundTaskPid = String(pid);
+  wikiRunner.backgroundTaskStartedAt = typeof indexState.last_started_at === "string" ? indexState.last_started_at : "";
+  wikiRunner.backgroundTaskLogPath = typeof indexState.log_path === "string" ? indexState.log_path : "";
+}
+
+function countRunnerQueueStatus(runner, boardRoot) {
+  const role = String(runner?.role || "").toLowerCase();
+  const runnerId = String(runner?.id || "").trim().toLowerCase();
+  const empty = {
+    queueStatus: "none",
+    queueStatusLabel: "처리할 작업 없음",
+    queueStatusDetail: "",
+    queueClaimableCount: 0,
+    queueBlockedCount: 0,
+    queuePendingCount: 0
+  };
+  try {
+    if (role === "worker" || role === "ticket") {
+      const inprogress = listQueueFilesSync(boardRoot, "tickets/inprogress", /^TODO-\d+\.md$/, 1000);
+      const readyToMerge = listQueueFilesSync(boardRoot, "tickets/ready-to-merge", /^TODO-\d+\.md$/, 1000);
+      const todo = listQueueFilesSync(boardRoot, "tickets/todo", /^TODO-\d+\.md$/, 1000);
+      const ownedInProgress = inprogress.filter((file) => ticketClaimedByRunnerIdSync(file) === runnerId);
+      const ownedReadyToMerge = readyToMerge.filter((file) => ticketClaimedByRunnerIdSync(file) === runnerId);
+      const claimable = todo.filter((file) => workerTodoFileIsClaimableSync(file));
+      const blocked = Math.max(0, todo.length - claimable.length);
+      if (ownedInProgress.some(workerInprogressFileIsActionableSync) || ownedReadyToMerge.length > 0) {
+        return {
+          queueStatus: "owned",
+          queueStatusLabel: "진행 중인 티켓 확인 중",
+          queueStatusDetail: `${ownedInProgress.length + ownedReadyToMerge.length}개 담당 중`,
+          queueClaimableCount: claimable.length,
+          queueBlockedCount: blocked,
+          queuePendingCount: todo.length
+        };
+      }
+      if (claimable.length > 0) {
+        return {
+          queueStatus: "claimable",
+          queueStatusLabel: "다음 티켓 확인 중",
+          queueStatusDetail: `${claimable.length}개 처리 가능`,
+          queueClaimableCount: claimable.length,
+          queueBlockedCount: blocked,
+          queuePendingCount: todo.length
+        };
+      }
+      if (todo.length > 0 && blocked > 0) {
+        return {
+          queueStatus: "ticket_blocked",
+          queueStatusLabel: "티켓 보완 필요",
+          queueStatusDetail: `${blocked}개에 구체적인 Allowed Paths가 없음`,
+          queueClaimableCount: 0,
+          queueBlockedCount: blocked,
+          queuePendingCount: todo.length
+        };
+      }
+      return {
+        ...empty,
+        queueStatusDetail: "TODO 대기열 비어 있음"
+      };
+    }
+    if (role === "verifier") {
+      const pending = listQueueFilesSync(boardRoot, "tickets/verifier", /^TODO-\d+\.md$/, 1000).length;
+      return pending > 0
+        ? {
+            queueStatus: "claimable",
+            queueStatusLabel: "검증 티켓 확인 대기",
+            queueStatusDetail: `${pending}개 대기`,
+            queueClaimableCount: pending,
+            queueBlockedCount: 0,
+            queuePendingCount: pending
+          }
+        : { ...empty, queueStatusDetail: "검증 대기열 비어 있음" };
+    }
+    if (role === "planner" || role === "plan") {
+      const pending = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000)
+        .filter(plannerQueueFileIsActionableSync)
+        .length;
+      return pending > 0
+        ? {
+            queueStatus: "claimable",
+            queueStatusLabel: "PRD 확인 대기",
+            queueStatusDetail: `${pending}개 대기`,
+            queueClaimableCount: pending,
+            queueBlockedCount: 0,
+            queuePendingCount: pending
+          }
+        : { ...empty, queueStatusDetail: "PRD 대기열 비어 있음" };
+    }
+    if (role.includes("wiki")) {
+      const pendingPaths = wikiPendingReviewPathsSync(boardRoot);
+      return pendingPaths.length > 0
+        ? {
+            queueStatus: "claimable",
+            queueStatusLabel: "위키 갱신 대기",
+            queueStatusDetail: `${pendingPaths.length}개 반영 필요`,
+            queueClaimableCount: 1,
+            queueBlockedCount: 0,
+            queuePendingCount: pendingPaths.length
+          }
+        : { ...empty, queueStatusDetail: "위키 변경 없음" };
+    }
+  } catch {
+    return {
+      ...empty,
+      queueStatus: "unknown",
+      queueStatusLabel: "대기열 확인 필요",
+      queueStatusDetail: "상태 계산 실패"
+    };
+  }
+  return empty;
+}
+
+async function enrichRunnerQueueStatus(runners, boardRoot) {
+  for (const runner of runners || []) {
+    Object.assign(runner, countRunnerQueueStatus(runner, boardRoot));
+  }
+}
+
 function usefulPreviewValue(value) {
-  const normalized = value.trim();
+  const normalized = String(value || "").trim();
   if (!normalized || normalized === "..." || normalized === "-") {
     return "";
   }
@@ -4778,14 +5788,44 @@ function usefulPreviewValue(value) {
     "Project Spec Template",
     "Feature Spec Template",
     "Ticket Template",
-    "Plan Template"
+    "Plan Template",
+    "Ticket"
   ]);
 
   return placeholders.has(normalized) ? "" : normalized.slice(0, 160);
 }
 
+function stripWorkflowTitlePrefix(value) {
+  let title = String(value || "").trim();
+  for (let i = 0; i < 3; i += 1) {
+    const next = title
+      .replace(/^(?:PRD|Project)\s+(?:(?:prd|project)[_-])?\d+\s*:\s*/i, "")
+      .replace(/^(?:(?:prd|project)[_-])\d+\s*:\s*/i, "")
+      .replace(/^(?:Todo|TODO|Ticket)\s*(?:(?:Todo|tickets)[_-])?\d+\s*:\s*/i, "")
+      .replace(/^Todo[-_]\d+\s*:\s*/i, "")
+      .replace(/^tickets[_-]\d+\s*:\s*/i, "")
+      .trim();
+    if (next === title) break;
+    title = next;
+  }
+  return title;
+}
+
 function markdownPreviewTitle(content, fallback) {
   const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    const headingMatch = line.trim().match(/^#\s+(.+)$/);
+    if (!headingMatch) {
+      continue;
+    }
+
+    const headingTitle = stripWorkflowTitlePrefix(headingMatch[1]);
+    const value = usefulPreviewValue(headingTitle);
+    if (value) {
+      return value;
+    }
+  }
 
   for (const line of lines) {
     const fieldMatch = line
@@ -4795,20 +5835,45 @@ function markdownPreviewTitle(content, fallback) {
       continue;
     }
 
-    const value = usefulPreviewValue(fieldMatch[1].replace(/^`|`$/g, ""));
+    const value = usefulPreviewValue(stripWorkflowTitlePrefix(fieldMatch[1].replace(/^`|`$/g, "")));
     if (value) {
       return value;
     }
   }
 
   for (const line of lines) {
-    const value = usefulPreviewValue(line.trim().replace(/^#+\s*/, ""));
+    const value = usefulPreviewValue(stripWorkflowTitlePrefix(line.trim().replace(/^#+\s*/, "")));
     if (value) {
       return value;
     }
   }
 
   return fallback;
+}
+
+function extractTicketScalar(content, field) {
+  const re = new RegExp(`^-\\s*${field.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*:\\s*(.+?)\\s*$`, "im");
+  const match = content.match(re);
+  return match ? match[1].replace(/^`+|`+$/g, "").trim() : "";
+}
+
+// Resolve a ticket's parent PRD key. Tickets created under the current
+// naming convention carry `- PRD Key: PRD-NNN`, but legacy tickets in
+// `tickets/done/ticket_NNN/TODO-NNN.md` use older fields (`- Project Key:`,
+// `- Key:`, `- Source PRD: \`tickets/prd/PRD-NNN.md\``). Try each in order
+// and normalize the captured value to the canonical `PRD-NNN` form so
+// renderer coverage matching does not have to special-case any of them.
+function extractTicketPrdKey(content) {
+  const direct =
+    extractTicketScalar(content, "PRD Key") ||
+    extractTicketScalar(content, "Project Key") ||
+    extractTicketScalar(content, "Key");
+  const sourcePrd = extractTicketScalar(content, "Source PRD");
+  const sourceMatch = sourcePrd.match(/PRD-\d+/i);
+  const raw = direct || (sourceMatch ? sourceMatch[0] : "");
+  if (!raw) return "";
+  const norm = raw.match(/PRD-\d+/i);
+  return norm ? norm[0].toUpperCase() : "";
 }
 
 async function readMarkdownPreview(filePath) {
@@ -4825,7 +5890,9 @@ async function readMarkdownPreview(filePath) {
       modifiedAt: stat.mtime.toISOString(),
       createdAt: new Date(birthMs).toISOString(),
       eventType: eventTypeMatch?.[1]?.trim() || "",
-      acknowledged: /^-\s*\[[xX]\]\s*사람 확인 완료\s*$/m.test(content)
+      acknowledged: /^-\s*\[[xX]\]\s*사람 확인 완료\s*$/m.test(content),
+      prdKey: extractTicketPrdKey(content),
+      stage: extractTicketScalar(content, "Stage")
     };
   } catch {
     return {
@@ -4838,15 +5905,32 @@ async function readMarkdownPreview(filePath) {
   }
 }
 
+async function readFilePrefixText(filePath, limitBytes = runnerLogPreviewReadLimitBytes) {
+  const stat = await fs.stat(filePath);
+  if (!stat.isFile() || stat.size <= 0) {
+    return { content: "", stat };
+  }
+
+  const bytesToRead = Math.min(stat.size, Math.max(1, limitBytes));
+  const handle = await fs.open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(bytesToRead);
+    const { bytesRead } = await handle.read(buffer, 0, bytesToRead, 0);
+    return { content: buffer.subarray(0, bytesRead).toString("utf8"), stat };
+  } finally {
+    await handle.close();
+  }
+}
+
 async function readTextPreview(filePath) {
   try {
-    const content = await fs.readFile(filePath, "utf8");
+    const { content, stat } = await readFilePrefixText(filePath);
     const firstLine = content.split(/\r?\n/).find((line) => line.trim().length > 0) || path.basename(filePath);
     return {
       filePath,
       name: path.basename(filePath),
       title: firstLine.slice(0, 160),
-      modifiedAt: (await fs.stat(filePath)).mtime.toISOString()
+      modifiedAt: stat.mtime.toISOString()
     };
   } catch {
     return {
@@ -4938,8 +6022,8 @@ async function listTicketFolders(ticketsRoot) {
   }
 
   const entries = await fs.readdir(ticketsRoot, { withFileTypes: true });
-  const canonicalOrder = ["order", "prd", "todo", "inprogress", "verifier", "done", "check"];
-  const ignoredLegacyFolders = new Set(["inbox", "backlog", "reject"]);
+  const canonicalOrder = ["prd", "todo", "inprogress", "verifier", "done", "check"];
+  const ignoredLegacyFolders = new Set(["inbox", "backlog", "reject", "order"]);
   return entries
     .filter((entry) => entry.isDirectory())
     .filter((entry) => !ignoredLegacyFolders.has(entry.name))
@@ -5196,7 +6280,9 @@ async function resolveStartupRulesDocument(options = {}) {
     };
   }
 
-  const confinedPath = await resolveExistingPathInside(boardRoot, targetPath);
+  const confinedPath = await resolveExistingPathInside(userShareRoot(), targetPath, {
+    rootLabel: "Autoflow 공유 루트"
+  });
   const resolvedTarget = confinedPath.targetPath;
   if (!confinedPath.ok) {
     return {
@@ -5320,107 +6406,6 @@ async function writeStartupRules(options = {}) {
 }
 
 
-async function deleteOrderFile(options = {}) {
-  if (!options.projectRoot) {
-    return {
-      ok: false,
-      filePath: "",
-      name: "",
-      message: "",
-      stderr: "Project root is required."
-    };
-  }
-
-  const filePath = options.filePath || "";
-  if (!filePath) {
-    return {
-      ok: false,
-      filePath: "",
-      name: "",
-      message: "",
-      stderr: "File path is required."
-    };
-  }
-
-  const boardDirName = options.boardDirName || defaultBoardDirName;
-  if (!isSafeBoardDirName(boardDirName)) {
-    return {
-      ok: false,
-      filePath: "",
-      name: path.basename(filePath),
-      message: "",
-      stderr: "Invalid board directory name."
-    };
-  }
-
-  const boardRoot = path.resolve(options.projectRoot, boardDirName);
-  const confinedPath = await resolveExistingPathInside(boardRoot, filePath);
-  const targetPath = confinedPath.targetPath;
-  const relativePath = confinedPath.relativePath;
-
-  if (!confinedPath.ok) {
-    return {
-      ok: false,
-      filePath: targetPath,
-      name: path.basename(targetPath),
-      message: "",
-      stderr: confinedPath.stderr
-    };
-  }
-
-  const normalizedRelativePath = relativePath.replace(/\\/g, "/");
-  const orderName = path.basename(relativePath);
-  if (!normalizedRelativePath.startsWith("tickets/order/") || !/^order_\d+(?:_retry_\d+_[A-Za-z0-9T.:-]+)?\.md$/i.test(orderName)) {
-    return {
-      ok: false,
-      filePath: targetPath,
-      name: orderName,
-      message: "",
-      stderr: "Only tickets/order/order_*.md files can be deleted."
-    };
-  }
-
-  try {
-    const stat = await fs.stat(targetPath);
-    if (!stat.isFile()) {
-      return {
-      ok: false,
-      filePath: targetPath,
-      name: orderName,
-      message: "",
-      stderr: "Path is not a file."
-    };
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      filePath: targetPath,
-      name: orderName,
-      message: "",
-      stderr: error.message || "Failed to read target file."
-    };
-  }
-
-  try {
-    await fs.unlink(targetPath);
-    return {
-      ok: true,
-      filePath: targetPath,
-      name: orderName,
-      message: `${orderName} 삭제 완료.`,
-      stderr: ""
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      filePath: targetPath,
-      name: orderName,
-      message: "",
-      stderr: error.message || "Failed to delete target file."
-    };
-  }
-}
-
 async function readBoard({ projectRoot, boardDirName }) {
   const normalizedBoardDirName = boardDirName || defaultBoardDirName;
   if (!isSafeBoardDirName(normalizedBoardDirName)) {
@@ -5517,14 +6502,10 @@ async function readBoard({ projectRoot, boardDirName }) {
 
   // Each list call below caps the number of files we actually readFile() to
   // avoid a 30s IPC timeout when these directories grow large. The renderer
-  // only consumes the slice limits below (e.g. 12 logs, 16 runner logs, etc.),
+  // only consumes the slice limits below (e.g. 16 runner logs, etc.),
   // but without an internal cap the listing helper used to readFile every
   // single file just to mtime-sort them — that read 600+ MB of runner logs
   // on every readBoard call.
-  const logs = await listMarkdownFiles(path.join(boardRoot, "logs"), true, {
-    limit: 12,
-    orderBy: "mtime"
-  });
   const runnerLogs = await listTextFiles(
     path.join(boardRoot, "runners", "logs"),
     [".log"],
@@ -5618,9 +6599,7 @@ async function readBoard({ projectRoot, boardDirName }) {
     runners: runnersResult?.runners || [],
     runnersResult,
     tickets: ticketGroups,
-    logs: logs
-      .sort((a, b) => byMostRecent(a, b))
-      .slice(0, 12),
+    logs: [],
     runnerLogs: runnerLogs
       .sort((a, b) => byMostRecent(a, b))
       .slice(0, 16),
@@ -5636,6 +6615,37 @@ async function readBoard({ projectRoot, boardDirName }) {
       .sort((a, b) => byMostRecent(a, b))
       .slice(0, 24)
   };
+}
+
+function readBoardSnapshotCacheKey(options = {}) {
+  return [
+    options.projectRoot || "",
+    options.boardDirName || defaultBoardDirName
+  ].join("\0");
+}
+
+function readBoardCached(options = {}) {
+  const key = readBoardSnapshotCacheKey(options);
+  const entry = readBoardSnapshotCache.get(key);
+  const now = Date.now();
+  if (entry?.result && now - entry.updatedAt < readBoardSnapshotCacheTtlMs) {
+    return Promise.resolve(entry.result);
+  }
+  if (entry?.promise) {
+    return entry.promise;
+  }
+  const nextEntry = entry || { result: null, updatedAt: 0, promise: null };
+  nextEntry.promise = readBoard(options)
+    .then((result) => {
+      nextEntry.result = result;
+      nextEntry.updatedAt = Date.now();
+      return result;
+    })
+    .finally(() => {
+      nextEntry.promise = null;
+    });
+  readBoardSnapshotCache.set(key, nextEntry);
+  return nextEntry.promise;
 }
 
 async function listRunners(options = {}) {
@@ -5657,6 +6667,8 @@ async function listRunners(options = {}) {
   const boardRoot = path.join(options.projectRoot, boardDirName);
   const runners = await enrichRunnerTerminalPreviews(parsed.runners, boardRoot);
   await enrichRunnerActiveTicketFromFs(runners, boardRoot);
+  await enrichWikiRunnerBackgroundTasks(runners, boardRoot);
+  await enrichRunnerQueueStatus(runners, boardRoot);
 
   return {
     ...result,
@@ -5776,7 +6788,7 @@ async function runnerResourceUsage(options = {}) {
 // ticket from the board so the UI reflects the current inprogress/prd
 // source of truth instead of stale runner state.
 //   worker    → first Todo-*.md in tickets/inprogress/
-//   planner         → first actionable order_*.md in tickets/order/, else first actionable prd_*.md in tickets/prd/
+//   planner         → first actionable PRD-*.md in tickets/prd/
 //   wiki-maintainer → leave blank (no per-ticket active item)
 function canonicalWorkerRunnerId(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -5793,13 +6805,14 @@ function runnerClaimKeys(runner) {
   const keys = new Set();
   const normalizedId = canonicalWorkerRunnerId(runner?.id || "");
   const role = String(runner?.role || "").trim().toLowerCase();
-  if (normalizedId) keys.add(normalizedId);
-  if (role === "worker" || role === "ticket") {
-    keys.add("worker");
+  if (normalizedId) {
+    keys.add(normalizedId);
     if (normalizedId.startsWith("worker-")) {
       const suffix = normalizedId.replace(/^worker-/, "");
       keys.add(`ai-${suffix}`);
     }
+  } else if (role === "worker" || role === "ticket") {
+    keys.add("worker");
   }
   return keys;
 }
@@ -5829,25 +6842,20 @@ function runnerClaimsTicketFromMeta(runner, ticketMeta) {
 async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
   if (!Array.isArray(runners) || runners.length === 0) return;
   const ticketsRoot = path.join(boardRoot, "tickets");
-  const readFirstMatch = async (dir, prefix, predicate = null) => {
-    try {
-      const entries = await fs.readdir(dir);
-      for (const name of entries.filter((n) => n.startsWith(prefix) && n.endsWith(".md")).sort()) {
-        const filePath = path.join(dir, name);
-        if (typeof predicate === "function" && !predicate(filePath)) {
-          continue;
-        }
-        return name;
-      }
-      return "";
-    } catch { return ""; }
-  };
   const readTitle = async (filePath) => {
     if (!filePath) return "";
     try {
       const text = await fs.readFile(filePath, "utf8");
-      const m = text.match(/^- Title:\s*(.+)$/m);
-      return m ? m[1].trim() : "";
+      const beforeSplitMap = text.split(/^##\s+(?:PRD|Todo|Ticket|Implementation)\s+Split(?:\s+Map)?\s*$/m)[0];
+      const titleScalar = beforeSplitMap.match(/^- Title:\s*(.+)$/m);
+      if (titleScalar) return titleScalar[1].trim();
+      const heading = text.match(/^#\s+(.+)$/m);
+      if (heading) {
+        return heading[1]
+          .replace(/^(?:PRD|Project|Todo)\s+\d+\s*:\s*/i, "")
+          .trim();
+      }
+      return "";
     } catch { return ""; }
   };
   const readTicketMeta = async (filePath) => {
@@ -5864,7 +6872,7 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
         executionAi: readScalar("Execution AI"),
         claimedBy: readScalar("Claimed By"),
         stage: readScalar("Stage"),
-        prdKey: readScalar("PRD Key")
+        prdKey: extractTicketPrdKey(text)
       };
     } catch {
       return null;
@@ -5874,7 +6882,7 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
   const verifierTickets = [];
   try {
     const entries = (await fs.readdir(path.join(ticketsRoot, "inprogress")))
-      .filter((name) => /^Todo-\d+\.md$/i.test(name))
+      .filter((name) => /^TODO-\d+\.md$/i.test(name))
       .sort();
     for (const file of entries) {
       const ticketPath = path.join(ticketsRoot, "inprogress", file);
@@ -5887,7 +6895,7 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
   } catch {}
   try {
     const entries = (await fs.readdir(path.join(ticketsRoot, "verifier")))
-      .filter((name) => /^Todo-\d+\.md$/i.test(name))
+      .filter((name) => /^TODO-\d+\.md$/i.test(name))
       .sort();
     for (const file of entries) {
       const ticketPath = path.join(ticketsRoot, "verifier", file);
@@ -5914,13 +6922,16 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
     runner.activeStage = "";
     runner.activeSpecRef = "";
   };
+  const assignedTicketIds = new Set();
   for (const runner of runners) {
     if (isWorkerRunner(runner)) {
-      const byClaim = inprogressTickets.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
-      const byState = inprogressTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
-      const unclaimed = inprogressTickets.find((ticket) => !runners.some((candidate) => runnerClaimsTicketFromMeta(candidate, ticket.meta)));
-      const ticket = byClaim || byState || (inprogressTickets.length === 1 ? inprogressTickets[0] : unclaimed);
+      const available = inprogressTickets.filter((ticket) => !assignedTicketIds.has(ticket.id));
+      const byClaim = available.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
+      const byState = available.find((ticket) => (runner.activeTicketId || "") === ticket.id);
+      const unclaimed = available.find((ticket) => !runners.some((candidate) => runnerClaimsTicketFromMeta(candidate, ticket.meta)));
+      const ticket = byClaim || byState || unclaimed;
       if (ticket) {
+        assignedTicketIds.add(ticket.id);
         await assignTicketToRunner(runner, ticket);
       } else {
         clearActiveTicket(runner);
@@ -5946,17 +6957,14 @@ async function enrichRunnerActiveTicketFromFs(runners, boardRoot) {
         clearActiveTicket(runner);
       }
     } else if (runner.role === "planner") {
-      const order = await readFirstMatch(path.join(ticketsRoot, "order"), "order_", plannerQueueFileIsActionableSync);
-      const prd = order ? "" : await readFirstMatch(path.join(ticketsRoot, "prd"), "prd_", plannerQueueFileIsActionableSync);
-      const file = order || prd;
-      if (file) {
-        const id = file.replace(/\.md$/, "");
-        runner.activeTicketId = id;
-        runner.activeTicketTitle = await readTitle(
-          path.join(ticketsRoot, order ? "order" : "prd", file)
-        );
-        runner.activeItem = id;
-        runner.activeStage = "planning";
+      const activePrdId = String(runner.activeTicketId || "");
+      const activePlannerStage = String(runner.activeStage || "").toLowerCase();
+      const activePrdFile = /^PRD[-_].+$/i.test(activePrdId)
+        ? path.join(ticketsRoot, "prd", `${activePrdId}.md`)
+        : "";
+      if (activePrdFile && safeIsFileSync(activePrdFile) && activePlannerStage && activePlannerStage !== "idle") {
+        runner.activeTicketTitle = runner.activeTicketTitle || await readTitle(activePrdFile);
+        runner.activeItem = runner.activeItem || activePrdId;
       } else {
         runner.activeTicketId = "";
         runner.activeTicketTitle = "";
@@ -6645,8 +7653,7 @@ async function browseWikiDatabase(options = {}) {
         "order by case",
         "when name='wiki_chunks' then 0",
         "when name='wiki_vectors' then 1",
-        "when name='wiki_chunks_fts' then 2",
-        "when name='wiki_index_meta' then 3",
+        "when name='wiki_index_meta' then 2",
         "else 10 end, name"
       ].join(" ")
     );
@@ -6702,10 +7709,10 @@ async function browseWikiDatabase(options = {}) {
       primaryKey: String(column.pk || "0") === "1"
     }));
     const selectedSummary = tables.find((table) => table.name === selectedTable);
-    const dataRows = await sqliteJson(
-      dbPath,
-      `select * from ${quotedTable} limit ${limit} offset ${offset}`
-    );
+    const dataSql = selectedTable === "wiki_vectors"
+      ? `select chunk_id, dim, length(vector_blob) as vector_bytes, model, indexed_at from ${quotedTable} limit ${limit} offset ${offset}`
+      : `select * from ${quotedTable} limit ${limit} offset ${offset}`;
+    const dataRows = await sqliteJson(dbPath, dataSql);
     const rows = dataRows.map((row) => {
       const out = {};
       for (const [key, value] of Object.entries(row || {})) {
@@ -6894,7 +7901,6 @@ function terminateAutoflowChild(child, reason = "cancelled", graceMs = autoflowC
   }, delay).unref();
 
   if (reason) {
-    console.warn(`[Autoflow Desktop] terminated child pid=${child.pid} reason=${reason}`);
   }
   return true;
 }
@@ -6954,7 +7960,6 @@ function commandLooksLikeAutoflowRunner(command) {
   if (command.includes("app/runtime/runners/")) return true;
   if (command.includes("app/runtime/system/")) return true;
   // adapter CLIs spawned by Autoflow runner processes
-  if (/\bgemini\b/.test(command) && command.includes("--prompt")) return true;
   if (/\bcodex\b/.test(command) && command.includes("exec")) return true;
   if (/\bclaude\b/.test(command) && command.includes("--permission-mode")) return true;
   return false;
@@ -7001,10 +8006,8 @@ function reapOrphanLegacyRunnerDaemons() {
       orphans.push({ pid, command });
     }
     if (orphans.length === 0) return 0;
-    console.log(`[startup-reaper] found ${orphans.length} orphan legacy runner daemon(s)`);
     for (const { pid, command } of orphans) {
-      console.log(`[startup-reaper]   killing pid=${pid} cmd=${command.slice(0, 100)}`);
-      // Process-group kill first (clean up any lingering claude/codex/gemini
+      // Process-group kill first (clean up any lingering claude/codex
       // children that legacy spawned), then targeted PID kill as fallback.
       try { process.kill(-pid, "SIGTERM"); } catch {}
       try { process.kill(pid, "SIGTERM"); } catch {}
@@ -7027,7 +8030,6 @@ function reapOrphanLegacyRunnerDaemons() {
       try { process.kill(pid, "SIGKILL"); } catch {}
     }
   } catch (err) {
-    console.warn("[startup-reaper] failed:", err && err.message ? err.message : err);
   }
   return killed;
 }
@@ -7046,6 +8048,19 @@ async function sweepStaleRunnersForScope(scope) {
   }
   let cleanedCount = 0;
   for (const name of entries.filter((value) => value.endsWith(".state"))) {
+    const runnerId = name.replace(/\.state$/, "");
+    const runnerKey = ptyRunnerKey(scope.projectRoot, scope.boardDirName, runnerId);
+    const ptyMgr = globalThis.__autoflowPtyManager;
+    const liveRunner = ptyMgr && typeof ptyMgr.get === "function" ? ptyMgr.get(runnerKey) : null;
+    if (
+      liveRunner?.status === "running" &&
+      ptyRunnerMatchesRequestedScope(ptyMgr, runnerKey, {
+        projectRoot: scope.projectRoot,
+        boardDirName: scope.boardDirName
+      })
+    ) {
+      continue;
+    }
     const filePath = path.join(stateDir, name);
     let content;
     try {
@@ -7095,9 +8110,9 @@ async function sweepStaleRunnersForScope(scope) {
     values.last_stop_reason = `startup_${action}`;
     values.last_result = "loop_stopped";
     values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-    // Also clear active recovery + active ticket — single-flow design:
-    // any unfinished blocker should re-emerge through order retry, not as
-    // stale state on the new desktop session.
+    // Clear active ticket — single-flow design: any unfinished blocker should
+    // re-emerge through verifier replan, not as stale state on the new desktop
+    // session.
     for (const key of [
       "active_item",
       "active_ticket_id",
@@ -7105,12 +8120,6 @@ async function sweepStaleRunnersForScope(scope) {
       "active_stage",
       "active_spec_ref",
       "active_ticket_path",
-      "active_recovery_reason",
-      "active_recovery_status",
-      "active_recovery_failure_class",
-      "active_recovery_worktree_path",
-      "active_recovery_worktree_status",
-      "active_recovery_board_state"
     ]) {
       values[key] = "";
     }
@@ -7550,7 +8559,6 @@ app.whenReady().then(() => {
   try {
     const ptyReaped = reapPreviousPtySessionPids();
     if (ptyReaped > 0) {
-      console.log(`[startup-reaper] reaped ${ptyReaped} orphan PTY pid(s) from previous session`);
     }
   } catch {}
 
@@ -7559,16 +8567,11 @@ app.whenReady().then(() => {
   // OS or watchdogs broke any state file during the suspend window.
   try {
     powerMonitor.on("suspend", () => {
-      console.log("[powerMonitor] suspend — preserving last PTY state");
     });
     powerMonitor.on("resume", () => {
-      console.log("[powerMonitor] resume — verifying PTY children + state files");
-      void selfHealPtyRunnerStates().then((n) => {
-        if (n > 0) console.log(`[powerMonitor] resume: self-healed ${n} PTY state file(s)`);
-      });
+      void selfHealPtyRunnerStates();
     });
   } catch (err) {
-    console.warn("[powerMonitor] hook registration failed:", err && err.message);
   }
 
   // Periodic state self-heal — recovers from token watcher race wipes,
@@ -7583,7 +8586,6 @@ app.whenReady().then(() => {
   try {
     const reaped = reapOrphanLegacyRunnerDaemons();
     if (reaped > 0) {
-      console.log(`[startup-reaper] reaped ${reaped} orphan legacy runner daemon(s)`);
     }
   } catch {}
   // Also drop any *.loop.lock dirs left by killed daemons so the next spawn
@@ -7628,7 +8630,7 @@ app.whenReady().then(() => {
     "autoflow:listInstalledAgentProfiles",
     withTimeout(() => readInstalledAgentProfiles(), 30000)
   );
-  ipcMain.handle("autoflow:readBoard", withTimeout(withScopeMemory(readBoard), 30000));
+  ipcMain.handle("autoflow:readBoard", withTimeout(withScopeMemory(readBoardCached), 30000));
   ipcMain.handle("autoflow:installBoard", withScopeMemory(installBoard));
   ipcMain.handle("autoflow:listRunners", withTimeout(withScopeMemory(listRunnersStandalone), 30000));
   ipcMain.handle("autoflow:runnerResourceUsage", withTimeout((_event, options = {}) => runnerResourceUsage(options), 5000));
@@ -7745,7 +8747,6 @@ app.whenReady().then(() => {
       10000
     )
   );
-  ipcMain.handle("autoflow:deleteOrderFile", withScopeMemory(deleteOrderFile));
   ipcMain.handle(
     "autoflow:projectExists",
     withTimeout(async (_event, projectRoot) => {
@@ -7798,7 +8799,7 @@ app.whenReady().then(() => {
   // Renderer-callable commands:
   //   autoflow:runnerPtyStart   disabled legacy low-level start path
   //   autoflow:runnerPtyStop    { runnerId, projectRoot?, boardDirName?, force? }
-  //   autoflow:runnerPtyInput   { runnerId, projectRoot?, boardDirName?, data }  — raw scoped stdin bytes
+  //   autoflow:runnerPtyInput   legacy renderer stdin path; rejected because terminals are read-only
   //   autoflow:runnerPtySnapshot { runnerId, projectRoot?, boardDirName? } → string
   //   autoflow:runnerPtyList     → [{ id, status, pid, ... }]
   // writePrompt() remains main-process only for automation prompts.
@@ -7813,12 +8814,42 @@ app.whenReady().then(() => {
   };
   ptyManager.on("bytes", ({ runnerId, data }) => {
     broadcastPty("autoflow:runnerPtyBytes", ptyRunnerScopedPayload(runnerId, { data }));
+    scheduleCodexHookTrustPromptAccept(ptyManager, runnerId, data);
     for (const usage of ptyUsageReportsFromChunk(runnerId, data)) {
       reportPtyUsageViaRunnerTool(runnerId, usage);
     }
-    scheduleCodexSessionUsageSyncForRunner(runnerId);
+    // Always schedule a debounced import. The debounce drops back-to-back calls
+    // so this is effectively one in-process incremental sync per debounce window
+    // even when stdout never emits a usage JSON line (e.g. codex). Cost is ~0
+    // because the cumulative is cached.
+    scheduleSessionTokenUsageImportForRunner(runnerId);
   });
   ptyManager.on("status", (payload) => {
+    if (payload.status === "stopped") {
+      const currentRunner = typeof ptyManager.get === "function" ? ptyManager.get(payload.runnerId) : null;
+      const payloadPid = Number(payload.pid || 0);
+      if (
+        currentRunner?.status === "running" &&
+        Number.isInteger(currentRunner.pid) &&
+        currentRunner.pid > 0 &&
+        Number.isInteger(payloadPid) &&
+        payloadPid > 0 &&
+        currentRunner.pid !== payloadPid
+      ) {
+        const meta = ptyRunnerMeta.get(payload.runnerId);
+        const publicRunnerId = meta?.runnerId || ptyRunnerPublicId(payload.runnerId);
+        if (meta?.projectRoot) {
+          const boardRoot = path.join(meta.projectRoot, meta.boardDirName || defaultBoardDirName);
+          appendRunnerLog(boardRoot, publicRunnerId, {
+            event: "stale_pty_stop_ignored",
+            runner_id: publicRunnerId,
+            stopped_pid: String(payloadPid),
+            live_pid: String(currentRunner.pid)
+          });
+        }
+        return;
+      }
+    }
     const scopedPayload = ptyRunnerScopedPayload(payload.runnerId, payload);
     broadcastPty("autoflow:runnerPtyStatus", scopedPayload);
     // Mirror status into runner state file so legacy UI bindings keep working.
@@ -7835,17 +8866,12 @@ app.whenReady().then(() => {
         active_ticket_title: "",
         active_stage: "",
         active_spec_ref: "",
-        active_ticket_path: "",
-        active_recovery_reason: "",
-        active_recovery_status: "",
-        active_recovery_failure_class: "",
-        active_recovery_worktree_path: "",
-        active_recovery_worktree_status: "",
-        active_recovery_board_state: ""
+        active_ticket_path: ""
       });
       if (payload.signal) {
-        fields.last_result = `signal_${payload.signal}`;
+        fields.last_result = "loop_stopped";
         fields.last_process_result = `signal_${payload.signal}`;
+        fields.last_stop_reason = `pty_signal_${payload.signal}`;
       } else if (typeof payload.exitCode === "number") {
         // Agent CLIs can exit non-zero after a successful turn because their
         // stop hooks failed or the PTY closed after completion. Keep that as
@@ -7858,11 +8884,32 @@ app.whenReady().then(() => {
       }
     }
     void writePtyRunnerStateFile(payload.runnerId, fields);
-    if (payload.status === "stopped") {
-      flushCodexSessionUsageSyncForRunner(payload.runnerId);
-      ptyRunnerMeta.delete(payload.runnerId);
-      ptyTokenUsageParseState.delete(payload.runnerId);
-      codexSessionUsageSyncPending.delete(payload.runnerId);
+      if (payload.status === "stopped") {
+        flushSessionTokenUsageImportForRunner(payload.runnerId);
+        const verifierTurnTimer = verifierHandoffTurnTimers.get(payload.runnerId);
+        if (verifierTurnTimer?.timer) clearTimeout(verifierTurnTimer.timer);
+        verifierHandoffTurnTimers.delete(payload.runnerId);
+        verifierHandoffLastInjected.delete(payload.runnerId);
+        const plannerTurnTimer = plannerHandoffTurnTimers.get(payload.runnerId);
+        if (plannerTurnTimer?.timer) clearTimeout(plannerTurnTimer.timer);
+        plannerHandoffTurnTimers.delete(payload.runnerId);
+        plannerHandoffLastInjected.delete(payload.runnerId);
+        const wikiTurnTimer = wikiHandoffTurnTimers.get(payload.runnerId);
+        if (wikiTurnTimer?.timer) clearTimeout(wikiTurnTimer.timer);
+        wikiHandoffTurnTimers.delete(payload.runnerId);
+        wikiHandoffLastInjected.delete(payload.runnerId);
+        const workerTodoTurnTimer = workerTodoHandoffTurnTimers.get(payload.runnerId);
+        if (workerTodoTurnTimer?.timer) clearTimeout(workerTodoTurnTimer.timer);
+        workerTodoHandoffTurnTimers.delete(payload.runnerId);
+        workerTodoHandoffLastInjected.delete(payload.runnerId);
+        const workerVerifierDecisionTimer = workerVerifierDecisionTurnTimers.get(payload.runnerId);
+        if (workerVerifierDecisionTimer?.timer) clearTimeout(workerVerifierDecisionTimer.timer);
+        workerVerifierDecisionTurnTimers.delete(payload.runnerId);
+        workerVerifierDecisionLastInjected.delete(payload.runnerId);
+        ptyRunnerMeta.delete(payload.runnerId);
+        ptyTokenUsageParseState.delete(payload.runnerId);
+        sessionTokenUsageImportPending.delete(payload.runnerId);
+        clearCodexHookTrustPromptAutomation(payload.runnerId);
       // Drop from precise reaper registry — PID is dead.
       if (Number.isInteger(payload.pid) && payload.pid > 0) {
         try { removePtySessionPid(payload.pid); } catch {}
@@ -7887,9 +8934,7 @@ app.whenReady().then(() => {
   // stdin after the CLI is ready. This is the path for runners that should use
   // user-visible PTY process + LLM-driven runner turn.
   ipcMain.handle("autoflow:runnerPtySpawn", async (_event, opts = {}) => {
-    console.log("[autoflow:runnerPtySpawn] called", opts);
     if (!ptyManager.isAvailable()) {
-      console.warn("[autoflow:runnerPtySpawn] node-pty unavailable");
       return { ok: false, error: "node-pty unavailable (rebuild required)" };
     }
     const projectRoot = String(opts.projectRoot || "");
@@ -7911,7 +8956,17 @@ app.whenReady().then(() => {
     if (!(await commandExists(agent))) {
       return { ok: false, error: `${agent} CLI not found in shell PATH` };
     }
-    const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
+    const initialPrompt = buildInitialPrompt({
+      role: normalizedRole,
+      agent,
+      runnerId,
+      projectRoot,
+      boardDirName
+    });
+    const initialPromptFile = agent === "codex"
+      ? writeRunnerStartupPromptFile({ projectRoot, boardDirName, runnerId, prompt: initialPrompt })
+      : "";
+    const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName, initialPromptFile });
     if (!command) {
       return { ok: false, error: `unsupported agent: ${agent}` };
     }
@@ -7945,11 +9000,10 @@ app.whenReady().then(() => {
       });
       const runner = ptyManager.start(runnerKey, {
         command,
+        execCommand: true,
         cwd: projectRoot,
         cols: Number.isFinite(opts.cols) ? opts.cols : 120,
         rows: Number.isFinite(opts.rows) ? opts.rows : 30,
-        logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
-        logSegment: runnerId,
         env: runnerEnv.env
       });
       const startedAt = new Date().toISOString();
@@ -7963,6 +9017,8 @@ app.whenReady().then(() => {
         codexHistory: runnerEnv.codexHistory,
         startedAt
       });
+      rememberProjectScope({ projectRoot, boardDirName });
+      startCodexHookTrustPromptWatchdog(ptyManager, runnerKey);
       // Initial state — UI immediately reflects "running"
       void writePtyRunnerStateFile(runnerKey, {
         id: runnerId,
@@ -7976,7 +9032,6 @@ app.whenReady().then(() => {
         started_at: startedAt,
         codex_home: runnerEnv.codexHome || "",
         codex_history: runnerEnv.codexHistory || "",
-        last_stdout_log: runner.liveStdoutLog || "",
         last_event_at: startedAt,
         last_result: ""
       });
@@ -7986,44 +9041,25 @@ app.whenReady().then(() => {
         addPtySessionPid({ pid: runner.pid, runnerId, role: normalizedRole, agent, spawnedAt: startedAt });
       } catch {}
       // Wait for the agent CLI to load its TUI before pushing the initial
-      // prompt. Different CLIs take different times to be ready for input:
-      //   - claude: ~2s for welcome banner
-      //   - codex: ~3s for TUI mount
-      //   - gemini: ~5s — TUI box renders fast but input handler isn't
-      //     attached until later; writes before then are silently dropped.
-      // Use the conservative max so all three reliably accept the first
-      // prompt. Empirically:
-      //   - claude: ready in ~2s
-      //   - codex:  ready in ~3s
-      //   - gemini: TUI mount fast but input handler attaches later (~6s).
-      //     Below that, the prompt write returns ok=true but the chars get
-      //     swallowed before the input box accepts focus, so the PTY sits
-      //     idle forever with empty input box.
-      // Use agent-specific delay so we wait long enough for gemini without
-      // making claude / codex lazy.
-      const PROMPT_INJECT_DELAY_MS = agent === "gemini" ? 10000 : 6000;
-      const initialPrompt = buildInitialPrompt({
-        role: normalizedRole,
-        agent,
-        runnerId,
-        projectRoot,
-        boardDirName
-      });
-      setTimeout(() => {
-        const paste = agent === "claude" ? "bracketed" : "plain";
-        const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
-        if (ok) markRunnerInitialPromptSent(runnerKey);
-        console.log(`[ptySpawn] initial prompt write → runnerId=${runnerId} agent=${agent} paste=${paste} ok=${ok} bytes=${initialPrompt.length}`);
-      }, PROMPT_INJECT_DELAY_MS);
+      // prompt. The shared delay covers the supported CLIs without making the
+      // first turn feel sluggish.
+      const PROMPT_INJECT_DELAY_MS = 6000;
+      if (agent === "codex" && initialPromptFile) {
+        markRunnerInitialPromptSent(runnerKey);
+      } else {
+        setTimeout(() => {
+          const paste = agent === "claude" ? "bracketed" : "plain";
+          const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+          if (ok) markRunnerInitialPromptSent(runnerKey);
+        }, PROMPT_INJECT_DELAY_MS);
+      }
       // Diagnostic: dump PTY buffer 2.5s AFTER prompt write so we can see
       // whether the TUI accepted it (text in input box / model response /
       // mojibake / nothing).
       setTimeout(() => {
         try {
           const snap = ptyManager.snapshot(runnerKey) || "";
-          console.log(`[ptySpawn] runner=${runnerId} buffer-tail (last 600 chars):\n${snap.slice(-600)}`);
         } catch (err) {
-          console.log(`[ptySpawn] runner=${runnerId} snapshot error:`, err && err.message);
         }
       }, PROMPT_INJECT_DELAY_MS + 2500);
       return { ok: true, runnerId, pid: runner.pid, status: runner.status };
@@ -8055,19 +9091,10 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("autoflow:runnerPtyInput", (_event, opts = {}) => {
     const runnerId = String(opts.runnerId || "");
-    const data = String(opts.data || "");
     if (!runnerId) {
       return { ok: false, error: "runnerId required" };
     }
-    if (!data) {
-      return { ok: false, error: "data required" };
-    }
-    const runnerKey = ptyRunnerKeyForScope(opts, runnerId);
-    if (!ptyRunnerMatchesRequestedScope(ptyManager, runnerKey, opts)) {
-      return { ok: false, error: "runner scope mismatch" };
-    }
-    const ok = ptyManager.writeInput(runnerKey, data);
-    return ok ? { ok: true } : { ok: false, error: "runner not running" };
+    return { ok: false, error: "runner terminal input is read-only" };
   });
   ipcMain.handle("autoflow:runnerPtySnapshot", (_event, opts = {}) => {
     const runnerKey = ptyRunnerKeyForScope(opts, opts.runnerId);
@@ -8125,15 +9152,27 @@ app.whenReady().then(() => {
           if (!runnerId) continue;
           const role = normalizeRunnerRole(grab("role") || inferRunnerRoleFromId(runnerId));
           const runnerKey = ptyRunnerKey(projectRoot, boardDirName, runnerId);
-          if (ptyManager.list().some((r) => r.id === runnerKey && r.status === "running")) {
-            console.log(`[auto-spawn] ${runnerId} already running; skip`);
+          const existing = ptyManager.list().find((r) => r.id === runnerKey && r.status === "running");
+          if (existing) {
+            mirrorExistingPtyRunnerRunningState(runnerKey, existing, {
+              id: runnerId,
+              role,
+              agent,
+              model,
+              reasoning,
+              codex_history: codexHistory,
+              spawn_source: "auto-spawn-existing"
+            });
             continue;
           }
           if (!(await commandExists(agent))) {
-            console.warn(`[auto-spawn] ${runnerId} skipped: ${agent} CLI not found in shell PATH`);
             continue;
           }
-          const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName });
+          const initialPrompt = buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName });
+          const initialPromptFile = agent === "codex"
+            ? writeRunnerStartupPromptFile({ projectRoot, boardDirName, runnerId, prompt: initialPrompt })
+            : "";
+          const command = buildAgentCliCommand(agent, model, reasoning, { boardDirName, initialPromptFile });
           if (!command) continue;
           const startedAt = new Date().toISOString();
           const runnerEnv = buildRunnerPtyEnv({
@@ -8146,11 +9185,10 @@ app.whenReady().then(() => {
           });
           const runner = ptyManager.start(runnerKey, {
             command,
+            execCommand: true,
             cwd: projectRoot,
             cols: 120,
             rows: 30,
-            logsDir: path.join(projectRoot, boardDirName, "runners", "logs"),
-            logSegment: runnerId,
             env: runnerEnv.env
           });
           ptyRunnerMeta.set(runnerKey, {
@@ -8163,27 +9201,29 @@ app.whenReady().then(() => {
             codexHistory: runnerEnv.codexHistory,
             startedAt
           });
+          rememberProjectScope({ projectRoot, boardDirName });
+          startCodexHookTrustPromptWatchdog(ptyManager, runnerKey);
           await writePtyRunnerStateFile(runnerKey, {
             id: runnerId, status: "running", role, agent, model, reasoning,
             mode: "pty", pid: String(runner.pid || ""), started_at: startedAt,
             codex_home: runnerEnv.codexHome || "",
             codex_history: runnerEnv.codexHistory || "",
-            last_stdout_log: runner.liveStdoutLog || "",
             last_event_at: startedAt
           });
           try { addPtySessionPid({ pid: runner.pid, runnerId, role, agent, spawnedAt: startedAt }); } catch {}
-          const initialPrompt = buildInitialPrompt({ role, agent, runnerId, projectRoot, boardDirName });
-          const promptDelay = agent === "gemini" ? 10000 : 6000;
-          setTimeout(() => {
-            const paste = agent === "claude" ? "bracketed" : "plain";
-            const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
-            if (ok) markRunnerInitialPromptSent(runnerKey);
-          }, promptDelay);
-          console.log(`[auto-spawn] ${runnerId} started (pid=${runner.pid}, agent=${agent})`);
+          const promptDelay = 6000;
+          if (agent === "codex" && initialPromptFile) {
+            markRunnerInitialPromptSent(runnerKey);
+          } else {
+            setTimeout(() => {
+              const paste = agent === "claude" ? "bracketed" : "plain";
+              const ok = ptyManager.writePrompt(runnerKey, initialPrompt, { paste });
+              if (ok) markRunnerInitialPromptSent(runnerKey);
+            }, promptDelay);
+          }
           await new Promise((r) => setTimeout(r, 800));
         }
       } catch (err) {
-        console.warn("[auto-spawn] failed:", err && err.message);
       }
     }, 1500);
   }
@@ -8210,18 +9250,37 @@ function runShutdownCleanupSync(reason) {
     try { clearInterval(memoryCeilingIntervalId); } catch {}
     memoryCeilingIntervalId = null;
   }
-  // 1. Kill our PTY children (zsh + claude/codex/gemini). Synchronous.
+  clearVerifierHandoffTurnTimers();
+  // 1. Kill our PTY children (zsh + claude/codex). Synchronous.
   try {
     if (globalThis.__autoflowPtyManager) {
       globalThis.__autoflowPtyManager.shutdown();
     }
   } catch {}
-  // 2. Stop fs.watch listeners.
+  // 2. Stop board watchers.
   try { disposeAllBoardWatchers(); } catch {}
   // 3. Drop the precise PTY PID registry — children are dead.
   try { clearPtySessionPids(); } catch {}
   // 4. Mark this session as cleanly shut down so next-boot reaper does not
   //    over-probe.
+  try { markDesktopSessionClean(reason || "quit"); } catch {}
+}
+
+async function runShutdownCleanupAsync(reason) {
+  if (appShutdownCleanupRun) return;
+  appShutdownCleanupRun = true;
+  if (memoryCeilingIntervalId) {
+    try { clearInterval(memoryCeilingIntervalId); } catch {}
+    memoryCeilingIntervalId = null;
+  }
+  clearVerifierHandoffTurnTimers();
+  try {
+    if (globalThis.__autoflowPtyManager) {
+      globalThis.__autoflowPtyManager.shutdown();
+    }
+  } catch {}
+  try { await disposeAllBoardWatchersAsync(); } catch {}
+  try { clearPtySessionPids(); } catch {}
   try { markDesktopSessionClean(reason || "quit"); } catch {}
 }
 
@@ -8232,6 +9291,15 @@ app.on("before-quit", () => {
 app.on("will-quit", () => {
   runShutdownCleanupSync("will-quit");
 });
+
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+  process.once(signal, () => {
+    void (async () => {
+      await runShutdownCleanupAsync(signal);
+      app.exit(0);
+    })();
+  });
+}
 
 // Force quit on all-windows-closed (including macOS) so before-quit fires
 // our synchronous PTY teardown. The macOS dock-keep convention is intentionally

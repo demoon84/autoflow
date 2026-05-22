@@ -13,6 +13,8 @@ type WikiChunk = {
     sourceGroup: string;
     title: string;
     text: string;
+    startOffset: number;
+    endOffset: number;
     startLine: number;
     endLine: number;
     contentSha: string;
@@ -29,6 +31,9 @@ type WikiIndexStats = {
     vectorDim: number;
     vectorModel: string;
     bm25Ready: boolean;
+    lexicalBackend: string;
+    textStorage: string;
+    vectorStorage: string;
     embeddingProvider: string;
 };
 
@@ -37,15 +42,23 @@ type VectorRow = {
     path: string;
     source_group: string;
     title: string;
-    chunk_text: string;
+    chunk_start_offset: number;
+    chunk_end_offset: number;
     chunk_start_line: number;
     chunk_end_line: number;
-    vector_json?: string | null;
+    content_sha: string;
+    chunk_text?: string | null;
+    vector_hex?: string | null;
 };
 
-type Bm25Row = {
+type StoredVectorRow = {
     chunk_id: number;
-    bm25_score: number;
+    path?: string;
+    chunk_start_offset?: number;
+    chunk_end_offset?: number;
+    content_sha?: string;
+    vector_json?: string | null;
+    vector_hex?: string | null;
 };
 
 type VectorMatch = {
@@ -57,6 +70,7 @@ type VectorMatch = {
     score: number;
     vectorScore?: number;
     bm25Score?: number;
+    contentSha?: string;
 };
 
 const WIKI_CHUNK_SIZE = 1024;
@@ -64,7 +78,164 @@ const WIKI_CHUNK_OVERLAP = 128;
 const DEFAULT_VECTOR_MODEL = "BAAI/bge-m3";
 const DEFAULT_VECTOR_DIM = 1024;
 const HYBRID_VECTOR_WEIGHT = 0.7;
-const HYBRID_BM25_WEIGHT = 0.3;
+const HYBRID_LEXICAL_WEIGHT = 0.3;
+const HYBRID_SCHEMA_VERSION = "2";
+const HYBRID_LEXICAL_BACKEND = "source_scan";
+const HYBRID_TEXT_STORAGE = "db_inline";
+const HYBRID_VECTOR_STORAGE = "float32_blob";
+
+function recencyEnabled(): boolean {
+    return (process.env.AUTOFLOW_WIKI_RECENCY_ENABLED ?? "1") !== "0";
+}
+
+function recencyHalfLifeDays(): number {
+    const parsed = Number.parseInt(process.env.AUTOFLOW_WIKI_RECENCY_HALF_LIFE_DAYS || "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 365;
+}
+
+function recencyFloor(): number {
+    const parsed = Number.parseFloat(process.env.AUTOFLOW_WIKI_RECENCY_FLOOR || "");
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    return 0.3;
+}
+
+function frontmatterUpdatedMs(file: string): number {
+    try {
+        const head = fs.readFileSync(file, "utf8").slice(0, 4096);
+        if (!head.startsWith("---")) return 0;
+        const end = head.indexOf("\n---", 3);
+        if (end < 0) return 0;
+        const block = head.slice(3, end);
+        const match = block.match(/^updated\s*:\s*['"]?(\S+?)['"]?\s*$/m);
+        if (!match) return 0;
+        const parsed = Date.parse(match[1]);
+        return Number.isFinite(parsed) ? parsed : 0;
+    } catch {
+        return 0;
+    }
+}
+
+type PageStatus = {
+    superseded: boolean;
+    supersededBy: string;
+    status: string;
+};
+
+function readPageStatus(file: string): PageStatus {
+    const empty: PageStatus = {superseded: false, supersededBy: "", status: ""};
+    try {
+        const head = fs.readFileSync(file, "utf8").slice(0, 4096);
+        if (!head.startsWith("---")) return empty;
+        const end = head.indexOf("\n---", 3);
+        if (end < 0) return empty;
+        const block = head.slice(3, end);
+        const supersededByMatch = block.match(/^superseded_by\s*:\s*['"]?(.+?)['"]?\s*$/m);
+        const statusMatch = block.match(/^status\s*:\s*['"]?(.+?)['"]?\s*$/m);
+        const supersededBy = supersededByMatch ? supersededByMatch[1].trim() : "";
+        const status = statusMatch ? statusMatch[1].trim().toLowerCase() : "";
+        return {
+            superseded: Boolean(supersededBy) || status === "superseded" || status === "deprecated",
+            supersededBy,
+            status,
+        };
+    } catch {
+        return empty;
+    }
+}
+
+function supersedeEnabled(): boolean {
+    return (process.env.AUTOFLOW_WIKI_SUPERSEDE_ENABLED ?? "1") !== "0";
+}
+
+function supersedePenalty(): number {
+    const parsed = Number.parseFloat(process.env.AUTOFLOW_WIKI_SUPERSEDE_PENALTY || "");
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    return 0.15;
+}
+
+function usageTrackingEnabled(): boolean {
+    return (process.env.AUTOFLOW_WIKI_USAGE_TRACKING_ENABLED ?? "1") !== "0";
+}
+
+function usageBoostThreshold(): number {
+    const parsed = Number.parseInt(process.env.AUTOFLOW_WIKI_USAGE_BOOST_THRESHOLD || "", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
+}
+
+function usageBoostWeight(): number {
+    const parsed = Number.parseFloat(process.env.AUTOFLOW_WIKI_USAGE_BOOST_WEIGHT || "");
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    return 0.15;
+}
+
+function readChunkUsageMap(dbPath: string): Map<string, number> {
+    const out = new Map<string, number>();
+    if (!fs.existsSync(dbPath) || !sqliteAvailable()) return out;
+    try {
+        const rows = sqliteJson<{content_sha: string; hit_count: number}>(dbPath,
+            "SELECT content_sha, hit_count FROM wiki_chunk_usage");
+        for (const row of rows) {
+            const sha = String(row.content_sha || "");
+            const count = Number(row.hit_count) || 0;
+            if (sha) out.set(sha, count);
+        }
+    } catch {
+        // table may not exist yet; treat as empty
+    }
+    return out;
+}
+
+function recordChunkUsage(dbPath: string, shas: string[]): void {
+    if (!shas.length || !sqliteAvailable()) return;
+    const unique = Array.from(new Set(shas.filter(Boolean)));
+    if (!unique.length) return;
+    const at = new Date().toISOString();
+    const stmts: string[] = [
+        "CREATE TABLE IF NOT EXISTS wiki_chunk_usage (content_sha TEXT PRIMARY KEY, hit_count INTEGER NOT NULL DEFAULT 0, last_retrieved_at TEXT);",
+        "BEGIN;",
+    ];
+    for (const sha of unique) {
+        const escSha = sqlEsc(sha);
+        const escAt = sqlEsc(at);
+        stmts.push(
+            `INSERT INTO wiki_chunk_usage (content_sha, hit_count, last_retrieved_at) VALUES ('${escSha}', 1, '${escAt}') ON CONFLICT(content_sha) DO UPDATE SET hit_count = hit_count + 1, last_retrieved_at = '${escAt}';`
+        );
+    }
+    stmts.push("COMMIT;");
+    sqliteExec(dbPath, stmts.join("\n"));
+}
+
+function usageWeight(hitCount: number, threshold: number, boostWeight: number): number {
+    if (hitCount <= 0 || threshold <= 0 || boostWeight <= 0) return 1;
+    const ratio = Math.log(1 + hitCount) / Math.log(1 + threshold);
+    return 1 + boostWeight * Math.min(1, ratio);
+}
+
+function dedupEnabled(): boolean {
+    return (process.env.AUTOFLOW_WIKI_DEDUP_ENABLED ?? "1") !== "0";
+}
+
+function dedupThreshold(): number {
+    const parsed = Number.parseFloat(process.env.AUTOFLOW_WIKI_DEDUP_THRESHOLD || "");
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) return parsed;
+    return 0.85;
+}
+
+function pageRecencyWeight(absPath: string, halfLifeDays: number, floor: number, cache: Map<string, number>): number {
+    if (cache.has(absPath)) return cache.get(absPath) as number;
+    let ms = frontmatterUpdatedMs(absPath);
+    if (!ms) {
+        try { ms = fs.statSync(absPath).mtimeMs || 0; } catch { ms = 0; }
+    }
+    let weight = 1;
+    if (ms > 0) {
+        const ageDays = Math.max(0, (Date.now() - ms) / (24 * 60 * 60 * 1000));
+        const decayed = halfLifeDays > 0 ? halfLifeDays / (halfLifeDays + ageDays) : 1;
+        weight = floor + (1 - floor) * decayed;
+    }
+    cache.set(absPath, weight);
+    return weight;
+}
 const TELEMETRY_DEFAULT_SLUGS = ["runner-health", "runner-timing", "prompt-evolution"];
 
 type RunnerTelemetrySnapshot = {
@@ -113,6 +284,14 @@ function stateValue(state: Record<string, string>, ...keys: string[]): string {
         if (value) return value;
     }
     return "";
+}
+
+function lastResultForTelemetry(state: Record<string, string>, effectiveStatus: string): string {
+    const value = stateValue(state, "last_result", "last_stop_reason");
+    if (effectiveStatus === "stopped" && /^signal_/i.test(value)) {
+        return "loop_stopped";
+    }
+    return value;
 }
 
 function isRemovedLegacyRunner(id: string, role: string): boolean {
@@ -174,6 +353,7 @@ function runnerSnapshots(ctx: WikiProjectContext): RunnerTelemetrySnapshot[] {
         const config = configById.get(id) || {};
         const state = readRunnerState(ctx, id);
         const role = stateValue(state, "role") || config.role || "";
+        const effectiveStatus = runnerEffectiveStateStatus(state);
         return {
             id,
             role,
@@ -183,9 +363,9 @@ function runnerSnapshots(ctx: WikiProjectContext): RunnerTelemetrySnapshot[] {
             mode: stateValue(state, "mode") || config.mode || "",
             enabled: boolish(config.enabled, true),
             intervalSeconds: config.interval_seconds || "",
-            effectiveStatus: runnerEffectiveStateStatus(state),
+            effectiveStatus,
             stateStatus: state.status || "",
-            lastResult: stateValue(state, "last_result", "last_stop_reason"),
+            lastResult: lastResultForTelemetry(state, effectiveStatus),
             lastEventAt: stateValue(state, "last_event_at", "updated_at"),
             lastTurnAt: state.last_turn_at || "",
             lastTurnTokens: intState(state, "last_turn_tokens"),
@@ -207,15 +387,15 @@ function summaryHeader(title: string, ctx: WikiProjectContext, window: string): 
     return [
         `# ${title}`,
         "",
-        `Source: generated from ${ctx.boardDirName}/runners/config.toml and ${ctx.boardDirName}/runners/state/*.state.`,
-        `Window: ${window}`,
+        `출처: ${ctx.boardDirName}/runners/config.toml 및 ${ctx.boardDirName}/runners/state/*.state 에서 생성됨.`,
+        `기간: ${window}`,
         "",
     ].join("\n");
 }
 
 function renderRunnerHealth(ctx: WikiProjectContext, window: string, snapshots: RunnerTelemetrySnapshot[]): string {
-    return `${summaryHeader("Runner Health", ctx, window)}${markdownTable(
-        ["Runner", "Role", "Enabled", "Effective Status", "State Status", "Last Result", "Active", "Last Event"],
+    return `${summaryHeader("러너 상태", ctx, window)}${markdownTable(
+        ["러너", "역할", "활성화", "유효 상태", "상태 파일", "최근 결과", "진행 중", "최근 이벤트"],
         snapshots.map((runner) => [
             runner.id,
             runnerRoleLabel(runner.role),
@@ -230,8 +410,8 @@ function renderRunnerHealth(ctx: WikiProjectContext, window: string, snapshots: 
 }
 
 function renderRunnerTiming(ctx: WikiProjectContext, window: string, snapshots: RunnerTelemetrySnapshot[]): string {
-    return `${summaryHeader("Runner Timing", ctx, window)}${markdownTable(
-        ["Runner", "Mode", "Interval Seconds", "Started At", "Updated At", "Last Event At", "Last Stop Reason"],
+    return `${summaryHeader("러너 타이밍", ctx, window)}${markdownTable(
+        ["러너", "모드", "간격(초)", "시작 시각", "갱신 시각", "최근 이벤트", "최근 중지 사유"],
         snapshots.map((runner) => [
             runner.id,
             runner.mode,
@@ -245,8 +425,8 @@ function renderRunnerTiming(ctx: WikiProjectContext, window: string, snapshots: 
 }
 
 function renderPromptEvolution(ctx: WikiProjectContext, window: string, snapshots: RunnerTelemetrySnapshot[]): string {
-    return `${summaryHeader("Prompt Evolution", ctx, window)}${markdownTable(
-        ["Runner", "Agent", "Model", "Reasoning", "Last Turn At", "Last Turn Tokens", "Cumulative Tokens", "Token Source", "Code Volume"],
+    return `${summaryHeader("프롬프트 변화", ctx, window)}${markdownTable(
+        ["러너", "에이전트", "모델", "추론", "최근 턴", "최근 턴 토큰", "누적 토큰", "토큰 출처", "코드 변경량"],
         snapshots.map((runner) => [
             runner.id,
             runner.agent,
@@ -264,11 +444,11 @@ function renderPromptEvolution(ctx: WikiProjectContext, window: string, snapshot
 function telemetrySummaryRelPath(slug: string): string {
     switch (slug) {
         case "runner-health":
-            return "wiki/operations/runner-health.md";
+            return "metrics/wiki/runner-health.md";
         case "runner-timing":
-            return "wiki/operations/runner-timing.md";
+            return "metrics/wiki/runner-timing.md";
         case "prompt-evolution":
-            return "wiki/agents/prompt-evolution.md";
+            return "metrics/wiki/prompt-evolution.md";
         default:
             return fail(`Unknown telemetry summary slug: ${slug}`);
     }
@@ -383,7 +563,7 @@ function sqliteJson<T>(dbPath: string, sql: string): T[] {
     const result = spawnSync("sqlite3", ["-json", dbPath, sql], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
-        maxBuffer: 128 * 1024 * 1024,
+        maxBuffer: 512 * 1024 * 1024,
     });
     if (result.status !== 0 || !result.stdout.trim()) return [];
     try {
@@ -473,6 +653,28 @@ function validVector(value: unknown, expectedDim: number): number[] | null {
     return vector.every((item) => Number.isFinite(item)) ? vector : null;
 }
 
+function vectorToBlobHex(vector: number[]): string {
+    const buffer = Buffer.allocUnsafe(vector.length * 4);
+    for (let index = 0; index < vector.length; index += 1) {
+        buffer.writeFloatLE(vector[index], index * 4);
+    }
+    return buffer.toString("hex");
+}
+
+function vectorFromBlobHex(hex: string | null | undefined, expectedDim: number): number[] | null {
+    const normalized = String(hex || "").trim();
+    if (!normalized || normalized.length !== expectedDim * 8 || /[^0-9a-f]/i.test(normalized)) return null;
+    const buffer = Buffer.from(normalized, "hex");
+    if (buffer.length !== expectedDim * 4) return null;
+    const vector: number[] = [];
+    for (let index = 0; index < expectedDim; index += 1) {
+        const value = buffer.readFloatLE(index * 4);
+        if (!Number.isFinite(value)) return null;
+        vector.push(value);
+    }
+    return vector;
+}
+
 function embedTexts(command: string, texts: string[], expectedDim: number, envExtra: NodeJS.ProcessEnv = {}): (number[] | null)[] {
     if (!command || texts.length === 0) return texts.map(() => null);
 
@@ -538,9 +740,38 @@ function sourceGroupForRelPath(relPath: string): string {
     return relPath.startsWith("tickets/done/") ? "tickets_done" : "wiki";
 }
 
+function chunkifyContent(text: string, relPath: string): Omit<WikiChunk, "chunkId">[] {
+    if (!text.trim()) return [];
+    const title = firstNonEmptyLine(text);
+    const contentSha = crypto.createHash("sha256").update(text).digest("hex");
+    const starts = lineStarts(text);
+    const chunks: Omit<WikiChunk, "chunkId">[] = [];
+    const step = Math.max(1, WIKI_CHUNK_SIZE - WIKI_CHUNK_OVERLAP);
+    for (let start = 0; start < text.length; start += step) {
+        const end = Math.min(text.length, start + WIKI_CHUNK_SIZE);
+        const chunkContent = text.slice(start, end).trim();
+        if (!chunkContent) {
+            if (end >= text.length) break;
+            continue;
+        }
+        chunks.push({
+            relPath,
+            sourceGroup: sourceGroupForRelPath(relPath),
+            title,
+            text: chunkContent,
+            startOffset: start,
+            endOffset: end,
+            startLine: lineAtOffset(starts, start),
+            endLine: lineAtOffset(starts, Math.max(start, end - 1)),
+            contentSha,
+        });
+        if (end >= text.length) break;
+    }
+    return chunks;
+}
+
 function collectWikiFiles(ctx: WikiProjectContext, includeTickets: boolean): string[] {
     return [
-        ...walkMarkdownFiles(path.join(ctx.boardRoot, "wiki")),
         ...(includeTickets ? walkMarkdownFiles(path.join(ctx.boardRoot, "tickets", "done")) : []),
     ].sort((a, b) => a.localeCompare(b));
 }
@@ -571,6 +802,8 @@ function collectWikiChunks(ctx: WikiProjectContext, includeTickets: boolean): {c
                 sourceGroup: sourceGroupForRelPath(relPath),
                 title,
                 text: chunkText,
+                startOffset: start,
+                endOffset: end,
                 startLine: lineAtOffset(starts, start),
                 endLine: lineAtOffset(starts, Math.max(start, end - 1)),
                 contentSha,
@@ -591,6 +824,196 @@ function readIndexMeta(dbPath: string): Record<string, string> {
     return meta;
 }
 
+function chunkReuseKey(chunk: Pick<WikiChunk, "relPath" | "startOffset" | "endOffset" | "contentSha">): string {
+    return [chunk.relPath, chunk.startOffset, chunk.endOffset, chunk.contentSha].join("\0");
+}
+
+function rowReuseKey(row: StoredVectorRow): string {
+    return [String(row.path || ""), Number(row.chunk_start_offset) || 0, Number(row.chunk_end_offset) || 0, String(row.content_sha || "")].join("\0");
+}
+
+function reusableStoredVectors(ctx: WikiProjectContext, chunks: WikiChunk[], includeTickets: boolean, expectedDim: number, expectedModel: string): {vectors: (number[] | null)[]; reusedCount: number} | null {
+    const dbPath = wikiIndexDbPath(ctx);
+    if (!fs.existsSync(dbPath) || !sqliteAvailable()) return null;
+    const meta = readIndexMeta(dbPath);
+    if (meta.backend !== "hybrid") return null;
+    if ((meta.include_tickets || "") !== (includeTickets ? "true" : "false")) return null;
+    if (Number(meta.vector_dim) !== expectedDim) return null;
+    if ((meta.vector_model || "") !== expectedModel) return null;
+
+    const rows = meta.vector_storage === HYBRID_VECTOR_STORAGE
+        ? sqliteJson<StoredVectorRow>(dbPath, `SELECT c.path, c.chunk_start_offset, c.chunk_end_offset, c.content_sha, hex(v.vector_blob) AS vector_hex FROM wiki_chunks c JOIN wiki_vectors v ON v.chunk_id = c.chunk_id WHERE v.dim = ${expectedDim}`)
+        : sqliteJson<StoredVectorRow>(dbPath, `SELECT c.path, c.chunk_start_offset, c.chunk_end_offset, c.content_sha, v.vector_json FROM wiki_chunks c JOIN wiki_vectors v ON v.chunk_id = c.chunk_id WHERE v.dim = ${expectedDim}`);
+    if (rows.length === 0) return null;
+
+    const vectorsByKey = new Map<string, number[]>();
+    for (const row of rows) {
+        let vector: number[] | null = null;
+        try {
+            vector = row.vector_hex
+                ? vectorFromBlobHex(row.vector_hex, expectedDim)
+                : validVector(JSON.parse(String(row.vector_json || "null")) as unknown, expectedDim);
+        } catch {
+            vector = null;
+        }
+        if (vector) vectorsByKey.set(rowReuseKey(row), vector);
+    }
+    const vectors = chunks.map((chunk) => vectorsByKey.get(chunkReuseKey(chunk)) || null);
+    const reusedCount = vectors.filter(Boolean).length;
+    return reusedCount > 0 ? {vectors, reusedCount} : null;
+}
+
+type PreservedWikiChunk = {
+    relPath: string;
+    sourceGroup: string;
+    title: string;
+    startOffset: number;
+    endOffset: number;
+    startLine: number;
+    endLine: number;
+    contentSha: string;
+    text: string;
+    vectorHex: string | null;
+};
+
+type WikiUpsertResult = {
+    status: "ok" | "skipped" | "error";
+    reason?: string;
+    path: string;
+    chunks: number;
+    replaced: number;
+    vectorsEmbedded: number;
+};
+
+export function upsertWikiPage(ctx: WikiProjectContext, relPath: string, content: string): WikiUpsertResult {
+    const target = String(relPath || "").replace(/\\/g, "/").replace(/^\.autoflow\//, "");
+    if (!target.startsWith("wiki/") || !target.endsWith(".md")) {
+        return {status: "error", reason: "invalid_path", path: target, chunks: 0, replaced: 0, vectorsEmbedded: 0};
+    }
+    const trimmed = String(content || "").trim();
+    if (!trimmed) {
+        return {status: "error", reason: "empty_content", path: target, chunks: 0, replaced: 0, vectorsEmbedded: 0};
+    }
+    const dbPath = wikiIndexDbPath(ctx);
+    if (!sqliteAvailable()) {
+        return {status: "skipped", reason: "sqlite3_missing", path: target, chunks: 0, replaced: 0, vectorsEmbedded: 0};
+    }
+    ensureDir(path.dirname(dbPath));
+
+    const dim = vectorDim();
+    const model = vectorModel();
+
+    // Bootstrap schema if DB does not yet exist (first wiki turn on a fresh board).
+    if (!fs.existsSync(dbPath)) {
+        const ok = sqliteExec(dbPath, [
+            "PRAGMA journal_mode=DELETE;",
+            "PRAGMA synchronous=NORMAL;",
+            `CREATE TABLE wiki_chunks (
+                chunk_id INTEGER PRIMARY KEY,
+                path TEXT NOT NULL,
+                source_group TEXT NOT NULL,
+                title TEXT NOT NULL,
+                chunk_start_offset INTEGER NOT NULL,
+                chunk_end_offset INTEGER NOT NULL,
+                chunk_start_line INTEGER NOT NULL,
+                chunk_end_line INTEGER NOT NULL,
+                content_sha TEXT NOT NULL,
+                chunk_text TEXT NOT NULL DEFAULT ''
+            );`,
+            `CREATE TABLE wiki_vectors (
+                chunk_id INTEGER PRIMARY KEY,
+                dim INTEGER NOT NULL,
+                vector_blob BLOB NOT NULL,
+                model TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                FOREIGN KEY(chunk_id) REFERENCES wiki_chunks(chunk_id) ON DELETE CASCADE
+            );`,
+            "CREATE INDEX idx_wiki_chunks_path ON wiki_chunks(path);",
+            "CREATE INDEX idx_wiki_vectors_dim ON wiki_vectors(dim);",
+            "CREATE TABLE wiki_index_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+            `INSERT INTO wiki_index_meta (key, value) VALUES ('backend', 'hybrid'), ('schema_version', '${HYBRID_SCHEMA_VERSION}'), ('text_storage', '${HYBRID_TEXT_STORAGE}'), ('vector_storage', '${HYBRID_VECTOR_STORAGE}'), ('vector_dim', '${dim}'), ('vector_model', '${sqlEsc(model)}'), ('include_tickets', 'true'), ('lexical_backend', '${HYBRID_LEXICAL_BACKEND}'), ('bm25_backend', '${HYBRID_LEXICAL_BACKEND}');`,
+        ].join("\n"));
+        if (!ok) return {status: "error", reason: "schema_init_failed", path: target, chunks: 0, replaced: 0, vectorsEmbedded: 0};
+    }
+
+    const newChunks = chunkifyContent(trimmed, target);
+    if (!newChunks.length) {
+        return {status: "error", reason: "no_chunks", path: target, chunks: 0, replaced: 0, vectorsEmbedded: 0};
+    }
+
+    const provider = resolveEmbeddingProvider(ctx);
+    const vectors = provider
+        ? embedTexts(provider, newChunks.map((c) => c.text), dim, embeddingEnv(ctx))
+        : newChunks.map(() => null);
+    const vectorsEmbedded = vectors.filter(Boolean).length;
+
+    const oldCountRows = sqliteJson<{count: number}>(dbPath,
+        `SELECT COUNT(*) AS count FROM wiki_chunks WHERE path = '${sqlEsc(target)}'`);
+    const replaced = Number(oldCountRows[0]?.count) || 0;
+
+    const maxIdRows = sqliteJson<{max_id: number}>(dbPath, "SELECT COALESCE(MAX(chunk_id), 0) AS max_id FROM wiki_chunks");
+    let nextId = (Number(maxIdRows[0]?.max_id) || 0) + 1;
+
+    const indexedAt = new Date().toISOString();
+    const stmts: string[] = [
+        "BEGIN;",
+        `DELETE FROM wiki_chunks WHERE path = '${sqlEsc(target)}';`,
+    ];
+    for (let i = 0; i < newChunks.length; i++) {
+        const c = newChunks[i];
+        const id = nextId++;
+        stmts.push(`INSERT INTO wiki_chunks (chunk_id, path, source_group, title, chunk_start_offset, chunk_end_offset, chunk_start_line, chunk_end_line, content_sha, chunk_text) VALUES (${id}, '${sqlEsc(c.relPath)}', '${sqlEsc(c.sourceGroup)}', '${sqlEsc(c.title)}', ${c.startOffset}, ${c.endOffset}, ${c.startLine}, ${c.endLine}, '${sqlEsc(c.contentSha)}', '${sqlEsc(c.text)}');`);
+        const vector = vectors[i];
+        if (vector) {
+            stmts.push(`INSERT INTO wiki_vectors (chunk_id, dim, vector_blob, model, indexed_at) VALUES (${id}, ${dim}, X'${vectorToBlobHex(vector)}', '${sqlEsc(model)}', '${sqlEsc(indexedAt)}');`);
+        }
+    }
+    stmts.push("COMMIT;");
+
+    const ok = sqliteExec(dbPath, stmts.join("\n"));
+    if (!ok) return {status: "error", reason: "exec_failed", path: target, chunks: newChunks.length, replaced, vectorsEmbedded};
+    return {status: "ok", path: target, chunks: newChunks.length, replaced, vectorsEmbedded};
+}
+
+export function deleteWikiPage(ctx: WikiProjectContext, relPath: string): {status: string; path: string; removed: number} {
+    const target = String(relPath || "").replace(/\\/g, "/").replace(/^\.autoflow\//, "");
+    if (!target.startsWith("wiki/") || !target.endsWith(".md")) {
+        return {status: "invalid_path", path: target, removed: 0};
+    }
+    const dbPath = wikiIndexDbPath(ctx);
+    if (!fs.existsSync(dbPath) || !sqliteAvailable()) {
+        return {status: "no_index", path: target, removed: 0};
+    }
+    const countRows = sqliteJson<{count: number}>(dbPath,
+        `SELECT COUNT(*) AS count FROM wiki_chunks WHERE path = '${sqlEsc(target)}'`);
+    const removed = Number(countRows[0]?.count) || 0;
+    if (removed === 0) return {status: "not_found", path: target, removed: 0};
+    const ok = sqliteExec(dbPath, `DELETE FROM wiki_chunks WHERE path = '${sqlEsc(target)}';`);
+    return {status: ok ? "ok" : "exec_failed", path: target, removed};
+}
+
+function readPreservedWikiChunks(dbPath: string, dim: number): PreservedWikiChunk[] {
+    if (!fs.existsSync(dbPath) || !sqliteAvailable()) return [];
+    try {
+        const rows = sqliteJson<VectorRow>(dbPath,
+            `SELECT c.chunk_id, c.path, c.source_group, c.title, c.chunk_start_offset, c.chunk_end_offset, c.chunk_start_line, c.chunk_end_line, c.content_sha, c.chunk_text, hex(v.vector_blob) AS vector_hex FROM wiki_chunks c LEFT JOIN wiki_vectors v ON v.chunk_id = c.chunk_id AND v.dim = ${dim} WHERE c.source_group = 'wiki'`);
+        return rows.map((row) => ({
+            relPath: String(row.path || ""),
+            sourceGroup: String(row.source_group || "wiki"),
+            title: String(row.title || ""),
+            startOffset: Number(row.chunk_start_offset) || 0,
+            endOffset: Number(row.chunk_end_offset) || 0,
+            startLine: Number(row.chunk_start_line) || 1,
+            endLine: Number(row.chunk_end_line) || 1,
+            contentSha: String(row.content_sha || ""),
+            text: String(row.chunk_text || ""),
+            vectorHex: row.vector_hex ? String(row.vector_hex) : null,
+        }));
+    } catch {
+        return [];
+    }
+}
+
 export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: boolean): WikiIndexStats {
     const dbPath = wikiIndexDbPath(ctx);
     const dim = vectorDim();
@@ -599,15 +1022,37 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
     const provider = resolveEmbeddingProvider(ctx);
 
     if (!sqliteAvailable()) {
-        return {status: "skipped", reason: "sqlite3_missing", dbPath, indexedFiles: fileCount, indexedChunks: chunks.length, vectorCount: 0, sourceHash, vectorDim: dim, vectorModel: model, bm25Ready: false, embeddingProvider: provider};
+        return {status: "skipped", reason: "sqlite3_missing", dbPath, indexedFiles: fileCount, indexedChunks: chunks.length, vectorCount: 0, sourceHash, vectorDim: dim, vectorModel: model, bm25Ready: false, lexicalBackend: HYBRID_LEXICAL_BACKEND, textStorage: HYBRID_TEXT_STORAGE, vectorStorage: HYBRID_VECTOR_STORAGE, embeddingProvider: provider};
     }
 
     ensureDir(path.dirname(dbPath));
-    const vectors = provider ? embedTexts(provider, chunks.map((chunk) => chunk.text), dim, embeddingEnv(ctx)) : chunks.map(() => null);
-    const vectorCount = vectors.filter(Boolean).length;
+    // Preserve DB-only wiki chunks (created via write-page upsert) so that
+    // ingest from external sources (tickets/done/, conversations/) does not
+    // wipe wiki entries that have no on-disk markdown.
+    const preservedWiki = readPreservedWikiChunks(dbPath, dim);
+    const reused = reusableStoredVectors(ctx, chunks, includeTickets, dim, model);
+    const vectors = reused?.vectors || chunks.map(() => null);
+    const missing = chunks
+        .map((chunk, index) => ({chunk, index}))
+        .filter((item) => !vectors[item.index]);
+    if (provider && missing.length > 0) {
+        const embedded = embedTexts(provider, missing.map((item) => item.chunk.text), dim, embeddingEnv(ctx));
+        for (let index = 0; index < missing.length; index += 1) {
+            vectors[missing[index].index] = embedded[index];
+        }
+    }
+    const vectorCount = vectors.filter(Boolean).length + preservedWiki.filter((c) => c.vectorHex).length;
+    const tempDbPath = `${dbPath}.tmp-${process.pid}-${Date.now()}`;
+    for (const suffix of ["", "-wal", "-shm"]) {
+        try {
+            fs.rmSync(`${tempDbPath}${suffix}`, {force: true});
+        } catch {
+            // Rebuild can continue if SQLite overwrites the temp file.
+        }
+    }
 
     const statements: string[] = [
-        "PRAGMA journal_mode=WAL;",
+        "PRAGMA journal_mode=DELETE;",
         "PRAGMA synchronous=NORMAL;",
         "DROP TABLE IF EXISTS wiki_chunks_fts;",
         "DROP TABLE IF EXISTS wiki_vectors;",
@@ -618,21 +1063,17 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
             path TEXT NOT NULL,
             source_group TEXT NOT NULL,
             title TEXT NOT NULL,
-            chunk_text TEXT NOT NULL,
+            chunk_start_offset INTEGER NOT NULL,
+            chunk_end_offset INTEGER NOT NULL,
             chunk_start_line INTEGER NOT NULL,
             chunk_end_line INTEGER NOT NULL,
-            content_sha TEXT NOT NULL
-        );`,
-        `CREATE VIRTUAL TABLE wiki_chunks_fts USING fts5(
-            chunk_id UNINDEXED,
-            path UNINDEXED,
-            title,
-            chunk_text
+            content_sha TEXT NOT NULL,
+            chunk_text TEXT NOT NULL DEFAULT ''
         );`,
         `CREATE TABLE wiki_vectors (
             chunk_id INTEGER PRIMARY KEY,
             dim INTEGER NOT NULL,
-            vector_json TEXT NOT NULL,
+            vector_blob BLOB NOT NULL,
             model TEXT NOT NULL,
             indexed_at TEXT NOT NULL,
             FOREIGN KEY(chunk_id) REFERENCES wiki_chunks(chunk_id) ON DELETE CASCADE
@@ -646,18 +1087,29 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
     const indexedAt = new Date().toISOString();
     for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
-        statements.push(`INSERT INTO wiki_chunks (chunk_id, path, source_group, title, chunk_text, chunk_start_line, chunk_end_line, content_sha) VALUES (${chunk.chunkId}, '${sqlEsc(chunk.relPath)}', '${sqlEsc(chunk.sourceGroup)}', '${sqlEsc(chunk.title)}', '${sqlEsc(chunk.text)}', ${chunk.startLine}, ${chunk.endLine}, '${sqlEsc(chunk.contentSha)}');`);
-        statements.push(`INSERT INTO wiki_chunks_fts (chunk_id, path, title, chunk_text) VALUES (${chunk.chunkId}, '${sqlEsc(chunk.relPath)}', '${sqlEsc(chunk.title)}', '${sqlEsc(chunk.text)}');`);
+        statements.push(`INSERT INTO wiki_chunks (chunk_id, path, source_group, title, chunk_start_offset, chunk_end_offset, chunk_start_line, chunk_end_line, content_sha, chunk_text) VALUES (${chunk.chunkId}, '${sqlEsc(chunk.relPath)}', '${sqlEsc(chunk.sourceGroup)}', '${sqlEsc(chunk.title)}', ${chunk.startOffset}, ${chunk.endOffset}, ${chunk.startLine}, ${chunk.endLine}, '${sqlEsc(chunk.contentSha)}', '${sqlEsc(chunk.text)}');`);
         const vector = vectors[index];
         if (vector) {
-            statements.push(`INSERT INTO wiki_vectors (chunk_id, dim, vector_json, model, indexed_at) VALUES (${chunk.chunkId}, ${dim}, '${sqlEsc(JSON.stringify(vector))}', '${sqlEsc(model)}', '${sqlEsc(indexedAt)}');`);
+            statements.push(`INSERT INTO wiki_vectors (chunk_id, dim, vector_blob, model, indexed_at) VALUES (${chunk.chunkId}, ${dim}, X'${vectorToBlobHex(vector)}', '${sqlEsc(model)}', '${sqlEsc(indexedAt)}');`);
+        }
+    }
+    // Re-insert preserved DB-only wiki chunks (no on-disk markdown to scan).
+    let preservedNextId = chunks.length + 1;
+    for (const pc of preservedWiki) {
+        const id = preservedNextId++;
+        statements.push(`INSERT INTO wiki_chunks (chunk_id, path, source_group, title, chunk_start_offset, chunk_end_offset, chunk_start_line, chunk_end_line, content_sha, chunk_text) VALUES (${id}, '${sqlEsc(pc.relPath)}', '${sqlEsc(pc.sourceGroup)}', '${sqlEsc(pc.title)}', ${pc.startOffset}, ${pc.endOffset}, ${pc.startLine}, ${pc.endLine}, '${sqlEsc(pc.contentSha)}', '${sqlEsc(pc.text)}');`);
+        if (pc.vectorHex) {
+            statements.push(`INSERT INTO wiki_vectors (chunk_id, dim, vector_blob, model, indexed_at) VALUES (${id}, ${dim}, X'${pc.vectorHex}', '${sqlEsc(model)}', '${sqlEsc(indexedAt)}');`);
         }
     }
 
     const meta: Record<string, string> = {
-        schema_version: "1",
+        schema_version: HYBRID_SCHEMA_VERSION,
         backend: "hybrid",
-        bm25_backend: "fts5",
+        bm25_backend: HYBRID_LEXICAL_BACKEND,
+        lexical_backend: HYBRID_LEXICAL_BACKEND,
+        text_storage: HYBRID_TEXT_STORAGE,
+        vector_storage: HYBRID_VECTOR_STORAGE,
         source_hash: sourceHash,
         include_tickets: includeTickets ? "true" : "false",
         indexed_at: indexedAt,
@@ -666,6 +1118,9 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
         vector_count: String(vectorCount),
         vector_dim: String(dim),
         vector_model: model,
+        vector_reuse_source: reused ? "existing_index" : "",
+        vector_reuse_count: String(reused?.reusedCount || 0),
+        vector_embed_count: String(missing.length),
         embedding_provider_configured: provider ? "true" : "false",
     };
     for (const [key, value] of Object.entries(meta)) {
@@ -673,7 +1128,25 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
     }
     statements.push("COMMIT;");
 
-    const ok = sqliteExec(dbPath, statements.join("\n"));
+    const ok = sqliteExec(tempDbPath, statements.join("\n"));
+    if (ok) {
+        for (const suffix of ["", "-wal", "-shm"]) {
+            try {
+                fs.rmSync(`${dbPath}${suffix}`, {force: true});
+            } catch {
+                // Best-effort cleanup before atomic replacement.
+            }
+        }
+        fs.renameSync(tempDbPath, dbPath);
+    } else {
+        for (const suffix of ["", "-wal", "-shm"]) {
+            try {
+                fs.rmSync(`${tempDbPath}${suffix}`, {force: true});
+            } catch {
+                // Best-effort cleanup for failed temp index.
+            }
+        }
+    }
     const ready = ok && (chunks.length === 0 || vectorCount > 0);
     const reason = !ok
         ? "sqlite_write_failed"
@@ -689,12 +1162,15 @@ export function buildWikiVectorIndex(ctx: WikiProjectContext, includeTickets: bo
         reason,
         dbPath,
         indexedFiles: fileCount,
-        indexedChunks: chunks.length,
+        indexedChunks: chunks.length + preservedWiki.length,
         vectorCount: ok ? vectorCount : 0,
         sourceHash,
         vectorDim: dim,
         vectorModel: model,
         bm25Ready: ok,
+        lexicalBackend: HYBRID_LEXICAL_BACKEND,
+        textStorage: HYBRID_TEXT_STORAGE,
+        vectorStorage: HYBRID_VECTOR_STORAGE,
         embeddingProvider: provider,
     };
 }
@@ -713,6 +1189,9 @@ function readExistingHybridIndex(ctx: WikiProjectContext, includeTickets: boolea
         vectorDim: dim,
         vectorModel: model,
         bm25Ready: false,
+        lexicalBackend: HYBRID_LEXICAL_BACKEND,
+        textStorage: HYBRID_TEXT_STORAGE,
+        vectorStorage: HYBRID_VECTOR_STORAGE,
         embeddingProvider: resolveEmbeddingProvider(ctx),
     };
     if (!sqliteAvailable()) {
@@ -723,12 +1202,11 @@ function readExistingHybridIndex(ctx: WikiProjectContext, includeTickets: boolea
     }
     const meta = readIndexMeta(dbPath);
     const existingVectorCount = Number.parseInt(meta.vector_count || "0", 10) || 0;
-    if (meta.backend !== "hybrid" || meta.bm25_backend !== "fts5") {
+    if (meta.backend !== "hybrid" || meta.schema_version !== HYBRID_SCHEMA_VERSION || meta.text_storage !== HYBRID_TEXT_STORAGE || meta.vector_storage !== HYBRID_VECTOR_STORAGE) {
         return {status: "skipped", reason: "hybrid_index_schema_missing_upgrade_required", ...baseStats};
     }
-    if (meta.source_hash !== sourceHash) {
-        return {status: "skipped", reason: "vector_index_stale_upgrade_required", ...baseStats};
-    }
+    // source_hash mismatch no longer blocks query — DB-only upserts intentionally
+    // diverge from external source hash. ingest still rebuilds when needed.
     if (Number(meta.vector_dim) !== dim) {
         return {status: "skipped", reason: "vector_index_dim_mismatch_upgrade_required", ...baseStats};
     }
@@ -748,41 +1226,92 @@ function readExistingHybridIndex(ctx: WikiProjectContext, includeTickets: boolea
         vectorDim: dim,
         vectorModel: model,
         bm25Ready: true,
+        lexicalBackend: meta.lexical_backend || meta.bm25_backend || HYBRID_LEXICAL_BACKEND,
+        textStorage: meta.text_storage || HYBRID_TEXT_STORAGE,
+        vectorStorage: meta.vector_storage || HYBRID_VECTOR_STORAGE,
         embeddingProvider: resolveEmbeddingProvider(ctx),
     };
 }
 
-function ftsPhrase(value: string): string {
-    return `"${value.replace(/"/g, '""')}"`;
-}
-
-function ftsQueryFromTerms(terms: string[]): string {
-    const tokens = Array.from(new Set(terms
-        .flatMap((term) => term.split(/[\s,./\\:;()[\]{}<>|]+/))
+function lexicalTokensFromTerms(terms: string[]): string[] {
+    return Array.from(new Set(terms
+        .flatMap((term) => term.toLowerCase().split(/[\s,./\\:;()[\]{}<>|]+/))
         .map((term) => term.trim())
         .filter(Boolean)));
-    return tokens.map(ftsPhrase).join(" OR ");
 }
 
-function bm25Score(raw: unknown): number {
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return 0;
-    return value < 0 ? -value : 1 / (1 + value);
+function countOccurrences(text: string, token: string): number {
+    if (!token) return 0;
+    let count = 0;
+    let index = 0;
+    while (index < text.length) {
+        const found = text.indexOf(token, index);
+        if (found < 0) break;
+        count += 1;
+        index = found + token.length;
+    }
+    return count;
 }
 
-function bm25Scores(dbPath: string, terms: string[], limit: number): Map<number, number> {
-    const query = ftsQueryFromTerms(terms);
-    if (!query) return new Map();
-    const rows = sqliteJson<Bm25Row>(
-        dbPath,
-        `SELECT chunk_id, bm25(wiki_chunks_fts) AS bm25_score FROM wiki_chunks_fts WHERE wiki_chunks_fts MATCH '${sqlEsc(query)}' ORDER BY bm25_score LIMIT ${Math.max(1, limit)}`
-    );
-    const scores = new Map<number, number>();
+function sourceFileForRelPath(ctx: WikiProjectContext, relPath: string): string {
+    const root = realPathSafe(ctx.boardRoot);
+    const file = realPathSafe(path.resolve(ctx.boardRoot, relPath));
+    const relative = path.relative(root, file);
+    if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return file;
+    return "";
+}
+
+function makeSourceTextReader(ctx: WikiProjectContext): (row: VectorRow) => {text: string; sha: string} | null {
+    const cache = new Map<string, {text: string; sha: string} | null>();
+    return (row: VectorRow) => {
+        const relPath = String(row.path || "");
+        if (!relPath) return null;
+        if (cache.has(relPath)) return cache.get(relPath) || null;
+        const file = sourceFileForRelPath(ctx, relPath);
+        if (!file || !fs.existsSync(file)) {
+            cache.set(relPath, null);
+            return null;
+        }
+        const text = fs.readFileSync(file, "utf8");
+        const value = {text, sha: crypto.createHash("sha256").update(text).digest("hex")};
+        cache.set(relPath, value);
+        return value;
+    };
+}
+
+function chunkTextFromSource(row: VectorRow, readSource: (row: VectorRow) => {text: string; sha: string} | null): string {
+    // Prefer DB-stored text when present (avoids markdown re-read; survives source removal).
+    const stored = String(row.chunk_text || "").trim();
+    if (stored) return stored;
+    const source = readSource(row);
+    if (!source) return "";
+    if (row.content_sha && row.content_sha !== source.sha) return "";
+    const start = Math.max(0, Number(row.chunk_start_offset) || 0);
+    const endRaw = Number(row.chunk_end_offset) || source.text.length;
+    const end = Math.min(source.text.length, Math.max(start, endRaw));
+    return source.text.slice(start, end).trim();
+}
+
+function sourceLexicalScores(rows: VectorRow[], terms: string[], limit: number, readSource: (row: VectorRow) => {text: string; sha: string} | null): Map<number, number> {
+    const tokens = lexicalTokensFromTerms(terms);
+    if (tokens.length === 0) return new Map();
+    const scored: {id: number; score: number}[] = [];
     for (const row of rows) {
         const id = Number(row.chunk_id);
-        if (Number.isFinite(id)) scores.set(id, bm25Score(row.bm25_score));
+        if (!Number.isFinite(id)) continue;
+        const text = chunkTextFromSource(row, readSource).toLowerCase();
+        if (!text) continue;
+        let hits = 0;
+        let coverage = 0;
+        for (const token of tokens) {
+            const count = countOccurrences(text, token);
+            hits += count;
+            if (count > 0) coverage += 1;
+        }
+        if (hits > 0) scored.push({id, score: hits + (coverage / tokens.length)});
     }
-    return scores;
+    scored.sort((a, b) => b.score - a.score || a.id - b.id);
+    return new Map(scored.slice(0, Math.max(1, limit)).map((item) => [item.id, item.score]));
 }
 
 function normalizedScores(scores: Map<number, number>): Map<number, number> {
@@ -814,46 +1343,70 @@ function hybridSearch(ctx: WikiProjectContext, terms: string[], limit: number, i
     const provider = resolveEmbeddingProvider(ctx);
     const queryVector = embedQuery(provider, terms, stats.vectorDim, embeddingEnv(ctx));
 
-    const rows = sqliteJson<VectorRow>(stats.dbPath, `SELECT c.chunk_id, c.path, c.source_group, c.title, c.chunk_text, c.chunk_start_line, c.chunk_end_line, v.vector_json FROM wiki_chunks c LEFT JOIN wiki_vectors v ON v.chunk_id = c.chunk_id AND v.dim = ${stats.vectorDim}`);
+    const rows = sqliteJson<VectorRow>(stats.dbPath, `SELECT c.chunk_id, c.path, c.source_group, c.title, c.chunk_start_offset, c.chunk_end_offset, c.chunk_start_line, c.chunk_end_line, c.content_sha, c.chunk_text, hex(v.vector_blob) AS vector_hex FROM wiki_chunks c LEFT JOIN wiki_vectors v ON v.chunk_id = c.chunk_id AND v.dim = ${stats.vectorDim}`);
     const chunkById = new Map<number, VectorRow>();
     const vectorScores = new Map<number, number>();
     for (const row of rows) {
         const id = Number(row.chunk_id);
         if (!Number.isFinite(id)) continue;
         chunkById.set(id, row);
-        if (!queryVector || !row.vector_json) continue;
-        let vector: number[] | null = null;
-        try {
-            vector = validVector(JSON.parse(row.vector_json) as unknown, stats.vectorDim);
-        } catch {
-            vector = null;
-        }
+        if (!queryVector || !row.vector_hex) continue;
+        const vector = vectorFromBlobHex(row.vector_hex, stats.vectorDim);
         if (!vector) continue;
         vectorScores.set(id, Math.max(0, (cosineSimilarity(queryVector, vector) + 1) / 2));
     }
 
-    const lexicalScores = bm25Scores(stats.dbPath, terms, Math.max(limit * 8, 50));
+    const readSource = makeSourceTextReader(ctx);
+    const lexicalScores = sourceLexicalScores(rows, terms, Math.max(limit * 8, 50), readSource);
     const normalizedVector = normalizedScores(vectorScores);
     const normalizedBm25 = normalizedScores(lexicalScores);
     const candidateIds = new Set<number>([...normalizedVector.keys(), ...normalizedBm25.keys()]);
     const vectorWeight = normalizedVector.size > 0 ? HYBRID_VECTOR_WEIGHT : 0;
-    const bm25Weight = normalizedBm25.size > 0 ? HYBRID_BM25_WEIGHT : 0;
+    const bm25Weight = normalizedBm25.size > 0 ? HYBRID_LEXICAL_WEIGHT : 0;
     const totalWeight = vectorWeight + bm25Weight || 1;
+    const useRecency = recencyEnabled();
+    const halfLifeDays = recencyHalfLifeDays();
+    const floor = recencyFloor();
+    const recencyCache = new Map<string, number>();
+    const useSupersede = supersedeEnabled();
+    const penalty = supersedePenalty();
+    const statusCache = new Map<string, PageStatus>();
+    const useUsage = usageTrackingEnabled();
+    const usageThreshold = usageBoostThreshold();
+    const usageBoost = usageBoostWeight();
+    const usageMap = useUsage ? readChunkUsageMap(stats.dbPath) : new Map<string, number>();
     const matches: VectorMatch[] = [];
     for (const id of candidateIds) {
         const row = chunkById.get(id);
         if (!row) continue;
         const vectorScore = normalizedVector.get(id) || 0;
         const lexicalScore = normalizedBm25.get(id) || 0;
+        const baseScore = ((vectorScore * vectorWeight) + (lexicalScore * bm25Weight)) / totalWeight;
+        const absPath = path.resolve(ctx.boardRoot, row.path.replace(/^\.autoflow\//, ""));
+        let recencyWeight = 1;
+        if (useRecency) {
+            recencyWeight = pageRecencyWeight(absPath, halfLifeDays, floor, recencyCache);
+        }
+        let pageStatus: PageStatus = {superseded: false, supersededBy: "", status: ""};
+        if (useSupersede) {
+            if (!statusCache.has(absPath)) statusCache.set(absPath, readPageStatus(absPath));
+            pageStatus = statusCache.get(absPath) as PageStatus;
+        }
+        const statusFactor = pageStatus.superseded ? penalty : 1;
+        const hitCount = useUsage ? (usageMap.get(String(row.content_sha || "")) || 0) : 0;
+        const usageFactor = useUsage ? usageWeight(hitCount, usageThreshold, usageBoost) : 1;
         matches.push({
             relPath: row.path,
-            title: row.title,
-            text: row.chunk_text,
+            title: pageStatus.supersededBy
+                ? `${row.title} (superseded by ${pageStatus.supersededBy})`
+                : row.title,
+            text: chunkTextFromSource(row, readSource),
             startLine: Number(row.chunk_start_line) || 1,
             endLine: Number(row.chunk_end_line) || 1,
-            score: ((vectorScore * vectorWeight) + (lexicalScore * bm25Weight)) / totalWeight,
+            score: baseScore * recencyWeight * statusFactor * usageFactor,
             vectorScore,
             bm25Score: lexicalScore,
+            contentSha: String(row.content_sha || ""),
         });
     }
     matches.sort((a, b) => b.score - a.score || a.relPath.localeCompare(b.relPath) || a.startLine - b.startLine);
@@ -864,7 +1417,49 @@ function hybridSearch(ctx: WikiProjectContext, terms: string[], limit: number, i
             : provider
                 ? "query_embedding_failed"
                 : "embedding_provider_missing";
-    return {stats, matches: matches.slice(0, limit), reason, bm25Count: lexicalScores.size, vectorScoredCount: vectorScores.size};
+
+    // Semantic dedup: skip chunks that are highly similar to an already-included
+    // higher-scored match. Avoids returning near-duplicate retrievals (e.g. the
+    // same decision restated across multiple pages).
+    const useDedup = dedupEnabled();
+    const threshold = dedupThreshold();
+    const finalMatches: VectorMatch[] = [];
+    const dedupVectors: number[][] = [];
+    const shaSeen = new Set<string>();
+    let dropped = 0;
+    for (const m of matches) {
+        if (finalMatches.length >= limit) break;
+        if (m.contentSha && shaSeen.has(m.contentSha)) { dropped += 1; continue; }
+        let duplicate = false;
+        if (useDedup && dedupVectors.length > 0) {
+            const row = matches.indexOf(m) >= 0 ? null : null;
+            void row;
+            // Reconstruct chunk vector from stored row via chunkById lookup by relPath+offset.
+            // We re-derive id by scanning candidateIds; cheaper to keep the score-sorted
+            // matches keyed back to their row through relPath+startLine equality.
+            const chunkRow = Array.from(chunkById.values()).find((r) =>
+                r.path === m.relPath && Number(r.chunk_start_line) === m.startLine
+            );
+            if (chunkRow && chunkRow.vector_hex) {
+                const myVec = vectorFromBlobHex(chunkRow.vector_hex, stats.vectorDim);
+                if (myVec) {
+                    for (const v of dedupVectors) {
+                        if (cosineSimilarity(myVec, v) >= threshold) { duplicate = true; break; }
+                    }
+                    if (!duplicate) dedupVectors.push(myVec);
+                }
+            }
+        }
+        if (duplicate) { dropped += 1; continue; }
+        if (m.contentSha) shaSeen.add(m.contentSha);
+        finalMatches.push(m);
+    }
+    void dropped;
+
+    if (useUsage && finalMatches.length > 0) {
+        recordChunkUsage(stats.dbPath, finalMatches.map((m) => m.contentSha || ""));
+    }
+    return {stats, matches: finalMatches, reason, bm25Count: lexicalScores.size, vectorScoredCount: vectorScores.size};
 }
 
 function markdownScanSearch(ctx: WikiProjectContext, terms: string[], limit: number, includeTickets: boolean): VectorMatch[] {
@@ -910,7 +1505,15 @@ export function wikiProject(args: string[]): never | void {
     const ctx = projectContext(parsed.positionals[0] || ".", parsed.positionals[1] || defaultBoardDirName());
     switch (subcmd) {
         case "update":
-            runRuntimeScript(ctx, "runners/wiki/scripts/update-wiki.ts", args.slice(2));
+        case "retrofit-frontmatter":
+            // Removed in DB-only migration; kept as no-op alias so legacy callers
+            // (LLM conversation memory, old prompts) don't crash. Emit a hint
+            // pointing to the current entrypoint.
+            out("status=deprecated");
+            out(`removed_command=wiki ${subcmd}`);
+            out("hint=use 'autoflow wiki write-page --path wiki/<slug>.md --content-file <file>' to upsert into wiki-search.db (markdown is no longer written to disk)");
+            out(`project_root=${ctx.projectRoot}`);
+            out(`board_root=${ctx.boardRoot}`);
             break;
         case "query": {
             ensureBoard(ctx);
@@ -922,7 +1525,10 @@ export function wikiProject(args: string[]): never | void {
                 if (matches.length > 0) {
                     out("status=ok");
                     out("rag_backend=hybrid");
-                    out("bm25_backend=fts5");
+                    out(`bm25_backend=${stats.lexicalBackend}`);
+                    out(`lexical_backend=${stats.lexicalBackend}`);
+                    out(`text_storage=${stats.textStorage}`);
+                    out(`vector_storage=${stats.vectorStorage}`);
                     out(`index_db=${stats.dbPath}`);
                     out(`indexed_chunks=${stats.indexedChunks}`);
                     out(`vector_count=${stats.vectorCount}`);
@@ -934,7 +1540,10 @@ export function wikiProject(args: string[]): never | void {
                 }
                 out("status=needs_hybrid_index");
                 out("rag_backend=hybrid");
-                out("bm25_backend=fts5");
+                out(`bm25_backend=${stats.lexicalBackend}`);
+                out(`lexical_backend=${stats.lexicalBackend}`);
+                out(`text_storage=${stats.textStorage}`);
+                out(`vector_storage=${stats.vectorStorage}`);
                 out(`reason=${reason || "no_hybrid_matches"}`);
                 if (stats.dbPath) out(`index_db=${stats.dbPath}`);
                 out(`indexed_chunks=${stats.indexedChunks}`);
@@ -952,7 +1561,6 @@ export function wikiProject(args: string[]): never | void {
         }
         case "lint":
             out("status=ok");
-            out("semantic_lint=skipped");
             out(`project_root=${ctx.projectRoot}`);
             out(`board_root=${ctx.boardRoot}`);
             break;
@@ -964,7 +1572,10 @@ export function wikiProject(args: string[]): never | void {
                 out(`status=${stats.status}`);
                 if (stats.reason) out(`reason=${stats.reason}`);
                 out("index_backend=hybrid");
-                out("bm25_backend=fts5");
+                out(`bm25_backend=${stats.lexicalBackend}`);
+                out(`lexical_backend=${stats.lexicalBackend}`);
+                out(`text_storage=${stats.textStorage}`);
+                out(`vector_storage=${stats.vectorStorage}`);
                 out(`index_db=${stats.dbPath}`);
                 out(`indexed_files=${stats.indexedFiles}`);
                 out(`indexed_chunks=${stats.indexedChunks}`);
@@ -979,6 +1590,38 @@ export function wikiProject(args: string[]): never | void {
         case "summarize-telemetry":
             summarizeTelemetry(ctx, parsed);
             break;
+        case "upsert": {
+            ensureBoard(ctx);
+            const targetPath = firstFlag(parsed, "path") || "";
+            const contentFile = firstFlag(parsed, "content-file") || "";
+            let body = "";
+            if (contentFile) {
+                try { body = fs.readFileSync(contentFile, "utf8"); }
+                catch (error: any) { fail(`failed to read content file: ${error?.message || error}`); }
+            } else {
+                try { body = fs.readFileSync(0, "utf8"); } catch {}
+            }
+            if (!body || !body.trim()) fail("wiki upsert requires --content-file or stdin markdown");
+            const result = upsertWikiPage(ctx, targetPath, body);
+            out(`status=${result.status}`);
+            if (result.reason) out(`reason=${result.reason}`);
+            out(`path=${result.path}`);
+            out(`chunks=${result.chunks}`);
+            out(`replaced=${result.replaced}`);
+            out(`vectors_embedded=${result.vectorsEmbedded}`);
+            out(`project_root=${ctx.projectRoot}`);
+            out(`board_root=${ctx.boardRoot}`);
+            break;
+        }
+        case "delete-page": {
+            ensureBoard(ctx);
+            const targetPath = firstFlag(parsed, "path") || "";
+            const result = deleteWikiPage(ctx, targetPath);
+            out(`status=${result.status}`);
+            out(`path=${result.path}`);
+            out(`removed=${result.removed}`);
+            break;
+        }
         default:
             fail(`Unknown wiki command: ${subcmd}`);
     }

@@ -27,13 +27,10 @@ export interface QueueItem {
   title: string;
   status: string;
   stage: string;
-  retry: boolean;
-  express: boolean;
-  recovery_status?: string;
-  failure_class?: string;
 }
 
 export interface WorkerTicketItem extends QueueItem {
+  prd_key: string;
   allowed_paths: string[];
   claimed_by: string;
   execution_ai: string;
@@ -43,7 +40,16 @@ export interface WorkerTicketItem extends QueueItem {
   semantic_reason: string;
   semantic_checked_at: string;
   semantic_log: string;
+  submitted_to_verifier_at: string;
   conflicts?: ConflictInfo[];
+}
+
+export interface HandoffLink {
+  path: string;
+  absolute_path: string;
+  prd_key: string;
+  source: string;
+  modified_at: string;
 }
 
 export interface ConflictInfo {
@@ -56,10 +62,6 @@ export interface GitRunResult {
   status: number;
   stdout: string;
   stderr: string;
-}
-
-export interface WakeEmitResult extends GitRunResult {
-  ok: boolean;
 }
 
 export const args = process.argv.slice(2);
@@ -95,27 +97,6 @@ export function git(gitArgs: string[], cwd: string): GitRunResult {
 export function spawnTsScript(scriptPath: string, scriptArgs: string[], env: NodeJS.ProcessEnv): ReturnType<typeof spawnSync> {
   const runner = resolveTsxCommand(SCRIPT_DIR);
   return spawnSync(runner.command, [...runner.args, scriptPath, ...scriptArgs], { encoding: "utf8", env });
-}
-
-export function emitRunnerWake(runnerId: string, reason: string, kind: string): WakeEmitResult {
-  const result = spawnTsScript(
-    path.join(RUNTIME_ROOT, "system", "runner-wake.ts"),
-    ["emit", "--runner", runnerId, "--reason", reason, "--kind", kind],
-    {
-      ...process.env,
-      PROJECT_ROOT,
-      AUTOFLOW_PROJECT_ROOT: PROJECT_ROOT,
-      BOARD_ROOT,
-      AUTOFLOW_BOARD_ROOT: BOARD_ROOT,
-    }
-  );
-  const status = typeof result.status === "number" ? result.status : 1;
-  return {
-    ok: status === 0,
-    status,
-    stdout: spawnOutputText(result.stdout),
-    stderr: spawnOutputText(result.stderr),
-  };
 }
 
 export function emitRunnerContextReset(
@@ -240,6 +221,91 @@ export function resolveBoardPath(raw: string): string {
 
 export function boardRel(file: string): string {
   return utils.boardRelativePath(file, BOARD_ROOT);
+}
+
+export function normalizePrdKey(raw: string): string {
+  const match = String(raw || "").match(/\bPRD[-_]?(\d+)\b/i);
+  if (!match) return "";
+  return `PRD-${String(Number.parseInt(match[1], 10)).padStart(3, "0")}`;
+}
+
+export function prdKeysFromText(text: string): string[] {
+  const keys = new Set<string>();
+  const re = /\bPRD[-_]?(\d+)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(String(text || ""))) !== null) {
+    const key = normalizePrdKey(match[0]);
+    if (key) keys.add(key);
+  }
+  return Array.from(keys).sort();
+}
+
+function fileMtimeIso(file: string): string {
+  try {
+    return fs.statSync(file).mtime.toISOString();
+  } catch {
+    return "";
+  }
+}
+
+export function conversationHandoffLinksForPrdKey(raw: string, limit = 4): HandoffLink[] {
+  const prdKey = normalizePrdKey(raw);
+  if (!prdKey) return [];
+  const conversationsRoot = path.join(BOARD_ROOT, "conversations");
+  const candidates = [
+    path.join(conversationsRoot, prdKey, "spec-handoff.md"),
+    path.join(conversationsRoot, `${prdKey}.md`),
+    ...collectFiles(path.join(conversationsRoot, prdKey), /\.md$/, 3),
+  ];
+  const seen = new Set<string>();
+  return candidates
+    .map((file) => path.resolve(file))
+    .filter((file) => {
+      if (seen.has(file) || !safeIsFile(file)) return false;
+      seen.add(file);
+      return true;
+    })
+    .sort((a, b) => {
+      const aSpec = path.basename(a) === "spec-handoff.md" ? 0 : 1;
+      const bSpec = path.basename(b) === "spec-handoff.md" ? 0 : 1;
+      if (aSpec !== bSpec) return aSpec - bSpec;
+      return fileMtimeIso(b).localeCompare(fileMtimeIso(a));
+    })
+    .slice(0, Math.max(0, limit))
+    .map((file) => ({
+      path: boardRel(file),
+      absolute_path: file,
+      prd_key: prdKey,
+      source: "conversation_handoff",
+      modified_at: fileMtimeIso(file),
+    }));
+}
+
+export function conversationHandoffLinksForText(text: string, limit = 4): HandoffLink[] {
+  const links: HandoffLink[] = [];
+  const seen = new Set<string>();
+  for (const prdKey of prdKeysFromText(text)) {
+    for (const link of conversationHandoffLinksForPrdKey(prdKey, limit)) {
+      if (seen.has(link.path)) continue;
+      seen.add(link.path);
+      links.push(link);
+      if (links.length >= limit) return links;
+    }
+  }
+  return links;
+}
+
+export function conversationHandoffLinksForBoardPath(boardPath: string, limit = 4): HandoffLink[] {
+  const file = resolveBoardPath(boardPath);
+  if (!file || !safeIsFile(file)) return [];
+  return conversationHandoffLinksForText(`${boardPath}\n${boardRel(file)}\n${readOptionalTextFile(file)}`, limit);
+}
+
+export function scopedSourceFileCount(sources: JsonObject[]): number {
+  return sources.reduce((total, source) => {
+    const links = source.handoff_links;
+    return total + 1 + (Array.isArray(links) ? links.length : 0);
+  }, 0);
 }
 
 export function stringValue(value: JsonValue | undefined): string {

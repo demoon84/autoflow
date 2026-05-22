@@ -32,7 +32,6 @@ export async function buildMainProcess() {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   buildMainProcess().catch((error) => {
-    console.error(error);
     process.exit(1);
   });
 }

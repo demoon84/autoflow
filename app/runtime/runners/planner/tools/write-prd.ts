@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -41,6 +40,7 @@ const {
   releaseDispatchLock,
   readWorktreeStatus,
   ensureWorkerTicketWorktree,
+  ensureTicketWorktree,
   worktreeModeDisabled,
   defaultTicketWorktreePath,
   isGitWorktree,
@@ -77,7 +77,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +95,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -131,13 +129,62 @@ const {
 export function cmdPlannerWritePrd(): void {
   const payload = readWritePayload();
   const id = normalizeId(getArg("--id") || stringValue(payload.id) || extractIdFromContent(payload.content, "prd"));
-  if (!id) fail(2, "write-prd requires --id or content with prd_NNN");
-  const target = path.join(TICKETS_ROOT, "prd", `prd_${id}.md`);
+  if (!id) fail(2, "write-prd requires --id or content with PRD-NNN");
+  const target = path.join(TICKETS_ROOT, "prd", `PRD-${id}.md`);
 
   validateNoUnsafeWrite(target, hasFlag("--overwrite"));
   validatePrdContent(payload.content, id);
+
+  // 1) Create branch + worktree first. The PRD worktree is the durable work
+  //    root for every TODO derived from this PRD.
+  let wt = ensureTicketWorktree({ id, kind: "prd", content: payload.content });
+
+  // 2) Persist in main board for queue scan / locatePrdFile.
   writeAtomic(target, payload.content);
   releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
 
-  ok({ tool: "planner.write-prd", status: "ok", id: `prd_${id}`, path: boardRel(target) });
+  // 3) Reflect branch / base commit fields back into the main markdown so
+  //    downstream tools can use the PRD worktree as the only PRD-backed TODO
+  //    working root.
+  if (wt.branch && wt.baseCommit) {
+    utils.replaceScalarFieldInSection(target, "Project", "Branch", wt.branch);
+    utils.replaceScalarFieldInSection(target, "Project", "Base Commit", wt.baseCommit);
+    wt = ensureTicketWorktree({
+      id,
+      kind: "prd",
+      content: fs.readFileSync(target, "utf8"),
+      commitMessage: `[PRD-${id}] record PRD branch metadata`,
+    });
+  }
+
+  writeCurrentPrdState(id, wt, target);
+
+  ok({
+    tool: "planner.write-prd",
+    status: "ok",
+    id: `PRD-${id}`,
+    path: boardRel(target),
+    branch: wt.branch,
+    base_commit: wt.baseCommit,
+    branch_status: wt.status,
+    worktree_path: wt.worktreePath,
+    worktree_commit: wt.commit || "",
+  });
+}
+
+function writeCurrentPrdState(id: string, wt: { branch: string; baseCommit: string; worktreePath: string; commit?: string }, prdFile: string): void {
+  const stateDir = path.join(BOARD_ROOT, "runners", "state");
+  fs.mkdirSync(stateDir, { recursive: true });
+  const statePath = path.join(stateDir, "current-prd.json");
+  const payload = {
+    prd_id: `PRD-${id}`,
+    path: boardRel(prdFile),
+    branch: wt.branch,
+    worktree_path: wt.worktreePath,
+    base_commit: wt.baseCommit,
+    worktree_commit: wt.commit || "",
+    status: "active",
+    updated_at: utils.nowIso(),
+  };
+  writeAtomic(statePath, JSON.stringify(payload, null, 2) + "\n");
 }

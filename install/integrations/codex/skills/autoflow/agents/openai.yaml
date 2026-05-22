@@ -1,4 +1,4 @@
 interface:
-  display_name: "Autoflow"
-  short_description: "Autoflow PRD handoff"
-  default_prompt: "Use $autoflow to gather requirements, split into multiple PRDs when needed, render drafts only on explicit request, and save only after approval."
+  display_name: "autoflow"
+  short_description: "PRD-based Autoflow goal orchestration"
+  default_prompt: "Use $autoflow to brief the plan, get approval, manage one PRD cycle at a time, and never directly execute runner work."

@@ -5,19 +5,18 @@ import {usage} from "./system/usage";
 import {printToolCatalog} from "./system/tool-catalog";
 import {runRuntimeTool} from "./system/tool-run";
 import {installBoard} from "./system/install-board";
+import {installCli} from "./system/install-cli";
 import {stopHookProject} from "./system/stop-hook";
 import {watchProject} from "./system/watch";
 import {specProject} from "./runners/planner/spec";
-import {orderProject} from "./runners/planner/order";
+import {todoProject} from "./runners/planner/todo";
 import {runRole} from "./system/run-role";
 import {wikiProject} from "./runners/wiki/wiki";
-import {skillProject} from "./runners/wiki/skill";
 import {runnersProject} from "./system/runners";
 import {metricsProject} from "./system/metrics";
 import {statusProject} from "./system/status";
 import {guardProject} from "./system/guard";
 import {originProject} from "./system/origin";
-import {cleanupRunnerLogs} from "./system/cleanup-runner-logs";
 import {telemetryProject} from "./system/telemetry";
 
 function runAutoflow(argv: string[]): void {
@@ -40,6 +39,9 @@ function runAutoflow(argv: string[]): void {
             break;
         case "upgrade":
             installBoard(argv, "upgrade");
+            break;
+        case "install-cli":
+            installCli(argv);
             break;
         case "install-stop-hook":
             stopHookProject(["install", ...argv]);
@@ -66,17 +68,14 @@ function runAutoflow(argv: string[]): void {
         case "spec":
             specProject(argv);
             break;
-        case "order":
-            orderProject(argv);
+        case "todo":
+            todoProject(argv);
             break;
         case "run":
             runRole(argv);
             break;
         case "wiki":
             wikiProject(argv);
-            break;
-        case "skill":
-            skillProject(argv);
             break;
         case "runners":
             runnersProject(argv);
@@ -92,9 +91,6 @@ function runAutoflow(argv: string[]): void {
             break;
         case "origin":
             originProject(argv);
-            break;
-        case "cleanup-runner-logs":
-            cleanupRunnerLogs(argv);
             break;
         case "telemetry":
             telemetryProject(argv);

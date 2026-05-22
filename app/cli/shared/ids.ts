@@ -9,8 +9,7 @@ export function listMarkdownIds(dir: string, prefix: string): number[] {
         return [];
     }
     const prefixPattern = prefix === "prd" ? "(?:prd|project)" : escapeRe(prefix);
-    const suffixPattern = prefix === "order" ? "(?:_retry_.*)?" : "";
-    const re = new RegExp(`^${prefixPattern}_(\\d+)${suffixPattern}\\.md$`, "i");
+    const re = new RegExp(`^${prefixPattern}[-_](\\d+)\\.md$`, "i");
     const ids: number[] = [];
     const walk = (current: string): void => {
         for (const entry of fs.readdirSync(current, {withFileTypes: true})) {
@@ -43,8 +42,7 @@ function listReservedIds(dir: string, prefix: string): number[] {
         return [];
     }
     const prefixPattern = prefix === "prd" ? "(?:prd|project)" : escapeRe(prefix);
-    const suffixPattern = prefix === "order" ? "(?:_retry_.*)?" : "";
-    const re = new RegExp(`^${prefixPattern}_(\\d+)${suffixPattern}\\.lock$`, "i");
+    const re = new RegExp(`^${prefixPattern}_(\\d+)\\.lock$`, "i");
     const ids: number[] = [];
     for (const entry of fs.readdirSync(reservationsDir, {withFileTypes: true})) {
         if (!entry.isFile()) continue;

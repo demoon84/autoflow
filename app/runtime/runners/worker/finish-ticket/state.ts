@@ -4,7 +4,13 @@ import {scalar} from "./ticket-sections";
 import {git, gitOut} from "./git";
 
 function isManagedAutoflowBranch(branch: string): boolean {
-  return /^autoflow\/tickets_\d+$/.test(branch);
+  return /^autoflow\/TODO-\d+$/.test(branch);
+}
+
+function isPrdTrackTicket(ticketFile: string): boolean {
+  const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
+  const branch = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
+  return Boolean(prdKey) && /^autoflow\/prd-\d+$/i.test(branch);
 }
 
 function isManagedAutoflowWorktree(worktreePath: string): boolean {
@@ -20,7 +26,7 @@ function ticketBranch(ticketFile: string): string {
   const recorded = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
   if (isManagedAutoflowBranch(recorded)) return recorded;
   const ticketId = idFromTicketPath(ticketFile);
-  return ticketId ? `autoflow/tickets_${ticketId}` : "";
+  return ticketId ? `autoflow/TODO-${ticketId}` : "";
 }
 
 function branchExists(branch: string): boolean {
@@ -47,6 +53,7 @@ function cleanupTicketBranch(ticketFile: string): void {
 }
 
 export function cleanupWorktree(ticketFile: string): void {
+  if (isPrdTrackTicket(ticketFile)) return;
   const worktreePath = scalar(ticketFile, "Worktree", "Path");
   if (worktreePath && fs.existsSync(worktreePath) && isManagedAutoflowWorktree(worktreePath)) {
     git(projectRoot, ["worktree", "remove", "--force", worktreePath]);
@@ -57,7 +64,7 @@ export function cleanupWorktree(ticketFile: string): void {
 export function clearActiveState(lastResult = ""): void {
   const stateFile = path.join(boardRoot, "runners", "state", `${workerId}.state`);
   if (fs.existsSync(stateFile)) {
-    const keys = new Set(["active_item", "active_ticket_id", "active_ticket_title", "active_stage", "active_spec_ref", "active_ticket_path", "active_recovery_reason", "active_recovery_status", "active_recovery_failure_class", "active_recovery_worktree_path", "active_recovery_worktree_status", "active_recovery_board_state"]);
+    const keys = new Set(["active_item", "active_ticket_id", "active_ticket_title", "active_stage", "active_spec_ref", "active_ticket_path"]);
     const updates = new Map<string, string>();
     if (lastResult) {
       updates.set("last_result", lastResult);
@@ -89,7 +96,7 @@ export function resolveTicketFile(ref: string): string {
   const id = normalizeId(ref);
   if (!id) return "";
   for (const state of ["inprogress", "ready-to-merge", "todo", "verifier"]) {
-    for (const name of [`Todo-${id}.md`, `tickets_${id}.md`]) {
+    for (const name of [`TODO-${id}.md`, `TODO-${id}.md`]) {
       const candidate = path.join(boardRoot, "tickets", state, name);
       if (fs.existsSync(candidate)) return candidate;
     }

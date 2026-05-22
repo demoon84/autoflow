@@ -16,7 +16,7 @@ export function boardRelativePath(file: string): string {
 }
 
 export function ticketPath(state: string, id: string): string {
-  return path.join(BOARD_ROOT, "tickets", state, `Todo-${id}.md`);
+  return path.join(BOARD_ROOT, "tickets", state, `TODO-${id}.md`);
 }
 
 export function projectKeyFromSpecRef(specRef: string): string {

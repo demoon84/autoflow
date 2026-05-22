@@ -1,12 +1,10 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, SCRIPT_DIR, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, SCRIPT_DIR, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { resolveAutoflowRepoRoot } from "../tsx";
 
 export function wikiSourceGroups(): Record<string, string[]> {
   return {
     done: collectFiles(path.join(TICKETS_ROOT, "done"), /\.md$/, 8),
-    retry_orders: collectFiles(path.join(TICKETS_ROOT, "order"), /^order_.*_retry_.*\.md$/, 3),
-    logs: collectFiles(path.join(BOARD_ROOT, "logs"), /\.md$/, 4),
     conversations: collectFiles(path.join(BOARD_ROOT, "conversations"), /\.md$/, 4),
     wiki: collectFiles(path.join(BOARD_ROOT, "wiki"), /\.md$/, 8),
     wiki_raw: collectFiles(path.join(BOARD_ROOT, "wiki-raw"), /\.md$/, 8),
@@ -151,20 +149,38 @@ export function safeLineCount(file: string): number {
   }
 }
 
+export function readWikiFrontmatterKind(file: string): string {
+  try {
+    const head = fs.readFileSync(file, "utf8").slice(0, 4096);
+    if (!head.startsWith("---")) return "";
+    const end = head.indexOf("\n---", 3);
+    if (end < 0) return "";
+    const block = head.slice(3, end);
+    const match = block.match(/^kind\s*:\s*(.+?)\s*$/m);
+    return match ? match[1].replace(/^["']|["']$/g, "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
 export function wikiCategory(rel: string): string {
   const clean = rel.replace(/^\.autoflow\//, "");
+  if (clean.startsWith("wiki-raw/")) return "raw";
+  if (!clean.startsWith("wiki/")) return "other";
+  const absPath = path.resolve(BOARD_ROOT, clean);
+  const kind = readWikiFrontmatterKind(absPath);
+  if (kind) return kind;
   const parts = clean.split("/");
-  if (parts[0] === "wiki-raw") return "raw";
-  if (parts[0] !== "wiki") return "other";
-  return parts[1] || "root";
+  return parts[1] && parts.length > 2 ? parts[1] : "wiki";
 }
 
 export function wikiFileWeight(rel: string): number {
   const clean = rel.replace(/^\.autoflow\//, "");
   const base = path.basename(clean);
-  if (clean === "wiki/index.md" || clean === "wiki/log.md") return 0;
   if (/\.(manifest|history|fingerprint)$/.test(base)) return 0;
   if (clean.startsWith("wiki-raw/")) return 1;
-  if (/^wiki\/(answers|architecture|decisions|features|learnings|operations|sources)\//.test(clean)) return 5;
-  return clean.startsWith("wiki/") ? 3 : 0;
+  if (!clean.startsWith("wiki/")) return 0;
+  // All wiki/ pages share equal weight; layout is flat and category comes from
+  // frontmatter `kind`, with directory segment kept only as fallback.
+  return 5;
 }

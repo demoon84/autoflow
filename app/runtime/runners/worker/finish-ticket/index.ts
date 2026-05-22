@@ -1,8 +1,8 @@
 import {boardRoot, projectRoot, timestamp} from "./context";
 import {printPairs} from "./io";
-import {failureClass, replaceScalar, replaceSection, updateGoalRuntime, scalar, appendNote, markRecoveryResolved} from "./ticket-sections";
+import {replaceScalar, replaceSection, updateGoalRuntime, scalar, appendNote} from "./ticket-sections";
 import {resolveTicketFile, cleanupWorktree, clearActiveState} from "./state";
-import {routeToOrderRetry} from "./retry";
+import {routeToTodoReplan} from "./retry";
 import {recordCodeMetricsWithRunnerTool} from "./metrics";
 import {shouldHandoffToVerifier, handoffToVerifier, removeVerifierMarker, markNeedsAiMerge} from "./verifier";
 import {sanityPreflight, prepareWorktreeForFinalization, finalizationPreflight, archiveDone, commitCompletion, restoreDoneAfterCommitFailure} from "./finalize";
@@ -33,7 +33,7 @@ export function main(): void {
 
   const ticketId = idFromTicketPath(ticketFile);
   if (outcome === "replan") {
-    routeToOrderRetry(ticketFile, ticketId, failureClass(ticketFile) || "verifier_replan_requested", message);
+    routeToTodoReplan(ticketFile, ticketId, "verifier_replan_requested", message);
     return;
   }
 
@@ -45,22 +45,16 @@ export function main(): void {
     replaceScalar(ticketFile, "Ticket", "Stage", "blocked");
     replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
     replaceScalar(ticketFile, "Worktree", "Integration Status", `blocked_${sanity.failure}`);
-    replaceScalar(ticketFile, "Recovery State", "Status", "blocked");
-    replaceScalar(ticketFile, "Recovery State", "Detected By", "finish-ticket.ts pass sanity gate");
-    replaceScalar(ticketFile, "Recovery State", "Failure Class", `shell_sanity_gate_${sanity.failure}`);
-    replaceScalar(ticketFile, "Recovery State", "Evidence", sanity.detail);
-    replaceScalar(ticketFile, "Recovery State", "Worker Resume Instruction", "Fix this same worktree, rerun local verification, check every Done When item, then call autoflow tool runner-tool worker submit-to-verifier again.");
-    replaceScalar(ticketFile, "Recovery State", "Last Recovery At", timestamp);
     updateGoalRuntime(ticketFile, "blocked", timestamp);
-    replaceSection(ticketFile, "Next Action", `- Next: shell sanity gate refused pass (${sanity.failure}). Worker must keep this same worktree, fix the issue, rerun local verification, update Done When, then call \`autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>"\` again. Do not create a retry order for this mechanical false-pass block.`);
+    replaceSection(ticketFile, "Next Action", `- Next: shell sanity gate refused pass (${sanity.failure}). Worker must keep this same worktree, fix the issue, rerun local verification, update Done When, then call \`autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>"\` again. Do not request replan requeue for this mechanical false-pass block.`);
     printPairs({
       status: "blocked",
       outcome: "pass_refused",
-      failure_class: `shell_sanity_gate_${sanity.failure}`,
+      sanity_failure: sanity.failure,
       reason: sanity.detail,
       ticket: ticketFile,
       ticket_id: ticketId,
-      next_action: "Worker must revise the same worktree and rerun worker submit-to-verifier; no order retry was created.",
+      next_action: "Worker must revise the same worktree and rerun worker submit-to-verifier; no replan requeue was created.",
       board_root: boardRoot,
       project_root: projectRoot,
     });
@@ -68,7 +62,6 @@ export function main(): void {
     return;
   }
 
-  markRecoveryResolved(ticketFile, "finish-ticket.ts pass sanity gate", "Sanity gate passed after worker recovery; stale recovery block cleared before handoff/finalization.");
   recordCodeMetricsWithRunnerTool(ticketFile, ticketId);
 
   if (shouldHandoffToVerifier(ticketId)) {
@@ -120,18 +113,11 @@ export function main(): void {
     replaceScalar(ticketFile, "Ticket", "Stage", "blocked");
     replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
     replaceScalar(ticketFile, "Worktree", "Integration Status", `blocked_${finalization.reason}`);
-    replaceScalar(ticketFile, "Recovery State", "Status", "blocked");
-    replaceScalar(ticketFile, "Recovery State", "Detected By", "finish-ticket.ts finalization preflight");
-    replaceScalar(ticketFile, "Recovery State", "Failure Class", finalization.reason);
-    replaceScalar(ticketFile, "Recovery State", "Evidence", finalization.detail);
-    replaceScalar(ticketFile, "Recovery State", "Worker Resume Instruction", "Fix PROJECT_ROOT merge or verification, rerun verification from PROJECT_ROOT, then rerun worker finalize-approved for this ticket.");
-    replaceScalar(ticketFile, "Recovery State", "Last Recovery At", timestamp);
     updateGoalRuntime(ticketFile, "blocked", timestamp);
     replaceSection(ticketFile, "Next Action", `- Next: finalization preflight failed (${finalization.reason}). Worker must fix PROJECT_ROOT merge/verification, rerun verification, then call \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\` again.`);
     printPairs({
       status: "blocked",
       outcome: "pass_refused",
-      failure_class: finalization.reason,
       reason: finalization.detail,
       ticket: ticketFile,
       ticket_id: ticketId,
@@ -145,16 +131,24 @@ export function main(): void {
     return;
   }
 
-  removeVerifierMarker(ticketId);
   const doneFile = archiveDone(ticketFile, ticketId);
   const commit = commitCompletion(doneFile, ticketId, message || scalar(doneFile, "Result", "Summary") || "complete worker work");
-  const commitOk = ["committed", "already_committed", "skipped_by_env", "not_git_repo", "no_changes"].includes(commit.status);
+  const commitOk = [
+    "committed",
+    "already_committed",
+    "skipped_by_env",
+    "not_git_repo",
+    "no_changes",
+    "prd_branch_committed_pending",
+    "prd_branch_no_changes_pending",
+    "prd_squash_committed",
+    "prd_squash_no_changes",
+  ].includes(commit.status);
   if (!commitOk) {
     const restoredTicket = restoreDoneAfterCommitFailure(doneFile, ticketId, commit.status, commit.detail);
     printPairs({
       status: "blocked",
       outcome: "completion_commit_failed",
-      failure_class: commit.status,
       reason: commit.detail,
       ticket: restoredTicket,
       ticket_id: ticketId,
@@ -169,6 +163,7 @@ export function main(): void {
     process.exit(1);
     return;
   }
+  removeVerifierMarker(ticketId);
   cleanupWorktree(doneFile);
   clearActiveState("done");
 
@@ -183,7 +178,7 @@ export function main(): void {
     merge_actor: "worker",
     finalizer_merge_action: "none",
     "wiki.status": "ai_owned",
-    "wiki.next_action": "Wiki runner inspects done/log sources and runs autoflow wiki update only when material baseline drift exists.",
+    "wiki.next_action": "Wiki runner inspects done/log sources and upserts focused wiki pages into wiki-search.db via autoflow wiki write-page when synthesis is warranted.",
     commit_status: commit.status === "committed" ? "committed_via_completion_finalizer" : commit.status,
     commit_hash: commit.hash,
     next_action: "Worker-owned merge finalization completed. Worker runner may pick the next todo ticket on the next tick.",

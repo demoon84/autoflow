@@ -48,12 +48,6 @@ function inactiveRunnerState(status: "idle" | "stopped", stoppedBy = ""): Record
         active_stage: "",
         active_spec_ref: "",
         active_ticket_path: "",
-        active_recovery_reason: "",
-        active_recovery_status: "",
-        active_recovery_failure_class: "",
-        active_recovery_worktree_path: "",
-        active_recovery_worktree_status: "",
-        active_recovery_board_state: "",
         last_result: status === "idle" ? "runner_started" : "runner_stopped",
     };
 }
@@ -99,12 +93,27 @@ export function runnersProject(args: string[]): void {
     const stateFile = path.join(stateDir, `${requiredRunnerId}.state`);
     switch (subcmd) {
         case "start":
-        case "restart":
-            writeRunnerState(ctx, requiredRunnerId, inactiveRunnerState("idle"));
+        case "restart": {
+            const index = runners.findIndex((runner) => runner.id === requiredRunnerId);
+            if (index >= 0 && (runners[index].enabled || "true") !== "true") {
+                runners[index] = {...runners[index], enabled: "true"};
+                writeRunnerConfig(ctx, runners);
+            }
+            const currentState = readRunnerState(ctx, requiredRunnerId);
+            const currentStatus = runnerEffectiveStateStatus(currentState);
+            writeRunnerState(ctx, requiredRunnerId, {
+                ...(currentStatus === "running" ? {} : {status: "starting", runner_status: "starting", pid: ""}),
+                stopped_by: "",
+                last_stop_reason: "",
+                last_process_result: "",
+                last_result: subcmd === "restart" ? "runner_restart_requested" : "runner_start_requested",
+            });
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
-            out("runner_status=idle");
+            out(`runner_status=${currentStatus === "running" ? "running" : "starting"}`);
+            out("desktop_start_status=manual_desktop_start_required");
             break;
+        }
         case "stop":
             writeRunnerState(ctx, requiredRunnerId, inactiveRunnerState("stopped", "user"));
             out("status=ok");
@@ -115,7 +124,6 @@ export function runnersProject(args: string[]): void {
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
             out(`state_file=${stateFile}`);
-            out(`log_dir=${path.join(ctx.boardRoot, "runners", "logs")}`);
             break;
         case "set": {
             const updates = runnerUpdateEntries(parsed.positionals.slice(2));

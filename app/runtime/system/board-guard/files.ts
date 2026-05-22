@@ -1,6 +1,6 @@
 import {fs, path, BOARD_ROOT, TICKETS_ROOT, utils} from "./context";
 
-export const TICKET_PATTERN = /^(Todo-\d{3}|tickets_\d{3})\.md$/;
+export const TICKET_PATTERN = /^(TODO-\d{3}|TODO-\d{3})\.md$/;
 
 export function listFiles(dir: string, opts: { pattern?: RegExp; depth?: number } = {}): string[] {
     const out: string[] = [];

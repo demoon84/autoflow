@@ -53,8 +53,8 @@ export function dispatchWorker(command: string): void {
     case "finalize-approved":
       cmdWorkerComplete("finalize-approved");
       return;
-    case "create-retry-order":
-      cmdWorkerComplete("create-retry-order");
+    case "request-replan":
+      cmdWorkerComplete("request-replan");
       return;
     default:
       fail(2, `unknown worker command: ${command}`);

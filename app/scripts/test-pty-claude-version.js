@@ -10,7 +10,6 @@ const { PtyRunnerManager, PTY_RUNNER_STATUS } = require(path.resolve(__dirname, 
 
 const mgr = new PtyRunnerManager();
 if (!mgr.isAvailable()) {
-  console.error("FAIL: node-pty unavailable");
   process.exit(1);
 }
 
@@ -20,10 +19,9 @@ let statusEvents = [];
 
 mgr.on("bytes", ({ data }) => { bufferedOutput += data; });
 mgr.on("status", (payload) => statusEvents.push(payload));
-mgr.on("error", (payload) => console.error("[error]", payload));
+mgr.on("error", () => {});
 
 (async () => {
-  console.log("--- spawn shell + 'claude --version && exit 0' ---");
   mgr.start(RUNNER_ID, {
     command: "claude --version && exit 0",
     cwd: process.env.HOME || "/tmp",
@@ -38,21 +36,13 @@ mgr.on("error", (payload) => console.error("[error]", payload));
     await new Promise((res) => setTimeout(res, 100));
   }
 
-  console.log("");
-  console.log("--- captured output (last 400 chars) ---");
-  console.log(bufferedOutput.slice(-400));
-  console.log("");
-  console.log("--- status events ---");
-  for (const e of statusEvents) console.log(" ", e);
-  console.log("");
+  void statusEvents;
 
   // We expect a version string somewhere in the output and a stopped event.
   const hasVersion = /\d+\.\d+\.\d+/.test(bufferedOutput);
   const stopped = statusEvents.some((e) => e.status === "stopped");
   if (hasVersion && stopped) {
-    console.log("\x1b[32mPASS\x1b[0m — claude --version round-tripped through PTY manager");
     process.exit(0);
   }
-  console.log("\x1b[31mFAIL\x1b[0m — version string missing or no stop event");
   process.exit(1);
 })();

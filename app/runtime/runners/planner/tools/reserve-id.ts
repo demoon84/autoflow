@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +94,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -130,8 +127,8 @@ const {
 
 export function cmdPlannerReserveId(): void {
   const kind = getArg("--kind") || getArg("-k");
-  if (!kind || !["prd", "ticket", "order"].includes(kind)) {
-    fail(2, "reserve-id requires --kind prd|ticket|order");
+  if (!kind || !["prd", "ticket"].includes(kind)) {
+    fail(2, "reserve-id requires --kind prd|ticket");
   }
   const ttlSec = positiveInt(getArg("--ttl-sec") || "", 3600);
   const reservationsDir = path.join(BOARD_ROOT, "runners", "state", "id-reservations");

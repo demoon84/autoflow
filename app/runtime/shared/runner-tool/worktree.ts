@@ -1,10 +1,18 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listWorkerTicketItems, ticketItemOwnedByRunner } from "./tickets";
 import { replaceSectionBlock } from "./sections";
 
 export function pathConflictGuardEnabled(): boolean {
-  return !["off", "0", "false", "no"].includes(String(process.env.AUTOFLOW_PATH_CONFLICT_CHECK || "on").toLowerCase());
+  return pathConflictMode() !== "off";
+}
+
+export function pathConflictMode(): "files" | "strict" | "off" {
+  const explicitMode = String(process.env.AUTOFLOW_PATH_CONFLICT_MODE || "").trim().toLowerCase();
+  const raw = explicitMode || String(process.env.AUTOFLOW_PATH_CONFLICT_CHECK || "").trim().toLowerCase();
+  if (["off", "0", "false", "no", "disabled", "none"].includes(raw)) return "off";
+  if (["strict", "legacy", "directory", "directories", "dir"].includes(raw)) return "strict";
+  return "files";
 }
 
 export function collectTicketConflicts(candidateFile: string, inprogress: WorkerTicketItem[], runnerId: string): ConflictInfo[] {
@@ -15,7 +23,7 @@ export function collectTicketConflicts(candidateFile: string, inprogress: Worker
     if (ticketItemOwnedByRunner(other, runnerId)) continue;
     for (const a of candidatePaths) {
       for (const b of other.allowed_paths) {
-        if (!pathsOverlap(a, b)) continue;
+        if (!allowedPathsConflict(a, b)) continue;
         conflicts.push({
           path: `${a} <-> ${b}`,
           ticket: other.path,
@@ -25,6 +33,44 @@ export function collectTicketConflicts(candidateFile: string, inprogress: Worker
     }
   }
   return conflicts;
+}
+
+function boardPathPrefix(): string {
+  return path.basename(BOARD_ROOT) || ".autoflow";
+}
+
+function isBoardSidecarPath(raw: string): boolean {
+  const rel = normalizeRelPath(raw);
+  const prefix = boardPathPrefix();
+  return rel === prefix || rel.startsWith(`${prefix}/`) || rel === ".autoflow" || rel.startsWith(".autoflow/");
+}
+
+function pathLooksDirectoryScope(raw: string): boolean {
+  const text = String(raw || "").replace(/`/g, "").trim();
+  const rel = normalizeRelPath(text);
+  if (!rel) return false;
+  if (/[\/\\]$/.test(text)) return true;
+  try {
+    return fs.statSync(path.join(PROJECT_ROOT, rel)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function conflictComparablePath(raw: string): string {
+  const rel = normalizeRelPath(raw);
+  if (!rel || isBoardSidecarPath(rel)) return "";
+  if (pathConflictMode() === "files" && pathLooksDirectoryScope(raw)) return "";
+  return rel;
+}
+
+export function allowedPathsConflict(aRaw: string, bRaw: string): boolean {
+  const mode = pathConflictMode();
+  if (mode === "off") return false;
+  if (mode === "strict") return pathsOverlap(aRaw, bRaw);
+  const a = conflictComparablePath(aRaw);
+  const b = conflictComparablePath(bRaw);
+  return Boolean(a && b && a === b);
 }
 
 export function pathsOverlap(aRaw: string, bRaw: string): boolean {
@@ -44,7 +90,7 @@ export function isReadyWorktree(result: JsonObject): boolean {
     Boolean(result.working_root);
 }
 
-export function acquireDispatchLock(): { acquired: boolean; path: string; pid: number } {
+export function acquireDispatchLock(options: { waitMs?: number; pollMs?: number } = {}): { acquired: boolean; path: string; pid: number } {
   const lockDir = path.join(BOARD_ROOT, "runners", "state", "dispatch.lock");
   const pidFile = path.join(lockDir, "pid");
   fs.mkdirSync(path.dirname(lockDir), { recursive: true });
@@ -58,18 +104,29 @@ export function acquireDispatchLock(): { acquired: boolean; path: string; pid: n
       return false;
     }
   };
-  if (tryCreate()) return { acquired: true, path: lockDir, pid };
 
-  let heldPid = 0;
-  try { heldPid = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10); } catch {}
-  if (utils.pidAlive(heldPid)) return { acquired: false, path: lockDir, pid };
+  const tryReclaimStale = (): boolean => {
+    let heldPid = 0;
+    try { heldPid = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10); } catch {}
+    if (utils.pidAlive(heldPid)) return false;
+    let ageMs = 0;
+    try { ageMs = Date.now() - fs.statSync(lockDir).mtimeMs; } catch {}
+    if (ageMs < 30000) return false;
+    try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch {}
+    return tryCreate();
+  };
 
-  let ageMs = 0;
-  try { ageMs = Date.now() - fs.statSync(lockDir).mtimeMs; } catch {}
-  if (ageMs < 30000) return { acquired: false, path: lockDir, pid };
-
-  try { fs.rmSync(lockDir, { recursive: true, force: true }); } catch {}
-  return { acquired: tryCreate(), path: lockDir, pid };
+  const waitMs = Math.max(0, numberValue(options.waitMs));
+  const pollMs = Math.max(20, numberValue(options.pollMs) || 50);
+  const deadline = Date.now() + waitMs;
+  const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    if (tryCreate()) return { acquired: true, path: lockDir, pid };
+    if (tryReclaimStale()) return { acquired: true, path: lockDir, pid };
+    if (Date.now() >= deadline) return { acquired: false, path: lockDir, pid };
+    const sleepMs = Math.min(pollMs, Math.max(1, deadline - Date.now()));
+    Atomics.wait(sleepBuffer, 0, 0, sleepMs);
+  }
 }
 
 export function releaseDispatchLock(lock: { acquired: boolean; path: string; pid: number }): void {
@@ -121,18 +178,50 @@ export function ensureWorkerTicketWorktree(ticket: string): JsonObject {
   }
 
   git(["worktree", "prune"], gitRoot);
-  const baseCommit = git(["rev-parse", "--verify", "HEAD"], gitRoot).stdout.trim();
-  if (!baseCommit) {
+  const mainHead = git(["rev-parse", "--verify", "HEAD"], gitRoot).stdout.trim();
+  if (!mainHead) {
     replaceSectionBlock(ticket, "Worktree", "- Path:\n- Branch:\n- Base Commit:\n- Worktree Commit:\n- Integration Status: no_head_commit");
     return { worktree_status: "no_head_commit", working_root: "" };
   }
-
   const ticketId = idFromPath(ticket);
-  const branch = `autoflow/tickets_${ticketId}`;
+  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
+  const prdTrack = resolvePrdTrackBase(ticket, gitRoot, mainHead);
+  if (prdKey && prdTrack.source !== "prd_branch") {
+    const blockedStatus = prdTrack.source === "main_branch_missing"
+      ? "blocked_prd_branch_missing"
+      : "blocked_prd_worktree_unavailable";
+    replaceSectionBlock(
+      ticket,
+      "Worktree",
+      `- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: ${blockedStatus}`
+    );
+    return {
+      worktree_status: blockedStatus,
+      reason: prdTrack.source,
+      prd_key: prdKey,
+      working_root: "",
+    };
+  }
+
+  const prdTrackActive = prdTrack.source === "prd_branch" && Boolean(prdTrack.branch);
+  const branch = prdTrackActive ? prdTrack.branch : `autoflow/TODO-${ticketId}`;
+  const baseCommit = prdTrackActive ? prdTrack.base : mainHead;
   const existingPath = utils.ticketWorktreePathFromFile(ticket);
-  let worktreePath = existingPath && isGitWorktree(existingPath)
-    ? existingPath
-    : defaultTicketWorktreePath(ticketId, gitRoot);
+  const existingBranch = existingPath && isGitWorktree(existingPath)
+    ? git(["symbolic-ref", "--short", "HEAD"], existingPath).stdout.trim()
+    : "";
+  const prdWorktreePath = prdTrackActive
+    ? checkedOutWorktreePathForBranch(gitRoot, branch) || ticketWorktreePath("prd", prdIdFromKey(prdKey), gitRoot)
+    : "";
+  let worktreePath = prdTrackActive
+    ? (existingBranch === branch ? existingPath : prdWorktreePath)
+    : existingPath && isGitWorktree(existingPath)
+      ? existingPath
+      : defaultTicketWorktreePath(ticketId, gitRoot);
   fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
 
   if (!isGitWorktree(worktreePath)) {
@@ -149,6 +238,14 @@ export function ensureWorkerTicketWorktree(ticket: string): JsonObject {
   }
 
   const actualBranch = git(["symbolic-ref", "--short", "HEAD"], worktreePath).stdout.trim() || branch;
+  if (actualBranch !== branch) {
+    fail(1, "worktree branch does not match ticket policy", {
+      ticket: boardRel(ticket),
+      expected_branch: branch,
+      actual_branch: actualBranch,
+      worktree_path: worktreePath,
+    });
+  }
   const existingBase = stripTicks(utils.extractScalarFieldInSection(ticket, "Worktree", "Base Commit"));
   const existingCommit = stripTicks(utils.extractScalarFieldInSection(ticket, "Worktree", "Worktree Commit"));
   let integrationStatus = utils.extractScalarFieldInSection(ticket, "Worktree", "Integration Status") || "pending";
@@ -192,16 +289,196 @@ export function worktreeModeDisabled(): boolean {
 }
 
 export function defaultTicketWorktreePath(ticketId: string, gitRoot: string): string {
+  return ticketWorktreePath("todo", ticketId, gitRoot);
+}
+
+function worktreeCacheRoot(gitRoot: string): string {
   const configured = process.env.AUTOFLOW_WORKTREE_ROOT;
-  if (configured) return path.join(path.resolve(configured), `tickets_${ticketId}`);
-  const repoName = path.basename(gitRoot);
+  if (configured) return path.resolve(configured);
   const home = process.env.HOME || "";
-  let cacheRoot = "";
-  if (process.env.XDG_CACHE_HOME) cacheRoot = path.join(process.env.XDG_CACHE_HOME, "autoflow", "worktrees");
-  else if (home && process.platform === "darwin") cacheRoot = path.join(home, "Library", "Caches", "autoflow", "worktrees");
-  else if (home) cacheRoot = path.join(home, ".cache", "autoflow", "worktrees");
-  else cacheRoot = path.join(path.dirname(gitRoot), ".autoflow-worktrees");
-  return path.join(cacheRoot, repoName, `tickets_${ticketId}`);
+  if (process.env.XDG_CACHE_HOME) return path.join(process.env.XDG_CACHE_HOME, "autoflow", "worktrees");
+  if (home && process.platform === "darwin") return path.join(home, "Library", "Caches", "autoflow", "worktrees");
+  if (home) return path.join(home, ".cache", "autoflow", "worktrees");
+  return path.join(path.dirname(gitRoot), ".autoflow-worktrees");
+}
+
+export function ticketWorktreePath(kind: "prd" | "todo", id: string, gitRoot: string): string {
+  const cacheRoot = worktreeCacheRoot(gitRoot);
+  const configured = process.env.AUTOFLOW_WORKTREE_ROOT;
+  const folder = kind === "prd" ? `prd-${id}` : `TODO-${id}`;
+  if (configured) return path.join(cacheRoot, folder);
+  const repoName = path.basename(gitRoot);
+  return path.join(cacheRoot, repoName, folder);
+}
+
+export type TicketWorktreeResult = {
+  status: "created" | "updated" | "unchanged" | "skipped";
+  reason?: string;
+  branch: string;
+  baseCommit: string;
+  worktreePath: string;
+  ticketRelPath: string;
+  ticketAbsPath: string;
+  commit?: string;
+};
+
+/**
+ * Provision (or reuse) a branch + worktree for a ticket and commit the ticket
+ * markdown into that worktree. PRD-backed TODOs do not get their own TODO
+ * worktree; they are written into the parent PRD worktree so one worker can
+ * finish the whole PRD as a single squash merge.
+ */
+export function ensureTicketWorktree(opts: {
+  id: string;
+  kind: "prd" | "todo";
+  content: string;
+  prdKey?: string;          // todo only — points at the parent PRD worktree
+  commitMessage?: string;   // override default `[KIND-id] init/update`
+}): TicketWorktreeResult {
+  const gitRoot = utils.gitRootPath(PROJECT_ROOT);
+  if (!gitRoot) {
+    return {
+      status: "skipped",
+      reason: "not_git_repo",
+      branch: "",
+      baseCommit: "",
+      worktreePath: "",
+      ticketRelPath: "",
+      ticketAbsPath: "",
+    };
+  }
+
+  const prdTodoId = opts.kind === "todo" && opts.prdKey ? prdIdFromKey(opts.prdKey) : "";
+  const branch = opts.kind === "prd"
+    ? `autoflow/prd-${opts.id}`
+    : prdTodoId ? `autoflow/prd-${prdTodoId}` : `autoflow/TODO-${opts.id}`;
+  const worktreePath = opts.kind === "todo" && prdTodoId
+    ? ticketWorktreePath("prd", prdTodoId, gitRoot)
+    : ticketWorktreePath(opts.kind, opts.id, gitRoot);
+
+  // Resolve base: PRD-backed TODOs always use the PRD branch HEAD; direct
+  // atodo TODOs and PRDs use the current project HEAD.
+  let baseCommit = git(["rev-parse", "--verify", "HEAD"], gitRoot).stdout.trim();
+  if (opts.kind === "todo" && prdTodoId) {
+    if (!gitBranchExists(gitRoot, branch)) {
+      return {
+        status: "skipped",
+        reason: "prd_branch_missing",
+        branch,
+        baseCommit: "",
+        worktreePath: "",
+        ticketRelPath: "",
+        ticketAbsPath: "",
+      };
+    }
+    const sha = git(["rev-parse", "--verify", branch], gitRoot).stdout.trim();
+    if (sha) baseCommit = sha;
+  }
+  if (!baseCommit) {
+    return {
+      status: "skipped",
+      reason: "no_base_commit",
+      branch,
+      baseCommit: "",
+      worktreePath: "",
+      ticketRelPath: "",
+      ticketAbsPath: "",
+    };
+  }
+
+  // Create branch if missing. PRD-backed TODOs never create a TODO branch.
+  if (opts.kind === "prd" && !gitBranchExists(gitRoot, branch)) {
+    const create = git(["branch", branch, baseCommit], gitRoot);
+    if (create.status !== 0) {
+      fail(1, "failed to create ticket branch", {
+        branch,
+        base_commit: baseCommit,
+        stderr: create.stderr,
+      });
+    }
+  }
+  if (opts.kind === "todo" && !prdTodoId && !gitBranchExists(gitRoot, branch)) {
+    const create = git(["branch", branch, baseCommit], gitRoot);
+    if (create.status !== 0) {
+      fail(1, "failed to create ticket branch", {
+        branch,
+        base_commit: baseCommit,
+        stderr: create.stderr,
+      });
+    }
+  }
+
+  // Ensure worktree.
+  git(["worktree", "prune"], gitRoot);
+  if (!isGitWorktree(worktreePath)) {
+    if (fs.existsSync(worktreePath) && fs.readdirSync(worktreePath).length > 0) {
+      fail(1, `worktree path exists but is not a git worktree: ${worktreePath}`);
+    }
+    fs.mkdirSync(path.dirname(worktreePath), {recursive: true});
+    const add = git(["worktree", "add", worktreePath, branch], gitRoot);
+    if (add.status !== 0) {
+      fail(1, "git worktree add failed", {
+        worktree_path: worktreePath,
+        stderr: add.stderr,
+        stdout: add.stdout,
+      });
+    }
+  }
+
+  // Write ticket markdown inside the worktree and commit if changed.
+  const filename = opts.kind === "prd" ? `PRD-${opts.id}.md` : `TODO-${opts.id}.md`;
+  const ticketRel = path.posix.join(".autoflow", "tickets", opts.kind, filename);
+  const ticketAbs = path.join(worktreePath, ticketRel);
+  const ticketDir = path.dirname(ticketAbs);
+  fs.mkdirSync(ticketDir, {recursive: true});
+
+  let existing = "";
+  try { existing = fs.readFileSync(ticketAbs, "utf8"); } catch {}
+
+  const normalized = ensureTrailingNewline(opts.content);
+  if (existing === normalized) {
+    const headSha = git(["rev-parse", "--verify", "HEAD"], worktreePath).stdout.trim();
+    return {
+      status: "unchanged",
+      branch,
+      baseCommit,
+      worktreePath,
+      ticketRelPath: ticketRel,
+      ticketAbsPath: ticketAbs,
+      commit: headSha,
+    };
+  }
+
+  fs.writeFileSync(ticketAbs, normalized, "utf8");
+  const stage = git(["add", ticketRel], worktreePath);
+  if (stage.status !== 0) {
+    fail(1, "git add failed for ticket file", {
+      worktree_path: worktreePath,
+      ticket_rel: ticketRel,
+      stderr: stage.stderr,
+    });
+  }
+  const msg = opts.commitMessage || (existing
+    ? `[${opts.kind === "prd" ? "PRD" : "TODO"}-${opts.id}] ticket update`
+    : `[${opts.kind === "prd" ? "PRD" : "TODO"}-${opts.id}] ticket init`);
+  const commit = git(["commit", "-m", msg], worktreePath);
+  if (commit.status !== 0) {
+    fail(1, "git commit failed for ticket file", {
+      worktree_path: worktreePath,
+      ticket_rel: ticketRel,
+      stderr: commit.stderr,
+    });
+  }
+  const headSha = git(["rev-parse", "--verify", "HEAD"], worktreePath).stdout.trim();
+  return {
+    status: existing ? "updated" : "created",
+    branch,
+    baseCommit,
+    worktreePath,
+    ticketRelPath: ticketRel,
+    ticketAbsPath: ticketAbs,
+    commit: headSha,
+  };
 }
 
 export function isGitWorktree(dir: string): boolean {
@@ -210,6 +487,57 @@ export function isGitWorktree(dir: string): boolean {
 
 export function gitBranchExists(cwd: string, branch: string): boolean {
   return git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd).status === 0;
+}
+
+function checkedOutWorktreePathForBranch(gitRoot: string, branch: string): string {
+  let current = "";
+  for (const line of git(["worktree", "list", "--porcelain"], gitRoot).stdout.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) {
+      current = line.slice("worktree ".length).trim();
+      continue;
+    }
+    if (line === `branch refs/heads/${branch}`) return current;
+  }
+  return "";
+}
+
+export function resolvePrdTrackBase(
+  ticket: string,
+  gitRoot: string,
+  fallbackHead: string
+): { base: string; branch: string; source: "prd_branch" | "main" | "main_branch_missing" } {
+  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
+  if (!prdKey) return { base: fallbackHead, branch: "", source: "main" };
+  const prdId = prdIdFromKey(prdKey);
+  if (!prdId) return { base: fallbackHead, branch: "", source: "main" };
+  const prdFile = locatePrdFile(prdId);
+  if (!prdFile) return { base: fallbackHead, branch: "", source: "main" };
+  const branch = stripTicks(utils.extractScalarFieldInSection(prdFile, "Project", "Branch"));
+  if (!branch) return { base: fallbackHead, branch: "", source: "main" };
+  if (!gitBranchExists(gitRoot, branch)) {
+    return { base: fallbackHead, branch: "", source: "main_branch_missing" };
+  }
+  const sha = git(["rev-parse", "--verify", branch], gitRoot).stdout.trim();
+  if (!sha) return { base: fallbackHead, branch: "", source: "main" };
+  return { base: sha, branch, source: "prd_branch" };
+}
+
+function prdIdFromKey(raw: string): string {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return "";
+  const m = trimmed.match(/(?:PRD[-_]|prd_|project_)(\d+)/i);
+  if (m) return m[1].padStart(3, "0");
+  const numericOnly = trimmed.match(/^(\d+)$/);
+  if (numericOnly) return numericOnly[1].padStart(3, "0");
+  return "";
+}
+
+function locatePrdFile(prdId: string): string {
+  const active = path.join(TICKETS_ROOT, "prd", `PRD-${prdId}.md`);
+  if (fs.existsSync(active)) return active;
+  const archived = path.join(TICKETS_ROOT, "done", `PRD-${prdId}`, `PRD-${prdId}.md`);
+  if (fs.existsSync(archived)) return archived;
+  return "";
 }
 
 export function hydrateWorktreeDependencies(ticket: string, worktreePath: string): { status: string; links: string[] } {

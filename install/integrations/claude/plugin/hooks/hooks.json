@@ -1,0 +1,16 @@
+{
+  "description": "Autoflow Stop guard for Claude Code runners. Blocks turn end while role-owned work (worker ticket inprogress, todo waiting, verifier waiting, planner PRD pending, active context) remains. No-op when invoked outside an Autoflow PTY (env vars absent).",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/check-stop.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

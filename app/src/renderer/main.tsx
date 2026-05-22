@@ -47,7 +47,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -64,7 +63,6 @@ import { cn } from "@/lib/utils";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
-import geminiAppIcon from "./assets/agent-icons/gemini.png";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
@@ -100,7 +98,7 @@ function AlertBox({
   );
 }
 
-const ticketFolders = ["order", "prd", "todo", "inprogress", "done"] as const;
+const ticketFolders = ["prd", "todo", "inprogress", "done"] as const;
 const initialInstallProgressLabel = "설치 준비 중입니다.";
 
 function createRendererInvocationId(prefix: string) {
@@ -152,7 +150,7 @@ const wikiBotFlowStages = [
 ] as const;
 
 const plannerFlowStages = [
-  { key: "idle", label: "대기", meta: "order/prd 감시", icon: Layers3, tone: "flow-todo" },
+  { key: "idle", label: "대기", meta: "prd 감시", icon: Layers3, tone: "flow-todo" },
   { key: "planning", label: "계획", meta: "PRD 분해 / 재계획", icon: ClipboardList, tone: "flow-plan" },
   { key: "generating-todo", label: "티켓생성", meta: "todo 생성 완료", icon: CheckCircle2, tone: "flow-done" }
 ] as const;
@@ -166,21 +164,14 @@ type FlowStageDef = {
 };
 
 const fallbackFlowFolder = ".autoflow";
-const runnerAgentOptions = ["codex", "claude", "gemini"] as const;
+const runnerAgentOptions = ["codex", "claude"] as const;
 const runnerAgentModelOptions: Record<string, string[]> = {
-  codex: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"],
-  claude: ["opus", "opus[1m]", "claude-opus-4-6", "claude-opus-4-6[1m]", "sonnet", "sonnet[1m]"],
-  gemini: [
-    "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite"
-  ]
+  codex: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark"],
+  claude: ["opus", "sonnet"]
 };
 const runnerAgentReasoningOptions: Record<string, string[]> = {
   codex: ["low", "medium", "high", "xhigh"],
-  claude: ["low", "medium", "high", "xhigh", "max"],
-  gemini: []
+  claude: ["low", "medium", "high", "xhigh", "max"]
 };
 const runnerOptionLabels: Record<string, Record<string, string>> = {
   codex: {
@@ -191,23 +182,12 @@ const runnerOptionLabels: Record<string, Record<string, string>> = {
   },
   claude: {
     opus: "Opus 4.7",
-    "opus[1m]": "Opus 4.7 1M",
-    "opus-1m": "Opus 4.7 1M",
     sonnet: "Sonnet 4.6",
-    "sonnet[1m]": "Sonnet 4.6 1M",
-    "claude-opus-4-7": "Opus 4.7",
-    "claude-opus-4-7[1m]": "Opus 4.7 1M",
-    "claude-opus-4-6": "Opus 4.6",
-    "claude-opus-4-6[1m]": "Opus 4.6 1M",
-    "claude-opus-4-5": "Opus 4.5",
-    "claude-opus-4-1": "Opus 4.1",
-    "claude-opus-4-0": "Opus 4",
-    "claude-sonnet-4-6": "Sonnet 4.6",
-    "claude-sonnet-4-6[1m]": "Sonnet 4.6 1M",
-    "claude-sonnet-4-5": "Sonnet 4.5",
-    "claude-sonnet-4-0": "Sonnet 4",
-    "claude-3-7-sonnet": "Claude 3.7 Sonnet",
-    "claude-3-5-sonnet": "Claude 3.5 Sonnet",
+    "claude-opus-4-1-20250805": "Opus 4.1",
+    "claude-opus-4-20250514": "Opus 4",
+    "claude-sonnet-4-20250514": "Sonnet 4",
+    "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet",
+    "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet",
     low: "낮음",
     medium: "보통",
     high: "높음",
@@ -220,9 +200,9 @@ const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
 
 const settingsNavigation = [
-  { key: "progress", label: "AI", icon: Computer },
+  { key: "progress", label: "AI Agent", icon: Computer },
   { key: "kanban", label: "티켓", icon: KanbanSquare },
-  { key: "knowledge", label: "위키", icon: BookOpenText },
+  { key: "knowledge", label: "LLM위키", icon: BookOpenText },
   { key: "snapshot", label: "운영 통계", icon: BarChart3 }
 ] as const;
 
@@ -247,12 +227,6 @@ type RunnerConfigApplyPending = {
 
 type RunnerAuthChoice = "continue" | "cancel";
 type RunnerControlAction = "start" | "stop" | "restart";
-type StartupRulesKind = "common" | "role";
-type OpenStartupRulesHandler = (kind: StartupRulesKind, role?: string) => void;
-type StartupRulesLayerState = {
-  kind: StartupRulesKind;
-  role?: string;
-};
 type RunnerControlOptions = {
   force?: boolean;
 };
@@ -751,6 +725,20 @@ const statusLabels: Record<string, string> = {
   stale_pid: "오래된 PID",
   stale_pid_removed: "오래된 PID 제거됨",
   adapter_auth_required: "인증 필요",
+  active_get: "작업 상태 확인됨",
+  no_owned_inprogress_ticket: "담당 티켓 없음",
+  runner_has_active_ticket: "담당 티켓 처리 중",
+  worker_owned_ticket_pending: "담당 티켓 진행 대기",
+  worker_ticket_blocked: "티켓 보완 필요",
+  worker_ticket_waiting_for_verifier: "검증 러너 응답 대기",
+  worker_todo_blocked: "처리할 TODO 없음",
+  worker_todo_claimable: "처리 가능한 TODO 있음",
+  planner_handoff_turn_requested: "플래너 러너 호출 요청됨",
+  verifier_handoff_turn_requested: "검증 러너 호출 요청됨",
+  verifier_revision_requested: "검증 수정 요청 확인됨",
+  verifier_replan_requested: "검증 재계획 요청 확인됨",
+  worker_todo_handoff_turn_requested: "워커 러너 호출 요청됨",
+  wiki_handoff_turn_requested: "위키 러너 호출 요청됨",
   dry_run: "미리 실행",
   true: "사용",
   false: "중지"
@@ -799,6 +787,10 @@ function displayStatus(value: string) {
 
   if (normalized === "loop_stopped") {
     return "중지됨";
+  }
+
+  if (normalized === "runner_start_requested") {
+    return "시작 요청됨";
   }
 
   const adapterExit = normalized.match(/^adapter_exit_(\d+)$/);
@@ -862,26 +854,21 @@ function normalizeRunnerModelValue(agent: string, value: string) {
     return trimmed;
   }
 
-  if (trimmed === "opus-1m") {
-    return "opus[1m]";
-  }
-
-  if (trimmed === "sonnet-1m") {
-    return "sonnet[1m]";
-  }
-
   return trimmed;
 }
 
 function isPreferredClaudeModel(value: string) {
   const normalized = normalizeRunnerModelValue("claude", value).toLowerCase();
+  if (!normalized || normalized.includes("[1m]") || normalized.endsWith("-1m")) {
+    return false;
+  }
+  const officialFullName =
+    /^claude-(?:opus|sonnet)-\d+(?:-\d+)?-\d{8}$/.test(normalized) ||
+    /^claude-3-(?:5|7)-sonnet-\d{8}$/.test(normalized);
   return (
     normalized === "opus" ||
-    normalized === "opus[1m]" ||
     normalized === "sonnet" ||
-    normalized === "sonnet[1m]" ||
-    normalized.includes("opus") ||
-    normalized.includes("sonnet")
+    officialFullName
   );
 }
 
@@ -903,12 +890,12 @@ function displayRunnerOption(agent: string, value: string) {
 function runnerProfileForAgent(agent: string, installedAgentProfiles: InstalledAgentProfiles) {
   return (
     installedAgentProfiles[agent] || {
-      installed: false,
-      model: "",
-      reasoning: "",
-      supportsReasoning: agent !== "gemini"
-    }
-  );
+    installed: false,
+    model: "",
+    reasoning: "",
+    supportsReasoning: true
+  }
+);
 }
 
 function runnerModelChoices(agent: string, installedAgentProfiles: InstalledAgentProfiles, currentValue = "") {
@@ -1104,17 +1091,6 @@ function commandPreviewForRunner(
       .join(" ");
   }
 
-  if (draft.agent === "gemini") {
-    return [
-      "gemini --skip-trust --approval-mode yolo --include-directories",
-      shellArg(boardDirName),
-      "--prompt prompt",
-      model ? `--model ${shellArg(model)}` : ""
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
-
   return `autoflow run ${shellArg(role)} ${shellArg(projectRoot)} ${shellArg(boardDirName)} --runner ${shellArg(
     runner.id
   )}`;
@@ -1175,10 +1151,9 @@ function runnerIsEnabled(value: string) {
 }
 
 function recentLogs(board: AutoflowBoardSnapshot | null, limit: number | null = 16): DisplayLog[] {
-  const boardLogs = (board?.logs || []).map((log) => ({ ...log, source: "Board" as const }));
   const runnerLogs = (board?.runnerLogs || []).map((log) => ({ ...log, source: "Runner" as const }));
 
-  const sorted = [...boardLogs, ...runnerLogs].sort((a, b) =>
+  const sorted = [...runnerLogs].sort((a, b) =>
     String(b.modifiedAt || "").localeCompare(String(a.modifiedAt || ""))
   );
   return limit == null ? sorted : sorted.slice(0, limit);
@@ -1195,7 +1170,6 @@ function selectableBoardFiles(board: AutoflowBoardSnapshot | null) {
   ];
   return [
     ...ticketFiles,
-    ...(board.logs || []),
     ...(board.runnerLogs || []),
     ...(board.wikiFiles || []),
     ...(board.metricsFiles || []),
@@ -1339,9 +1313,9 @@ function wikiTitleFromPath(filePath: string) {
 function wikiKindFromPath(filePath: string) {
   const normalized = filePath.replace(/\\/g, "/").toLowerCase();
   if (normalized.includes("/decisions/")) return "wiki-decision";
-  if (normalized.includes("/features/")) return "wiki-feature";
   if (normalized.includes("/architecture")) return "wiki-architecture";
-  if (normalized.includes("/learnings/")) return "wiki-learning";
+  if (normalized.includes("/answers/")) return "wiki-answer";
+  if (normalized.includes("/operations/")) return "wiki-operation";
   if (normalized.includes("/tickets/done/")) return "ticket-done";
   if (normalized.includes("/tickets/reject/")) return "ticket-reject";
   if (normalized.includes("/conversations/")) return "handoff";
@@ -1360,9 +1334,9 @@ function formatWikiScore(value: number | null | undefined) {
 const WIKI_QUERY_KIND_LABEL: Record<string, string> = {
   wiki: "Wiki",
   "wiki-decision": "Wiki · Decision",
-  "wiki-feature": "Wiki · Feature",
   "wiki-architecture": "Wiki · Architecture",
-  "wiki-learning": "Wiki · Learning",
+  "wiki-answer": "Wiki · Answer",
+  "wiki-operation": "Wiki · Operation",
   "ticket-done": "Ticket · Done",
   "ticket-reject": "Ticket · Reject",
   handoff: "Handoff",
@@ -1392,24 +1366,15 @@ function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
 
-function runnerRecoveryInProgress(runner: AutoflowRunner) {
-  const activeStage = (runner.activeStage || "").toLowerCase();
-  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
-  return activeStage === "blocked" && ["repairing", "requeued"].includes(activeRecoveryStatus);
-}
-
 function runnersNeedingAttention(runners: AutoflowRunner[]) {
   return runners.filter((runner) => {
     if ((runner.enabled || "").toLowerCase() === "false") return false;
     const stateStatus = (runner.stateStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
-    const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const lastResult = (runner.lastResult || "").toLowerCase();
-    const recoveryInProgress = runnerRecoveryInProgress(runner);
     return (
       runnerHealthNeedsAttention(stateStatus) ||
-      (!recoveryInProgress && runnerHealthNeedsAttention(activeStage)) ||
-      runnerHealthNeedsAttention(activeRecoveryStatus) ||
+      runnerHealthNeedsAttention(activeStage) ||
       runnerHealthNeedsAttention(lastResult)
     );
   });
@@ -1422,8 +1387,6 @@ function runnerHealthToastKey(runners: AutoflowRunner[]) {
         runner.id,
         runner.stateStatus,
         runner.activeStage,
-        runner.activeRecoveryStatus,
-        runner.activeRecoveryFailureClass,
         runner.lastResult
       ].join(":")
     )
@@ -1431,13 +1394,12 @@ function runnerHealthToastKey(runners: AutoflowRunner[]) {
 }
 
 function runnerHealthToastMessage(unhealthy: AutoflowRunner[], allRunners: AutoflowRunner[]) {
-  // Single-flow design: verifier replan routes through order retry files,
-  // so raw failure_class / recovery_status / last_result are noise here. We
-  // only surface the runner display name and its top-level stateStatus
-  // (running / idle / blocked / failed) — actionable retry context lives in
-  // the order retry file itself.
+  // Single-flow design: verifier replan happens in-place on the PRD ticket,
+  // so raw last_result is noise here. We only surface the runner display name
+  // and its top-level stateStatus (running / idle / blocked / failed) —
+  // actionable retry context lives in the active ticket itself.
   const preview = unhealthy.slice(0, 3).map((runner) => {
-    const display = displayWorkflowRunnerId(runner.id, allRunners);
+    const display = displayAiAgentRunnerLabel(runner.id, allRunners);
     const status = runner.stateStatus ? displayStatus(runner.stateStatus) : "";
     return status ? `${display} — ${status}` : display;
   });
@@ -1501,18 +1463,11 @@ function App() {
   const [logPreview, setLogPreview] = React.useState<AutoflowFileContentResult | null>(null);
   const [isReadingLog, setIsReadingLog] = React.useState(false);
   const [logError, setLogError] = React.useState("");
-  const [startupRulesLayer, setStartupRulesLayer] = React.useState<StartupRulesLayerState | null>(null);
-  const [startupRulesContent, setStartupRulesContent] = React.useState<AutoflowFileContentResult | null>(null);
-  const [startupRulesDraft, setStartupRulesDraft] = React.useState("");
-  const [startupRulesLoading, setStartupRulesLoading] = React.useState(false);
-  const [startupRulesSaving, setStartupRulesSaving] = React.useState(false);
-  const [startupRulesError, setStartupRulesError] = React.useState("");
   const [setupError, setSetupError] = React.useState("");
   const [wikiError, setWikiError] = React.useState("");
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
   const [wikiQueryRunning, setWikiQueryRunning] = React.useState(false);
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
-  const [knowledgeDetailMode, setKnowledgeDetailMode] = React.useState<"database" | "document">("database");
   const [wikiDbSelectedTable, setWikiDbSelectedTable] = React.useState("wiki_chunks");
   const [wikiDbResult, setWikiDbResult] = React.useState<AutoflowWikiDatabaseResult | null>(null);
   const [wikiDbLoading, setWikiDbLoading] = React.useState(false);
@@ -1741,7 +1696,7 @@ function App() {
         // leave the in-flight flag stuck and freeze the auto-refresh loop.
         // loadBoard already routes the error to setSetupError when it can.
         if (typeof console !== "undefined") {
-          console.warn("autoflow.refreshSnapshot failed", error);
+          void error;
         }
       } finally {
         autoRefreshInFlightRef.current = false;
@@ -1765,15 +1720,14 @@ function App() {
     // Initial snapshot load.
     void refreshSnapshot();
 
-    // Event-driven refresh: main process pushes here when fs.watch sees
-    // a relevant change inside .autoflow/{tickets,runners/state,wiki/skills-local}.
+    // Event-driven refresh: main process pushes here when @parcel/watcher sees
+    // a relevant change inside .autoflow/{tickets,runners/state}.
     const offBoardChange = window.autoflow.onBoardChange(() => {
       scheduleRefresh();
     });
 
-    // Safety-net polling. fs.watch can miss events on edge cases (NFS,
-    // file moves into the tree from outside, brief watcher errors). 30s
-    // is rare enough to be cheap and catches anything the watcher dropped.
+    // Safety-net polling catches permission errors, native watcher failures, or
+    // other rare delivery gaps. 30s is rare enough to be cheap.
     const safetyInterval = window.setInterval(() => {
       void refreshSnapshot();
     }, 30000);
@@ -1921,7 +1875,6 @@ function App() {
     (table: string) => {
       if (!table || table === wikiDbSelectedTable) return;
       setWikiDbSelectedTable(table);
-      setKnowledgeDetailMode("database");
       void loadWikiDatabase(table);
     },
     [loadWikiDatabase, wikiDbSelectedTable]
@@ -2294,21 +2247,6 @@ function App() {
           reasoning: runner.reasoning || "",
           command: runner.command || ""
         };
-        if (runner && action === "stop" && (runner.enabled || "true") !== "false") {
-          const disableResult = await window.autoflow.configureRunner({
-            runnerId,
-            ...options,
-            config: {
-              enabled: "false"
-            }
-          });
-          if (!disableResult.ok) {
-            setRunnerError(disableResult.stderr || disableResult.stdout || "AI 중지 설정 저장에 실패했습니다.");
-            await loadBoard();
-            setRunnerAction(runnerId, "");
-            return;
-          }
-        }
         if (runner && (action === "start" || action === "restart")) {
           const currentRunnerDraft = runnerDraftFromRunner(runner);
           const draft = runnerDrafts[runner.id] || currentRunnerDraft;
@@ -2407,7 +2345,7 @@ function App() {
           ((refreshedRunner.stateStatus || "").toLowerCase() === "running" || Boolean(refreshedRunner.pid))
         ) {
           setRunnerAction(runnerId, "");
-          pushToast("success", `${displayWorkflowRunnerId(runnerId, refreshed?.runners)} runner에 재연결했습니다.`);
+          pushToast("success", `${displayAiAgentRunnerLabel(runnerId, refreshed?.runners)} runner에 재연결했습니다.`);
         }
       } catch (error) {
         setRunnerError(error instanceof Error ? error.message : "AI 작업에 실패했습니다.");
@@ -2427,92 +2365,6 @@ function App() {
       setRunnerAction
     ]
   );
-
-  const openStartupRules = React.useCallback(
-    async (kind: StartupRulesKind, role?: string) => {
-      if (!options.projectRoot) {
-        pushToast("warning", "프로젝트 루트가 설정되어 있지 않습니다.");
-        return;
-      }
-
-      const request = { kind, ...(role ? { role } : {}) };
-      setStartupRulesLayer(request);
-      setStartupRulesContent(null);
-      setStartupRulesDraft("");
-      setStartupRulesError("");
-      setStartupRulesLoading(true);
-      try {
-        const result = await window.autoflow.readStartupRules({
-          ...options,
-          ...request
-        });
-        if (!result.ok) {
-          setStartupRulesError(result.stderr || "시작 규칙 문서를 불러오지 못했습니다.");
-          return;
-        }
-
-        setStartupRulesContent(result);
-        setStartupRulesDraft(result.content || "");
-      } catch (error) {
-        setStartupRulesError(error instanceof Error ? error.message : "시작 규칙 문서를 불러오지 못했습니다.");
-      } finally {
-        setStartupRulesLoading(false);
-      }
-    },
-    [options, pushToast]
-  );
-
-  const startupRulesDirty = Boolean(
-    startupRulesLayer && startupRulesContent && startupRulesDraft !== startupRulesContent.content
-  );
-  const startupRulesCanSave = Boolean(
-    options.projectRoot &&
-    startupRulesLayer &&
-    startupRulesContent &&
-    startupRulesDirty &&
-    !startupRulesLoading &&
-    !startupRulesSaving
-  );
-
-  const closeStartupRulesLayer = React.useCallback(() => {
-    if (startupRulesDirty && !window.confirm("저장하지 않은 변경사항이 있습니다. 닫을까요?")) {
-      return;
-    }
-    setStartupRulesLayer(null);
-    setStartupRulesContent(null);
-    setStartupRulesDraft("");
-    setStartupRulesError("");
-    setStartupRulesLoading(false);
-    setStartupRulesSaving(false);
-  }, [startupRulesDirty]);
-
-  const saveStartupRules = React.useCallback(async () => {
-    if (!startupRulesCanSave || !startupRulesLayer) {
-      return;
-    }
-
-    setStartupRulesSaving(true);
-    setStartupRulesError("");
-    try {
-      const result = await window.autoflow.writeStartupRules({
-        ...options,
-        ...startupRulesLayer,
-        content: startupRulesDraft
-      });
-      if (!result.ok) {
-        setStartupRulesError(result.stderr || "시작 규칙 문서를 저장하지 못했습니다.");
-        return;
-      }
-
-      setStartupRulesContent(result);
-      setStartupRulesDraft(result.content || "");
-      pushToast("success", `${result.name || "시작 규칙 문서"}를 저장했습니다.`);
-    } catch (error) {
-      setStartupRulesError(error instanceof Error ? error.message : "시작 규칙 문서를 저장하지 못했습니다.");
-    } finally {
-      setStartupRulesSaving(false);
-    }
-  }, [options, pushToast, startupRulesCanSave, startupRulesDraft, startupRulesLayer]);
 
   const answerRunnerAuthPrompt = React.useCallback(
     async (choice: RunnerAuthChoice, runner: AutoflowRunner) => {
@@ -2549,7 +2401,7 @@ function App() {
         }
 
         const output = result.stdout || "";
-        const runnerLabel = displayWorkflowRunnerId(runner.id, board?.runners);
+        const runnerLabel = displayAiAgentRunnerLabel(runner.id, board?.runners);
         if (output.includes("auth_flow_already_running")) {
           pushToast("info", `${runnerLabel} 인증 처리가 이미 진행 중입니다.`);
         } else if (output.includes("auth_check_completed")) {
@@ -2593,17 +2445,6 @@ function App() {
       }
     },
     [options]
-  );
-
-  const readWikiLog = React.useCallback(
-    async (filePath: string) => {
-      if (!filePath) {
-        return;
-      }
-      setKnowledgeDetailMode("document");
-      await readLog(filePath);
-    },
-    [readLog]
   );
 
   const runRunner = React.useCallback(
@@ -2889,17 +2730,6 @@ function App() {
                       <Moon className="h-4 w-4" aria-hidden="true" />
                     )}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="settings-nav-startup-rule-button"
-                    title="공통 규칙 Markdown 편집"
-                    disabled={!options.projectRoot}
-                    onClick={() => void openStartupRules("common")}
-                  >
-                    <BookOpenText className="h-4 w-4" aria-hidden="true" />
-                    <span>공통 규칙</span>
-                  </Button>
                   {showInstallButton ? (
                     <Button
                       variant="outline"
@@ -3012,7 +2842,6 @@ function App() {
                       onRunnerAuthChoice={answerRunnerAuthPrompt}
                       onDraftChange={updateRunnerDraft}
                       onConfigure={saveRunnerConfig}
-                      onOpenStartupRules={openStartupRules}
                       onActionToast={pushToast}
                       onRequestRefresh={() => {
                         void loadBoard();
@@ -3038,81 +2867,20 @@ function App() {
               )}
 
               {!setupRequired && visibleSettingsSection === "knowledge" && (
-                <section className="dashboard-area" aria-label="Wiki">
-	                  <section className="board-section board-section-flush" aria-label="Wiki 본문">
-	                    <PageLayout
-	                      className="knowledge-page"
-	                      header={
-	                        <Tabs
-	                          value={knowledgeDetailMode}
-	                          onValueChange={(value) => {
-	                            const nextMode = value === "document" ? "document" : "database";
-	                            setKnowledgeDetailMode(nextMode);
-	                            if (nextMode === "database") {
-	                              void loadWikiDatabase(wikiDbSelectedTable);
-	                            }
-	                          }}
-	                        >
-	                          <TabsList className="knowledge-page-tabs" aria-label="위키 보기">
-	                            <TabsTrigger value="database">
-	                              <Database className="h-4 w-4" />
-	                              <span>DB</span>
-	                            </TabsTrigger>
-	                            <TabsTrigger value="document">
-	                              <BookOpenText className="h-4 w-4" />
-	                              <span>문서</span>
-	                            </TabsTrigger>
-	                          </TabsList>
-	                        </Tabs>
-	                      }
-	                    >
-	                      {knowledgeDetailMode === "database" ? (
-	                        <div className="knowledge-db-body">
-	                          <WikiDatabasePanel
-	                            result={wikiDbResult}
-	                            isLoading={wikiDbLoading}
-	                            error={wikiDbError}
-	                            selectedTable={wikiDbSelectedTable}
-	                            onSelectTable={selectWikiDatabaseTable}
-	                            onRefresh={() => void loadWikiDatabase(wikiDbSelectedTable)}
-	                          />
-	                        </div>
-	                      ) : (
-	                        <div className="knowledge-split">
-	                          <div className="tool-panel knowledge-list-pane">
-	                            <WikiQueryPanel
-	                              query={wikiQueryInput}
-	                              onQueryChange={setWikiQueryInput}
-	                              onSubmit={runWikiQuery}
-	                              onCancel={cancelWikiQuery}
-	                              onReset={resetWikiQuery}
-	                              isRunning={wikiQueryRunning}
-	                              result={wikiQueryResult}
-	                            />
-	                            {wikiQueryResult ? (
-	                              <WikiQueryResultsList
-	                                result={wikiQueryResult}
-	                                selectedPath={selectedLogPath}
-	                                onSelect={readWikiLog}
-	                              />
-	                            ) : wikiQueryRunning ? (
-	                              <div className="empty-panel knowledge-list">검색 중입니다</div>
-	                            ) : (
-	                              <WikiList board={board} selectedPath={selectedLogPath} onSelect={readWikiLog} />
-	                            )}
-	                          </div>
-	                          <div className="knowledge-preview-pane">
-	                            <LogPreview
-	                              preview={logPreview}
-	                              isLoading={isReadingLog}
-	                              error={logError}
-	                              fallbackTitle=""
-	                              emptyMessage="선택된 문서가 없습니다"
-	                            />
-	                          </div>
-	                        </div>
-	                      )}
-	                    </PageLayout>
+                <section className="dashboard-area" aria-label="LLM위키">
+                  <section className="board-section board-section-flush" aria-label="LLM위키 본문">
+                    <PageLayout className="knowledge-page">
+                      <div className="knowledge-db-body">
+                        <WikiDatabasePanel
+                          result={wikiDbResult}
+                          isLoading={wikiDbLoading}
+                          error={wikiDbError}
+                          selectedTable={wikiDbSelectedTable}
+                          onSelectTable={selectWikiDatabaseTable}
+                          onRefresh={() => void loadWikiDatabase(wikiDbSelectedTable)}
+                        />
+                      </div>
+                    </PageLayout>
                   </section>
                 </section>
               )}
@@ -3170,19 +2938,6 @@ function App() {
           </div>
         </div>
       ) : null}
-      <StartupRulesEditorLayer
-        layer={startupRulesLayer}
-        content={startupRulesContent}
-        draft={startupRulesDraft}
-        loading={startupRulesLoading}
-        saving={startupRulesSaving}
-        error={startupRulesError}
-        dirty={startupRulesDirty}
-        canSave={startupRulesCanSave}
-        onDraftChange={setStartupRulesDraft}
-        onSave={saveStartupRules}
-        onClose={closeStartupRulesLayer}
-      />
       <FullPageLoading open={showGlobalLoading} label={globalLoadingLabel} />
       {globalToast ? (
         <div className="af-toast-region" aria-live="polite">
@@ -3325,7 +3080,7 @@ function EssentialApp() {
         await loadBoard();
       } catch (error) {
         if (typeof console !== "undefined") {
-          console.warn("autoflow.refreshSnapshot failed", error);
+          void error;
         }
       } finally {
         autoRefreshInFlightRef.current = false;
@@ -4078,7 +3833,7 @@ function runnerLoginMessage(runner: AutoflowRunner) {
 }
 
 function runnerCanContinueAuth(runner: AutoflowRunner) {
-  return runnerNeedsLogin(runner) && !runner.authProviderBlocked && (runner.agent || "").toLowerCase() === "gemini";
+  return false;
 }
 
 const ansiConverter = new AnsiToHtml({
@@ -5155,9 +4910,8 @@ function ReportingDashboard({
   }).length;
   const runnerBlocked = runners.filter((runner) => {
     const status = (runner.stateStatus || "").toLowerCase();
-    const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
-    return status === "blocked" || status === "failed" || recoveryStatus === "needs_user" || activeStage === "blocked";
+    return status === "blocked" || status === "failed" || activeStage === "blocked";
   }).length;
   const runnerEnabled = runners.filter((runner) => runnerIsEnabled(runner.enabled)).length;
   const tokenHourlyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_token_hourly_24h_json", "[]"))
@@ -5173,12 +4927,10 @@ function ReportingDashboard({
   );
   const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
   const runnerNeedUser = runners.filter((runner) => {
-    const recoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
     const activeStage = (runner.activeStage || "").toLowerCase();
-    return recoveryStatus === "needs_user" || activeStage === "blocked";
+    return activeStage === "blocked";
   }).length;
   const ticketBreakdown = [
-    { label: "주문", value: board?.tickets.order?.length || 0 },
     { label: "PRD", value: board?.tickets.prd?.length || 0 },
     { label: "대기", value: board?.tickets.todo?.length || 0 },
     { label: "진행", value: board?.tickets.inprogress?.length || 0 },
@@ -5558,9 +5310,9 @@ type WorkflowFileEntry = AutoflowFilePreview & {
   displayName?: string;
 };
 
-type TicketWorkspaceTabKey = "prd" | "order" | "todo";
-type TicketWorkspaceStatusKey = "prd" | "order" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done";
-type TicketWorkspaceItemKind = "prd" | "order" | "ticket";
+type TicketWorkspaceTabKey = "prd" | "todo" | "coverage";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done";
+type TicketWorkspaceItemKind = "prd" | "ticket";
 type TicketKanbanFolderKey = string;
 type TicketPriority = "critical" | "high" | "normal" | "low";
 
@@ -5585,45 +5337,30 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketKanbanFolderOrder = ["order", "prd", "todo", "inprogress", "done"] as const;
+const ticketKanbanFolderOrder = ["prd", "todo", "inprogress", "done"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
   description: string;
 }> = [
-  { key: "order", label: "Order", description: "빠른 오더 intake" },
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
-  { key: "todo", label: "TODO", description: "TODO 작업 티켓" }
+  { key: "todo", label: "TODO", description: "TODO 작업 티켓" },
+  { key: "coverage", label: "맵", description: "PRD ↔ TODO 커버리지" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
   label: string;
   description: string;
 }> = {
   prd: { label: "PRD", description: "PRD 대기" },
-  order: { label: "Order", description: "오더 대기" },
   todo: { label: "TODO", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "Worker가 처리중" },
   done: { label: "완료", description: "완료 기록" }
 };
 
 function workflowFileDisplayName(name: string) {
-  const stem = name.replace(/\.md$/, "");
-  if (stem.startsWith("prd_")) {
-    return stem.replace(/^prd_/, "PRD-");
-  }
-  if (stem.startsWith("project_")) {
-    return stem.replace(/^project_/, "PRD-");
-  }
-  if (stem.startsWith("order_")) {
-    return stem.replace(/^order_/, "Order-");
-  }
-  if (stem.startsWith("Todo-")) {
-    return stem;
-  }
-  if (stem.startsWith("tickets_")) {
-    return stem.replace(/^tickets_/, "Todo-");
-  }
-  return stem;
+  // Filenames are stored in the new PRD-NNN.md / TODO-NNN.md convention, so
+  // the stem is already the display id.
+  return name.replace(/\.md$/, "");
 }
 
 function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
@@ -5631,7 +5368,7 @@ function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
 }
 
 function numericIdFromBoardFile(file: AutoflowFilePreview) {
-  const match = file.name.match(/^(?:Todo-|tickets_|order_|prd_|project_)(\d+)(?:_retry_.*)?\.md$/i);
+  const match = file.name.match(/^(?:PRD|TODO)-(\d+)(?:_retry_.*)?\.md$/);
   return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
 }
 
@@ -5724,15 +5461,7 @@ function isPrdBoardFile(file: AutoflowFilePreview) {
 }
 
 function isTicketBoardFile(file: AutoflowFilePreview) {
-  return /^Todo-\d+\.md$/i.test(file.name) || /^tickets_\d+\.md$/i.test(file.name);
-}
-
-function isOrderBoardFile(file: AutoflowFilePreview) {
-  return /^order_\d+(?:_retry_\d+_[A-Za-z0-9T.:-]+)?\.md$/i.test(file.name);
-}
-
-function isOrderQueueBoardFile(file: AutoflowFilePreview) {
-  return isOrderBoardFile(file) && boardPath(file.filePath).includes("/tickets/order/");
+  return /^TODO-\d+\.md$/i.test(file.name) || /^TODO-\d+\.md$/i.test(file.name);
 }
 
 function markdownScalar(content: string, labels: string[]) {
@@ -5754,6 +5483,22 @@ function markdownSectionPreview(content: string, heading: string) {
     .find((line) => line && !line.startsWith("#")) || "";
 }
 
+function stripWorkflowTitlePrefix(value: string) {
+  let title = String(value || "").trim();
+  for (let i = 0; i < 3; i += 1) {
+    const next = title
+      .replace(/^(?:PRD|Project)\s+(?:(?:prd|project)[_-])?\d+\s*:\s*/i, "")
+      .replace(/^(?:(?:prd|project)[_-])\d+\s*:\s*/i, "")
+      .replace(/^(?:Todo|TODO|Ticket)\s*(?:(?:Todo|tickets)[_-])?\d+\s*:\s*/i, "")
+      .replace(/^Todo[-_]\d+\s*:\s*/i, "")
+      .replace(/^tickets[_-]\d+\s*:\s*/i, "")
+      .trim();
+    if (next === title) break;
+    title = next;
+  }
+  return title;
+}
+
 function projectKeyFromBoardFile(file: AutoflowFilePreview, content: string) {
   return (
     markdownScalar(content, ["Project Key", "PRD Key"]) ||
@@ -5766,9 +5511,6 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   const normalized = boardPath(file.filePath);
   if (isPrdBoardFile(file)) {
     return "prd";
-  }
-  if (isOrderQueueBoardFile(file)) {
-    return "order";
   }
   if (!isTicketBoardFile(file)) {
     return null;
@@ -5796,10 +5538,6 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return boardPath(file.filePath).includes("/tickets/prd/") ? "PRD" : "보관 PRD";
   }
 
-  if (statusKey === "order") {
-    return markdownScalar(content, ["Status"]) || "Order";
-  }
-
   if (statusKey === "blocked") {
     return "막힘";
   }
@@ -5817,7 +5555,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "order" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
     todo: "발급됨",
     done: "완료"
   };
@@ -5840,7 +5578,9 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
   const id = markdownScalar(content, ["ID"]) || workflowFileDisplayName(file.name);
   const ai = markdownScalar(content, ["AI", "Execution AI", "Worker"]);
   const claimedBy = markdownScalar(content, ["Claimed By"]);
-  const title = markdownScalar(content, ["Title"]) || markdownSectionPreview(content, "Request") || file.title || file.name;
+  const title = stripWorkflowTitlePrefix(
+    markdownScalar(content, ["Title"]) || markdownSectionPreview(content, "Request") || file.title || file.name
+  );
   const stage = markdownScalar(content, ["Stage"]);
   const fileStatusKey = ticketWorkspaceStatusForFile(file) || "todo";
   const statusKey = fileStatusKey === "inprogress" && stage.toLowerCase() === "blocked" ? "blocked" : fileStatusKey;
@@ -5877,16 +5617,8 @@ function prdWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
   return sortFilesByModifiedAt(files);
 }
 
-function orderWorkspaceFiles(board: AutoflowBoardSnapshot | null) {
-  const files = Object.values(board?.tickets || {}).flatMap((folderFiles) =>
-    folderFiles.filter(isOrderBoardFile)
-  );
-
-  return sortFilesByModifiedAt(files);
-}
-
 function ticketWorkspaceTabFromStorage(value: string | null): TicketWorkspaceTabKey {
-  if (value === "inbox") return "order";
+  if (value === "order" || value === "inbox") return "prd";
   if (value === "issued") return "todo";
   return ticketWorkspaceTabs.some((tab) => tab.key === value) ? (value as TicketWorkspaceTabKey) : "todo";
 }
@@ -5910,7 +5642,7 @@ function resolveTicketWorkspaceDetailItem(
   if (exactItem) return exactItem;
 
   const activeName = boardFileNameFromPath(activeDetailPath);
-  const movedTicket = /^Todo-\d+\.md$/i.test(activeName) || activeName.startsWith("tickets_")
+  const movedTicket = /^TODO-\d+\.md$/i.test(activeName) || activeName.startsWith("tickets_")
     ? items.find((item) => item.kind === "ticket" && item.name === activeName)
     : null;
 
@@ -5932,7 +5664,7 @@ function TicketDetailLayer({
   onOpenChange: (open: boolean) => void;
   onClose: () => void;
 }) {
-  const ItemIcon = item?.kind === "prd" ? ClipboardCheck : item?.kind === "order" ? Inbox : ClipboardList;
+  const ItemIcon = item?.kind === "prd" ? ClipboardCheck : ClipboardList;
   const metaRows = item
     ? [
         ["ID", item.id || item.displayId],
@@ -6040,9 +5772,6 @@ function ticketWorkspaceItemKindForFile(file: AutoflowFilePreview): TicketWorksp
   if (isPrdBoardFile(file)) {
     return "prd";
   }
-  if (isOrderBoardFile(file)) {
-    return "order";
-  }
   return "ticket";
 }
 
@@ -6051,17 +5780,13 @@ function TicketWorkspaceKanbanView({
   options,
   runners,
   defaultFolders,
-  ariaLabel = "폴더 기준 칸반",
-  onActionToast,
-  onRequestRefresh
+  ariaLabel = "폴더 기준 칸반"
 }: {
   files: AutoflowFilePreview[];
   options?: WorkflowBoardOptions;
   runners?: AutoflowRunner[];
   defaultFolders?: readonly string[];
   ariaLabel?: string;
-  onActionToast?: (severity: AlertSeverity, message: string) => void;
-  onRequestRefresh?: () => Promise<void> | void;
 }) {
   const [metaByPath, setMetaByPath] = React.useState<Record<string, TicketWorkspaceItemMeta>>({});
   const [activeDetailPath, setActiveDetailPath] = React.useState("");
@@ -6070,9 +5795,6 @@ function TicketWorkspaceKanbanView({
   const [detailContentPath, setDetailContentPath] = React.useState("");
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
-  const [deleteTarget, setDeleteTarget] = React.useState<TicketWorkspaceItem | null>(null);
-  const [deleteInProgress, setDeleteInProgress] = React.useState(false);
-  const [deleteError, setDeleteError] = React.useState("");
   const itemButtonRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
 
   React.useEffect(() => {
@@ -6100,7 +5822,7 @@ function TicketWorkspaceKanbanView({
       for (const { file, result } of results) {
         const fallbackKey: TicketWorkspaceStatusKey =
           ticketWorkspaceStatusForFile(file) ||
-          (isOrderBoardFile(file) ? "order" : isPrdBoardFile(file) ? "prd" : "todo");
+          (isPrdBoardFile(file) ? "prd" : "todo");
         nextMeta[file.filePath] = result.ok
           ? extractTicketWorkspaceMeta(file, result.content || "", runners)
           : {
@@ -6138,7 +5860,7 @@ function TicketWorkspaceKanbanView({
         const itemKind = ticketWorkspaceItemKindForFile(file);
         const fallbackKey: TicketWorkspaceStatusKey =
           ticketWorkspaceStatusForFile(file) ||
-          (itemKind === "order" ? "order" : itemKind === "prd" ? "prd" : "todo");
+          (itemKind === "prd" ? "prd" : "todo");
         const statusKey = meta?.statusKey || fallbackKey;
         return {
           ...file,
@@ -6187,6 +5909,12 @@ function TicketWorkspaceKanbanView({
     }
   }, [activeDetailItem, activeDetailPath]);
 
+  // Fetch the detail body once per file path. Board polling produces fresh item
+  // references every tick, so path + scoped options are the stable inputs.
+  const activeDetailFilePath = activeDetailItem?.filePath || "";
+  const optionsProjectRoot = options?.projectRoot || "";
+  const optionsBoardDirName = options?.boardDirName || "";
+
   const closeDetailLayer = React.useCallback(() => {
     const previousPath = activeDetailPath;
     setActiveDetailPath("");
@@ -6210,68 +5938,7 @@ function TicketWorkspaceKanbanView({
     setActiveDetailPath(filePath);
   }, [items]);
 
-  const requestDelete = React.useCallback((item: TicketWorkspaceItem) => {
-    setDeleteError("");
-    setDeleteTarget(item);
-  }, []);
-
-  const closeDeleteDialog = React.useCallback(() => {
-    if (deleteInProgress) return;
-    setDeleteTarget(null);
-    setDeleteError("");
-  }, [deleteInProgress]);
-
-  const confirmDelete = React.useCallback(async () => {
-    if (!deleteTarget || !options?.projectRoot) {
-      setDeleteError("삭제 대상을 찾을 수 없습니다.");
-      return;
-    }
-
-    if (!isOrderQueueBoardFile(deleteTarget)) {
-      const message = "대기 Order 항목만 삭제할 수 있습니다.";
-      setDeleteError(message);
-      onActionToast?.("warning", message);
-      return;
-    }
-
-    setDeleteInProgress(true);
-    setDeleteError("");
-    try {
-      const result = await window.autoflow.deleteOrderFile({
-        ...options,
-        filePath: deleteTarget.filePath
-      });
-      if (!result.ok) {
-        const message = result.stderr || "삭제에 실패했습니다.";
-        setDeleteError(message);
-        onActionToast?.("error", message);
-        return;
-      }
-
-      onActionToast?.("success", `${deleteTarget.displayId} 삭제를 완료했습니다.`);
-      if (activeDetailPath === deleteTarget.filePath) {
-        closeDetailLayer();
-      }
-      setDeleteTarget(null);
-      setDeleteError("");
-      await onRequestRefresh?.();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "삭제 중 오류가 발생했습니다.";
-      setDeleteError(message);
-      onActionToast?.("error", message);
-    } finally {
-      setDeleteInProgress(false);
-    }
-  }, [activeDetailPath, closeDetailLayer, deleteTarget, onActionToast, onRequestRefresh, options]);
-
-  // Fetch the detail body once per *file path* — not per render. board polling
-  // produces a fresh `activeDetailItem` reference every tick, which used to
-  // re-trigger this effect and clear `detailContent` mid-view, causing the
-  // panel body to blink. Depending on filePath + scoped options keeps the
-  // fetch idempotent for the open ticket.
-  const activeDetailFilePath = activeDetailItem?.filePath || "";
-  const optionsProjectRoot = options?.projectRoot || "";
-  const optionsBoardDirName = options?.boardDirName || "";
+  // Keep source fetch idempotent for the open ticket.
   React.useEffect(() => {
     let cancelled = false;
 
@@ -6354,8 +6021,6 @@ function TicketWorkspaceKanbanView({
                     <div className="ticket-kanban-card-list">
                       {columnItems.map((item) => {
                         const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
-                        const canDelete = isOrderQueueBoardFile(item);
-                        const isDeletingThis = deleteTarget?.filePath === item.filePath;
                         const showPriorityBadge = item.priority === "critical" || item.priority === "high";
                         return (
                           <div
@@ -6388,24 +6053,6 @@ function TicketWorkspaceKanbanView({
                                   </Badge>
                                 ) : null}
                                 <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
-                                {canDelete ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="ticket-kanban-card-delete-button"
-                                    disabled={isDeletingThis && deleteInProgress}
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      requestDelete(item);
-                                    }}
-                                    title={`${item.displayId} 삭제`}
-                                    aria-label={`${item.displayId} 삭제`}
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                                  </Button>
-                                ) : null}
                               </span>
                             </span>
                             <strong>{item.title}</strong>
@@ -6434,57 +6081,6 @@ function TicketWorkspaceKanbanView({
         }}
         onClose={closeDetailLayer}
       />
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeDeleteDialog();
-          }
-        }}
-      >
-        <DialogContent
-          className="workflow-pin-layer-panel ticket-delete-confirm-dialog"
-          overlayClassName="workflow-pin-layer-overlay"
-          keepMounted
-          aria-describedby={undefined}
-        >
-          {deleteTarget ? (
-            <>
-              <div className="workflow-pin-layer-header">
-                <div className="workflow-pin-layer-heading">
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  <DialogTitle asChild>
-                    <strong>Order 항목 삭제 확인</strong>
-                  </DialogTitle>
-                </div>
-              </div>
-              <div className="ticket-delete-confirm-body">
-                <DialogDescription>
-                  삭제 대상 파일: <strong>{deleteTarget.displayId}</strong>
-                  <br />
-                  {deleteTarget.filePath}
-                </DialogDescription>
-                <p>이 항목을 삭제하면 파일이 즉시 제거되며, 되돌릴 수 없습니다.</p>
-                {deleteError ? <div className="workflow-pin-detail-error">{deleteError}</div> : null}
-                <div className="ticket-delete-confirm-actions">
-                  <Button type="button" variant="outline" size="sm" onClick={closeDeleteDialog} disabled={deleteInProgress}>
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => void confirmDelete()}
-                    disabled={deleteInProgress}
-                  >
-                    {deleteInProgress ? "삭제 중..." : "삭제"}
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -6492,8 +6088,6 @@ function TicketWorkspaceKanbanView({
 function WorkflowPinLayer({
   files,
   options,
-  onActionToast,
-  onRequestRefresh,
   pinTitle,
   pinSubtitle,
   pinIcon,
@@ -6504,8 +6098,6 @@ function WorkflowPinLayer({
 }: {
   files: WorkflowFileEntry[];
   options?: WorkflowBoardOptions;
-  onActionToast?: (severity: AlertSeverity, message: string) => void;
-  onRequestRefresh?: () => Promise<void> | void;
   pinTitle: string;
   pinSubtitle?: string;
   pinIcon: React.ReactNode;
@@ -6519,9 +6111,6 @@ function WorkflowPinLayer({
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
   const [detailError, setDetailError] = React.useState("");
-  const [deleteTarget, setDeleteTarget] = React.useState<WorkflowFileEntry | null>(null);
-  const [deleteInProgress, setDeleteInProgress] = React.useState(false);
-  const [deleteError, setDeleteError] = React.useState("");
 
   const closeLayer = React.useCallback(() => {
     setLayerOpen(false);
@@ -6575,60 +6164,6 @@ function WorkflowPinLayer({
     },
     [options]
   );
-
-  const closeDeleteDialog = React.useCallback(() => {
-    if (deleteInProgress) return;
-    setDeleteTarget(null);
-    setDeleteError("");
-  }, [deleteInProgress]);
-
-  const requestDelete = React.useCallback((file: WorkflowFileEntry) => {
-    setDeleteError("");
-    setDeleteTarget(file);
-  }, []);
-
-  const confirmDelete = React.useCallback(async () => {
-    if (!deleteTarget || !options?.projectRoot) {
-      setDeleteError("삭제 대상을 찾을 수 없습니다.");
-      return;
-    }
-    if (!isOrderQueueBoardFile(deleteTarget)) {
-      const message = "대기 Order 항목만 삭제할 수 있습니다.";
-      setDeleteError(message);
-      onActionToast?.("warning", message);
-      return;
-    }
-
-    setDeleteInProgress(true);
-    setDeleteError("");
-    try {
-      const result = await window.autoflow.deleteOrderFile({
-        ...options,
-        filePath: deleteTarget.filePath
-      });
-      if (!result.ok) {
-        const message = result.stderr || "삭제에 실패했습니다.";
-        setDeleteError(message);
-        onActionToast?.("error", message);
-        return;
-      }
-
-      onActionToast?.("success", `${workflowFileDisplayName(deleteTarget.name)} 삭제를 완료했습니다.`);
-      if (detailFile?.filePath === deleteTarget.filePath) {
-        setDetailFile(null);
-        setDetailContent(null);
-        setDetailError("");
-      }
-      setDeleteTarget(null);
-      await onRequestRefresh?.();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "삭제 중 오류가 발생했습니다.";
-      setDeleteError(message);
-      onActionToast?.("error", message);
-    } finally {
-      setDeleteInProgress(false);
-    }
-  }, [deleteTarget, detailFile?.filePath, onActionToast, onRequestRefresh, options]);
 
   if (files.length === 0 && !showWhenEmpty) return null;
 
@@ -6684,14 +6219,12 @@ function WorkflowPinLayer({
                 <ul className="workflow-pin-list">
                   {files.map((file) => {
                     const isActive = detailFile?.filePath === file.filePath;
-                    const canDelete = isOrderQueueBoardFile(file);
-                    const isDeletingThis = deleteTarget?.filePath === file.filePath && deleteInProgress;
                     return (
                       <li key={file.filePath} className="workflow-pin-list-item">
                         <Button
                           variant="ghost"
                           type="button"
-                          className={`workflow-pin-item${isActive ? " workflow-pin-item-active" : ""}${canDelete ? " workflow-pin-item-deletable" : ""}`}
+                          className={`workflow-pin-item${isActive ? " workflow-pin-item-active" : ""}`}
                           onClick={() => handleOpenDetail(file)}
                           aria-pressed={isActive}
                           title={file.title || file.name}
@@ -6710,24 +6243,6 @@ function WorkflowPinLayer({
                           {file.title ? <span className="workflow-pin-item-title">{file.title}</span> : null}
                           <time>{formatDate(file.modifiedAt)}</time>
                         </Button>
-                        {canDelete ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="workflow-pin-item-delete-button"
-                            disabled={isDeletingThis}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              requestDelete(file);
-                            }}
-                            title={`${workflowFileDisplayName(file.name)} 삭제`}
-                            aria-label={`${workflowFileDisplayName(file.name)} 삭제`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                          </Button>
-                        ) : null}
                       </li>
                     );
                   })}
@@ -6770,57 +6285,6 @@ function WorkflowPinLayer({
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeDeleteDialog();
-          }
-        }}
-      >
-        <DialogContent
-          className="workflow-pin-layer-panel ticket-delete-confirm-dialog"
-          overlayClassName="workflow-pin-layer-overlay"
-          keepMounted
-          aria-describedby={undefined}
-        >
-          {deleteTarget ? (
-            <>
-              <div className="workflow-pin-layer-header">
-                <div className="workflow-pin-layer-heading">
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  <DialogTitle asChild>
-                    <strong>Order 삭제 확인</strong>
-                  </DialogTitle>
-                </div>
-              </div>
-              <div className="ticket-delete-confirm-body">
-                <DialogDescription>
-                  삭제 대상: <strong>{workflowFileDisplayName(deleteTarget.name)}</strong>
-                  <br />
-                  {deleteTarget.filePath}
-                </DialogDescription>
-                <p>이 Order를 삭제하면 플래너 러너가 처리하지 않습니다.</p>
-                {deleteError ? <div className="workflow-pin-detail-error">{deleteError}</div> : null}
-                <div className="ticket-delete-confirm-actions">
-                  <Button type="button" variant="outline" size="sm" onClick={closeDeleteDialog} disabled={deleteInProgress}>
-                    취소
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => void confirmDelete()}
-                    disabled={deleteInProgress}
-                  >
-                    {deleteInProgress ? "삭제 중..." : "삭제"}
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </>
   );
 }
@@ -6836,8 +6300,8 @@ function TicketWorkspaceDetailPane({
   detailError: string;
   detailContent: AutoflowFileContentResult | null;
 }) {
-  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : selectedItem?.kind === "order" ? Inbox : ClipboardList;
-  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : selectedItem?.kind === "order" ? "Order" : "TODO";
+  const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : "TODO";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -6899,6 +6363,483 @@ function TicketWorkspaceDetailPane({
   );
 }
 
+type CoverageStageKey = "todo" | "inprogress" | "verifier" | "done";
+
+type CoverageTodoRef = {
+  file: WorkflowFileEntry;
+  stage: CoverageStageKey;
+};
+
+type CoveragePrdEntry = {
+  prdKey: string;
+  displayId: string;
+  title: string;
+  prdStatus: "open" | "done" | "missing";
+  prdFile?: WorkflowFileEntry;
+  todos: CoverageTodoRef[];
+  counts: Record<CoverageStageKey, number>;
+  total: number;
+  closure: number;
+};
+
+type CoverageData = {
+  entries: CoveragePrdEntry[];
+  unmapped: CoverageTodoRef[];
+  prdCount: number;
+  mappedTodoCount: number;
+  unmappedTodoCount: number;
+  totalTodoCount: number;
+  doneTodoCount: number;
+  avgClosure: number;
+};
+
+function isPrdFileName(name: string): boolean {
+  return /^(PRD)-\d+\.md$/i.test(name);
+}
+
+function isTodoFileName(name: string): boolean {
+  return /^TODO-\d+\.md$/i.test(name);
+}
+
+function prdKeyFromFileName(name: string): string {
+  const stem = name.replace(/\.md$/i, "");
+  if (/^PRD-\d+$/.test(stem)) return stem;
+  return "";
+}
+
+function prdKeyFromDonePath(filePath: string): string {
+  const norm = filePath.replace(/\\/g, "/");
+  const m = norm.match(/\/tickets\/done\/([^/]+)\//);
+  if (!m) return "";
+  const candidate = m[1];
+  return /^PRD-\d+$/.test(candidate) ? candidate : "";
+}
+
+function buildPrdCoverage(board: AutoflowBoardSnapshot | null): CoverageData {
+  const empty: CoverageData = {
+    entries: [],
+    unmapped: [],
+    prdCount: 0,
+    mappedTodoCount: 0,
+    unmappedTodoCount: 0,
+    totalTodoCount: 0,
+    doneTodoCount: 0,
+    avgClosure: 0,
+  };
+  if (!board) return empty;
+
+  const prdMap = new Map<string, { prdKey: string; title: string; prdStatus: "open" | "done"; prdFile: WorkflowFileEntry }>();
+  for (const file of board.tickets.prd || []) {
+    if (!isPrdFileName(file.name)) continue;
+    const key = prdKeyFromFileName(file.name);
+    if (!key) continue;
+    prdMap.set(key, { prdKey: key, title: file.title || key, prdStatus: "open", prdFile: file });
+  }
+  for (const file of board.tickets.done || []) {
+    if (!isPrdFileName(file.name)) continue;
+    const key = prdKeyFromFileName(file.name);
+    if (!key) continue;
+    if (!prdMap.has(key)) {
+      prdMap.set(key, { prdKey: key, title: file.title || key, prdStatus: "done", prdFile: file });
+    }
+  }
+
+  const todoRefs: Array<CoverageTodoRef & { prdKey: string }> = [];
+  const collectFrom = (bucket: CoverageStageKey, files: WorkflowFileEntry[] | undefined) => {
+    for (const file of files || []) {
+      if (!isTodoFileName(file.name)) continue;
+      const key = file.prdKey || prdKeyFromDonePath(file.filePath) || "";
+      todoRefs.push({ file, stage: bucket, prdKey: key });
+    }
+  };
+  collectFrom("todo", board.tickets.todo);
+  collectFrom("inprogress", board.tickets.inprogress);
+  collectFrom("verifier", board.tickets.verifier);
+  collectFrom("done", board.tickets.done);
+
+  const todosByPrd = new Map<string, CoverageTodoRef[]>();
+  const unmapped: CoverageTodoRef[] = [];
+  for (const ref of todoRefs) {
+    if (!ref.prdKey) {
+      unmapped.push({ file: ref.file, stage: ref.stage });
+      continue;
+    }
+    const list = todosByPrd.get(ref.prdKey) || [];
+    list.push({ file: ref.file, stage: ref.stage });
+    todosByPrd.set(ref.prdKey, list);
+  }
+
+  const allKeys = new Set<string>([...prdMap.keys(), ...todosByPrd.keys()]);
+  const entries: CoveragePrdEntry[] = Array.from(allKeys).map((key) => {
+    const prd = prdMap.get(key);
+    const todos = (todosByPrd.get(key) || []).sort((a, b) => a.file.name.localeCompare(b.file.name));
+    const counts: Record<CoverageStageKey, number> = { todo: 0, inprogress: 0, verifier: 0, done: 0 };
+    for (const t of todos) counts[t.stage] = (counts[t.stage] || 0) + 1;
+    const total = todos.length;
+    const closure = total > 0 ? Math.round((counts.done / total) * 100) : 0;
+    return {
+      prdKey: key,
+      displayId: workflowFileDisplayName(`${key}.md`),
+      title: prd?.title || key,
+      prdStatus: prd ? prd.prdStatus : "missing",
+      prdFile: prd?.prdFile,
+      todos,
+      counts,
+      total,
+      closure,
+    };
+  });
+  const prdNumericIdValue = (prdKey: string): number => {
+    const m = prdKey.match(/[-_](\d+)$/);
+    return m ? Number.parseInt(m[1], 10) : -1;
+  };
+  entries.sort((a, b) => {
+    const an = prdNumericIdValue(a.prdKey);
+    const bn = prdNumericIdValue(b.prdKey);
+    if (an !== bn) return bn - an;
+    return b.prdKey.localeCompare(a.prdKey);
+  });
+
+  const mappedTodoCount = todoRefs.length - unmapped.length;
+  const doneTodoCount = todoRefs.filter((ref) => ref.stage === "done").length;
+  const closureValues = entries.filter((entry) => entry.total > 0).map((entry) => entry.closure);
+  const avgClosure = closureValues.length > 0
+    ? Math.round(closureValues.reduce((sum, v) => sum + v, 0) / closureValues.length)
+    : 0;
+
+  return {
+    entries,
+    unmapped: unmapped.sort((a, b) => a.file.name.localeCompare(b.file.name)),
+    prdCount: allKeys.size,
+    mappedTodoCount,
+    unmappedTodoCount: unmapped.length,
+    totalTodoCount: todoRefs.length,
+    doneTodoCount,
+    avgClosure,
+  };
+}
+
+const coverageStageMeta: Record<CoverageStageKey, { label: string; tone: "neutral" | "info" | "warning" | "success" }> = {
+  todo: { label: "대기", tone: "neutral" },
+  inprogress: { label: "진행", tone: "info" },
+  verifier: { label: "검증", tone: "warning" },
+  done: { label: "완료", tone: "success" },
+};
+
+function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | null; options?: WorkflowBoardOptions }) {
+  const data = React.useMemo(() => buildPrdCoverage(board), [board]);
+  const [selectedFile, setSelectedFile] = React.useState<WorkflowFileEntry | null>(null);
+  const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
+  const [detailLoading, setDetailLoading] = React.useState(false);
+  const [detailError, setDetailError] = React.useState("");
+
+  const closeLayer = React.useCallback(() => {
+    setSelectedFile(null);
+    setDetailContent(null);
+    setDetailError("");
+  }, []);
+
+  const handleOpenFile = React.useCallback(async (file: WorkflowFileEntry) => {
+    setSelectedFile(file);
+    setDetailContent(null);
+    setDetailError("");
+    if (!options?.projectRoot) {
+      setDetailError("프로젝트 루트가 설정되어 있지 않습니다.");
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      const result = await window.autoflow.readBoardFile({
+        ...options,
+        filePath: file.filePath
+      });
+      if (!result.ok) {
+        setDetailError(result.stderr || "파일 미리보기에 실패했습니다.");
+        return;
+      }
+      setDetailContent(result);
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : "파일 미리보기에 실패했습니다.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [options]);
+
+  const hasEntries = data.entries.length > 0 || data.unmapped.length > 0;
+
+  if (!hasEntries) {
+    return (
+      <div className="prd-coverage-empty" role="status">
+        <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
+        <span>아직 매핑할 PRD 또는 Todo 가 없습니다.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="prd-coverage-view" aria-label="PRD 커버리지 맵">
+      <header className="prd-coverage-summary">
+        <article className="prd-coverage-summary-card">
+          <span>PRD</span>
+          <strong>{data.prdCount}</strong>
+        </article>
+        <article className="prd-coverage-summary-card">
+          <span>매핑된 Todo</span>
+          <strong>{data.mappedTodoCount}</strong>
+          <em>/ {data.totalTodoCount}</em>
+        </article>
+        <article className="prd-coverage-summary-card">
+          <span>완료된 Todo</span>
+          <strong>{data.doneTodoCount}</strong>
+          <em>/ {data.totalTodoCount}</em>
+        </article>
+        <article className="prd-coverage-summary-card">
+          <span>평균 PRD 커버리지</span>
+          <strong>{data.avgClosure}%</strong>
+        </article>
+        {data.unmappedTodoCount > 0 ? (
+          <article className="prd-coverage-summary-card prd-coverage-summary-warning">
+            <span>PRD없는 TODO</span>
+            <strong>{data.unmappedTodoCount}</strong>
+          </article>
+        ) : null}
+      </header>
+      <div className="prd-coverage-grid">
+        {data.entries.map((entry) => (
+          <PrdCoverageCard key={entry.prdKey} entry={entry} onOpenFile={handleOpenFile} />
+        ))}
+        {data.unmapped.length > 0 ? (
+          <PrdCoverageUnmappedCard todos={data.unmapped} onOpenFile={handleOpenFile} />
+        ) : null}
+      </div>
+      <PrdCoverageDetailLayer
+        file={selectedFile}
+        content={detailContent}
+        loading={detailLoading}
+        error={detailError}
+        onOpenChange={(open) => { if (!open) closeLayer(); }}
+        onClose={closeLayer}
+      />
+    </div>
+  );
+}
+
+function PrdCoverageDetailLayer({
+  file,
+  content,
+  loading,
+  error,
+  onOpenChange,
+  onClose,
+}: {
+  file: WorkflowFileEntry | null;
+  content: AutoflowFileContentResult | null;
+  loading: boolean;
+  error: string;
+  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
+}) {
+  const isPrd = file ? isPrdFileName(file.name) : false;
+  const ItemIcon = isPrd ? ClipboardCheck : ClipboardList;
+  const displayId = file ? workflowFileDisplayName(file.name) : "";
+  const title = file?.title || displayId;
+  const prdKey = file
+    ? (isPrd
+        ? prdKeyFromFileName(file.name) || prdKeyFromDonePath(file.filePath)
+        : (file.prdKey || prdKeyFromDonePath(file.filePath) || ""))
+    : "";
+  const stage = file?.stage || "";
+  const stageLabel = stage && coverageStageMeta[stage as CoverageStageKey]
+    ? coverageStageMeta[stage as CoverageStageKey].label
+    : stage;
+  const statusLabel = isPrd
+    ? (file?.filePath.includes("/tickets/done/") ? "PRD 완료" : "PRD 열림")
+    : stageLabel || "Todo";
+  const statusVariant: "default" | "secondary" | "destructive" = isPrd
+    ? (file?.filePath.includes("/tickets/done/") ? "default" : "secondary")
+    : "secondary";
+  const metaRows: Array<[string, string]> = file
+    ? [
+        ["ID", displayId],
+        ["PRD Key", prdKey],
+        ["Stage", stageLabel],
+        ["Last Updated", formatDate(file.modifiedAt)],
+      ].filter(([, value]) => Boolean(value)) as Array<[string, string]>
+    : [];
+
+  return (
+    <Dialog open={Boolean(file)} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="workflow-pin-layer-panel workflow-pin-layer-default ticket-detail-layer-panel"
+        overlayClassName="workflow-pin-layer-overlay"
+        keepMounted
+        aria-describedby={undefined}
+      >
+        {file ? (
+          <>
+            <div className="workflow-pin-layer-header ticket-detail-layer-header">
+              <div className="workflow-pin-layer-heading">
+                <ItemIcon className="h-4 w-4" aria-hidden="true" />
+                <DialogTitle asChild>
+                  <strong>{displayId}</strong>
+                </DialogTitle>
+              </div>
+              <Badge className="ticket-workspace-detail-badge" variant={statusVariant}>
+                {statusLabel}
+              </Badge>
+              <time>{formatDate(file.modifiedAt)}</time>
+              <span className="ticket-detail-layer-path">{file.filePath}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                className="workflow-pin-layer-close"
+                onClick={onClose}
+                aria-label="닫기"
+                autoFocus
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <div className="ticket-workspace-detail-summary ticket-detail-layer-summary">
+              <h4>{title}</h4>
+              <dl className="ticket-detail-layer-meta">
+                {metaRows.map(([label, value]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <div className="workflow-pin-detail ticket-workspace-detail-body ticket-detail-layer-body">
+              {loading ? (
+                <div className="workflow-pin-detail-loading">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <span>불러오는 중…</span>
+                </div>
+              ) : null}
+              {error ? <div className="workflow-pin-detail-error">{error}</div> : null}
+              {!error && content ? (
+                <div className="workflow-pin-detail-body">
+                  {content.content ? (
+                    <MarkdownViewer content={content.content} />
+                  ) : (
+                    <p className="workflow-pin-detail-empty">(비어 있음)</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PrdCoverageCard({
+  entry,
+  onOpenFile,
+}: {
+  entry: CoveragePrdEntry;
+  onOpenFile: (file: WorkflowFileEntry) => void | Promise<void>;
+}) {
+  const isResearchOnly = entry.prdStatus === "done" && entry.total === 0;
+  const isPrdOnlyDone =
+    entry.prdStatus === "done" && entry.total > 0 && entry.counts.done < entry.total;
+  const statusTone = isResearchOnly
+    ? "research"
+    : isPrdOnlyDone
+      ? "prd-only-done"
+      : entry.prdStatus;
+  const statusLabel = isResearchOnly
+    ? "구현 없이 완료"
+    : entry.prdStatus === "open"
+      ? "PRD 열림"
+      : entry.prdStatus === "done"
+        ? isPrdOnlyDone
+          ? "PRD 완료 · TODO 진행"
+          : "전체 완료"
+        : "PRD 없음";
+  const prdClickable = Boolean(entry.prdFile);
+  return (
+    <article className={`prd-coverage-card prd-coverage-card-${statusTone}`} aria-label={`${entry.displayId} 커버리지`}>
+      <header className="prd-coverage-card-header">
+        {prdClickable && entry.prdFile ? (
+          <button
+            type="button"
+            className="prd-coverage-card-title prd-coverage-card-title-button"
+            onClick={() => onOpenFile(entry.prdFile as WorkflowFileEntry)}
+            title={`${entry.displayId} 내용 열기`}
+          >
+            <strong>{entry.displayId}</strong>
+            <span title={entry.title}>{entry.title}</span>
+          </button>
+        ) : (
+          <div className="prd-coverage-card-title">
+            <strong>{entry.displayId}</strong>
+            <span title={entry.title}>{entry.title}</span>
+          </div>
+        )}
+        <span className={`prd-coverage-status prd-coverage-status-${statusTone}`}>{statusLabel}</span>
+      </header>
+      {entry.total > 0 ? (
+        <ul className="prd-coverage-todos" aria-label="자식 Todo 목록">
+          {entry.todos.map((todo) => (
+            <li key={todo.file.filePath} className={`prd-coverage-todo prd-coverage-todo-${todo.stage}`}>
+              <button
+                type="button"
+                className="prd-coverage-todo-button"
+                onClick={() => onOpenFile(todo.file)}
+                title={`${todo.file.name} 내용 열기`}
+              >
+                <span className="prd-coverage-todo-id">{workflowFileDisplayName(todo.file.name)}</span>
+                <span className="prd-coverage-todo-stage">{coverageStageMeta[todo.stage].label}</span>
+                <span className="prd-coverage-todo-title" title={todo.file.title}>{todo.file.title}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  );
+}
+
+function PrdCoverageUnmappedCard({
+  todos,
+  onOpenFile,
+}: {
+  todos: CoverageTodoRef[];
+  onOpenFile: (file: WorkflowFileEntry) => void | Promise<void>;
+}) {
+  return (
+    <article className="prd-coverage-card prd-coverage-card-unmapped" aria-label="PRD없는 TODO">
+      <header className="prd-coverage-card-header">
+        <div className="prd-coverage-card-title">
+          <strong>PRD없는 TODO</strong>
+        </div>
+        <span className="prd-coverage-status prd-coverage-status-unmapped">{todos.length}</span>
+      </header>
+      <ul className="prd-coverage-todos" aria-label="자식 Todo 목록">
+        {todos.map((todo) => (
+          <li key={todo.file.filePath} className={`prd-coverage-todo prd-coverage-todo-${todo.stage}`}>
+            <button
+              type="button"
+              className="prd-coverage-todo-button"
+              onClick={() => onOpenFile(todo.file)}
+              title={`${todo.file.name} 내용 열기`}
+            >
+              <span className="prd-coverage-todo-id">{todo.file.name.replace(/\.md$/, "")}</span>
+              <span className="prd-coverage-todo-stage">{coverageStageMeta[todo.stage].label}</span>
+              <span className="prd-coverage-todo-title" title={todo.file.title}>{todo.file.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function TicketKanban({
   board,
   options,
@@ -6912,7 +6853,6 @@ function TicketKanban({
 }) {
   const todoFiles = React.useMemo(() => todoWorkspaceFiles(board), [board]);
   const prdFiles = React.useMemo(() => prdWorkspaceFiles(board), [board]);
-  const orderFiles = React.useMemo(() => orderWorkspaceFiles(board), [board]);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = React.useState<TicketWorkspaceTabKey>(() =>
     ticketWorkspaceTabFromStorage(window.localStorage.getItem("autoflow.activeTicketWorkspaceTab"))
   );
@@ -6921,7 +6861,7 @@ function TicketKanban({
     window.localStorage.setItem("autoflow.activeTicketWorkspaceTab", activeWorkspaceTab);
   }, [activeWorkspaceTab]);
 
-  const activeTabMeta = ticketWorkspaceTabs.find((tab) => tab.key === activeWorkspaceTab) || ticketWorkspaceTabs[2];
+  const activeTabMeta = ticketWorkspaceTabs.find((tab) => tab.key === activeWorkspaceTab) || ticketWorkspaceTabs[ticketWorkspaceTabs.length - 1];
 
   return (
     <section className="ticket-kanban-board" aria-label="티켓 정보">
@@ -6953,17 +6893,8 @@ function TicketKanban({
               ariaLabel="폴더 기준 PRD 칸반"
             />
           ) : null}
-          {activeWorkspaceTab === "order" ? (
-            <TicketWorkspaceKanbanView
-              key="order"
-              files={orderFiles}
-              options={options}
-              runners={board?.runners}
-              defaultFolders={["order", "done"]}
-              ariaLabel="폴더 기준 Order 칸반"
-              onActionToast={onActionToast}
-              onRequestRefresh={onRequestRefresh}
-            />
+          {activeWorkspaceTab === "coverage" ? (
+            <PrdCoverageView key="coverage" board={board} options={options} />
           ) : null}
           {activeWorkspaceTab === "todo" ? (
             <TicketWorkspaceKanbanView
@@ -6995,7 +6926,6 @@ function TicketBoard({
   onRunnerAuthChoice,
   onDraftChange,
   onConfigure,
-  onOpenStartupRules,
   onActionToast,
   onRequestRefresh
 }: {
@@ -7015,7 +6945,6 @@ function TicketBoard({
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
-  onOpenStartupRules?: OpenStartupRulesHandler;
   onActionToast?: (severity: AlertSeverity, message: string) => void;
   onRequestRefresh?: () => Promise<void> | void;
 }) {
@@ -7030,22 +6959,48 @@ function TicketBoard({
   const runners = sortProgressBoardRunners(
     (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve")
   );
+  const plannerRunners: AutoflowRunner[] = [];
+  const workerRunners: AutoflowRunner[] = [];
+  const verifierRunners: AutoflowRunner[] = [];
+  const wikiRunners: AutoflowRunner[] = [];
+  const otherRunners: AutoflowRunner[] = [];
+  for (const runner of runners) {
+    const role = startupRuleRoleForRunner(runner);
+    if (role === "planner") plannerRunners.push(runner);
+    else if (role === "worker") workerRunners.push(runner);
+    else if (role === "verifier") verifierRunners.push(runner);
+    else if (role === "wiki-maintainer") wikiRunners.push(runner);
+    else otherRunners.push(runner);
+  }
+  const verifierRunner = verifierRunners[0];
+  const hasVerifierRunner = Boolean(verifierRunner);
+  const renderProgressRow = (runner: AutoflowRunner) => (
+    <AiProgressRow
+      key={runner.id}
+      runner={runner}
+      onSelect={onSelect}
+      installedAgentProfiles={installedAgentProfiles}
+      options={options ? { ...options, allRunners: runners } : undefined}
+      actionKey={actionKeys[runner.id] || ""}
+      draft={drafts[runner.id]}
+      savedDraft={savedDrafts[runner.id]}
+      onSelectRunner={onSelectRunner}
+      onControl={onControl}
+      onRunnerAuthChoice={onRunnerAuthChoice}
+      onDraftChange={onDraftChange}
+      onConfigure={onConfigure}
+    />
+  );
   const prdSpecs = (board?.tickets.prd || [])
     .filter((file) => {
       const name = file?.name || "";
-      return name.startsWith("prd_") || name.startsWith("project_");
+      return name.startsWith("PRD-");
     })
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const orderQueueItems = (board?.tickets.order || [])
-    .filter(isOrderBoardFile)
-    .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const doneOrders = (board?.tickets.done || [])
-    .filter(isOrderBoardFile)
-    .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => {
       const name = file?.name || "";
-      return name.startsWith("prd_") || name.startsWith("project_");
+      return name.startsWith("PRD-");
     })
     .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
   const todoTickets = (board?.tickets.todo || [])
@@ -7058,28 +7013,15 @@ function TicketBoard({
     .filter(isTicketBoardFile)
     .map((file) => ({ ...file, stateLabel: "진행 중", stateTone: "neutral" } as WorkflowFileEntry));
   const specNumericId = (name: string) => {
-    const match = name.match(/(?:prd|project)_(\d+)/);
+    const match = name.match(/PRD-(\d+)/);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const ticketNumericId = (name: string) => {
-    const match = name.match(/(?:Todo-|tickets_)(\d+)/i);
-    return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-  };
-  const orderNumericId = (name: string) => {
-    const match = name.match(/order_(\d+)/);
+    const match = name.match(/TODO-(\d+)/i);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const specFiles: WorkflowFileEntry[] = [...prdSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
-  );
-  const orderFilesById = new Map<string, WorkflowFileEntry>();
-  for (const order of [...orderQueueItems, ...doneOrders]) {
-    if (!orderFilesById.has(order.name)) {
-      orderFilesById.set(order.name, order);
-    }
-  }
-  const orderFiles: WorkflowFileEntry[] = Array.from(orderFilesById.values()).sort(
-    (a, b) => orderNumericId(b.name) - orderNumericId(a.name)
   );
   const todoFilesById = new Map<string, WorkflowFileEntry>();
   for (const ticket of [...todoTickets, ...inprogressTickets, ...doneTickets]) {
@@ -7091,9 +7033,8 @@ function TicketBoard({
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD (${prdSpecs.length}/${specFiles.length})`;
-  const orderPinTitle = `ORDER (${orderQueueItems.length}/${orderFiles.length})`;
   const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
-  const hasWorkflowPins = Boolean(specFiles.length || orderFiles.length || todoFiles.length);
+  const hasWorkflowPins = Boolean(specFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
 
@@ -7104,18 +7045,6 @@ function TicketBoard({
       header={
         hasHeader ? (
           <div className="workflow-pin-strip" aria-label="작업 흐름 요약">
-                <WorkflowPinLayer
-                  files={orderFiles}
-                  options={options}
-                onActionToast={onActionToast}
-                onRequestRefresh={onRequestRefresh}
-                pinTitle={orderPinTitle}
-                  pinIcon={<Inbox className="h-4 w-4" aria-hidden="true" />}
-                  variant="default"
-                  layerHeading={orderPinTitle}
-                  emptyText="아직 들어온 오더가 없습니다."
-                  showWhenEmpty
-                />
                 <WorkflowPinLayer
                   files={specFiles}
                   options={options}
@@ -7149,25 +7078,11 @@ function TicketBoard({
           </div>
         ) : runners.length ? (
           <>
-            {runners.map((runner) => (
-              <AiProgressRow
-                key={runner.id}
-                runner={runner}
-                onSelect={onSelect}
-                installedAgentProfiles={installedAgentProfiles}
-                options={options ? { ...options, allRunners: runners } : undefined}
-                actionKey={actionKeys[runner.id] || ""}
-                draft={drafts[runner.id]}
-                savedDraft={savedDrafts[runner.id]}
-                onSelectRunner={onSelectRunner}
-                onControl={onControl}
-                onRunnerAuthChoice={onRunnerAuthChoice}
-                onDraftChange={onDraftChange}
-                onConfigure={onConfigure}
-                onOpenStartupRules={onOpenStartupRules}
-              />
-            ))}
-            {!runners.some((r) => r.role === "verifier") && (
+            {plannerRunners.map(renderProgressRow)}
+            {workerRunners.map(renderProgressRow)}
+            {hasVerifierRunner ? (
+              renderProgressRow(verifierRunner!)
+            ) : (
               <article
                 className="ai-progress-row ai-progress-row-placeholder ai-progress-row-placeholder-verifier"
                 data-runner-role="verifier"
@@ -7180,6 +7095,8 @@ function TicketBoard({
                 </div>
               </article>
             )}
+            {wikiRunners.map(renderProgressRow)}
+            {otherRunners.map(renderProgressRow)}
           </>
         ) : (
           <div className="ai-progress-empty">
@@ -7210,114 +7127,6 @@ function PageLayout({
       ) : null}
       <div className="page-layout-body">{children}</div>
     </div>
-  );
-}
-
-function startupRulesTitle(layer: StartupRulesLayerState | null) {
-  if (!layer || layer.kind === "common") return "공통 시작 규칙";
-  const role = startupRuleRoleForValue(layer.role || "");
-  if (role === "planner") return "Planner 시작 규칙";
-  if (role === "worker") return "Worker 시작 규칙";
-  if (role === "verifier") return "Verifier 시작 규칙";
-  if (role === "wiki-maintainer") return "Wiki 시작 규칙";
-  return "시작 규칙";
-}
-
-function StartupRulesEditorLayer({
-  layer,
-  content,
-  draft,
-  loading,
-  saving,
-  error,
-  dirty,
-  canSave,
-  onDraftChange,
-  onSave,
-  onClose
-}: {
-  layer: StartupRulesLayerState | null;
-  content: AutoflowFileContentResult | null;
-  draft: string;
-  loading: boolean;
-  saving: boolean;
-  error: string;
-  dirty: boolean;
-  canSave: boolean;
-  onDraftChange: (value: string) => void;
-  onSave: () => void;
-  onClose: () => void;
-}) {
-  const title = startupRulesTitle(layer);
-  return (
-    <Dialog open={Boolean(layer)} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent
-        className="workflow-pin-layer-panel workflow-pin-layer-default startup-rules-layer-panel"
-        overlayClassName="workflow-pin-layer-overlay"
-        keepMounted
-        aria-describedby={undefined}
-      >
-        {layer ? (
-          <>
-            <div className="workflow-pin-layer-header startup-rules-layer-header">
-              <div className="workflow-pin-layer-heading">
-                <BookOpenText className="h-4 w-4" aria-hidden="true" />
-                <DialogTitle asChild>
-                  <strong>{title}</strong>
-                </DialogTitle>
-              </div>
-              {dirty ? <Badge variant="outline">수정됨</Badge> : null}
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                className="workflow-pin-layer-close"
-                onClick={onClose}
-                aria-label="닫기"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-            <DialogDescription className="startup-rules-layer-description">
-              {content?.filePath || "시작 규칙 Markdown 문서를 불러오는 중입니다."}
-            </DialogDescription>
-            <div className="startup-rules-editor-body">
-              {loading ? (
-                <div className="workflow-pin-detail-loading">
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  <span>불러오는 중…</span>
-                </div>
-              ) : null}
-              {error ? <div className="workflow-pin-detail-error">{error}</div> : null}
-              {!loading && !error ? (
-                <textarea
-                  className="startup-rules-editor-textarea"
-                  value={draft}
-                  onChange={(event) => onDraftChange(event.target.value)}
-                  spellCheck={false}
-                  aria-label={`${title} Markdown 편집`}
-                />
-              ) : null}
-            </div>
-            <div className="startup-rules-editor-footer">
-              <span>{content?.modifiedAt ? `마지막 저장 ${formatDate(content.modifiedAt)}` : ""}</span>
-              <div className="startup-rules-editor-actions">
-                <Button
-                  type="button"
-                  size="sm"
-                  className="startup-rules-save-button"
-                  disabled={!canSave}
-                  onClick={onSave}
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-                  <span>저장</span>
-                </Button>
-              </div>
-            </div>
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -7413,7 +7222,7 @@ const LIVE_TERMINAL_FONT_FAMILY =
   '"D2Coding", "Cascadia Mono", "Consolas", "Courier New", monospace';
 const LIVE_TERMINAL_FONT_SIZE = 10;
 
-// prd_225 (2026-05-09): xterm theme 을 라이트/다크 카드 톤에 정렬한다.
+// PRD-225 (2026-05-09): xterm theme 을 라이트/다크 카드 톤에 정렬한다.
 // LOG_TOKEN_ANSI 는 ANSI palette index (\x1b[36m = cyan 등) 만 쓰므로 같은
 // escape 가 palette 에 따라 색이 달라진다. 라이트 팔레트는 ansiConverter
 // (line ~3515) 의 colors map 톤을 차용해 ConversationStream 시리즈와 시각
@@ -7566,12 +7375,16 @@ function LivePtyView({
   runnerId,
   projectRoot,
   boardDirName,
-  ariaLabel
+  ariaLabel,
+  clearOnStopped = true,
+  runnerStatus = ""
 }: {
   runnerId: string;
   projectRoot: string;
   boardDirName: string;
   ariaLabel: string;
+  clearOnStopped?: boolean;
+  runnerStatus?: string;
 }) {
   const LIVE_TERMINAL_SCROLLBAR_WIDTH_PX = 4;
   const hostRef = React.useRef<HTMLDivElement | null>(null);
@@ -7584,6 +7397,14 @@ function LivePtyView({
   const [terminalThemeMode, setTerminalThemeMode] = React.useState<
     "light" | "dark"
   >(() => readDocumentThemeMode());
+  const resetTerminal = React.useCallback(() => {
+    if (flushRafRef.current !== null) {
+      window.cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
+    }
+    pendingChunksRef.current = [];
+    try { terminalRef.current?.reset(); } catch {}
+  }, []);
   const syncPtyColsWithTerminal = React.useCallback(() => {
     if (!runnerId) return;
     const term = terminalRef.current;
@@ -7673,7 +7494,7 @@ function LivePtyView({
     };
     // Theme handled separately below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitAndResize, runnerId]);
+  }, [boardDirName, fitAndResize, projectRoot, runnerId]);
 
   // Theme observer (light/dark swap on data-theme change)
   React.useEffect(() => {
@@ -7718,6 +7539,12 @@ function LivePtyView({
     if (!runnerId) return;
     let unsubscribe: undefined | (() => void);
     let cancelled = false;
+    const inactive = runnerPtyStatusIsInactive(runnerStatus);
+
+    if (clearOnStopped && inactive) {
+      resetTerminal();
+      return;
+    }
 
     const flushPending = () => {
       flushRafRef.current = null;
@@ -7739,6 +7566,7 @@ function LivePtyView({
     // Replay buffered bytes from main on subscribe so the terminal shows
     // history when the renderer mounts mid-session.
     void (async () => {
+      if (!runnerPtyStatusAllowsSnapshot(runnerStatus)) return;
       try {
         const res = await (window.autoflow as any).runnerPtySnapshot({
           runnerId,
@@ -7768,7 +7596,30 @@ function LivePtyView({
       try { unsubscribe?.(); } catch {}
       try { terminalRef.current?.reset(); } catch {}
     };
-  }, [boardDirName, projectRoot, runnerId]);
+  }, [boardDirName, clearOnStopped, projectRoot, resetTerminal, runnerId, runnerStatus]);
+
+  React.useEffect(() => {
+    if (!clearOnStopped) return;
+    if (runnerPtyStatusIsInactive(runnerStatus)) {
+      resetTerminal();
+    }
+  }, [clearOnStopped, resetTerminal, runnerStatus]);
+
+  React.useEffect(() => {
+    if (!clearOnStopped || !runnerId) return;
+    const subscribeStatus = (window.autoflow as any).onRunnerPtyStatus;
+    if (typeof subscribeStatus !== "function") return;
+    const unsubscribe = subscribeStatus((payload: any) => {
+      if (!payload || payload.runnerId !== runnerId) return;
+      if (!livePtyPayloadMatchesScope(payload, projectRoot, boardDirName)) return;
+      if (runnerPtyStatusIsInactive(String(payload.status || ""))) {
+        resetTerminal();
+      }
+    });
+    return () => {
+      try { unsubscribe?.(); } catch {}
+    };
+  }, [boardDirName, clearOnStopped, projectRoot, resetTerminal, runnerId]);
 
   return (
     <div
@@ -7780,6 +7631,20 @@ function LivePtyView({
       <div ref={hostRef} className="live-terminal-view-host" />
     </div>
   );
+}
+
+function runnerPtyStatusIsStopped(status: string) {
+  const normalized = status.toLowerCase();
+  return normalized === "stopped" || normalized === "user_stopped" || normalized === "failed" || normalized === "errored";
+}
+
+function runnerPtyStatusIsInactive(status: string) {
+  const normalized = status.toLowerCase();
+  return !normalized || normalized === "idle" || runnerPtyStatusIsStopped(normalized);
+}
+
+function runnerPtyStatusAllowsSnapshot(status: string) {
+  return status.toLowerCase() === "running";
 }
 
 const LIVE_TERMINAL_IDLE_STAGES = new Set(["todo", "idle"]);
@@ -7822,7 +7687,7 @@ function LiveTerminalView({
       ? `일시적 제한입니다. 잠시 후 자동으로 재시도됩니다.${quotaSignal.retryAfter ? ` ${quotaSignal.retryAfter}에 재개 가능.` : ""}`
       : `${quotaAgentLabel} 한도가 소진됐습니다. 모델을 교체하거나 한도 회복을 기다려주세요.`;
 
-  // prd_225: <html data-theme="..."> 변화를 구독해 xterm theme 도 즉시 swap.
+  // PRD-225: <html data-theme="..."> 변화를 구독해 xterm theme 도 즉시 swap.
   // 사용자가 헤더 토글을 누르면 documentElement.dataset.theme 가 바뀌므로
   // MutationObserver 한 개로 충분하다. prop drilling / context 도입 없음.
   React.useEffect(() => {
@@ -7925,7 +7790,7 @@ function LiveTerminalView({
     };
   }, []);
 
-  // prd_225: themeMode 가 바뀌면 이미 mount 된 xterm 의 theme 만 swap.
+  // PRD-225: themeMode 가 바뀌면 이미 mount 된 xterm 의 theme 만 swap.
   // xterm Terminal#options.theme setter 가 palette 를 즉시 반영한다.
   React.useEffect(() => {
     const terminal = terminalRef.current;
@@ -7989,12 +7854,8 @@ function LiveTerminalView({
         const isIdle = LIVE_TERMINAL_IDLE_STAGES.has(stage) || !stage;
         let message: string;
         let tone: string;
-        if (isStopped) {
-          message = "AI를 시작해 주세요.";
-          tone = "muted";
-        } else if (isIdle) {
-          message = "처리할 작업이 없습니다.";
-          tone = "default";
+        if (isStopped || isIdle) {
+          return null;
         } else {
           message = "AI 응답 대기 중 입니다.";
           tone = "active";
@@ -8248,7 +8109,10 @@ function useLiveStdoutText(
       return;
     }
     let cancelled = false;
+    let inFlight = false;
     const fetchOnce = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
         const result = await window.autoflow.tailBoardFile({
           projectRoot,
@@ -8261,13 +8125,12 @@ function useLiveStdoutText(
         setText(raw);
       } catch {
         // best-effort polling — swallow read errors
+      } finally {
+        inFlight = false;
       }
     };
     void fetchOnce();
-    // vibe-terminal 은 PTY data 이벤트 (event-driven) 라 즉시 stream. file
-    // polling 이라 진정한 event-driven 은 아니지만 150ms 간격이면 perceived
-    // latency 가 1 frame 수준이라 stutter 안 느껴진다.
-    const handle = window.setInterval(fetchOnce, 150);
+    const handle = window.setInterval(fetchOnce, 1000);
     return () => {
       cancelled = true;
       window.clearInterval(handle);
@@ -8287,7 +8150,10 @@ function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerRe
     }
 
     let cancelled = false;
+    let inFlight = false;
     const fetchUsage = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
         const nextUsage = await window.autoflow.runnerResourceUsage({ pid });
         if (!cancelled) {
@@ -8295,6 +8161,8 @@ function useRunnerResourceUsage(running: boolean, pid: string): AutoflowRunnerRe
         }
       } catch {
         if (!cancelled) setUsage(null);
+      } finally {
+        inFlight = false;
       }
     };
     void fetchUsage();
@@ -8324,7 +8192,9 @@ function RunnerResourceUsage({ running, pid }: { running: boolean; pid: string }
   const measuredUsage = usage?.ok ? usage : null;
   const cpuLabel = formatResourcePercent(measuredUsage?.cpuPercent);
   const memoryLabel = formatResourceMemory(measuredUsage?.rssMb);
-  const title = measuredUsage
+  const title = !running
+    ? "러너 정지됨 · CPU - · 메모리 -"
+    : measuredUsage
     ? `러너 실행 중 · CPU ${cpuLabel} · 메모리 ${memoryLabel} · 프로세스 ${measuredUsage.processCount}`
     : "러너 실행 중 · 부하 측정 중";
   const segments = [
@@ -8336,14 +8206,14 @@ function RunnerResourceUsage({ running, pid }: { running: boolean; pid: string }
     <span
       className="runner-resource-usage"
       data-running={running ? "true" : "false"}
-      data-loading={usage?.ok ? "false" : "true"}
+      data-loading={running && !usage?.ok ? "true" : "false"}
       aria-label={title}
       title={title}
     >
       {segments.map(([label, value]) => (
-        <span className="runner-resource-usage-segment" key={label}>
-          <span className="runner-resource-usage-label">{label}</span>
-          <span className="runner-resource-usage-value">{value}</span>
+        <span className="ai-conversation-panel-activity-metric runner-resource-usage-segment" key={label}>
+          <span className="ai-conversation-panel-activity-label runner-resource-usage-label">{label}</span>
+          <strong className="ai-conversation-panel-activity-value runner-resource-usage-value">{value}</strong>
         </span>
       ))}
     </span>
@@ -8357,6 +8227,7 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
+  const pidValue = isRunning ? String(runner.pid) : "";
   const tokenTitle = cacheReadTokens > 0
     ? `토큰 ${activity.tokens.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
     : `토큰 ${activity.tokens.toLocaleString()}`;
@@ -8368,10 +8239,29 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
       aria-live="polite"
       title={footerTitle}
     >
-      <span>{animatedTokens.toLocaleString()} tokens</span>
-      {cacheReadTokens > 0 ? <span>cache read {cacheReadTokens.toLocaleString()}</span> : null}
-      {isRunning ? <RunnerResourceUsage running={isRunning} pid={runner.pid} /> : null}
-      {pidLabel ? <span className="ai-conversation-panel-activity-pid">{pidLabel}</span> : null}
+      <div className="ai-conversation-panel-activity-row">
+        <span className="ai-conversation-panel-activity-band ai-conversation-panel-activity-band-primary">
+          <span className="ai-conversation-panel-activity-metric">
+            <span className="ai-conversation-panel-activity-label">토큰</span>
+            <strong className="ai-conversation-panel-activity-value">{animatedTokens.toLocaleString()}</strong>
+          </span>
+          <span className="ai-conversation-panel-activity-metric ai-conversation-panel-activity-metric-end">
+            <span className="ai-conversation-panel-activity-label">캐시</span>
+            <strong className="ai-conversation-panel-activity-value">{cacheReadTokens.toLocaleString()}</strong>
+          </span>
+        </span>
+      </div>
+      <div className="ai-conversation-panel-activity-row">
+        <span className="ai-conversation-panel-activity-band ai-conversation-panel-activity-band-hardware">
+          <RunnerResourceUsage running={isRunning} pid={runner.pid} />
+          {pidValue ? (
+            <span className="ai-conversation-panel-activity-metric ai-conversation-panel-activity-metric-end ai-conversation-panel-activity-pid">
+              <span className="ai-conversation-panel-activity-label">PID</span>
+              <strong className="ai-conversation-panel-activity-value">{pidValue}</strong>
+            </span>
+          ) : null}
+        </span>
+      </div>
     </footer>
   );
 }
@@ -8456,9 +8346,6 @@ function runnerStageKey(runner: AutoflowRunner): string {
   const runnerActiveTicket = runnerHasActiveWorkContext(runner);
   const stateSignalText = [
     runner.activeItem,
-    runner.activeRecoveryReason,
-    runner.activeRecoveryStatus,
-    runner.activeRecoveryFailureClass,
     runner.lastResult,
     runner.lastLogLine
   ]
@@ -8478,7 +8365,6 @@ function runnerStageKey(runner: AutoflowRunner): string {
     if (role === "planner" || role === "plan") return "idle";
     return "idle";
   }
-  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
   const hasWorkerIdleSignal = /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
   const hasCompletionFinalizerCommit = /\bcommitted_via_completion_finalizer\b/.test(stateText);
@@ -8488,6 +8374,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
     /\bfailed\b|\berror\b|adapter_exit_[1-9]/.test(stateSignalText);
 
   if (role.includes("wiki")) {
+    if (runner.backgroundTask) return "syncing";
     if (isFailLike) return "idle";
     if (status === "running" && (runnerActiveTicket || /event=adapter_start|\bstatus=running\b/.test(stateText))) return "syncing";
     if (/event=adapter_finish.*status=ok|\bwiki_(?:updated|sync_ok)\b/.test(stateText)) return "syncing";
@@ -8498,7 +8385,6 @@ function runnerStageKey(runner: AutoflowRunner): string {
     const hasPlannerIdleSignal =
       /\bno_actionable_plan_input\b|\bidle_wait_for_order_or_prd\b|\bruntime_status=idle\b|\bstatus=idle\b/.test(stateText);
     if (isFailLike) return "blocked";
-    if (/^(stalled|blocked|repairing|requeued|needs_user)$/.test(activeRecoveryStatus)) return "planning";
     if (hasPlannerIdleSignal && !runnerActiveTicket && !runner.activeItem) return "idle";
     if (/\bsource=prd-to-todo\b|\btodo_ticket=/.test(stateText)) return "generating-todo";
     if (status === "running" && (runnerActiveTicket || /\bevent=adapter_start\b/.test(stateText))) return "planning";
@@ -8549,16 +8435,11 @@ function runnerSuccessSignalIsStale(runner: AutoflowRunner, value: string) {
 
 function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject" | "" {
   const status = (runner.stateStatus || "").toLowerCase();
-  const activeRecoveryStatus = (runner.activeRecoveryStatus || "").toLowerCase();
   const activeStage = (runner.activeStage || "").toLowerCase();
   const lastResult = (runner.lastResult || "").toLowerCase();
   const stateSignalText = [
     runner.activeItem,
-    runner.activeRecoveryReason,
-    activeRecoveryStatus,
-    runner.activeRecoveryFailureClass,
     lastResult,
-    runner.lastLogLine,
     runner.lastLogLine
   ].join(" ").toLowerCase();
 
@@ -8584,10 +8465,22 @@ function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject
   return "";
 }
 
+function runnerHandoffResultIsInternal(value: string) {
+  return /_handoff_turn_requested$/i.test(value || "");
+}
+
+function runnerQueueStatusText(runner: AutoflowRunner) {
+  return compactStatusParts([runner.queueStatusLabel || "", runner.queueStatusDetail || ""]).join(" · ");
+}
+
 function runnerProgressDetail(runner: AutoflowRunner) {
-  // Recovery reason / failure_class strings (e.g. "recovery_state_blocked",
-  // "dirty_root") are no longer surfaced — single-flow fail handling routes
-  // every blocker to order retry, so users only need the active title.
+  // Blocker classification strings (e.g. "dirty_root") are no longer surfaced —
+  // single-flow fail handling resurfaces every blocker through verifier replan,
+  // so users only need the active title.
+  if (runner.backgroundTaskLabel) {
+    return runner.backgroundTaskLabel;
+  }
+
   if (runner.activeTicketTitle) {
     return runner.activeTicketTitle;
   }
@@ -8596,8 +8489,24 @@ function runnerProgressDetail(runner: AutoflowRunner) {
     return displayActiveItemLabel(runner.activeItem);
   }
 
-  if ((runner.lastResult || "").toLowerCase() === "adapter_auth_required") {
+  const statusLower = (runner.stateStatus || "").toLowerCase();
+  const lastResultLower = (runner.lastResult || "").toLowerCase();
+
+  if (lastResultLower === "adapter_auth_required") {
     return runnerLoginMessage(runner);
+  }
+
+  const queueStatusText = runnerQueueStatusText(runner);
+
+  if (statusLower === "running" && lastResultLower === "runner_start_requested") {
+    if (queueStatusText) {
+      return queueStatusText;
+    }
+    return "다음 작업 확인 중";
+  }
+
+  if (runnerHandoffResultIsInternal(lastResultLower) && queueStatusText) {
+    return queueStatusText;
   }
 
   if (runner.lastResult && !runnerSuccessSignalIsStale(runner, runner.lastResult)) {
@@ -8608,7 +8517,14 @@ function runnerProgressDetail(runner: AutoflowRunner) {
     return runner.lastLogLine;
   }
 
-  return runnerIsEnabled(runner.enabled) ? "대기 중 — 처리할 백로그/티켓 없음" : "중지됨";
+  if (runnerIsEnabled(runner.enabled) && statusLower === "running") {
+    if (queueStatusText) {
+      return queueStatusText;
+    }
+    return "대기 중 — 다음 작업 확인 대기";
+  }
+
+  return runnerIsEnabled(runner.enabled) ? "대기 중 — 처리할 티켓 없음" : "중지됨";
 }
 
 type RunnerStatusTone = "idle" | "running" | "stopped" | "blocked" | "done" | "error" | "auth" | "pending";
@@ -8637,13 +8553,13 @@ function idleStatusDetailText(value: string) {
 }
 
 function runnerStatusSummaryTitle(runner: AutoflowRunner, label: string, detail: string, currentKey: string) {
+  void currentKey;
   return compactStatusParts([
     detail ? `${label} · ${detail}` : label,
-    runner.stateStatus ? `state_status=${runner.stateStatus}` : "",
-    currentKey ? `stage=${currentKey}` : "",
-    runner.activeStage ? `active_stage=${runner.activeStage}` : "",
-    runner.activeTicketId ? `active_ticket_id=${runner.activeTicketId}` : "",
-    runner.lastResult && !runnerSuccessSignalIsStale(runner, runner.lastResult) ? `last_result=${runner.lastResult}` : ""
+    runner.activeTicketId ? `작업=${displayActiveTicketBadge(runner.activeTicketId)}` : "",
+    runner.lastResult && !runnerHandoffResultIsInternal(runner.lastResult) && !runnerSuccessSignalIsStale(runner, runner.lastResult)
+      ? `최근 결과=${displayStatus(runner.lastResult)}`
+      : ""
   ]).join("\n");
 }
 
@@ -8691,6 +8607,10 @@ function runnerStatusSummary({
   } else if (isApplyingConfig) {
     label = "설정 적용 중";
     tone = "pending";
+    detailParts = compactStatusParts([activeTicketLabel]);
+  } else if (runner.backgroundTaskLabel) {
+    label = runner.backgroundTaskLabel;
+    tone = "running";
     detailParts = compactStatusParts([activeTicketLabel]);
   } else if (statusLower === "stopped" || statusLower === "user_stopped") {
     label = "중지됨";
@@ -8817,6 +8737,23 @@ function titleCaseWorkflowRunnerId(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function displayProgressWorkerLabel(runner: AutoflowRunner, runners?: AutoflowRunner[]) {
+  const id = (runner.id || "").toLowerCase();
+  const visibleWorkers = runners?.filter((candidate) => startupRuleRoleForRunner(candidate) === "worker");
+  const visibleWorkerIndex = visibleWorkers?.findIndex((candidate) => candidate.id === runner.id);
+  if (typeof visibleWorkerIndex === "number" && visibleWorkerIndex >= 0) {
+    if ((visibleWorkers?.length || 0) <= 1) return "Worker";
+    return `Worker${visibleWorkerIndex + 1}`;
+  }
+
+  if (id === "worker" || id === "ai" || id === "merge") return "Worker";
+
+  const numbered = id.match(/^(?:worker|ai|merge)-(\d+)$/);
+  if (numbered) return `Worker${Number.parseInt(numbered[1], 10) + 1}`;
+
+  return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
+}
+
 function isCoordinatorRole(value: string) {
   return ["coordinator", "coord"].includes((value || "").toLowerCase());
 }
@@ -8830,9 +8767,9 @@ function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunn
   const role = (runner.role || "").toLowerCase();
   if (role === "planner" || role === "plan") return "Planner";
   if (role === "worker" || role === "ticket" || role === "merge" || role === "merge-bot" || /^merge-/.test(role)) {
-    return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
+    return displayProgressWorkerLabel(runner, runners);
   }
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "위키";
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
   if (role === "verifier") return "Verifier";
 
   const metaLabel = displayWorkflowRunnerId(runner.id, runners);
@@ -8840,13 +8777,19 @@ function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunn
   return metaLabel ? `${agentName}(${metaLabel})` : agentName;
 }
 
+function displayAiAgentRunnerLabel(value: string, runners?: AutoflowRunner[]) {
+  const runner = runners?.find((candidate) => candidate.id === value);
+  if (runner) return displayProgressRoleLabel(runner, runners);
+  return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(value, runners));
+}
+
 function progressBoardRunnerOrder(runner: AutoflowRunner) {
   const role = (runner.role || "").toLowerCase();
   const runnerId = (runner.id || "").toLowerCase();
   const idRole = canonicalWorkflowRunnerRole(runner.id);
   if (runnerId === "worker") return 1;
-  if (runnerId === "verifier") return 2;
-  if (/^worker-\d+$/.test(runnerId)) return 3;
+  if (/^worker-\d+$/.test(runnerId)) return 2;
+  if (runnerId === "verifier") return 3;
   if (
     runnerId === "wiki" ||
     runnerId === "wiki-maintainer" ||
@@ -8871,15 +8814,13 @@ function sortProgressBoardRunners(runners: AutoflowRunner[]) {
 
 const AGENT_APP_ICONS: Record<string, string> = {
   claude: claudeAppIcon,
-  codex: codexAppIcon,
-  gemini: geminiAppIcon
+  codex: codexAppIcon
 };
 
 function normalizeAgentIconKey(agent: string) {
   const normalized = (agent || "").trim().toLowerCase();
   if (normalized.includes("claude")) return "claude";
   if (normalized.includes("codex")) return "codex";
-  if (normalized.includes("gemini")) return "gemini";
   return normalized;
 }
 
@@ -8901,7 +8842,7 @@ function AgentAppIcon({ agent }: { agent?: string }) {
 }
 
 function projectKeyFromSpecRef(value: string) {
-  return value.match(/(prd_\d+|project_\d+)/)?.[1] || "";
+  return value.match(/(PRD-\d+|PRD-\d+)/)?.[1] || "";
 }
 
 function displayActiveTicketBadge(value: string) {
@@ -8931,8 +8872,8 @@ function activeItemFileAliases(value: string) {
   const numericMatch = stem.match(/(\d+)/);
   if (numericMatch) {
     const id = numericMatch[1];
-    aliases.add(`Todo-${id}.md`);
-    aliases.add(`tickets_${id}.md`);
+    aliases.add(`TODO-${id}.md`);
+    aliases.add(`TODO-${id}.md`);
   }
   return [...aliases];
 }
@@ -8941,7 +8882,6 @@ function activeItemPreviewPaths(runner: AutoflowRunner) {
   const activeId = (runner.activeTicketId || "").trim().replace(/\.md$/i, "");
   if (!activeId) return [];
 
-  const normalized = activeId.toLowerCase();
   const paths = new Set<string>();
   const addFiles = (folders: string[], files: string[]) => {
     for (const folder of folders) {
@@ -8954,10 +8894,7 @@ function activeItemPreviewPaths(runner: AutoflowRunner) {
   if (runner.activeSpecRef) {
     paths.add(runner.activeSpecRef);
   }
-  if (normalized.startsWith("order_")) {
-    addFiles(["order", "inbox"], [`${activeId}.md`]);
-  }
-  if (normalized.startsWith("prd_") || normalized.startsWith("project_")) {
+  if (activeId.startsWith("PRD-")) {
     addFiles(["prd", "backlog"], [`${activeId}.md`]);
   }
 
@@ -8981,8 +8918,7 @@ function AiProgressRow({
   onControl,
   onRunnerAuthChoice,
   onDraftChange,
-  onConfigure,
-  onOpenStartupRules
+  onConfigure
 }: {
   runner: AutoflowRunner;
   onSelect: (filePath: string) => void;
@@ -8996,7 +8932,6 @@ function AiProgressRow({
   onRunnerAuthChoice?: (choice: RunnerAuthChoice, runner: AutoflowRunner) => void;
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
-  onOpenStartupRules?: OpenStartupRulesHandler;
 }) {
   const currentKey = runnerStageKey(runner);
   const hideProgressTrack = isCoordinatorRole(runner.role);
@@ -9042,8 +8977,6 @@ function AiProgressRow({
   const runnerDraft = draft || runnerDraftFromRunner(runner);
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
-  const startupRuleRole = startupRuleRoleForRunner(runner);
-  const canOpenRoleStartupRules = Boolean(onOpenStartupRules && startupRuleRole);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
   const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
   const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
@@ -9135,29 +9068,16 @@ function AiProgressRow({
         </div>
         {canControl ? (
           <div className="ai-progress-actions" aria-label={`${agentTitle} 제어`}>
-            {canOpenRoleStartupRules ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="runner-icon-button runner-plain-icon-button"
-                aria-label={`${agentTitle} 시작 규칙 열기`}
-                title={`${agentTitle} 시작 규칙 문서 열기`}
-                onClick={() => onOpenStartupRules?.("role", startupRuleRole)}
-              >
-                <BookOpenText className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            ) : null}
             {canStop ? (
               <>
                 <Button
                   variant="outline"
-                  size="icon"
-                  className="runner-icon-button runner-plain-icon-button"
-                  aria-label={`${runner.id} 중지`}
-                  disabled={Boolean(actionKey)}
-                  onClick={() => {
-                    onControl?.("stop", runner.id);
+                size="icon"
+                className="runner-icon-button runner-plain-icon-button"
+                aria-label={`${agentTitle} 중지`}
+                disabled={Boolean(actionKey)}
+                onClick={() => {
+                  onControl?.("stop", runner.id);
                   }}
                 >
                   {isWorking && (actionKey === "stopping_pending" || actionKey === "stopping_force") ? (
@@ -9168,15 +9088,15 @@ function AiProgressRow({
                 </Button>
                 {canForceStop ? (
                   <Button
-                    variant="outline"
-                    size="icon"
-                    className="runner-icon-button runner-plain-icon-button"
-                    aria-label={`${runner.id} 강제 종료`}
-                    onClick={() => {
-                      if (window.confirm(`${displayWorkflowRunnerId(runner.id)} runner 를 강제 종료할까요?`)) {
-                        onControl?.("stop", runner.id, { force: true });
-                      }
-                    }}
+                  variant="outline"
+                  size="icon"
+                  className="runner-icon-button runner-plain-icon-button"
+                  aria-label={`${agentTitle} 강제 종료`}
+                  onClick={() => {
+                    if (window.confirm(`${agentTitle} runner 를 강제 종료할까요?`)) {
+                      onControl?.("stop", runner.id, { force: true });
+                    }
+                  }}
                   >
                     <TriangleAlert className="h-4 w-4" />
                   </Button>
@@ -9187,7 +9107,7 @@ function AiProgressRow({
                 variant="outline"
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
-                aria-label={`${runner.id} 시작`}
+                aria-label={`${agentTitle} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
                   onControl?.("start", runner.id);
@@ -9282,6 +9202,8 @@ function AiProgressRow({
         projectRoot={options?.projectRoot || ""}
         boardDirName={options?.boardDirName || ".autoflow"}
         ariaLabel={`${agentLabel} 라이브 터미널`}
+        clearOnStopped
+        runnerStatus={status}
       />
       <RunnerActivityFooter runner={runner} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
@@ -9518,12 +9440,10 @@ function wikiListGroup(relativePath: string, kind: "wiki" | "handoff") {
   const path = relativePath.replace(/\\/g, "/").toLowerCase();
   if (path === "wiki/project-overview.md") return "Overview";
   if (path === "wiki/index.md") return "Index";
-  if (path === "wiki/log.md") return "Log";
   if (path.includes("/decisions/")) return "Decisions";
-  if (path.includes("/features/")) return "Features";
   if (path.includes("/architecture")) return "Architecture";
-  if (path.includes("/learnings/")) return "Learnings";
-  if (path.includes("/skills")) return "Skills";
+  if (path.includes("/answers/")) return "Answers";
+  if (path.includes("/operations/")) return "Operations";
   return "Wiki";
 }
 
@@ -9554,11 +9474,10 @@ function wikiListPriority(file: AutoflowFilePreview, relativePath: string, kind:
   const path = relativePath.replace(/\\/g, "/").toLowerCase();
   if (path === "wiki/project-overview.md") return 0;
   if (path === "wiki/index.md") return 1;
-  if (path === "wiki/log.md") return 2;
   if (path.includes("/decisions/")) return 10;
-  if (path.includes("/features/")) return 20;
-  if (path.includes("/architecture")) return 30;
-  if (path.includes("/learnings/")) return 40;
+  if (path.includes("/architecture")) return 20;
+  if (path.includes("/answers/")) return 30;
+  if (path.includes("/operations/")) return 40;
   if (isLowSignalWikiFile(file, relativePath)) return 90;
   return 50;
 }

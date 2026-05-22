@@ -1,5 +1,5 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, normalizePrdKey, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listQueueItems, readQueueItem } from "./queue";
 import { extractChecklistFromText, extractSectionLines } from "./sections";
 
@@ -7,7 +7,7 @@ export function listWorkerTicketItems(bucket: string): WorkerTicketItem[] {
   const dir = path.join(TICKETS_ROOT, bucket);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
-    .filter((name) => /^(Todo-\d+|tickets_\d+)\.md$/.test(name))
+    .filter((name) => /^TODO-\d+\.md$/.test(name))
     .map((name) => path.join(dir, name))
     .filter((file) => safeIsFile(file))
     .map((file) => readWorkerTicketItem(file, bucket))
@@ -16,8 +16,13 @@ export function listWorkerTicketItems(bucket: string): WorkerTicketItem[] {
 
 export function readWorkerTicketItem(file: string, kind: string): WorkerTicketItem {
   const base = readQueueItem(file, kind);
+  const prdKey = normalizePrdKey(
+    utils.extractScalarFieldInSection(file, "Ticket", "PRD Key") ||
+    utils.extractScalarFieldInSection(file, "References", "PRD")
+  );
   return {
     ...base,
+    prd_key: prdKey,
     allowed_paths: utils.ticketConcreteAllowedPaths(file),
     claimed_by: utils.extractScalarFieldInSection(file, "Ticket", "Claimed By"),
     execution_ai: utils.extractScalarFieldInSection(file, "Ticket", "Execution AI"),
@@ -27,6 +32,7 @@ export function readWorkerTicketItem(file: string, kind: string): WorkerTicketIt
     semantic_reason: utils.extractScalarFieldInSection(file, "Verification", "Semantic Reason"),
     semantic_checked_at: utils.extractScalarFieldInSection(file, "Verification", "Semantic Checked At"),
     semantic_log: utils.extractScalarFieldInSection(file, "Verification", "Semantic Log"),
+    submitted_to_verifier_at: utils.extractScalarFieldInSection(file, "Verification", "Submitted At"),
   };
 }
 
@@ -50,7 +56,7 @@ export function runnerTokenMatches(raw: string, runnerId: string): boolean {
 }
 
 export function canonicalRunnerId(raw: string): string {
-  return String(raw || "").trim().replace(/-\d+$/, "").toLowerCase();
+  return String(raw || "").trim().toLowerCase();
 }
 
 export function claimToken(runnerId: string): string {
@@ -78,7 +84,7 @@ export function resolveTicketPath(raw: string, states: string[]): string {
   const id = normalizeId(raw);
   if (!id) return "";
   for (const state of states) {
-    for (const name of [`Todo-${id}.md`, `tickets_${id}.md`]) {
+    for (const name of [`TODO-${id}.md`, `TODO-${id}.md`]) {
       const candidate = path.join(TICKETS_ROOT, state, name);
       if (safeIsFile(candidate)) return candidate;
     }
@@ -102,25 +108,20 @@ export function updateWorkerState(runnerId: string, ticket: string, stage: strin
   utils.updateRunnerState(runnerId, {
     runner_status: stage === "idle" ? "idle" : "running",
     active_role: "worker",
-    active_ticket_id: idFromPath(ticket) ? `Todo-${idFromPath(ticket)}` : "",
+    active_ticket_id: idFromPath(ticket) ? `TODO-${idFromPath(ticket)}` : "",
     active_ticket_path: boardRel(ticket),
     active_stage: stage,
     last_result: result,
   }, BOARD_ROOT);
 }
 
-export function setRecoveryField(ticket: string, field: string, value: string): void {
-  utils.replaceScalarFieldInSection(ticket, "Recovery State", field, value);
-}
-
 export function collectUsedIds(kind: string): Set<string> {
   const used = new Set<string>();
   const patterns: RegExp[] =
-    kind === "ticket" ? [/^(Todo-|tickets_)(\d+)\.md$/] :
-    kind === "prd" ? [/^(prd|project)_(\d+)\.md$/] :
-    [/^order_(\d+)(?:_retry_.*)?\.md$/];
+    kind === "ticket" ? [/^(TODO)-(\d+)\.md$/] :
+    kind === "prd" ? [/^(PRD)-(\d+)\.md$/] :
+    [];
   const roots = [
-    path.join(TICKETS_ROOT, "order"),
     path.join(TICKETS_ROOT, "prd"),
     path.join(TICKETS_ROOT, "todo"),
     path.join(TICKETS_ROOT, "inprogress"),

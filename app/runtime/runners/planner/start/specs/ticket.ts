@@ -1,15 +1,17 @@
 import {fs, path, BOARD_ROOT, PROJECT_ROOT, displayId, utils} from "../context";
+import {ensureTicketWorktree} from "../../../../shared/runner-tool/worktree";
 import {emit} from "../output";
 import {boardRelativePath, projectKeyFromSpecRef, ticketPath} from "../ids";
 import {nextTicketId} from "../files";
 import {SplitMapEntry, extractBulletSection, extractChecklist, extractSectionText, extractSplitMap} from "../sections";
 import {normalizeChangeType, normalizePriority} from "../priority";
-import {archiveSourceOrderForSpec, archiveSpecToDoneIfNeeded} from "./archive";
+import {archiveSpecToDoneIfNeeded} from "./archive";
 import {missingRequiredSecrets, runLintTicket} from "./preflight";
 
 type TodoSlice = {
   title: string;
   goal: string;
+  priority: string;
   allowedPaths: string[];
   doneWhen: string;
   verificationCommand: string;
@@ -41,10 +43,14 @@ function compactSection(file: string, heading: string): string {
 }
 
 function specTitle(file: string, projectKey: string): string {
+  // PRD heading is the most descriptive signal — "PRD 007: Vue page and router
+  // modules" carries the actual scope. Project Name (e.g. "Promokit") is the
+  // umbrella label and is the worst tiebreaker for a ticket title, so it goes
+  // last. Project Title sits between when the spec author bothered to set it.
   return (
-    utils.extractScalarFieldInSection(file, "Project", "Name") ||
-    utils.extractScalarFieldInSection(file, "Project", "Title") ||
     cleanHeadingTitle(firstHeading(file), projectKey) ||
+    utils.extractScalarFieldInSection(file, "Project", "Title") ||
+    utils.extractScalarFieldInSection(file, "Project", "Name") ||
     `AI work for ${projectKey}`
   );
 }
@@ -54,7 +60,7 @@ function specGoal(file: string, projectKey: string): string {
     utils.extractScalarFieldInSection(file, "Project", "Goal") ||
     utils.extractScalarFieldInSection(file, "Core Scope", "Goal") ||
     compactSection(file, "Goal") ||
-    `Implement the approved spec for ${projectKey}.`
+    `${projectKey}의 승인된 spec을 구현한다.`
   );
 }
 
@@ -82,7 +88,7 @@ function specDoneWhenLines(file: string): string[] {
 }
 
 function specDoneWhen(file: string): string {
-  return specDoneWhenLines(file).join("\n") || "- [ ] Implementation stays inside Allowed Paths\n- [ ] Verification evidence is recorded before done/order-retry";
+  return specDoneWhenLines(file).join("\n") || "- [ ] 구현이 Allowed Paths 안에서만 이루어진다.\n- [ ] done/revise 전에 검증 근거가 기록된다.";
 }
 
 function splitListValues(values: string[]): string[] {
@@ -106,15 +112,21 @@ function firstSplitValue(entry: SplitMapEntry, key: string): string {
 function defaultSliceDoneWhen(goal: string, allowedPaths: string[], verificationCommand: string): string {
   const pathText = allowedPaths.join(", ") || "Allowed Paths";
   return [
-    `- [ ] \`${pathText}\` 범위 변경이 "${goal}" 결과를 반영한다.`,
-    `- [ ] 검증 명령 \`${verificationCommand || "none-shell"}\` 이 exit 0 으로 끝나거나, \`none-shell\` 인 경우 파일 검토 근거가 남는다.`,
+    `- [ ] \`${pathText}\` 안의 변경이 "${goal}" 결과를 반영한다.`,
+    `- [ ] 검증 명령 \`${verificationCommand || "none-shell"}\` 가 exit 0으로 끝나거나, 명령이 \`none-shell\` 이면 파일 검토 근거가 기록된다.`,
     `- [ ] 최종 diff가 \`${pathText}\` 밖의 파일을 포함하지 않는다.`,
   ].join("\n");
+}
+
+function inheritedTodoPriorityFromSpec(file: string): string {
+  const priority = normalizePriority(utils.extractScalarFieldInSection(file, "Project", "Priority"));
+  return priority === "critical" ? "critical" : "normal";
 }
 
 function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
   const baseTitle = specTitle(file, projectKey);
   const baseGoal = specGoal(file, projectKey);
+  const inheritedPriority = inheritedTodoPriorityFromSpec(file);
   const baseVerificationCommand = specVerificationCommand(file);
   const concreteAllowedPaths = extractBulletSection(file, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
   const entries = extractSplitMap(file, ["Todo Split Map", "Todo Splits", "Implementation Slices", "Ticket Split Map"]);
@@ -123,6 +135,7 @@ function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
     return [{
       title: baseTitle,
       goal: baseGoal,
+      priority: inheritedPriority,
       allowedPaths: concreteAllowedPaths,
       doneWhen: specDoneWhen(file),
       verificationCommand: baseVerificationCommand,
@@ -135,6 +148,7 @@ function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
   return entries.map((entry, index) => {
     const entryTitle = firstSplitValue(entry, "title") || entry.title || `Slice ${index + 1}`;
     const goal = firstSplitValue(entry, "goal") || firstSplitValue(entry, "scope") || entryTitle;
+    const priority = firstSplitValue(entry, "priority");
     const sliceAllowedPaths = splitListValues(entry.fields.allowed_paths || []).filter((p) => utils.allowedPathIsConcreteRepoPath(p));
     const allowedPaths = sliceAllowedPaths.length > 0 ? sliceAllowedPaths : concreteAllowedPaths;
     const verificationCommand = firstSplitValue(entry, "verification").replace(/^Command:\s*/i, "") || baseVerificationCommand;
@@ -142,6 +156,7 @@ function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
     return {
       title: `${baseTitle} - ${entryTitle}`,
       goal,
+      priority: priority ? normalizePriority(priority) : inheritedPriority,
       allowedPaths,
       doneWhen: doneWhenLines.length > 0 ? doneWhenLines.join("\n") : defaultSliceDoneWhen(goal, allowedPaths, verificationCommand),
       verificationCommand,
@@ -162,10 +177,10 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
       source: "allowed-paths-missing",
       spec: specFile,
       failure_class: "ambiguous_scope",
-      recovery_state: "needs_user",
+      blocker_state: "needs_user",
       board_root: BOARD_ROOT,
       project_root: PROJECT_ROOT,
-      next_action: `Narrow Allowed Paths in ${boardRelativePath(specFile)} to concrete repo-relative paths, then rerun planner.`,
+	      next_action: `${boardRelativePath(specFile)}의 Allowed Paths를 구체적인 repo-relative path로 좁힌 뒤 플래너 러너를 다시 실행한다.`,
     });
     process.exit(0);
   }
@@ -180,10 +195,10 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
       spec: specFile,
       missing_secrets: missingSecrets.join(","),
       failure_class: "needs_user_decision",
-      recovery_state: "needs_user",
+      blocker_state: "needs_user",
       board_root: BOARD_ROOT,
       project_root: PROJECT_ROOT,
-      next_action: `Set ${missingSecrets.join(",")}, then rerun planner to promote ${boardRelativePath(specFile)}.`,
+	      next_action: `${missingSecrets.join(",")} 값을 설정한 뒤 플래너 러너를 다시 실행해 ${boardRelativePath(specFile)}를 승격한다.`,
     });
     process.exit(0);
   }
@@ -198,10 +213,10 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
       lint_vagueness_score: lint.score || "unknown",
       lint_vague_terms: lint.terms || "",
       failure_class: "vague_completion_promise",
-      recovery_state: "needs_user",
+      blocker_state: "needs_user",
       board_root: BOARD_ROOT,
       project_root: PROJECT_ROOT,
-      next_action: `PRD ${boardRelativePath(specFile)} has a vague Completion Promise (lint_status=${lint.status || "block"}, vagueness_score=${lint.score || "unknown"}). spec-author-agent must rework Done When / Global Acceptance Criteria with concrete signals (commands, file paths, exit codes, numeric metrics) before promoting to todo. Override only after review with AUTOFLOW_LINT_TICKET=off.`,
+	      next_action: `PRD ${boardRelativePath(specFile)}의 완료 약속이 모호하다(lint_status=${lint.status || "block"}, vagueness_score=${lint.score || "unknown"}). todo로 승격하기 전에 spec-author-agent가 Done When / Global Acceptance Criteria를 명령, 파일 경로, exit code, 수치 지표 같은 구체적 신호로 다시 작성해야 한다. 검토 후에만 AUTOFLOW_LINT_TICKET=off로 우회한다.`,
     });
     process.exit(0);
   }
@@ -224,7 +239,7 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
     lint_vagueness_score: lint.score,
     board_root: BOARD_ROOT,
     project_root: PROJECT_ROOT,
-    next_action: `${tickets.length} todo ticket(s) created from ${boardRelativePath(specFile)}; hand off to worker.`,
+	    next_action: `${boardRelativePath(specFile)}에서 todo ticket ${tickets.length}개를 생성했다. 워커 러너에게 넘긴다.`,
   });
   process.exit(0);
 }
@@ -232,11 +247,19 @@ export function promoteSpecToTodoOrExit(specFile: string): never {
 export function createTodoTicketsFromSpec(specFile: string): string[] {
   const specRef = boardRelativePath(specFile);
   const projectKey = projectKeyFromSpecRef(specRef);
+  // Compute slices BEFORE archiving the PRD so we never leave a PRD in done/
+  // without a sibling Todo. todoSlicesFromSpec always returns at least one
+  // slice (base slice from PRD Goal + Allowed Paths when no Split Map),
+  // so this guarantees ≥1 Todo per archived PRD.
+  const preflightSlices = todoSlicesFromSpec(specFile, projectKey);
+  if (preflightSlices.length === 0) {
+    throw new Error(`PRD ${specRef} produced 0 todo slices; refuse to archive without at least one Todo.`);
+  }
   const archivedSpecRef = archiveSpecToDoneIfNeeded(specRef);
   const archivedSpecFile = path.join(BOARD_ROOT, archivedSpecRef);
-  archiveSourceOrderForSpec(projectKey, archivedSpecFile);
   const slices = todoSlicesFromSpec(archivedSpecFile, projectKey);
-  return slices.map((slice) => writeTodoTicketFromSlice(archivedSpecRef, archivedSpecFile, projectKey, slice));
+  const effectiveSlices = slices.length > 0 ? slices : preflightSlices;
+  return effectiveSlices.map((slice) => writeTodoTicketFromSlice(archivedSpecRef, archivedSpecFile, projectKey, slice));
 }
 
 export function createTodoTicketFromSpec(specFile: string): string {
@@ -247,7 +270,7 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
   const ticketId = nextTicketId();
   const ticketFile = ticketPath("todo", ticketId);
   const timestamp = utils.nowIso();
-  const priority = normalizePriority(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Priority"));
+  const priority = slice.priority || inheritedTodoPriorityFromSpec(archivedSpecFile);
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Change Type"));
   const allowedPaths = slice.allowedPaths.map((p) => `- ${p}`).join("\n");
   const sliceRef = slice.count > 1 ? `${archivedSpecRef}#todo-${String(slice.index).padStart(2, "0")}` : archivedSpecRef;
@@ -259,7 +282,7 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
 
 ## Ticket
 
-- ID: Todo-${ticketId}
+- ID: TODO-${ticketId}
 - PRD Key: ${projectKey}
 - PRD Slice: ${slice.index}/${slice.count}
 - Plan Candidate: planner-runner handoff from ${sliceRef}
@@ -275,7 +298,7 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
 
 ## Goal
 
-- 이번 작업의 목표: ${slice.goal}
+	- 이번 작업의 목표: ${slice.goal}
 
 ## References
 
@@ -287,7 +310,7 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
 
 - Project Note: [[${projectKey}]]
 - Plan Note:
-- Ticket Note: [[Todo-${ticketId}]]
+- Ticket Note: [[TODO-${ticketId}]]
 
 ## Allowed Paths
 
@@ -317,35 +340,25 @@ ${allowedPaths}
 - Last Lint Status:
 - Last Lint Vagueness Score:
 
-## Recovery State
-
-- Status: healthy
-- Detected By:
-- Failure Class:
-- Evidence:
-- Planner Decision:
-- Worker Resume Instruction:
-- Last Recovery At:
-
 ## Done When
 
 ${slice.doneWhen}
 
 ## Next Action
 
-- 다음에 바로 이어서 할 일: 플래너 러너가 Allowed Paths 와 Done When 을 PRD 기준으로 더 좁힌다. 워커 러너는 이 티켓을 todo 에서 claim 한 뒤 mini-plan, 구현, 검증, 머지까지 한 턴에 끝낸다.
+	- 다음 즉시 작업: 워커 러너가 이 todo ticket을 claim하고, mini-plan을 작성한 뒤 Allowed Paths 안에서 구현하고, 검증 근거를 기록한 다음 검증 러너 handoff로 진행한다.
 
 ## Resume Context
 
-- 현재 상태 요약: 플래너 러너가 PRD 큐에서 todo 티켓을 생성한 직후.
-- 직전 작업: autoflow run planner 가 PRD 를 done 으로 보관하고 todo 티켓을 만들었다.
-- 재개 시 먼저 볼 것: PRD, Goal, Allowed Paths, Done When.
+	- 현재 상태: 플래너 러너가 PRD queue에서 이 todo ticket을 방금 생성했다.
+	- 마지막 완료 작업: \`autoflow run planner\` 가 PRD를 archive하고 이 todo ticket을 만들었다.
+	- 재개 시 먼저 확인할 것: PRD, Goal, Allowed Paths, Done When.
 
 ## Notes
 
-- Created by ${displayId} (planner runner) from ${archivedSpecRef} at ${timestamp}.
+	- ${displayId} (플래너 러너)가 ${timestamp}에 ${archivedSpecRef}에서 생성했다.
 - PRD slice: ${slice.index}/${slice.count}.
-${slice.notes.length > 0 ? slice.notes.map((item) => `- Slice note: ${item}`).join("\n") : ""}
+	${slice.notes.length > 0 ? slice.notes.map((item) => `- slice 메모: ${item}`).join("\n") : ""}
 
 ## Verification
 
@@ -361,5 +374,29 @@ ${slice.notes.length > 0 ? slice.notes.map((item) => `- Slice note: ${item}`).jo
 `,
     "utf8"
   );
+
+  // Provision branch + worktree, and commit the ticket markdown into the
+  // worktree so the PRD-track squash captures both planner output and worker
+  // implementation in one branch.
+  try {
+    const ticketContent = fs.readFileSync(ticketFile, "utf8");
+    const wt = ensureTicketWorktree({
+      id: ticketId,
+      kind: "todo",
+      content: ticketContent,
+      prdKey: projectKey,
+    });
+    if (wt.worktreePath) {
+      utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Path", `\`${wt.worktreePath}\``);
+      utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Branch", wt.branch);
+      utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Base Commit", wt.baseCommit);
+      utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Worktree Commit", "");
+      utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Integration Status", "ready");
+    }
+  } catch {
+    // Best-effort: ticket file is already on disk; worktree provisioning failure
+    // does not block planner output. Worker still creates worktree on claim.
+  }
+
   return ticketFile;
 }

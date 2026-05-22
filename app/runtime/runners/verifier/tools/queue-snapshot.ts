@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 type VerifierTicketItem = WorkerTicketItem & { verify_pending: boolean };
 
 const {
@@ -78,7 +77,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -97,11 +95,11 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
   collectFiles,
+  conversationHandoffLinksForPrdKey,
   resolveBoardPath,
   validateNoUnsafeWrite,
   writeAtomic,
@@ -125,14 +123,30 @@ const {
   safeIsFile,
   ensureTrailingNewline,
   escapeRe,
+  scopedSourceFileCount,
   ok,
   fail
 } = shared;
 
+function verifierFifoSort(a: VerifierTicketItem, b: VerifierTicketItem): number {
+  if (a.verify_pending !== b.verify_pending) return a.verify_pending ? -1 : 1;
+  const at = a.submitted_to_verifier_at || "";
+  const bt = b.submitted_to_verifier_at || "";
+  if (at && bt && at !== bt) return at < bt ? -1 : 1;
+  if (at && !bt) return -1;
+  if (!at && bt) return 1;
+  const ai = Number.parseInt(a.id || "999999", 10);
+  const bi = Number.parseInt(b.id || "999999", 10);
+  if (ai !== bi) return ai - bi;
+  return a.path.localeCompare(b.path);
+}
+
 function compactVerifierSource(item: VerifierTicketItem): JsonObject {
+  const handoffLinks = conversationHandoffLinksForPrdKey(item.prd_key || "", 4);
   return {
     path: item.path,
     id: item.id,
+    prd_key: item.prd_key || "",
     priority: item.priority,
     title: item.title,
     stage: item.stage || "",
@@ -142,6 +156,9 @@ function compactVerifierSource(item: VerifierTicketItem): JsonObject {
     worktree_status: item.worktree_status || "",
     allowed_paths: item.allowed_paths || [],
     verify_pending: item.verify_pending,
+    submitted_to_verifier_at: item.submitted_to_verifier_at || "",
+    handoff_links: handoffLinks,
+    handoff_link_count: handoffLinks.length,
   };
 }
 
@@ -152,6 +169,7 @@ export function cmdVerifierQueueSnapshot(): void {
     ...item,
     verify_pending: item.stage === "verify_pending" || item.stage === "",
   }));
+  tickets.sort(verifierFifoSort);
   const actionable = tickets.find((item) => item.verify_pending) || tickets[0];
   const visibleTickets = actionable && !tickets.slice(0, maxItems).some((item) => item.path === actionable.path)
     ? [actionable, ...tickets.filter((item) => item.path !== actionable.path).slice(0, Math.max(0, maxItems - 1))]
@@ -169,7 +187,7 @@ export function cmdVerifierQueueSnapshot(): void {
     ai_followup_reason: actionable ? "verifier_ticket_pending" : "no_pending_verifier_ticket",
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
-      max_files_to_open: scopedSources.length,
+      max_files_to_open: scopedSourceFileCount(scopedSources),
       max_tickets_to_edit: actionable ? 1 : 0,
       do_not_follow_references_outside_scope: true,
       avoid_routine_tools_already_run: true,

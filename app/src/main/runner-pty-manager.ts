@@ -2,8 +2,10 @@
 //
 // Long-lived PTY-based runner manager. One pty.spawn() per runner. The runner
 // holds a shell that the user's environment (PATH/PROFILE) is loaded into;
-// inside that shell we type the agent CLI command (claude / codex / gemini)
-// just like a human would. Stdin is internal-only — the renderer-side
+// inside that shell we type the agent CLI command (claude / codex)
+// just like a human would. Desktop runners use execCommand so the agent
+// replaces the shell and failed/exited CLIs cannot receive later prompts as
+// shell input. Stdin is internal-only — the renderer-side
 // LiveTerminalView is read-only by design.
 //
 // Lifecycle (per runner):
@@ -11,8 +13,7 @@
 //   write()    → write a prompt + Enter to the stdin queue
 //   stop()     → send SIGTERM, kill subtree, status='stopped'
 //
-// fs.watch wakes are mediated by the caller — when a board change fires,
-// the caller decides what prompt or raw stdin bytes to push.
+// Board change handling is mediated by the caller.
 
 import { EventEmitter } from "node:events";
 import path from "node:path";
@@ -37,8 +38,7 @@ type RunnerStartOptions = {
   rows?: number;
   env?: NodeJS.ProcessEnv;
   command?: string;
-  logsDir?: string;
-  logSegment?: string;
+  execCommand?: boolean;
 };
 
 type WritePromptOptions = {
@@ -61,13 +61,14 @@ type PtyRunner = {
   command: string;
   shell: string;
   startedAt: string;
-  liveStdoutLog: string;
   client: IPty;
   buffer: string[];
   bufferBytes: number;
   stdinQueue: string[];
   stdinDraining: boolean;
   lastDataAt: number;
+  contextResetLastInjectedAt?: number;
+  contextResetLastInjectedCommand?: string;
   exitCode?: number;
   signal?: number;
   _dataSub?: IDisposable;
@@ -95,14 +96,84 @@ function getDefaultShell() {
   if (process.platform === "win32") {
     return process.env.COMSPEC || "cmd.exe";
   }
-  return process.env.SHELL || "/bin/bash";
+  try {
+    return process.env.SHELL || os.userInfo().shell || "/bin/zsh";
+  } catch {
+    return process.env.SHELL || "/bin/zsh";
+  }
+}
+
+function uniquePathEntries(entries: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of entries) {
+    const value = String(entry || "").trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function existingDirEntries(entries: string[]) {
+  return entries.filter((entry) => {
+    try {
+      return entry && fs.existsSync(entry) && fs.statSync(entry).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function nvmNodeBinEntries(homeDir: string) {
+  const versionsRoot = path.join(homeDir, ".nvm", "versions", "node");
+  try {
+    return fs
+      .readdirSync(versionsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(versionsRoot, entry.name, "bin"));
+  } catch {
+    return [];
+  }
+}
+
+function augmentedPathValue(basePath = process.env.PATH || "") {
+  const homeDir = os.homedir();
+  const baseEntries = String(basePath || "").split(path.delimiter).filter(Boolean);
+  const candidateEntries = [
+    ...baseEntries,
+    ...nvmNodeBinEntries(homeDir),
+    path.join(homeDir, ".local", "bin"),
+    path.join(homeDir, ".npm-global", "bin"),
+    path.join(homeDir, ".npm", "bin"),
+    path.join(homeDir, ".yarn", "bin"),
+    path.join(homeDir, ".config", "yarn", "global", "node_modules", ".bin"),
+    path.join(homeDir, ".bun", "bin"),
+    path.join(homeDir, ".volta", "bin"),
+    path.join(homeDir, "Library", "pnpm"),
+    path.join(homeDir, ".local", "share", "pnpm"),
+    path.join(homeDir, ".local", "share", "mise", "shims"),
+    path.join(homeDir, ".asdf", "shims"),
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin"
+  ];
+  return uniquePathEntries(existingDirEntries(candidateEntries)).join(path.delimiter);
 }
 
 function buildShellEnv(extraEnv?: NodeJS.ProcessEnv) {
   const merged = { ...process.env, ...(extraEnv || {}) };
+  merged.PATH = augmentedPathValue(merged.PATH);
+  if (!merged.SHELL) {
+    merged.SHELL = getDefaultShell();
+  }
   // Force xterm-256color + truecolor unconditionally. The original `||`
   // form preserved a user-set TERM=dumb / empty / non-color value and then
-  // the agent CLIs (chalk-based: claude / codex / gemini) saw a non-color
+  // the agent CLIs (chalk-based: claude / codex) saw a non-color
   // terminal and emitted plain text. Override.
   merged.TERM = "xterm-256color";
   merged.COLORTERM = "truecolor";
@@ -122,12 +193,9 @@ function buildShellEnv(extraEnv?: NodeJS.ProcessEnv) {
   return merged;
 }
 
-function safeRunnerLogSegment(value: string) {
-  return String(value || "runner").replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 80) || "runner";
-}
-
-function timestampForLogFile(date = new Date()) {
-  return date.toISOString().replace(/\.\d+Z$/, "Z").replace(/:/g, "-");
+function shellExecCommand(command: string) {
+  const value = String(command || "").trim();
+  return value ? `exec ${value}` : "";
 }
 
 export class PtyRunnerManager extends EventEmitter {
@@ -151,8 +219,7 @@ export class PtyRunnerManager extends EventEmitter {
       pid: runner.pid,
       cwd: runner.cwd,
       command: runner.command,
-      startedAt: runner.startedAt,
-      liveStdoutLog: runner.liveStdoutLog || ""
+      startedAt: runner.startedAt
     }));
   }
 
@@ -184,28 +251,11 @@ export class PtyRunnerManager extends EventEmitter {
     const rows = Number.isFinite(opts.rows) ? opts.rows : 30;
     const env = buildShellEnv(opts.env);
     const command = String(opts.command || "").trim();
-    const logsDir = typeof opts.logsDir === "string" && opts.logsDir ? opts.logsDir : "";
-    let liveStdoutLog = "";
-    if (logsDir) {
-      try {
-        fs.mkdirSync(logsDir, { recursive: true });
-        const logSegment = String(opts.logSegment || runnerId);
-        liveStdoutLog = path.join(
-          logsDir,
-          `${safeRunnerLogSegment(logSegment)}_${timestampForLogFile()}_live_stdout.log`
-        );
-        fs.writeFileSync(liveStdoutLog, "");
-      } catch {
-        liveStdoutLog = "";
-      }
-    }
 
     const permissionFix = fixNodePtySpawnHelperPermissions({
-      log: (message) => console.log(`[node-pty] ${message}`)
+      log: () => {}
     });
-    if (permissionFix.errors.length) {
-      console.warn("[node-pty] spawn-helper permission repair warning", permissionFix.errors);
-    }
+    void permissionFix;
 
     let client;
     try {
@@ -228,7 +278,6 @@ export class PtyRunnerManager extends EventEmitter {
       command,
       shell,
       startedAt: new Date().toISOString(),
-      liveStdoutLog,
       client,
       buffer: [],
       bufferBytes: 0,
@@ -243,7 +292,7 @@ export class PtyRunnerManager extends EventEmitter {
       this._onExit(runner, exitCode, signal)
     );
 
-    // After the shell prompt is ready, type the agent CLI command. We add a
+    // After the shell prompt is ready, type the command. We add a
     // short delay so the shell's startup banner doesn't race with the typed
     // command; vibe-terminal does this implicitly because users type after the
     // prompt appears. 250ms is conservative and below the human-perceptible
@@ -252,7 +301,8 @@ export class PtyRunnerManager extends EventEmitter {
       setTimeout(() => {
         if (runner.status === STATUS.STOPPED) return;
         try {
-          client.write(`${command}\r`);
+          const typedCommand = opts.execCommand ? shellExecCommand(command) : command;
+          client.write(`${typedCommand}\r`);
         } catch (err) {
           this.emit("error", { runnerId, error: err });
         }
@@ -289,7 +339,7 @@ export class PtyRunnerManager extends EventEmitter {
     //     treats it as a real paste and a separate \r afterwards submits.
     //     Without the envelope, claude parks content in a "[Pasted N lines]"
     //     placeholder and ignores \r.
-    //   - "plain" (codex / gemini / default): write body as-is. These TUIs
+    //   - "plain" (codex / default): write body as-is. These TUIs
     //     do NOT recognize \e[200~ markers and would render them as raw
     //     mojibake bytes if we sent them.
     const pasteMode = opts.paste === "bracketed" ? "bracketed" : "plain";
@@ -330,27 +380,49 @@ export class PtyRunnerManager extends EventEmitter {
   // Agent mapping:
   //   claude  compact→/compact  clear→/clear
   //   codex   compact→/compact  clear→/new
-  //   gemini  compact→/compress clear→/clear
-  //           (set AUTOFLOW_GEMINI_CLEAR_MODE=new to opt into /new)
   // Slash commands are single-line, so no bracketed-paste envelope.
   injectContextReset(runnerId: string, mode: ContextResetMode = "compact") {
     const runner = this.runners.get(runnerId);
     if (!runner || runner.status !== STATUS.RUNNING) return false;
     const cmd = String(runner.command || "").trimStart().toLowerCase();
     let slashCmd;
-    if (cmd.startsWith("gemini")) {
-      const geminiClearMode = String(process.env.AUTOFLOW_GEMINI_CLEAR_MODE || "clear").toLowerCase();
-      slashCmd = mode === "clear" && geminiClearMode === "new" ? "/new" : (mode === "clear" ? "/clear" : "/compress");
-    } else if (cmd.startsWith("codex")) {
+    if (cmd.startsWith("codex")) {
       slashCmd = mode === "clear" ? "/new" : "/compact";
     } else {
       // claude (default)
       slashCmd = mode === "clear" ? "/clear" : "/compact";
     }
-    // Plain text + carriage return. No bracketed-paste — slash commands must
-    // not be wrapped in \e[200~...\e[201~ or they render as literal text.
-    runner.stdinQueue.push(`${slashCmd}\r`);
+    const submitDelayMs = Math.max(
+      50,
+      Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_SUBMIT_DELAY_MS || "400", 10) || 400
+    );
+    const dedupMs = Math.max(
+      1000,
+      Number.parseInt(process.env.AUTOFLOW_CONTEXT_RESET_INJECT_DEDUP_MS || "60000", 10) || 60000
+    );
+    const now = Date.now();
+    if (
+      runner.contextResetLastInjectedCommand === slashCmd &&
+      runner.contextResetLastInjectedAt &&
+      now - runner.contextResetLastInjectedAt < dedupMs
+    ) {
+      return true;
+    }
+    if (runner.stdinQueue.some((queued) => queued === slashCmd || queued === "\r")) {
+      return true;
+    }
+    // Slash commands must not be wrapped in bracketed paste. Submit the Enter
+    // keystroke separately, matching writePrompt(), so agent TUIs have time to
+    // accept the input line before the command is submitted.
+    runner.contextResetLastInjectedAt = now;
+    runner.contextResetLastInjectedCommand = slashCmd;
+    runner.stdinQueue.push(slashCmd);
     this._drainStdin(runner);
+    setTimeout(() => {
+      if (runner.status !== STATUS.RUNNING) return;
+      runner.stdinQueue.push("\r");
+      this._drainStdin(runner);
+    }, submitDelayMs);
     return true;
   }
 
@@ -390,13 +462,6 @@ export class PtyRunnerManager extends EventEmitter {
       const dropped = runner.buffer.shift() || "";
       runner.bufferBytes -= Buffer.byteLength(dropped, "utf8");
     }
-    if (runner.liveStdoutLog) {
-      try {
-        fs.appendFileSync(runner.liveStdoutLog, data);
-      } catch {
-        // Logging must never break the live PTY.
-      }
-    }
     this.emit("bytes", { runnerId: runner.id, data });
   }
 
@@ -431,7 +496,7 @@ export class PtyRunnerManager extends EventEmitter {
   // Resize the PTY's notion of the terminal window. Must be called whenever
   // the renderer's xterm fits to a new size, otherwise the agent CLI keeps
   // wrapping at the original cols and its cursor-up redraws (claude's
-  // "thinking..." spinner, codex's TUI footer, gemini's input frame) leave
+  // "thinking..." spinner, codex's TUI footer) leave
   // leftover characters behind.
   resize(runnerId: string, cols: number, rows: number) {
     const runner = this.runners.get(runnerId);

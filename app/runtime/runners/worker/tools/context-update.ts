@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -96,7 +94,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -139,10 +136,10 @@ export function cmdWorkerContextUpdate(): void {
   if (resumeCurrent || resumeLast || resumeFirst) {
     replaceSectionBlock(
       ticket,
-      "Resume Context",
-      `- Current state: ${resumeCurrent || utils.extractScalarFieldInSection(ticket, "Resume Context", "Current state") || "not provided"}
-- Last completed action: ${resumeLast || "not provided"}
-- First thing to inspect on resume: ${resumeFirst || "not provided"}`
+	      "Resume Context",
+	      `- Current state: ${resumeCurrent || utils.extractScalarFieldInSection(ticket, "Resume Context", "Current state") || "제공되지 않음"}
+	- Last completed action: ${resumeLast || "제공되지 않음"}
+	- First thing to inspect on resume: ${resumeFirst || "제공되지 않음"}`
     );
   }
 

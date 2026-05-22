@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,8 +76,8 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   emitRunnerContextReset,
+  ensureTicketWorktree,
   spawnOutputText,
   wikiSourceGroups,
   hashFiles,
@@ -97,7 +96,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -135,18 +133,6 @@ function scalarFromTicketContent(content: string, fieldName: string): string {
   return match ? stripTicks(match[1]).trim() : "";
 }
 
-function sourceOrderRefsFromTicketContent(content: string): string[] {
-  const source = scalarFromTicketContent(content, "Source");
-  return unique(
-    [
-      ...source.split(/[, ]+/),
-      ...(String(content || "").match(/tickets\/order\/order_[A-Za-z0-9._-]+\.md/g) || []),
-    ]
-      .map((part) => stripTicks(part).trim())
-      .filter((part) => /^tickets\/order\/[A-Za-z0-9._-]+\.md$/.test(part))
-  );
-}
-
 function sectionTextFromTicketContent(content: string, heading: string): string {
   const escaped = escapeRe(heading);
   const match = String(content || "").match(new RegExp(`^##\\s+${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|\\s*$)`, "m"));
@@ -172,10 +158,67 @@ function projectKeyFromTicketContent(content: string, ticketId: string): string 
 
 function sourcePrdRefsFromTicketContent(content: string): string[] {
   return unique(
-    (String(content || "").match(/tickets\/prd\/prd_[A-Za-z0-9._-]+\.md/g) || [])
+    (String(content || "").match(/tickets\/prd\/PRD-[A-Za-z0-9._-]+\.md/g) || [])
       .map((part) => stripTicks(part).trim())
       .filter(Boolean)
   );
+}
+
+function prdBodyExists(prdKey: string): boolean {
+  if (!prdKey) return false;
+  const active = path.join(TICKETS_ROOT, "prd", `${prdKey}.md`);
+  const done = path.join(TICKETS_ROOT, "done", prdKey, `${prdKey}.md`);
+  return safeIsFile(active) || safeIsFile(done);
+}
+
+function enforcePrdReferenceExists(content: string): void {
+  // Reject TODOs that self-declare a `PRD Key: PRD-NNN` whose PRD body does
+  // not exist on the board. Without this gate, a TODO can claim provenance
+  // from a PRD that was lost (e.g. when `.autoflow/` was temporarily
+  // gitignored), leaving the UI to render an orphan "PRD 없음" group.
+  // `/atodo`-direct TODOs leave the PRD Key blank and pass through this gate.
+  const prdKey = scalarFromTicketContent(content, "PRD Key");
+  if (!/^PRD-\d+$/.test(prdKey)) return;
+  if (prdBodyExists(prdKey)) return;
+  if (hasFlag("--allow-missing-prd")) return;
+  fail(2, `ticket references PRD Key=${prdKey} but no PRD body exists at tickets/prd/${prdKey}.md or tickets/done/${prdKey}/${prdKey}.md; refuse to create an orphan TODO. Pass --allow-missing-prd to override for reconstructed-stub or migration scenarios.`, {
+    prd_key: prdKey,
+    rule: "todo_requires_existing_prd",
+  });
+}
+
+function prdBranchFromKey(prdKey: string): string {
+  if (!/^PRD-\d+$/.test(prdKey)) return "";
+  const candidates = [
+    path.join(TICKETS_ROOT, "prd", `${prdKey}.md`),
+    path.join(TICKETS_ROOT, "done", prdKey, `${prdKey}.md`),
+  ];
+  for (const candidate of candidates) {
+    if (!safeIsFile(candidate)) continue;
+    const branch = stripTicks(utils.extractScalarFieldInSection(candidate, "Project", "Branch"));
+    if (branch) return branch;
+  }
+  return "";
+}
+
+function enforcePrdWorktreeAvailable(content: string): void {
+  const prdKey = scalarFromTicketContent(content, "PRD Key");
+  if (!/^PRD-\d+$/.test(prdKey)) return;
+  const branch = prdBranchFromKey(prdKey);
+  if (!branch) {
+    fail(2, `ticket references ${prdKey}, but that PRD has no Branch field; PRD-derived TODO cannot create a TODO worktree`, {
+      prd_key: prdKey,
+      rule: "prd_todo_requires_prd_worktree",
+    });
+  }
+  const gitRoot = utils.gitRootPath(PROJECT_ROOT);
+  if (!gitRoot || !gitBranchExists(gitRoot, branch)) {
+    fail(2, `ticket references ${prdKey}, but PRD branch ${branch} is missing; PRD-derived TODO cannot create a TODO worktree`, {
+      prd_key: prdKey,
+      branch,
+      rule: "prd_todo_requires_prd_worktree",
+    });
+  }
 }
 
 function uniqueArchiveTarget(doneDir: string, filename: string): string {
@@ -190,34 +233,6 @@ function uniqueArchiveTarget(doneDir: string, filename: string): string {
   }
   fail(1, `unable to choose archive target for ${filename}`);
   throw new Error(`unable to choose archive target for ${filename}`);
-}
-
-function archiveConsumedOrderSources(content: string, ticketId: string): JsonObject[] {
-  const refs = sourceOrderRefsFromTicketContent(content);
-  if (refs.length === 0) return [];
-
-  const projectKey = projectKeyFromTicketContent(content, ticketId);
-  const doneDir = path.join(TICKETS_ROOT, "done", projectKey);
-  fs.mkdirSync(doneDir, { recursive: true });
-
-  const archived: JsonObject[] = [];
-  for (const ref of refs) {
-    const source = resolveBoardPath(ref);
-    const orderRoot = path.resolve(path.join(TICKETS_ROOT, "order"));
-    if (!source || !path.resolve(source).startsWith(orderRoot + path.sep)) {
-      archived.push({ source: ref, status: "skipped_unsafe_source" });
-      continue;
-    }
-    if (!safeIsFile(source)) {
-      archived.push({ source: ref, status: "missing" });
-      continue;
-    }
-
-    const target = uniqueArchiveTarget(doneDir, path.basename(source));
-    fs.renameSync(source, target);
-    archived.push({ source: ref, status: "archived", path: boardRel(target), project_key: projectKey });
-  }
-  return archived;
 }
 
 function archiveConsumedPrdSources(content: string, ticketId: string): JsonObject[] {
@@ -252,27 +267,54 @@ export function cmdPlannerWriteTicket(): void {
   const payload = readWritePayload();
   const id = normalizeId(getArg("--id") || stringValue(payload.id) || extractIdFromContent(payload.content, "ticket"));
   if (!id) fail(2, "write-ticket requires --id or content with Todo-NNN");
-  const target = path.join(TICKETS_ROOT, "todo", `Todo-${id}.md`);
+  const target = path.join(TICKETS_ROOT, "todo", `TODO-${id}.md`);
 
   validateNoUnsafeWrite(target, hasFlag("--overwrite"));
   validateTicketContent(payload.content, id);
+  enforcePrdReferenceExists(payload.content);
+  enforcePrdWorktreeAvailable(payload.content);
+
+  // 1) Persist to main board (backward-compat queue scan).
   writeAtomic(target, payload.content);
   releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
-  const archivedSources = archiveConsumedOrderSources(payload.content, id);
   const archivedPrds = archiveConsumedPrdSources(payload.content, id);
+
+  // 2) Commit ticket markdown into the correct worktree. PRD-derived TODOs
+  //    reuse the PRD worktree; only atodo/direct TODOs create TODO worktrees.
+  const prdKey = scalarFromTicketContent(payload.content, "PRD Key");
+  const wt = ensureTicketWorktree({ id, kind: "todo", content: payload.content, prdKey });
+  if (prdKey && wt.status === "skipped") {
+    fail(1, "PRD-derived TODO could not use the PRD worktree", {
+      prd_key: prdKey,
+      reason: wt.reason || "unknown",
+      branch: wt.branch,
+    });
+  }
+  if (wt.worktreePath) {
+    utils.replaceScalarFieldInSection(target, "Worktree", "Path", `\`${wt.worktreePath}\``);
+    utils.replaceScalarFieldInSection(target, "Worktree", "Branch", wt.branch);
+    utils.replaceScalarFieldInSection(target, "Worktree", "Base Commit", wt.baseCommit);
+    utils.replaceScalarFieldInSection(target, "Worktree", "Worktree Commit", "");
+    utils.replaceScalarFieldInSection(target, "Worktree", "Integration Status", "ready");
+  }
+
   const contextReset = emitRunnerContextReset(currentRunnerId("planner"), "planner.write-ticket", "compact", {
     tool: "planner.write-ticket",
-    ticket_id: `Todo-${id}`,
+    ticket_id: `TODO-${id}`,
     path: boardRel(target),
   });
 
   ok({
     tool: "planner.write-ticket",
     status: "ok",
-    id: `Todo-${id}`,
+    id: `TODO-${id}`,
     path: boardRel(target),
-    archived_sources: archivedSources,
     archived_prds: archivedPrds,
+    branch: wt.branch,
+    base_commit: wt.baseCommit,
+    worktree_path: wt.worktreePath,
+    worktree_status: wt.status,
+    worktree_commit: wt.commit || "",
     context_reset: contextReset.ok ? "queued" : "failed",
     context_reset_path: contextReset.path,
   });

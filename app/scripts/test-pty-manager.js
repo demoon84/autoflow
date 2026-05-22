@@ -11,7 +11,6 @@ const { PtyRunnerManager, PTY_RUNNER_STATUS } = require(path.resolve(__dirname, 
 
 const mgr = new PtyRunnerManager();
 if (!mgr.isAvailable()) {
-  console.error("FAIL: node-pty unavailable");
   process.exit(1);
 }
 
@@ -28,14 +27,11 @@ mgr.on("bytes", ({ runnerId, data }) => {
 });
 mgr.on("status", (payload) => {
   statusEvents.push(payload);
-  console.log(`\x1b[33m[status]\x1b[0m`, payload);
 });
 mgr.on("error", (payload) => {
-  console.error(`\x1b[31m[error]\x1b[0m`, payload);
 });
 
 (async () => {
-  console.log("--- spawn shell + 'echo hello world && exit 0' ---");
   mgr.start(RUNNER_ID, {
     command: 'echo "hello from pty manager" && date && exit 0',
     cwd: process.env.HOME || "/tmp",
@@ -51,19 +47,37 @@ mgr.on("error", (payload) => {
     await new Promise((res) => setTimeout(res, 100));
   }
 
-  console.log("");
-  console.log("--- summary ---");
-  console.log("bytes received:", bytesReceived);
-  console.log("status events :", statusEvents.length);
-  console.log("final status  :", mgr.get(RUNNER_ID)?.status);
-  console.log("final exitCode:", mgr.get(RUNNER_ID)?.exitCode);
 
-  const ok = bytesReceived > 0 && statusEvents.some((e) => e.status === "stopped");
+  const EXEC_RUNNER_ID = "exec-smoke";
+  mgr.start(EXEC_RUNNER_ID, {
+    command: "sh -c 'printf exec-safe && exit 42'",
+    execCommand: true,
+    cwd: process.env.HOME || "/tmp",
+    cols: 100,
+    rows: 24
+  });
+
+  const execDeadline = Date.now() + 6000;
+  while (Date.now() < execDeadline) {
+    const r = mgr.get(EXEC_RUNNER_ID);
+    if (r && r.status === PTY_RUNNER_STATUS.STOPPED) break;
+    await new Promise((res) => setTimeout(res, 100));
+  }
+
+  const execRunner = mgr.get(EXEC_RUNNER_ID);
+  const execStopped = execRunner?.status === PTY_RUNNER_STATUS.STOPPED;
+  const execExitCode = execRunner?.exitCode;
+  const execPromptAccepted = mgr.writePrompt(EXEC_RUNNER_ID, "this must not reach a shell");
+
+  const ok =
+    bytesReceived > 0 &&
+    statusEvents.some((e) => e.status === "stopped" && e.runnerId === RUNNER_ID) &&
+    execStopped &&
+    execExitCode === 42 &&
+    execPromptAccepted === false;
   if (ok) {
-    console.log("\x1b[32mPASS\x1b[0m — PTY manager round-trip works");
     process.exit(0);
   } else {
-    console.log("\x1b[31mFAIL\x1b[0m — no bytes or no stopped event");
     process.exit(1);
   }
 })();

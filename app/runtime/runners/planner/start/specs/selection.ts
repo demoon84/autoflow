@@ -1,7 +1,6 @@
 import {fs, path, BOARD_ROOT, requestedNormalized, utils} from "../context";
 import {extractNumericId} from "../ids";
 import {listMatchingFiles} from "../files";
-import {extractSpecSourceOrderRef} from "../sections";
 
 export function isPlaceholderSpec(file: string): boolean {
   const text = utils.readFileSafe(file);
@@ -19,22 +18,12 @@ export function isPlaceholderPlan(file: string): boolean {
 
 export function selectPopulatedSpec(): string {
   if (requestedNormalized) {
-    for (const name of [`prd_${requestedNormalized}.md`, `project_${requestedNormalized}.md`]) {
-      const file = path.join(BOARD_ROOT, "tickets", "prd", name);
-      if (fs.existsSync(file) && !isPlaceholderSpec(file)) return file;
-    }
+    const file = path.join(BOARD_ROOT, "tickets", "prd", `PRD-${requestedNormalized}.md`);
+    if (fs.existsSync(file) && !isPlaceholderSpec(file)) return file;
     return "";
   }
-  for (const file of listMatchingFiles(path.join(BOARD_ROOT, "tickets", "prd"), [/^prd_.*\.md$/, /^project_.*\.md$/])) {
+  for (const file of listMatchingFiles(path.join(BOARD_ROOT, "tickets", "prd"), [/^PRD-.*\.md$/])) {
     if (!isPlaceholderSpec(file) && extractNumericId(file)) return file;
-  }
-  return "";
-}
-
-export function selectOrderGeneratedSpec(): string {
-  for (const file of listMatchingFiles(path.join(BOARD_ROOT, "tickets", "prd"), [/^prd_.*\.md$/, /^project_.*\.md$/])) {
-    if (isPlaceholderSpec(file)) continue;
-    if (/^tickets\/order\/order_.*\.md$/.test(extractSpecSourceOrderRef(file))) return file;
   }
   return "";
 }

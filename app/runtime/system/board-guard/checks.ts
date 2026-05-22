@@ -1,6 +1,6 @@
 import {execFileSync, fs, path, BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, utils} from "./context";
 import {recordCheck, recordError, recordWarning} from "./reporter";
-import {activeTicketFiles, fieldInSectionPresent, guardTicketFiles, listFiles, markdownScalar, relPath, sectionExists, ticketFileForId, ticketWorktreeBoardState, TICKET_PATTERN} from "./files";
+import {activeTicketFiles, guardTicketFiles, listFiles, markdownScalar, relPath, sectionExists, ticketFileForId, ticketWorktreeBoardState, TICKET_PATTERN} from "./files";
 
 export function checkDuplicateTicketIds(): void {
     const all = guardTicketFiles().sort();
@@ -54,7 +54,7 @@ export function checkTodoWorktreeMetadata(): void {
 export function checkActiveSections(): void {
     const required = [
         "Ticket", "Goal", "Allowed Paths", "Worktree", "Goal Runtime",
-        "Recovery State", "Done When", "Next Action", "Resume Context",
+        "Done When", "Next Action", "Resume Context",
         "Verification", "Result"
     ];
     let missing = 0;
@@ -69,54 +69,6 @@ export function checkActiveSections(): void {
         }
     }
     recordCheck("active_ticket_sections", missing > 0 ? "warning" : "ok");
-}
-
-export function checkRecoveryStateFields(): void {
-    const fields = ["Status", "Detected By", "Failure Class", "Evidence", "Planner Decision", "Worker Resume Instruction", "Last Recovery At"];
-    let missing = 0;
-    const files = activeTicketFiles().sort();
-    for (const file of files) {
-        if (!sectionExists(file, "Recovery State")) continue;
-        const rel = relPath(file);
-        for (const f of fields) {
-            if (f === "Worker Resume Instruction" && fieldInSectionPresent(file, "Recovery State", "Owner Resume Instruction")) {
-                continue;
-            }
-            if (!fieldInSectionPresent(file, "Recovery State", f)) {
-                missing += 1;
-                recordWarning(`${rel} Recovery State missing field ${f}`);
-            }
-        }
-    }
-    recordCheck("recovery_state_fields", missing > 0 ? "warning" : "ok");
-}
-
-export function checkRecoveryStateValues(): void {
-    const validStatuses = new Set(["healthy", "stalled", "blocked", "repairing", "requeued", "resolved", "needs_user"]);
-    const validFailureClasses = new Set([
-        "adapter_no_progress", "stale_todo_worktree", "missing_worktree", "dirty_root",
-        "dirty_root_cleared", "dirty_project_root_conflict", "allowed_path_conflict",
-        "shared_head_conflict", "verification_failed", "merge_conflict", "ambiguous_scope",
-        "oversized_ticket", "tooling_failure", "retry_limit", "needs_user_decision",
-        "leftover_worktree", "vague_completion_promise", "iteration_no_progress"
-    ]);
-    let invalid = 0;
-    const files = activeTicketFiles().sort();
-    for (const file of files) {
-        if (!sectionExists(file, "Recovery State")) continue;
-        const rel = relPath(file);
-        const status = markdownScalar(file, "Recovery State", "Status");
-        const failureClass = markdownScalar(file, "Recovery State", "Failure Class");
-        if (!validStatuses.has(status)) {
-            invalid += 1;
-            recordWarning(`${rel} Recovery State has invalid Status=${status || "<empty>"}`);
-        }
-        if (failureClass && !validFailureClasses.has(failureClass)) {
-            invalid += 1;
-            recordWarning(`${rel} Recovery State has invalid Failure Class=${failureClass}`);
-        }
-    }
-    recordCheck("recovery_state_values", invalid > 0 ? "warning" : "ok");
 }
 
 export function checkResolvedTicketWorktrees(): void {
@@ -139,12 +91,12 @@ export function checkResolvedTicketWorktrees(): void {
     let stale = 0;
     for (const block of blocks) {
         const wtMatch = block.match(/^worktree (.+)$/m);
-        const branchMatch = block.match(/^branch refs\/heads\/(autoflow\/tickets_\d{3})$/m);
+        const branchMatch = block.match(/^branch refs\/heads\/(autoflow\/TODO-\d{3})$/m);
         const wtPath = wtMatch ? wtMatch[1] : "";
         const branch = branchMatch ? branchMatch[1] : "";
         if (!wtPath || !branch) continue;
-        const ticketRef = branch.split("/").pop()!.replace(/^tickets_/, "Todo-");
-        const ticketFile = ticketFileForId(ticketRef.replace(/^Todo-/, "tickets_")) || ticketFileForId(ticketRef);
+        const ticketRef = branch.split("/").pop()!;
+        const ticketFile = ticketFileForId(ticketRef);
         if (!ticketFile) {
             stale += 1;
             recordWarning(`${branch} has a ticket worktree but no board ticket: ${wtPath}`);
@@ -202,7 +154,7 @@ export function checkResolvedTicketBranches(): void {
     for (const branch of branches) {
         const idMatch = branch.match(/tickets_(\d+)$/);
         const id = idMatch ? idMatch[1] : "";
-        const ticketFile = id ? (ticketFileForId(`tickets_${id}`) || ticketFileForId(`Todo-${id}`)) : "";
+        const ticketFile = id ? (ticketFileForId(`TODO-${id}`) || ticketFileForId(`TODO-${id}`)) : "";
         if (!ticketFile) {
             stale += 1;
             recordWarning(`${branch} exists but has no board ticket`);
@@ -276,4 +228,51 @@ export function checkRogueProjectRootBoardPaths(): void {
         }
     }
     recordCheck("rogue_project_root_board_paths", rogue > 0 ? "error" : "ok");
+}
+
+export function checkDonePrdHasTodo(): void {
+    const doneRoot = path.join(TICKETS_ROOT, "done");
+    if (!fs.existsSync(doneRoot)) {
+        recordCheck("done_prd_has_todo", "ok");
+        return;
+    }
+    let orphan = 0;
+    let projectDirs: string[] = [];
+    try {
+        projectDirs = fs.readdirSync(doneRoot, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory() && /^(PRD)-\d+$/i.test(entry.name))
+            .map((entry) => entry.name);
+    } catch {
+        recordCheck("done_prd_has_todo", "ok");
+        return;
+    }
+    for (const projectKey of projectDirs) {
+        const projectDir = path.join(doneRoot, projectKey);
+        let entries: string[] = [];
+        try {
+            entries = fs.readdirSync(projectDir);
+        } catch {
+            continue;
+        }
+        const hasPrd = entries.some((name) => new RegExp(`^${projectKey}\\.md$`, "i").test(name));
+        if (!hasPrd) continue;
+        const hasLocalTodo = entries.some((name) => /^TODO-\d+\.md$/.test(name));
+        if (hasLocalTodo) continue;
+        const prdKeyRe = new RegExp(`^-\\s*PRD Key\\s*:\\s*${projectKey}\\b`, "im");
+        let referencingCount = 0;
+        for (const bucket of ["todo", "inprogress", "verifier"]) {
+            const dir = path.join(TICKETS_ROOT, bucket);
+            if (!fs.existsSync(dir)) continue;
+            for (const name of fs.readdirSync(dir)) {
+                if (!/^TODO-\d+\.md$/.test(name)) continue;
+                const full = path.join(dir, name);
+                if (prdKeyRe.test(utils.readFileSafe(full))) referencingCount += 1;
+            }
+        }
+        if (referencingCount === 0) {
+            recordWarning(`tickets/done/${projectKey}/${projectKey}.md has no Todo referencing PRD Key=${projectKey}. PRDs must produce ≥1 Todo before archival; pass --force-archive-orphan with a documented reason when intentional.`);
+            orphan += 1;
+        }
+    }
+    recordCheck("done_prd_has_todo", orphan > 0 ? "warning" : "ok");
 }

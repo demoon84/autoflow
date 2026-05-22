@@ -3,7 +3,7 @@ import {fs, path, REPO_ROOT} from "./context";
 type ManifestValue = string | boolean;
 type ManifestSections = Map<string, Record<string, ManifestValue>>;
 
-export type InstallSourceType = "board" | "host";
+export type InstallSourceType = "board" | "host" | "user_share";
 export type InstallSourceOverwrite = "never" | "upgrade" | "always";
 
 export type InstallSourceEntry = {
@@ -106,7 +106,7 @@ function booleanValue(values: Record<string, ManifestValue>, name: string, fallb
 }
 
 function sourceType(value: string, id: string): InstallSourceType {
-    if (value === "board" || value === "host") {
+    if (value === "board" || value === "host" || value === "user_share") {
         return value;
     }
     throw new Error(`Invalid install source type for sources.${id}: ${value || "(missing)"}`);

@@ -3,7 +3,6 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
-type WakeEmitResult = shared.WakeEmitResult;
 
 const {
   crypto,
@@ -77,7 +76,6 @@ const {
   unique,
   git,
   spawnTsScript,
-  emitRunnerWake,
   emitRunnerContextReset,
   spawnOutputText,
   wikiSourceGroups,
@@ -97,7 +95,6 @@ const {
   validatePrdContent,
   validateTicketContent,
   requireSection,
-  setRecoveryField,
   collectUsedIds,
   pruneReservations,
   releaseReservation,
@@ -129,7 +126,7 @@ const {
   fail
 } = shared;
 
-type WorkerCompletionCommand = "submit-to-verifier" | "finalize-approved" | "create-retry-order";
+type WorkerCompletionCommand = "submit-to-verifier" | "finalize-approved" | "request-replan";
 
 function verifierMarkerForTicket(ticketId: string): string {
   return path.join(BOARD_ROOT, "runners", "state", `verifier-ok-${ticketId}.marker`);
@@ -142,7 +139,7 @@ function verifierRequired(): boolean {
 }
 
 export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
-  const backendOutcome = command === "create-retry-order" ? "replan" : "pass";
+  const backendOutcome = command === "request-replan" ? "replan" : "pass";
   const ticket = requireTicket(["inprogress", "ready-to-merge"]);
   const message = backendOutcome === "pass" ? getArg("--summary") : getArg("--reason");
   if (!message) fail(2, `worker ${command} requires --${backendOutcome === "pass" ? "summary" : "reason"}`);
@@ -152,14 +149,14 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
 
   if (command === "submit-to-verifier" && hasVerifierApproval) {
     fail(2, "verifier approval marker already exists; use worker finalize-approved after merging the approved worktree into PROJECT_ROOT", {
-      ticket_id: `Todo-${ticketId}`,
+      ticket_id: `TODO-${ticketId}`,
       verifier_marker: boardRel(verifierMarker),
     });
   }
 
   if (command === "finalize-approved" && verifierRequired() && !hasVerifierApproval) {
     fail(2, "verifier approval marker is missing; use worker submit-to-verifier before merge/finalization", {
-      ticket_id: `Todo-${ticketId}`,
+      ticket_id: `TODO-${ticketId}`,
       expected_marker: boardRel(verifierMarker),
     });
   }
@@ -179,18 +176,21 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const stderr = spawnOutputText(result.stderr);
   const parsed = parseKeyValueOutput(stdout);
   const backendStatus = stringValue(parsed.status);
+  const outputPath = stringValue(parsed.ticket) || stringValue(parsed.verifier_ticket) || boardRel(ticket);
   const finalBoundaryStatuses = new Set(["done", "replanned"]);
+  const contextResetMode = "compact";
   const contextReset = result.status === 0 && finalBoundaryStatuses.has(backendStatus)
-    ? emitRunnerContextReset(currentRunnerId("worker"), `worker.${command}`, "compact", {
+    ? emitRunnerContextReset(currentRunnerId("worker"), `worker.${command}`, contextResetMode, {
         tool: `worker.${command}`,
-        ticket_id: `Todo-${ticketId}`,
+        ticket_id: `TODO-${ticketId}`,
         backend_status: backendStatus,
+        next_scan: "after context compact, run worker.active-get; if no owned ticket, run worker.todo-snapshot before idling",
       })
     : { ok: false, path: "" };
   ok({
     status: backendStatus || (result.status === 0 ? "ok" : "error"),
     tool: `worker.${command}`,
-    path: boardRel(ticket),
+    path: outputPath,
     backend: `runners/worker/finish-ticket/index.ts ${backendOutcome}`,
     exit_code: result.status ?? 1,
     backend_status: backendStatus,

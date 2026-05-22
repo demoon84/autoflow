@@ -1,6 +1,6 @@
 import {boardRoot, projectRoot, runnerId} from "./context";
 import {asObject, printPairs} from "./io";
-import {doneTarget, idFromTicketPath, nextActionFor, resolveBoardPath, ticketScalar, ticketWorktreeField, worktreeStatusAllowsResume} from "./ticket";
+import {doneTarget, idFromTicketPath, nextActionFor, resolveBoardPath, ticketScalar, ticketSectionScalar, ticketWorktreeField, worktreeStatusAllowsResume} from "./ticket";
 
 export function emitActiveTicket(rawItem: unknown, source: string): void {
   const item = asObject(rawItem);
@@ -28,10 +28,10 @@ export function emitActiveTicket(rawItem: unknown, source: string): void {
     project_root: projectRoot,
     done_target: doneTarget(ticketAbs),
     next_action: worktreeReady
-      ? nextActionFor(ticketId, stage)
-      : `Call autoflow tool runner-tool worker worktree-ensure --ticket ${ticketRel || `Todo-${ticketId}`} before implementation. Do not edit PROJECT_ROOT as fallback.`,
+      ? nextActionFor(ticketId, stage, ticketAbs)
+      : `Call autoflow tool runner-tool worker worktree-ensure --ticket ${ticketRel || `TODO-${ticketId}`} before implementation. Do not edit PROJECT_ROOT as fallback.`,
     routing_pass: `After worktree verification evidence passes, run autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<short summary>" to hand off to verifier before any PROJECT_ROOT merge.`,
-    routing_replan: `If verifier or recovery evidence says the ticket must be replaced, run autoflow tool runner-tool worker create-retry-order --ticket ${ticketId} --reason "<concrete reason>".`,
+    routing_replan: `If verifier says the ticket must be redone from scratch, run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<concrete reason>". The ticket returns to tickets/todo/ for a fresh worker attempt.`,
   });
 }
 
@@ -57,7 +57,7 @@ export function emitTodoCandidate(rawItem: unknown, source: string): void {
     implementation_root: "",
     board_root: boardRoot,
     project_root: projectRoot,
-    next_action: `Runner must choose explicitly: autoflow tool runner-tool worker claim --ticket ${ticketRel || `Todo-${ticketId}`} --runner ${runnerId}. Claim will create/validate the worktree before implementation.`,
+    next_action: `Runner must choose explicitly: autoflow tool runner-tool worker claim --ticket ${ticketRel || `TODO-${ticketId}`} --runner ${runnerId}. Claim will create/validate the worktree before implementation.`,
   });
 }
 

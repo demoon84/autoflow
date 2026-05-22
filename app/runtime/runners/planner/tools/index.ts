@@ -4,7 +4,6 @@ import { cmdPlannerReserveId } from "./reserve-id";
 import { cmdPlannerWritePrd } from "./write-prd";
 import { cmdPlannerWriteTicket } from "./write-ticket";
 import { cmdPlannerItemArchive } from "./item-archive";
-import { cmdPlannerRecoveryUpdate } from "./recovery-update";
 import { cmdPlannerGuard } from "./guard";
 
 export function dispatchPlanner(command: string): void {
@@ -23,9 +22,6 @@ export function dispatchPlanner(command: string): void {
       return;
     case "item-archive":
       cmdPlannerItemArchive();
-      return;
-    case "recovery-update":
-      cmdPlannerRecoveryUpdate();
       return;
     case "guard":
       cmdPlannerGuard();

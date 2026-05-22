@@ -6,5 +6,5 @@
 process.stdout.write([
   "status=deprecated",
   "reason=file_watch_loop_removed",
-  "next_action=Use runner realtime wakeup instead of watch-board.",
+  "next_action=Use runner-tool startup scans instead of watch-board.",
 ].join("\n") + "\n");

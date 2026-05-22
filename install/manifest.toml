@@ -11,6 +11,18 @@ overwrite = "upgrade"
 template = false
 skip_shell = true
 
+# Static templates / agent prompts / contracts / rules / sqlite schema.
+# Identical across every project, so they live once at the user-scope share
+# root (default ~/.autoflow/share, overridable via AUTOFLOW_SHARE_ROOT) instead
+# of being copied into each board.
+[sources.share]
+path = "install/share"
+target = "{{USER_SHARE_ROOT}}"
+type = "user_share"
+overwrite = "upgrade"
+template = false
+skip_shell = true
+
 [sources.host]
 path = "install/host/AGENTS.md"
 target = "AGENTS.md"
@@ -53,14 +65,7 @@ type = "host"
 overwrite = "upgrade"
 template = true
 
-[sources.gemini_skills]
-path = "install/integrations/gemini/skills"
-target = ".gemini/skills"
-type = "host"
-overwrite = "upgrade"
-template = true
-
-# Runtime scripts are NOT installed into the board. They live under
-# `app/runtime/` and are invoked by the app (or by the CLI on the host repo)
-# with `BOARD_ROOT` / `PROJECT_ROOT` env vars pointing at the target board.
-# The board only holds data (tickets, logs, state, wiki).
+# 런타임 스크립트는 보드에 설치하지 않는다. 실행 코드는 `app/runtime/`에 있고,
+# 앱 또는 host repo의 CLI가 `BOARD_ROOT` / `PROJECT_ROOT` 환경변수로 대상 보드를
+# 가리키며 호출한다. 보드는 데이터(`tickets`, `runners/state`,
+# `metrics`, `conversations`)와 DB-only 위키 인덱스 상태만 가진다.

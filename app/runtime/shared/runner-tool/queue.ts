@@ -1,5 +1,5 @@
-import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WakeEmitResult, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, emitRunnerWake, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 
 function migrateLegacyQueueDir(fromBucket: string, toBucket: string): void {
   const fromDir = path.join(TICKETS_ROOT, fromBucket);
@@ -24,12 +24,11 @@ function migrateLegacyQueueDir(fromBucket: string, toBucket: string): void {
 }
 
 export function migrateLegacyQueueDirs(): void {
-  migrateLegacyQueueDir("inbox", "order");
   migrateLegacyQueueDir("backlog", "prd");
 }
 
 export function listQueueItems(bucket: string, patterns: RegExp[], kind: string): QueueItem[] {
-  if (bucket === "order" || bucket === "prd") migrateLegacyQueueDirs();
+  if (bucket === "prd") migrateLegacyQueueDirs();
   const dir = path.join(TICKETS_ROOT, bucket);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
@@ -43,9 +42,6 @@ export function readQueueItem(file: string, kind: string): QueueItem {
   const text = utils.readFileSafe(file);
   const priority = normalizePriority(readAnyPriority(file, text));
   const rel = boardRel(file);
-  const recoveryStatus = utils.extractScalarFieldInSection(file, "Recovery State", "Status");
-  const failureClass = utils.extractScalarFieldInSection(file, "Recovery State", "Failure Class");
-  const orderExpress = utils.extractScalarFieldInSection(file, "Order", "Express").toLowerCase();
   return {
     kind,
     path: rel,
@@ -55,16 +51,11 @@ export function readQueueItem(file: string, kind: string): QueueItem {
     title: readTitle(file, text),
     status: readStatus(file),
     stage: utils.extractScalarFieldInSection(file, "Ticket", "Stage"),
-    retry: /^order_.*_retry_.*\.md$/.test(path.basename(file)),
-    express: ["true", "yes", "1", "on"].includes(orderExpress),
-    recovery_status: recoveryStatus || undefined,
-    failure_class: failureClass || undefined,
   };
 }
 
 export function readAnyPriority(file: string, text: string): string {
   const candidates = [
-    utils.extractScalarFieldInSection(file, "Order", "Priority"),
     utils.extractScalarFieldInSection(file, "Ticket", "Priority"),
     utils.extractScalarFieldInSection(file, "Project", "Priority"),
   ].filter(Boolean);
@@ -78,7 +69,6 @@ export function readAnyPriority(file: string, text: string): string {
 
 export function readTitle(file: string, text: string): string {
   return (
-    utils.extractScalarFieldInSection(file, "Order", "Title") ||
     utils.extractScalarFieldInSection(file, "Ticket", "Title") ||
     utils.extractScalarFieldInSection(file, "Project", "Title") ||
     utils.extractScalarFieldInSection(file, "Project", "Name") ||
@@ -88,7 +78,6 @@ export function readTitle(file: string, text: string): string {
 
 export function readStatus(file: string): string {
   return (
-    utils.extractScalarFieldInSection(file, "Order", "Status") ||
     utils.extractScalarFieldInSection(file, "Project", "Status") ||
     utils.extractScalarFieldInSection(file, "Ticket", "Stage") ||
     ""

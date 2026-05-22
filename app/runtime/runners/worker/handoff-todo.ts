@@ -51,13 +51,13 @@ function normalizeId(value: unknown): string {
 }
 
 function ticketPath(state: string, id: string): string {
-    return path.join(boardRoot(), "tickets", state, `Todo-${id}.md`);
+    return path.join(boardRoot(), "tickets", state, `TODO-${id}.md`);
 }
 
 function listTickets(dir: string): string[] {
     try {
         return fs.readdirSync(dir)
-            .filter((name) => /^Todo-\d+\.md$|^tickets_\d+\.md$/.test(name))
+            .filter((name) => /^TODO-\d+\.md$|^TODO-\d+\.md$/.test(name))
             .sort()
             .map((name) => path.join(dir, name));
     } catch {
@@ -270,12 +270,12 @@ const resultSummary = sectionScalar(text, "Result", "Summary");
 text = replaceScalar(text, "Ticket", "Stage", "verifier");
 text = replaceScalar(text, "Ticket", "Last Updated", timestamp);
 text = replaceSection(text, "Verification", "- Run file:\n- Log file:\n- Result: pending");
-text = replaceSection(text, "Next Action", "- Next: verifier runner should run the ticket checks from `tickets/verifier/`.");
-text = replaceSection(text, "Resume Context", "- Current state: implementation work is complete and the ticket has been handed off for verification.\n- Last runtime action: `autoflow tool handoff-todo` moved the ticket from `tickets/inprogress/` to `tickets/verifier/`.\n- Next reader: verifier should review Done When, Verification command, Notes, and the ticket worktree.");
+text = replaceSection(text, "Next Action", "- Next: 검증 러너가 `tickets/verifier/`에서 ticket 검사를 실행해야 한다.");
+text = replaceSection(text, "Resume Context", "- Current state: 구현 작업이 완료되었고 ticket이 검증으로 handoff되었다.\n- Last runtime action: `autoflow tool handoff-todo`가 ticket을 `tickets/inprogress/`에서 `tickets/verifier/`로 이동했다.\n- Next reader: 검증 러너는 Done When, Verification command, Notes, ticket worktree를 검토해야 한다.");
 if (!trim(resultSummary)) {
-    text = replaceScalar(text, "Result", "Summary", "Implementation completed; awaiting verifier.");
+    text = replaceScalar(text, "Result", "Summary", "구현이 완료되었고 검증 러너를 기다린다.");
 }
-text = appendNote(text, `Handed off to verifier at ${timestamp} via autoflow tool handoff-todo`);
+text = appendNote(text, `${timestamp}에 autoflow tool handoff-todo로 검증 러너에게 handoff했다.`);
 
 fs.mkdirSync(path.dirname(targetFile), {recursive: true});
 write(ticketFile, text);

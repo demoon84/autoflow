@@ -7,13 +7,11 @@ type Stage = "inprogress" | "merging" | "idle" | string;
 
 const args = process.argv.slice(2);
 if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-  console.log("Usage: node runner-stage.ts <stage> [--runner <id>] [--ticket <ticket-id>] [--note <text>]");
   process.exit(0);
 }
 
 let stage: Stage = args.shift() as Stage;
 if (!stage || stage.startsWith("--")) {
-  console.error("Usage: node runner-stage.ts <stage> [--runner <id>] [--ticket <ticket-id>] [--note <text>]");
   process.exit(1);
 }
 
@@ -61,7 +59,7 @@ const normalizeTicketId = (value: string): string => {
   ];
   for (const pattern of ticketIdPattern) {
     const m = trimmed.match(pattern);
-    if (m) return `Todo-${m[1]}`;
+    if (m) return `TODO-${m[1]}`;
   }
 
   const pathTicket = trimmed.match(/(?:^|[\/\\])(Todo[-_][^\/\\]+|tickets[-_][^\/\\]+)\.md$/i);
@@ -69,12 +67,12 @@ const normalizeTicketId = (value: string): string => {
     const tail = pathTicket[1];
     const todo = tail.match(/^Todo[-_](.+)$/i);
     const alt = tail.match(/^tickets?[-_](.+)$/i);
-    if (todo) return `Todo-${todo[1]}`;
-    if (alt) return `Todo-${alt[1]}`;
+    if (todo) return `TODO-${todo[1]}`;
+    if (alt) return `TODO-${alt[1]}`;
   }
 
   const onlyDigits = trimmed.match(/^(\d+)$/);
-  if (onlyDigits) return `Todo-${onlyDigits[1]}`;
+  if (onlyDigits) return `TODO-${onlyDigits[1]}`;
 
   return "";
 };
@@ -87,7 +85,6 @@ const pathForTicket = (ticketValue: string): string => {
     path.join(boardRoot, "tickets", "verifier", ticketValue),
     path.join(boardRoot, "tickets", "ready-to-merge", ticketValue),
     path.join(boardRoot, "tickets", "done", ticketValue),
-    path.join(boardRoot, "tickets", "order", ticketValue),
     path.join(boardRoot, "tickets", "check", ticketValue),
   ];
 
@@ -159,9 +156,9 @@ let ticketPath = "";
 if (ticketRef) {
   ticketPath = pathForTicket(ticketRef);
   if (!ticketPath && ticketId) {
-    const suffix = ticketId.replace(/^Todo-/, "");
-    const legacyNames = [`Todo-${suffix}.md`, `tickets_${suffix}.md`];
-    ticketPath = legacyNames
+    const suffix = ticketId.replace(/^TODO-/, "");
+    const candidateNames = [`TODO-${suffix}.md`];
+    ticketPath = candidateNames
       .flatMap((name) => [
         path.join(boardRoot, "tickets", "inprogress", name),
         path.join(boardRoot, "tickets", "todo", name),
@@ -206,12 +203,6 @@ const next: Record<string, string> = {
   active_stage: isIdle ? "idle" : stage,
   active_spec_ref: isIdle ? "" : specRef,
   active_ticket_path: isIdle ? "" : relativePath(ticketPath),
-  active_recovery_reason: "",
-  active_recovery_status: "",
-  active_recovery_failure_class: "",
-  active_recovery_worktree_path: "",
-  active_recovery_worktree_status: "",
-  active_recovery_board_state: "",
   last_result: "",
 };
 if (note) next.last_result = note;

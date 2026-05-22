@@ -1,9 +1,9 @@
 #!/usr/bin/env npx tsx
 /*
- * wiki-search-index.ts — wiki BM25+vector hybrid index refresher.
+ * wiki-search-index.ts — wiki source-scan lexical+vector hybrid index refresher.
  *
  * Builds .autoflow/runners/state/wiki-search.db so `autoflow wiki query --rag`
- * can use SQLite FTS5/BM25 plus dense vector similarity.
+ * can use source Markdown lexical scoring plus dense vector similarity.
  */
 
 import * as fs from "node:fs";

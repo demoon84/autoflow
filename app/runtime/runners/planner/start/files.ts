@@ -26,13 +26,12 @@ function migrateLegacyQueueDir(fromName: string, toName: string): void {
 }
 
 export function migrateLegacyQueueDirs(): void {
-  migrateLegacyQueueDir("inbox", "order");
   migrateLegacyQueueDir("backlog", "prd");
 }
 
 export function listMatchingFiles(dir: string, patterns: RegExp[]): string[] {
   const normalized = dir.split(path.sep).join("/");
-  if (normalized.endsWith("/tickets/order") || normalized.endsWith("/tickets/prd")) {
+  if (normalized.endsWith("/tickets/prd")) {
     migrateLegacyQueueDirs();
   }
   if (!fs.existsSync(dir)) return [];
@@ -68,7 +67,7 @@ export function collectFiles(root: string, basenameRe: RegExp): string[] {
 
 export function nextTicketId(): string {
   let max = 0;
-  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^(Todo-\d+|tickets_\d+)\.md$/)) {
+  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^TODO-\d+\.md$/)) {
     const id = Number.parseInt(extractNumericId(file) || "0", 10);
     if (id > max) max = id;
   }
