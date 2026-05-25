@@ -8,13 +8,7 @@ import {
   runnerIdForContextResetQueueChange,
   scheduleContextReset
 } from "./context-reset";
-import {
-  schedulePlannerHandoffTurnsForScope,
-  scheduleVerifierHandoffTurnsForScope,
-  scheduleWikiHandoffTurnsForScope,
-  scheduleWorkerTodoHandoffTurnsForScope,
-  scheduleWorkerVerifierDecisionTurnsForScope
-} from "./handoff-turns";
+import { scheduleAllHandoffTurnsForScope } from "./handoff-turns";
 import { defaultBoardDirName, ptyRunnerKey, ptyRunnerMeta } from "./pty-scope";
 
 const { BrowserWindow } = require("electron");
@@ -67,11 +61,7 @@ export function ensureBoardWatcher(scope: Scope): void {
   boardWatchersByScope.set(key, entry);
 
   const scheduleBoardRunnerHandoffs = (reasons: string[]) => {
-    schedulePlannerHandoffTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
-    scheduleVerifierHandoffTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
-    scheduleWorkerTodoHandoffTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
-    scheduleWorkerVerifierDecisionTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
-    scheduleWikiHandoffTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
+    scheduleAllHandoffTurnsForScope({ projectRoot: scope.projectRoot!, boardDirName, boardRoot, reasons });
   };
 
   const broadcast = () => {

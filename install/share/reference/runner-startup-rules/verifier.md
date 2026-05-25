@@ -8,6 +8,7 @@ Verifier runner에 주입되는 규칙이다.
 - 지정된 verifier item만 읽는다.
 - `reference/autoflow-state-loop.md`, `reference/runner-tool-contract.md`, `agents/verifier-agent.md`를 필요한 만큼 확인한다.
 - 지정 item 밖의 verifier item을 선택하지 않는다.
+- compact 이후 재개: 컨텍스트가 compact/clear 로 리셋된 직후에는 compact 결과 요약으로 턴을 끝내지 않고, 검증 러너 startup 도구(`verifier active-get` 후 owned item이 없으면 `verifier work-snapshot`)를 다시 호출해 큐에 남은 verifier item을 먼저 확인한다.
 
 ## Semantic Decision
 

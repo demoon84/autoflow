@@ -37,7 +37,7 @@
 
 ## 절차
 
-1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다.
+1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다. 컨텍스트가 compact/clear 로 리셋된 직후에는 compact 결과 요약으로 턴을 끝내지 않고, `planner queue-snapshot` 을 다시 호출해 큐에 남은 PRD 작업을 먼저 확인하고 재개한다.
 2. 지정된 PRD의 PRD worktree 생성/보장과 `Branch`/`Base Commit` 필드 기록을 먼저 수행한다.
 3. `reference/autoflow-state-loop.md`와 `reference/runner-tool-contract.md`의 공통 계약을 확인한다.
 4. 지정된 PRD의 Goal, Scope, Allowed Paths, Global Acceptance Criteria, Verification을 읽는다.

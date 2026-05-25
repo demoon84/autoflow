@@ -9,6 +9,7 @@ Planner runner에 주입되는 규칙이다.
 - 지정된 PRD만 읽는다.
 - `reference/autoflow-state-loop.md`, `reference/runner-tool-contract.md`, `agents/plan-to-ticket-agent.md`를 필요한 만큼 확인한다.
 - 지정 PRD 밖의 PRD나 TODO를 선택하지 않는다.
+- compact 이후 재개: 컨텍스트가 compact/clear 로 리셋된 직후에는 compact 결과 요약으로 턴을 끝내지 않고, 플래너 러너 startup 도구(`planner queue-snapshot`)를 다시 호출해 큐에 남은 PRD/TODO 작업을 먼저 확인한다.
 
 ## Work
 

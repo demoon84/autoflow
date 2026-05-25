@@ -64,7 +64,7 @@
 
 ## 절차
 
-1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다.
+1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다. 컨텍스트가 compact/clear 로 리셋된 직후에는 compact 결과 요약으로 턴을 끝내지 않고, `verifier active-get` 후 owned item이 없으면 `verifier work-snapshot` 을 다시 호출해 큐에 남은 verifier item을 먼저 확인하고 재개한다.
 2. 지정된 verifier item, 참조 PRD, TODO, worker evidence를 읽는다.
 3. 필요한 경우 evidence의 title/goal/path에서 distinctive term을 뽑아 wiki query로 prior decision을 확인한다.
 4. diff와 Done When, Verification evidence를 비교한다.

@@ -43,7 +43,7 @@
 
 ## 절차
 
-1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다.
+1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다. 컨텍스트가 compact/clear 로 리셋된 직후에는 compact 결과 요약으로 턴을 끝내지 않고, `worker active-get` 후 owned ticket이 없으면 `worker work-snapshot` 을 다시 호출해 보드에 남은 작업을 먼저 확인하고 재개한다.
 2. 지정된 TODO와 참조 PRD를 읽는다.
 3. `Allowed Paths`, `Done When`, `Verification`을 확인한다.
 4. 필요한 경우 title/goal/path에서 distinctive term을 뽑아 wiki query로 prior decision을 확인한다.

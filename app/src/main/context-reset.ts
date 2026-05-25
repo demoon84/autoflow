@@ -7,6 +7,7 @@ import {
   ptyRunnerMatchesRequestedScope,
   ptyRunnerMeta
 } from "./pty-scope";
+import { writePtyRunnerStateFile } from "./runner-state-write";
 import { autoflowShellCommand } from "./shell-path";
 
 const contextResetTimers = new Map<string, ContextResetEntry>();
@@ -193,6 +194,39 @@ export function scheduleContextReset(
         reason: resetReason
       });
       clearEntry();
+
+      // post_context_reset / context_reset_recovery sweep: /compact 또는 /clear
+      // 입력으로 runner 컨텍스트가 비워진 뒤에는 파일 변경이 없어도
+      // planner/worker/verifier/wiki queue 를 한 번 재평가해 active 작업이 다시
+      // handoff turn 으로 주입되도록 한다. 이때 force=true 로 호출해 동일
+      // fingerprint 의 dedup 으로 retry 가 조용히 drop 되는 것을 막는다.
+      // fingerprint guard 와 maxAttempts 자체는 schedule 내부에서 계속 유지된다.
+      // 각 scheduler 는 내부 idle/prompt-readiness 검사로 /compact 입력과
+      // handoff prompt 가 같은 prompt line 에서 충돌하지 않도록 대기한다.
+      appendRunnerLog(boardRoot, publicRunnerId, {
+        event: "context_reset_recovery_scheduled",
+        runner_id: publicRunnerId,
+        mode,
+        trigger,
+        reason: resetReason
+      });
+      void writePtyRunnerStateFile(runnerKey, {
+        context_reset_recovery_event: "scheduled",
+        context_reset_recovery_reason: resetReason,
+        context_reset_recovery_trigger: trigger,
+        context_reset_recovery_mode: mode,
+        context_reset_recovery_at: new Date().toISOString()
+      });
+      try {
+        const { scheduleAllHandoffTurnsForScope } = require("./handoff-turns");
+        scheduleAllHandoffTurnsForScope({
+          projectRoot: String(meta.projectRoot),
+          boardDirName,
+          boardRoot,
+          reasons: ["context-reset"],
+          force: true
+        });
+      } catch {}
 
       if (respawnFallback) {
         const beforeData = runner.lastDataAt;
