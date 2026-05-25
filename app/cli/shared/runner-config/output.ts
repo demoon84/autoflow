@@ -74,18 +74,9 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}applied_config_fingerprint=${state.applied_config_fingerprint || state.config_fingerprint || configFingerprint}`);
     out(`${prefix}config_applied_at=${state.config_applied_at || state.updated_at || state.last_event_at || ""}`);
     out(`${prefix}state_status=${stateStatus}`);
-<<<<<<< Updated upstream
-    // PID 노출은 PTY 연결이 살아 있는지 기준이다. semantic 상태가 idle 이어도
-    // 실제 PTY 프로세스가 살아 있으면 (예: wiki_idle_no_followup) `runners list`
-    // 에 pid 를 그대로 노출해 CLI/UI 가 live 연결을 잃지 않게 한다.
-    // 정지/에러 경로만 비운다.
-    const pidVisible = stateStatus !== "stopped" && stateStatus !== "errored";
-    out(`${prefix}pid=${pidVisible ? state.pid || "" : ""}`);
-=======
     // PID 는 stopped 가 아니고 실제 PID 가 살아 있을 때만 노출. idle/starting 도 PTY 가 살아 있으면 그대로 보여야
     // renderer 가 "중지됨" 으로 잘못 표시하지 않는다.
     out(`${prefix}pid=${stateStatus !== "stopped" && pidIsRunning(state.pid || "") ? state.pid || "" : ""}`);
->>>>>>> Stashed changes
     out(`${prefix}started_at=${state.started_at || ""}`);
     out(`${prefix}last_event_at=${state.last_event_at || state.updated_at || ""}`);
     out(`${prefix}last_adapter_chunk_at=${state.last_adapter_chunk_at || ""}`);
