@@ -142,6 +142,17 @@ export function cmdPlannerWritePrd(): void {
   // 1) Create branch + worktree first. The PRD worktree is the durable work
   //    root for every TODO derived from this PRD.
   let wt = ensureTicketWorktree({ id, kind: "prd", content: payload.content });
+  if (!wt.branch || !wt.baseCommit || !wt.worktreePath) {
+    // PRD worktree 가 없으면 TODO 가 PRD branch 안에서 작업할 수 없다.
+    // 발행 자체를 실패시켜 "PRD body 는 만들어졌는데 branch/worktree 없음"
+    // 같은 모순 상태를 막는다.
+    fail(1, "PRD worktree could not be created; refusing to publish PRD without a usable worktree", {
+      prd_id: `PRD-${id}`,
+      reason: wt.reason || wt.status || "ensure_ticket_worktree_failed",
+      branch: wt.branch || "",
+      worktree_path: wt.worktreePath || "",
+    });
+  }
 
   // 2) Persist in main board for queue scan / locatePrdFile.
   writeAtomic(target, payload.content);

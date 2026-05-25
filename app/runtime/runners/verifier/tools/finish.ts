@@ -126,7 +126,8 @@ const {
   ensureTrailingNewline,
   escapeRe,
   ok,
-  fail
+  fail,
+  emitRunnerContextReset
 } = shared;
 
 type VerifierDecision = shared.VerifierDecision;
@@ -173,6 +174,11 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     if (original) {
       try { fs.unlinkSync(ticket); } catch {}
     }
+    const passContextReset = emitRunnerContextReset(runnerId, `verifier.${command}`, "compact", {
+      tool: `verifier.${command}`,
+      ticket_id: `TODO-${ticketId}`,
+      decision: outcome,
+    });
     ok({
       tool: `verifier.${command}`,
       runner: runnerId,
@@ -185,8 +191,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
       log_path: stringValue(record.log_path),
       marker_path: stringValue(record.marker_path),
       removed_verifier_ticket: !fs.existsSync(ticket),
-      context_reset: "not_queued",
-      context_reset_path: "",
+      context_reset: passContextReset.ok ? "queued" : "not_queued",
+      context_reset_path: stringValue(passContextReset.path),
       next_action: "Worker must run worker finalize-approved to commit the verifier-approved result into the PRD worktree, rerun required verification from that target, and merge the PRD worktree if this was the final TODO.",
     });
     return;
@@ -203,6 +209,11 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
   if (original) {
     try { fs.unlinkSync(ticket); } catch {}
   }
+  const decisionContextReset = emitRunnerContextReset(runnerId, `verifier.${command}`, "compact", {
+    tool: `verifier.${command}`,
+    ticket_id: `TODO-${ticketId}`,
+    decision: outcome,
+  });
   ok({
     tool: `verifier.${command}`,
     runner: runnerId,
@@ -215,8 +226,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     log_path: stringValue(record.log_path),
     marker_path: stringValue(record.marker_path),
     removed_verifier_ticket: !fs.existsSync(ticket),
-    context_reset: "not_queued",
-    context_reset_path: "",
+    context_reset: decisionContextReset.ok ? "queued" : "not_queued",
+    context_reset_path: stringValue(decisionContextReset.path),
     next_action: outcome === "revise"
       ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker submit-to-verifier again."
       : "Worker must run worker request-replan so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.",

@@ -656,10 +656,17 @@ export function schedulePlannerHandoffTurnsForScope(
   }
 }
 
+// Worker owned-ticket release (inprogress/verifier disappearing, or a done ticket
+// appearing) is also a trigger: when a slice finalizes, the next slice in
+// tickets/todo/ should be claimable but tickets/todo/ itself didn't change.
 export function workerTodoQueueChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    return value === "boot-catchup" || value === "tickets/todo" || /^tickets\/todo\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value);
+    if (value === "boot-catchup") return true;
+    if (value === "tickets/todo" || value === "tickets/inprogress" || value === "tickets/verifier" || value === "tickets/done") return true;
+    if (/^tickets\/(?:todo|inprogress|verifier)\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value)) return true;
+    if (/^tickets\/done(?:\/[^/]+)?\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value)) return true;
+    return false;
   });
 }
 

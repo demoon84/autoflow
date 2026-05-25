@@ -786,6 +786,13 @@ async function spawnRunnerPtySession(opts: any = {}, source: any = "manual") {
         });
         rememberProjectScope({projectRoot, boardDirName});
         startCodexHookTrustPromptWatchdog(ptyManager, runnerKey);
+        // PTY 시작 직후 누적된 context-reset queue 이벤트는 ticket boundary 가
+        // 아니므로 skip. pointer 만 latest 로 옮겨 다음 ticket 완료 이벤트부터
+        // 발화하도록 한다.
+        try {
+            const boardRoot = path.join(projectRoot, boardDirName);
+            readPendingRunnerContextResetEvents(boardRoot, runnerId);
+        } catch {}
         await writePtyRunnerStateFile(runnerKey, {
             id: runnerId,
             status: "running",

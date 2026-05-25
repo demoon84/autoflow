@@ -845,8 +845,10 @@ export function cmdWikiTick(): void {
   } else {
     output.details_hint = "rerun wiki tick with --verbose for step excerpts and full recent source lists";
   }
-  const idleContextResetEnabled = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_WIKI_CONTEXT_RESET_ON_IDLE || "");
-  if (failedSteps.length === 0 && skipTelemetry && (aiFollowupRecommended || idleContextResetEnabled)) {
+  // wiki tick 끝에 /compact 를 PTY 에 주입하면 일부 codex 빌드에서 turn 종료 후
+  // session 이 죽는 현상이 있다. 사용자가 명시적으로 켤 때만 발화하고 기본은 끈다.
+  const wikiCompactExplicit = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_WIKI_CONTEXT_RESET_ON_IDLE || "");
+  if (failedSteps.length === 0 && skipTelemetry && wikiCompactExplicit) {
     const contextReset = emitRunnerContextReset(runnerId, "wiki.tick", "compact", {
       tool: "wiki.tick",
       ai_followup_recommended: aiFollowupRecommended,

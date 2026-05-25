@@ -648,8 +648,12 @@ function archivePrdDone(prdKey: string): string {
   return fs.existsSync(done) ? done : "";
 }
 
-function prdCommitMessage(prdKey: string, _prdDoneFile: string, _summary: string): string {
-  return prdCommitSubject(prdKey);
+function prdCommitMessage(prdKey: string, prdDoneFile: string, summary: string): string {
+  const key = normalizePrdKey(prdKey) || prdKey;
+  const title = oneLine(scalar(prdDoneFile, "Project", "Title") || "", 80).trim();
+  const summaryLine = oneLine(summary || "", 160).trim();
+  const subject = title ? `${key}: ${title}` : `${key} 완료`;
+  return summaryLine ? `${subject}\n\n${summaryLine}` : subject;
 }
 
 function cleanupPrdBranch(gitRoot: string, prdWorktree: string, branch: string): void {
