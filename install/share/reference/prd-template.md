@@ -50,9 +50,9 @@ PRD는 현재 turn의 scope, assumption, acceptance criteria, verification inten
 
 ## Global Acceptance Criteria
 
-- [ ] <user-visible behavior, command output, file evidence에 근거한 관찰 가능한 criterion>
-- [ ] <구체적 path, command, state, example이 있는 관찰 가능한 criterion>
-- [ ] <관련 reset/error/regression behavior를 다루는 관찰 가능한 criterion>
+- [ ] (auto) <command output, file evidence에 근거한 자동 검증 가능한 criterion>
+- [ ] (manual) <사람의 UI/문서/시각 확인이 필요한 user-visible criterion>
+- [ ] (auto) <관련 reset/error/regression behavior를 다루는 자동 검증 가능한 criterion>
 
 ## Verification
 
@@ -66,8 +66,10 @@ PRD는 현재 turn의 scope, assumption, acceptance criteria, verification inten
   - Goal: <worker role이 소유할 implementation outcome 하나>
   - Scope: <이 work item의 좁은 boundary>
   - Allowed Paths: path/to/file-or-folder, path/to/other-file
-  - Done When: <이 work item의 관찰 가능한 criterion>
+  - Done When: - [ ] (auto) <이 work item의 자동 검증 가능한 criterion>
   - Verification: npm run test
+  - Depends On: <먼저 완료되어야 하는 work item id 또는 (없음)>
+  - Notes: <추가 제약, 위험, handoff note 또는 (없음)>
 
 ## Conversation Handoff
 

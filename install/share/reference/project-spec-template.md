@@ -29,13 +29,24 @@
 
 ## Global Acceptance Criteria
 
-- [ ] Command output, UI observation, file review로 뒷받침되는 관찰 가능한 completion criterion.
-- [ ] 완료를 증명하는 user-visible behavior 또는 system-visible result.
+- [ ] (auto) Command output 또는 file review로 뒷받침되는 자동 검증 가능한 completion criterion.
+- [ ] (manual) UI observation 또는 사람의 판단이 필요한 user-visible behavior.
 
 ## Verification
 
 - Command: `command-to-run`
 - Notes: verification scope, extra check, manual review 기준을 적는다.
+
+## Work Item Split
+
+- Title: 선택적 work item title을 적는다.
+  - Goal: worker role이 소유할 implementation outcome 하나를 적는다.
+  - Scope: 이 work item의 좁은 boundary를 적는다.
+  - Allowed Paths: path/to/file-or-folder, path/to/other-file
+  - Done When: - [ ] (auto) 이 work item의 자동 검증 가능한 criterion을 적는다.
+  - Verification: `command-to-run`
+  - Depends On: 먼저 완료되어야 하는 work item id 또는 `(없음)`을 적는다.
+  - Notes: 추가 제약, 위험, handoff note 또는 `(없음)`을 적는다.
 
 ## Conversation Handoff
 

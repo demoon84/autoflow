@@ -54,6 +54,14 @@
 - Allowed Paths 또는 Done When이 목표와 맞지 않는다.
 - 같은 TODO를 수정하는 것보다 새 분해가 안전하다.
 
+## Acceptance Criteria 태그 해석
+
+`Global Acceptance Criteria`와 `Done When`의 체크박스가 `(auto)` 또는 `(manual)` 태그를 포함하면 다음 기준으로 evidence와 decision을 분리한다.
+
+- `(auto)` 항목은 명령 실행, 파일 내용, diff, 상태값 등 자동 확인 evidence로 검증한다.
+- `(manual)` 항목은 명령 자동 실행 대상에서 제외하고, verifier evidence/decision의 사람 확인 영역으로 분리해 판단 근거와 남은 수동 확인 필요성을 기록한다.
+- 한 체크박스에 자동 검증 조건과 사람 확인 조건이 섞여 있으면 `revise` 또는 `replan` decision을 고려하고, 다음 worker/planner가 조건을 분리할 수 있게 reason에 남긴다.
+
 ## 절차
 
 1. assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다.
