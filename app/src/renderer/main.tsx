@@ -671,6 +671,11 @@ function mergeBreakdownLabels(items: ReportBreakdownItem[], labelFor: (label: st
     .sort((left, right) => right.value - left.value || left.label.localeCompare(right.label, "ko-KR"));
 }
 
+// 사용자-facing 시간은 OS 시간대와 무관하게 항상 한국 시간으로 표시한다.
+// 저장 데이터(ISO 원본, runner state, 로그 timestamp) 자체는 변환하지 않고
+// renderer 표시 단계에서만 Asia/Seoul 시간대로 포맷한다.
+const KST_TIME_ZONE = "Asia/Seoul";
+
 function formatDate(value: string) {
   if (!value) {
     return "-";
@@ -685,9 +690,22 @@ function formatDate(value: string) {
     month: "short",
     day: "numeric",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: KST_TIME_ZONE
   }).format(date);
 }
+
+const kstHourChartFormatter = new Intl.DateTimeFormat("ko-KR", {
+  hour: "2-digit",
+  hour12: false,
+  timeZone: KST_TIME_ZONE
+});
+
+const kstMonthDayChartFormatter = new Intl.DateTimeFormat("ko-KR", {
+  month: "numeric",
+  day: "numeric",
+  timeZone: KST_TIME_ZONE
+});
 
 const statusLabels: Record<string, string> = {
   ok: "정상",
@@ -4160,11 +4178,15 @@ function truncateChartLabel(label: string, maxLength = 22) {
 
 function formatHourChartLabel(hour: number, includeDate = false) {
   const date = new Date(hour * 1000);
-  const hourLabel = `${String(date.getHours()).padStart(2, "0")}시`;
+  // OS 시간대와 상관없이 한국 시간 기준 시각으로 표시.
+  const hourLabel = `${kstHourChartFormatter.format(date)}시`;
   if (!includeDate) {
     return hourLabel;
   }
-  return `${date.getMonth() + 1}/${date.getDate()} ${hourLabel}`;
+  // ko-KR + month/day numeric 은 "M. D." 형태로 출력하므로 차트 축에 어울리는
+  // "M/D" 모양으로 정리한다.
+  const monthDay = kstMonthDayChartFormatter.format(date).replace(/\.$/, "").replace(/\.\s*/g, "/").trim();
+  return `${monthDay} ${hourLabel}`;
 }
 
 function ReportHorizontalBarChart({
