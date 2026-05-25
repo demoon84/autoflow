@@ -4839,13 +4839,13 @@ function ReportingDashboard({
       cache: safeNumber(entry.cache)
     }));
   const tokenRoleBreakdownRaw =
-    statusValue(metrics, "autoflow_token_role_breakdown_24h_json", "") ||
-    statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}");
+    statusValue(metrics, "autoflow_token_role_breakdown_json", "") ||
+    statusValue(metrics, "autoflow_token_runner_breakdown_json", "{}");
   const tokenRoleBreakdown = mergeBreakdownLabels(
     buildSortedBreakdown(parseMetricJsonObject(tokenRoleBreakdownRaw)),
     (label) => displayReportRunnerLabel(label, runners)
   );
-  const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
+  const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_json", "{}")));
   const runnerNeedUser = runners.filter(runnerBlockedNeedsAttention).length;
   const ticketBreakdown = [
     { label: "PRD", value: board?.tickets.prd?.length || 0 },
@@ -5006,8 +5006,8 @@ function ReportingDashboard({
                   </em>
                 </div>
               ) : null}
-              <ReportHorizontalBarChart title="역할별 24h 토큰" items={tokenRoleBreakdown} />
-              {modelBreakdown.length ? <ReportHorizontalBarChart title="모델별 24h 토큰" items={modelBreakdown} /> : null}
+              <ReportHorizontalBarChart title="역할별 누적 토큰" items={tokenRoleBreakdown} />
+              {modelBreakdown.length ? <ReportHorizontalBarChart title="모델별 누적 토큰" items={modelBreakdown} /> : null}
               <ReportHourlyTokenChart title="최근 24시간 입력/출력 토큰 추세" data={tokenHourlyBuckets} />
             </>
           ) : (

@@ -374,6 +374,9 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
     const runnerBreakdown24h: Record<string, number> = {};
     const roleBreakdown24h: Record<string, number> = {};
     const modelBreakdown24h: Record<string, number> = {};
+    const runnerBreakdownCumulative: Record<string, number> = {};
+    const roleBreakdownCumulative: Record<string, number> = {};
+    const modelBreakdownCumulative: Record<string, number> = {};
     const hourly24h = new Map<number, { hour: number; input: number; output: number; cache: number }>();
     const now = Date.now();
     const oneHourAgo = now - 60 * 60 * 1000;
@@ -396,6 +399,14 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
             requestCount += stateRequestCount;
         } else if (state.token_source === "llm_reported" && (state.last_turn_tick_id || stateCumulative > 0)) {
             requestCount += 1;
+        }
+
+        if (stateCumulative > 0) {
+            const cumulativeRole = inferTokenRoleFromState(runner, state);
+            const cumulativeModel = runner.model || state.model || "unknown";
+            runnerBreakdownCumulative[runnerId] = (runnerBreakdownCumulative[runnerId] || 0) + stateCumulative;
+            roleBreakdownCumulative[cumulativeRole] = (roleBreakdownCumulative[cumulativeRole] || 0) + stateCumulative;
+            modelBreakdownCumulative[cumulativeModel] = (modelBreakdownCumulative[cumulativeModel] || 0) + stateCumulative;
         }
 
         const historyEntries = readTokenHistoryEntries(ctx, runnerId);
@@ -464,6 +475,9 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
         autoflow_token_runner_breakdown_24h_json: JSON.stringify(runnerBreakdown24h),
         autoflow_token_role_breakdown_24h_json: JSON.stringify(roleBreakdown24h),
         autoflow_token_model_breakdown_24h_json: JSON.stringify(modelBreakdown24h),
+        autoflow_token_runner_breakdown_json: JSON.stringify(runnerBreakdownCumulative),
+        autoflow_token_role_breakdown_json: JSON.stringify(roleBreakdownCumulative),
+        autoflow_token_model_breakdown_json: JSON.stringify(modelBreakdownCumulative),
         autoflow_token_hourly_24h_json: JSON.stringify([...hourly24h.values()].sort((left, right) => left.hour - right.hour)),
     };
 }
