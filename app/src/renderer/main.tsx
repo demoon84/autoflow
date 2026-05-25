@@ -744,6 +744,7 @@ const statusLabels: Record<string, string> = {
   verifier_replan_requested: "검증 재계획 요청 확인됨",
   worker_work_handoff_turn_requested: "Worker 호출 요청됨",
   wiki_handoff_turn_requested: "Wiki 호출 요청됨",
+  wiki_idle_no_followup: "처리할 작업 없음",
   dry_run: "미리 실행",
   true: "사용",
   false: "중지"
