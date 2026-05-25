@@ -306,6 +306,57 @@ function inferTokenRoleFromState(runner: Record<string, string>, state: Record<s
     return "unknown";
 }
 
+type TokenHistoryEntry = {
+    atMs: number;
+    visible: number;
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreate: number;
+};
+
+function nonNegativeInt(value: unknown): number {
+    const parsed = Number.parseInt(String(value ?? "0"), 10);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+}
+
+function tokenHistoryPath(ctx: ProjectContext, runnerId: string): string {
+    return path.join(ctx.boardRoot, "runners", "state", `${safeSegment(runnerId)}.tokens-history.jsonl`);
+}
+
+function readTokenHistoryEntries(ctx: ProjectContext, runnerId: string): TokenHistoryEntry[] {
+    let raw = "";
+    try {
+        raw = fs.readFileSync(tokenHistoryPath(ctx, runnerId), "utf8");
+    } catch {
+        return [];
+    }
+
+    const entries: TokenHistoryEntry[] = [];
+    for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+            const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+            const atMs = Date.parse(String(parsed.at || ""));
+            if (!Number.isFinite(atMs) || atMs <= 0) continue;
+            const input = nonNegativeInt(parsed.input);
+            const output = nonNegativeInt(parsed.output);
+            entries.push({
+                atMs,
+                visible: input + output,
+                input,
+                output,
+                cacheRead: nonNegativeInt(parsed.cacheRead),
+                cacheCreate: nonNegativeInt(parsed.cacheCreate),
+            });
+        } catch {
+            continue;
+        }
+    }
+    return entries;
+}
+
 export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConfig(ctx)): Record<string, number | string> {
     let usage = 0;
     let totalUsage = 0;
@@ -347,38 +398,51 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
             requestCount += 1;
         }
 
-        const lastTurnAtMs = Date.parse(state.last_turn_at || "");
-        if (!Number.isFinite(lastTurnAtMs) || lastTurnAtMs <= 0 || lastTurnAtMs < twentyFourHoursAgo || lastTurnAtMs > now + 60_000) {
-            continue;
-        }
+        const historyEntries = readTokenHistoryEntries(ctx, runnerId);
+        const windowEntries = historyEntries.length > 0
+            ? historyEntries
+            : (() => {
+                const lastTurnAtMs = Date.parse(state.last_turn_at || "");
+                if (!Number.isFinite(lastTurnAtMs) || lastTurnAtMs <= 0) return [];
+                return [{
+                    atMs: lastTurnAtMs,
+                    visible: intState(state, "last_turn_tokens"),
+                    input: intState(state, "last_turn_input_tokens"),
+                    output: intState(state, "last_turn_output_tokens"),
+                    cacheRead: intState(state, "last_turn_cache_read_tokens"),
+                    cacheCreate: intState(state, "last_turn_cache_create_tokens"),
+                }];
+            })();
 
-        const lastVisible = intState(state, "last_turn_tokens");
-        const lastInput = intState(state, "last_turn_input_tokens");
-        const lastOutput = intState(state, "last_turn_output_tokens");
-        const lastCache = intState(state, "last_turn_cache_read_tokens") + intState(state, "last_turn_cache_create_tokens");
-        usage24h += lastVisible;
-        input24h += lastInput;
-        output24h += lastOutput;
-        cache24h += lastCache;
+        for (const entry of windowEntries) {
+            if (entry.atMs < twentyFourHoursAgo || entry.atMs > now + 60_000) continue;
 
-        runnerBreakdown24h[runnerId] = (runnerBreakdown24h[runnerId] || 0) + lastVisible;
-        const role = inferTokenRoleFromState(runner, state);
-        roleBreakdown24h[role] = (roleBreakdown24h[role] || 0) + lastVisible;
-        const model = runner.model || state.model || "unknown";
-        modelBreakdown24h[model] = (modelBreakdown24h[model] || 0) + lastVisible;
+            const entryVisible = entry.visible;
+            const entryCache = entry.cacheRead + entry.cacheCreate;
+            usage24h += entryVisible;
+            input24h += entry.input;
+            output24h += entry.output;
+            cache24h += entryCache;
 
-        const hour = Math.floor(lastTurnAtMs / (60 * 60 * 1000)) * 3600;
-        const bucket = hourly24h.get(hour) || {hour, input: 0, output: 0, cache: 0};
-        bucket.input += lastInput;
-        bucket.output += lastOutput;
-        bucket.cache += lastCache;
-        hourly24h.set(hour, bucket);
+            runnerBreakdown24h[runnerId] = (runnerBreakdown24h[runnerId] || 0) + entryVisible;
+            const role = inferTokenRoleFromState(runner, state);
+            roleBreakdown24h[role] = (roleBreakdown24h[role] || 0) + entryVisible;
+            const model = runner.model || state.model || "unknown";
+            modelBreakdown24h[model] = (modelBreakdown24h[model] || 0) + entryVisible;
 
-        if (lastTurnAtMs >= oneHourAgo) {
-            usage1h += lastVisible;
-            input1h += lastInput;
-            output1h += lastOutput;
-            cache1h += lastCache;
+            const hour = Math.floor(entry.atMs / (60 * 60 * 1000)) * 3600;
+            const bucket = hourly24h.get(hour) || {hour, input: 0, output: 0, cache: 0};
+            bucket.input += entry.input;
+            bucket.output += entry.output;
+            bucket.cache += entryCache;
+            hourly24h.set(hour, bucket);
+
+            if (entry.atMs >= oneHourAgo) {
+                usage1h += entryVisible;
+                input1h += entry.input;
+                output1h += entry.output;
+                cache1h += entryCache;
+            }
         }
     }
 

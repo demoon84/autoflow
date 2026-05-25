@@ -66,6 +66,12 @@ function stateLockPath(runner: string): string {
 function sessionCursorPath(runner: string): string {
   return path.join(STATE_DIR, `${runner}.session-cursor.json`);
 }
+function tokenHistoryPath(runner: string): string {
+  return path.join(STATE_DIR, `${runner}.tokens-history.jsonl`);
+}
+
+const TOKEN_HISTORY_PRUNE_SIZE_BYTES = 512 * 1024;
+const TOKEN_HISTORY_RETENTION_MS = 25 * 60 * 60 * 1000;
 
 type SessionFileCursor = {
   mtimeMs: number;
@@ -174,6 +180,49 @@ function writeState(runner: string, content: string): boolean {
     return true;
   }
   catch (err: any) { warn(`state write failed: ${err && err.message}`); return false; }
+}
+
+function appendTokenHistory(
+  runner: string,
+  entry: { at: string; input: number; output: number; cacheRead: number; cacheCreate: number },
+): void {
+  try {
+    fs.appendFileSync(tokenHistoryPath(runner), JSON.stringify(entry) + "\n", "utf8");
+  } catch (err: any) {
+    warn(`token history append failed: ${err?.message || err}`);
+  }
+}
+
+function pruneTokenHistoryIfLarge(runner: string, nowMs: number): void {
+  const target = tokenHistoryPath(runner);
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(target);
+  } catch {
+    return;
+  }
+  if (stat.size <= TOKEN_HISTORY_PRUNE_SIZE_BYTES) return;
+
+  const keepAfterMs = nowMs - TOKEN_HISTORY_RETENTION_MS;
+  try {
+    const kept = fs.readFileSync(target, "utf8")
+      .split(/\r?\n/)
+      .filter((line) => {
+        if (!line.trim()) return false;
+        try {
+          const parsed = JSON.parse(line);
+          const atMs = Date.parse(String(parsed?.at || ""));
+          return Number.isFinite(atMs) && atMs >= keepAfterMs;
+        } catch {
+          return false;
+        }
+      });
+    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, kept.length > 0 ? kept.join("\n") + "\n" : "", "utf8");
+    fs.renameSync(tmp, target);
+  } catch (err: any) {
+    warn(`token history prune failed: ${err?.message || err}`);
+  }
 }
 
 function parseStateLines(text: string): Map<string, string> {
@@ -575,6 +624,8 @@ export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; mes
 
   ensureDirs();
   const result = withStateLock(runner, () => {
+    const at = NOW();
+    const atMs = Date.parse(at);
     const state = readState(runner);
     const map = parseStateLines(state);
     if (!map.has("id")) map.set("id", runner);
@@ -608,7 +659,7 @@ export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; mes
     map.set("last_turn_cache_read_tokens", String(cacheR));
     map.set("last_turn_cache_create_tokens", String(cacheC));
     map.set("last_turn_llm_request_count", "1");
-    map.set("last_turn_at", NOW());
+    map.set("last_turn_at", at);
     if (tickId) map.set("last_turn_tick_id", tickId);
     map.set("last_turn_role", tokenRoleFromState(map));
     map.set("cumulative_tokens", String(newVisible));
@@ -618,10 +669,12 @@ export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; mes
     map.set("cumulative_llm_request_count", String(newRequestCount));
     map.set("token_source", "llm_reported");
     map.set("last_token_usage_source", "llm_reported");
-    map.set("updated_at", NOW());
+    map.set("updated_at", at);
 
     let message = "";
     if (writeState(runner, serializeStateLines(map))) {
+      appendTokenHistory(runner, { at, input: inputT, output: outputT, cacheRead: cacheR, cacheCreate: cacheC });
+      pruneTokenHistoryIfLarge(runner, Number.isFinite(atMs) ? atMs : Date.now());
       message = `[runner-tokens] ${runner}: +${visible} (total=${turnTotal}, cum=${newVisible})\n`;
     }
 
