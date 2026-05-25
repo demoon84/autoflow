@@ -117,7 +117,7 @@ export function buildInjectedHandoffPrompt(
   if (normalizedAgent === "codex") {
     const promptPath = writeRunnerHandoffPromptFile({ boardRoot, runnerId, kind, prompt });
     return {
-      prompt: `Autoflow handoff: read ${JSON.stringify(promptPath)} and follow it exactly now. Execute the single runner turn it describes, then summarize briefly. When no actionable work remains, Desktop will stop this runner process.`,
+      prompt: `Autoflow handoff: read ${JSON.stringify(promptPath)} and follow it exactly now. Execute the single runner turn it describes, then summarize briefly. When no actionable work remains, leave this runner idle and wait for the next handoff. Do not exit or close the CLI; stay in the interactive prompt.`,
       paste: "plain",
       promptPath
     };

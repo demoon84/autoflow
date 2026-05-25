@@ -24,6 +24,12 @@ export function initCliRunnerControl(injected: CliRunnerControlDeps): void {
 const cliRunnerControlRequestsInFlight = new Set<string>();
 const staleCliRunnerControlRequestMs = 120_000;
 
+// PTY status callback이 stopped 이벤트를 받았을 때, 사용자가 명시적으로 중지를
+// 요청한 케이스인지 구분하기 위한 marker. cli-runner-control이 ptyManager.stop
+// 을 호출하기 직전에 runnerKey를 추가하고, status callback이 처리 후 제거한다.
+// 이게 비어있으면 codex 자체 종료(exit code/SIGTERM)로 간주해 자동 재시작.
+export const pendingUserStopRunnerKeys = new Set<string>();
+
 export function cliRunnerControlRequestKey(scope: Scope, runnerId: string, state: RunnerState): string {
   return [
     scope?.projectRoot || "",
@@ -93,6 +99,9 @@ export async function processCliRunnerControlRequest(scope: Scope, runnerId: str
     const runner = ptyManager && typeof ptyManager.get === "function" ? ptyManager.get(runnerKey) : null;
     if (runner && runner.status === "running") {
       const force = String(state.control_force || "").toLowerCase() === "true";
+      // 자동 재시작 self-heal 이 user-initiated stop 을 다시 살리지 않도록
+      // ptyManager.stop 호출 직전에 marker 를 set 한다.
+      pendingUserStopRunnerKeys.add(runnerKey);
       if (force && Number.isInteger(runner.pid) && runner.pid > 0) {
         deps.killPidForcefully(runner.pid);
         removePtySessionPid(runner.pid);
@@ -108,6 +117,8 @@ export async function processCliRunnerControlRequest(scope: Scope, runnerId: str
         status: "stopped",
         runner_status: "stopped",
         pid: "",
+        stopped_by: "user",
+        last_stop_reason: "user_stopped",
         control_action: "",
         control_source: "",
         control_requested_at: "",

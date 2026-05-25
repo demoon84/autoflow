@@ -151,7 +151,8 @@ const {
     stateHasCliRunnerControlRequest,
     markCliRunnerControlFailed,
     processCliRunnerControlRequest,
-    reconcileCliRunnerControlRequestsForScope
+    reconcileCliRunnerControlRequestsForScope,
+    pendingUserStopRunnerKeys
 } = require("./main/cli-runner-control");
 const {
     defaultBoardDirName: getDefaultBoardDirName,
@@ -5006,6 +5007,67 @@ async function selfHealStoppedRunnersForScope(_scope: any) {
     return;
 }
 
+// PTY 가 사용자 의도와 상관없이 죽었을 때(예: codex 가 stop hook fail 로 exit
+// 1, 응답 후 자체 종료) 자동 재시작. 사용자가 명시 stop 한 경우는 호출되지
+// 않는다 (pendingUserStopRunnerKeys 로 거른다).
+const runnerSelfHealAttempts = new Map<string, number[]>();
+const RUNNER_SELF_HEAL_WINDOW_MS = 5 * 60 * 1000;
+const RUNNER_SELF_HEAL_MAX_PER_WINDOW = 5;
+const RUNNER_SELF_HEAL_DELAY_MS = 1500;
+
+function shouldRecordRunnerSelfHealAttempt(runnerKey: string): boolean {
+    const now = Date.now();
+    const history = (runnerSelfHealAttempts.get(runnerKey) || []).filter(
+        (ts) => now - ts < RUNNER_SELF_HEAL_WINDOW_MS
+    );
+    if (history.length >= RUNNER_SELF_HEAL_MAX_PER_WINDOW) {
+        runnerSelfHealAttempts.set(runnerKey, history);
+        return false;
+    }
+    history.push(now);
+    runnerSelfHealAttempts.set(runnerKey, history);
+    return true;
+}
+
+async function scheduleRunnerSelfHealRespawn(runnerKey: string, meta: any) {
+    if (!meta || !meta.projectRoot || !meta.runnerId) return;
+    const projectRoot = String(meta.projectRoot);
+    const boardDirName = String(meta.boardDirName || defaultBoardDirName);
+    const runnerId = String(meta.runnerId);
+
+    if (!shouldRecordRunnerSelfHealAttempt(runnerKey)) {
+        try {
+            const boardRoot = path.join(projectRoot, boardDirName);
+            appendRunnerLog(boardRoot, runnerId, {
+                event: "runner_self_heal_skipped_cooldown",
+                runner_id: runnerId,
+                attempts_in_window: String(RUNNER_SELF_HEAL_MAX_PER_WINDOW)
+            });
+        } catch {}
+        return;
+    }
+
+    setTimeout(async () => {
+        try {
+            // 사용자가 그 사이 명시 중지했으면 self-heal 취소.
+            const statePath = path.join(projectRoot, boardDirName, "runners", "state", `${runnerId}.state`);
+            try {
+                const current = await readRunnerStateValues(statePath);
+                if (String(current.stopped_by || "").toLowerCase() === "user") return;
+            } catch {}
+            const boardRoot = path.join(projectRoot, boardDirName);
+            appendRunnerLog(boardRoot, runnerId, {
+                event: "runner_self_heal_respawn",
+                runner_id: runnerId
+            });
+            await spawnRunnerPtySession(
+                { runnerId, projectRoot, boardDirName, freshSession: false },
+                "self-heal"
+            );
+        } catch {}
+    }, RUNNER_SELF_HEAL_DELAY_MS);
+}
+
 async function shutdownRunnersForScope(scope: any, reason: any = "parent_terminated", opts: any = {}) {
     const stateDir = path.join(scope.projectRoot, scope.boardDirName, "runners", "state");
     let entries;
@@ -5565,6 +5627,9 @@ app.whenReady().then(() => {
         }
         void writePtyRunnerStateFile(payload.runnerId, fields);
         if (payload.status === "stopped") {
+            // self-heal 판단을 위해 ptyRunnerMeta 를 delete 하기 전에 snapshot.
+            const metaSnapshot = ptyRunnerMeta.get(payload.runnerId);
+            const wasUserStop = pendingUserStopRunnerKeys.delete(payload.runnerId);
             clearAllHandoffTimersForRunner(payload.runnerId);
             ptyRunnerMeta.delete(payload.runnerId);
             ptyTokenUsageParseState.delete(payload.runnerId);
@@ -5576,6 +5641,13 @@ app.whenReady().then(() => {
                     removePtySessionPid(payload.pid);
                 } catch {
                 }
+            }
+            // codex 자체 종료 (exit code) 또는 신호 종료 인데 사용자가 명시
+            // 중지한 게 아니면 자동 재시작 trigger. cool-down 으로 무한 재시작
+            // 루프 방지.
+            const isAbnormalExit = typeof payload.exitCode === "number" || Boolean(payload.signal);
+            if (isAbnormalExit && !wasUserStop && metaSnapshot && metaSnapshot.projectRoot) {
+                void scheduleRunnerSelfHealRespawn(payload.runnerId, metaSnapshot);
             }
         }
     });
