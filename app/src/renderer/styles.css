@@ -2596,8 +2596,8 @@ pre {
 
 .prd-coverage-card-prd-only-done {
   border-style: dashed;
-  border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(34, 197, 94, 0.03);
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.05);
 }
 
 .prd-coverage-card-missing {
@@ -2681,9 +2681,9 @@ pre {
 }
 
 .prd-coverage-status-prd-only-done {
-  background: rgba(34, 197, 94, 0.1);
-  color: rgb(167, 243, 208);
-  border: 1px dashed rgba(34, 197, 94, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  color: rgb(252, 211, 77);
+  border: 1px dashed rgba(245, 158, 11, 0.5);
   padding-block: 1px;
 }
 
