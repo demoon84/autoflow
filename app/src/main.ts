@@ -255,6 +255,10 @@ const {
     writeRunnerStartupPromptFile,
     buildRunnerStartupScan
 } = require("./main/context-reset");
+const {
+    wikiTreeList,
+    wikiPageRead
+} = require("./main/wiki-pages");
 
 function ignoreBrokenPipe(stream: any) {
     if (!stream || typeof stream.on !== "function") return;
@@ -3779,6 +3783,8 @@ function publishBoardChange(scope: any = {}, reason: any = "board-change") {
     const boardDirName = scope.boardDirName || defaultBoardDirName;
     // Board broadcasts only invalidate UI caches; runner shutdown stays on explicit stop paths.
     clearReadBoardCachesForScope({projectRoot, boardDirName});
+    const reasonText = String(reason || "");
+    const wikiPathMatch = reasonText.match(/(?:^|[\\/])wiki[\\/].*\.md$/i);
     for (const win of BrowserWindow.getAllWindows()) {
         if (win.isDestroyed()) {
             continue;
@@ -3789,6 +3795,14 @@ function publishBoardChange(scope: any = {}, reason: any = "board-change") {
                 boardDirName,
                 reason
             });
+            if (wikiPathMatch) {
+                win.webContents.send("autoflow:wikiTreeChanged", {
+                    projectRoot,
+                    boardDirName,
+                    path: wikiPathMatch[0].replace(/^[\\/]/, ""),
+                    reason
+                });
+            }
         } catch {
             // Renderer may be closing; board polling is the fallback.
         }
@@ -5386,6 +5400,8 @@ app.whenReady().then(() => {
     ipcMain.handle("autoflow:continueRunnerAuth", withScopeMemory(continueRunnerAuth));
     ipcMain.handle("autoflow:controlWiki", withScopeMemory(controlWiki));
     ipcMain.handle("autoflow:browseWikiDatabase", withTimeout(withScopeMemory(browseWikiDatabase), 30000));
+    ipcMain.handle("autoflow:wikiTreeList", withTimeout(withScopeMemory(wikiTreeList), 10000));
+    ipcMain.handle("autoflow:wikiPageRead", withTimeout(withScopeMemory(wikiPageRead), 10000));
     ipcMain.handle("autoflow:controlWatcher", withScopeMemory(controlWatcher));
     ipcMain.handle("autoflow:readBoardFile", withTimeout(withScopeMemory(readBoardFile), 30000));
     ipcMain.handle("autoflow:readStartupRules", withTimeout(withScopeMemory(readStartupRules), 10000));

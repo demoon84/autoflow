@@ -64,6 +64,7 @@ import { cn } from "@/lib/utils";
 import "./styles.css";
 import claudeAppIcon from "./assets/agent-icons/claude.png";
 import codexAppIcon from "./assets/agent-icons/codex.png";
+import { WikiPanel } from "./wiki-panel";
 
 type AlertSeverity = "error" | "warning" | "info" | "success";
 type ThemeMode = "light" | "dark";
@@ -2849,6 +2850,8 @@ function App() {
                   <section className="board-section board-section-flush" aria-label="LLM위키 본문">
                     <PageLayout className="knowledge-page">
                       <div className="knowledge-db-body">
+                        {/* WikiPanel 내부에서 wikiTreeChanged 이벤트를 구독해 트리와 본문을 reload 한다. */}
+                        <WikiPanel projectRoot={options.projectRoot} boardDirName={options.boardDirName} />
                         <WikiDatabasePanel
                           result={wikiDbResult}
                           isLoading={wikiDbLoading}
