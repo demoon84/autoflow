@@ -4666,7 +4666,7 @@ function WorkflowStatStrip({ board }: { board: AutoflowBoardSnapshot | null }) {
         <div className={`workflow-stat-cell${hasTokenData ? "" : " workflow-stat-cell-muted"}`}>
           <Badge variant="secondary">토큰 사용량</Badge>
           <strong>{formatCount(tokenUsageCount)}</strong>
-          <span>LLM 요청 {formatCount(tokenReportCount)}개 · cache read {formatCount(tokenCacheReadCount)}</span>
+          <span>· LLM 요청 {formatCount(tokenReportCount)} · cache read {formatCount(tokenCacheReadCount)}</span>
         </div>
       </div>
     </div>
@@ -4949,11 +4949,11 @@ function ReportingDashboard({
         <ReportMetricCard
           label="토큰 사용량"
           value={`${formatCompactCount(tokenUsageCount)}토큰`}
-	          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
+	          detail={hasTokenData ? `${formatCount(tokenReportCount)} LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
           icon={Terminal}
           tone="report-tone-violet"
           className="report-metric-card-token"
-	          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}개, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
+	          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
         >
           {hasTokenData ? (
             <>
@@ -8215,8 +8215,8 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
   const pidValue = isRunning ? String(runner.pid) : "";
   const tokenTitle = cacheReadTokens > 0
-    ? `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()}개 · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
-    : `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()}개`;
+    ? `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
+    : `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()}`;
   const footerTitle = pidLabel ? `${tokenTitle} · ${pidLabel}` : tokenTitle;
   return (
     <footer
