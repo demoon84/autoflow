@@ -750,6 +750,9 @@ const statusLabels: Record<string, string> = {
   worker_work_handoff_turn_requested: "Worker 호출 요청됨",
   wiki_handoff_turn_requested: "Wiki 호출 요청됨",
   wiki_idle_no_followup: "처리할 작업 없음",
+  worker_idle_no_followup: "처리할 작업 없음",
+  planner_idle_no_followup: "처리할 작업 없음",
+  verifier_idle_no_followup: "처리할 작업 없음",
   dry_run: "미리 실행",
   true: "사용",
   false: "중지"
@@ -828,7 +831,15 @@ function displayStatus(value: string) {
     return statusLabels[`verifier_${verifierDecision[1]}`] || raw;
   }
 
-  return statusLabels[normalized] || raw || "-";
+  if (statusLabels[normalized]) {
+    return statusLabels[normalized];
+  }
+
+  if (/_idle_no_followup$/.test(normalized)) {
+    return "처리할 작업 없음";
+  }
+
+  return raw || "-";
 }
 
 function displayActiveItemLabel(value: string) {
@@ -964,6 +975,11 @@ function runnerDraftFromRunner(runner: AutoflowRunner): RunnerDraft {
     enabled: runner.enabled || "true",
     command: runner.command || ""
   };
+}
+
+function runnerRuntimeConfigIsAuthoritative(runner: AutoflowRunner) {
+  const status = (runner.stateStatus || "").toLowerCase();
+  return status === "running" || runnerHasConnectedPty(runner);
 }
 
 function isWikiRunner(runner: Pick<AutoflowRunner, "id" | "role">) {
@@ -2030,7 +2046,9 @@ function App() {
         const runnerDraft = runnerDraftFromRunner(runner);
         const currentSaved = current[runner.id];
         const currentDraft = runnerDrafts[runner.id];
+        const runtimeConfigIsAuthoritative = runnerRuntimeConfigIsAuthoritative(runner);
         const hasLocalUnsavedEdit =
+          !runtimeConfigIsAuthoritative &&
           Boolean(currentSaved && currentDraft && !runnerDraftsEqual(currentDraft, currentSaved)) &&
           !runnerDraftsEqual(currentDraft, runnerDraft);
         next[runner.id] = hasLocalUnsavedEdit && currentSaved ? currentSaved : runnerDraft;
@@ -2050,8 +2068,11 @@ function App() {
         const previousDraft = previous[runner.id];
         const savedDraft = runnerSavedDrafts[runner.id];
         const previousHasUnsavedEdits = Boolean(previousDraft && savedDraft && !runnerDraftsEqual(previousDraft, savedDraft));
+        const runtimeConfigIsAuthoritative = runnerRuntimeConfigIsAuthoritative(runner);
         const isThisRunnerWorking = Boolean(runnerActionKeys[runner.id]);
-        const baseDraft = previousDraft && (isThisRunnerWorking || previousHasUnsavedEdits) ? previousDraft : runnerDraft;
+        const shouldKeepPreviousDraft =
+          previousDraft && !runtimeConfigIsAuthoritative && (isThisRunnerWorking || previousHasUnsavedEdits);
+        const baseDraft = shouldKeepPreviousDraft ? previousDraft : runnerDraft;
         const normalized = normalizeRunnerSelections(
           baseDraft.agent || "codex",
           baseDraft.model || "",
@@ -3676,8 +3697,11 @@ function RunnerConsole({
             const intervalLabel = scheduledLoop ? (runner.intervalSeconds || runner.intervalEffectiveSeconds || "60") : "";
             const runnerCadenceLabel = scheduledLoop ? `반복 실행 / ${intervalLabel}s` : "수동 실행";
             const transitionLabel = runnerTransitionLabel(actionKey);
-            const canEditConfig = status !== "running";
-            const draft = drafts[runner.id] || runnerDraftFromRunner(runner);
+            const canEditConfig = !runnerRuntimeConfigIsAuthoritative(runner);
+            const runnerRuntimeDraft = runnerDraftFromRunner(runner);
+            const draft = runnerRuntimeConfigIsAuthoritative(runner)
+              ? runnerRuntimeDraft
+              : drafts[runner.id] || runnerRuntimeDraft;
             const runnerEventRaw = runner.activeItem || runner.lastResult || "";
             const runnerEventValue = runner.activeItem
               ? displayActiveItemLabel(runner.activeItem)
@@ -7064,8 +7088,7 @@ function formatRunnerElapsedSeconds(totalSeconds: number): string {
 
 function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: number } {
   const [nowMs, setNowMs] = React.useState<number>(() => Date.now());
-  const stateStatus = (runner.stateStatus || "").toLowerCase();
-  const isRunning = stateStatus === "running" && Boolean(runner.pid);
+  const isRunning = runnerHasConnectedPty(runner);
 
   React.useEffect(() => {
     if (!isRunning) return;
@@ -7269,6 +7292,87 @@ function livePtySnapshotLooksBusy(snapshot: string) {
   return false;
 }
 
+function runnerHasConnectedPty(runner: Pick<AutoflowRunner, "pid" | "stateStatus">) {
+  return Boolean(String(runner.pid || "").trim()) && !runnerPtyStatusIsStopped(String(runner.stateStatus || ""));
+}
+
+type LivePtyConnection = {
+  pid: string;
+  status: string;
+  startedAt: string;
+};
+
+function useLivePtyConnection(runner: AutoflowRunner, options?: WorkflowBoardOptions): LivePtyConnection | null {
+  const projectRoot = options?.projectRoot || "";
+  const boardDirName = options?.boardDirName || ".autoflow";
+  const runnerId = runner.id || "";
+  const [connection, setConnection] = React.useState<LivePtyConnection | null>(null);
+
+  React.useEffect(() => {
+    if (!runnerId || !projectRoot) {
+      setConnection(null);
+      return undefined;
+    }
+
+    if (runnerHasConnectedPty(runner)) {
+      setConnection({
+        pid: String(runner.pid || ""),
+        status: runner.stateStatus || "running",
+        startedAt: runner.startedAt || ""
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    const applyCandidate = (candidate: any | null) => {
+      if (cancelled) return;
+      const status = String(candidate?.status || "").toLowerCase();
+      if (!candidate || status !== "running") {
+        setConnection(null);
+        return;
+      }
+      setConnection({
+        pid: String(candidate.pid || ""),
+        status: candidate.status || "running",
+        startedAt: candidate.startedAt || ""
+      });
+    };
+    const refresh = async () => {
+      const listPtys = (window.autoflow as any).runnerPtyList;
+      if (typeof listPtys !== "function") {
+        applyCandidate(null);
+        return;
+      }
+      try {
+        const result = await listPtys();
+        const candidate = Array.isArray(result?.runners)
+          ? result.runners.find((item: any) =>
+              String(item?.id || "") === runnerId &&
+              livePtyPayloadMatchesScope(item, projectRoot, boardDirName)
+            )
+          : null;
+        applyCandidate(candidate || null);
+      } catch {
+        applyCandidate(null);
+      }
+    };
+
+    void refresh();
+    const offStatus = (window.autoflow as any).onRunnerPtyStatus?.((payload: any) => {
+      if (!payload || String(payload.runnerId || "") !== runnerId) return;
+      if (!livePtyPayloadMatchesScope(payload, projectRoot, boardDirName)) return;
+      applyCandidate(payload);
+    }) || (() => {});
+
+    return () => {
+      cancelled = true;
+      try { offStatus(); } catch {}
+    };
+  }, [boardDirName, projectRoot, runner.pid, runner.stateStatus, runner.startedAt, runnerId]);
+
+  return connection;
+}
+
 function useLivePtyActivity(runner: AutoflowRunner, options?: WorkflowBoardOptions) {
   const projectRoot = options?.projectRoot || "";
   const boardDirName = options?.boardDirName || ".autoflow";
@@ -7277,8 +7381,8 @@ function useLivePtyActivity(runner: AutoflowRunner, options?: WorkflowBoardOptio
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    const isRunning = runnerStatus.toLowerCase() === "running" && Boolean(runner.pid);
-    if (!isRunning || !runnerId || !projectRoot) {
+    const isConnected = runnerHasConnectedPty(runner);
+    if (!isConnected || !runnerId || !projectRoot) {
       setBusy(false);
       return;
     }
@@ -8235,8 +8339,7 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
     typeof runner.cumulativeLlmRequestCount === "number" ? runner.cumulativeLlmRequestCount : 0,
     typeof runner.lastTurnLlmRequestCount === "number" ? runner.lastTurnLlmRequestCount : 0
   );
-  const stateStatus = (runner.stateStatus || "").toLowerCase();
-  const isRunning = stateStatus === "running" && Boolean(runner.pid);
+  const isRunning = runnerHasConnectedPty(runner);
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
   const pidValue = isRunning ? String(runner.pid) : "";
   const tokenTitle = cacheReadTokens > 0
@@ -8653,11 +8756,7 @@ function runnerStatusSummary({
     label = runner.backgroundTaskLabel;
     tone = "running";
     detailParts = compactStatusParts([activeTicketLabel]);
-  } else if (
-    !runner.pid ||
-    statusLower === "stopped" ||
-    statusLower === "user_stopped"
-  ) {
+  } else if (statusLower === "stopped" || statusLower === "user_stopped") {
     label = "중지됨";
     tone = "stopped";
     detailParts = [];
@@ -9102,14 +9201,27 @@ function AiProgressRow({
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
-  const livePtyActivity = useLivePtyActivity(runner, options);
-  const livePtyBusy = Boolean(runner.livePtyBusy) || livePtyActivity.busy;
-  const baseCurrentKey = runnerStageKey(runner);
+  const livePtyConnection = useLivePtyConnection(runner, options);
+  const runnerView = React.useMemo<AutoflowRunner>(() => {
+    if (!livePtyConnection) return runner;
+    const stateStatus = runnerPtyStatusIsStopped(runner.stateStatus || "")
+      ? "idle"
+      : runner.stateStatus;
+    return {
+      ...runner,
+      pid: runner.pid || livePtyConnection.pid,
+      startedAt: runner.startedAt || livePtyConnection.startedAt,
+      stateStatus
+    };
+  }, [livePtyConnection, runner]);
+  const livePtyActivity = useLivePtyActivity(runnerView, options);
+  const livePtyBusy = Boolean(runnerView.livePtyBusy) || livePtyActivity.busy;
+  const baseCurrentKey = runnerStageKey(runnerView);
   const currentKey = livePtyBusy && baseCurrentKey === "idle"
-    ? runnerLivePtyBusyStageKey(runner)
+    ? runnerLivePtyBusyStageKey(runnerView)
     : baseCurrentKey;
-  const hideProgressTrack = isCoordinatorRole(runner.role);
-  const flowStages = flowStagesForRunner(runner);
+  const hideProgressTrack = isCoordinatorRole(runnerView.role);
+  const flowStages = flowStagesForRunner(runnerView);
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
   const stageIndex = flowStages.findIndex((candidate) => candidate.key === currentKey);
   const stageCount = Math.max(1, flowStages.length);
@@ -9117,52 +9229,54 @@ function AiProgressRow({
   const progressScale = String(
     Math.max(0, Math.min(1, (stageIndex > 0 ? (stageIndex / progressStepCount) * 100 : 0) / 100))
   );
-  const cycleResult = runnerCycleResult(runner);
-  const status = runner.stateStatus || "idle";
-  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
+  const cycleResult = runnerCycleResult(runnerView);
+  const status = runnerView.stateStatus || "idle";
+  const role = displayRoleKeyForRunner(runnerView) || runnerCurrentRoleValue(runnerView);
   const isWorkerProgressRow = role === "worker" || role === "ticket";
-  const isBlocked = runnerBlockedNeedsAttention(runner);
-  const detail = runnerProgressDetail(runner);
+  const isBlocked = runnerBlockedNeedsAttention(runnerView);
+  const detail = runnerProgressDetail(runnerView);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
-  const hasActiveWorkContext = runnerHasActiveWorkContext(runner);
+  const hasActiveWorkContext = runnerHasActiveWorkContext(runnerView);
   const activeTicketLabel = hasActiveWorkContext
-    ? runner.activeTicketId
-      ? displayActiveTicketBadge(runner.activeTicketId)
-      : runner.assignedItemRef
-        ? displayActiveTicketBadge(runner.assignedItemRef)
+    ? runnerView.activeTicketId
+      ? displayActiveTicketBadge(runnerView.activeTicketId)
+      : runnerView.assignedItemRef
+        ? displayActiveTicketBadge(runnerView.assignedItemRef)
         : ""
     : "";
-  const activeTicketTitle = runner.activeTicketTitle && !repeatsActiveTicketBadge(runner.activeTicketTitle, runner.activeTicketId)
-    ? runner.activeTicketTitle
+  const activeTicketTitle = runnerView.activeTicketTitle && !repeatsActiveTicketBadge(runnerView.activeTicketTitle, runnerView.activeTicketId)
+    ? runnerView.activeTicketTitle
     : "";
-  const detailText = displayDetail && !repeatsActiveTicketBadge(displayDetail, runner.activeTicketId) ? displayDetail : "";
-  const agentLabel = displayProgressRunnerLabel(runner);
-  const agentTitle = displayProgressRoleLabel(runner, options?.allRunners);
-  const isRunnerActive =
-    (runner.stateStatus || "").toLowerCase() === "running" && Boolean(runner.pid);
-  const liveStdoutText = useLiveStdoutText(runner, options);
+  const detailText = displayDetail && !repeatsActiveTicketBadge(displayDetail, runnerView.activeTicketId) ? displayDetail : "";
+  const agentLabel = displayProgressRunnerLabel(runnerView);
+  const agentTitle = displayProgressRoleLabel(runnerView, options?.allRunners);
+  const hasConnectedPty = runnerHasConnectedPty(runnerView);
+  const liveTerminalStatus = hasConnectedPty ? "running" : status;
+  const isRunnerActive = hasConnectedPty;
+  const liveStdoutText = useLiveStdoutText(runnerView, options);
   // 실행 중일 때만 live stdout 표시. previewText fallback 없음 —
   // previewText 가 먼저 쓰이면 writtenLengthRef 가 오염돼 typewriter 가 깨진다.
   const conversationText = isRunnerActive ? liveStdoutText : "";
   const statusLower = status.toLowerCase();
-  const scheduledLoop = runnerUsesScheduledLoop(runner);
-  const mode = scheduledLoop ? (runner.mode || "loop") : "";
+  const scheduledLoop = runnerUsesScheduledLoop(runnerView);
+  const mode = scheduledLoop ? (runnerView.mode || "loop") : "";
   const isWorking = Boolean(actionKey);
   const transitionLabel = runnerTransitionLabel(actionKey);
   const canForceStop = actionKey === "stopping_pending";
   const canStart = scheduledLoop ? mode === "loop" : true;
-  const canStop = statusLower === "running" || Boolean(runner.pid);
-  const canEditConfig = statusLower !== "running";
-  const runnerDraft = draft || runnerDraftFromRunner(runner);
+  const canStop = statusLower === "running" || hasConnectedPty;
+  const canEditConfig = !hasConnectedPty && statusLower !== "running";
+  const runnerRuntimeDraft = runnerDraftFromRunner(runnerView);
+  const runnerDraft = runnerRuntimeConfigIsAuthoritative(runnerView) ? runnerRuntimeDraft : draft || runnerRuntimeDraft;
   const canConfigure = Boolean(onSelectRunner && onDraftChange && onConfigure);
   const canControl = Boolean(onSelectRunner && onControl);
   const isApplyingConfig = actionKey === "config_applying" || actionKey === "config_applying_restart";
-  const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runner);
-  const showAuthPrompt = runnerNeedsLogin(runner) && Boolean(onRunnerAuthChoice);
-  const canContinueAuth = runnerCanContinueAuth(runner);
+  const showConversation = Boolean(liveStdoutText) || shouldShowConversation(runnerView);
+  const showAuthPrompt = runnerNeedsLogin(runnerView) && Boolean(onRunnerAuthChoice);
+  const canContinueAuth = runnerCanContinueAuth(runnerView);
   const statusSummary = runnerStatusSummary({
-    runner,
+    runner: runnerView,
     status,
     statusLower,
     currentKey,
@@ -9185,7 +9299,7 @@ function AiProgressRow({
   const [ticketError, setTicketError] = React.useState("");
 
   const openTicketDialog = React.useCallback(async () => {
-    if (!runner.activeTicketId) return;
+    if (!runnerView.activeTicketId) return;
     setTicketDialogOpen(true);
     setTicketContent(null);
     setTicketError("");
@@ -9195,7 +9309,7 @@ function AiProgressRow({
     }
     const boardDir = options.boardDirName || ".autoflow";
     const projectRoot = options.projectRoot.replace(/[\\/]+$/, "");
-    const candidatePaths = activeItemPreviewPaths(runner).map((filePath) =>
+    const candidatePaths = activeItemPreviewPaths(runnerView).map((filePath) =>
       filePath.startsWith("/") || /^[A-Za-z]:[\\/]/.test(filePath) ? filePath : `${projectRoot}/${boardDir}/${filePath}`
     );
     setTicketLoading(true);
@@ -9220,12 +9334,12 @@ function AiProgressRow({
     } finally {
       setTicketLoading(false);
     }
-  }, [options, runner.activeTicketId]);
+  }, [options, runnerView]);
 
   return (
     <article
-      data-runner-role={runner.role}
-      data-runner-id={runner.id}
+      data-runner-role={runnerView.role}
+      data-runner-id={runnerView.id}
       className={`ai-progress-row ai-progress-${currentKey}${isWorkerProgressRow ? " ai-progress-row-worker" : ""}${
         hideProgressTrack ? " ai-progress-row-no-track" : ""
       }`}
@@ -9233,7 +9347,7 @@ function AiProgressRow({
       <div className="ai-progress-row-top">
         <div className="ai-progress-agent">
           <div className={`ai-progress-agent-title${isWorkerProgressRow ? " ai-progress-agent-title-worker" : ""}`}>
-            <AgentAppIcon agent={runnerDraft.agent || runner.agent || "codex"} />
+            <AgentAppIcon agent={runnerDraft.agent || runnerView.agent || "codex"} />
             <div className="ai-progress-agent-label-cluster">
               <strong>{agentTitle}</strong>
             </div>
@@ -9307,7 +9421,7 @@ function AiProgressRow({
           is the single source of truth for "what is this runner doing". */}
 
       <div className="ai-progress-current">
-        {runner.activeTicketId ? (
+        {runnerView.activeTicketId ? (
           <Button
             variant="ghost"
             type="button"
@@ -9330,7 +9444,7 @@ function AiProgressRow({
       </div>
       {canConfigure ? (
         <RunnerConfigControls
-          runner={runner}
+          runner={runnerView}
           installedAgentProfiles={installedAgentProfiles || {}}
           actionKey={actionKey}
           draft={runnerDraft}
@@ -9347,7 +9461,7 @@ function AiProgressRow({
         <div className="runner-auth-prompt" role="group" aria-label={`${agentTitle} 인증 선택`}>
           <div className="runner-auth-copy">
             <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-            <span>{runnerLoginMessage(runner)}</span>
+            <span>{runnerLoginMessage(runnerView)}</span>
           </div>
           <div className="runner-auth-actions">
             {canContinueAuth ? (
@@ -9356,7 +9470,7 @@ function AiProgressRow({
                 variant="default"
                 size="sm"
                 disabled={Boolean(actionKey)}
-                onClick={() => onRunnerAuthChoice?.("continue", runner)}
+                onClick={() => onRunnerAuthChoice?.("continue", runnerView)}
               >
                 {actionKey === "auth_continue" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 <span>Y 계속</span>
@@ -9367,7 +9481,7 @@ function AiProgressRow({
               variant="outline"
               size="sm"
               disabled={Boolean(actionKey)}
-              onClick={() => onRunnerAuthChoice?.("cancel", runner)}
+              onClick={() => onRunnerAuthChoice?.("cancel", runnerView)}
             >
               <X className="h-4 w-4" />
               <span>n 취소</span>
@@ -9376,15 +9490,15 @@ function AiProgressRow({
         </div>
       ) : null}
       <LivePtyView
-        key={`${options?.projectRoot || ""}\0${options?.boardDirName || ".autoflow"}\0${runner.id}`}
-        runnerId={runner.id}
+        key={`${options?.projectRoot || ""}\0${options?.boardDirName || ".autoflow"}\0${runnerView.id}`}
+        runnerId={runnerView.id}
         projectRoot={options?.projectRoot || ""}
         boardDirName={options?.boardDirName || ".autoflow"}
         ariaLabel={`${agentLabel} 라이브 터미널`}
         clearOnStopped
-        runnerStatus={status}
+        runnerStatus={liveTerminalStatus}
       />
-      <RunnerActivityFooter runner={runner} />
+      <RunnerActivityFooter runner={runnerView} />
       <Dialog open={ticketDialogOpen} onOpenChange={setTicketDialogOpen}>
         <DialogContent
           className="workflow-pin-layer-panel workflow-pin-layer-default"
@@ -9397,8 +9511,8 @@ function AiProgressRow({
               <KanbanSquare className="h-4 w-4" aria-hidden="true" />
               <DialogTitle asChild>
                 <strong>
-                  {runner.activeTicketId
-                    ? workflowFileDisplayName(`${runner.activeTicketId}.md`)
+                  {runnerView.activeTicketId
+                    ? workflowFileDisplayName(`${runnerView.activeTicketId}.md`)
                     : "항목"}
                   {activeTicketTitle ? (
                     <span className="ai-ticket-dialog-subtitle"> · {activeTicketTitle}</span>
