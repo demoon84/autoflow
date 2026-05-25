@@ -1,30 +1,68 @@
 ---
 name: autoflow
-description: 사용자가 /autoflow, #autoflow, $autoflow를 호출할 때 사용한다. 사용자와 대화로 요구조건과 목표를 정리하고, 승인을 받으면 목표 달성을 위한 PRD를 1개 이상 발행한다. LLM Wiki와 기존 작업 코드를 필요할 때 참고한다.
+description: 사용자가 $autoflow, #autoflow, /autoflow를 호출하거나 Autoflow로 작업 진행을 맡기려 할 때 사용한다. Autoflow는 스킬이며, 스킬 대화는 프로젝트 현재 상태와 LLM Wiki를 참고해 PRD를 하나 이상 발행한다. 구현, 검증, merge, 위키 작성은 러너와 데스크탑 사이드카가 처리한다.
 ---
 
 # Autoflow Skill
 
-Autoflow 스킬은 사용자의 요구조건과 목표를 정리해 PRD로 발행하는 대화 진입점이다.
+Autoflow는 사용자-facing skill이다. 데스크탑 앱은 이 skill과 러너를 실행하는 sidecar이며, 4개 고정 러너를 표시한다.
 
-## 절차
+스킬 대화는 프로젝트 현재 구현 상태와 LLM Wiki를 read-only로 참고해 PRD를 발행한다. 제품 구현, 검증 판정, PRD worktree commit/merge, 위키 작성은 스킬 대화가 직접 수행하지 않는다.
 
-1. 사용자의 요구조건과 목표를 정리한다.
-2. 사용자가 PRD 발행을 승인하면 PRD를 1개 이상 발행한다.
+이 문서는 현재 Autoflow 계약이다.
 
-## 요구조건과 목표 정리
+## 구조
 
-- 스킬이 호출되면 먼저 사용자의 요구조건과 목표를 정리한다.
-- 한 번의 답으로 결론을 내지 않고, 사용자와 대화를 반복하며 요구조건을 다듬는다.
-- 정리 과정에서 필요하면 언제든 LLM Wiki와 기존 작업 코드를 참고한다.
+- `autoflow` skill: 프로젝트 상태 파악, LLM Wiki 참고, PRD 발행 범위 판단.
+- Desktop sidecar: 스킬과 runner 실행, 4개 고정 러너 표시, runner lifecycle/PTY 관리.
+- Board: PRD, TODO, runner state, verifier decision, commit/merge evidence의 source of truth.
+- Planner runner: PRD를 TODO로 분해한다.
+- Worker runner: 배정 TODO를 수행하고 verifier pass 후 PRD worktree commit을 반영한다. PRD의 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
+- Verifier runner: Worker 결과를 검증하고 pass/revise/replan 같은 후속조치를 기록한다.
+- LLM Wiki runner: 완료 원장에서 파생 지식을 지연/배치로 정리한다. 위키는 source of truth가 아니며 작업 완료를 막지 않는다.
 
-## LLM Wiki
+## 시작 게이트
 
-LLM Wiki는 이전에 작업했던 내용을 보관하는 장기 기억이다. 특정 단계에 묶이지 않고, 요구조건 정리·PRD 발행 직전·이외 어떤 시점이든 필요할 때 언제든 참고할 수 있다.
+`$autoflow`를 사용하면 스킬 대화는 먼저 read-only로 요청 범위와 현재 상태를 파악하고 사용자에게 실행 방향을 짧게 브리핑한다.
+
+승인 전 허용:
+
+- 요청 범위와 완료 조건을 이해하기 위한 질문.
+- `autoflow status`, ticket/runner state, LLM Wiki read-only 확인.
+- 발행할 PRD 묶음과 완료 조건 초안 작성.
+
+승인 전 금지:
+
+- PRD/TODO/runner state/wiki/제품 파일 변경.
+- runner action 실행.
+- 외부 리서치나 제품 구현에 해당하는 작업 수행.
+
+브리핑 전에는 LLM Wiki를 read-only로 확인한다. 기본 순서는 `.autoflow/wiki/index.md`, `.autoflow/wiki/log.md`, 관련 wiki page, 필요 시 wiki query다. 관련 기록이 없으면 `LLM위키 참고: 관련 기록 없음`을 적는다.
 
 ## PRD 발행
 
-- 사용자가 명시적으로 PRD 발행을 승인했을 때만 PRD를 발행한다.
-- 정리한 목표를 달성하기 위해 PRD를 1개 이상 발행한다.
-- PRD를 작성할 때 필요하면 LLM Wiki와 기존 작업 코드 내용을 참고한다.
-- 스킬은 PRD `.md`만 발행하고 branch/worktree는 직접 만들지 않는다.
+스킬 대화의 주된 산출물은 PRD다.
+
+- PRD는 하나 이상 발행할 수 있다.
+- active PRD가 있다는 이유만으로 새 PRD 발행을 막지 않는다.
+- 같은 요청 범위 안에서 병렬로 진행 가능한 작업은 여러 PRD로 발행할 수 있다.
+- PRD 하나는 Planner가 여러 TODO로 나눌 수 있게 `## Work Item Split`을 포함할 수 있다.
+- PRD는 관찰 가능한 작업 범위, `Allowed Paths`, `Done When`, `Verification`, 부족분/후속 후보를 담는다.
+- 스킬 대화는 PRD 발행 후 구현 세부를 직접 해결하지 않는다.
+
+## Runner
+
+데스크탑 sidecar는 4개 고정 러너를 표시한다.
+
+- `Planner`
+- `Worker`
+- `Verifier`
+- `LLM Wiki`
+
+`Merge` runner는 없다. PRD worktree merge는 해당 PRD의 마지막 TODO를 처리한 Worker가 수행한다.
+
+Planner, Worker, Verifier는 자신의 상태 변수를 보드에 기록한다.
+
+## 위키
+
+LLM Wiki는 스킬 대화가 PRD를 발행할 때 참고하는 read-only memory다. LLM Wiki runner의 작성/정리는 지연/배치 작업이며 `PRD turn`, worker/verifier 진행을 막지 않는다.

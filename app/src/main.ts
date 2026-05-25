@@ -2352,9 +2352,41 @@ async function enrichRunnerTerminalPreviews(runners: any, boardRoot: any) {
     );
 }
 
+async function enrichRunnerRuntimeConfigFromState(runners: any, boardRoot: any) {
+    if (!Array.isArray(runners) || runners.length === 0) return runners;
+    const stateDir = path.join(boardRoot, "runners", "state");
+    await Promise.all(runners.map(async (runner) => {
+        const runnerId = String(runner?.id || "").trim();
+        if (!runnerId) return;
+        const values = await readRunnerStateValues(path.join(stateDir, `${runnerId}.state`));
+        const pid = positiveIntegerValue(values.pid);
+        const status = String(values.runner_status || values.status || "").toLowerCase();
+        if (!pid || status === "stopped" || status === "user_stopped") return;
+
+        const identity = inspectPidIdentity(pid);
+        if (!identity.alive || !commandLooksLikeAutoflowRunner(identity.command)) return;
+
+        const runtimeFields: Array<[string, string]> = [
+            ["role", "role"],
+            ["agent", "agent"],
+            ["model", "model"],
+            ["reasoning", "reasoning"],
+            ["codex_history", "codexHistory"]
+        ];
+        for (const [stateKey, runnerKey] of runtimeFields) {
+            const value = String(values[stateKey] || "").trim();
+            if (value) runner[runnerKey] = value;
+        }
+        runner.pid = String(pid);
+        if (values.started_at) runner.startedAt = values.started_at;
+        if (values.runner_status || values.status) runner.stateStatus = values.runner_status || values.status;
+    }));
+    return runners;
+}
+
 async function enrichWikiRunnerBackgroundTasks(runners: any, boardRoot: any) {
     if (!Array.isArray(runners) || runners.length === 0) return;
-    const wikiRunner = runners.find((runner) => String(runner?.role || "").toLowerCase().includes("wiki"));
+    const wikiRunner = runners.find((runner) => runnerOperationalRole(runner).includes("wiki"));
     if (!wikiRunner) return;
 
     const stateDir = path.join(boardRoot, "runners", "state");
@@ -2390,15 +2422,54 @@ function enrichLivePtyRunnerActivity(runners: any, projectRoot: any, boardDirNam
             runner.livePtyBusy = false;
             continue;
         }
+        const statusLower = String(runner.stateStatus || "").toLowerCase();
+        const livePid = Number(liveRunner.pid || 0);
+        let shouldMirrorLiveState = false;
+        if (Number.isInteger(livePid) && livePid > 0 && !String(runner.pid || "").trim()) {
+            runner.pid = String(livePid);
+            shouldMirrorLiveState = true;
+        }
+        if (liveRunner.startedAt && !runner.startedAt) {
+            runner.startedAt = liveRunner.startedAt;
+        }
         const snapshot = typeof ptyManager.snapshot === "function"
             ? ptyManager.snapshot(runnerKey) || ""
             : "";
         runner.livePtyBusy = runnerSnapshotLooksBusy(snapshot.slice(-6000));
+        if (statusLower === "stopped" || statusLower === "user_stopped") {
+            runner.stateStatus = runner.livePtyBusy ? "running" : "idle";
+            shouldMirrorLiveState = true;
+        }
+        if (shouldMirrorLiveState) {
+            void writePtyRunnerStateFile(runnerKey, {});
+        }
     }
 }
 
+function runnerOperationalRole(runner: any) {
+    const candidates = [
+        runner?.role,
+        runner?.activeRole,
+        runner?.assignmentRole,
+        runner?.id
+    ];
+    for (const candidate of candidates) {
+        const raw = String(candidate || "").trim().toLowerCase();
+        if (!raw) continue;
+        if (/^(worker|ai)-\d+$/.test(raw)) return "worker";
+        if (/^(planner|plan)-/.test(raw)) return "planner";
+        if (/^verifier-/.test(raw)) return "verifier";
+        if (/^(wiki-maintainer|wiki)-/.test(raw)) return "wiki-maintainer";
+        const normalized = normalizeRunnerRole(raw);
+        if (["planner", "worker", "verifier", "wiki-maintainer"].includes(normalized)) {
+            return normalized;
+        }
+    }
+    return "";
+}
+
 function countRunnerQueueStatus(runner: any, boardRoot: any) {
-    const role = String(runner?.role || "").toLowerCase();
+    const role = runnerOperationalRole(runner);
     const runnerId = String(runner?.id || "").trim().toLowerCase();
     const assignmentStatus = String(runner?.assignmentStatus || "").toLowerCase();
     const assignedItemRef = String(runner?.assignedItemRef || "").trim();
@@ -3461,6 +3532,7 @@ async function listRunners(options: any = {}) {
     const result = await runAutoflowArgs(args, options);
     const parsed = parseRunnerListOutput(result.stdout);
     const boardRoot = path.join(options.projectRoot, boardDirName);
+    await enrichRunnerRuntimeConfigFromState(parsed.runners, boardRoot);
     const runners = await enrichRunnerTerminalPreviews(parsed.runners, boardRoot);
     await enrichRunnerActiveTicketFromFs(runners, boardRoot);
     await enrichWikiRunnerBackgroundTasks(runners, boardRoot);
@@ -3822,6 +3894,14 @@ function cloneRunnersResult(result: any) {
     };
 }
 
+function cloneLiveEnrichedRunnersResult(result: any, options: any = {}) {
+    const cloned = cloneRunnersResult(result);
+    if (cloned?.runners) {
+        enrichLivePtyRunnerActivity(cloned.runners, options.projectRoot || "", options.boardDirName || defaultBoardDirName);
+    }
+    return cloned;
+}
+
 function emptyRunnerListResult(options: any = {}, fallback: any = {}) {
     return {
         ok: fallback.ok === false ? false : true,
@@ -3908,14 +3988,14 @@ function listRunnersCachedOrRefresh(options: any = {}, ttlMs: any = readBoardRun
     const now = Date.now();
 
     if (entry?.result && now - entry.updatedAt < ttlMs) {
-        return Promise.resolve(markRunnerListFallback(cloneRunnersResult(entry.result), {cacheStatus: "fresh"}));
+        return Promise.resolve(markRunnerListFallback(cloneLiveEnrichedRunnersResult(entry.result, options), {cacheStatus: "fresh"}));
     }
 
     if (entry?.result) {
         if (!entry.promise) {
             void startRunnerListRefresh(options, key, entry);
         }
-        return Promise.resolve(markRunnerListFallback(cloneRunnersResult(entry.result), {
+        return Promise.resolve(markRunnerListFallback(cloneLiveEnrichedRunnersResult(entry.result, options), {
             partial: true,
             fallback: true,
             stale: true,
@@ -3926,12 +4006,12 @@ function listRunnersCachedOrRefresh(options: any = {}, ttlMs: any = readBoardRun
 
     if (!entry?.promise) {
         return startRunnerListRefresh(options, key, entry).then((result) =>
-            markRunnerListFallback(cloneRunnersResult(result), {cacheStatus: "miss"})
+            markRunnerListFallback(cloneLiveEnrichedRunnersResult(result, options), {cacheStatus: "miss"})
         );
     }
 
     return entry.promise.then((result) =>
-        markRunnerListFallback(cloneRunnersResult(result), {
+        markRunnerListFallback(cloneLiveEnrichedRunnersResult(result, options), {
             refreshInFlight: true,
             cacheStatus: "pending"
         })
@@ -3944,19 +4024,19 @@ async function listRunnersStandalone(options: any = {}) {
     const now = Date.now();
 
     if (entry?.result && now - entry.updatedAt < standaloneRunnerListCacheTtlMs) {
-        return markRunnerListFallback(cloneRunnersResult(entry.result), {cacheStatus: "fresh"});
+        return markRunnerListFallback(cloneLiveEnrichedRunnersResult(entry.result, options), {cacheStatus: "fresh"});
     }
 
     if (entry?.promise) {
         const result = await entry.promise;
-        return markRunnerListFallback(cloneRunnersResult(result), {
+        return markRunnerListFallback(cloneLiveEnrichedRunnersResult(result, options), {
             refreshInFlight: true,
             cacheStatus: "pending"
         });
     }
 
     const result = await startRunnerListRefresh(options, key, entry);
-    return markRunnerListFallback(cloneRunnersResult(result), {cacheStatus: "fresh"});
+    return markRunnerListFallback(cloneLiveEnrichedRunnersResult(result, options), {cacheStatus: "fresh"});
 }
 
 // Per-(projectRoot, runnerId) inflight tracker. Renderer-side parallel

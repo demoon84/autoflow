@@ -7748,13 +7748,18 @@ function runnerPtyStatusIsStopped(status: string) {
   return normalized === "stopped" || normalized === "user_stopped" || normalized === "failed" || normalized === "errored";
 }
 
+// idle 은 semantic 상태이지 PTY 연결 단절이 아니다. live PID + 연결이 있으면
+// idle 상태에서도 terminal buffer/PID/footer 를 유지해야 하므로
+// inactive = stop 계열만 포함시킨다.
 function runnerPtyStatusIsInactive(status: string) {
-  const normalized = status.toLowerCase();
-  return !normalized || normalized === "idle" || runnerPtyStatusIsStopped(normalized);
+  return runnerPtyStatusIsStopped(status);
 }
 
+// snapshot 요청은 stopped 계열이 아니면 허용한다. 메인 프로세스가
+// PTY 가 살아 있을 때만 buffer 를 돌려주므로 renderer 가 idle 에서도
+// 안전하게 reconnect 할 수 있다.
 function runnerPtyStatusAllowsSnapshot(status: string) {
-  return status.toLowerCase() === "running";
+  return !runnerPtyStatusIsStopped(status);
 }
 
 const LIVE_TERMINAL_IDLE_STAGES = new Set(["todo", "idle"]);

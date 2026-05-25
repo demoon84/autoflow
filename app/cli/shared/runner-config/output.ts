@@ -1,5 +1,5 @@
 import {path, out, type ProjectContext} from "../context";
-import {readRunnerState, runnerEffectiveStateStatus} from "./state";
+import {pidIsRunning, readRunnerState, runnerEffectiveStateStatus} from "./state";
 import {runnerTokenAccounting} from "./metrics";
 import {runnerConfigFingerprint, runnerStringFieldDefaults} from "./serialize";
 
@@ -25,6 +25,11 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     const configFingerprint = runnerConfigFingerprint(runner);
     const tokenAccounting = runnerTokenAccounting(ctx, runner.id || "");
     const field = (key: string, fallback = "") => runner[key] ?? fallback;
+    const runtimePidIsAlive = stateStatus !== "stopped" && pidIsRunning(state.pid || "");
+    const displayField = (key: string, fallback = "") => {
+        if (runtimePidIsAlive && state[key]) return state[key];
+        return field(key, fallback);
+    };
     const assignmentStatus = (state.assignment_status || "").toLowerCase();
     const hasOpenAssignment = Boolean(assignmentStatus && !["completed", "released"].includes(assignmentStatus));
     const runtimeHasActiveWork = activeStageCarriesWork(state.active_stage || "") || Boolean(
@@ -54,11 +59,11 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     };
 
     out(`${prefix}id=${field("id")}`);
-    out(`${prefix}role=${field("role")}`);
-    out(`${prefix}agent=${field("agent", runnerStringFieldDefaults.agent)}`);
-    out(`${prefix}codex_history=${field("codex_history", runnerStringFieldDefaults.codex_history)}`);
-    out(`${prefix}model=${field("model", runnerStringFieldDefaults.model)}`);
-    out(`${prefix}reasoning=${field("reasoning", runnerStringFieldDefaults.reasoning)}`);
+    out(`${prefix}role=${displayField("role")}`);
+    out(`${prefix}agent=${displayField("agent", runnerStringFieldDefaults.agent)}`);
+    out(`${prefix}codex_history=${displayField("codex_history", runnerStringFieldDefaults.codex_history)}`);
+    out(`${prefix}model=${displayField("model", runnerStringFieldDefaults.model)}`);
+    out(`${prefix}reasoning=${displayField("reasoning", runnerStringFieldDefaults.reasoning)}`);
     out(`${prefix}mode=${field("mode", "")}`);
     out(`${prefix}interval_seconds=${field("interval_seconds", "")}`);
     out(`${prefix}interval_effective_seconds=${field("interval_seconds", "")}`);
@@ -69,7 +74,18 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}applied_config_fingerprint=${state.applied_config_fingerprint || state.config_fingerprint || configFingerprint}`);
     out(`${prefix}config_applied_at=${state.config_applied_at || state.updated_at || state.last_event_at || ""}`);
     out(`${prefix}state_status=${stateStatus}`);
-    out(`${prefix}pid=${stateStatus === "running" ? state.pid || "" : ""}`);
+<<<<<<< Updated upstream
+    // PID 노출은 PTY 연결이 살아 있는지 기준이다. semantic 상태가 idle 이어도
+    // 실제 PTY 프로세스가 살아 있으면 (예: wiki_idle_no_followup) `runners list`
+    // 에 pid 를 그대로 노출해 CLI/UI 가 live 연결을 잃지 않게 한다.
+    // 정지/에러 경로만 비운다.
+    const pidVisible = stateStatus !== "stopped" && stateStatus !== "errored";
+    out(`${prefix}pid=${pidVisible ? state.pid || "" : ""}`);
+=======
+    // PID 는 stopped 가 아니고 실제 PID 가 살아 있을 때만 노출. idle/starting 도 PTY 가 살아 있으면 그대로 보여야
+    // renderer 가 "중지됨" 으로 잘못 표시하지 않는다.
+    out(`${prefix}pid=${stateStatus !== "stopped" && pidIsRunning(state.pid || "") ? state.pid || "" : ""}`);
+>>>>>>> Stashed changes
     out(`${prefix}started_at=${state.started_at || ""}`);
     out(`${prefix}last_event_at=${state.last_event_at || state.updated_at || ""}`);
     out(`${prefix}last_adapter_chunk_at=${state.last_adapter_chunk_at || ""}`);

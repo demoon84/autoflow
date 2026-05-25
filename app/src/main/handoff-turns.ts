@@ -61,6 +61,10 @@ function getPtyManager(): PtyManagerLike | undefined {
   return (globalThis as any).__autoflowPtyManager;
 }
 
+function queueSweepReason(value: string): boolean {
+  return value === "boot-catchup" || value === "handoff-sweep" || value === "context-reset";
+}
+
 export function clearVerifierHandoffTurnTimers(idlePtyRunnerStopTimers?: Map<string, NodeJS.Timeout>): void {
   for (const entry of plannerHandoffTurnTimers.values()) {
     if (entry?.timer) clearTimeout(entry.timer);
@@ -132,7 +136,7 @@ export function buildInjectedHandoffPrompt(
 export function verifierQueueChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    return value === "boot-catchup" || value === "context-reset" || value === "tickets/verifier" || /^tickets\/verifier\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value);
+    return queueSweepReason(value) || value === "tickets/verifier" || /^tickets\/verifier\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value);
   });
 }
 
@@ -225,39 +229,6 @@ export function handoffDedupBlocks(
   return now - (last.at || 0) < Math.max(1000, Math.min(dedupMs, retryMs));
 }
 
-// post_context_reset/context_reset_recovery: compact 또는 clear 입력으로 runner
-// 컨텍스트가 비워진 직후, 같은 queue fingerprint 라도 아직 actionable work 가
-// 남아 있으면 한 번은 handoff retry 가 가능해야 한다. 호출자가 force=true 로
-// 부르면 기존 dedup 을 건너뛰고, 결과(예약/주입/스킵)는 receiver runner 의
-// state 파일에 context_reset_recovery_event 로 남긴다. fingerprint guard /
-// max attempts 자체는 그대로 유지된다.
-export function contextResetRecoveryStateFields(
-  outcome: "scheduled" | "injected" | "skipped",
-  reason: string,
-  detail = ""
-): Record<string, string> {
-  const reasonValue = String(reason || "");
-  if (!reasonValue.includes("context-reset")) return {};
-  const fields: Record<string, string> = {
-    context_reset_recovery_event: outcome,
-    context_reset_recovery_reason: reasonValue,
-    context_reset_recovery_at: new Date().toISOString()
-  };
-  if (detail) fields.context_reset_recovery_detail = detail;
-  return fields;
-}
-
-export function recordContextResetRecoveryEvent(
-  runnerKey: string,
-  outcome: "scheduled" | "injected" | "skipped",
-  reason: string,
-  detail = ""
-): void {
-  const fields = contextResetRecoveryStateFields(outcome, reason, detail);
-  if (Object.keys(fields).length === 0) return;
-  void writePtyRunnerStateFile(runnerKey, fields);
-}
-
 export function handoffIdleStateFields(lastResult: string, promptPath = ""): Record<string, string> {
   return {
     last_result: lastResult,
@@ -285,7 +256,7 @@ export function pokeRunnerContinuePromptIfNeeded(
 export function workerVerifierDecisionChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    return value === "boot-catchup" || value === "context-reset" || value === "tickets/inprogress" || /^tickets\/inprogress\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value);
+    return queueSweepReason(value) || value === "tickets/inprogress" || /^tickets\/inprogress\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value);
   });
 }
 
@@ -363,10 +334,7 @@ export function scheduleWorkerVerifierDecisionTurn(
   const now = Date.now();
   const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WORKER_VERIFIER_DECISION_DEDUP_MS || "300000", 10) || 300000);
   const last = workerVerifierDecisionLastInjected.get(runnerKey);
-  if (!force && last?.fingerprint === fingerprint && now - last.at < dedupMs) {
-    recordContextResetRecoveryEvent(runnerKey, "skipped", reason, "dedup_blocked");
-    return;
-  }
+  if (!force && last?.fingerprint === fingerprint && now - last.at < dedupMs) return;
 
   const existing = workerVerifierDecisionTurnTimers.get(runnerKey);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -424,8 +392,7 @@ export function scheduleWorkerVerifierDecisionTurn(
           active_ticket_id: path.basename(ticketPath, ".md"),
           active_ticket_path: boardRelPath(boardRoot, ticketPath),
           active_ticket_title: readMarkdownTitleSync(ticketPath),
-          last_handoff_prompt_path: injectedPrompt.promptPath || "",
-          ...contextResetRecoveryStateFields("injected", reason)
+          last_handoff_prompt_path: injectedPrompt.promptPath || ""
         });
       }
       clearEntry();
@@ -433,12 +400,11 @@ export function scheduleWorkerVerifierDecisionTurn(
     if (typeof entry.timer?.unref === "function") entry.timer.unref();
   };
   workerVerifierDecisionTurnTimers.set(runnerKey, entry);
-  recordContextResetRecoveryEvent(runnerKey, "scheduled", reason);
   scheduleNext(delayMs);
 }
 
 export function scheduleWorkerVerifierDecisionTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
   if (!workerVerifierDecisionChangeReasons(reasons)) return;
   const candidates = listQueueFilesSync(boardRoot, "tickets/inprogress", workItemQueueFilePattern, 1000)
@@ -460,8 +426,7 @@ export function scheduleWorkerVerifierDecisionTurnsForScope(
     scheduleWorkerVerifierDecisionTurn({
       projectRoot, boardDirName, boardRoot,
       runnerId: item.runnerId, ticketPath: item.ticketPath, stage: item.stage,
-      reason: (reasons || []).join(","),
-      force
+      reason: (reasons || []).join(",")
     });
   }
 }
@@ -507,10 +472,7 @@ export function scheduleVerifierHandoffTurn(
   const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_VERIFIER_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
   const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_VERIFIER_HANDOFF_RETRY_MS", 30000, dedupMs);
   const last = verifierHandoffLastInjected.get(runnerKey);
-  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) {
-    recordContextResetRecoveryEvent(runnerKey, "skipped", reason, "dedup_blocked");
-    return;
-  }
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
 
   const existing = verifierHandoffTurnTimers.get(runnerKey);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -553,22 +515,18 @@ export function scheduleVerifierHandoffTurn(
       if (injected) {
         const currentFingerprint = computeQueueFingerprint("verifier", boardRoot);
         verifierHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
-        void writePtyRunnerStateFile(runnerKey, {
-          ...handoffIdleStateFields("verifier_handoff_turn_requested", injectedPrompt.promptPath),
-          ...contextResetRecoveryStateFields("injected", reason)
-        });
+        void writePtyRunnerStateFile(runnerKey, handoffIdleStateFields("verifier_handoff_turn_requested", injectedPrompt.promptPath));
       }
       clearEntry();
     }, waitMs);
     if (typeof entry.timer?.unref === "function") entry.timer.unref();
   };
   verifierHandoffTurnTimers.set(runnerKey, entry);
-  recordContextResetRecoveryEvent(runnerKey, "scheduled", reason);
   scheduleNext(delayMs);
 }
 
 export function scheduleVerifierHandoffTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
   if (!verifierQueueChangeReasons(reasons)) return;
   if (listQueueFilesSync(boardRoot, "tickets/verifier", workItemQueueFilePattern, 1).length === 0) return;
@@ -578,8 +536,7 @@ export function scheduleVerifierHandoffTurnsForScope(
   for (const runner of verifierRunners) {
     scheduleVerifierHandoffTurn({
       projectRoot, boardDirName, boardRoot,
-      runnerId: runner.id, reason: (reasons || []).join(","),
-      force
+      runnerId: runner.id, reason: (reasons || []).join(",")
     });
   }
 }
@@ -587,7 +544,7 @@ export function scheduleVerifierHandoffTurnsForScope(
 export function plannerQueueChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    return value === "boot-catchup" || value === "context-reset" || value === "tickets/prd" || /^tickets\/prd\/PRD[-_].+\.md$/i.test(value);
+    return queueSweepReason(value) || value === "tickets/prd" || /^tickets\/prd\/PRD[-_].+\.md$/i.test(value);
   });
 }
 
@@ -633,10 +590,7 @@ export function schedulePlannerHandoffTurn(
   const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_PLANNER_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
   const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_PLANNER_HANDOFF_RETRY_MS", 30000, dedupMs);
   const last = plannerHandoffLastInjected.get(runnerKey);
-  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) {
-    recordContextResetRecoveryEvent(runnerKey, "skipped", reason, "dedup_blocked");
-    return;
-  }
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
 
   const existing = plannerHandoffTurnTimers.get(runnerKey);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -680,22 +634,18 @@ export function schedulePlannerHandoffTurn(
       if (injected) {
         const currentFingerprint = computeQueueFingerprint("planner", boardRoot);
         plannerHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
-        void writePtyRunnerStateFile(runnerKey, {
-          ...handoffIdleStateFields("planner_handoff_turn_requested", injectedPrompt.promptPath),
-          ...contextResetRecoveryStateFields("injected", reason)
-        });
+        void writePtyRunnerStateFile(runnerKey, handoffIdleStateFields("planner_handoff_turn_requested", injectedPrompt.promptPath));
       }
       clearEntry();
     }, waitMs);
     if (typeof entry.timer?.unref === "function") entry.timer.unref();
   };
   plannerHandoffTurnTimers.set(runnerKey, entry);
-  recordContextResetRecoveryEvent(runnerKey, "scheduled", reason);
   scheduleNext(delayMs);
 }
 
 export function schedulePlannerHandoffTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
   if (!plannerQueueChangeReasons(reasons)) return;
   if (listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000).filter(plannerQueueFileIsActionableSync).length === 0) return;
@@ -705,8 +655,7 @@ export function schedulePlannerHandoffTurnsForScope(
   for (const runner of plannerRunners) {
     schedulePlannerHandoffTurn({
       projectRoot, boardDirName, boardRoot,
-      runnerId: runner.id, reason: (reasons || []).join(","),
-      force
+      runnerId: runner.id, reason: (reasons || []).join(",")
     });
   }
 }
@@ -717,7 +666,7 @@ export function schedulePlannerHandoffTurnsForScope(
 export function workerTodoQueueChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    if (value === "boot-catchup" || value === "context-reset") return true;
+    if (queueSweepReason(value)) return true;
     if (value === "tickets/todo" || value === "tickets/inprogress" || value === "tickets/verifier" || value === "tickets/done") return true;
     if (/^tickets\/(?:todo|inprogress|verifier)\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value)) return true;
     if (/^tickets\/done(?:\/[^/]+)?\/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(value)) return true;
@@ -812,10 +761,7 @@ export function scheduleWorkerTodoHandoffTurn(
   const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WORKER_WORK_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
   const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_WORKER_WORK_HANDOFF_RETRY_MS", 15000, dedupMs);
   const last = workerTodoHandoffLastInjected.get(runnerKey);
-  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) {
-    recordContextResetRecoveryEvent(runnerKey, "skipped", reason, "dedup_blocked");
-    return;
-  }
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
 
   const existing = workerTodoHandoffTurnTimers.get(runnerKey);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -860,22 +806,18 @@ export function scheduleWorkerTodoHandoffTurn(
       if (injected) {
         const currentFingerprint = workerTodoQueueFingerprint(boardRoot);
         workerTodoHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
-        void writePtyRunnerStateFile(runnerKey, {
-          ...handoffIdleStateFields("worker_work_handoff_turn_requested", injectedPrompt.promptPath),
-          ...contextResetRecoveryStateFields("injected", reason)
-        });
+        void writePtyRunnerStateFile(runnerKey, handoffIdleStateFields("worker_work_handoff_turn_requested", injectedPrompt.promptPath));
       }
       clearEntry();
     }, waitMs);
     if (typeof entry.timer?.unref === "function") entry.timer.unref();
   };
   workerTodoHandoffTurnTimers.set(runnerKey, entry);
-  recordContextResetRecoveryEvent(runnerKey, "scheduled", reason);
   scheduleNext(delayMs);
 }
 
 export function scheduleWorkerTodoHandoffTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
   if (!workerTodoQueueChangeReasons(reasons)) return;
   const pendingTodos = listQueueFilesSync(boardRoot, "tickets/todo", workItemQueueFilePattern, 1000)
@@ -895,8 +837,7 @@ export function scheduleWorkerTodoHandoffTurnsForScope(
     if (!live || live.status !== "running") continue;
     scheduleWorkerTodoHandoffTurn({
       projectRoot, boardDirName, boardRoot,
-      runnerId, reason: (reasons || []).join(","),
-      force
+      runnerId, reason: (reasons || []).join(",")
     });
     scheduled += 1;
     if (scheduled >= pendingTodos.length) break;
@@ -906,7 +847,7 @@ export function scheduleWorkerTodoHandoffTurnsForScope(
 export function wikiQueueChangeReasons(reasons: unknown[]): boolean {
   return (reasons || []).some((reason) => {
     const value = String(reason || "");
-    return value === "boot-catchup" || value === "context-reset" || value === "wiki" || value.startsWith("wiki/") || value === "tickets/done" || value.startsWith("tickets/done/");
+    return queueSweepReason(value) || value === "wiki" || value.startsWith("wiki/") || value === "tickets/done" || value.startsWith("tickets/done/");
   });
 }
 
@@ -948,10 +889,7 @@ export function scheduleWikiHandoffTurn(
   const dedupMs = Math.max(1000, Number.parseInt(process.env.AUTOFLOW_WIKI_HANDOFF_DEDUP_MS || "300000", 10) || 300000);
   const retryDedupMs = handoffRetryDedupMs("AUTOFLOW_WIKI_HANDOFF_RETRY_MS", 30000, dedupMs);
   const last = wikiHandoffLastInjected.get(runnerKey);
-  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) {
-    recordContextResetRecoveryEvent(runnerKey, "skipped", reason, "dedup_blocked");
-    return;
-  }
+  if (handoffDedupBlocks(last, fingerprint, now, dedupMs, retryDedupMs, force)) return;
 
   const existing = wikiHandoffTurnTimers.get(runnerKey);
   if (existing?.timer) clearTimeout(existing.timer);
@@ -993,22 +931,18 @@ export function scheduleWikiHandoffTurn(
       if (injected) {
         const currentFingerprint = computeQueueFingerprint("wiki-maintainer", boardRoot);
         wikiHandoffLastInjected.set(runnerKey, { at: Date.now(), fingerprint: currentFingerprint, reason });
-        void writePtyRunnerStateFile(runnerKey, {
-          ...handoffIdleStateFields("wiki_handoff_turn_requested", injectedPrompt.promptPath),
-          ...contextResetRecoveryStateFields("injected", reason)
-        });
+        void writePtyRunnerStateFile(runnerKey, handoffIdleStateFields("wiki_handoff_turn_requested", injectedPrompt.promptPath));
       }
       clearEntry();
     }, waitMs);
     if (typeof entry.timer?.unref === "function") entry.timer.unref();
   };
   wikiHandoffTurnTimers.set(runnerKey, entry);
-  recordContextResetRecoveryEvent(runnerKey, "scheduled", reason);
   scheduleNext(delayMs);
 }
 
 export function scheduleWikiHandoffTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
   if (!wikiQueueChangeReasons(reasons)) return;
   if (!wikiHasPendingRunnerWorkSync(boardRoot)) return;
@@ -1018,25 +952,13 @@ export function scheduleWikiHandoffTurnsForScope(
   for (const runner of wikiRunners) {
     scheduleWikiHandoffTurn({
       projectRoot, boardDirName, boardRoot,
-      runnerId: runner.id, reason: (reasons || []).join(","),
-      force
+      runnerId: runner.id, reason: (reasons || []).join(",")
     });
   }
 }
 
 // 한 runner 의 모든 handoff turn 타이머와 dedup 기록을 정리한다.
 // PTY runner 가 stopped 이벤트를 발생시킬 때 main.ts 가 호출한다.
-export function scheduleAllHandoffTurnsForScope(
-  { projectRoot, boardDirName, boardRoot, reasons, force = false }:
-  { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[]; force?: boolean }
-): void {
-  schedulePlannerHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons, force });
-  scheduleVerifierHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons, force });
-  scheduleWorkerTodoHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons, force });
-  scheduleWorkerVerifierDecisionTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons, force });
-  scheduleWikiHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons, force });
-}
-
 export function clearAllHandoffTimersForRunner(runnerKey: string): void {
   const verifierTurnTimer = verifierHandoffTurnTimers.get(runnerKey);
   if (verifierTurnTimer?.timer) clearTimeout(verifierTurnTimer.timer);

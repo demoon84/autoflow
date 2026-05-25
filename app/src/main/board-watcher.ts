@@ -37,6 +37,13 @@ export function initBoardWatcher(injected: BoardWatcherDeps): void {
 
 const boardWatchersByScope = new Map<string, BoardWatcherEntry>();
 const boardWatchDebounceMs = 250;
+const handoffSelfHealReason = "handoff-sweep";
+
+function handoffSweepIntervalMs(): number {
+  const raw = Number.parseInt(process.env.AUTOFLOW_HANDOFF_SWEEP_INTERVAL_MS || "30000", 10);
+  if (!Number.isFinite(raw)) return 30000;
+  return raw <= 0 ? 0 : Math.max(5000, raw);
+}
 
 export function projectScopeKey(projectRoot: string, boardDirName: string): string {
   return `${projectRoot}\0${boardDirName}`;
@@ -209,9 +216,15 @@ export function ensureBoardWatcher(scope: Scope): void {
     await refreshSnapshot();
     try { scheduleBoardRunnerHandoffs(["boot-catchup"]); } catch {}
     entry.snapshotRefreshTimer = setInterval(() => { void refreshSnapshot(); }, 10 * 60 * 1000);
-    // 주기적 sweep timer 제거: parcel-watcher 이벤트와 부팅 시 1회
-    // boot-catchup 만으로 처리 요청을 발화한다. 매 5초마다 재발화하면
-    // 러너가 idle <-> running 사이를 깜빡인다.
+    const sweepIntervalMs = handoffSweepIntervalMs();
+    if (sweepIntervalMs > 0) {
+      entry.handoffSweepTimer = setInterval(() => {
+        try {
+          scheduleBoardRunnerHandoffs([handoffSelfHealReason]);
+        } catch {}
+      }, sweepIntervalMs);
+      if (typeof entry.handoffSweepTimer.unref === "function") entry.handoffSweepTimer.unref();
+    }
   })();
 }
 
