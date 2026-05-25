@@ -1,7 +1,7 @@
 import { fail } from "../../../shared/runner-tool";
 import { cmdPlannerQueueSnapshot } from "./queue-snapshot";
 import { cmdPlannerReserveId } from "./reserve-id";
-import { cmdPlannerWritePrd } from "./write-prd";
+import { cmdPlannerEnsurePrdWorktree, cmdPlannerWritePrd } from "./write-prd";
 import { cmdPlannerWriteTicket } from "./write-ticket";
 import { cmdPlannerItemArchive } from "./item-archive";
 import { cmdPlannerGuard } from "./guard";
@@ -16,6 +16,9 @@ export function dispatchPlanner(command: string): void {
       return;
     case "write-prd":
       cmdPlannerWritePrd();
+      return;
+    case "ensure-prd-worktree":
+      cmdPlannerEnsurePrdWorktree();
       return;
     case "write-ticket":
       cmdPlannerWriteTicket();

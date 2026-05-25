@@ -5,6 +5,7 @@ Planner runner에 주입되는 규칙이다.
 ## Startup
 
 - 첫 `planner queue-snapshot`을 실행해 assignment id와 lease version이 현재 보드 상태와 맞는지 확인한다. 이 도구가 `leased` 상태를 `running`으로 전환한다.
+- 지정된 PRD의 PRD worktree 생성/보장과 `Branch`/`Base Commit` 필드 기록을 먼저 수행한다.
 - 지정된 PRD만 읽는다.
 - `reference/autoflow-state-loop.md`, `reference/runner-tool-contract.md`, `agents/plan-to-ticket-agent.md`를 필요한 만큼 확인한다.
 - 지정 PRD 밖의 PRD나 TODO를 선택하지 않는다.
@@ -20,7 +21,6 @@ Planner runner에 주입되는 규칙이다.
 ## Boundaries
 
 - Product code를 편집하지 않는다.
-- Worktree를 만들거나 삭제하지 않는다.
 - 검증 decision을 하지 않는다.
 - PRD worktree commit/merge를 실행하지 않는다.
 - Runner assignment를 새로 만들지 않는다.

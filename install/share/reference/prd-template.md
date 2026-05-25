@@ -15,8 +15,8 @@ PRD는 현재 turn의 scope, assumption, acceptance criteria, verification inten
 - State: active
 - Change Type: code | docs | cleanup | infra
 - Requires Secrets: []
-- Branch: autoflow/prd-<id>
-- Base Commit: <git SHA>
+- Branch: autoflow/prd-<id> 또는 TBD
+- Base Commit: <git SHA> 또는 TBD
 
 ## Source
 
@@ -86,3 +86,4 @@ PRD는 현재 turn의 scope, assumption, acceptance criteria, verification inten
 - PRD 본문은 기본적으로 한국어로 쓴다. Parser-sensitive heading, id, path, command, code, runtime format은 보존한다.
 - PRD acceptance criteria는 work item `Done When`이 될 수 있으므로 기계적 검사와 사람의 파일 검토로 관찰 가능해야 한다.
 - `Work Item Split`은 선택 사항이다. PRD 하나를 여러 work item으로 구현해야 할 때 쓴다.
+- `Branch`와 `Base Commit`은 발행 시점에 `TBD`일 수 있다. 플래너가 PRD worktree를 생성/보장한 뒤 두 필드를 실제 값으로 채운다.

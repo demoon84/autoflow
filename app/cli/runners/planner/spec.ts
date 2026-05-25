@@ -15,7 +15,10 @@ Options:
   --from-file path     Read PRD body from a file.
   --raw                Write raw body instead of the minimal PRD wrapper.
   --save-handoff       Also save conversation handoff.
-  --force              Overwrite an existing PRD id.`);
+  --force              Overwrite an existing PRD id.
+
+Flow:
+  PRD markdown을 먼저 저장한 뒤 planner ensure-prd-worktree로 PRD worktree를 생성/보장하고 Branch/Base Commit을 기록합니다.`);
         return;
     }
     const subcmd = args[0] === "create" ? args.shift() : "create";
@@ -46,8 +49,8 @@ Options:
 - Status: approved
 - Change Type: code
 - Requires Secrets: []
-- Branch:
-- Base Commit:
+- Branch: TBD
+- Base Commit: TBD
 
 ## Source
 
@@ -114,9 +117,10 @@ ${goal.trim()}
         id,
         "--content-file",
         contentFile,
+        "--md-only",
     ];
     if (hasFlag(parsed, "force")) toolArgs.push("--overwrite");
-    const result = spawnSync(process.execPath, toolArgs, {
+    const writeResult = spawnSync(process.execPath, toolArgs, {
         cwd: ctx.projectRoot,
         encoding: "utf8",
         env: {
@@ -125,14 +129,37 @@ ${goal.trim()}
             AUTOFLOW_BOARD_ROOT: ctx.boardRoot,
         },
     });
+    const ensureArgs = [
+        requiredTsxCli(),
+        toolScript,
+        "planner",
+        "ensure-prd-worktree",
+        "--id",
+        id,
+    ];
+    const ensureResult = writeResult.status === 0
+        ? spawnSync(process.execPath, ensureArgs, {
+            cwd: ctx.projectRoot,
+            encoding: "utf8",
+            env: {
+                ...process.env,
+                AUTOFLOW_PROJECT_ROOT: ctx.projectRoot,
+                AUTOFLOW_BOARD_ROOT: ctx.boardRoot,
+            },
+        })
+        : writeResult;
     try { fs.unlinkSync(contentFile); } catch {}
-    if (result.status !== 0) {
-        const detail = oneLine(`${result.stdout || ""} ${result.stderr || ""}`, 1200);
-        fail(detail || `planner write-prd failed with exit ${result.status ?? 1}`);
+    if (writeResult.status !== 0) {
+        const detail = oneLine(`${writeResult.stdout || ""} ${writeResult.stderr || ""}`, 1200);
+        fail(detail || `planner write-prd --md-only failed with exit ${writeResult.status ?? 1}`);
+    }
+    if (ensureResult.status !== 0) {
+        const detail = oneLine(`${ensureResult.stdout || ""} ${ensureResult.stderr || ""}`, 1200);
+        fail(detail || `planner ensure-prd-worktree failed with exit ${ensureResult.status ?? 1}`);
     }
     let parsedResult: Record<string, unknown> = {};
     try {
-        parsedResult = JSON.parse(result.stdout || "{}") as Record<string, unknown>;
+        parsedResult = JSON.parse(ensureResult.stdout || "{}") as Record<string, unknown>;
     } catch {
         parsedResult = {};
     }

@@ -139,14 +139,41 @@ export function cmdPlannerWritePrd(): void {
   validateNoUnsafeWrite(target, hasFlag("--overwrite"));
   validatePrdContent(payload.content, id);
 
-  // 1) Create branch + worktree first. The PRD worktree is the durable work
-  //    root for every TODO derived from this PRD.
-  let wt = ensureTicketWorktree({ id, kind: "prd", content: payload.content });
+  // PRD 발행 경로는 markdown만 저장한다. PRD branch/worktree 보장은
+  // planner ensure-prd-worktree 명령이 별도로 수행한다.
+  writeAtomic(target, payload.content);
+  releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
+
+  ok({
+    tool: "planner.write-prd",
+    status: "ok",
+    runner: runnerId,
+    assignment: compactAssignment(assignment),
+    id: `PRD-${id}`,
+    path: boardRel(target),
+    mode: "md-only",
+    branch: "",
+    base_commit: "",
+    branch_status: "md_only",
+    worktree_path: "",
+    worktree_commit: "",
+  });
+}
+
+export function cmdPlannerEnsurePrdWorktree(): void {
+  const runnerId = currentRunnerId("planner");
+  const id = normalizeId(getArg("--id"));
+  if (!id) fail(2, "ensure-prd-worktree requires --id");
+  const target = path.join(TICKETS_ROOT, "prd", `PRD-${id}.md`);
+  const assignment = requireRoleAssignmentForItem("planner", target, runnerId);
+  if (!fs.existsSync(target)) fail(1, `PRD file not found: ${boardRel(target)}`);
+
+  const content = fs.readFileSync(target, "utf8");
+  validatePrdContent(content, id);
+
+  let wt = ensureTicketWorktree({ id, kind: "prd", content });
   if (!wt.branch || !wt.baseCommit || !wt.worktreePath) {
-    // PRD worktree 가 없으면 TODO 가 PRD branch 안에서 작업할 수 없다.
-    // 발행 자체를 실패시켜 "PRD body 는 만들어졌는데 branch/worktree 없음"
-    // 같은 모순 상태를 막는다.
-    fail(1, "PRD worktree could not be created; refusing to publish PRD without a usable worktree", {
+    fail(1, "PRD worktree could not be created; refusing to continue without a usable worktree", {
       prd_id: `PRD-${id}`,
       reason: wt.reason || wt.status || "ensure_ticket_worktree_failed",
       branch: wt.branch || "",
@@ -154,28 +181,19 @@ export function cmdPlannerWritePrd(): void {
     });
   }
 
-  // 2) Persist in main board for queue scan / locatePrdFile.
-  writeAtomic(target, payload.content);
-  releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
-
-  // 3) Reflect branch / base commit fields back into the main markdown so
-  //    downstream tools can use the PRD worktree as the only PRD-backed TODO
-  //    working root.
-  if (wt.branch && wt.baseCommit) {
-    utils.replaceScalarFieldInSection(target, "Project", "Branch", wt.branch);
-    utils.replaceScalarFieldInSection(target, "Project", "Base Commit", wt.baseCommit);
-    wt = ensureTicketWorktree({
-      id,
-      kind: "prd",
-      content: fs.readFileSync(target, "utf8"),
-      commitMessage: `[PRD-${id}] record PRD branch metadata`,
-    });
-  }
+  utils.replaceScalarFieldInSection(target, "Project", "Branch", wt.branch);
+  utils.replaceScalarFieldInSection(target, "Project", "Base Commit", wt.baseCommit);
+  wt = ensureTicketWorktree({
+    id,
+    kind: "prd",
+    content: fs.readFileSync(target, "utf8"),
+    commitMessage: `[PRD-${id}] record PRD branch metadata`,
+  });
 
   writeCurrentPrdState(id, wt, target);
 
   ok({
-    tool: "planner.write-prd",
+    tool: "planner.ensure-prd-worktree",
     status: "ok",
     runner: runnerId,
     assignment: compactAssignment(assignment),

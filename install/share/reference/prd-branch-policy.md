@@ -12,12 +12,19 @@ Git에는 제품 코드, 테스트, 문서, 설정처럼 팀이 공유할 결과
 
 ## PRD Branch
 
-PRD 발행 시점에 PRD writer 도구는 다음을 수행한다.
+PRD 발행은 스킬 단계와 플래너 단계로 나뉜다.
+
+스킬 단계:
+
+1. `autoflow` 스킬은 로컬 보드에 PRD 파일 `tickets/prd/PRD-<id>.md`만 작성한다.
+2. 스킬은 branch/worktree를 만들지 않는다.
+3. 발행 시점에 branch 정보가 아직 없으면 PRD `## Project` 섹션의 `Branch`와 `Base Commit`은 `TBD`로 둘 수 있다.
+
+플래너 단계:
 
 1. `git branch autoflow/prd-<id> <main HEAD>`로 PRD branch 생성.
-2. PRD worktree 생성.
-3. 로컬 보드에 PRD 파일 `tickets/prd/PRD-<id>.md` 작성.
-4. PRD `## Project` 섹션에 다음 필드 기록:
+2. PRD worktree 생성/보장.
+3. PRD `## Project` 섹션에 다음 필드 기록:
    - `Branch: autoflow/prd-<id>`
    - `Base Commit: <git SHA>`
 

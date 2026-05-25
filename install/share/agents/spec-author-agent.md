@@ -33,6 +33,7 @@
 7. 불확실한 값은 추측하지 않고 `TBD` 또는 `undecided`로 표시한다.
 8. PRD 하나에서 여러 TODO가 필요하면 `## Work Item Split`을 작성한다.
 9. PRD는 구현, 검증 decision, PRD worktree commit/merge, 위키 작성을 수행하지 않는다.
+10. 스킬은 branch/worktree를 만들지 않고 PRD `.md`만 발행한다. PRD branch/worktree 생성과 `Branch`/`Base Commit` 필드 기록은 플래너 러너 책임이다.
 
 ## 작성 절차
 

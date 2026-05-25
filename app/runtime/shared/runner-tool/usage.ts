@@ -4,7 +4,8 @@ export function usage(): void {
 
   autoflow tool runner-tool planner queue-snapshot
   autoflow tool runner-tool planner reserve-id --kind <prd|ticket> [--ttl-sec <seconds>]
-  autoflow tool runner-tool planner write-prd --id <NNN> --content-file <file> [--reservation <path>] [--overwrite]
+  autoflow tool runner-tool planner write-prd --id <NNN> --content-file <file> [--reservation <path>] [--overwrite] [--md-only]
+  autoflow tool runner-tool planner ensure-prd-worktree --id <NNN>
   autoflow tool runner-tool planner write-ticket --id <NNN> --content-file <file> [--reservation <path>] [--overwrite] [--allow-missing-prd]
   autoflow tool runner-tool planner item-archive --from <board-path> --project-key <key> [--as <filename>]
   autoflow tool runner-tool planner guard [--strict]

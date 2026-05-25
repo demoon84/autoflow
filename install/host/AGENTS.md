@@ -8,9 +8,10 @@
 2. `autoflow` skill은 goal 기능을 사용해 사용자 목표를 유지하고 완료한다.
 3. Skill 대화의 주된 역할은 프로젝트 현재 구현 상태와 LLM Wiki를 read-only로 참고해 PRD를 하나 이상 발행하는 것이다.
 4. Skill 대화는 구현, 검증, PRD worktree commit/merge, 위키 작성을 직접 하지 않는다.
-5. 데스크탑 sidecar는 보드 상태를 실시간 감지하고 4개 고정 러너를 실행/표시한다.
-6. Runner는 `Planner`, `Worker`, `Verifier`, `LLM Wiki` 네 개다.
-7. `Merge` runner는 없다.
+5. Autoflow 스킬은 PRD `.md`만 발행하고, PRD branch/worktree 생성은 플래너 러너의 책임이다.
+6. 데스크탑 sidecar는 보드 상태를 실시간 감지하고 4개 고정 러너를 실행/표시한다.
+7. Runner는 `Planner`, `Worker`, `Verifier`, `LLM Wiki` 네 개다.
+8. `Merge` runner는 없다.
 
 ## Autoflow Flow
 
