@@ -109,6 +109,11 @@ function createRendererInvocationId(prefix: string) {
     : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function buildBoardScopeKey(target: { projectRoot: string; boardDirName: string }) {
+  if (!target.projectRoot) return "";
+  return `${target.projectRoot}::${target.boardDirName}`;
+}
+
 function DesktopGlobalLoading({
   open,
   label = "로딩 중"
@@ -1517,6 +1522,7 @@ function App() {
     [defaultFlowFolder, projectRoot]
   );
   const autoRefreshInFlightRef = React.useRef(false);
+  const boardScopeKeyRef = React.useRef(buildBoardScopeKey(options));
 
   React.useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -1658,7 +1664,11 @@ function App() {
       window.localStorage.setItem("autoflow.boardDirName", targetOptions.boardDirName);
       window.localStorage.setItem("autoflow.projectRoot", targetOptions.projectRoot);
 
+      const targetScopeKey = buildBoardScopeKey(targetOptions);
+      const scopeMatches = () => boardScopeKeyRef.current === targetScopeKey;
+
       if (!targetOptions.projectRoot) {
+        if (!scopeMatches()) return null;
         setBoard(null);
         setLastUpdated("");
         setIsBoardLoading(false);
@@ -1672,23 +1682,28 @@ function App() {
       setIsPageRefreshing(true);
       try {
         const snapshot = await window.autoflow.readBoard(targetOptions);
+        if (!scopeMatches()) return null;
         setBoard(snapshot);
         setSetupError("");
         setLastUpdated(new Date().toISOString());
         return snapshot;
       } catch (error) {
+        if (!scopeMatches()) return null;
         setBoard(null);
         setSetupError(error instanceof Error ? error.message : "Autoflow 상태를 확인하지 못했습니다.");
         return null;
       } finally {
-        setIsBoardLoading(false);
-        setIsPageRefreshing(false);
+        if (scopeMatches()) {
+          setIsBoardLoading(false);
+          setIsPageRefreshing(false);
+        }
       }
     },
     [options]
   );
 
   React.useEffect(() => {
+    boardScopeKeyRef.current = buildBoardScopeKey(options);
     setBoard(null);
     setLastUpdated("");
     setIsBoardLoading(Boolean(options.projectRoot));
@@ -2250,7 +2265,7 @@ function App() {
     async (action: RunnerControlAction, runnerId: string, controlOptions: RunnerControlOptions = {}) => {
       const existingAction = runnerActionKeys[runnerId] || "";
       const forceStop = action === "stop" && Boolean(controlOptions.force);
-      if (!options.projectRoot || (existingAction && !forceStop)) {
+      if (!options.projectRoot || isBoardLoading || (existingAction && !forceStop)) {
         return;
       }
 
@@ -2336,6 +2351,7 @@ function App() {
       beginRunnerTransition,
       board?.runners,
       installedAgentProfiles,
+      isBoardLoading,
       loadBoard,
       options,
       pushToast,
@@ -2348,7 +2364,7 @@ function App() {
 
   const answerRunnerAuthPrompt = React.useCallback(
     async (choice: RunnerAuthChoice, runner: AutoflowRunner) => {
-      if (!options.projectRoot || runnerActionKeys[runner.id]) {
+      if (!options.projectRoot || isBoardLoading || runnerActionKeys[runner.id]) {
         return;
       }
 
@@ -2396,12 +2412,12 @@ function App() {
         setRunnerAction(runner.id, "");
       }
     },
-    [board?.runners, controlRunner, loadBoard, options, pushToast, runnerActionKeys, setRunnerAction]
+    [board?.runners, controlRunner, isBoardLoading, loadBoard, options, pushToast, runnerActionKeys, setRunnerAction]
   );
 
   const readLog = React.useCallback(
     async (filePath: string) => {
-      if (!options.projectRoot || !filePath) {
+      if (!options.projectRoot || isBoardLoading || !filePath) {
         return;
       }
 
@@ -2424,12 +2440,12 @@ function App() {
         setIsReadingLog(false);
       }
     },
-    [options]
+    [isBoardLoading, options]
   );
 
   const runRunner = React.useCallback(
     async (runner: AutoflowRunner, dryRun = false) => {
-      if (!options.projectRoot || runnerActionKeys[runner.id]) {
+      if (!options.projectRoot || isBoardLoading || runnerActionKeys[runner.id]) {
         return;
       }
 
@@ -2456,7 +2472,7 @@ function App() {
         setRunnerAction(runner.id, "");
       }
     },
-    [loadBoard, options, readLog, runnerActionKeys, selectRunner, setRunnerAction]
+    [isBoardLoading, loadBoard, options, readLog, runnerActionKeys, selectRunner, setRunnerAction]
   );
 
   const updateRunnerDraft = React.useCallback((runnerId: string, field: keyof RunnerDraft, value: string) => {
@@ -2496,7 +2512,7 @@ function App() {
 
   const saveRunnerConfig = React.useCallback(
     async (runner: AutoflowRunner, restartAfterSave = false) => {
-      if (!options.projectRoot || runnerActionKeys[runner.id]) {
+      if (!options.projectRoot || isBoardLoading || runnerActionKeys[runner.id]) {
         return;
       }
 
@@ -2639,7 +2655,7 @@ function App() {
         setRunnerError(error instanceof Error ? error.message : "AI 설정 저장에 실패했습니다.");
       }
     },
-    [installedAgentProfiles, loadBoard, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
+    [installedAgentProfiles, isBoardLoading, loadBoard, options, runnerActionKeys, runnerDrafts, runnerSavedDrafts, selectRunner, setRunnerAction]
   );
 
   const boardInitialized = board?.status?.initialized === "true";
@@ -2654,8 +2670,13 @@ function App() {
   const visibleSettingsSection = setupRequired ? "progress" : activeSettingsSection;
   const selectedSettingsItem =
     settingsNavigation.find((item) => item.key === visibleSettingsSection) || settingsNavigation[0];
-  const showGlobalLoading = isInstalling;
-  const globalLoadingLabel = isInstalling ? installProgressLabel : "잠시만 기다려 주세요";
+  const isProjectSwitching = Boolean(options.projectRoot && isBoardLoading && !isInstalling);
+  const showGlobalLoading = isInstalling || isProjectSwitching;
+  const globalLoadingLabel = isInstalling
+    ? installProgressLabel
+    : isProjectSwitching
+    ? "프로젝트 폴더를 전환 중입니다."
+    : "잠시만 기다려 주세요";
 
   React.useEffect(() => {
     if (setupRequired || visibleSettingsSection !== "knowledge" || !options.projectRoot) return;
