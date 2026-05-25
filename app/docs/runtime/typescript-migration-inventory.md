@@ -9,4 +9,4 @@ repo-owned shell migration은 runtime, installable-board, package CLI entrypoint
 - App/CLI는 target board를 가리키는 `AUTOFLOW_BOARD_ROOT`, `AUTOFLOW_PROJECT_ROOT` env var와 함께 physical runtime path를 직접 호출한다.
 - CLI entrypoint는 `app/cli/{runners,system,shared}/`와 `app/cli/autoflow.ts`에 있다. 이 코드는 desktop app 안으로 흡수되어 있다.
 
-Legacy shell wrapper는 더 이상 supported runtime contract의 일부가 아니다. `node_modules/` 아래 third-party dependency script는 외부 package content이며 generated board로 복사하지 않는다.
+Shell wrapper는 supported runtime contract의 일부가 아니다. `node_modules/` 아래 third-party dependency script는 외부 package content이며 generated board로 복사하지 않는다.

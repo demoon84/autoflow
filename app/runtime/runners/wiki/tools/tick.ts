@@ -10,6 +10,10 @@ const {
   boardDirName,
   boardRel,
   currentRunnerId,
+  requireRoleAssignment,
+  startAssignmentIfLeased,
+  completeRoleAssignment,
+  compactAssignment,
   emitRunnerContextReset,
   getArg,
   hasFlag,
@@ -295,23 +299,12 @@ function walkMarkdownFiles(root: string): string[] {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
-function currentWikiIndexMetaValue(key: string): string {
-  const dbPath = path.join(BOARD_ROOT, "runners", "state", "wiki-search.db");
-  if (!fs.existsSync(dbPath)) return "";
-  const safeKey = key.replace(/'/g, "''");
-  const result = spawnSync("sqlite3", [dbPath, `SELECT value FROM wiki_index_meta WHERE key='${safeKey}' LIMIT 1;`], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  return result.status === 0 ? String(result.stdout || "").trim() : "";
-}
-
 function currentIndexedSourceHash(): string {
-  return currentWikiIndexMetaValue("source_hash");
+  return currentIndexableSourceHash().hash;
 }
 
 function currentIndexedAt(): string {
-  return currentWikiIndexMetaValue("indexed_at");
+  return readWikiIndexRefreshStartState()?.last_started_at || "";
 }
 
 function wikiIndexRefreshCooldownMs(): number {
@@ -349,6 +342,7 @@ function currentIndexRefreshCooldownReference(): WikiIndexRefreshCooldownReferen
 function currentIndexableSourceHash(): { hash: string; count: number } {
   const files = [
     ...walkMarkdownFiles(path.join(BOARD_ROOT, "wiki")),
+    ...walkMarkdownFiles(path.join(BOARD_ROOT, "raw")),
     ...walkMarkdownFiles(path.join(BOARD_ROOT, "tickets", "done")),
   ].sort((a, b) => a.localeCompare(b));
   const hash = shared.crypto.createHash("sha256");
@@ -385,7 +379,7 @@ function recentSources(maxItems: number): shared.JsonObject[] {
 }
 
 function isFocusedWikiSourcePath(value: unknown): boolean {
-  return /^wiki\/(answers|architecture|decisions|operations)\//.test(String(value || ""));
+  return /^wiki\/(concepts|decisions|questions|sources)\//.test(String(value || ""));
 }
 
 function normalizeBoardSourcePath(value: unknown): string {
@@ -657,7 +651,7 @@ function gitChangedWikiFiles(): shared.JsonObject[] {
     "--short",
     "--",
     path.relative(PROJECT_ROOT, path.join(BOARD_ROOT, "wiki")),
-    path.relative(PROJECT_ROOT, path.join(BOARD_ROOT, "wiki-raw")),
+    path.relative(PROJECT_ROOT, path.join(BOARD_ROOT, "raw")),
   ], { cwd: PROJECT_ROOT, encoding: "utf8" });
   const raw = result.stdout || "";
   return raw.split(/\r?\n/)
@@ -669,7 +663,29 @@ function gitChangedWikiFiles(): shared.JsonObject[] {
     }));
 }
 
+function markWikiRunnerIdle(runnerId: string, result: string, assignmentStatus = ""): void {
+  shared.utils.updateRunnerState(runnerId, {
+    active_role: "",
+    active_item: "",
+    active_ticket_id: "",
+    active_ticket_title: "",
+    active_ticket_path: "",
+    active_spec_ref: "",
+    active_stage: "idle",
+    assignment_role: "",
+    assigned_item_ref: "",
+    contract_id: "",
+    contract_digest: "",
+    assignment_status: assignmentStatus,
+    last_result: result,
+  }, BOARD_ROOT);
+}
+
 export function cmdWikiTick(): void {
+  const runnerId = currentRunnerId("wiki");
+  const leasedAssignment = requireRoleAssignment("wiki", runnerId);
+  let assignment = startAssignmentIfLeased(leasedAssignment);
+  let assignmentLifecycle = leasedAssignment.status === "leased" ? "started" : "unchanged";
   const verbose = hasFlag("--verbose");
   const maxItems = positiveInt(getArg("--max-items"), verbose ? 12 : 5);
   const skipTelemetry = hasFlag("--skip-telemetry");
@@ -753,7 +769,7 @@ export function cmdWikiTick(): void {
     const itemPath = String(item.path || "");
     return itemPath && !reviewedDonePaths.has(itemPath);
   });
-  const focusedChanged = changedFiles.filter((item) => /^\.autoflow\/wiki\/(answers|architecture|decisions|operations)\//.test(String(item.path || "")));
+  const focusedChanged = changedFiles.filter((item) => /^\.autoflow\/wiki\/(concepts|decisions|questions|sources)\//.test(String(item.path || "")));
   const focusedNeedsReview = !skipTelemetry && focusedRecent.length > 0 && focusedFingerprint !== focusedReviewFingerprint;
   const doneNeedsReview = unreviewedRecentDone.length > 0;
   const aiFollowupRecommended = doneNeedsReview || (baselineChanged && recentDone.length > 0) || focusedChanged.length > 0 || focusedNeedsReview;
@@ -771,9 +787,27 @@ export function cmdWikiTick(): void {
     writePendingDoneReviewPaths(followupEvidenceSources.map((item) => String(item.path || "")).filter(Boolean));
   }
 
+  if (failedSteps.length === 0 && !aiFollowupRecommended) {
+    assignment = completeRoleAssignment(assignment, "wiki focused review completed", "completed");
+    if (assignment.status !== "completed") {
+      const now = shared.utils.nowIso();
+      assignment = {
+        ...assignment,
+        status: "completed",
+        completed_at: assignment.completed_at || now,
+        updated_at: now,
+        result: assignment.result || "wiki focused review completed",
+      };
+    }
+    assignmentLifecycle = "completed";
+    markWikiRunnerIdle(runnerId, "wiki_idle_no_followup", "completed");
+  }
+
   const output: shared.JsonObject = {
     tool: "wiki.tick",
-    runner: currentRunnerId("wiki"),
+    runner: runnerId,
+    assignment: compactAssignment(assignment),
+    assignment_lifecycle: assignmentLifecycle,
     output_mode: verbose ? "verbose" : "compact",
     before_source_count: beforeFiles.length,
     after_source_count: sourceFiles().length,
@@ -813,7 +847,7 @@ export function cmdWikiTick(): void {
   }
   const idleContextResetEnabled = /^(1|true|yes|on)$/i.test(process.env.AUTOFLOW_WIKI_CONTEXT_RESET_ON_IDLE || "");
   if (failedSteps.length === 0 && skipTelemetry && (aiFollowupRecommended || idleContextResetEnabled)) {
-    const contextReset = emitRunnerContextReset(currentRunnerId("wiki"), "wiki.tick", "compact", {
+    const contextReset = emitRunnerContextReset(runnerId, "wiki.tick", "compact", {
       tool: "wiki.tick",
       ai_followup_recommended: aiFollowupRecommended,
       skip_telemetry: skipTelemetry,

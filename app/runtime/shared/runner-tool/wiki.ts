@@ -7,7 +7,7 @@ export function wikiSourceGroups(): Record<string, string[]> {
     done: collectFiles(path.join(TICKETS_ROOT, "done"), /\.md$/, 8),
     conversations: collectFiles(path.join(BOARD_ROOT, "conversations"), /\.md$/, 4),
     wiki: collectFiles(path.join(BOARD_ROOT, "wiki"), /\.md$/, 8),
-    wiki_raw: collectFiles(path.join(BOARD_ROOT, "wiki-raw"), /\.md$/, 8),
+    raw: collectFiles(path.join(BOARD_ROOT, "raw"), /\.md$/, 8),
   };
 }
 
@@ -93,7 +93,7 @@ export function resolveWikiWritablePath(raw: string): string {
   if (!cleaned || path.isAbsolute(cleaned)) return "";
   const normalized = path.posix.normalize(cleaned);
   if (normalized === ".." || normalized.startsWith("../")) return "";
-  if (!/^(wiki|wiki-raw)\//.test(normalized)) return "";
+  if (!/^wiki\//.test(normalized)) return "";
   if (!normalized.endsWith(".md")) return "";
   const resolved = path.resolve(BOARD_ROOT, normalized);
   if (!resolved.startsWith(path.resolve(BOARD_ROOT) + path.sep)) return "";
@@ -165,7 +165,7 @@ export function readWikiFrontmatterKind(file: string): string {
 
 export function wikiCategory(rel: string): string {
   const clean = rel.replace(/^\.autoflow\//, "");
-  if (clean.startsWith("wiki-raw/")) return "raw";
+  if (clean.startsWith("raw/")) return "raw";
   if (!clean.startsWith("wiki/")) return "other";
   const absPath = path.resolve(BOARD_ROOT, clean);
   const kind = readWikiFrontmatterKind(absPath);
@@ -178,7 +178,7 @@ export function wikiFileWeight(rel: string): number {
   const clean = rel.replace(/^\.autoflow\//, "");
   const base = path.basename(clean);
   if (/\.(manifest|history|fingerprint)$/.test(base)) return 0;
-  if (clean.startsWith("wiki-raw/")) return 1;
+  if (clean.startsWith("raw/")) return 1;
   if (!clean.startsWith("wiki/")) return 0;
   // All wiki/ pages share equal weight; layout is flat and category comes from
   // frontmatter `kind`, with directory segment kept only as fallback.

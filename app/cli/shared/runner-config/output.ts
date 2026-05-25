@@ -11,6 +11,12 @@ function lastResultForOutput(state: Record<string, string>, effectiveStatus: str
     return value;
 }
 
+function activeStageCarriesWork(value: string): boolean {
+    return /^(planning|generating-todo|claimed|executing|inprogress|verifying|verify_pending|verifier_pending|merging|revision_requested|replan_requested|blocked)$/.test(
+        String(value || "").toLowerCase(),
+    );
+}
+
 export function outputRunner(index: number, ctx: ProjectContext, runner: Record<string, string>): void {
     const prefix = `runner.${index}.`;
     const state = readRunnerState(ctx, runner.id || "");
@@ -19,9 +25,33 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     const configFingerprint = runnerConfigFingerprint(runner);
     const tokenAccounting = runnerTokenAccounting(ctx, runner.id || "");
     const field = (key: string, fallback = "") => runner[key] ?? fallback;
-    const activeField = (key: string) => (
-        stateStatus === "idle" || stateStatus === "stopped" ? "" : state[key] || ""
+    const assignmentStatus = (state.assignment_status || "").toLowerCase();
+    const hasOpenAssignment = Boolean(assignmentStatus && !["completed", "released"].includes(assignmentStatus));
+    const runtimeHasActiveWork = activeStageCarriesWork(state.active_stage || "") || Boolean(
+        state.active_item ||
+        state.active_ticket_title ||
+        state.active_spec_ref,
     );
+    const assignmentScopedFields = new Set(["assignment_role", "assignment_status", "assigned_item_ref"]);
+    const runtimeScopedFields = new Set([
+        "active_role",
+        "active_item",
+        "active_ticket_id",
+        "active_ticket_title",
+        "active_ticket_path",
+        "active_stage",
+        "active_spec_ref",
+    ]);
+    const activeField = (key: string) => {
+        if (assignmentScopedFields.has(key) && !hasOpenAssignment) return "";
+        if (runtimeScopedFields.has(key) && !hasOpenAssignment && !runtimeHasActiveWork) {
+            return key === "active_stage" && (state.active_stage || "").toLowerCase() === "idle" ? "idle" : "";
+        }
+        if ((stateStatus === "idle" || stateStatus === "stopped") && !hasOpenAssignment && !runtimeHasActiveWork) {
+            return "";
+        }
+        return state[key] || "";
+    };
 
     out(`${prefix}id=${field("id")}`);
     out(`${prefix}role=${field("role")}`);
@@ -43,9 +73,14 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}started_at=${state.started_at || ""}`);
     out(`${prefix}last_event_at=${state.last_event_at || state.updated_at || ""}`);
     out(`${prefix}last_adapter_chunk_at=${state.last_adapter_chunk_at || ""}`);
+    out(`${prefix}active_role=${activeField("active_role") || activeField("assignment_role") || activeField("role")}`);
+    out(`${prefix}assignment_role=${activeField("assignment_role")}`);
+    out(`${prefix}assignment_status=${activeField("assignment_status")}`);
+    out(`${prefix}assigned_item_ref=${activeField("assigned_item_ref")}`);
     out(`${prefix}active_item=${activeField("active_item")}`);
     out(`${prefix}active_ticket_id=${activeField("active_ticket_id")}`);
     out(`${prefix}active_ticket_title=${activeField("active_ticket_title")}`);
+    out(`${prefix}active_ticket_path=${activeField("active_ticket_path")}`);
     out(`${prefix}active_stage=${activeField("active_stage")}`);
     out(`${prefix}active_spec_ref=${activeField("active_spec_ref")}`);
     out(`${prefix}last_result=${lastResult}`);
@@ -59,12 +94,14 @@ export function outputRunner(index: number, ctx: ProjectContext, runner: Record<
     out(`${prefix}cumulative_total_tokens=${tokenAccounting.cumulativeTotalTokens}`);
     out(`${prefix}cumulative_cache_read_tokens=${tokenAccounting.cumulativeCacheReadTokens}`);
     out(`${prefix}cumulative_cache_create_tokens=${tokenAccounting.cumulativeCacheCreateTokens}`);
+    out(`${prefix}cumulative_llm_request_count=${tokenAccounting.cumulativeLlmRequestCount}`);
     out(`${prefix}last_turn_tokens=${tokenAccounting.lastTurnTokens}`);
     out(`${prefix}last_turn_total_tokens=${tokenAccounting.lastTurnTotalTokens}`);
     out(`${prefix}last_turn_input_tokens=${tokenAccounting.lastTurnInputTokens}`);
     out(`${prefix}last_turn_output_tokens=${tokenAccounting.lastTurnOutputTokens}`);
     out(`${prefix}last_turn_cache_read_tokens=${tokenAccounting.lastTurnCacheReadTokens}`);
     out(`${prefix}last_turn_cache_create_tokens=${tokenAccounting.lastTurnCacheCreateTokens}`);
+    out(`${prefix}last_turn_llm_request_count=${tokenAccounting.lastTurnLlmRequestCount}`);
     out(`${prefix}last_turn_at=${tokenAccounting.lastTurnAt}`);
     out(`${prefix}last_turn_tick_id=${tokenAccounting.lastTurnTickId}`);
     out(`${prefix}token_source=${tokenAccounting.tokenSource}`);

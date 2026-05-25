@@ -126,6 +126,6 @@ const {
 } = shared;
 
 export function cmdWorkerDiffCheck(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   ok({ tool: "worker.diff-check", path: boardRel(ticket), ...diffCheck(ticket) });
 }

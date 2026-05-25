@@ -2,6 +2,7 @@ export * from "./context";
 export * from "./sections";
 export * from "./queue";
 export * from "./tickets";
+export * from "./assignment";
 export * from "./worktree";
 export * from "./diff";
 export * from "./verifier";

@@ -29,19 +29,19 @@ export function emitActiveTicket(rawItem: unknown, source: string): void {
     done_target: doneTarget(ticketAbs),
     next_action: worktreeReady
       ? nextActionFor(ticketId, stage, ticketAbs)
-      : `Call autoflow tool runner-tool worker worktree-ensure --ticket ${ticketRel || `TODO-${ticketId}`} before implementation. Do not edit PROJECT_ROOT as fallback.`,
+      : `Call autoflow tool runner-tool worker worktree-ensure --ticket ${ticketRel || ticketId} before implementation. Do not edit PROJECT_ROOT as fallback.`,
     routing_pass: `After worktree verification evidence passes, run autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<short summary>" to hand off to verifier before any PROJECT_ROOT merge.`,
-    routing_replan: `If verifier says the ticket must be redone from scratch, run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<concrete reason>". The ticket returns to tickets/todo/ for a fresh worker attempt.`,
+    routing_replan: `If verifier says the work item must be redone from scratch, run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<concrete reason>". The work item returns to the pending work lane for a fresh worker attempt.`,
   });
 }
 
-export function emitTodoCandidate(rawItem: unknown, source: string): void {
+export function emitWorkCandidate(rawItem: unknown, source: string): void {
   const item = asObject(rawItem);
   const ticketRel = String(item.path || "");
   const ticketAbs = resolveBoardPath(ticketRel);
   const ticketId = idFromTicketPath(ticketRel || ticketAbs);
   printPairs({
-    status: "todo_available",
+    status: "work_available",
     runner_status: "idle",
     runtime_status: "waiting_for_runner_decision",
     source,
@@ -49,7 +49,6 @@ export function emitTodoCandidate(rawItem: unknown, source: string): void {
     ticket: ticketRel,
     ticket_id: ticketId,
     stage: String(item.stage || ticketScalar(ticketAbs, "Stage") || "todo"),
-    priority: String(item.priority || ticketScalar(ticketAbs, "Priority") || ""),
     claimable: String(item.claimable ?? "true"),
     worktree_status: String(item.worktree_status || ticketWorktreeField(ticketAbs, "Integration Status") || ""),
     worktree_path: String(item.worktree_path || ticketWorktreeField(ticketAbs, "Path") || ""),
@@ -57,7 +56,7 @@ export function emitTodoCandidate(rawItem: unknown, source: string): void {
     implementation_root: "",
     board_root: boardRoot,
     project_root: projectRoot,
-    next_action: `Runner must choose explicitly: autoflow tool runner-tool worker claim --ticket ${ticketRel || `TODO-${ticketId}`} --runner ${runnerId}. Claim will create/validate the worktree before implementation.`,
+    next_action: `Use the current runner assignment if one exists: run autoflow tool assignment current --runner ${runnerId}, then autoflow tool runner-tool worker claim --ticket ${ticketRel || ticketId} --runner ${runnerId}. Claim will create/validate the worktree before implementation.`,
   });
 }
 
@@ -71,6 +70,6 @@ export function emitIdle(reason: string, detail: string): void {
     detail,
     board_root: boardRoot,
     project_root: projectRoot,
-    next_action: "No claimable ticket found for this worker tick.",
+    next_action: "No assigned claimable work item found for this worker tick.",
   });
 }

@@ -1,6 +1,6 @@
 import {fs, path, BOARD_ROOT, TICKETS_ROOT, utils} from "./context";
 
-export const TICKET_PATTERN = /^(TODO-\d{3}|TODO-\d{3})\.md$/;
+export const TICKET_PATTERN = /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/;
 
 export function listFiles(dir: string, opts: { pattern?: RegExp; depth?: number } = {}): string[] {
     const out: string[] = [];
@@ -25,7 +25,7 @@ export function listFiles(dir: string, opts: { pattern?: RegExp; depth?: number 
 
 export function guardTicketFiles(): string[] {
     const out: string[] = [];
-    for (const dir of ["todo", "inprogress", "ready-to-merge", "merge-blocked", "verifier"]) {
+    for (const dir of ["todo", "inprogress", "verifier"]) {
         const root = path.join(TICKETS_ROOT, dir);
         out.push(...listFiles(root, {pattern: TICKET_PATTERN, depth: 1}));
     }
@@ -35,7 +35,7 @@ export function guardTicketFiles(): string[] {
 
 export function activeTicketFiles(): string[] {
     const out: string[] = [];
-    for (const dir of ["todo", "inprogress", "ready-to-merge", "merge-blocked", "verifier"]) {
+    for (const dir of ["todo", "inprogress", "verifier"]) {
         const root = path.join(TICKETS_ROOT, dir);
         out.push(...listFiles(root, {pattern: TICKET_PATTERN, depth: 1}));
     }
@@ -45,8 +45,6 @@ export function activeTicketFiles(): string[] {
 export function ticketWorktreeBoardState(file: string): string {
     if (file.startsWith(path.join(TICKETS_ROOT, "todo")) ||
         file.startsWith(path.join(TICKETS_ROOT, "inprogress")) ||
-        file.startsWith(path.join(TICKETS_ROOT, "ready-to-merge")) ||
-        file.startsWith(path.join(TICKETS_ROOT, "merge-blocked")) ||
         file.startsWith(path.join(TICKETS_ROOT, "verifier"))) {
         return "active";
     }
@@ -55,15 +53,15 @@ export function ticketWorktreeBoardState(file: string): string {
 }
 
 export function ticketFileForId(ref: string): string {
-    const ticketNum = ref.replace(/^(Todo-|tickets_)/, "");
-    for (const dir of ["todo", "inprogress", "ready-to-merge", "merge-blocked", "verifier"]) {
-        for (const prefix of ["Todo-", "tickets_"]) {
+    const ticketNum = ref.replace(/^(?:TODO-|Todo-|tickets_)/, "").replace(/\.md$/i, "");
+    for (const dir of ["todo", "inprogress", "verifier"]) {
+        for (const prefix of ["TODO-", "Todo-", "tickets_"]) {
             const f = path.join(TICKETS_ROOT, dir, `${prefix}${ticketNum}.md`);
             if (fs.existsSync(f)) return f;
         }
     }
     const all = listFiles(path.join(TICKETS_ROOT, "done"), {
-        pattern: new RegExp(`^(Todo-|tickets_)${ticketNum}\\.md$`),
+        pattern: new RegExp(`^(TODO-|Todo-|tickets_)${ticketNum.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.md$`),
         depth: 5
     });
     return all[0] || "";

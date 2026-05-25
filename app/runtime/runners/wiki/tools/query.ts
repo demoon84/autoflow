@@ -116,6 +116,7 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -136,7 +137,11 @@ export function cmdWikiQuery(): void {
     if (hasFlag(flag)) cliArgs.push(flag);
   }
   const saveAs = getArg("--save-as");
-  if (saveAs) cliArgs.push("--save-as", saveAs);
-  cliArgs.push("--runner", currentRunnerId("wiki"));
+  const runnerId = currentRunnerId("wiki");
+  if (saveAs) {
+    requireRoleAssignment("wiki", runnerId);
+    cliArgs.push("--save-as", saveAs);
+  }
+  cliArgs.push("--runner", runnerId);
   emitAutoflowResult("wiki.query", cliArgs);
 }

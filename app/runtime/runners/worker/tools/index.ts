@@ -1,6 +1,6 @@
 import { fail } from "../../../shared/runner-tool";
 import { cmdWorkerActiveGet } from "./active-get";
-import { cmdWorkerTodoSnapshot } from "./todo-snapshot";
+import { cmdWorkerWorkSnapshot } from "./work-snapshot";
 import { cmdWorkerClaim } from "./claim";
 import { cmdWorkerWorktreeStatus } from "./worktree-status";
 import { cmdWorkerWorktreeEnsure } from "./worktree-ensure";
@@ -17,8 +17,8 @@ export function dispatchWorker(command: string): void {
     case "active-get":
       cmdWorkerActiveGet();
       return;
-    case "todo-snapshot":
-      cmdWorkerTodoSnapshot();
+    case "work-snapshot":
+      cmdWorkerWorkSnapshot();
       return;
     case "claim":
       cmdWorkerClaim();

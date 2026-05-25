@@ -117,6 +117,8 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignmentForItem,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -127,10 +129,12 @@ const {
 } = shared;
 
 export function cmdPlannerWritePrd(): void {
+  const runnerId = currentRunnerId("planner");
   const payload = readWritePayload();
   const id = normalizeId(getArg("--id") || stringValue(payload.id) || extractIdFromContent(payload.content, "prd"));
   if (!id) fail(2, "write-prd requires --id or content with PRD-NNN");
   const target = path.join(TICKETS_ROOT, "prd", `PRD-${id}.md`);
+  const assignment = requireRoleAssignmentForItem("planner", target, runnerId);
 
   validateNoUnsafeWrite(target, hasFlag("--overwrite"));
   validatePrdContent(payload.content, id);
@@ -162,6 +166,8 @@ export function cmdPlannerWritePrd(): void {
   ok({
     tool: "planner.write-prd",
     status: "ok",
+    runner: runnerId,
+    assignment: compactAssignment(assignment),
     id: `PRD-${id}`,
     path: boardRel(target),
     branch: wt.branch,

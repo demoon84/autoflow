@@ -19,7 +19,7 @@ export const runnerStringFieldDefaults: Record<string, string> = {
     agent: "codex",
     codex_history: "isolated",
     model: "",
-    reasoning: "",
+    reasoning: "medium",
     mode: "loop",
     interval_seconds: "60",
     enabled: "true",
@@ -30,10 +30,27 @@ function isScheduledLoopField(key: string): boolean {
     return key === "mode" || key === "interval_seconds";
 }
 
+export function normalizeRunnerReasoningValue(agent: string, value: string): string {
+    const normalizedAgent = String(agent || "").toLowerCase();
+    const normalized = String(value || "").trim().toLowerCase();
+    const options: Record<string, string[]> = {
+        codex: ["medium", "high", "xhigh"],
+        claude: ["medium", "high", "xhigh", "max"],
+    };
+    const allowed = options[normalizedAgent];
+    if (!allowed) return normalized;
+    return allowed.includes(normalized) ? normalized : "medium";
+}
+
 export function runnerConfigFingerprint(runner: Record<string, string>): string {
     const body = runnerConfigFieldOrder
         .filter((key) => !isScheduledLoopField(key))
-        .map((key) => `${key}=${runner[key] ?? ""}`)
+        .map((key) => {
+            const value = key === "reasoning"
+                ? normalizeRunnerReasoningValue(runner.agent || "codex", runner[key] ?? "")
+                : runner[key] ?? "";
+            return `${key}=${value}`;
+        })
         .join("\n");
     return crypto.createHash("sha256").update(body).digest("hex").slice(0, 16);
 }
@@ -64,7 +81,8 @@ export function serializeRunnerConfig(runners: Array<Record<string, string>>): s
             if (runner[key] === undefined && runnerStringFieldDefaults[key] === undefined) {
                 continue;
             }
-            const value = runner[key] ?? runnerStringFieldDefaults[key] ?? "";
+            const rawValue = runner[key] ?? runnerStringFieldDefaults[key] ?? "";
+            const value = key === "reasoning" ? normalizeRunnerReasoningValue(runner.agent || "codex", rawValue) : rawValue;
             lines.push(`${key} = ${formatTomlValue(key, value)}`);
         }
         const extraKeys = Object.keys(runner)

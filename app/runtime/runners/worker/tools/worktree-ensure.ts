@@ -126,7 +126,7 @@ const {
 } = shared;
 
 export function cmdWorkerWorktreeEnsure(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   const result = ensureWorkerTicketWorktree(ticket);
   utils.replaceScalarFieldInSection(ticket, "Ticket", "Last Updated", utils.nowIso());
   ok({ tool: "worker.worktree-ensure", path: boardRel(ticket), ...result });

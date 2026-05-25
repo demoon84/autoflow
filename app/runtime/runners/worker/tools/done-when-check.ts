@@ -126,7 +126,7 @@ const {
 } = shared;
 
 export function cmdWorkerDoneWhenCheck(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   const check = doneWhenCheck(ticket);
   ok({ tool: "worker.done-when-check", path: boardRel(ticket), ...check });
 }

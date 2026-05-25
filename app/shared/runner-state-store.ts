@@ -5,13 +5,20 @@ export type RunnerStateFields = Record<string, string>;
 
 const tokenAccountingKeys = [
     "cumulative_tokens",
+    "cumulative_total_tokens",
+    "cumulative_cache_read_tokens",
+    "cumulative_cache_create_tokens",
+    "cumulative_llm_request_count",
     "last_turn_tokens",
+    "last_turn_total_tokens",
     "last_turn_input_tokens",
     "last_turn_output_tokens",
     "last_turn_cache_read_tokens",
     "last_turn_cache_create_tokens",
+    "last_turn_llm_request_count",
     "last_turn_at",
     "last_turn_tick_id",
+    "last_turn_role",
     "token_source",
     "last_token_usage_source",
 ];
@@ -50,15 +57,21 @@ function copyFreshAccountingFields(
     target: RunnerStateFields,
     latest: RunnerStateFields,
     keys: string[],
+    explicitKeys: Set<string>,
 ): void {
     for (const key of keys) {
+        if (explicitKeys.has(key)) continue;
         if (latest[key] !== undefined) {
             target[key] = latest[key];
         }
     }
 }
 
-function preserveFreshAccountingFields(file: string, target: RunnerStateFields): RunnerStateFields {
+function preserveFreshAccountingFields(
+    file: string,
+    target: RunnerStateFields,
+    explicitKeys = new Set<string>(),
+): RunnerStateFields {
     const latest = readRunnerStateFile(file);
     const latestCumulative = positiveStateInt(latest.cumulative_tokens);
     const targetCumulative = positiveStateInt(target.cumulative_tokens);
@@ -66,7 +79,7 @@ function preserveFreshAccountingFields(file: string, target: RunnerStateFields):
         isAuthoritativeTokenSource(latest.token_source) &&
         (latestCumulative >= targetCumulative || !isAuthoritativeTokenSource(target.token_source))
     ) {
-        copyFreshAccountingFields(target, latest, tokenAccountingKeys);
+        copyFreshAccountingFields(target, latest, tokenAccountingKeys, explicitKeys);
     }
 
     const latestCodeVolume = positiveStateInt(latest.cumulative_code_volume);
@@ -81,7 +94,7 @@ function preserveFreshAccountingFields(file: string, target: RunnerStateFields):
             (latestCodeAt === targetCodeAt && latestCodeVolume > targetCodeVolume)
         )
     ) {
-        copyFreshAccountingFields(target, latest, codeAccountingKeys);
+        copyFreshAccountingFields(target, latest, codeAccountingKeys, explicitKeys);
     }
     return target;
 }
@@ -110,10 +123,18 @@ export function readRunnerStateFile(file: string): RunnerStateFields {
     }
 }
 
-export function writeRunnerStateFile(file: string, state: RunnerStateFields): void {
+export function writeRunnerStateFile(
+    file: string,
+    state: RunnerStateFields,
+    explicitAccountingKeys = new Set<string>(),
+): void {
     fs.mkdirSync(path.dirname(file), {recursive: true});
     const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tempFile, serializeRunnerStateFields(preserveFreshAccountingFields(file, {...state})), "utf8");
+    fs.writeFileSync(
+        tempFile,
+        serializeRunnerStateFields(preserveFreshAccountingFields(file, {...state}, explicitAccountingKeys)),
+        "utf8",
+    );
     fs.renameSync(tempFile, file);
 }
 

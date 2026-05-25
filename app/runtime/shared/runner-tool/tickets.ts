@@ -1,5 +1,5 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, normalizePrdKey, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, normalizePrdKey, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listQueueItems, readQueueItem } from "./queue";
 import { extractChecklistFromText, extractSectionLines } from "./sections";
 
@@ -7,7 +7,7 @@ export function listWorkerTicketItems(bucket: string): WorkerTicketItem[] {
   const dir = path.join(TICKETS_ROOT, bucket);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir)
-    .filter((name) => /^TODO-\d+\.md$/.test(name))
+    .filter((name) => /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/.test(name))
     .map((name) => path.join(dir, name))
     .filter((file) => safeIsFile(file))
     .map((file) => readWorkerTicketItem(file, bucket))
@@ -37,7 +37,6 @@ export function readWorkerTicketItem(file: string, kind: string): WorkerTicketIt
 }
 
 export function workerTicketSort(a: WorkerTicketItem, b: WorkerTicketItem): number {
-  if (a.priority_rank !== b.priority_rank) return a.priority_rank - b.priority_rank;
   const ai = Number.parseInt(a.id || "999999", 10);
   const bi = Number.parseInt(b.id || "999999", 10);
   if (ai !== bi) return ai - bi;
@@ -115,11 +114,11 @@ export function updateWorkerState(runnerId: string, ticket: string, stage: strin
   }, BOARD_ROOT);
 }
 
-export function collectUsedIds(kind: string): Set<string> {
+export function collectUsedIds(kind: string, namespace = ""): Set<string> {
   const used = new Set<string>();
   const patterns: RegExp[] =
-    kind === "ticket" ? [/^(TODO)-(\d+)\.md$/] :
-    kind === "prd" ? [/^(PRD)-(\d+)\.md$/] :
+    kind === "ticket" ? [/^TODO-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\.md$/] :
+    kind === "prd" ? [/^PRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\.md$/] :
     [];
   const roots = [
     path.join(TICKETS_ROOT, "prd"),
@@ -133,15 +132,20 @@ export function collectUsedIds(kind: string): Set<string> {
       const base = path.basename(file);
       for (const pattern of patterns) {
         const m = base.match(pattern);
-        const id = m?.[2] || m?.[1] || "";
-        if (/^\d+$/.test(id)) used.add(String(Number.parseInt(id, 10)).padStart(3, "0"));
+        const parsed = parseTicketId(m?.[1] || "");
+        if ((!namespace || parsed.namespace === namespace) && parsed.numeric > 0) {
+          used.add(String(parsed.numeric).padStart(3, "0"));
+        }
       }
     }
   }
   const reservationsDir = path.join(BOARD_ROOT, "runners", "state", "id-reservations");
-  for (const file of collectFiles(reservationsDir, new RegExp(`^${kind}_\\d+_.*\\.json$`), 1)) {
-    const m = path.basename(file).match(new RegExp(`^${kind}_(\\d+)_`));
-    if (m) used.add(m[1]);
+  const reservationPattern = namespace
+    ? new RegExp(`^${kind}_${escapeRe(namespace)}_\\d+_.*\\.json$`)
+    : new RegExp(`^${kind}_(?:(?:[A-Za-z0-9][A-Za-z0-9_.-]*)_)?\\d+_.*\\.json$`);
+  for (const file of collectFiles(reservationsDir, reservationPattern, 1)) {
+    const m = path.basename(file).match(new RegExp(`^${kind}_(?:(?:[A-Za-z0-9][A-Za-z0-9_.-]*)_)?(\\d+)_`));
+    if (m) used.add(m[1].padStart(3, "0"));
   }
   return used;
 }

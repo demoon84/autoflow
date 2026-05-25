@@ -1,15 +1,14 @@
 import * as shared from "../shared";
-const {fs, path, REPO_ROOT, fail, runNodeOrTsScript} = shared;
+const {fs, path, fail, runNodeOrTsScript, resolveAutoflowCore} = shared;
 
 const runtimeToolPaths: Record<string, string> = {
     "board-guard": "system/board-guard/index.ts",
-    "check-stop": "system/check-stop.ts",
     "clear-thread-context": "system/clear-thread-context.ts",
-    "install-stop-hook": "system/install-stop-hook.ts",
     "notify-user": "system/notify-user.ts",
     "origin-cli": "system/origin-cli.ts",
     "path-conflict-check": "system/path-conflict-check.ts",
     "run-hook": "system/run-hook.ts",
+    "assignment": "system/assignment.ts",
     "runner-stage": "system/runner-stage.ts",
     "runner-tokens": "system/runner-tokens.ts",
     "set-thread-context": "system/set-thread-context.ts",
@@ -20,15 +19,11 @@ const runtimeToolPaths: Record<string, string> = {
     "start-spec": "runners/planner/spec.ts",
     "lint-ticket": "runners/planner/lint-ticket.ts",
     "start-ticket": "runners/worker/start/index.ts",
-    "start-todo": "runners/worker/start-todo.ts",
     "finish-ticket": "runners/worker/finish-ticket/index.ts",
     "draft-pr": "runners/worker/draft-pr.ts",
-    "handoff-todo": "runners/worker/handoff-todo.ts",
     "integrate-worktree": "runners/worker/integrate-worktree.ts",
-    "merge-ready-ticket": "runners/worker/merge-ready-ticket.ts",
     "start-verifier": "runners/verifier/start.ts",
     "verify-ticket": "runners/verifier/legacy-verify/index.ts",
-    "wiki-embed": "runners/wiki/scripts/wiki-embed.ts",
     "wiki-query": "runners/wiki/scripts/wiki-query.ts",
     "wiki-search-index": "runners/wiki/scripts/wiki-search-index.ts",
 };
@@ -104,12 +99,8 @@ export function runRuntimeTool(name: string, args: string[]): never {
         return fail(`Invalid tool name: ${name}`);
     }
     const relativePath = runtimeToolPaths[name];
-    const scriptPath = relativePath ? path.join(REPO_ROOT, "app", "runtime", relativePath) : "";
-    if (!scriptPath) {
+    if (!relativePath) {
         return fail(`Unknown tool: ${name}. Known tools: ${Object.keys(runtimeToolPaths).sort().join(", ")}`);
-    }
-    if (!fs.existsSync(scriptPath)) {
-        return fail(`Runtime tool file missing: app/runtime/${relativePath}`);
     }
     const scoped = extractRuntimeToolScope(args, {allowAnywhere: name === "runner-tool"});
     const envProjectRoot = process.env.AUTOFLOW_PROJECT_ROOT || process.env.PROJECT_ROOT || "";
@@ -118,11 +109,21 @@ export function runRuntimeTool(name: string, args: string[]): never {
         : "";
     const projectRoot = path.resolve(scoped.projectRoot || envProjectRoot || (scopedBoardRoot ? path.dirname(scopedBoardRoot) : inferredProjectRoot()));
     const boardRoot = scopedBoardRoot || inferredBoardRoot(projectRoot);
+    const boardRel = path.relative(projectRoot, boardRoot);
+    const boardDirName = boardRel && !boardRel.startsWith("..") && !path.isAbsolute(boardRel) ? boardRel : boardRoot;
+    const core = resolveAutoflowCore({projectRoot, boardRoot, boardDirName});
+    const scriptPath = path.join(core.runtimeRoot, relativePath);
+    if (!fs.existsSync(scriptPath)) {
+        return fail(`Runtime tool file missing: ${path.relative(core.coreRoot, scriptPath)}`);
+    }
     return runNodeOrTsScript(scriptPath, scoped.args, {
         ...process.env,
+        AUTOFLOW_CORE_ROOT: core.coreRoot,
+        AUTOFLOW_RUNTIME_ROOT: core.runtimeRoot,
+        AUTOFLOW_SHARE_ROOT: core.shareRoot,
         AUTOFLOW_PROJECT_ROOT: projectRoot,
         PROJECT_ROOT: projectRoot,
         AUTOFLOW_BOARD_ROOT: boardRoot,
         BOARD_ROOT: boardRoot,
-    });
+    }, core.coreRoot);
 }

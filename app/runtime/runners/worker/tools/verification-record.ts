@@ -127,7 +127,7 @@ const {
 } = shared;
 
 export function cmdWorkerVerificationRecord(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   const result = getArg("--result");
   if (!result) fail(2, "worker verification-record requires --result");
   const command = getArg("--command");

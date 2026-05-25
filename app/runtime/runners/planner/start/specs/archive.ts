@@ -3,7 +3,7 @@ import {boardRelativePath, doneSpecPathForSpecRef, projectKeyFromSpecRef} from "
 import {archiveFile, collectFiles, filesEqual} from "../files";
 
 export function projectKeyHasTicket(projectKey: string): boolean {
-  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^TODO-\d+\.md$/)) {
+  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/)) {
     const current = utils.ticketScalarField(file, "PRD Key") || projectKeyFromSpecRef(utils.extractScalarFieldInSection(file, "References", "PRD"));
     if (utils.trimSpaces(current) === projectKey) return true;
   }

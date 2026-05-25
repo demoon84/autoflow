@@ -1,6 +1,6 @@
 import * as shared from "../shared";
-const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, cleanupObsoleteHostFiles, migrateQueueDirectoryNames, archiveLegacyOrderQueue, migrateStaleVerifyPendingDecisionFields, migrateTicketNaming, syncBoardInstallAssets, syncProjectHostInstallAssets, syncUserShareInstallAssets, userShareRoot, ensureViteSidecarWatchIgnores, detectHostGuidanceDrift, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
-import {buildWikiVectorIndex} from "../runners/wiki/wiki";
+const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, cleanupObsoleteHostFiles, cleanupObsoleteUserShareFiles, migrateQueueDirectoryNames, archiveLegacyOrderQueue, migrateStaleVerifyPendingDecisionFields, migrateTicketNaming, migratePreviousWorkflowTerminology, cleanupPreviousRunnerResidue, syncBoardInstallAssets, syncProjectHostInstallAssets, syncUserShareInstallAssets, syncUserHomeInstallAssets, migrateRunnerConfigToLocal, userShareRoot, ensureViteSidecarWatchIgnores, detectHostGuidanceDrift, writeBoardCoreManifest, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
+import {refreshWikiSearchIndex} from "../runners/wiki/wiki";
 
 function hasInstallHelpFlag(args: string[]): boolean {
     return args.includes("--help") || args.includes("-h");
@@ -21,9 +21,6 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     const refreshHostGuidance = args.includes("--refresh-host-guidance");
     const positionalArgs = args.filter((arg) => arg !== "--refresh-host-guidance");
     const ctx = projectContext(positionalArgs[0] || ".", positionalArgs[1] || defaultBoardDirName(), true);
-    if (samePath(ctx.projectRoot, REPO_ROOT)) {
-        fail("Refusing to install a board into the Autoflow source repository root. Choose a separate target project instead.");
-    }
     const overwrite = mode === "upgrade";
     ensureDir(ctx.boardRoot);
     const boardAssets = (() => {
@@ -40,12 +37,23 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
             return fail(`User-share install source sync failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     })();
+    const userHomeAssets = (() => {
+        try {
+            return syncUserHomeInstallAssets(ctx, {overwrite});
+        } catch (error) {
+            return fail(`User-home install source sync failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    })();
+    const runnerConfigMigrated = migrateRunnerConfigToLocal(ctx);
     const obsoleteRemoved = cleanupObsoleteBoardFiles(ctx);
     const obsoleteHostRemoved = cleanupObsoleteHostFiles(ctx);
+    const obsoleteShareRemoved = cleanupObsoleteUserShareFiles(ctx);
     const queueDirectoryMigrated = migrateQueueDirectoryNames(ctx);
     const legacyOrdersArchived = archiveLegacyOrderQueue(ctx);
     const staleVerifyPendingDecisionMigrated = migrateStaleVerifyPendingDecisionFields(ctx);
     const ticketNamingMigration = migrateTicketNaming(ctx);
+    const previousWorkflowTerminology = migratePreviousWorkflowTerminology(ctx);
+    const previousRunnerResidue = cleanupPreviousRunnerResidue(ctx);
     const terminologyMigrated = migrateWorkerTerminology(ctx);
     const hostAssets = (() => {
         try {
@@ -64,11 +72,12 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     }
     writeFile(path.join(ctx.boardRoot, ".project-root"), `${ctx.projectRoot}\n`, true);
     writeFile(path.join(ctx.boardRoot, ".autoflow-version"), `${packageVersion()}\n`, true);
+    const boardManifestCore = writeBoardCoreManifest(ctx, {mode});
     const gitInstall = ensureGitBaseline(ctx);
-    // Ensure worktree-related .gitignore patterns even when the project already
+    // Ensure sidecar/worktree .gitignore patterns even when the project already
     // has a git HEAD (ensureGitBaseline only writes .gitignore during initial
-    // baseline commit). This keeps `.autoflow-worktrees/` ignored across both
-    // fresh-init and existing-repo upgrade paths.
+    // baseline commit). This keeps the local board out of product history
+    // across both fresh-init and existing-repo upgrade paths.
     const gitignoreRefreshed = ensureInstallGitignore(ctx);
     const viteWatchIgnore = (() => {
         try {
@@ -83,7 +92,7 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
             };
         }
     })();
-    const wikiVectorIndex = buildWikiVectorIndex(ctx, true);
+    const wikiIndex = refreshWikiSearchIndex(ctx, true);
     const hostGuidanceDrift = detectHostGuidanceDrift(ctx);
     const hostGuidanceCustom = hostGuidanceDrift.filter((item) => item.status === "custom");
     const hostGuidanceStale = hostGuidanceDrift.filter((item) => item.status === "stale");
@@ -96,6 +105,17 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     out(`mode=${mode}`);
     out(`project_root=${ctx.projectRoot}`);
     out(`board_root=${ctx.boardRoot}`);
+    out(`board_manifest=${boardManifestCore.boardManifestPath}`);
+    out(`board_schema_version=${boardManifestCore.boardSchemaVersion || "1"}`);
+    out(`core_ref=${boardManifestCore.ref}`);
+    out(`core_source=${boardManifestCore.source}`);
+    out(`core_root=${boardManifestCore.coreRoot}`);
+    out(`core_available=${boardManifestCore.available ? "true" : "false"}`);
+    out(`core_version=${boardManifestCore.version}`);
+    out(`core_required_version=${boardManifestCore.requiredVersion}`);
+    out(`core_runtime_root=${boardManifestCore.runtimeRoot}`);
+    out(`core_install_root=${boardManifestCore.installRoot}`);
+    out(`core_registry=${boardManifestCore.registryPath}`);
     out("runtime_scripts=typescript");
     out(`git_status=${gitInstall.status}`);
     out(`git_available=${gitInstall.available ? "true" : "false"}`);
@@ -104,13 +124,18 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     out(`git_head=${gitInstall.head}`);
     out(`git_root=${gitInstall.root}`);
     out(`gitignore_updated=${gitInstall.gitignoreUpdated || gitignoreRefreshed ? "true" : "false"}`);
-    const legacyBoardIgnore = shared.detectLegacyBoardIgnore(ctx);
-    if (legacyBoardIgnore) {
-        out(`board_ignore_legacy=true`);
-        out(`board_ignore_legacy_pattern=${legacyBoardIgnore}`);
-        out(`board_ignore_legacy_hint=PRD-branch policy expects the board to be git tracked. Remove the line "${legacyBoardIgnore}" from .gitignore so PRD/ticket/wiki documents are carried by the worker-owned PRD squash commit. Machine-local runtime state is already filtered by inner .gitignore files under .autoflow/runners/, .autoflow/metrics/, and .autoflow/automations/state/.`);
+    const boardIgnore = shared.detectBoardIgnore(ctx);
+    if (boardIgnore) {
+        out(`board_ignore_configured=true`);
+        out(`board_ignore_pattern=${boardIgnore}`);
     } else {
-        out(`board_ignore_legacy=false`);
+        out(`board_ignore_configured=false`);
+    }
+    const trackedBoardFiles = shared.listTrackedBoardFiles(ctx);
+    out(`board_tracked_sample_count=${trackedBoardFiles.length}`);
+    if (trackedBoardFiles.length > 0) {
+        out(`board_tracked_sample=${trackedBoardFiles.join(",")}`);
+        out(`board_tracked_hint=보드는 개인 로컬 실행 원장이므로 Git 추적 대상이 아니다. 기존에 추적된 보드 파일은 필요하면 백업한 뒤 git rm --cached -r ${ctx.boardDirName} 로 인덱스에서 제거한다.`);
     }
     out(`vite_watch_ignore_status=${viteWatchIgnore.status}`);
     out(`vite_watch_ignore_reason=${viteWatchIgnore.reason}`);
@@ -127,11 +152,22 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     out(`board_assets_unchanged_count=${boardAssets.unchanged}`);
     out(`board_assets_preserved_count=${boardAssets.preserved}`);
     out(`board_assets_overwritten_count=${boardAssets.overwritten}`);
-    out(`share_root=${userShareRoot()}`);
+    out(`share_root=${boardManifestCore.shareRoot}`);
     out(`share_assets_created_count=${shareAssets.created}`);
     out(`share_assets_unchanged_count=${shareAssets.unchanged}`);
     out(`share_assets_preserved_count=${shareAssets.preserved}`);
     out(`share_assets_overwritten_count=${shareAssets.overwritten}`);
+    out(`runner_config_migrated_count=${runnerConfigMigrated.length}`);
+    if (runnerConfigMigrated.length > 0) {
+        out(`runner_config_migrated=${runnerConfigMigrated.join(",")}`);
+    }
+    out(`user_home_assets_created_count=${userHomeAssets.created}`);
+    out(`user_home_assets_unchanged_count=${userHomeAssets.unchanged}`);
+    out(`user_home_assets_preserved_count=${userHomeAssets.preserved}`);
+    out(`user_home_assets_overwritten_count=${userHomeAssets.overwritten}`);
+    if (userHomeAssets.files.length > 0) {
+        out(`user_home_assets_changed=${userHomeAssets.files.join(",")}`);
+    }
     out(`obsolete_removed_count=${obsoleteRemoved.length}`);
     if (obsoleteRemoved.length > 0) {
         out(`obsolete_removed=${obsoleteRemoved.join(",")}`);
@@ -139,6 +175,10 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     out(`obsolete_host_removed_count=${obsoleteHostRemoved.length}`);
     if (obsoleteHostRemoved.length > 0) {
         out(`obsolete_host_removed=${obsoleteHostRemoved.join(",")}`);
+    }
+    out(`obsolete_share_removed_count=${obsoleteShareRemoved.length}`);
+    if (obsoleteShareRemoved.length > 0) {
+        out(`obsolete_share_removed=${obsoleteShareRemoved.join(",")}`);
     }
     out(`queue_dir_migrated_count=${queueDirectoryMigrated.length}`);
     if (queueDirectoryMigrated.length > 0) {
@@ -163,6 +203,16 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
     if (ticketNamingMigration.dirsRenamed.length > 0) {
         out(`ticket_naming_dirs_renamed=${ticketNamingMigration.dirsRenamed.map((r) => `${r.from}->${r.to}`).slice(0, 50).join(",")}`);
     }
+    out(`previous_workflow_terms_changed_count=${previousWorkflowTerminology.filesChanged.length}`);
+    out(`previous_workflow_terms_replacements=${previousWorkflowTerminology.replacements}`);
+    if (previousWorkflowTerminology.filesChanged.length > 0) {
+        out(`previous_workflow_terms_changed=${previousWorkflowTerminology.filesChanged.slice(0, 50).join(",")}`);
+    }
+    out(`previous_runner_residue_changed_count=${previousRunnerResidue.filesChanged.length}`);
+    out(`previous_runner_residue_replacements=${previousRunnerResidue.replacements}`);
+    if (previousRunnerResidue.filesChanged.length > 0) {
+        out(`previous_runner_residue_changed=${previousRunnerResidue.filesChanged.slice(0, 50).join(",")}`);
+    }
     out(`terminology_migrated_count=${terminologyMigrated.length}`);
     if (terminologyMigrated.length > 0) {
         out(`terminology_migrated=${terminologyMigrated.join(",")}`);
@@ -185,17 +235,14 @@ export function installBoard(args: string[], mode: "init" | "upgrade" = "init"):
             const reasons = item.staleMatches.length > 0 ? item.staleMatches.join("+") : item.status;
             out(`host_guidance.${index + 1}=${item.file}:${item.status}:${reasons}`);
         });
-    out(`wiki_vector_index_status=${wikiVectorIndex.status}`);
-    if (wikiVectorIndex.reason) out(`wiki_vector_index_reason=${wikiVectorIndex.reason}`);
-    out("wiki_index_backend=hybrid");
-    out(`wiki_bm25_backend=${wikiVectorIndex.bm25Ready ? wikiVectorIndex.lexicalBackend : "unavailable"}`);
-    out(`wiki_lexical_backend=${wikiVectorIndex.bm25Ready ? wikiVectorIndex.lexicalBackend : "unavailable"}`);
-    out(`wiki_text_storage=${wikiVectorIndex.textStorage}`);
-    out(`wiki_vector_storage=${wikiVectorIndex.vectorStorage}`);
-    out(`wiki_vector_index_db=${wikiVectorIndex.dbPath}`);
-    out(`wiki_vector_index_chunks=${wikiVectorIndex.indexedChunks}`);
-    out(`wiki_vector_index_vectors=${wikiVectorIndex.vectorCount}`);
-    out(`wiki_vector_model=${wikiVectorIndex.vectorModel}`);
-    out(`wiki_vector_dim=${wikiVectorIndex.vectorDim}`);
+    out(`wiki_index_status=${wikiIndex.status}`);
+    if (wikiIndex.reason) out(`wiki_index_reason=${wikiIndex.reason}`);
+    out("wiki_index_backend=markdown");
+    out(`wiki_search_provider=${wikiIndex.qmdProvider ? "qmd_optional" : "markdown_scan"}`);
+    out(`wiki_qmd_available=${wikiIndex.qmdProvider ? "true" : "false"}`);
+    out(`wiki_lexical_backend=${wikiIndex.lexicalBackend}`);
+    out(`wiki_text_storage=${wikiIndex.textStorage}`);
+    out(`wiki_search_accelerator=${wikiIndex.searchAccelerator}`);
+    out(`wiki_index_chunks=${wikiIndex.indexedChunks}`);
     if (gitInstall.detail) out(`git_detail=${gitInstall.detail}`);
 }

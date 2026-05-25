@@ -44,9 +44,14 @@ type AutoflowRunner = {
   command: string;
   commandPreview: string;
   stateStatus: string;
+  activeRole: string;
+  assignmentRole: string;
+  assignmentStatus: string;
+  assignedItemRef: string;
   activeItem: string;
   activeTicketId: string;
   activeTicketTitle: string;
+  activeTicketPath: string;
   activeStage: string;
   activeSpecRef: string;
   pid: string;
@@ -74,6 +79,7 @@ type AutoflowRunner = {
   backgroundTaskPid?: string;
   backgroundTaskStartedAt?: string;
   backgroundTaskLogPath?: string;
+  livePtyBusy?: boolean;
   queueStatus?: string;
   queueStatusLabel?: string;
   queueStatusDetail?: string;
@@ -87,12 +93,14 @@ type AutoflowRunner = {
   cumulativeTotalTokens?: number;
   cumulativeCacheReadTokens?: number;
   cumulativeCacheCreateTokens?: number;
+  cumulativeLlmRequestCount?: number;
   lastTurnTokens?: number;
   lastTurnTotalTokens?: number;
   lastTurnInputTokens?: number;
   lastTurnOutputTokens?: number;
   lastTurnCacheReadTokens?: number;
   lastTurnCacheCreateTokens?: number;
+  lastTurnLlmRequestCount?: number;
 };
 
 type AutoflowRunnerConfigUpdate = Partial<
@@ -135,6 +143,8 @@ type AutoflowMetricSnapshot = {
   autoflow_token_total_count: number;
   autoflow_token_cache_read_count: number;
   autoflow_token_cache_create_count: number;
+  autoflow_llm_request_count: number;
+  autoflow_token_report_count: number;
   completion_rate_percent: number;
 };
 
@@ -146,8 +156,6 @@ type AutoflowBoardSnapshot = {
   statusResult: AutoflowRunResult | null;
   metrics: Record<string, string>;
   metricsResult: AutoflowRunResult | null;
-  stopHook: Record<string, string>;
-  stopHookResult: AutoflowRunResult | null;
   watcher: Record<string, string>;
   watcherResult: AutoflowRunResult | null;
   runners: AutoflowRunner[];
@@ -308,12 +316,6 @@ interface Window {
       offset?: number;
     }) => Promise<AutoflowWikiDatabaseResult>;
     writeMetricsSnapshot: (options: {
-      projectRoot: string;
-      boardDirName: string;
-      invocationId?: string;
-    }) => Promise<AutoflowRunResult>;
-    controlStopHook: (options: {
-      action: "install" | "remove" | "status";
       projectRoot: string;
       boardDirName: string;
       invocationId?: string;

@@ -1,6 +1,7 @@
 #!/usr/bin/env npx tsx
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import {autoflowPidIsRunning} from "./common";
 
@@ -23,23 +24,55 @@ export function runnerBoardRoot(): string {
 }
 
 export function runnerConfigBasePath(boardRoot = runnerBoardRoot()): string {
-    return path.join(boardRoot, "runners", "config.toml");
+    return runnerConfigTemplatePath(boardRoot);
 }
 
 export function runnerConfigLocalPath(boardRoot = runnerBoardRoot()): string {
     return path.join(boardRoot, "runners", "config.local.toml");
 }
 
+function runnerConfigLegacyBasePath(boardRoot = runnerBoardRoot()): string {
+    return path.join(boardRoot, "runners", "config.toml");
+}
+
+function manifestShareRoot(boardRoot = runnerBoardRoot()): string {
+    let text = "";
+    try {
+        text = fs.readFileSync(path.join(boardRoot, "manifest.toml"), "utf8");
+    } catch {
+        return "";
+    }
+    const match = text.match(/^\s*share_root\s*=\s*"((?:\\"|[^"])*)"/m);
+    return match ? match[1].replace(/\\"/g, "\"") : "";
+}
+
+export function runnerShareRoot(boardRoot = runnerBoardRoot()): string {
+    const env = process.env.AUTOFLOW_SHARE_ROOT && process.env.AUTOFLOW_SHARE_ROOT.trim();
+    if (env) return path.resolve(env);
+    const fromManifest = manifestShareRoot(boardRoot);
+    if (fromManifest) return path.resolve(fromManifest);
+    return path.join(os.homedir(), ".autoflow", "share");
+}
+
+export function runnerConfigTemplatePath(boardRoot = runnerBoardRoot()): string {
+    return path.join(runnerShareRoot(boardRoot), "reference", "runners", "config.toml");
+}
+
 export function runnerConfigPath(boardRoot = runnerBoardRoot()): string {
     const local = runnerConfigLocalPath(boardRoot);
-    return fs.existsSync(local) ? local : runnerConfigBasePath(boardRoot);
+    if (fs.existsSync(local)) return local;
+    const template = runnerConfigTemplatePath(boardRoot);
+    if (fs.existsSync(template)) return template;
+    const legacy = runnerConfigLegacyBasePath(boardRoot);
+    return fs.existsSync(legacy) ? legacy : template;
 }
 
 export function runnerConfigWritePath(boardRoot = runnerBoardRoot()): string {
     const local = runnerConfigLocalPath(boardRoot);
     if (!fs.existsSync(local)) {
         fs.mkdirSync(path.dirname(local), {recursive: true});
-        fs.copyFileSync(runnerConfigBasePath(boardRoot), local);
+        const source = runnerConfigPath(boardRoot);
+        if (fs.existsSync(source)) fs.copyFileSync(source, local);
     }
     return local;
 }

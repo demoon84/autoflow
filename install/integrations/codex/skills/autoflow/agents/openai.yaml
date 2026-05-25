@@ -1,4 +1,4 @@
 interface:
   display_name: "autoflow"
-  short_description: "PRD-based Autoflow goal orchestration"
-  default_prompt: "Use $autoflow to brief the plan, get approval, manage one PRD cycle at a time, and never directly execute runner work."
+  short_description: "Goal-based Autoflow orchestrator"
+  default_prompt: "Use $autoflow as a coordinator only: brief the plan, get approval, maintain the goal, publish PRD turn envelopes, reconcile board state, assign runners, and checkpoint after each merge. Do not perform research, design, implementation, verification, merge, wiki, or hook handling yourself; delegate real work to assigned runners. Before approval, only read Autoflow board/wiki/goal state and brief the first PRD turn."

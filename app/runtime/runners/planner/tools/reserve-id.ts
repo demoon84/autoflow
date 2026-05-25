@@ -116,6 +116,9 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignment,
+  startAssignmentIfLeased,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -126,6 +129,9 @@ const {
 } = shared;
 
 export function cmdPlannerReserveId(): void {
+  const runnerId = currentRunnerId("planner");
+  const assignment = requireRoleAssignment("planner", runnerId);
+  const activeAssignment = startAssignmentIfLeased(assignment);
   const kind = getArg("--kind") || getArg("-k");
   if (!kind || !["prd", "ticket"].includes(kind)) {
     fail(2, "reserve-id requires --kind prd|ticket");
@@ -142,18 +148,22 @@ export function cmdPlannerReserveId(): void {
     if (Number.isFinite(parsed) && parsed > maxUsed) maxUsed = parsed;
   }
   for (let i = maxUsed + 1; i < 1000000; i += 1) {
-    const id = String(i).padStart(3, "0");
-    if (used.has(id)) continue;
+    const numericId = String(i).padStart(3, "0");
+    if (used.has(numericId)) continue;
+    const id = numericId;
     const token = `${Date.now()}-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
-    const reservationPath = path.join(reservationsDir, `${kind}_${id}_${token}.json`);
+    const reservationPath = path.join(reservationsDir, `${kind}_${numericId}_${token}.json`);
     try {
       fs.writeFileSync(
         reservationPath,
-        JSON.stringify({ kind, id, token, created_at: utils.nowIso(), runner: currentRunnerId() }, null, 2) + "\n",
+        JSON.stringify({ kind, id, token, created_at: utils.nowIso(), runner: runnerId }, null, 2) + "\n",
         { encoding: "utf8", flag: "wx" }
       );
       ok({
         tool: "planner.reserve-id",
+        runner: runnerId,
+        assignment: compactAssignment(activeAssignment),
+        assignment_lifecycle: assignment.status === "leased" ? "started" : "unchanged",
         kind,
         id,
         reservation: boardRel(reservationPath),

@@ -116,6 +116,7 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -126,14 +127,16 @@ const {
 } = shared;
 
 export function cmdWikiIngest(): void {
-  emitWikiVectorIndex("wiki.ingest");
+  requireRoleAssignment("wiki", currentRunnerId("wiki"));
+  emitWikiIndexRefresh("wiki.ingest");
 }
 
 export function cmdWikiIndexRefresh(): void {
-  emitWikiVectorIndex("wiki.index-refresh");
+  requireRoleAssignment("wiki", currentRunnerId("wiki"));
+  emitWikiIndexRefresh("wiki.index-refresh");
 }
 
-function emitWikiVectorIndex(tool: string): void {
+function emitWikiIndexRefresh(tool: string): void {
   const cliArgs = ["wiki", "ingest", PROJECT_ROOT, boardDirName()];
   if (hasFlag("--no-tickets")) cliArgs.push("--no-tickets");
   cliArgs.push("--runner", currentRunnerId("wiki"));

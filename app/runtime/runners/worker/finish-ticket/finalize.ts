@@ -12,6 +12,13 @@ type MergeTarget = {
   kind: "prd_branch" | "project_root";
 };
 
+const ticketBranchIdPattern = "(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\\d+";
+const managedPrdBranchRe = new RegExp(`^autoflow\\/prd-${ticketBranchIdPattern}$`, "i");
+
+function isManagedPrdBranch(branch: string): boolean {
+  return managedPrdBranchRe.test(branch);
+}
+
 function realPathSafe(value: string): string {
   try {
     return fs.realpathSync.native(value);
@@ -137,7 +144,7 @@ function ticketCompletionCommitExists(cwd: string, ticketFile: string): boolean 
 
 function prdBranchForTicket(ticketFile: string): { prdKey: string; branch: string } {
   const prdKey = normalizePrdKey(scalar(ticketFile, "Ticket", "PRD Key"));
-  if (!/^PRD-\d+$/i.test(prdKey)) return { prdKey: "", branch: "" };
+  if (!prdKey) return { prdKey: "", branch: "" };
   const candidates = [
     path.join(boardRoot, "tickets", "prd", `${prdKey}.md`),
     path.join(boardRoot, "tickets", "done", prdKey, `${prdKey}.md`),
@@ -225,9 +232,7 @@ export function sanityPreflight(ticketFile: string): SanityFailure | null {
   }
 
   if (!boardOnly && !["docs", "cleanup"].includes(changeType)) {
-    const names = changedFiles(worktreePath, baseCommit)
-      .filter((name) => !name.startsWith(".autoflow/tickets/inprogress/"))
-      .filter((name) => !name.startsWith(".autoflow/tickets/done/"));
+    const names = changedFiles(worktreePath, baseCommit).filter((name) => !isBoardSidecarPath(name));
     const matched = names.some((name) => allowed.some((ap) => pathsOverlap(name, ap)));
     if (!matched) {
       return {
@@ -249,10 +254,11 @@ export function prepareWorktreeForFinalization(ticketFile: string, ticketId: str
     return { status: "ready", reason: "no_worktree_or_allowed_paths", worktreePath, worktreeCommit: scalar(ticketFile, "Worktree", "Worktree Commit") };
   }
 
+  const productAllowed = allowed.filter((item) => !isBoardSidecarPath(item));
   const changed = baseCommit ? changedFiles(worktreePath, baseCommit) : statusPaths(worktreePath);
-  const scopedChanged = changed.filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+  const scopedChanged = changed.filter((name) => productAllowed.some((ap) => pathsOverlap(name, ap)));
   if (scopedChanged.length > 0) {
-    git(worktreePath, ["add", "-A", "--", ...allowed]);
+    git(worktreePath, ["add", "-A", "--", ...productAllowed]);
     if (git(worktreePath, ["diff", "--cached", "--quiet"]).status !== 0) {
       git(worktreePath, ["commit", "-m", todoCommitSubject(ticketId, "snapshot")]);
     }
@@ -274,7 +280,7 @@ export function prepareWorktreeForFinalization(ticketFile: string, ticketId: str
   const needsMerge = scopedChanged.some((name) => !rootContainsWorktreeChange(target.root, worktreePath, baseCommit, name));
   if (needsMerge) {
     replaceScalar(ticketFile, "Worktree", "Integration Status", "needs_ai_merge");
-    return { status: "needs_ai_merge", reason: "runner_merge_required", worktreePath, worktreeCommit: head };
+    return { status: "needs_ai_merge", reason: "worker_finalization_required", worktreePath, worktreeCommit: head };
   }
 
   replaceScalar(ticketFile, "Worktree", "Integration Status", "integrated");
@@ -293,6 +299,53 @@ function verificationCommand(ticketFile: string): string {
   return command;
 }
 
+function commandScore(command: string): number {
+  const lowered = command.toLowerCase();
+  let score = 0;
+  if (lowered.includes("scripts/install-clipshot.sh")) score += 100;
+  if (lowered.includes("scripts/verify-clipshot-install.sh")) score += 50;
+  if (lowered.includes("codesign --verify")) score += 10;
+  if (lowered.includes("swift build")) score += 5;
+  return score;
+}
+
+function normalizeInlineVerificationCommand(raw: string): string {
+  return raw
+    .replace(/`/g, "")
+    .replace(/^(?:PROJECT_ROOT|PROJECT ROOT|ROOT|WORKTREE|TICKET WORKTREE)\s*:\s*/i, "")
+    .replace(/\.\s*$/, "")
+    .trim();
+}
+
+function extractInlineVerificationCommands(text: string): string[] {
+  const candidates: string[] = [];
+  const patterns = [
+    /verification rerun[^\r\n]*?\bcommand=([^\r\n]+)/gi,
+    /Verification passed:\s*([^\r\n]+?)(?:\.\s+Evidence|\s*$)/gi,
+    /`([^`\r\n]*(?:install-clipshot|verify-clipshot-install)[^`\r\n]*)`/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const command = normalizeInlineVerificationCommand(match[1] || "");
+      if (command && !/^(TBD|TODO:?|N\/A|NA|NONE|none-shell)$/i.test(command)) candidates.push(command);
+    }
+  }
+  return candidates;
+}
+
+function postSquashVerificationCommand(doneFile: string): string {
+  const candidates = [verificationCommand(doneFile)];
+  const doneDir = path.dirname(doneFile);
+  let entries: string[] = [];
+  try { entries = fs.readdirSync(doneDir).filter((entry) => /\.md$/i.test(entry)).sort(); } catch { entries = []; }
+  for (const entry of entries) {
+    candidates.push(...extractInlineVerificationCommands(read(path.join(doneDir, entry))));
+  }
+  const uniqueCandidates = unique(candidates).filter(Boolean);
+  uniqueCandidates.sort((a, b) => commandScore(b) - commandScore(a));
+  return uniqueCandidates[0] || "";
+}
+
 export function finalizationPreflight(ticketFile: string): { status: "ok" | "needs_ai_merge" | "blocked"; reason: string; detail: string; command?: string; exitCode?: number } {
   const worktreePath = scalar(ticketFile, "Worktree", "Path");
   const allowed = allowedPaths(ticketFile);
@@ -300,7 +353,8 @@ export function finalizationPreflight(ticketFile: string): { status: "ok" | "nee
   const target = mergeTargetForTicket(ticketFile);
   if (worktreePath && isGitWorktree(worktreePath)) {
     const changed = baseCommit ? changedFiles(worktreePath, baseCommit) : statusPaths(worktreePath);
-    const scopedChanged = changed.filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+    const productAllowed = allowed.filter((item) => !isBoardSidecarPath(item));
+    const scopedChanged = changed.filter((name) => productAllowed.some((ap) => pathsOverlap(name, ap)));
     const mismatched = scopedChanged.filter((relPath) => !rootContainsWorktreeChange(target.root, worktreePath, baseCommit, relPath));
     if (mismatched.length > 0 && !ticketCompletionCommitExists(target.root, ticketFile)) {
       return {
@@ -389,24 +443,17 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
   if (!gitRoot) return { status: "not_git_repo", hash: "", detail: "" };
 
   const prdKey = normalizePrdKey(scalar(doneFile, "Ticket", "PRD Key"));
-  if (/^PRD-\d+$/i.test(prdKey)) {
+  if (prdKey) {
     return commitPrdTrackCompletion(gitRoot, doneFile, ticketId, prdKey, summary);
   }
 
-  const boardRelPath = gitRelativePath(gitRoot, boardRoot);
   const worktreeCommit = scalar(doneFile, "Worktree", "Worktree Commit");
   const productChangesAreCommitted = worktreeCommit ? headContainsCommit(gitRoot, worktreeCommit) : false;
   const allowed = allowedPaths(doneFile);
   const boardOnly = isBoardOnlyTicket(allowed);
+  const productAllowed = allowed.filter((item) => !isBoardSidecarPath(item));
   const candidates = [
-    gitRelativePath(gitRoot, doneFile),
-    path.join(boardRelPath, "tickets", "todo", `TODO-${ticketId}.md`),
-    path.join(boardRelPath, "tickets", "todo", `TODO-${ticketId}.md`),
-    path.join(boardRelPath, "tickets", "inprogress", `TODO-${ticketId}.md`),
-    path.join(boardRelPath, "tickets", "inprogress", `TODO-${ticketId}.md`),
-    path.join(boardRelPath, "tickets", "verifier", `TODO-${ticketId}.md`),
-    path.join(boardRelPath, "tickets", "verifier", `TODO-${ticketId}.md`),
-    ...(productChangesAreCommitted || boardOnly ? [] : allowed),
+    ...(productChangesAreCommitted || boardOnly ? [] : productAllowed),
   ].filter((value) => value && !value.startsWith(".."));
   const stageFailures: string[] = [];
   for (const candidate of unique(candidates)) {
@@ -428,15 +475,17 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
   }
 
   if (git(gitRoot, ["diff", "--cached", "--quiet"]).status === 0) {
-    const dirtyAllowed = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+    const dirtyAllowed = statusPaths(gitRoot)
+      .filter((name) => !isBoardSidecarPath(name))
+      .filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
     if (dirtyAllowed.length > 0) {
       return { status: "dirty_allowed_paths_uncommitted", hash: "", detail: dirtyAllowed.join(",") };
     }
     if (productChangesAreCommitted) {
       return { status: "already_committed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: "" };
     }
-    if (worktreeCommit && allowed.length > 0 && !boardOnly) {
-      return { status: "no_completion_changes_for_allowed_paths", hash: "", detail: allowed.join(",") };
+    if (worktreeCommit && productAllowed.length > 0 && !boardOnly) {
+      return { status: "no_completion_changes_for_allowed_paths", hash: "", detail: productAllowed.join(",") };
     }
     return { status: "no_changes", hash: "", detail: "" };
   }
@@ -449,7 +498,9 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
     return { status: "commit_failed", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail };
   }
   const hash = gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]);
-  const dirtyAllowedAfterCommit = statusPaths(gitRoot).filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
+  const dirtyAllowedAfterCommit = statusPaths(gitRoot)
+    .filter((name) => !isBoardSidecarPath(name))
+    .filter((name) => allowed.some((ap) => pathsOverlap(name, ap)));
   if (dirtyAllowedAfterCommit.length > 0) {
     return { status: "dirty_allowed_paths_after_commit", hash, detail: dirtyAllowedAfterCommit.join(",") };
   }
@@ -462,20 +513,11 @@ function commitPrdTrackCompletion(gitRoot: string, doneFile: string, ticketId: s
     return { status: "prd_branch_missing", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: `${prdKey} PRD branch worktree is not available` };
   }
 
-  const sync = syncDoneTicketToPrdWorktree(gitRoot, target.root, doneFile, ticketId);
-  if (sync.status !== "ok") {
-    return { status: sync.status, hash: gitOut(target.root, ["rev-parse", "--verify", "HEAD"]), detail: sync.detail };
-  }
-
-  const commitBranch = commitIfStaged(target.root, todoCommitSubject(ticketId, "done"));
-  if (commitBranch === "failed") {
-    return { status: "prd_branch_commit_failed", hash: gitOut(target.root, ["rev-parse", "--verify", "HEAD"]), detail: `${prdKey} branch ticket commit failed` };
-  }
   const branchHead = gitOut(target.root, ["rev-parse", "--verify", "HEAD"]);
   if (!prdTodoQueueDrained(prdKey)) {
     replaceScalar(doneFile, "Worktree", "Integration Status", "prd_branch_done_pending");
     return {
-      status: commitBranch === "committed" ? "prd_branch_committed_pending" : "prd_branch_no_changes_pending",
+      status: "prd_branch_no_changes_pending",
       hash: branchHead,
       detail: `${prdKey} still has active TODO tickets`,
     };
@@ -484,50 +526,13 @@ function commitPrdTrackCompletion(gitRoot: string, doneFile: string, ticketId: s
   return squashPrdBranchToMain(gitRoot, target.root, target.branch, prdKey, summary);
 }
 
-function syncDoneTicketToPrdWorktree(gitRoot: string, prdWorktree: string, doneFile: string, ticketId: string): { status: string; detail: string } {
-  const relDone = gitRelativePath(gitRoot, doneFile);
-  if (!relDone || relDone.startsWith("..") || path.isAbsolute(relDone)) {
-    return { status: "prd_done_path_outside_git", detail: doneFile };
-  }
-
-  const dest = path.join(prdWorktree, relDone);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(doneFile, dest);
-  const stale = ticketQueueRelCandidates(gitRoot, ticketId);
-  for (const rel of stale) {
-    git(prdWorktree, ["rm", "-f", "--ignore-unmatch", "--", rel]);
-  }
-  const add = spawnSync("git", ["add", "-A", "--", relDone], { cwd: prdWorktree, encoding: "utf8" });
-  if (add.status !== 0) {
-    return { status: "prd_branch_stage_failed", detail: oneLine(`${add.stderr || ""} ${add.stdout || ""}`) };
-  }
-  return { status: "ok", detail: "" };
-}
-
-function ticketQueueRelCandidates(gitRoot: string, ticketId: string): string[] {
-  const boardRelPath = gitRelativePath(gitRoot, boardRoot);
-  const names = [`TODO-${ticketId}.md`, `Todo-${ticketId}.md`, `tickets_${ticketId}.md`];
-  const states = ["todo", "inprogress", "verifier", "ready-to-merge"];
-  const out: string[] = [];
-  for (const state of states) {
-    for (const name of names) out.push(path.join(boardRelPath, "tickets", state, name));
-  }
-  return unique(out).filter((value) => value && !value.startsWith(".."));
-}
-
-function commitIfStaged(cwd: string, message: string): "committed" | "no_changes" | "failed" {
-  if (git(cwd, ["diff", "--cached", "--quiet"]).status === 0) return "no_changes";
-  const commit = spawnSync("git", ["commit", "-m", message], { cwd, encoding: "utf8" });
-  return commit.status === 0 ? "committed" : "failed";
-}
-
 function prdTodoQueueDrained(prdKey: string): boolean {
-  for (const state of ["todo", "inprogress", "verifier", "ready-to-merge"]) {
+  for (const state of ["todo", "inprogress", "verifier"]) {
     const dir = path.join(boardRoot, "tickets", state);
     let entries: string[] = [];
     try { entries = fs.readdirSync(dir); } catch { continue; }
     for (const entry of entries) {
-      if (!/^TODO-\d+\.md$/i.test(entry) && !/^Todo-\d+\.md$/.test(entry) && !/^tickets_\d+\.md$/i.test(entry)) continue;
+      if (!/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(entry) && !/^Todo-\d+\.md$/.test(entry) && !/^tickets_\d+\.md$/i.test(entry)) continue;
       const candidate = path.join(dir, entry);
       if (normalizePrdKey(scalar(candidate, "Ticket", "PRD Key")) === prdKey) return false;
     }
@@ -541,10 +546,6 @@ function squashPrdBranchToMain(gitRoot: string, prdWorktree: string, branch: str
     return { status: "prd_squash_blocked", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: "PROJECT_ROOT is checked out on the PRD branch" };
   }
 
-  // New installs often have untracked board files until the first PRD squash.
-  // Stage the PRD-scoped board state before merge so --autostash can move it
-  // out of the way and restore it into the final squash commit.
-  stagePrdBoardState(gitRoot, prdKey);
   const merge = spawnSync("git", ["merge", "--squash", "--autostash", branch], { cwd: gitRoot, encoding: "utf8" });
   if (merge.status !== 0) {
     const detail = oneLine(`${merge.stderr || ""} ${merge.stdout || ""}`) || `git merge --squash exited ${merge.status ?? 1}`;
@@ -556,7 +557,16 @@ function squashPrdBranchToMain(gitRoot: string, prdWorktree: string, branch: str
     return { status: "prd_archive_missing", hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]), detail: `${prdKey} PRD file not found` };
   }
 
-  stagePrdBoardState(gitRoot, prdKey);
+  const postMergeVerification = runPostSquashVerification(gitRoot, prdDoneFile);
+  if (postMergeVerification.status !== "ok") {
+    return {
+      status: "prd_squash_post_verify_failed",
+      hash: gitOut(gitRoot, ["rev-parse", "--verify", "HEAD"]),
+      detail: postMergeVerification.detail,
+    };
+  }
+
+  stageAllowedPaths(gitRoot, prdDoneFile);
   if (git(gitRoot, ["diff", "--cached", "--quiet"]).status === 0) {
     replaceScalar(prdDoneFile, "Project", "Status", "done");
     cleanupPrdBranch(gitRoot, prdWorktree, branch);
@@ -576,6 +586,52 @@ function squashPrdBranchToMain(gitRoot: string, prdWorktree: string, branch: str
   return { status: "prd_squash_committed", hash, detail: "" };
 }
 
+function runPostSquashVerification(gitRoot: string, doneFile: string): { status: "ok" | "failed"; detail: string } {
+  const command = postSquashVerificationCommand(doneFile);
+  if (!command || process.env.AUTOFLOW_FINALIZE_RUN_VERIFICATION === "0") {
+    return { status: "ok", detail: command ? "post squash verification skipped by env" : "verification command empty" };
+  }
+  const timeout = positiveInt(process.env.AUTOFLOW_FINALIZE_VERIFY_TIMEOUT_MS || "", 120000);
+  const result = spawnSync(command, {
+    cwd: gitRoot,
+    encoding: "utf8",
+    shell: true,
+    timeout,
+  });
+  const exitCode = typeof result.status === "number" ? result.status : 1;
+  cleanupVerificationArtifacts(gitRoot, doneFile);
+  replaceScalar(doneFile, "Verification", "Post Squash Exit Code", String(exitCode));
+  replaceScalar(doneFile, "Verification", "Post Squash Last Run", timestamp);
+  appendNote(doneFile, `main post-squash verification rerun at ${timestamp}: exit_code=${exitCode} command=${command}`);
+  if (exitCode !== 0 || result.error) {
+    const detail = result.error
+      ? `post-squash verification failed before completion: ${oneLine(String(result.error), 240)}`
+      : `post-squash verification exited ${exitCode}; stdout/stderr omitted from ticket note`;
+    return { status: "failed", detail };
+  }
+  return { status: "ok", detail: "" };
+}
+
+function cleanupVerificationArtifacts(gitRoot: string, doneFile: string): void {
+  const allowed = allowedPaths(doneFile).map(normalizeRelPath);
+  if (allowed.some((rel) => rel === ".build" || rel.startsWith(".build/"))) return;
+  const buildDir = path.join(gitRoot, ".build");
+  if (!fs.existsSync(buildDir)) return;
+  git(gitRoot, ["restore", "--worktree", "--", ".build"]);
+  git(gitRoot, ["clean", "-ffdx", "--", ".build"]);
+}
+
+function stageAllowedPaths(gitRoot: string, doneFile: string): void {
+  const allowed = allowedPaths(doneFile)
+    .map(normalizeRelPath)
+    .filter((value) => value && !value.startsWith("..") && !path.isAbsolute(value) && !isBoardSidecarPath(value));
+  for (const rel of unique(allowed)) {
+    const tracked = git(gitRoot, ["ls-files", "--error-unmatch", "--", rel]).status === 0;
+    if (!fs.existsSync(path.join(gitRoot, rel)) && !tracked) continue;
+    spawnSync("git", ["add", "-A", "--", rel], { cwd: gitRoot, encoding: "utf8" });
+  }
+}
+
 function archivePrdDone(prdKey: string): string {
   const active = path.join(boardRoot, "tickets", "prd", `${prdKey}.md`);
   const doneDir = path.join(boardRoot, "tickets", "done", safeSegment(prdKey));
@@ -592,36 +648,33 @@ function archivePrdDone(prdKey: string): string {
   return fs.existsSync(done) ? done : "";
 }
 
-function stagePrdBoardState(gitRoot: string, prdKey: string): void {
-  const boardRelPath = gitRelativePath(gitRoot, boardRoot);
-  const doneDir = path.join(boardRelPath, "tickets", "done", safeSegment(prdKey));
-  const prdActive = path.join(boardRelPath, "tickets", "prd", `${prdKey}.md`);
-  const ids = doneTodoIds(prdKey);
-  const candidates = [doneDir, prdActive, ...ids.flatMap((id) => ticketQueueRelCandidates(gitRoot, id))];
-  for (const candidate of unique(candidates)) {
-    if (!candidate || candidate.startsWith("..")) continue;
-    const tracked = git(gitRoot, ["ls-files", "--error-unmatch", "--", candidate]).status === 0;
-    if (!fs.existsSync(path.join(gitRoot, candidate)) && !tracked) continue;
-    spawnSync("git", ["add", "-A", "--", candidate], { cwd: gitRoot, encoding: "utf8" });
-  }
-}
-
-function doneTodoIds(prdKey: string): string[] {
-  const dir = path.join(boardRoot, "tickets", "done", safeSegment(prdKey));
-  let entries: string[] = [];
-  try { entries = fs.readdirSync(dir); } catch { return []; }
-  return unique(entries.map((entry) => ticketIdFromFile(entry)).filter(Boolean));
-}
-
 function prdCommitMessage(prdKey: string, _prdDoneFile: string, _summary: string): string {
   return prdCommitSubject(prdKey);
 }
 
 function cleanupPrdBranch(gitRoot: string, prdWorktree: string, branch: string): void {
-  if (prdWorktree && path.resolve(prdWorktree) !== path.resolve(gitRoot) && fs.existsSync(prdWorktree)) {
-    git(gitRoot, ["worktree", "remove", "--force", prdWorktree]);
+  const checkedOut = branch ? worktreePathForBranch(gitRoot, branch) : "";
+  const cleanupTarget = checkedOut || prdWorktree;
+  if (cleanupTarget && isSafeAutoflowWorktree(gitRoot, cleanupTarget) && fs.existsSync(cleanupTarget)) {
+    const removed = git(gitRoot, ["worktree", "remove", "--force", "--force", cleanupTarget]).status === 0;
+    if (!removed && isSafeAutoflowWorktree(gitRoot, cleanupTarget)) {
+      fs.rmSync(cleanupTarget, { recursive: true, force: true });
+      git(gitRoot, ["worktree", "prune"]);
+    }
   }
-  if (branch) git(gitRoot, ["branch", "-D", branch]);
+  if (branch && isManagedPrdBranch(branch)) {
+    git(gitRoot, ["branch", "-D", branch]);
+  }
+}
+
+function isSafeAutoflowWorktree(gitRoot: string, candidate: string): boolean {
+  const resolved = path.resolve(candidate);
+  if (!resolved || resolved === path.resolve(gitRoot) || resolved === path.resolve(projectRoot)) return false;
+  return (
+    resolved.includes(`${path.sep}autoflow${path.sep}worktrees${path.sep}`) ||
+    resolved.includes(`${path.sep}.autoflow${path.sep}worktrees${path.sep}`) ||
+    resolved.includes(`${path.sep}Library${path.sep}Caches${path.sep}autoflow${path.sep}worktrees${path.sep}`)
+  );
 }
 
 function clearCurrentPrdState(prdKey: string): void {
@@ -635,7 +688,9 @@ function clearCurrentPrdState(prdKey: string): void {
 
 function normalizePrdKey(value: string): string {
   const trimmed = value.trim();
+  const scoped = trimmed.match(/PRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)/i);
+  if (scoped) return `PRD-${normalizeId(scoped[1])}`;
   const numeric = trimmed.match(/(?:PRD[-_]|prd_|project_)(\d+)/i);
   if (numeric) return `PRD-${numeric[1].padStart(3, "0")}`;
-  return trimmed.toUpperCase().replace(/_/g, "-");
+  return "";
 }

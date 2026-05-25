@@ -15,69 +15,77 @@ const ticketsRoot = path.join(boardRoot, "tickets");
 const doneRoot = path.join(ticketsRoot, "done");
 
 if (!fs.existsSync(doneRoot)) {
-  process.exit(1);
+    process.exit(1);
 }
 
 function readFile(p) {
-  try { return fs.readFileSync(p, "utf8"); } catch { return ""; }
+    try {
+        return fs.readFileSync(p, "utf8");
+    } catch {
+        return "";
+    }
 }
 
 function nowIso() {
-  return new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    return new Date().toISOString().replace(/\.\d+Z$/, "Z");
 }
 
 function extractTitle(content, fallback) {
-  const m = content.match(/^#\s+(.+)$/m);
-  if (!m) return fallback;
-  return m[1].replace(/^PRD\s+\d+:\s*/i, "").replace(/^PRD\s+PRD-\d+:\s*/i, "").trim() || fallback;
+    const m = content.match(/^#\s+(.+)$/m);
+    if (!m) return fallback;
+    return m[1].replace(/^PRD\s+\d+:\s*/i, "").replace(/^PRD\s+PRD-\d+:\s*/i, "").trim() || fallback;
 }
 
 function listExistingTicketIds() {
-  const ids = [];
-  const walk = (dir) => {
-    if (!fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { walk(full); continue; }
-      const m = entry.name.match(/^TODO-(\d+)\.md$/);
-      if (m) ids.push(Number.parseInt(m[1], 10));
-    }
-  };
-  walk(ticketsRoot);
-  return ids;
+    const ids = [];
+    const walk = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                walk(full);
+                continue;
+            }
+            const m = entry.name.match(/^TODO-(\d+)\.md$/);
+            if (m) ids.push(Number.parseInt(m[1], 10));
+        }
+    };
+    walk(ticketsRoot);
+    return ids;
 }
 
 let nextId = (Math.max(0, ...listExistingTicketIds()) || 0);
+
 function takeNextId() {
-  nextId += 1;
-  return String(nextId).padStart(3, "0");
+    nextId += 1;
+    return String(nextId).padStart(3, "0");
 }
 
 function todoReferencesPrdKey(file, prdKey) {
-  const re = new RegExp(`^-\\s*PRD Key\\s*:\\s*${prdKey}\\b`, "im");
-  return re.test(readFile(file));
+    const re = new RegExp(`^-\\s*PRD Key\\s*:\\s*${prdKey}\\b`, "im");
+    return re.test(readFile(file));
 }
 
 function boardHasTodoFor(prdKey) {
-  for (const bucket of ["todo", "inprogress", "verifier"]) {
-    const dir = path.join(ticketsRoot, bucket);
-    if (!fs.existsSync(dir)) continue;
-    for (const name of fs.readdirSync(dir)) {
-      if (!/^TODO-\d+\.md$/.test(name)) continue;
-      if (todoReferencesPrdKey(path.join(dir, name), prdKey)) return true;
+    for (const bucket of ["todo", "inprogress", "verifier"]) {
+        const dir = path.join(ticketsRoot, bucket);
+        if (!fs.existsSync(dir)) continue;
+        for (const name of fs.readdirSync(dir)) {
+            if (!/^TODO-\d+\.md$/.test(name)) continue;
+            if (todoReferencesPrdKey(path.join(dir, name), prdKey)) return true;
+        }
     }
-  }
-  const doneProjectDir = path.join(doneRoot, prdKey);
-  if (fs.existsSync(doneProjectDir)) {
-    for (const name of fs.readdirSync(doneProjectDir)) {
-      if (/^TODO-\d+\.md$/.test(name)) return true;
+    const doneProjectDir = path.join(doneRoot, prdKey);
+    if (fs.existsSync(doneProjectDir)) {
+        for (const name of fs.readdirSync(doneProjectDir)) {
+            if (/^TODO-\d+\.md$/.test(name)) return true;
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 function buildRetroactiveTodo(prdKey, prdTitle, prdRef, ticketId, timestamp) {
-  return `# Ticket
+    return `# Ticket
 
 ## Ticket
 
@@ -152,7 +160,7 @@ function buildRetroactiveTodo(prdKey, prdTitle, prdRef, ticketId, timestamp) {
 
 - Current state: retroactive backfill 완료. PRD ${prdKey} 의 done 상태와 동기화됨.
 - Last completed action: ${timestamp} backfill-orphan-prd-todos.mjs 가 본 Todo 를 생성했다.
-- First thing to inspect on resume: 만약 본 PRD 에 실제 후속 구현 작업이 필요하다는 evidence 가 나타나면 새 PRD 또는 atodo 로 발행한다.
+- First thing to inspect on resume: 만약 본 PRD 에 실제 후속 구현 작업이 필요하다는 evidence 가 나타나면 새 PRD turn으로 발행한다.
 
 ## Notes
 
@@ -176,11 +184,11 @@ function buildRetroactiveTodo(prdKey, prdTitle, prdRef, ticketId, timestamp) {
 
 let projectDirs = [];
 try {
-  projectDirs = fs.readdirSync(doneRoot, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && /^(PRD)-\d+$/i.test(e.name))
-    .map((e) => e.name);
+    projectDirs = fs.readdirSync(doneRoot, {withFileTypes: true})
+        .filter((e) => e.isDirectory() && /^(PRD)-\d+$/i.test(e.name))
+        .map((e) => e.name);
 } catch (error) {
-  process.exit(1);
+    process.exit(1);
 }
 
 const timestamp = nowIso();
@@ -188,27 +196,27 @@ const created = [];
 const skipped = [];
 
 for (const projectKey of projectDirs) {
-  const projectDir = path.join(doneRoot, projectKey);
-  const prdFile = path.join(projectDir, `${projectKey}.md`);
-  if (!fs.existsSync(prdFile)) {
-    skipped.push(`${projectKey}:no_prd_file`);
-    continue;
-  }
-  if (boardHasTodoFor(projectKey)) {
-    skipped.push(`${projectKey}:has_todo`);
-    continue;
-  }
-  const prdContent = readFile(prdFile);
-  const prdTitle = extractTitle(prdContent, projectKey);
-  const ticketId = takeNextId();
-  const prdRef = `tickets/done/${projectKey}/${projectKey}.md`;
-  const todoFile = path.join(projectDir, `TODO-${ticketId}.md`);
-  if (fs.existsSync(todoFile)) {
-    skipped.push(`${projectKey}:todo_conflict`);
-    continue;
-  }
-  fs.writeFileSync(todoFile, buildRetroactiveTodo(projectKey, prdTitle, prdRef, ticketId, timestamp), "utf8");
-  created.push(`${projectKey}->TODO-${ticketId}`);
+    const projectDir = path.join(doneRoot, projectKey);
+    const prdFile = path.join(projectDir, `${projectKey}.md`);
+    if (!fs.existsSync(prdFile)) {
+        skipped.push(`${projectKey}:no_prd_file`);
+        continue;
+    }
+    if (boardHasTodoFor(projectKey)) {
+        skipped.push(`${projectKey}:has_todo`);
+        continue;
+    }
+    const prdContent = readFile(prdFile);
+    const prdTitle = extractTitle(prdContent, projectKey);
+    const ticketId = takeNextId();
+    const prdRef = `tickets/done/${projectKey}/${projectKey}.md`;
+    const todoFile = path.join(projectDir, `TODO-${ticketId}.md`);
+    if (fs.existsSync(todoFile)) {
+        skipped.push(`${projectKey}:todo_conflict`);
+        continue;
+    }
+    fs.writeFileSync(todoFile, buildRetroactiveTodo(projectKey, prdTitle, prdRef, ticketId, timestamp), "utf8");
+    created.push(`${projectKey}->TODO-${ticketId}`);
 }
 
 void created;

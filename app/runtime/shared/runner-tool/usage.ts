@@ -10,26 +10,26 @@ export function usage(): void {
   autoflow tool runner-tool planner guard [--strict]
 
   autoflow tool runner-tool worker active-get [--runner <id>]
-  autoflow tool runner-tool worker todo-snapshot [--runner <id>]
-  autoflow tool runner-tool worker claim --ticket <TODO-NNN|path> [--runner <id>]
-  autoflow tool runner-tool worker worktree-status --ticket <TODO-NNN|path>
-  autoflow tool runner-tool worker worktree-ensure --ticket <TODO-NNN|path>
-  autoflow tool runner-tool worker stage-set --ticket <TODO-NNN|path> --stage <value> [--runner <id>]
-  autoflow tool runner-tool worker context-update --ticket <TODO-NNN|path> [--next-action <text>] [--resume-current <text>] [--resume-last <text>] [--resume-first <text>] [--note <text>]
-  autoflow tool runner-tool worker verification-record --ticket <TODO-NNN|path> --result <value> [--command <cmd>] [--exit-code <n>] [--summary <text>|--summary-file <file>]
-  autoflow tool runner-tool worker done-when-check --ticket <TODO-NNN|path>
-  autoflow tool runner-tool worker diff-check --ticket <TODO-NNN|path>
-  autoflow tool runner-tool worker code-report --ticket <TODO-NNN|path> [--runner <id>]
-  autoflow tool runner-tool worker submit-to-verifier --ticket <TODO-NNN|path> --summary <text>
-  autoflow tool runner-tool worker finalize-approved --ticket <TODO-NNN|path> --summary <text>
-  autoflow tool runner-tool worker request-replan --ticket <TODO-NNN|path> --reason <text>
+  autoflow tool runner-tool worker work-snapshot [--runner <id>]
+  autoflow tool runner-tool worker claim --ticket <work-item-id|path> [--runner <id>]
+  autoflow tool runner-tool worker worktree-status --ticket <work-item-id|path>
+  autoflow tool runner-tool worker worktree-ensure --ticket <work-item-id|path>
+  autoflow tool runner-tool worker stage-set --ticket <work-item-id|path> --stage <value> [--runner <id>]
+  autoflow tool runner-tool worker context-update --ticket <work-item-id|path> [--next-action <text>] [--resume-current <text>] [--resume-last <text>] [--resume-first <text>] [--note <text>]
+  autoflow tool runner-tool worker verification-record --ticket <work-item-id|path> --result <value> [--command <cmd>] [--exit-code <n>] [--summary <text>|--summary-file <file>]
+  autoflow tool runner-tool worker done-when-check --ticket <work-item-id|path>
+  autoflow tool runner-tool worker diff-check --ticket <work-item-id|path>
+  autoflow tool runner-tool worker code-report --ticket <work-item-id|path> [--runner <id>]
+  autoflow tool runner-tool worker submit-to-verifier --ticket <work-item-id|path> --summary <text>
+  autoflow tool runner-tool worker finalize-approved --ticket <work-item-id|path> --summary <text>
+  autoflow tool runner-tool worker request-replan --ticket <work-item-id|path> --reason <text>
 
   autoflow tool runner-tool verifier queue-snapshot [--runner <id>]
-  autoflow tool runner-tool verifier evidence --ticket <TODO-NNN|path> [--patch-bytes <n>]
-  autoflow tool runner-tool verifier decision-record --ticket <TODO-NNN|path> --decision <pass|revise|replan> --reason <text> [--runner <id>]
-  autoflow tool runner-tool verifier approve-merge --ticket <TODO-NNN|path> --summary <text> [--runner <id>]
-  autoflow tool runner-tool verifier request-revision --ticket <TODO-NNN|path> --reason <text> [--runner <id>]
-  autoflow tool runner-tool verifier request-replan --ticket <TODO-NNN|path> --reason <text> [--runner <id>]
+  autoflow tool runner-tool verifier evidence --ticket <work-item-id|path> [--patch-bytes <n>]
+  autoflow tool runner-tool verifier decision-record --ticket <work-item-id|path> --decision <pass|revise|replan> --reason <text> [--runner <id>]
+  autoflow tool runner-tool verifier pass --ticket <work-item-id|path> --summary <text> [--runner <id>]
+  autoflow tool runner-tool verifier request-revision --ticket <work-item-id|path> --reason <text> [--runner <id>]
+  autoflow tool runner-tool verifier request-replan --ticket <work-item-id|path> --reason <text> [--runner <id>]
 
   autoflow tool runner-tool wiki source-snapshot [--runner <id>] [--max-items <n>]
   autoflow tool runner-tool wiki tick [--runner <id>] [--max-items <n>] [--window 7d|30d|all] [--skip-telemetry] [--skip-lint] [--force-index] [--wait-index] [--no-index] [--no-tickets] [--verbose]
@@ -37,10 +37,10 @@ export function usage(): void {
   autoflow tool runner-tool wiki query --term <text> [--term <text>]... [--limit <n>] [--rag] [--synth] [--save-as <slug>] [--runner <id>]
   autoflow tool runner-tool wiki lint [--runner <id>]
   autoflow tool runner-tool wiki index-refresh [--no-tickets] [--runner <id>]
-  autoflow tool runner-tool wiki ingest [--no-tickets] [--runner <id>]  # compatibility alias for index-refresh
+  autoflow tool runner-tool wiki ingest [--no-tickets] [--runner <id>]
   autoflow tool runner-tool wiki write-page --path wiki/<path>.md --content-file <file> [--overwrite]
   autoflow tool runner-tool wiki diff-snapshot
 
-Output is JSON. Runner tools do not infer scope, draft Done When, or choose work.
+출력은 JSON입니다. Runner tool은 scope, Done When, work 선택을 추론하지 않습니다. runner assignment가 있으면 요청 item과 맞아야 하며, 없으면 4개 고정 러너가 해당 role의 대기열에서 하나만 선택해 실행합니다.
 `);
 }

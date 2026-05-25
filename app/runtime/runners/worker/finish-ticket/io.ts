@@ -1,12 +1,14 @@
 import {fs, path, boardRoot, type PairMap} from "./context";
 
 export function idFromTicketPath(file: string): string {
-  const match = path.basename(file).match(/(\d+)/);
-  return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
+  return normalizeId(path.basename(file));
 }
 
 export function normalizeId(value: string): string {
-  const match = value.match(/(\d+)/);
+  const raw = String(value || "").trim().replace(/\.md$/i, "").replace(/^(?:PRD|TODO)-/i, "");
+  const scoped = raw.match(/^([A-Za-z0-9][A-Za-z0-9_.-]*)-(\d+)$/);
+  if (scoped) return `${scoped[1].toLowerCase()}-${scoped[2].padStart(3, "0")}`;
+  const match = raw.match(/(\d+)/);
   return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
 }
 

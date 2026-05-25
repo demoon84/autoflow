@@ -6,10 +6,9 @@ import {printToolCatalog} from "./system/tool-catalog";
 import {runRuntimeTool} from "./system/tool-run";
 import {installBoard} from "./system/install-board";
 import {installCli} from "./system/install-cli";
-import {stopHookProject} from "./system/stop-hook";
+import {devLinkProject} from "./system/dev-link";
 import {watchProject} from "./system/watch";
 import {specProject} from "./runners/planner/spec";
-import {todoProject} from "./runners/planner/todo";
 import {runRole} from "./system/run-role";
 import {wikiProject} from "./runners/wiki/wiki";
 import {runnersProject} from "./system/runners";
@@ -43,14 +42,8 @@ function runAutoflow(argv: string[]): void {
         case "install-cli":
             installCli(argv);
             break;
-        case "install-stop-hook":
-            stopHookProject(["install", ...argv]);
-            break;
-        case "remove-stop-hook":
-            stopHookProject(["remove", ...argv]);
-            break;
-        case "stop-hook-status":
-            stopHookProject(["status", ...argv]);
+        case "dev-link":
+            devLinkProject(argv);
             break;
         case "watch":
             watchProject(argv);
@@ -67,9 +60,6 @@ function runAutoflow(argv: string[]): void {
         case "prd":
         case "spec":
             specProject(argv);
-            break;
-        case "todo":
-            todoProject(argv);
             break;
         case "run":
             runRole(argv);

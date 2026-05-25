@@ -73,3 +73,8 @@ dist-installer/
 # Auto-rotated backups (kept locally only)
 /.autoflow/metrics/*.before-reset.*
 /.autoflow/metrics/*.before-reset.*Z
+
+# Autoflow local harness
+.autoflow-worktrees/
+*.local
+npm-debug.log*

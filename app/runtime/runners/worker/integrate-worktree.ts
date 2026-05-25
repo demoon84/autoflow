@@ -114,11 +114,10 @@ utils.gitOutput(["commit", "-m", `autoflow ticket ${ticketId} code snapshot`], w
 const wtCommit = utils.gitOutput(["rev-parse", "--verify", "HEAD"], worktreePath).trim();
 
 utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Worktree Commit", wtCommit);
-utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Integration Status", "needs_ai_merge");
-utils.appendNote(ticketFile, `Worktree snapshot ${wtCommit} prepared at ${timestamp}; AI must manually merge it into PROJECT_ROOT. integrate-worktree did not run rebase, cherry-pick, conflict resolution, or product-code merge because scripts are tools, not merge actors.`);
+utils.replaceScalarFieldInSection(ticketFile, "Worktree", "Integration Status", "prd_branch_committed");
+utils.appendNote(ticketFile, `PRD worktree commit ${wtCommit} recorded at ${timestamp}. 이 TODO 가 PRD branch 의 마지막 work item 이면 worker 가 main 으로 squash merge 하고 PRD worktree 를 삭제한다.`);
 
-process.stdout.write(`status=needs_ai_merge\n`);
-process.stdout.write(`reason=ai_merge_required\n`);
+process.stdout.write(`status=prd_branch_committed\n`);
 process.stdout.write(`ticket_id=${ticketId}\n`);
 process.stdout.write(`worktree_path=${worktreePath}\n`);
 process.stdout.write(`worktree_commit=${wtCommit}\n`);

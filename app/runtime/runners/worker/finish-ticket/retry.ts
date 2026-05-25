@@ -6,8 +6,6 @@ import {positiveInt, printPairs} from "./io";
 export function routeToTodoReplan(ticketFile: string, ticketId: string, failure: string, replanMessage: string): void {
   const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
   const title = scalar(ticketFile, "Ticket", "Title");
-  const priorPriority = scalar(ticketFile, "Ticket", "Priority").toLowerCase();
-  const retryPriority = priorPriority === "critical" || priorPriority === "high" ? priorPriority : "high";
   if (replanMessage) appendReplanReason(ticketFile, replanMessage);
 
   const fpInput = `${prdKey}|${title}|${failure}|${replanMessage}`;
@@ -30,7 +28,6 @@ export function routeToTodoReplan(ticketFile: string, ticketId: string, failure:
   }
 
   replaceScalar(todoFile, "Ticket", "Stage", decision === "needs_user" ? "needs_user" : "todo");
-  replaceScalar(todoFile, "Ticket", "Priority", retryPriority);
   replaceScalar(todoFile, "Ticket", "Claimed By", "");
   replaceScalar(todoFile, "Ticket", "Execution AI", "");
   replaceScalar(todoFile, "Ticket", "Verifier Runner", "");

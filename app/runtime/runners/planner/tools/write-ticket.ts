@@ -111,6 +111,7 @@ const {
   priorityRank,
   idFromPath,
   normalizeId,
+  normalizePrdKey,
   getArg,
   getArgs,
   hasFlag,
@@ -118,6 +119,9 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignmentForItem,
+  startAssignmentIfLeased,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -172,23 +176,24 @@ function prdBodyExists(prdKey: string): boolean {
 }
 
 function enforcePrdReferenceExists(content: string): void {
-  // Reject TODOs that self-declare a `PRD Key: PRD-NNN` whose PRD body does
-  // not exist on the board. Without this gate, a TODO can claim provenance
-  // from a PRD that was lost (e.g. when `.autoflow/` was temporarily
-  // gitignored), leaving the UI to render an orphan "PRD 없음" group.
-  // `/atodo`-direct TODOs leave the PRD Key blank and pass through this gate.
+  // Reject work items that self-declare a `PRD Key: PRD-NNN` whose PRD body
+  // does not exist on the board. Without this gate, a work item can claim
+  // provenance from a PRD that was lost, leaving the UI to render an orphan
+  // "PRD 없음" group.
   const prdKey = scalarFromTicketContent(content, "PRD Key");
-  if (!/^PRD-\d+$/.test(prdKey)) return;
-  if (prdBodyExists(prdKey)) return;
+  const normalizedPrdKey = normalizePrdKey(prdKey);
+  if (!normalizedPrdKey) return;
+  if (prdBodyExists(normalizedPrdKey)) return;
   if (hasFlag("--allow-missing-prd")) return;
-  fail(2, `ticket references PRD Key=${prdKey} but no PRD body exists at tickets/prd/${prdKey}.md or tickets/done/${prdKey}/${prdKey}.md; refuse to create an orphan TODO. Pass --allow-missing-prd to override for reconstructed-stub or migration scenarios.`, {
-    prd_key: prdKey,
+  fail(2, `ticket references PRD Key=${normalizedPrdKey} but no PRD body exists at tickets/prd/${normalizedPrdKey}.md or tickets/done/${normalizedPrdKey}/${normalizedPrdKey}.md; refuse to create an orphan work item. Pass --allow-missing-prd to override for reconstructed-stub or migration scenarios.`, {
+    prd_key: normalizedPrdKey,
     rule: "todo_requires_existing_prd",
   });
 }
 
 function prdBranchFromKey(prdKey: string): string {
-  if (!/^PRD-\d+$/.test(prdKey)) return "";
+  prdKey = normalizePrdKey(prdKey);
+  if (!prdKey) return "";
   const candidates = [
     path.join(TICKETS_ROOT, "prd", `${prdKey}.md`),
     path.join(TICKETS_ROOT, "done", prdKey, `${prdKey}.md`),
@@ -202,23 +207,31 @@ function prdBranchFromKey(prdKey: string): string {
 }
 
 function enforcePrdWorktreeAvailable(content: string): void {
-  const prdKey = scalarFromTicketContent(content, "PRD Key");
-  if (!/^PRD-\d+$/.test(prdKey)) return;
+  const prdKey = normalizePrdKey(scalarFromTicketContent(content, "PRD Key"));
+  if (!prdKey) return;
   const branch = prdBranchFromKey(prdKey);
   if (!branch) {
-    fail(2, `ticket references ${prdKey}, but that PRD has no Branch field; PRD-derived TODO cannot create a TODO worktree`, {
+    fail(2, `ticket references ${prdKey}, but that PRD has no Branch field; PRD-derived work item cannot create an independent worktree`, {
       prd_key: prdKey,
       rule: "prd_todo_requires_prd_worktree",
     });
   }
   const gitRoot = utils.gitRootPath(PROJECT_ROOT);
   if (!gitRoot || !gitBranchExists(gitRoot, branch)) {
-    fail(2, `ticket references ${prdKey}, but PRD branch ${branch} is missing; PRD-derived TODO cannot create a TODO worktree`, {
+    fail(2, `ticket references ${prdKey}, but PRD branch ${branch} is missing; PRD-derived work item cannot create an independent worktree`, {
       prd_key: prdKey,
       branch,
       rule: "prd_todo_requires_prd_worktree",
     });
   }
+}
+
+function plannerAssignmentCandidateForWorkItem(content: string, fallbackTarget: string): string {
+  const prdKey = normalizePrdKey(scalarFromTicketContent(content, "PRD Key"));
+  if (prdKey) return path.join(TICKETS_ROOT, "prd", `${prdKey}.md`);
+  const refs = sourcePrdRefsFromTicketContent(content);
+  if (refs.length > 0) return refs[0];
+  return fallbackTarget;
 }
 
 function uniqueArchiveTarget(doneDir: string, filename: string): string {
@@ -264,27 +277,30 @@ function archiveConsumedPrdSources(content: string, ticketId: string): JsonObjec
 }
 
 export function cmdPlannerWriteTicket(): void {
+  const runnerId = currentRunnerId("planner");
   const payload = readWritePayload();
   const id = normalizeId(getArg("--id") || stringValue(payload.id) || extractIdFromContent(payload.content, "ticket"));
-  if (!id) fail(2, "write-ticket requires --id or content with Todo-NNN");
+  if (!id) fail(2, "write-ticket requires --id or content with a work item id");
   const target = path.join(TICKETS_ROOT, "todo", `TODO-${id}.md`);
+  const assignment = requireRoleAssignmentForItem("planner", plannerAssignmentCandidateForWorkItem(payload.content, target), runnerId);
+  const activeAssignment = startAssignmentIfLeased(assignment);
 
   validateNoUnsafeWrite(target, hasFlag("--overwrite"));
   validateTicketContent(payload.content, id);
   enforcePrdReferenceExists(payload.content);
   enforcePrdWorktreeAvailable(payload.content);
 
-  // 1) Persist to main board (backward-compat queue scan).
+  // 1) Persist to main board.
   writeAtomic(target, payload.content);
   releaseReservation(getArg("--reservation") || stringValue(payload.reservation));
   const archivedPrds = archiveConsumedPrdSources(payload.content, id);
 
-  // 2) Commit ticket markdown into the correct worktree. PRD-derived TODOs
-  //    reuse the PRD worktree; only atodo/direct TODOs create TODO worktrees.
+  // 2) Provision the correct worktree. Ticket markdown stays in the local
+  //    board; PRD-derived work items reuse the PRD worktree.
   const prdKey = scalarFromTicketContent(payload.content, "PRD Key");
   const wt = ensureTicketWorktree({ id, kind: "todo", content: payload.content, prdKey });
   if (prdKey && wt.status === "skipped") {
-    fail(1, "PRD-derived TODO could not use the PRD worktree", {
+    fail(1, "PRD-derived work item could not use the PRD worktree", {
       prd_key: prdKey,
       reason: wt.reason || "unknown",
       branch: wt.branch,
@@ -298,7 +314,7 @@ export function cmdPlannerWriteTicket(): void {
     utils.replaceScalarFieldInSection(target, "Worktree", "Integration Status", "ready");
   }
 
-  const contextReset = emitRunnerContextReset(currentRunnerId("planner"), "planner.write-ticket", "compact", {
+  const contextReset = emitRunnerContextReset(runnerId, "planner.write-ticket", "compact", {
     tool: "planner.write-ticket",
     ticket_id: `TODO-${id}`,
     path: boardRel(target),
@@ -307,6 +323,8 @@ export function cmdPlannerWriteTicket(): void {
   ok({
     tool: "planner.write-ticket",
     status: "ok",
+    runner: runnerId,
+    assignment: compactAssignment(activeAssignment),
     id: `TODO-${id}`,
     path: boardRel(target),
     archived_prds: archivedPrds,

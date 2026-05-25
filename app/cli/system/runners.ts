@@ -6,8 +6,6 @@ const allowedRunnerRoles = new Set([
     "planner",
     "verifier",
     "wiki-maintainer",
-    "todo",
-    "watcher",
 ]);
 
 function normalizeRunnerRole(role: string): string {
@@ -17,15 +15,11 @@ function normalizeRunnerRole(role: string): string {
     if (value === "verify") return "verifier";
     if (value === "wiki") return "wiki-maintainer";
     if (value === "coord") return "coordinator";
-    if (value === "merge" || value === "merge-bot") return "worker";
     return value;
 }
 
 function requireRunnerRole(role: string): string {
     const raw = role.toLowerCase();
-    if (raw === "merge" || raw === "merge-bot") {
-        fail(`Deprecated runner role: ${role}. Verifier-approved merge is owned by role=worker; use worker instead.`);
-    }
     const normalized = normalizeRunnerRole(role);
     if (normalized === "coordinator") {
         fail(`Unsupported runner role: ${role}. Coordinator is not a runner; use planner, worker, verifier, or wiki-maintainer.`);
@@ -50,6 +44,57 @@ function inactiveRunnerState(status: "idle" | "stopped", stoppedBy = ""): Record
         active_ticket_path: "",
         last_result: status === "idle" ? "runner_started" : "runner_stopped",
     };
+}
+
+function nowIso(): string {
+    return new Date().toISOString().replace(/\.\d+Z$/, "Z");
+}
+
+function pidAlive(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function childPids(pid: number): number[] {
+    if (process.platform === "win32") return [];
+    const result = spawnSync("pgrep", ["-P", String(pid)], {encoding: "utf8"});
+    if (result.status !== 0) return [];
+    return String(result.stdout || "")
+        .split(/\s+/)
+        .map((value) => Number.parseInt(value, 10))
+        .filter((value) => Number.isInteger(value) && value > 0);
+}
+
+function processTree(pid: number, seen = new Set<number>()): number[] {
+    if (!Number.isInteger(pid) || pid <= 0 || seen.has(pid)) return [];
+    seen.add(pid);
+    const children = childPids(pid).flatMap((child) => processTree(child, seen));
+    return [pid, ...children];
+}
+
+function stopRunnerPid(pidValue: string, force = false) {
+    const pid = Number.parseInt(pidValue || "", 10);
+    if (!Number.isInteger(pid) || pid <= 0) {
+        return {pid: "", signal: "", process_stop_status: "no_pid"};
+    }
+    if (!pidAlive(pid)) {
+        return {pid: String(pid), signal: "", process_stop_status: "not_running"};
+    }
+
+    const signal = force ? "SIGKILL" : "SIGTERM";
+    const targets = processTree(pid).reverse();
+    for (const target of targets.length ? targets : [pid]) {
+        try {
+            process.kill(target, signal);
+        } catch {}
+    }
+
+    return {pid: String(pid), signal, process_stop_status: "signal_sent"};
 }
 
 function printRunnersUsage(): void {
@@ -101,25 +146,51 @@ export function runnersProject(args: string[]): void {
             }
             const currentState = readRunnerState(ctx, requiredRunnerId);
             const currentStatus = runnerEffectiveStateStatus(currentState);
+            const requestedAt = nowIso();
             writeRunnerState(ctx, requiredRunnerId, {
                 ...(currentStatus === "running" ? {} : {status: "starting", runner_status: "starting", pid: ""}),
                 stopped_by: "",
                 last_stop_reason: "",
                 last_process_result: "",
                 last_result: subcmd === "restart" ? "runner_restart_requested" : "runner_start_requested",
+                control_action: subcmd,
+                control_source: "cli",
+                control_requested_at: requestedAt,
             });
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
             out(`runner_status=${currentStatus === "running" ? "running" : "starting"}`);
-            out("desktop_start_status=manual_desktop_start_required");
+            out("desktop_start_status=requested");
+            out(`control_action=${subcmd}`);
+            out(`control_source=cli`);
+            out(`control_requested_at=${requestedAt}`);
             break;
         }
-        case "stop":
-            writeRunnerState(ctx, requiredRunnerId, inactiveRunnerState("stopped", "user"));
+        case "stop": {
+            const force = hasFlag(parsed, "force");
+            const currentState = readRunnerState(ctx, requiredRunnerId);
+            const stopResult = stopRunnerPid(currentState.pid || "", force);
+            const requestedAt = nowIso();
+            writeRunnerState(ctx, requiredRunnerId, {
+                ...inactiveRunnerState("stopped", "user"),
+                last_process_result: stopResult.signal ? `signal_${stopResult.signal}` : stopResult.process_stop_status,
+                last_stop_reason: stopResult.process_stop_status,
+                control_action: "stop",
+                control_source: "cli",
+                control_force: force ? "true" : "false",
+                control_requested_at: requestedAt,
+            });
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);
             out("runner_status=stopped");
+            out(`pid=${stopResult.pid}`);
+            out(`stop_signal=${stopResult.signal}`);
+            out(`process_stop_status=${stopResult.process_stop_status}`);
+            out(`control_action=stop`);
+            out(`control_source=cli`);
+            out(`control_requested_at=${requestedAt}`);
             break;
+        }
         case "artifacts":
             out("status=ok");
             out(`runner_id=${requiredRunnerId}`);

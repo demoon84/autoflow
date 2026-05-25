@@ -9,22 +9,12 @@ function normalizeRunRole(role: string): string {
     if (value === "prd-author") return "spec";
     if (value === "verify") return "verifier";
     if (value === "wiki-maintainer") return "wiki";
-    if (value === "merge" || value === "merge-bot") return "worker";
     return value;
-}
-
-function compatibilityRunRoleWarning(requestedRole: string, role: string): string {
-    const requested = requestedRole.toLowerCase();
-    if ((requested === "merge" || requested === "merge-bot") && role === "worker") {
-        return "merge_alias_normalized_to_worker";
-    }
-    return "";
 }
 
 const knownRunRoles = new Set([
     "planner",
     "worker",
-    "todo",
     "verifier",
     "wiki",
     "spec",
@@ -43,17 +33,12 @@ export function runRole(args: string[]): never | void {
     const ctx = projectContext(parsed.positionals[0] || ".", parsed.positionals[1] || defaultBoardDirName());
     const runner = firstFlag(parsed, "runner");
     const dryRun = hasFlag(parsed, "dry-run");
-    const compatibilityWarning = compatibilityRunRoleWarning(requestedRole, role);
     if (dryRun) {
         out("status=ok");
         out("dry_run=true");
         out(`role=${role}`);
         if (requestedRole !== role) {
             out(`requested_role=${requestedRole}`);
-        }
-        if (compatibilityWarning) {
-            out("compatibility_alias=true");
-            out(`warning=${compatibilityWarning}`);
         }
         if (runner) {
             out(`runner=${runner}`);
@@ -71,21 +56,12 @@ export function runRole(args: string[]): never | void {
     } : {
         AUTOFLOW_ROLE: role,
     };
-    if (compatibilityWarning) {
-        out("compatibility_alias=true");
-        out(`requested_role=${requestedRole}`);
-        out(`role=${role}`);
-        out(`warning=${compatibilityWarning}`);
-    }
     switch (role) {
         case "planner":
             runRuntimeScript(ctx, "runners/planner/start/index.ts", parsed.positionals.slice(2), runnerEnv);
             break;
         case "worker":
             runRuntimeScript(ctx, "runners/worker/start/index.ts", [], runnerEnv);
-            break;
-        case "todo":
-            runRuntimeScript(ctx, "runners/worker/start-todo.ts", [], runnerEnv);
             break;
         case "verifier":
             runRuntimeScript(ctx, "runners/verifier/start.ts", [], runnerEnv);

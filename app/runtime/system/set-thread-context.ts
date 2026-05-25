@@ -9,7 +9,7 @@ const BOARD_ROOT = utils.resolveBoardRoot();
 const PROJECT_ROOT = utils.resolveProjectRoot();
 
 function usage(): never {
-  process.stderr.write("Usage: set-thread-context.js <worker|plan|todo|verifier> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]\n");
+  process.stderr.write("Usage: set-thread-context.js <worker|plan|verifier|wiki> [worker-id] [active-ticket-id] [active-stage] [active-ticket-path]\n");
   process.exit(1);
 }
 
@@ -100,7 +100,7 @@ const args = process.argv.slice(2);
 if (args.length < 1 || args.length > 5) usage();
 
 const role = normalizeRole(args[0]);
-if (!["worker", "plan", "todo", "verifier"].includes(role)) usage();
+if (!["worker", "plan", "verifier", "wiki"].includes(role)) usage();
 
 const workerId = args[1] || defaultWorkerId();
 const activeTicketId = args[2] || "";

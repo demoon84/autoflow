@@ -126,7 +126,7 @@ const {
 } = shared;
 
 export function cmdWorkerContextUpdate(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   const nextAction = getArg("--next-action");
   if (nextAction) replaceSectionBlock(ticket, "Next Action", bulletize(nextAction));
 

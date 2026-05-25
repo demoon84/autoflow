@@ -4,14 +4,13 @@ import {emit} from "../output";
 import {boardRelativePath, projectKeyFromSpecRef, ticketPath} from "../ids";
 import {nextTicketId} from "../files";
 import {SplitMapEntry, extractBulletSection, extractChecklist, extractSectionText, extractSplitMap} from "../sections";
-import {normalizeChangeType, normalizePriority} from "../priority";
+import {normalizeChangeType} from "../priority";
 import {archiveSpecToDoneIfNeeded} from "./archive";
 import {missingRequiredSecrets, runLintTicket} from "./preflight";
 
 type TodoSlice = {
   title: string;
   goal: string;
-  priority: string;
   allowedPaths: string[];
   doneWhen: string;
   verificationCommand: string;
@@ -19,6 +18,15 @@ type TodoSlice = {
   index: number;
   count: number;
 };
+
+const WORK_ITEM_SPLIT_HEADINGS = [
+  "Work Item Split",
+  "Work Item Splits",
+  "Todo Split Map",
+  "Todo Splits",
+  "Implementation Slices",
+  "Ticket Split Map",
+];
 
 function firstHeading(file: string): string {
   return (utils.readFileSafe(file).match(/^#\s+(.+)$/m)?.[1] || "").trim();
@@ -118,24 +126,17 @@ function defaultSliceDoneWhen(goal: string, allowedPaths: string[], verification
   ].join("\n");
 }
 
-function inheritedTodoPriorityFromSpec(file: string): string {
-  const priority = normalizePriority(utils.extractScalarFieldInSection(file, "Project", "Priority"));
-  return priority === "critical" ? "critical" : "normal";
-}
-
 function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
   const baseTitle = specTitle(file, projectKey);
   const baseGoal = specGoal(file, projectKey);
-  const inheritedPriority = inheritedTodoPriorityFromSpec(file);
   const baseVerificationCommand = specVerificationCommand(file);
   const concreteAllowedPaths = extractBulletSection(file, "Allowed Paths").filter((p) => utils.allowedPathIsConcreteRepoPath(p));
-  const entries = extractSplitMap(file, ["Todo Split Map", "Todo Splits", "Implementation Slices", "Ticket Split Map"]);
+  const entries = extractSplitMap(file, WORK_ITEM_SPLIT_HEADINGS);
 
   if (entries.length === 0) {
     return [{
       title: baseTitle,
       goal: baseGoal,
-      priority: inheritedPriority,
       allowedPaths: concreteAllowedPaths,
       doneWhen: specDoneWhen(file),
       verificationCommand: baseVerificationCommand,
@@ -148,7 +149,6 @@ function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
   return entries.map((entry, index) => {
     const entryTitle = firstSplitValue(entry, "title") || entry.title || `Slice ${index + 1}`;
     const goal = firstSplitValue(entry, "goal") || firstSplitValue(entry, "scope") || entryTitle;
-    const priority = firstSplitValue(entry, "priority");
     const sliceAllowedPaths = splitListValues(entry.fields.allowed_paths || []).filter((p) => utils.allowedPathIsConcreteRepoPath(p));
     const allowedPaths = sliceAllowedPaths.length > 0 ? sliceAllowedPaths : concreteAllowedPaths;
     const verificationCommand = firstSplitValue(entry, "verification").replace(/^Command:\s*/i, "") || baseVerificationCommand;
@@ -156,7 +156,6 @@ function todoSlicesFromSpec(file: string, projectKey: string): TodoSlice[] {
     return {
       title: `${baseTitle} - ${entryTitle}`,
       goal,
-      priority: priority ? normalizePriority(priority) : inheritedPriority,
       allowedPaths,
       doneWhen: doneWhenLines.length > 0 ? doneWhenLines.join("\n") : defaultSliceDoneWhen(goal, allowedPaths, verificationCommand),
       verificationCommand,
@@ -248,12 +247,12 @@ export function createTodoTicketsFromSpec(specFile: string): string[] {
   const specRef = boardRelativePath(specFile);
   const projectKey = projectKeyFromSpecRef(specRef);
   // Compute slices BEFORE archiving the PRD so we never leave a PRD in done/
-  // without a sibling Todo. todoSlicesFromSpec always returns at least one
+  // without a sibling work item. todoSlicesFromSpec always returns at least one
   // slice (base slice from PRD Goal + Allowed Paths when no Split Map),
-  // so this guarantees ≥1 Todo per archived PRD.
+  // so this guarantees at least one work item per archived PRD.
   const preflightSlices = todoSlicesFromSpec(specFile, projectKey);
   if (preflightSlices.length === 0) {
-    throw new Error(`PRD ${specRef} produced 0 todo slices; refuse to archive without at least one Todo.`);
+    throw new Error(`PRD ${specRef} produced 0 work item slices; refuse to archive without at least one work item.`);
   }
   const archivedSpecRef = archiveSpecToDoneIfNeeded(specRef);
   const archivedSpecFile = path.join(BOARD_ROOT, archivedSpecRef);
@@ -270,7 +269,6 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
   const ticketId = nextTicketId();
   const ticketFile = ticketPath("todo", ticketId);
   const timestamp = utils.nowIso();
-  const priority = slice.priority || inheritedTodoPriorityFromSpec(archivedSpecFile);
   const changeType = normalizeChangeType(utils.extractScalarFieldInSection(archivedSpecFile, "Project", "Change Type"));
   const allowedPaths = slice.allowedPaths.map((p) => `- ${p}`).join("\n");
   const sliceRef = slice.count > 1 ? `${archivedSpecRef}#todo-${String(slice.index).padStart(2, "0")}` : archivedSpecRef;
@@ -287,7 +285,6 @@ function writeTodoTicketFromSlice(archivedSpecRef: string, archivedSpecFile: str
 - PRD Slice: ${slice.index}/${slice.count}
 - Plan Candidate: planner-runner handoff from ${sliceRef}
 - Title: ${slice.title}
-- Priority: ${priority}
 - Change Type: ${changeType}
 - Stage: todo
 - AI:
@@ -375,9 +372,8 @@ ${slice.doneWhen}
     "utf8"
   );
 
-  // Provision branch + worktree, and commit the ticket markdown into the
-  // worktree so the PRD-track squash captures both planner output and worker
-  // implementation in one branch.
+  // Provision branch + worktree. Ticket markdown stays in the local board;
+  // the PRD-track squash captures product changes from the worktree.
   try {
     const ticketContent = fs.readFileSync(ticketFile, "utf8");
     const wt = ensureTicketWorktree({

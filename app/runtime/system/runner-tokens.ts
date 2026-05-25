@@ -200,19 +200,35 @@ function parseInt0(s: unknown): number {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+function tokenRoleFromState(map: Map<string, string>): string {
+  const candidates = [
+    map.get("active_role") || "",
+    map.get("assignment_role") || "",
+    map.get("role") || "",
+  ];
+  for (const value of candidates) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
 const tokenDefaults = new Map<string, string>([
   ["cumulative_tokens", "0"],
   ["cumulative_total_tokens", "0"],
   ["cumulative_cache_read_tokens", "0"],
   ["cumulative_cache_create_tokens", "0"],
+  ["cumulative_llm_request_count", "0"],
   ["last_turn_tokens", "0"],
   ["last_turn_total_tokens", "0"],
   ["last_turn_input_tokens", "0"],
   ["last_turn_output_tokens", "0"],
   ["last_turn_cache_read_tokens", "0"],
   ["last_turn_cache_create_tokens", "0"],
+  ["last_turn_llm_request_count", "0"],
   ["last_turn_at", ""],
   ["last_turn_tick_id", ""],
+  ["last_turn_role", ""],
   ["token_source", "none"],
   ["last_token_usage_source", "none"],
   ["cumulative_code_files_changed", "0"],
@@ -251,6 +267,27 @@ type TokenEntry = {
 };
 
 type SessionFileEntry = { filePath: string; mtimeMs: number; size: number };
+
+function allSessionTokenEntriesForRunner(runner: string, map: Map<string, string>): TokenEntry[] {
+  const projectRoot = projectRootForSessionLogs();
+  const agent = String(map.get("agent") || "").toLowerCase();
+  const cursor: SessionCursorAll = {};
+  const knownTicks = new Set<string>();
+  return [
+    ...(agent === "codex" ? scopedCodexSessionTokenEntries(runner, map, knownTicks, 0, cursor, false) : []),
+    ...(agent === "claude" ? scopedClaudeSessionTokenEntries(runner, projectRoot, map, knownTicks, 0, cursor, false) : []),
+  ].sort((left, right) => left.atMs - right.atMs || left.tickId.localeCompare(right.tickId));
+}
+
+function backfillLlmRequestCount(runner: string, map: Map<string, string>): number {
+  const existing = parseInt0(map.get("cumulative_llm_request_count"));
+  const entries = allSessionTokenEntriesForRunner(runner, map);
+  const count = Math.max(existing, entries.length);
+  if (count > existing) {
+    map.set("cumulative_llm_request_count", String(count));
+  }
+  return count;
+}
 
 function sessionLogFileEntries(root: string, limit = 40): SessionFileEntry[] {
   const out: SessionFileEntry[] = [];
@@ -292,6 +329,7 @@ function scopedCodexSessionTokenEntries(
   knownTicks: Set<string>,
   afterMs: number,
   cursorAll: SessionCursorAll,
+  useCursor = true,
 ): TokenEntry[] {
   const codexHome = state.get("codex_home") || "";
   if (!path.isAbsolute(codexHome)) return [];
@@ -306,15 +344,15 @@ function scopedCodexSessionTokenEntries(
   for (const fileEntry of sessionLogFileEntries(sessionsRoot)) {
     const filePath = fileEntry.filePath;
     const prev = cursor[filePath];
-    if (prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) continue;
-    const fromOffset = prev && prev.size <= fileEntry.size ? prev.size : 0;
+    if (useCursor && prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) continue;
+    const fromOffset = useCursor && prev && prev.size <= fileEntry.size ? prev.size : 0;
     const raw = readSliceUtf8(filePath, fromOffset, fileEntry.size);
     let belongsToRunner = prev?.belongsToRunner === true;
     if (!belongsToRunner) {
       const head = fromOffset === 0 ? raw : readSliceUtf8(filePath, 0, Math.min(fileEntry.size, 512 * 1024));
       belongsToRunner = sessionNeedles.every((needle) => head.includes(needle));
     }
-    cursor[filePath] = { mtimeMs: fileEntry.mtimeMs, size: fileEntry.size, belongsToRunner };
+    if (useCursor) cursor[filePath] = { mtimeMs: fileEntry.mtimeMs, size: fileEntry.size, belongsToRunner };
     if (!belongsToRunner) continue;
     if (!raw) continue;
     const rel = path.relative(sessionsRoot, filePath);
@@ -434,6 +472,7 @@ function scopedClaudeSessionTokenEntries(
   knownTicks: Set<string>,
   afterMs: number,
   cursorAll: SessionCursorAll,
+  useCursor = true,
 ): TokenEntry[] {
   const root = claudeProjectChatRoot(projectRoot);
   if (!root || !fs.existsSync(root)) return [];
@@ -451,10 +490,10 @@ function scopedClaudeSessionTokenEntries(
     const sessionId = path.basename(filePath, ".jsonl");
     const isCurrent = currentSessionIds.has(sessionId);
     const prev = cursor[filePath];
-    if (!isCurrent && prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) {
+    if (useCursor && !isCurrent && prev && prev.mtimeMs === fileEntry.mtimeMs && prev.size === fileEntry.size) {
       continue;
     }
-    const fromOffset = prev && prev.size <= fileEntry.size ? prev.size : 0;
+    const fromOffset = useCursor && prev && prev.size <= fileEntry.size ? prev.size : 0;
     const raw = readSliceUtf8(filePath, fromOffset, fileEntry.size);
     const lines = raw ? raw.split(/\r?\n/) : [];
 
@@ -479,11 +518,13 @@ function scopedClaudeSessionTokenEntries(
         }
       }
     }
-    cursor[filePath] = {
-      mtimeMs: fileEntry.mtimeMs,
-      size: fileEntry.size,
-      belongsToRunner,
-    };
+    if (useCursor) {
+      cursor[filePath] = {
+        mtimeMs: fileEntry.mtimeMs,
+        size: fileEntry.size,
+        belongsToRunner,
+      };
+    }
     if (!belongsToRunner) continue;
 
     let lineIndex = 0;
@@ -556,20 +597,25 @@ export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; mes
       : 0;
     const prevCacheRead = parseInt0(map.get("cumulative_cache_read_tokens"));
     const prevCacheCreate = parseInt0(map.get("cumulative_cache_create_tokens"));
+    const prevRequestCount = parseInt0(map.get("cumulative_llm_request_count"));
     const newVisible = prevVisible + visible;
     const newTotal = prevTotal + turnTotal;
+    const newRequestCount = prevRequestCount + 1;
     map.set("last_turn_tokens", String(visible));
     map.set("last_turn_total_tokens", String(turnTotal));
     map.set("last_turn_input_tokens", String(inputT));
     map.set("last_turn_output_tokens", String(outputT));
     map.set("last_turn_cache_read_tokens", String(cacheR));
     map.set("last_turn_cache_create_tokens", String(cacheC));
+    map.set("last_turn_llm_request_count", "1");
     map.set("last_turn_at", NOW());
     if (tickId) map.set("last_turn_tick_id", tickId);
+    map.set("last_turn_role", tokenRoleFromState(map));
     map.set("cumulative_tokens", String(newVisible));
     map.set("cumulative_total_tokens", String(newTotal));
     map.set("cumulative_cache_read_tokens", String(prevCacheRead + cacheR));
     map.set("cumulative_cache_create_tokens", String(prevCacheCreate + cacheC));
+    map.set("cumulative_llm_request_count", String(newRequestCount));
     map.set("token_source", "llm_reported");
     map.set("last_token_usage_source", "llm_reported");
     map.set("updated_at", NOW());
@@ -601,6 +647,7 @@ export type ImportSessionResult = {
   imported: number;
   cumulativeTokens: number;
   cumulativeTotalTokens: number;
+  cumulativeLlmRequestCount: number;
   lastTurnTickId: string;
   lastTurnTotalTokens: number;
   lastTurnTokens: number;
@@ -636,8 +683,14 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
     let cumulativeVisible = map.get("token_source") === "llm_reported" ? parseInt0(map.get("cumulative_tokens")) : 0;
     let cumulativeCacheRead = parseInt0(map.get("cumulative_cache_read_tokens"));
     let cumulativeCacheCreate = parseInt0(map.get("cumulative_cache_create_tokens"));
+    const previousRequestCount = parseInt0(map.get("cumulative_llm_request_count"));
+    let cumulativeRequests = backfillLlmRequestCount(runner, map);
     if (entries.length === 0) {
-      return { imported: 0, cumulative, cumulativeVisible, last: undefined };
+      if (cumulativeRequests > previousRequestCount) {
+        map.set("updated_at", NOW());
+        writeState(runner, serializeStateLines(map));
+      }
+      return { imported: 0, cumulative, cumulativeVisible, cumulativeRequests, last: undefined };
     }
 
     for (const entry of entries) {
@@ -646,6 +699,7 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
       cumulativeCacheRead += entry.cacheRead;
       cumulativeCacheCreate += entry.cacheCreate;
     }
+    cumulativeRequests = Math.max(cumulativeRequests, previousRequestCount + entries.length);
 
     const last = entries[entries.length - 1];
     map.set("last_turn_tokens", String(Math.max(0, last.turnTotal - last.cacheRead)));
@@ -654,17 +708,20 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
     map.set("last_turn_output_tokens", String(last.output));
     map.set("last_turn_cache_read_tokens", String(last.cacheRead));
     map.set("last_turn_cache_create_tokens", String(last.cacheCreate));
+    map.set("last_turn_llm_request_count", "1");
     map.set("last_turn_at", new Date(last.atMs).toISOString().replace(/\.\d+Z$/, "Z"));
     map.set("last_turn_tick_id", last.tickId);
+    map.set("last_turn_role", tokenRoleFromState(map));
     map.set("cumulative_tokens", String(cumulativeVisible));
     map.set("cumulative_total_tokens", String(cumulative));
     map.set("cumulative_cache_read_tokens", String(cumulativeCacheRead));
     map.set("cumulative_cache_create_tokens", String(cumulativeCacheCreate));
+    map.set("cumulative_llm_request_count", String(cumulativeRequests));
     map.set("token_source", "llm_reported");
     map.set("last_token_usage_source", "llm_reported");
     map.set("updated_at", NOW());
     writeState(runner, serializeStateLines(map));
-    return { imported: entries.length, cumulative, cumulativeVisible, last };
+    return { imported: entries.length, cumulative, cumulativeVisible, cumulativeRequests, last };
   });
 
   const last = result?.last;
@@ -673,6 +730,7 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
     imported: result?.imported || 0,
     cumulativeTokens: result?.cumulativeVisible || 0,
     cumulativeTotalTokens: result?.cumulative || 0,
+    cumulativeLlmRequestCount: result?.cumulativeRequests || 0,
     lastTurnTickId: last?.tickId || "",
     lastTurnTotalTokens: last?.turnTotal || 0,
     lastTurnTokens: last ? Math.max(0, (last.turnTotal || 0) - (last.cacheRead || 0)) : 0,
@@ -686,10 +744,11 @@ function importSessionTokenUsage(runner: string | undefined): never {
   process.stdout.write([
     "status=ok",
     `runner=${runner}`,
-    `imported_count=${r.imported}`,
-    `cumulative_tokens=${r.cumulativeTokens}`,
-    `cumulative_total_tokens=${r.cumulativeTotalTokens}`,
-    `last_turn_tokens=${r.lastTurnTokens}`,
+	    `imported_count=${r.imported}`,
+	    `cumulative_tokens=${r.cumulativeTokens}`,
+	    `cumulative_total_tokens=${r.cumulativeTotalTokens}`,
+	    `cumulative_llm_request_count=${r.cumulativeLlmRequestCount}`,
+	    `last_turn_tokens=${r.lastTurnTokens}`,
     `last_turn_total_tokens=${r.lastTurnTotalTokens}`,
     `last_turn_at=${r.lastTurnAt}`,
     "",
@@ -720,14 +779,16 @@ function reset(runner: string | undefined, note?: string): never {
     map.set("last_turn_total_tokens", "0");
     map.set("last_turn_input_tokens", "0");
     map.set("last_turn_output_tokens", "0");
-    map.set("last_turn_cache_read_tokens", "0");
-    map.set("last_turn_cache_create_tokens", "0");
-    map.set("last_turn_at", at);
+	    map.set("last_turn_cache_read_tokens", "0");
+	    map.set("last_turn_cache_create_tokens", "0");
+	    map.set("last_turn_llm_request_count", "0");
+	    map.set("last_turn_at", at);
     map.set("last_turn_tick_id", tickId);
     map.set("cumulative_tokens", "0");
     map.set("cumulative_total_tokens", "0");
-    map.set("cumulative_cache_read_tokens", "0");
-    map.set("cumulative_cache_create_tokens", "0");
+	    map.set("cumulative_cache_read_tokens", "0");
+	    map.set("cumulative_cache_create_tokens", "0");
+	    map.set("cumulative_llm_request_count", "0");
     map.set("token_source", "none");
     map.set("last_token_usage_source", "none");
     map.set("updated_at", at);
@@ -738,8 +799,9 @@ function reset(runner: string | undefined, note?: string): never {
   process.stdout.write([
     "status=ok",
     `runner=${runner}`,
-    "cumulative_tokens=0",
-    "cumulative_total_tokens=0",
+	    "cumulative_tokens=0",
+	    "cumulative_total_tokens=0",
+	    "cumulative_llm_request_count=0",
     `last_turn_tick_id=${result?.tickId || ""}`,
     `reset_at=${result?.at || ""}`,
     "",
@@ -759,14 +821,16 @@ function show(runner: string | undefined): never {
     runner,
     cumulative_tokens: parseInt0(map.get("cumulative_tokens")),
     cumulative_total_tokens: parseInt0(map.get("cumulative_total_tokens")) || parseInt0(map.get("cumulative_tokens")),
-    cumulative_cache_read_tokens: parseInt0(map.get("cumulative_cache_read_tokens")) || parseInt0(map.get("last_turn_cache_read_tokens")),
-    cumulative_cache_create_tokens: parseInt0(map.get("cumulative_cache_create_tokens")) || parseInt0(map.get("last_turn_cache_create_tokens")),
-    last_turn_tokens: parseInt0(map.get("last_turn_tokens")),
+	    cumulative_cache_read_tokens: parseInt0(map.get("cumulative_cache_read_tokens")) || parseInt0(map.get("last_turn_cache_read_tokens")),
+	    cumulative_cache_create_tokens: parseInt0(map.get("cumulative_cache_create_tokens")) || parseInt0(map.get("last_turn_cache_create_tokens")),
+	    cumulative_llm_request_count: parseInt0(map.get("cumulative_llm_request_count")),
+	    last_turn_tokens: parseInt0(map.get("last_turn_tokens")),
     last_turn_total_tokens: parseInt0(map.get("last_turn_total_tokens")) || parseInt0(map.get("last_turn_tokens")),
     last_turn_input_tokens: parseInt0(map.get("last_turn_input_tokens")),
     last_turn_output_tokens: parseInt0(map.get("last_turn_output_tokens")),
-    last_turn_cache_read_tokens: parseInt0(map.get("last_turn_cache_read_tokens")),
-    last_turn_cache_create_tokens: parseInt0(map.get("last_turn_cache_create_tokens")),
+	    last_turn_cache_read_tokens: parseInt0(map.get("last_turn_cache_read_tokens")),
+	    last_turn_cache_create_tokens: parseInt0(map.get("last_turn_cache_create_tokens")),
+	    last_turn_llm_request_count: parseInt0(map.get("last_turn_llm_request_count")),
     last_turn_at: map.get("last_turn_at") || "",
     last_turn_tick_id: map.get("last_turn_tick_id") || "",
     token_source: map.get("token_source") || ""

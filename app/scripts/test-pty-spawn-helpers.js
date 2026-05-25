@@ -76,22 +76,36 @@ function runnerPromptNeedsContinue(snapshot, agent) {
 }
 
 // Mirror main.ts buildAgentCliCommand() — keep in sync.
+function normalizeRunnerReasoningValue(agent, value) {
+  const normalizedAgent = String(agent || "").toLowerCase();
+  const normalized = String(value || "").trim().toLowerCase();
+  const mediumPlus = {
+    codex: new Set(["medium", "high", "xhigh"]),
+    claude: new Set(["medium", "high", "xhigh", "max"])
+  };
+  const allowed = mediumPlus[normalizedAgent];
+  if (!allowed) return normalized;
+  return allowed.has(normalized) ? normalized : "medium";
+}
+
 function buildAgentCliCommand(agent, model, reasoning, options = {}) {
   const parts = [];
   const rawSuffix = [];
-  switch (String(agent || "").toLowerCase()) {
+  const normalizedAgent = String(agent || "").toLowerCase();
+  const normalizedReasoning = normalizeRunnerReasoningValue(normalizedAgent, reasoning);
+  switch (normalizedAgent) {
     case "claude": {
       parts.push("claude", "--dangerously-skip-permissions",
         "--permission-mode", "bypassPermissions",
         "--plugin-dir", ".claude/autoflow-plugin");
       if (model) parts.push("--model", model);
-      if (reasoning) parts.push("--effort", reasoning);
+      if (normalizedReasoning) parts.push("--effort", normalizedReasoning);
       break;
     }
     case "codex": {
       parts.push("codex", "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust");
       if (model) parts.push("-m", model);
-      if (reasoning) parts.push("-c", `model_reasoning_effort="${reasoning}"`);
+      if (normalizedReasoning) parts.push("-c", `model_reasoning_effort="${normalizedReasoning}"`);
       if (options.initialPromptFile) rawSuffix.push(`"$(cat ${shellQuote(options.initialPromptFile)})"`);
       break;
     }
@@ -111,9 +125,11 @@ const cases = [
   { agent: "claude", model: "opus[1m]", reasoning: "xhigh",
     expect: "claude --dangerously-skip-permissions --permission-mode bypassPermissions --plugin-dir .claude/autoflow-plugin --model 'opus[1m]' --effort xhigh" },
   { agent: "codex", model: "gpt-5.4", reasoning: "low",
-    expect: `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust -m gpt-5.4 -c 'model_reasoning_effort="low"'` },
+    expect: `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust -m gpt-5.4 -c 'model_reasoning_effort="medium"'` },
   { agent: "codex", model: "gpt-5.5", reasoning: "medium", options: { initialPromptFile: "/tmp/autoflow-startup-prompt.md" },
     expect: `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust -m gpt-5.5 -c 'model_reasoning_effort="medium"' "$(cat '/tmp/autoflow-startup-prompt.md')"` },
+  { agent: "codex", model: "gpt-5.5", reasoning: "",
+    expect: `codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust -m gpt-5.5 -c 'model_reasoning_effort="medium"'` },
   { agent: "unknown", model: "", reasoning: "",
     expect: "" }
 ];

@@ -38,22 +38,65 @@ export function parseTomlScalar(raw: string): string {
     return value.split(/\s+/)[0] || "";
 }
 
+function parseRunnerConfigSection(
+    lines: string[],
+    tableId = "",
+): Record<string, string> {
+    const item: Record<string, string> = {};
+    for (const line of lines) {
+        const match = line.match(/^\s*([A-Za-z0-9_-]+)\s*=\s*(.+?)\s*$/);
+        if (!match) {
+            continue;
+        }
+        item[match[1] || ""] = parseTomlScalar(match[2] || "");
+    }
+    if (tableId && !item.id) {
+        item.id = tableId;
+    }
+    return item;
+}
+
+function parseRunnerConfigText(text: string): Array<Record<string, string>> {
+    const items: Array<Record<string, string>> = [];
+    let current: {tableId: string; lines: string[]} | null = null;
+    const flush = () => {
+        if (!current) return;
+        const item = parseRunnerConfigSection(current.lines, current.tableId);
+        if (item.id) {
+            items.push(item);
+        }
+        current = null;
+    };
+
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = stripTomlInlineComment(rawLine).trim();
+        const arrayHeader = line.match(/^\[\[runners\]\]$/);
+        const namedHeader = line.match(/^\[runners\.([^\]]+)\]$/);
+        if (arrayHeader || namedHeader) {
+            flush();
+            current = {
+                tableId: namedHeader ? parseTomlScalar(namedHeader[1] || "") : "",
+                lines: [],
+            };
+            continue;
+        }
+        if (/^\[/.test(line)) {
+            flush();
+            continue;
+        }
+        if (current) {
+            current.lines.push(rawLine);
+        }
+    }
+    flush();
+    return items;
+}
+
 export function parseRunnerConfig(ctx: ProjectContext): Array<Record<string, string>> {
     const config = runnerConfigPath(ctx);
     if (!fs.existsSync(config)) {
         return [];
     }
     const text = fs.readFileSync(config, "utf8");
-    const blocks = text.split(/\[\[runners\]\]/g).slice(1);
-    return blocks.map((block) => {
-        const item: Record<string, string> = {};
-        for (const line of block.split(/\r?\n/)) {
-            const match = line.match(/^\s*([A-Za-z0-9_-]+)\s*=\s*(.+?)\s*$/);
-            if (!match) {
-                continue;
-            }
-            item[match[1] || ""] = parseTomlScalar(match[2] || "");
-        }
-        return item;
-    }).filter((item) => item.id);
+    return parseRunnerConfigText(text);
 }

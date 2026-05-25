@@ -83,13 +83,7 @@ export function boardGitignorePattern(ctx: ProjectContext): string | undefined {
     return rel.endsWith("/") ? rel : `${rel}/`;
 }
 
-/**
- * Detect whether the project's root .gitignore still ignores the entire board
- * directory. Returns the matching line if present, empty string otherwise.
- * Used by `autoflow upgrade` to surface a migration hint without rewriting the
- * user's .gitignore automatically (their comments and formatting are preserved).
- */
-export function detectLegacyBoardIgnore(ctx: ProjectContext): string {
+export function detectBoardIgnore(ctx: ProjectContext): string {
     const file = path.join(ctx.projectRoot, ".gitignore");
     if (!fs.existsSync(file)) return "";
     let raw = "";
@@ -114,15 +108,31 @@ export function detectLegacyBoardIgnore(ctx: ProjectContext): string {
     return "";
 }
 
+export function detectLegacyBoardIgnore(ctx: ProjectContext): string {
+    return detectBoardIgnore(ctx);
+}
+
+export function listTrackedBoardFiles(ctx: ProjectContext, limit = 10): string[] {
+    const state = gitState(ctx.projectRoot);
+    if (!state.available || !state.inside || !state.root || !samePath(state.root, ctx.projectRoot)) {
+        return [];
+    }
+    const expected = boardGitignorePattern(ctx);
+    const rel = (expected || ".autoflow/").replace(/\/+$/, "");
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return [];
+    const result = gitRun(["ls-files", "--", rel], ctx.projectRoot);
+    if (result.status !== 0) return [];
+    return result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, Math.max(0, limit));
+}
+
 export function ensureInstallGitignore(ctx: ProjectContext): boolean {
-    // The board directory itself is NOT added to .gitignore: PRDs, tickets, wiki,
-    // reference, and policy documents are meant to be tracked alongside product
-    // code so the PRD-branch squash merge to main carries the full
-    // implementation context. Machine-local runtime state (runner pid/lock,
-    // metrics, logs, automation state) is already filtered by inner
-    // .gitignore files under .autoflow/runners/, .autoflow/metrics/, and
-    // .autoflow/automations/state/.
+    const boardPattern = boardGitignorePattern(ctx);
     const patterns = [
+        ...(boardPattern ? [boardPattern] : []),
         ".autoflow-worktrees/",
         "node_modules/",
         "dist/",

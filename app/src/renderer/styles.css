@@ -2801,6 +2801,7 @@ pre {
 .prd-coverage-todo-todo .prd-coverage-todo-stage { background: rgba(148, 163, 184, 0.16); color: rgb(203, 213, 225); }
 .prd-coverage-todo-inprogress .prd-coverage-todo-stage { background: rgba(96, 165, 250, 0.18); color: rgb(147, 197, 253); }
 .prd-coverage-todo-verifier .prd-coverage-todo-stage { background: rgba(245, 158, 11, 0.18); color: rgb(252, 211, 77); }
+.prd-coverage-todo-merge .prd-coverage-todo-stage { background: rgba(245, 158, 11, 0.18); color: rgb(252, 211, 77); }
 .prd-coverage-todo-done .prd-coverage-todo-stage { background: rgba(34, 197, 94, 0.18); color: rgb(134, 239, 172); }
 
 .prd-coverage-todo-title {
@@ -2875,7 +2876,7 @@ pre {
 
 .ai-progress-board {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: minmax(220px, 1fr);
   gap: var(--workflow-grid-gap);
   min-width: 0;
@@ -2892,9 +2893,46 @@ pre {
   grid-column: 1 / -1;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 1280px) {
+  .ai-progress-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
   .ai-progress-board {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 761px) {
+  .ai-progress-board[data-runner-count="1"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ai-progress-board[data-runner-count="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-progress-board[data-runner-count="3"],
+  .ai-progress-board[data-runner-count="6"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ai-progress-board[data-runner-count="4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ai-progress-board[data-runner-count="5"] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .ai-progress-board[data-runner-count="5"] > .ai-progress-row {
+    grid-column: span 2;
+  }
+
+  .ai-progress-board[data-runner-count="5"] > .ai-progress-row:nth-of-type(n + 4) {
+    grid-column: span 3;
   }
 }
 
@@ -3186,23 +3224,6 @@ pre {
   flex-shrink: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.ticket-priority-badge {
-  max-width: 86px;
-  text-transform: uppercase;
-  letter-spacing: 0;
-}
-
-.ticket-priority-badge-critical {
-  border-color: color-mix(in srgb, var(--destructive) 48%, var(--border)) !important;
-  background: color-mix(in srgb, var(--destructive) 15%, var(--card)) !important;
-}
-
-.ticket-priority-badge-high {
-  border-color: color-mix(in srgb, var(--chart-4) 42%, var(--border)) !important;
-  background: color-mix(in srgb, var(--chart-4) 12%, var(--card)) !important;
-  color: var(--foreground) !important;
 }
 
 .ticket-kanban-card-id {
@@ -3661,6 +3682,11 @@ pre {
   width: 100%;
 }
 
+.ai-conversation-panel-activity-row-inline {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+}
+
 .ai-conversation-panel-activity-band {
   display: inline-flex;
   align-items: center;
@@ -3681,14 +3707,28 @@ pre {
   white-space: nowrap;
 }
 
+.ai-conversation-panel-activity-row-inline .ai-conversation-panel-activity-band {
+  width: auto;
+}
+
 .ai-conversation-panel-activity-band-primary {
   border-color: color-mix(in srgb, var(--border) 64%, transparent);
+}
+
+.ai-conversation-panel-activity-row-inline .ai-conversation-panel-activity-band-primary {
+  flex: 1 1 auto;
+  justify-content: flex-start;
 }
 
 .ai-conversation-panel-activity-band-hardware {
   border-color: color-mix(in srgb, var(--border) 50%, transparent);
   background: transparent;
   padding-right: 5px;
+}
+
+.ai-conversation-panel-activity-row-inline .ai-conversation-panel-activity-band-hardware {
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .ai-conversation-panel-activity-metric {
@@ -3747,6 +3787,11 @@ pre {
   color: color-mix(in srgb, var(--foreground) 86%, var(--muted-foreground));
   user-select: none;
   white-space: nowrap;
+}
+
+.ai-conversation-panel-activity-row-inline .runner-resource-usage {
+  flex: 0 1 auto;
+  justify-content: flex-end;
 }
 
 .runner-resource-usage[data-loading="true"] {

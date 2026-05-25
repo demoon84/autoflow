@@ -2,8 +2,8 @@
 """
 PRD 9 Origin Extractor (2026-05-09)
 
-Reads Claude Code and Codex session jsonl files, identifies PRD/todo
-trigger records, and builds the origin_chain in .autoflow/state.db.
+Reads Claude Code and Codex session jsonl files, identifies Autoflow
+orchestration trigger records, and builds the origin_chain in .autoflow/state.db.
 
 NOTE: uses `from __future__ import annotations` so the modern PEP 604 /
 PEP 585 type annotations (e.g. `str | None`, `dict[str, str]`) parse cleanly
@@ -11,11 +11,11 @@ on Python 3.7+ as well.
 
 Chain shape (one row per trigger event):
 
-    session(jsonl) --(#aprd|#atodo|/aprd|/atodo)--> prd_path
-                                                       ↓
-                                                   ticket_id
-                                                       ↓
-                                                   commit_hash
+    session(jsonl) --(#autoflow|/autoflow|$autoflow)--> prd_path
+                                                           ↓
+                                                       ticket_id
+                                                           ↓
+                                                       commit_hash
 
 Idempotent: running multiple times rebuilds the snapshot tables. Read-only
 on Claude Code / Codex jsonl files; writes only to .autoflow/state.db.
@@ -43,24 +43,23 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Iterable
 
-# PRD/todo trigger detection.
+# Autoflow trigger detection.
 #
 # Real-world shapes observed in Claude Code & Codex jsonl:
 #   1. Slash command (most common):
-#        <command-name>/aprd</command-name>
-#        <command-name>/atodo</command-name>
-#   2. Hash trigger in prose:           "#aprd ..." / "#atodo ..."
-#   3. Codex dollar trigger in prose:   "$aprd ..." / "$atodo ..."
+#        <command-name>/autoflow</command-name>
+#   2. Hash trigger in prose:           "#autoflow ..."
+#   3. Codex dollar trigger in prose:   "$autoflow ..."
 #
-# A bare token "aprd/atodo skill ..." (no leading # or /) is NOT a
-# trigger — only the prefixed forms count.
+# A bare token "autoflow skill ..." (no leading #, $, or command tag) is
+# NOT a trigger — only the explicit invocation forms count.
 TRIGGER_RE = re.compile(
     # 1. <command-name>/X</command-name> form
-    r'<command-name>/?(?P<cmd>aprd|atodo|plan|todo)</command-name>'
+    r'<command-name>/?(?P<cmd>autoflow)</command-name>'
     # 2. word-boundary #X form
-    r'|(?<![A-Za-z0-9_])#(?P<hash>aprd|atodo|plan|todo)\b'
+    r'|(?<![A-Za-z0-9_])#(?P<hash>autoflow)\b'
     # 3. word-boundary $X form (Codex)
-    r'|(?<![A-Za-z0-9_])\$(?P<dollar>aprd|atodo|plan|todo)\b',
+    r'|(?<![A-Za-z0-9_])\$(?P<dollar>autoflow)\b',
     re.MULTILINE,
 )
 
@@ -82,7 +81,7 @@ def safe_load_json(line: str):
 
 # When the user invokes a slash command, the actual prompt body lives in
 # <command-args>...</command-args>. Skill activation alone (no args) means the
-# user did NOT issue a real PRD/todo request — those are skipped.
+# user did NOT issue a real Autoflow orchestration request — those are skipped.
 ARGS_RE = re.compile(r'<command-args>(.*?)</command-args>', re.DOTALL)
 
 
@@ -90,10 +89,9 @@ def detect_trigger_with_args(text: str) -> tuple[str | None, str | None]:
     """Return (trigger_kind, args_body) only for *real* user-issued triggers.
     A real trigger is one that carries <command-args>...</command-args> with
     non-empty body. Without args, the trigger word almost always comes from
-    the skill body itself being injected into user content (e.g. "Base
-    directory for this skill: .../skills/atodo ... 1. Treat `#atodo`...")
-    which is not an actionable invocation. Skipping those removes the
-    skill-activation noise entirely.
+    the skill body itself being injected into user content, which is not an
+    actionable invocation. Skipping those removes the skill-activation noise
+    entirely.
     """
     if not text:
         return None, None

@@ -116,6 +116,8 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignmentForItem,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -137,7 +139,7 @@ function findTodosForPrdKey(prdKey: string): string[] {
     const dir = path.join(TICKETS_ROOT, bucket);
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
-      if (!/^TODO-\d+\.md$/.test(name)) continue;
+      if (!/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/.test(name)) continue;
       const full = path.join(dir, name);
       if (todoReferencesPrdKey(full, prdKey)) matches.push(boardRel(full));
     }
@@ -145,7 +147,7 @@ function findTodosForPrdKey(prdKey: string): string[] {
   const doneProjectDir = path.join(TICKETS_ROOT, "done", prdKey);
   if (fs.existsSync(doneProjectDir)) {
     for (const name of fs.readdirSync(doneProjectDir)) {
-      if (!/^TODO-\d+\.md$/.test(name)) continue;
+      if (!/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/.test(name)) continue;
       matches.push(boardRel(path.join(doneProjectDir, name)));
     }
   }
@@ -153,6 +155,7 @@ function findTodosForPrdKey(prdKey: string): string[] {
 }
 
 export function cmdPlannerItemArchive(): void {
+  const runnerId = currentRunnerId("planner");
   const fromRaw = getArg("--from");
   const projectKey = getArg("--project-key");
   if (!fromRaw) fail(2, "item-archive requires --from");
@@ -160,10 +163,11 @@ export function cmdPlannerItemArchive(): void {
 
   const from = resolveBoardPath(fromRaw);
   if (!from || !fs.existsSync(from) || !fs.statSync(from).isFile()) fail(1, `archive source not found: ${fromRaw}`);
+  const assignment = requireRoleAssignmentForItem("planner", from, runnerId);
   const targetName = getArg("--as") || path.basename(from);
   if (!/^[A-Za-z0-9._-]+\.md$/.test(targetName)) fail(2, "archive target filename must be a safe markdown filename");
 
-  // Enforce: archiving a PRD requires at least one Todo to reference it.
+  // Enforce: archiving a PRD requires at least one work item to reference it.
   // Use --force-archive-orphan when intentionally closing a no-implementation PRD
   // (research/audit/policy only). Without that override the planner refuses to
   // strand a done PRD with zero children.
@@ -173,10 +177,10 @@ export function cmdPlannerItemArchive(): void {
   if (isPrdSource && !allowOrphan) {
     const matches = findTodosForPrdKey(projectKey);
     if (matches.length === 0) {
-      fail(2, `PRD ${sourceName} has no Todo referencing PRD Key=${projectKey}; refuse to archive a PRD without ≥1 Todo. Pass --force-archive-orphan to override for an intentional no-implementation PRD.`, {
+      fail(2, `PRD ${sourceName} has no work item referencing PRD Key=${projectKey}; refuse to archive a PRD without at least one work item. Pass --force-archive-orphan to override for an intentional no-implementation PRD.`, {
         project_key: projectKey,
         source: boardRel(from),
-        rule: "prd_archive_requires_at_least_one_todo",
+        rule: "prd_archive_requires_at_least_one_work_item",
       });
     }
   }
@@ -189,6 +193,8 @@ export function cmdPlannerItemArchive(): void {
   ok({
     tool: "planner.item-archive",
     status: "ok",
+    runner: runnerId,
+    assignment: compactAssignment(assignment),
     from: boardRel(from),
     path: boardRel(target),
     project_key: projectKey,

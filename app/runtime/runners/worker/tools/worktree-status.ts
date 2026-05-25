@@ -126,7 +126,7 @@ const {
 } = shared;
 
 export function cmdWorkerWorktreeStatus(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   ok({
     tool: "worker.worktree-status",
     path: boardRel(ticket),

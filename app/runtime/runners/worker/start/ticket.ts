@@ -9,7 +9,7 @@ export function findTicket(raw: string): { state: string; path: string } | null 
   }
   const id = normalizeId(raw);
   if (!id) return null;
-  for (const state of ["inprogress", "todo", "verifier", "ready-to-merge"]) {
+  for (const state of ["inprogress", "todo", "verifier"]) {
     for (const name of [`TODO-${id}.md`, `TODO-${id}.md`]) {
       const candidate = path.join(boardRoot, "tickets", state, name);
       if (fs.existsSync(candidate)) return { state, path: candidate };
@@ -40,12 +40,14 @@ export function boardRel(file: string): string {
 }
 
 export function idFromTicketPath(file: string): string {
-  const match = path.basename(file).match(/(\d+)/);
-  return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
+  return normalizeId(path.basename(file));
 }
 
 export function normalizeId(raw: string): string {
-  const match = String(raw || "").match(/(\d+)/);
+  const value = String(raw || "").trim().replace(/\.md$/i, "").replace(/^(?:PRD|TODO)-/i, "");
+  const scoped = value.match(/^([A-Za-z0-9][A-Za-z0-9_.-]*)-(\d+)$/);
+  if (scoped) return `${scoped[1].toLowerCase()}-${scoped[2].padStart(3, "0")}`;
+  const match = value.match(/(\d+)/);
   return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
 }
 
@@ -95,7 +97,7 @@ export function ticketSectionScalar(file: string, section: string, field: string
 function prdBranchForTicket(ticketAbs: string): string {
   if (!ticketAbs) return "";
   const prdKey = ticketScalar(ticketAbs, "PRD Key");
-  if (!/^PRD-\d+$/i.test(prdKey)) return "";
+  if (!/^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(prdKey)) return "";
   const candidates = [
     path.join(boardRoot, "tickets", "prd", `${prdKey}.md`),
     path.join(boardRoot, "tickets", "done", prdKey, `${prdKey}.md`),
@@ -111,7 +113,7 @@ function prdBranchForTicket(ticketAbs: string): string {
 function mergeTargetDescription(ticketAbs: string): string {
   const prdBranch = prdBranchForTicket(ticketAbs);
   if (prdBranch) return `${prdBranch} PRD branch`;
-  return "main (atodo 또는 Branch 없는 legacy PRD)";
+  return "main";
 }
 
 export function doneTarget(ticketAbs: string): string {
@@ -127,16 +129,16 @@ export function nextActionFor(ticketId: string, stage: string, ticketAbs = ""): 
     return `Wait for verifier semantic review for ticket ${ticketId}. Worker must not merge into PROJECT_ROOT until verifier records pass.`;
   }
   if (stage === "verified_pending_merge") {
-    return `Verifier passed ticket ${ticketId}. Merge the verified worktree changes into ${mergeTargetDescription(ticketAbs)}, rerun verification from that merge target, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
+    return `Verifier passed ticket ${ticketId}. Worker owns finalization now: run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>" to commit the verified result into ${mergeTargetDescription(ticketAbs)}, rerun required verification, and merge the PRD worktree if this was the final TODO.`;
   }
   if (stage === "revision_requested") {
     return `Verifier requested revise for ticket ${ticketId}. Keep the same worktree, fix the verifier notes inside Allowed Paths, rerun local verification, then run autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>" to submit again.`;
   }
   if (stage === "replan_requested") {
-    return `Verifier requested replan for ticket ${ticketId}. Run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>" so the worktree is cleaned up and this ticket returns to tickets/todo/ for a fresh worker attempt.`;
+    return `Verifier requested replan for ticket ${ticketId}. Run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>" so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.`;
   }
-  if (stage === "merging" || stage === "ready_to_merge" || stage === "needs_ai_merge") {
-    return `Continue worker merge for ticket ${ticketId}: integrate verifier-approved worktree changes into ${mergeTargetDescription(ticketAbs)}, rerun verification from that merge target, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
+  if (stage === "merging" || stage === "needs_ai_merge") {
+    return `Worker must continue finalization for ticket ${ticketId}: integrate verifier-approved worktree changes into ${mergeTargetDescription(ticketAbs)}, rerun verification from that merge target, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
   }
   return `Use this same worker turn to update the mini-plan and implement within Allowed Paths. Then run the verification command yourself, record evidence with autoflow tool runner-tool worker verification-record, and call autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>" for verifier handoff. If the ticket itself must be redone from scratch, use worker request-replan after verifier/blocker evidence records the reason. Never git push.`;
 }

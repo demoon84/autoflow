@@ -33,7 +33,6 @@ contextBridge.exposeInMainWorld("autoflow", {
   controlWiki: (options: unknown) => ipcRenderer.invoke("autoflow:controlWiki", options),
   browseWikiDatabase: (options: unknown) => ipcRenderer.invoke("autoflow:browseWikiDatabase", options),
   writeMetricsSnapshot: (options: unknown) => ipcRenderer.invoke("autoflow:writeMetricsSnapshot", options),
-  controlStopHook: (options: unknown) => ipcRenderer.invoke("autoflow:controlStopHook", options),
   controlWatcher: (options: unknown) => ipcRenderer.invoke("autoflow:controlWatcher", options),
   readBoardFile: (options: unknown) => ipcRenderer.invoke("autoflow:readBoardFile", options),
   readStartupRules: (options: unknown) => ipcRenderer.invoke("autoflow:readStartupRules", options),

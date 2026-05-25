@@ -3,6 +3,7 @@ import * as shared from "../../../shared/runner-tool";
 type JsonObject = shared.JsonObject;
 type QueueItem = shared.QueueItem;
 type WorkerTicketItem = shared.WorkerTicketItem;
+type AssignmentRecord = shared.AssignmentRecord;
 type PlannerQueueItem = QueueItem & {
   branch?: string;
 };
@@ -120,6 +121,12 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  normalizePrdKey,
+  readRoleAssignment,
+  assignmentMatchesItem,
+  startAssignmentIfLeased,
+  completeRoleAssignment,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -138,7 +145,6 @@ function compactPlannerSource(item: PlannerQueueItem): JsonObject {
     path: item.path,
     kind: item.kind,
     id: item.id,
-    priority: item.priority,
     title: item.title,
     status: item.status || "",
     blocked_reason: blockedReason,
@@ -168,25 +174,73 @@ function plannerFollowupReason(item: PlannerQueueItem): string {
     : `planner_${item.kind}_pending`;
 }
 
+function prdKeyFromAssignment(record: AssignmentRecord | null): string {
+  if (!record) return "";
+  return normalizePrdKey(record.assigned_item_ref || path.basename(record.assigned_item_ref || ""));
+}
+
+function workItemPrdKey(file: string): string {
+  return normalizePrdKey(
+    utils.extractScalarFieldInSection(file, "Work Item", "PRD Key") ||
+    utils.extractScalarFieldInSection(file, "Ticket", "PRD Key") ||
+    utils.extractScalarFieldInSection(file, "Project", "PRD Key")
+  );
+}
+
+function findWorkItemsForPrdKey(prdKey: string): string[] {
+  if (!prdKey) return [];
+  const pattern = /^(?:TODO|WORK)-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i;
+  const roots = [
+    ["todo", 2],
+    ["inprogress", 2],
+    ["verifier", 2],
+    ["done", 5],
+  ] as const;
+  const files = roots.flatMap(([dir, depth]) => collectFiles(path.join(TICKETS_ROOT, dir), pattern, depth));
+  return unique(files)
+    .filter((file) => workItemPrdKey(file) === prdKey)
+    .sort();
+}
+
+function compactGeneratedWorkItems(files: string[]): JsonObject[] {
+  return files.map((file) => {
+    const text = readOptionalTextFile(file);
+    return {
+      path: boardRel(file),
+      id: idFromPath(file),
+      title: readTitle(file, text) || path.basename(file),
+    };
+  });
+}
+
+function plannerCompletionCandidate(record: AssignmentRecord | null): { shouldComplete: boolean; prdKey: string; workItems: string[] } {
+  const prdKey = prdKeyFromAssignment(record);
+  if (!record || !prdKey) return { shouldComplete: false, prdKey, workItems: [] };
+  const activePrd = path.join(TICKETS_ROOT, "prd", `${prdKey}.md`);
+  if (safeIsFile(activePrd)) return { shouldComplete: false, prdKey, workItems: [] };
+  const workItems = findWorkItemsForPrdKey(prdKey);
+  return { shouldComplete: workItems.length > 0, prdKey, workItems };
+}
+
 export function cmdPlannerQueueSnapshot(): void {
+  const runnerId = currentRunnerId("planner");
+  const assignmentCheck = readRoleAssignment("planner", runnerId);
+  let assignment = assignmentCheck.assignment;
+  const assignmentWasLeased = assignmentCheck.ok && assignment?.status === "leased";
+  if (assignmentCheck.ok && assignment) {
+    assignment = startAssignmentIfLeased(assignment);
+  }
   const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const items: PlannerQueueItem[] = [];
   items.push(...listQueueItems("prd", [/^PRD[-_].+\.md$/i], "prd").filter(plannerQueueItemIsActionable));
-  items.push(...listQueueItems("todo", [/^TODO-\d+\.md$/], "todo"));
-  items.push(...listQueueItems("inprogress", [/^TODO-\d+\.md$/], "inprogress"));
+  items.push(...listQueueItems("todo", [/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/], "todo"));
+  items.push(...listQueueItems("inprogress", [/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/], "inprogress"));
 
   items.sort((a, b) => {
-    // Critical (rank 0) preempts everything else regardless of kind: that is
-    // reserved for board-integrity / host-resource / security emergencies.
-    if (a.priority_rank === 0 && b.priority_rank !== 0) return -1;
-    if (b.priority_rank === 0 && a.priority_rank !== 0) return 1;
-
     const ar = planSelectionRank(a);
     const br = planSelectionRank(b);
     if (ar !== br) return ar - br;
 
-    // Within the same kind, the original priority + FIFO order applies.
-    if (a.priority_rank !== b.priority_rank) return a.priority_rank - b.priority_rank;
     const ai = Number.parseInt(a.id || "999999", 10);
     const bi = Number.parseInt(b.id || "999999", 10);
     if (ai !== bi) return ai - bi;
@@ -194,11 +248,41 @@ export function cmdPlannerQueueSnapshot(): void {
   });
 
   const visibleItems = items.slice(0, maxItems);
-  const actionable = items.find(plannerQueueItemIsActionable);
+  const assignmentIsScoped = Boolean(assignment);
+  const assignedItems = assignmentCheck.ok && assignmentIsScoped
+    ? items.filter((item) => assignmentMatchesItem(assignment, item.path))
+    : assignmentCheck.ok
+      ? items
+    : [];
+  const actionable = assignedItems.find(plannerQueueItemIsActionable);
   const scopedSources = actionable ? [compactPlannerSource(actionable)] : [];
+  let assignmentStatus = assignmentCheck.ok ? (assignmentIsScoped ? "active" : "fixed_runner") : assignmentCheck.reason;
+  let followupReason = actionable ? plannerFollowupReason(actionable) : assignmentCheck.reason || "no_actionable_plan_input";
+  let generatedWorkItems: JsonObject[] = [];
+  let assignmentLifecycle = assignmentWasLeased ? "started" : "unchanged";
+
+  if (assignmentCheck.ok && assignment && !actionable) {
+    const completion = plannerCompletionCandidate(assignment);
+    if (completion.shouldComplete) {
+      generatedWorkItems = compactGeneratedWorkItems(completion.workItems);
+      const result = `planner completed ${completion.prdKey}; generated_work_items=${completion.workItems.length}: ${generatedWorkItems
+        .map((item) => String(item.path || ""))
+        .slice(0, 8)
+        .join(", ")}`;
+      assignment = completeRoleAssignment(assignment, result, "completed");
+      assignmentStatus = "completed";
+      followupReason = "planner_assignment_completed";
+      assignmentLifecycle = "completed";
+    }
+  }
 
   ok({
     tool: "planner.queue-snapshot",
+    runner: runnerId,
+    assignment_required: assignmentIsScoped,
+    assignment_status: assignmentStatus,
+    assignment_lifecycle: assignmentLifecycle,
+    assignment: compactAssignment(assignment),
     board_root: BOARD_ROOT,
     project_root: PROJECT_ROOT,
     generated_at: utils.nowIso(),
@@ -207,7 +291,8 @@ export function cmdPlannerQueueSnapshot(): void {
     items_truncated: items.length > visibleItems.length,
     items: visibleItems,
     ai_followup_recommended: Boolean(actionable),
-    ai_followup_reason: actionable ? plannerFollowupReason(actionable) : "no_actionable_plan_input",
+    ai_followup_reason: followupReason,
+    generated_work_items: generatedWorkItems,
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
       max_files_to_open: scopedSourceFileCount(scopedSources),

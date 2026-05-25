@@ -1,3 +1,3 @@
-# Machine-local runner overrides. The tracked config.toml is the default
-# topology; `autoflow runners set/add/remove` writes this local file.
+# Machine-local runner configuration. The default topology lives in the
+# user-scope share root at `reference/runners/config.toml`.
 config.local.toml

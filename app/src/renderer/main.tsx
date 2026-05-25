@@ -19,6 +19,7 @@ import {
   Clock3,
   Computer,
   Database,
+  FileText,
   FolderOpen,
   FolderPlus,
   Inbox,
@@ -141,7 +142,7 @@ function FullPageLoading({
 const workerFlowStages = [
   { key: "idle", label: "대기", meta: "다음 실행 차례", icon: Layers3, tone: "flow-todo" },
   { key: "inprogress", label: "구현", meta: "mini-plan / 구현 / 검증", icon: Activity, tone: "flow-inprogress" },
-  { key: "merging", label: "머지", meta: "통합 준비", icon: CheckCircle2, tone: "flow-done" }
+  { key: "merging", label: "마무리", meta: "PRD worktree 반영", icon: CheckCircle2, tone: "flow-done" }
 ] as const;
 
 const wikiBotFlowStages = [
@@ -170,12 +171,11 @@ const runnerAgentModelOptions: Record<string, string[]> = {
   claude: ["opus", "sonnet"]
 };
 const runnerAgentReasoningOptions: Record<string, string[]> = {
-  codex: ["low", "medium", "high", "xhigh"],
-  claude: ["low", "medium", "high", "xhigh", "max"]
+  codex: ["medium", "high", "xhigh"],
+  claude: ["medium", "high", "xhigh", "max"]
 };
 const runnerOptionLabels: Record<string, Record<string, string>> = {
   codex: {
-    low: "낮음 (fast)",
     medium: "보통",
     high: "높음",
     xhigh: "매우 높음"
@@ -188,13 +188,19 @@ const runnerOptionLabels: Record<string, Record<string, string>> = {
     "claude-sonnet-4-20250514": "Sonnet 4",
     "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet",
     "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet",
-    low: "낮음",
     medium: "보통",
     high: "높음",
     xhigh: "매우 높음",
     max: "Max"
   }
 };
+
+function normalizeRunnerReasoningValue(agent: string, value: string) {
+  const options = runnerAgentReasoningOptions[agent] || [];
+  const normalized = (value || "").trim().toLowerCase();
+  if (!options.length) return normalized;
+  return options.includes(normalized) ? normalized : "medium";
+}
 const runnerModeOptions = ["one-shot", "loop", "watch"] as const;
 const runnerEnabledOptions = ["true", "false"] as const;
 const runnableRunnerAgents = new Set<string>(runnerAgentOptions);
@@ -581,7 +587,7 @@ function getWorkflowMetricCounts(board: AutoflowBoardSnapshot | null) {
     codeVolumeCount: statusNumber(metrics, "autoflow_code_volume_count"),
     codeNetDeltaCount: statusNumber(metrics, "autoflow_code_net_delta_count"),
     tokenUsageCount: statusNumber(metrics, "autoflow_token_usage_count"),
-    tokenReportCount: statusNumber(metrics, "autoflow_token_report_count"),
+	    tokenReportCount: statusNumber(metrics, "autoflow_llm_request_count") || statusNumber(metrics, "autoflow_token_report_count"),
     tokenCacheReadCount: statusNumber(metrics, "autoflow_token_cache_read_count"),
     tokenUsage1hCount: statusNumber(metrics, "autoflow_token_usage_1h_count"),
     tokenUsage24hCount: statusNumber(metrics, "autoflow_token_usage_24h_count"),
@@ -696,19 +702,17 @@ const statusLabels: Record<string, string> = {
   verifier_pending: "검증 대기",
   verifier_pass: "검증 통과",
   verifier_passed: "검증 통과",
-  verifier_passed_merge_pending: "검증 통과 · 머지 대기",
+  verifier_passed_worker_finalization_pending: "검증 통과 · Worker 마무리",
   verifier_revise: "수정 요청",
   verifier_replan: "재계획 요청",
   verifier_reject: "검증 반려",
   verifier_rejected: "검증 반려",
-  verified_pending_merge: "검증 통과 · 머지 대기",
-  needs_ai_merge: "AI 머지 필요",
-  ai_merge_required: "AI 머지 필요",
-  ready_to_merge: "머지 대기",
-  "ready-to-merge": "머지 대기",
+  verified_pending_merge: "검증 통과 · Worker 마무리",
+  needs_ai_merge: "Worker 마무리 필요",
+  ai_merge_required: "Worker 마무리 필요",
   revision_requested: "수정 요청",
   replan_requested: "재계획 요청",
-  merging: "머지 중",
+  merging: "Worker 마무리 중",
   done: "완료",
   completed: "완료",
   complete: "완료",
@@ -730,33 +734,29 @@ const statusLabels: Record<string, string> = {
   runner_has_active_ticket: "담당 티켓 처리 중",
   worker_owned_ticket_pending: "담당 티켓 진행 대기",
   worker_ticket_blocked: "티켓 보완 필요",
-  worker_ticket_waiting_for_verifier: "검증 러너 응답 대기",
-  worker_todo_blocked: "처리할 TODO 없음",
-  worker_todo_claimable: "처리 가능한 TODO 있음",
-  planner_handoff_turn_requested: "플래너 러너 호출 요청됨",
-  verifier_handoff_turn_requested: "검증 러너 호출 요청됨",
+  worker_ticket_waiting_for_verifier: "Verifier 응답 대기",
+  worker_work_blocked: "처리할 work item 없음",
+  worker_work_claimable: "처리 가능한 work item 있음",
+  planner_handoff_turn_requested: "Planner 호출 요청됨",
+  verifier_handoff_turn_requested: "Verifier 호출 요청됨",
   verifier_revision_requested: "검증 수정 요청 확인됨",
   verifier_replan_requested: "검증 재계획 요청 확인됨",
-  worker_todo_handoff_turn_requested: "워커 러너 호출 요청됨",
-  wiki_handoff_turn_requested: "위키 러너 호출 요청됨",
+  worker_work_handoff_turn_requested: "Worker 호출 요청됨",
+  wiki_handoff_turn_requested: "Wiki 호출 요청됨",
   dry_run: "미리 실행",
   true: "사용",
   false: "중지"
 };
 
-// Default topology is planner + worker + verifier + wiki. Legacy role labels are
-// kept so older boards with coordinator / merge aliases still render readable
-// names without implying a separate merge-bot runner.
+// Default topology is planner + worker + verifier + wiki.
 const runnerRoleLabels: Record<string, string> = {
-  "worker": "워커 러너",
-  ticket: "워커 러너",
-  merge: "워커 러너",
-  "merge-bot": "워커 러너",
-  planner: "플래너 러너",
-  plan: "플래너 러너",
-  "wiki-maintainer": "위키 러너",
-  wiki: "위키 러너",
-  verifier: "검증 러너",
+  "worker": "Worker",
+  ticket: "Worker",
+  planner: "Planner",
+  plan: "Planner",
+  "wiki-maintainer": "Wiki",
+  wiki: "Wiki",
+  verifier: "Verifier",
   coordinator: "coordinator (legacy)",
   coord: "coordinator (legacy)",
   todo: "작업자 (legacy)",
@@ -913,12 +913,7 @@ function runnerReasoningChoices(agent: string, installedAgentProfiles: Installed
   if (!profile.supportsReasoning) {
     return [];
   }
-
-  if (agent === "claude") {
-    return uniqueOptions([currentValue, profile.reasoning, ...(runnerAgentReasoningOptions.claude || [])]);
-  }
-
-  return uniqueOptions([currentValue, profile.reasoning, ...(runnerAgentReasoningOptions[agent] || [])]);
+  return runnerAgentReasoningOptions[agent] || uniqueOptions([currentValue, profile.reasoning]);
 }
 
 function normalizeRunnerSelections(
@@ -931,13 +926,14 @@ function normalizeRunnerSelections(
   const modelChoices = runnerModelChoices(agent, installedAgentProfiles, model);
   const normalizedModel = modelChoices[0] || "";
   const reasoningChoices = runnerReasoningChoices(agent, installedAgentProfiles, reasoning);
+  const normalizedRequestedReasoning = normalizeRunnerReasoningValue(agent, reasoning);
   const normalizedReasoning =
     agent === "claude" && profile.supportsReasoning
-      ? reasoningChoices.includes(reasoning)
-        ? reasoning
-        : "high"
+      ? reasoningChoices.includes(normalizedRequestedReasoning)
+        ? normalizedRequestedReasoning
+        : "medium"
       : profile.supportsReasoning
-        ? reasoningChoices[0] || ""
+        ? (reasoningChoices.includes(normalizedRequestedReasoning) ? normalizedRequestedReasoning : reasoningChoices[0] || "")
         : "";
 
   return {
@@ -955,7 +951,7 @@ function runnerDraftFromRunner(runner: AutoflowRunner): RunnerDraft {
   return {
     agent: runner.agent || "codex",
     model: runner.model || "",
-    reasoning: runner.reasoning || "",
+    reasoning: normalizeRunnerReasoningValue(runner.agent || "codex", runner.reasoning || ""),
     mode: runner.mode || mode,
     intervalSeconds: runner.intervalSeconds || intervalSeconds,
     enabled: runner.enabled || "true",
@@ -967,6 +963,16 @@ function isWikiRunner(runner: Pick<AutoflowRunner, "id" | "role">) {
   const id = (runner.id || "").toLowerCase();
   const role = (runner.role || "").toLowerCase();
   return id === "wiki" || id.startsWith("wiki-") || role === "wiki" || role === "wiki-maintainer";
+}
+
+function runnerConfiguredRole(runner: Pick<AutoflowRunner, "role">) {
+  return (runner.role || "").toLowerCase();
+}
+
+function runnerCurrentRoleValue(
+  runner: Pick<AutoflowRunner, "role"> & Partial<Pick<AutoflowRunner, "activeRole" | "assignmentRole">>
+) {
+  return (runner.activeRole || runner.assignmentRole || runner.role || "").toLowerCase();
 }
 
 function runnerUsesScheduledLoop(runner: Pick<AutoflowRunner, "id" | "role">) {
@@ -1038,7 +1044,7 @@ function commandPreviewForRunner(
   const boardDirName = board?.status.board_dir_name || defaultBoardDirName;
   const role = runRoleForRunner(runner.role);
   const model = draft.model.trim();
-  const reasoning = draft.reasoning.trim();
+  const reasoning = normalizeRunnerReasoningValue(draft.agent, draft.reasoning);
   const commandOverride = draft.command.trim();
 
   if (commandOverride) {
@@ -1366,15 +1372,27 @@ function runnerHealthNeedsAttention(value: string) {
   return ["blocked", "error", "fail", "failed", "missing", "stale_pid", "warning"].includes(value);
 }
 
+function runnerHasLiveProcess(runner: AutoflowRunner) {
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  return stateStatus === "running" || Boolean(runner.pid);
+}
+
+function runnerBlockedNeedsAttention(runner: AutoflowRunner) {
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  if (stateStatus === "blocked" || stateStatus === "failed") return true;
+  if (activeStage !== "blocked") return false;
+  return !runnerHasLiveProcess(runner);
+}
+
 function runnersNeedingAttention(runners: AutoflowRunner[]) {
   return runners.filter((runner) => {
     if ((runner.enabled || "").toLowerCase() === "false") return false;
     const stateStatus = (runner.stateStatus || "").toLowerCase();
-    const activeStage = (runner.activeStage || "").toLowerCase();
     const lastResult = (runner.lastResult || "").toLowerCase();
     return (
       runnerHealthNeedsAttention(stateStatus) ||
-      runnerHealthNeedsAttention(activeStage) ||
+      runnerBlockedNeedsAttention(runner) ||
       runnerHealthNeedsAttention(lastResult)
     );
   });
@@ -1468,7 +1486,7 @@ function App() {
   const [wikiQueryInput, setWikiQueryInput] = React.useState("");
   const [wikiQueryRunning, setWikiQueryRunning] = React.useState(false);
   const [wikiQueryResult, setWikiQueryResult] = React.useState<WikiQueryParsed | null>(null);
-  const [wikiDbSelectedTable, setWikiDbSelectedTable] = React.useState("wiki_chunks");
+  const [wikiDbSelectedTable, setWikiDbSelectedTable] = React.useState("wiki");
   const [wikiDbResult, setWikiDbResult] = React.useState<AutoflowWikiDatabaseResult | null>(null);
   const [wikiDbLoading, setWikiDbLoading] = React.useState(false);
   const [wikiDbError, setWikiDbError] = React.useState("");
@@ -1483,7 +1501,7 @@ function App() {
   const [isRefreshingProjectTabs, setIsRefreshingProjectTabs] = React.useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = React.useState<SettingsSection>(() => {
     const stored = initialSetting("autoflow.activeSettingsSection", "progress");
-    if (stored === "general" || stored === "automation" || stored === "stop-hook" || stored === "watcher" || stored === "chat") {
+    if (stored === "general" || stored === "automation" || stored === "watcher" || stored === "chat") {
       return "progress";
     }
     return settingsNavigation.some((item) => item.key === stored) ? (stored as SettingsSection) : "progress";
@@ -1841,7 +1859,7 @@ function App() {
   React.useEffect(() => {
     setWikiDbResult(null);
     setWikiDbError("");
-    setWikiDbSelectedTable("wiki_chunks");
+    setWikiDbSelectedTable("wiki");
   }, [options.boardDirName, options.projectRoot]);
 
   const loadWikiDatabase = React.useCallback(
@@ -1857,13 +1875,13 @@ function App() {
         });
         if (!result.ok) {
           setWikiDbResult(result);
-          setWikiDbError(result.stderr || "위키 DB를 읽지 못했습니다.");
+          setWikiDbError(result.stderr || "위키를 읽지 못했습니다.");
           return;
         }
         setWikiDbResult(result);
         setWikiDbSelectedTable(result.selectedTable || table);
       } catch (error) {
-        setWikiDbError(error instanceof Error ? error.message : "위키 DB를 읽지 못했습니다.");
+        setWikiDbError(error instanceof Error ? error.message : "위키를 읽지 못했습니다.");
       } finally {
         setWikiDbLoading(false);
       }
@@ -2072,7 +2090,7 @@ function App() {
     previousSettingsSectionRef.current = activeSettingsSection;
   }, [activeSettingsSection]);
 
-  // (checks tab removed — no automated intervention ledger in the 4-runner topology)
+  // Checks tab removed; runtime state now comes from runner assignment evidence.
 
   const refreshProjectTabs = React.useCallback(async () => {
     setIsRefreshingProjectTabs(true);
@@ -2241,12 +2259,6 @@ function App() {
       beginRunnerTransition(runner, action, forceStop);
       setRunnerError("");
       try {
-        let effectiveRunnerConfig = {
-          agent: runner.agent || "codex",
-          model: runner.model || "",
-          reasoning: runner.reasoning || "",
-          command: runner.command || ""
-        };
         if (runner && (action === "start" || action === "restart")) {
           const currentRunnerDraft = runnerDraftFromRunner(runner);
           const draft = runnerDrafts[runner.id] || currentRunnerDraft;
@@ -2258,12 +2270,6 @@ function App() {
             reasoning: normalized.reasoning
           };
           const hasUnsavedConfigEdit = !runnerDraftsEqual(normalizedDraft, savedDraft);
-          effectiveRunnerConfig = {
-            agent: hasUnsavedConfigEdit ? draft.agent : runner.agent || "codex",
-            model: hasUnsavedConfigEdit ? normalized.model : runner.model || "",
-            reasoning: hasUnsavedConfigEdit ? normalized.reasoning : runner.reasoning || "",
-            command: hasUnsavedConfigEdit ? draft.command : runner.command || ""
-          };
           const needsLoopNormalization =
             (runner.mode || "") !== "" ||
             (runner.intervalSeconds || "") !== "" ||
@@ -2294,40 +2300,12 @@ function App() {
           }
         }
 
-        // PTY mode (vibe-terminal pattern): ▶/■ map to long-lived PTY
-        // process management. The legacy run-role.sh polling loop is no
-        // longer used for runners — autoflow:runnerPtySpawn replaces it.
-        let result: { ok: boolean; stderr?: string; stdout?: string };
-        if (action === "start") {
-          const spawnRes = await (window.autoflow as any).runnerPtySpawn({
-            runnerId,
-            role: runner?.role || "worker",
-            agent: effectiveRunnerConfig.agent || "codex",
-            model: effectiveRunnerConfig.model || "",
-            reasoning: effectiveRunnerConfig.reasoning || "",
-            projectRoot: options.projectRoot,
-            boardDirName: options.boardDirName,
-            freshSession: true
-          });
-          result = { ok: !!spawnRes?.ok, stderr: spawnRes?.error || "", stdout: spawnRes?.stdout || "" };
-        } else if (action === "stop") {
-          const stopRes = await (window.autoflow as any).runnerPtyStop({
-            runnerId,
-            projectRoot: options.projectRoot,
-            boardDirName: options.boardDirName,
-            force: forceStop
-          });
-          result = { ok: !!stopRes?.ok, stderr: "", stdout: "" };
-        } else {
-          // restart / other actions fall through to legacy controlRunner
-          // until PTY-mode equivalents are added.
-          result = await window.autoflow.controlRunner({
-            action,
-            runnerId,
-            ...(forceStop ? { force: true } : {}),
-            ...options
-          });
-        }
+        const result = await window.autoflow.controlRunner({
+          action,
+          runnerId,
+          ...(forceStop ? { force: true } : {}),
+          ...options
+        });
         if (!result.ok) {
           setRunnerError(result.stderr || result.stdout || "AI 작업에 실패했습니다.");
           await loadBoard();
@@ -3616,7 +3594,6 @@ function RunnerConsole({
   drafts,
   selectedRunnerId,
   onSelectRunner,
-  onControl,
   onReadLog,
   onDraftChange,
   onConfigure
@@ -3629,7 +3606,6 @@ function RunnerConsole({
   drafts: Record<string, RunnerDraft>;
   selectedRunnerId: string;
   onSelectRunner: (runnerId: string) => void;
-  onControl: (action: RunnerControlAction, runnerId: string, options?: RunnerControlOptions) => void;
   onReadLog: (filePath: string) => void;
   onDraftChange: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
@@ -3646,9 +3622,7 @@ function RunnerConsole({
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
   const stoppedCount = runners.filter((runner) => (runner.stateStatus || "") === "stopped").length;
-  const blockedCount = runners.filter(
-    (runner) => (runner.activeStage || "").toLowerCase() === "blocked"
-  ).length;
+  const blockedCount = runners.filter(runnerBlockedNeedsAttention).length;
 
   return (
     <section className="runner-console" aria-label="Autoflow AI 설정">
@@ -3662,7 +3636,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">플래너 / 워커 / 검증 / 위키 러너</span>
+            <span className="ticket-workspace-tab-copy">Planner / Worker / Verifier / Wiki</span>
           </div>
         }
       >
@@ -3672,18 +3646,11 @@ function RunnerConsole({
           <div className="runner-grid">
             {runners.length ? (
               runners.map((runner) => {
-            const enabled = runnerIsEnabled(runner.enabled);
             const status = runner.stateStatus || "idle";
             const scheduledLoop = runnerUsesScheduledLoop(runner);
-            const mode = scheduledLoop ? (runner.mode || "loop") : "";
             const intervalLabel = scheduledLoop ? (runner.intervalSeconds || runner.intervalEffectiveSeconds || "60") : "";
             const runnerCadenceLabel = scheduledLoop ? `반복 실행 / ${intervalLabel}s` : "수동 실행";
-            // actionKey holds the action label for THIS runner only ("" when idle).
-            const isWorking = Boolean(actionKey);
             const transitionLabel = runnerTransitionLabel(actionKey);
-            const canForceStop = actionKey === "stopping_pending";
-            const canStart = scheduledLoop ? mode === "loop" : true;
-            const canStop = status === "running" || Boolean(runner.pid);
             const canEditConfig = status !== "running";
             const draft = drafts[runner.id] || runnerDraftFromRunner(runner);
             const runnerEventRaw = runner.activeItem || runner.lastResult || "";
@@ -3713,60 +3680,6 @@ function RunnerConsole({
                     <span>
                       {runner.agent || "에이전트"} {runner.model ? `- ${runner.model}` : ""} - {runnerCadenceLabel}
                     </span>
-                  </div>
-                  <div className="runner-actions">
-                    {canStop ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="runner-icon-button runner-plain-icon-button"
-                          aria-label={`${runner.id} 중지`}
-                          disabled={Boolean(actionKey)}
-                          onClick={() => {
-                            onControl("stop", runner.id);
-                          }}
-                        >
-                          {isWorking && (actionKey === "stopping_pending" || actionKey === "stopping_force") ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Square className="h-4 w-4" />
-                          )}
-                        </Button>
-                        {canForceStop ? (
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="runner-icon-button runner-plain-icon-button"
-                            aria-label={`${runner.id} 강제 종료`}
-                            onClick={() => {
-                              if (window.confirm(`${displayWorkflowRunnerId(runner.id, runners)} runner 를 강제 종료할까요?`)) {
-                                onControl("stop", runner.id, { force: true });
-                              }
-                            }}
-                          >
-                            <TriangleAlert className="h-4 w-4" />
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="runner-icon-button runner-plain-icon-button"
-                        aria-label={`${runner.id} 시작`}
-                        disabled={!canStart || Boolean(actionKey)}
-                        onClick={() => {
-                          onControl("start", runner.id);
-                        }}
-                      >
-                        {isWorking && actionKey === "starting" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Play className="h-4 w-4" />
-                        )}
-                      </Button>
-                    )}
                   </div>
                 </div>
                 <div className="runner-details">
@@ -4851,17 +4764,25 @@ function ReportHero({
 }
 
 function displayReportRunnerLabel(value: string, runners?: AutoflowRunner[]) {
+  const runner = runners?.find((candidate) => candidate.id === value);
+  if (runner) {
+    const roleLabel = displayProgressRoleLabel(runner, runners);
+    if (roleLabel) return roleLabel;
+  }
+
   const label = displayWorkflowRunnerId(value, runners);
   const normalized = (label || value || "").toLowerCase();
   const workerMatch = normalized.match(/^worker-(\d+)$/);
   const wikiMatch = label.match(/^위키-(\d+)$/);
 
-  if (normalized === "planner") return "플래너 러너";
-  if (normalized === "verifier") return "검증 러너";
-  if (normalized === "worker") return "워커 러너";
-  if (workerMatch) return `워커 러너 ${workerMatch[1]}`;
-  if (label === "위키") return "위키 러너";
-  if (wikiMatch) return `위키 러너 ${wikiMatch[1]}`;
+  if (normalized === "planner") return "Planner";
+  if (normalized === "verifier") return "Verifier";
+  if (normalized === "worker") return "Worker";
+  if (normalized === "unknown") return "역할 미확인";
+  if (workerMatch) return `Worker${workerMatch[1]}`;
+  if (label === "위키") return "Wiki";
+  if (normalized === "wiki") return "Wiki";
+  if (wikiMatch) return `Wiki${wikiMatch[1]}`;
 
   return label;
 }
@@ -4904,15 +4825,8 @@ function ReportingDashboard({
     tokenOutput24hCount,
     tokenCache24hCount
   } = getWorkflowMetricCounts(board);
-  const runnerRunning = runners.filter((runner) => {
-    const status = (runner.stateStatus || "").toLowerCase();
-    return status === "running" || Boolean(runner.pid);
-  }).length;
-  const runnerBlocked = runners.filter((runner) => {
-    const status = (runner.stateStatus || "").toLowerCase();
-    const activeStage = (runner.activeStage || "").toLowerCase();
-    return status === "blocked" || status === "failed" || activeStage === "blocked";
-  }).length;
+  const runnerRunning = runners.filter(runnerHasLiveProcess).length;
+  const runnerBlocked = runners.filter(runnerBlockedNeedsAttention).length;
   const runnerEnabled = runners.filter((runner) => runnerIsEnabled(runner.enabled)).length;
   const tokenHourlyBuckets = parseMetricJsonArray(statusValue(metrics, "autoflow_token_hourly_24h_json", "[]"))
     .map((entry) => ({
@@ -4921,15 +4835,15 @@ function ReportingDashboard({
       output: safeNumber(entry.output),
       cache: safeNumber(entry.cache)
     }));
-  const runnerBreakdown = mergeBreakdownLabels(
-    buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}"))),
+  const tokenRoleBreakdownRaw =
+    statusValue(metrics, "autoflow_token_role_breakdown_24h_json", "") ||
+    statusValue(metrics, "autoflow_token_runner_breakdown_24h_json", "{}");
+  const tokenRoleBreakdown = mergeBreakdownLabels(
+    buildSortedBreakdown(parseMetricJsonObject(tokenRoleBreakdownRaw)),
     (label) => displayReportRunnerLabel(label, runners)
   );
   const modelBreakdown = buildSortedBreakdown(parseMetricJsonObject(statusValue(metrics, "autoflow_token_model_breakdown_24h_json", "{}")));
-  const runnerNeedUser = runners.filter((runner) => {
-    const activeStage = (runner.activeStage || "").toLowerCase();
-    return activeStage === "blocked";
-  }).length;
+  const runnerNeedUser = runners.filter(runnerBlockedNeedsAttention).length;
   const ticketBreakdown = [
     { label: "PRD", value: board?.tickets.prd?.length || 0 },
     { label: "대기", value: board?.tickets.todo?.length || 0 },
@@ -4954,7 +4868,7 @@ function ReportingDashboard({
     tokenReportCount > 0 ||
     tokenUsage1hCount > 0 ||
     tokenUsage24hCount > 0 ||
-    runnerBreakdown.length > 0 ||
+    tokenRoleBreakdown.length > 0 ||
     modelBreakdown.length > 0;
   const hasRunnerData = runners.length > 0;
 
@@ -5035,11 +4949,11 @@ function ReportingDashboard({
         <ReportMetricCard
           label="토큰 사용량"
           value={`${formatCompactCount(tokenUsageCount)}토큰`}
-          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
+	          detail={hasTokenData ? `${formatCount(tokenReportCount)}개 LLM 요청 · 전체 누적` : "러너 실행 후 채워집니다"}
           icon={Terminal}
           tone="report-tone-violet"
           className="report-metric-card-token"
-          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}개, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
+	          title={`토큰 사용량 ${formatCount(tokenUsageCount)}토큰, LLM 요청 ${formatCount(tokenReportCount)}개, cache read ${formatCount(tokenCacheReadCount)}, 전체 누적`}
         >
           {hasTokenData ? (
             <>
@@ -5073,8 +4987,8 @@ function ReportingDashboard({
                   <strong>{formatCount(tokenCache24hCount)}</strong>
                 </div>
                 <div className="report-inline-stat">
-                  <span>러너별</span>
-                  <strong>{runnerBreakdown.length}개</strong>
+                  <span>역할별</span>
+                  <strong>{tokenRoleBreakdown.length}개</strong>
                 </div>
                 <div className="report-inline-stat">
                   <span>모델별</span>
@@ -5089,7 +5003,7 @@ function ReportingDashboard({
                   </em>
                 </div>
               ) : null}
-              <ReportHorizontalBarChart title="러너별 24h 토큰" items={runnerBreakdown} />
+              <ReportHorizontalBarChart title="역할별 24h 토큰" items={tokenRoleBreakdown} />
               {modelBreakdown.length ? <ReportHorizontalBarChart title="모델별 24h 토큰" items={modelBreakdown} /> : null}
               <ReportHourlyTokenChart title="최근 24시간 입력/출력 토큰 추세" data={tokenHourlyBuckets} />
             </>
@@ -5265,8 +5179,8 @@ function SummaryGrid({ board }: { board: AutoflowBoardSnapshot | null }) {
     },
     {
       label: "대기열",
-      value: statusValue(status, "ticket_todo_count", String(board?.tickets.todo?.length || 0)),
-      detail: "준비된 티켓",
+      value: statusValue(status, "work_item_pending_count", String(board?.tickets.todo?.length || 0)),
+      detail: "준비된 work item",
       icon: Layers3,
       tone: "metric-amber"
     },
@@ -5311,10 +5225,9 @@ type WorkflowFileEntry = AutoflowFilePreview & {
 };
 
 type TicketWorkspaceTabKey = "prd" | "todo" | "coverage";
-type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked" | "done";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "verifier" | "blocked" | "done";
 type TicketWorkspaceItemKind = "prd" | "ticket";
 type TicketKanbanFolderKey = string;
-type TicketPriority = "critical" | "high" | "normal" | "low";
 
 type TicketWorkspaceItemMeta = {
   id: string;
@@ -5327,8 +5240,6 @@ type TicketWorkspaceItemMeta = {
   statusKey: TicketWorkspaceStatusKey;
   statusLabel: string;
   statusVariant: "default" | "secondary" | "destructive";
-  priority: TicketPriority;
-  priorityRank: number;
 };
 
 type TicketWorkspaceItem = AutoflowFilePreview &
@@ -5337,23 +5248,30 @@ type TicketWorkspaceItem = AutoflowFilePreview &
     displayId: string;
   };
 
-const ticketKanbanFolderOrder = ["prd", "todo", "inprogress", "done"] as const;
+const prdKeyPattern = /PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+/i;
+const namespacedPrdFilePattern = /^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i;
+const namespacedTodoFilePattern = /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i;
+const legacyPrdFilePattern = /^pr(?:d|oject)_\d+\.md$/i;
+const legacyTodoFilePattern = /^(?:Todo-\d+|tickets_\d+)\.md$/i;
+
+const ticketKanbanFolderOrder = ["prd", "todo", "inprogress", "verifier", "done"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
   description: string;
 }> = [
   { key: "prd", label: "PRD", description: "작성/보관된 PRD" },
-  { key: "todo", label: "TODO", description: "TODO 작업 티켓" },
-  { key: "coverage", label: "맵", description: "PRD ↔ TODO 커버리지" }
+  { key: "todo", label: "WORK", description: "PRD-derived work item" },
+  { key: "coverage", label: "맵", description: "PRD ↔ work item 커버리지" }
 ];
 const ticketKanbanFolderMeta: Record<string, {
   label: string;
   description: string;
 }> = {
   prd: { label: "PRD", description: "PRD 대기" },
-  todo: { label: "TODO", description: "아직 시작 전" },
+  todo: { label: "WORK", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "Worker가 처리중" },
+  verifier: { label: "검증 대기", description: "Verifier가 확인할 항목" },
   done: { label: "완료", description: "완료 기록" }
 };
 
@@ -5368,64 +5286,8 @@ function sortFilesByModifiedAt(files: AutoflowFilePreview[]) {
 }
 
 function numericIdFromBoardFile(file: AutoflowFilePreview) {
-  const match = file.name.match(/^(?:PRD|TODO)-(\d+)(?:_retry_.*)?\.md$/);
+  const match = file.name.match(/^(?:PRD|TODO)-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?(\d+)(?:_retry_.*)?\.md$/i);
   return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-function normalizeTicketPriority(value: string): TicketPriority | null {
-  const normalized = value
-    .replace(/[#`"'\[\]:]/g, " ")
-    .trim()
-    .toLowerCase();
-
-  if (normalized === "critical" || normalized === "crit" || normalized === "p0") {
-    return "critical";
-  }
-  if (normalized === "high" || normalized === "p1") {
-    return "high";
-  }
-  if (normalized === "normal" || normalized === "medium" || normalized === "default" || normalized === "p2") {
-    return "normal";
-  }
-  if (normalized === "low" || normalized === "p3") {
-    return "low";
-  }
-  return null;
-}
-
-function ticketPriorityRank(priority: TicketPriority) {
-  const ranks: Record<TicketPriority, number> = {
-    critical: 0,
-    high: 1,
-    normal: 2,
-    low: 3
-  };
-  return ranks[priority];
-}
-
-function extractMarkdownPriority(content: string): TicketPriority {
-  const frontmatterMatch = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
-  const frontmatterPriority = frontmatterMatch?.[1]?.match(/^priority:\s*(.*?)\s*$/im)?.[1];
-  const fromFrontmatter = frontmatterPriority ? normalizeTicketPriority(frontmatterPriority) : null;
-  if (fromFrontmatter) {
-    return fromFrontmatter;
-  }
-
-  const bodyPriority = content.match(/^-?\s*Priority:\s*(.*?)\s*$/im)?.[1];
-  const fromBody = bodyPriority ? normalizeTicketPriority(bodyPriority) : null;
-  if (fromBody) {
-    return fromBody;
-  }
-
-  const titleLine = content.match(/^(?:-\s*)?Title:\s*(.*?)\s*$/im)?.[1] || content.match(/^#\s+(.*?)\s*$/m)?.[1] || "";
-  if (/\[critical\]|🚨/i.test(titleLine)) {
-    return "critical";
-  }
-  if (/\[high\]|⚠️|⚠/i.test(titleLine)) {
-    return "high";
-  }
-
-  return "normal";
 }
 
 function compareTicketWorkspaceItems(left: TicketWorkspaceItem, right: TicketWorkspaceItem) {
@@ -5433,10 +5295,6 @@ function compareTicketWorkspaceItems(left: TicketWorkspaceItem, right: TicketWor
   const rightId = numericIdFromBoardFile(right);
   if (leftId !== rightId) {
     return rightId - leftId;
-  }
-
-  if (left.priorityRank !== right.priorityRank) {
-    return left.priorityRank - right.priorityRank;
   }
 
   const modified = right.modifiedAt.localeCompare(left.modifiedAt);
@@ -5457,17 +5315,38 @@ function ticketFolderKeyFromFile(file: AutoflowFilePreview) {
 }
 
 function isPrdBoardFile(file: AutoflowFilePreview) {
-  return /^pr(?:d|oject)_\d+\.md$/i.test(file.name);
+  return namespacedPrdFilePattern.test(file.name) || legacyPrdFilePattern.test(file.name);
 }
 
 function isTicketBoardFile(file: AutoflowFilePreview) {
-  return /^TODO-\d+\.md$/i.test(file.name) || /^TODO-\d+\.md$/i.test(file.name);
+  return namespacedTodoFilePattern.test(file.name) || legacyTodoFilePattern.test(file.name);
 }
 
 function markdownScalar(content: string, labels: string[]) {
   const escaped = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const match = content.match(new RegExp(`^- (?:${escaped.join("|")}):[ \\t]*(.*)$`, "im"));
   return match?.[1]?.trim() || "";
+}
+
+function ticketMarkdownDisplayContent(content: string) {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:[-*]\s*)?Priority\s*:/i.test(line))
+    .join("\n");
+}
+
+function normalizePrdKey(value: string): string {
+  const match = value.match(prdKeyPattern);
+  return match ? match[0].replace(/^prd-/i, "PRD-") : "";
+}
+
+function prdKeyFromTicketContent(content: string): string {
+  const direct =
+    markdownScalar(content, ["PRD Key"]) ||
+    markdownScalar(content, ["Project Key"]) ||
+    markdownScalar(content, ["Key"]);
+  const sourcePrd = markdownScalar(content, ["Source PRD"]);
+  return normalizePrdKey(direct || sourcePrd);
 }
 
 function markdownSectionPreview(content: string, heading: string) {
@@ -5521,11 +5400,8 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
   if (normalized.includes("/tickets/inprogress/")) {
     return "inprogress";
   }
-  if (normalized.includes("/tickets/ready-to-merge/")) {
-    return "ready-to-merge";
-  }
-  if (normalized.includes("/tickets/merge-blocked/")) {
-    return "merge-blocked";
+  if (normalized.includes("/tickets/verifier/")) {
+    return "verifier";
   }
   if (normalized.includes("/tickets/done/")) {
     return "done";
@@ -5542,12 +5418,8 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return "막힘";
   }
 
-  if (statusKey === "ready-to-merge") {
-    return "머지 대기";
-  }
-
-  if (statusKey === "merge-blocked") {
-    return "머지 막힘";
+  if (statusKey === "verifier") {
+    return "검증 대기";
   }
 
   if (statusKey === "inprogress") {
@@ -5555,7 +5427,7 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "ready-to-merge" | "merge-blocked" | "blocked">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "verifier" | "blocked">, string> = {
     todo: "발급됨",
     done: "완료"
   };
@@ -5563,11 +5435,11 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
 }
 
 function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
-  if (statusKey === "blocked" || statusKey === "merge-blocked") {
+  if (statusKey === "blocked") {
     return "destructive" as const;
   }
 
-  if (statusKey === "inprogress" || statusKey === "ready-to-merge" || statusKey === "done") {
+  if (statusKey === "inprogress" || statusKey === "verifier" || statusKey === "done") {
     return "default" as const;
   }
 
@@ -5584,7 +5456,6 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
   const stage = markdownScalar(content, ["Stage"]);
   const fileStatusKey = ticketWorkspaceStatusForFile(file) || "todo";
   const statusKey = fileStatusKey === "inprogress" && stage.toLowerCase() === "blocked" ? "blocked" : fileStatusKey;
-  const priority = extractMarkdownPriority(content);
   return {
     id,
     title,
@@ -5595,9 +5466,7 @@ function extractTicketWorkspaceMeta(file: AutoflowFilePreview, content: string, 
     lastUpdated: markdownScalar(content, ["Last Updated"]),
     statusKey,
     statusLabel: ticketWorkspaceStatusLabel(statusKey, file, content),
-    statusVariant: ticketWorkspaceStatusVariant(statusKey),
-    priority,
-    priorityRank: ticketPriorityRank(priority)
+    statusVariant: ticketWorkspaceStatusVariant(statusKey)
   };
 }
 
@@ -5642,7 +5511,7 @@ function resolveTicketWorkspaceDetailItem(
   if (exactItem) return exactItem;
 
   const activeName = boardFileNameFromPath(activeDetailPath);
-  const movedTicket = /^TODO-\d+\.md$/i.test(activeName) || activeName.startsWith("tickets_")
+  const movedTicket = namespacedTodoFilePattern.test(activeName) || legacyTodoFilePattern.test(activeName)
     ? items.find((item) => item.kind === "ticket" && item.name === activeName)
     : null;
 
@@ -5732,7 +5601,7 @@ function TicketDetailLayer({
               {!error && content ? (
                 <div className="workflow-pin-detail-body">
                   {content.content ? (
-                    <MarkdownViewer content={content.content} />
+                    <MarkdownViewer content={ticketMarkdownDisplayContent(content.content)} />
                   ) : (
                     <p className="workflow-pin-detail-empty">(비어 있음)</p>
                   )}
@@ -5835,9 +5704,7 @@ function TicketWorkspaceKanbanView({
               lastUpdated: "",
               statusKey: fallbackKey,
               statusLabel: ticketWorkspaceStatusLabel(fallbackKey, file, ""),
-              statusVariant: ticketWorkspaceStatusVariant(fallbackKey),
-              priority: "normal",
-              priorityRank: ticketPriorityRank("normal")
+              statusVariant: ticketWorkspaceStatusVariant(fallbackKey)
             };
       }
 
@@ -5875,9 +5742,7 @@ function TicketWorkspaceKanbanView({
           lastUpdated: meta?.lastUpdated || "",
           statusKey,
           statusLabel: meta?.statusLabel || ticketWorkspaceStatusLabel(statusKey, file, ""),
-          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey),
-          priority: meta?.priority || "normal",
-          priorityRank: meta?.priorityRank ?? ticketPriorityRank("normal")
+          statusVariant: meta?.statusVariant || ticketWorkspaceStatusVariant(statusKey)
         };
       }).sort(compareTicketWorkspaceItems),
     [files, metaByPath]
@@ -6021,7 +5886,6 @@ function TicketWorkspaceKanbanView({
                     <div className="ticket-kanban-card-list">
                       {columnItems.map((item) => {
                         const metaText = [item.projectKey, item.aiLabel].filter(Boolean).join(" · ");
-                        const showPriorityBadge = item.priority === "critical" || item.priority === "high";
                         return (
                           <div
                             key={item.filePath}
@@ -6044,14 +5908,6 @@ function TicketWorkspaceKanbanView({
                             <span className="ticket-kanban-card-topline">
                               <span className="ticket-kanban-card-id">{item.displayId}</span>
                               <span className="ticket-kanban-card-controls">
-                                {showPriorityBadge ? (
-                                  <Badge
-                                    className={`ticket-priority-badge ticket-priority-badge-${item.priority}`}
-                                    variant={item.priority === "critical" ? "destructive" : "secondary"}
-                                  >
-                                    {item.priority}
-                                  </Badge>
-                                ) : null}
                                 <Badge variant={item.statusVariant}>{item.statusLabel}</Badge>
                               </span>
                             </span>
@@ -6269,7 +6125,7 @@ function WorkflowPinLayer({
                   {!detailError && detailContent ? (
                     <div className="workflow-pin-detail-body">
                       {detailContent.content ? (
-                        <MarkdownViewer content={detailContent.content} />
+                        <MarkdownViewer content={ticketMarkdownDisplayContent(detailContent.content)} />
                       ) : (
                         <p className="workflow-pin-detail-empty">(비어 있음)</p>
                       )}
@@ -6301,7 +6157,7 @@ function TicketWorkspaceDetailPane({
   detailContent: AutoflowFileContentResult | null;
 }) {
   const SelectedDetailIcon = selectedItem?.kind === "prd" ? ClipboardCheck : ClipboardList;
-  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : "TODO";
+  const selectedKindLabel = selectedItem?.kind === "prd" ? "PRD" : "WORK";
 
   return (
     <div className="ticket-workspace-detail-pane workflow-pin-layer-default">
@@ -6318,14 +6174,6 @@ function TicketWorkspaceDetailPane({
               <strong>{selectedKindLabel}</strong>
             </div>
             <strong className="workflow-pin-layer-title">{selectedItem.displayId}</strong>
-            {selectedItem.priority === "critical" || selectedItem.priority === "high" ? (
-              <Badge
-                className={`ticket-priority-badge ticket-priority-badge-${selectedItem.priority}`}
-                variant={selectedItem.priority === "critical" ? "destructive" : "secondary"}
-              >
-                {selectedItem.priority}
-              </Badge>
-            ) : null}
             <Badge className="ticket-workspace-detail-badge" variant={selectedItem.statusVariant}>
               {selectedItem.statusLabel}
             </Badge>
@@ -6350,7 +6198,7 @@ function TicketWorkspaceDetailPane({
             {!detailError && detailContent ? (
               <div className="workflow-pin-detail-body">
                 {detailContent.content ? (
-                  <MarkdownViewer content={detailContent.content} />
+                  <MarkdownViewer content={ticketMarkdownDisplayContent(detailContent.content)} />
                 ) : (
                   <p className="workflow-pin-detail-empty">(비어 있음)</p>
                 )}
@@ -6394,17 +6242,16 @@ type CoverageData = {
 };
 
 function isPrdFileName(name: string): boolean {
-  return /^(PRD)-\d+\.md$/i.test(name);
+  return namespacedPrdFilePattern.test(name);
 }
 
 function isTodoFileName(name: string): boolean {
-  return /^TODO-\d+\.md$/i.test(name);
+  return namespacedTodoFilePattern.test(name);
 }
 
 function prdKeyFromFileName(name: string): string {
   const stem = name.replace(/\.md$/i, "");
-  if (/^PRD-\d+$/.test(stem)) return stem;
-  return "";
+  return /^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(stem) ? normalizePrdKey(stem) : "";
 }
 
 function prdKeyFromDonePath(filePath: string): string {
@@ -6412,10 +6259,10 @@ function prdKeyFromDonePath(filePath: string): string {
   const m = norm.match(/\/tickets\/done\/([^/]+)\//);
   if (!m) return "";
   const candidate = m[1];
-  return /^PRD-\d+$/.test(candidate) ? candidate : "";
+  return /^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(candidate) ? normalizePrdKey(candidate) : "";
 }
 
-function buildPrdCoverage(board: AutoflowBoardSnapshot | null): CoverageData {
+function buildPrdCoverage(board: AutoflowBoardSnapshot | null, prdKeyByPath: Record<string, string> = {}): CoverageData {
   const empty: CoverageData = {
     entries: [],
     unmapped: [],
@@ -6448,8 +6295,9 @@ function buildPrdCoverage(board: AutoflowBoardSnapshot | null): CoverageData {
   const collectFrom = (bucket: CoverageStageKey, files: WorkflowFileEntry[] | undefined) => {
     for (const file of files || []) {
       if (!isTodoFileName(file.name)) continue;
-      const key = file.prdKey || prdKeyFromDonePath(file.filePath) || "";
-      todoRefs.push({ file, stage: bucket, prdKey: key });
+      const key = normalizePrdKey(file.prdKey || "") || prdKeyByPath[file.filePath] || prdKeyFromDonePath(file.filePath) || "";
+      const coverageFile = key && file.prdKey !== key ? { ...file, prdKey: key } : file;
+      todoRefs.push({ file: coverageFile, stage: bucket, prdKey: key });
     }
   };
   collectFrom("todo", board.tickets.todo);
@@ -6527,7 +6375,50 @@ const coverageStageMeta: Record<CoverageStageKey, { label: string; tone: "neutra
 };
 
 function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | null; options?: WorkflowBoardOptions }) {
-  const data = React.useMemo(() => buildPrdCoverage(board), [board]);
+  const coverageTodoFiles = React.useMemo(() => {
+    if (!board) return [];
+    return ["todo", "inprogress", "verifier", "done"].flatMap((bucket) =>
+      (board.tickets[bucket] || []).filter((file): file is WorkflowFileEntry => isTodoFileName(file.name))
+    );
+  }, [board]);
+  const coverageTodoFingerprint = React.useMemo(() => (
+    coverageTodoFiles.map((file) => `${file.filePath}:${file.modifiedAt}:${file.prdKey || ""}`).join("\n")
+  ), [coverageTodoFiles]);
+  const [contentPrdKeysByPath, setContentPrdKeysByPath] = React.useState<Record<string, string>>({});
+  React.useEffect(() => {
+    let cancelled = false;
+    const missingPrdKeyFiles = coverageTodoFiles.filter((file) => !normalizePrdKey(file.prdKey || ""));
+    if (!options?.projectRoot || missingPrdKeyFiles.length === 0) {
+      setContentPrdKeysByPath({});
+      return () => {
+        cancelled = true;
+      };
+    }
+    const readOptions: WorkflowBoardOptions = {
+      projectRoot: options.projectRoot,
+      boardDirName: options.boardDirName,
+    };
+    void Promise.all(
+      missingPrdKeyFiles.map(async (file): Promise<[string, string]> => {
+        try {
+          const result = await window.autoflow.readBoardFile({
+            ...readOptions,
+            filePath: file.filePath
+          });
+          return [file.filePath, result.ok ? prdKeyFromTicketContent(result.content || "") : ""];
+        } catch {
+          return [file.filePath, ""];
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setContentPrdKeysByPath(Object.fromEntries(entries.filter(([, key]) => Boolean(key))));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [coverageTodoFiles, coverageTodoFingerprint, options?.projectRoot, options?.boardDirName]);
+  const data = React.useMemo(() => buildPrdCoverage(board, contentPrdKeysByPath), [board, contentPrdKeysByPath]);
   const [selectedFile, setSelectedFile] = React.useState<WorkflowFileEntry | null>(null);
   const [detailContent, setDetailContent] = React.useState<AutoflowFileContentResult | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
@@ -6571,7 +6462,7 @@ function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | nu
     return (
       <div className="prd-coverage-empty" role="status">
         <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
-        <span>아직 매핑할 PRD 또는 Todo 가 없습니다.</span>
+        <span>아직 매핑할 PRD 또는 work item이 없습니다.</span>
       </div>
     );
   }
@@ -6584,12 +6475,12 @@ function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | nu
           <strong>{data.prdCount}</strong>
         </article>
         <article className="prd-coverage-summary-card">
-          <span>매핑된 Todo</span>
+          <span>매핑된 work item</span>
           <strong>{data.mappedTodoCount}</strong>
           <em>/ {data.totalTodoCount}</em>
         </article>
         <article className="prd-coverage-summary-card">
-          <span>완료된 Todo</span>
+          <span>완료된 work item</span>
           <strong>{data.doneTodoCount}</strong>
           <em>/ {data.totalTodoCount}</em>
         </article>
@@ -6599,7 +6490,7 @@ function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | nu
         </article>
         {data.unmappedTodoCount > 0 ? (
           <article className="prd-coverage-summary-card prd-coverage-summary-warning">
-            <span>PRD없는 TODO</span>
+            <span>PRD없는 work item</span>
             <strong>{data.unmappedTodoCount}</strong>
           </article>
         ) : null}
@@ -6654,7 +6545,7 @@ function PrdCoverageDetailLayer({
     : stage;
   const statusLabel = isPrd
     ? (file?.filePath.includes("/tickets/done/") ? "PRD 완료" : "PRD 열림")
-    : stageLabel || "Todo";
+    : stageLabel || "work item";
   const statusVariant: "default" | "secondary" | "destructive" = isPrd
     ? (file?.filePath.includes("/tickets/done/") ? "default" : "secondary")
     : "secondary";
@@ -6723,7 +6614,7 @@ function PrdCoverageDetailLayer({
               {!error && content ? (
                 <div className="workflow-pin-detail-body">
                   {content.content ? (
-                    <MarkdownViewer content={content.content} />
+                    <MarkdownViewer content={ticketMarkdownDisplayContent(content.content)} />
                   ) : (
                     <p className="workflow-pin-detail-empty">(비어 있음)</p>
                   )}
@@ -6758,7 +6649,7 @@ function PrdCoverageCard({
       ? "PRD 열림"
       : entry.prdStatus === "done"
         ? isPrdOnlyDone
-          ? "PRD 완료 · TODO 진행"
+          ? "PRD 완료 · work item 진행"
           : "전체 완료"
         : "PRD 없음";
   const prdClickable = Boolean(entry.prdFile);
@@ -6784,7 +6675,7 @@ function PrdCoverageCard({
         <span className={`prd-coverage-status prd-coverage-status-${statusTone}`}>{statusLabel}</span>
       </header>
       {entry.total > 0 ? (
-        <ul className="prd-coverage-todos" aria-label="자식 Todo 목록">
+        <ul className="prd-coverage-todos" aria-label="자식 work item 목록">
           {entry.todos.map((todo) => (
             <li key={todo.file.filePath} className={`prd-coverage-todo prd-coverage-todo-${todo.stage}`}>
               <button
@@ -6813,14 +6704,14 @@ function PrdCoverageUnmappedCard({
   onOpenFile: (file: WorkflowFileEntry) => void | Promise<void>;
 }) {
   return (
-    <article className="prd-coverage-card prd-coverage-card-unmapped" aria-label="PRD없는 TODO">
+    <article className="prd-coverage-card prd-coverage-card-unmapped" aria-label="PRD없는 work item">
       <header className="prd-coverage-card-header">
         <div className="prd-coverage-card-title">
-          <strong>PRD없는 TODO</strong>
+          <strong>PRD없는 work item</strong>
         </div>
         <span className="prd-coverage-status prd-coverage-status-unmapped">{todos.length}</span>
       </header>
-      <ul className="prd-coverage-todos" aria-label="자식 Todo 목록">
+      <ul className="prd-coverage-todos" aria-label="자식 work item 목록">
         {todos.map((todo) => (
           <li key={todo.file.filePath} className={`prd-coverage-todo prd-coverage-todo-${todo.stage}`}>
             <button
@@ -6902,8 +6793,8 @@ function TicketKanban({
               files={todoFiles}
               options={options}
               runners={board?.runners}
-              defaultFolders={["todo", "inprogress", "done"]}
-              ariaLabel="폴더 기준 TODO 칸반"
+              defaultFolders={["todo", "inprogress", "verifier", "done"]}
+              ariaLabel="폴더 기준 work item 칸반"
             />
           ) : null}
         </div>
@@ -6956,9 +6847,10 @@ function TicketBoard({
     );
   }
 
-  const runners = sortProgressBoardRunners(
+  const allProgressRunners = sortProgressBoardRunners(
     (board?.runners || []).filter((runner) => (runner.role || "").toLowerCase() !== "self-improve")
   );
+  const runners = allProgressRunners.filter(runnerShouldShowOnAiProgressBoard);
   const plannerRunners: AutoflowRunner[] = [];
   const workerRunners: AutoflowRunner[] = [];
   const verifierRunners: AutoflowRunner[] = [];
@@ -6972,15 +6864,14 @@ function TicketBoard({
     else if (role === "wiki-maintainer") wikiRunners.push(runner);
     else otherRunners.push(runner);
   }
-  const verifierRunner = verifierRunners[0];
-  const hasVerifierRunner = Boolean(verifierRunner);
+  const hasVerifierRunner = verifierRunners.length > 0;
   const renderProgressRow = (runner: AutoflowRunner) => (
     <AiProgressRow
       key={runner.id}
       runner={runner}
       onSelect={onSelect}
       installedAgentProfiles={installedAgentProfiles}
-      options={options ? { ...options, allRunners: runners } : undefined}
+      options={options ? { ...options, allRunners: allProgressRunners } : undefined}
       actionKey={actionKeys[runner.id] || ""}
       draft={drafts[runner.id]}
       savedDraft={savedDrafts[runner.id]}
@@ -7012,19 +6903,22 @@ function TicketBoard({
   const inprogressTickets = (board?.tickets.inprogress || [])
     .filter(isTicketBoardFile)
     .map((file) => ({ ...file, stateLabel: "진행 중", stateTone: "neutral" } as WorkflowFileEntry));
+  const verifierTickets = (board?.tickets.verifier || [])
+    .filter(isTicketBoardFile)
+    .map((file) => ({ ...file, stateLabel: "검증 대기", stateTone: "neutral" } as WorkflowFileEntry));
   const specNumericId = (name: string) => {
-    const match = name.match(/PRD-(\d+)/);
+    const match = name.match(/PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?(\d+)/i);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const ticketNumericId = (name: string) => {
-    const match = name.match(/TODO-(\d+)/i);
+    const match = name.match(/TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?(\d+)/i);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
   };
   const specFiles: WorkflowFileEntry[] = [...prdSpecs, ...doneSpecs].sort(
     (a, b) => specNumericId(b.name) - specNumericId(a.name)
   );
   const todoFilesById = new Map<string, WorkflowFileEntry>();
-  for (const ticket of [...todoTickets, ...inprogressTickets, ...doneTickets]) {
+  for (const ticket of [...todoTickets, ...inprogressTickets, ...verifierTickets, ...doneTickets]) {
     if (!todoFilesById.has(ticket.name)) {
       todoFilesById.set(ticket.name, ticket);
     }
@@ -7033,7 +6927,8 @@ function TicketBoard({
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
   const prdPinTitle = `PRD (${prdSpecs.length}/${specFiles.length})`;
-  const todoPinTitle = `TODO (${todoTickets.length + inprogressTickets.length}/${todoFiles.length})`;
+  const activeWorkCount = todoTickets.length + inprogressTickets.length + verifierTickets.length;
+  const todoPinTitle = `WORK (${activeWorkCount}/${todoFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || todoFiles.length);
   const boardInitialized = board?.status?.initialized === "true";
   const boardMissing = Boolean(options?.projectRoot && board && !boardInitialized);
@@ -7062,7 +6957,7 @@ function TicketBoard({
                   pinIcon={<ClipboardList className="h-4 w-4" aria-hidden="true" />}
                   variant="default"
                   layerHeading={todoPinTitle}
-                  emptyText="아직 발급된 TODO 티켓이 없습니다."
+                  emptyText="아직 발급된 work item이 없습니다."
                   showWhenEmpty
                 />
           </div>
@@ -7077,30 +6972,30 @@ function TicketBoard({
             <span>왼쪽 아래 설치 버튼을 눌러 이 프로젝트에 Autoflow 보드를 먼저 설치해 주세요.</span>
           </div>
         ) : runners.length ? (
-          <>
-            {plannerRunners.map(renderProgressRow)}
-            {workerRunners.map(renderProgressRow)}
-            {hasVerifierRunner ? (
-              renderProgressRow(verifierRunner!)
-            ) : (
-              <article
-                className="ai-progress-row ai-progress-row-placeholder ai-progress-row-placeholder-verifier"
-                data-runner-role="verifier"
-                data-runner-id="verifier"
-                aria-label="Verifier 자리 (대기 중)"
-              >
-                <div className="ai-progress-row-placeholder-body">
-                  <strong>Verifier</strong>
-                  <span>config.local.toml에 verifier 블록을 추가하면 활성화됩니다.</span>
-                </div>
-              </article>
-            )}
-            {wikiRunners.map(renderProgressRow)}
-            {otherRunners.map(renderProgressRow)}
-          </>
+            <>
+              {plannerRunners.map(renderProgressRow)}
+              {workerRunners.map(renderProgressRow)}
+              {hasVerifierRunner ? (
+                verifierRunners.map(renderProgressRow)
+              ) : (
+                <article
+                  className="ai-progress-row ai-progress-row-placeholder ai-progress-row-placeholder-verifier"
+                  data-runner-role="verifier"
+                  data-runner-id="verifier"
+                  aria-label="Verifier 자리 (대기 중)"
+                >
+                  <div className="ai-progress-row-placeholder-body">
+                    <strong>Verifier</strong>
+                    <span>config.local.toml에 verifier 블록을 추가하면 활성화됩니다.</span>
+                  </div>
+                </article>
+              )}
+              {wikiRunners.map(renderProgressRow)}
+              {otherRunners.map(renderProgressRow)}
+            </>
         ) : (
           <div className="ai-progress-empty">
-            <span>runner 설정이 추가되면 진행 상태가 여기에 표시됩니다.</span>
+            <span>설정된 러너가 없습니다.</span>
           </div>
         )}
       </div>
@@ -7153,7 +7048,10 @@ function useRunnerActivity(runner: AutoflowRunner): { elapsed: string; tokens: n
     return () => window.clearInterval(handle);
   }, [isRunning]);
 
-  const tokens = typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0;
+  const tokens = Math.max(
+    typeof runner.tokenUsage === "number" ? runner.tokenUsage : 0,
+    typeof runner.cumulativeTokens === "number" ? runner.cumulativeTokens : 0
+  );
   const startSource = runner.lastEventAt || runner.lastAdapterChunkAt || runner.startedAt || "";
   const startMs = Date.parse(startSource);
   if (!isRunning || !startSource || !Number.isFinite(startMs)) {
@@ -7320,6 +7218,89 @@ function livePtyPayloadMatchesScope(payload: any, projectRoot: string, boardDirN
   const payloadProjectRoot = normalizeLiveTerminalProjectRoot(String(payload?.projectRoot || ""));
   if (!payloadProjectRoot || payloadProjectRoot !== expectedProjectRoot) return false;
   return String(payload?.boardDirName || ".autoflow") === String(boardDirName || ".autoflow");
+}
+
+function stripLivePtyControlSequences(text: string) {
+  return String(text || "")
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[>=][0-9;?]*/g, "");
+}
+
+function livePtySnapshotLooksBusy(snapshot: string) {
+  const clean = stripLivePtyControlSequences(snapshot)
+    .replace(/\r/g, "\n")
+    .replace(/\u001b/g, "");
+  const compactTail = clean
+    .split(/\n/)
+    .slice(-24)
+    .join("\n")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!compactTail) return false;
+  if (/\b(Working|Running command|Waiting for background terminal|Thinking|Compacting|Booting MCP server)\b/i.test(compactTail)) return true;
+  if (/Hooks need review/i.test(compactTail)) return true;
+  if (/(Trust\s*all\s*and\s*continue|Continue\s*without\s*trusting|hooks\s*won'?t\s*run)/i.test(compactTail)) return true;
+  return false;
+}
+
+function useLivePtyActivity(runner: AutoflowRunner, options?: WorkflowBoardOptions) {
+  const projectRoot = options?.projectRoot || "";
+  const boardDirName = options?.boardDirName || ".autoflow";
+  const runnerId = runner.id;
+  const runnerStatus = runner.stateStatus || "";
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    const isRunning = runnerStatus.toLowerCase() === "running" && Boolean(runner.pid);
+    if (!isRunning || !runnerId || !projectRoot) {
+      setBusy(false);
+      return;
+    }
+
+    let cancelled = false;
+    let tail = "";
+    const updateBusy = () => {
+      if (!cancelled) {
+        setBusy(livePtySnapshotLooksBusy(tail));
+      }
+    };
+
+    window.autoflow
+      .runnerPtySnapshot({ runnerId, projectRoot, boardDirName })
+      .then((result) => {
+        if (cancelled) return;
+        tail = String(result?.snapshot || "").slice(-6000);
+        updateBusy();
+      })
+      .catch(() => {
+        if (!cancelled) setBusy(false);
+      });
+
+    const offBytes = (window.autoflow as any).onRunnerPtyBytes?.((payload: any) => {
+      if (!payload || String(payload.runnerId || "") !== runnerId) return;
+      if (!livePtyPayloadMatchesScope(payload, projectRoot, boardDirName)) return;
+      tail = `${tail}${String(payload.data || "")}`.slice(-6000);
+      updateBusy();
+    }) || (() => {});
+    const offStatus = (window.autoflow as any).onRunnerPtyStatus?.((payload: any) => {
+      if (!payload || String(payload.runnerId || "") !== runnerId) return;
+      if (!livePtyPayloadMatchesScope(payload, projectRoot, boardDirName)) return;
+      const nextStatus = String(payload.status || "").toLowerCase();
+      if (runnerPtyStatusIsInactive(nextStatus)) {
+        tail = "";
+        setBusy(false);
+      }
+    }) || (() => {});
+
+    return () => {
+      cancelled = true;
+      offBytes();
+      offStatus();
+    };
+  }, [boardDirName, projectRoot, runner.pid, runnerId, runnerStatus]);
+
+  return { busy };
 }
 
 // vibe-terminal appendOutput 패턴: PTY 는 작은 chunk 가 실시간 도착하므로
@@ -8223,14 +8204,19 @@ function RunnerResourceUsage({ running, pid }: { running: boolean; pid: string }
 function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
   const activity = useRunnerActivity(runner);
   const animatedTokens = useCountUp(activity.tokens);
-  const cacheReadTokens = typeof runner.cumulativeCacheReadTokens === "number" ? runner.cumulativeCacheReadTokens : 0;
+  const rawCacheReadTokens = typeof runner.cumulativeCacheReadTokens === "number" ? runner.cumulativeCacheReadTokens : 0;
+  const cacheReadTokens = rawCacheReadTokens;
+  const llmRequestCount = Math.max(
+    typeof runner.cumulativeLlmRequestCount === "number" ? runner.cumulativeLlmRequestCount : 0,
+    typeof runner.lastTurnLlmRequestCount === "number" ? runner.lastTurnLlmRequestCount : 0
+  );
   const stateStatus = (runner.stateStatus || "").toLowerCase();
   const isRunning = stateStatus === "running" && Boolean(runner.pid);
   const pidLabel = isRunning ? `PID ${runner.pid}` : "";
   const pidValue = isRunning ? String(runner.pid) : "";
   const tokenTitle = cacheReadTokens > 0
-    ? `토큰 ${activity.tokens.toLocaleString()} · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
-    : `토큰 ${activity.tokens.toLocaleString()}`;
+    ? `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()}개 · 캐시 읽기 ${cacheReadTokens.toLocaleString()}`
+    : `토큰 ${activity.tokens.toLocaleString()} · LLM 요청 ${llmRequestCount.toLocaleString()}개`;
   const footerTitle = pidLabel ? `${tokenTitle} · ${pidLabel}` : tokenTitle;
   return (
     <footer
@@ -8239,19 +8225,21 @@ function RunnerActivityFooter({ runner }: { runner: AutoflowRunner }) {
       aria-live="polite"
       title={footerTitle}
     >
-      <div className="ai-conversation-panel-activity-row">
+      <div className="ai-conversation-panel-activity-row ai-conversation-panel-activity-row-inline">
         <span className="ai-conversation-panel-activity-band ai-conversation-panel-activity-band-primary">
           <span className="ai-conversation-panel-activity-metric">
             <span className="ai-conversation-panel-activity-label">토큰</span>
             <strong className="ai-conversation-panel-activity-value">{animatedTokens.toLocaleString()}</strong>
           </span>
           <span className="ai-conversation-panel-activity-metric ai-conversation-panel-activity-metric-end">
+            <span className="ai-conversation-panel-activity-label">LLM 요청</span>
+            <strong className="ai-conversation-panel-activity-value">{llmRequestCount.toLocaleString()}</strong>
+          </span>
+          <span className="ai-conversation-panel-activity-metric ai-conversation-panel-activity-metric-end">
             <span className="ai-conversation-panel-activity-label">캐시</span>
             <strong className="ai-conversation-panel-activity-value">{cacheReadTokens.toLocaleString()}</strong>
           </span>
         </span>
-      </div>
-      <div className="ai-conversation-panel-activity-row">
         <span className="ai-conversation-panel-activity-band ai-conversation-panel-activity-band-hardware">
           <RunnerResourceUsage running={isRunning} pid={runner.pid} />
           {pidValue ? (
@@ -8333,7 +8321,7 @@ function flowStepState(
 }
 
 function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
-  const role = (runner.role || "").toLowerCase();
+  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
   if (role.includes("wiki")) return wikiBotFlowStages;
   if (role === "planner" || role === "plan") return plannerFlowStages;
   return workerFlowStages;
@@ -8341,7 +8329,7 @@ function flowStagesForRunner(runner: AutoflowRunner): readonly FlowStageDef[] {
 
 function runnerStageKey(runner: AutoflowRunner): string {
   const status = (runner.stateStatus || "").toLowerCase();
-  const role = (runner.role || "").toLowerCase();
+  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
   const activeStage = (runner.activeStage || "").toLowerCase();
   const runnerActiveTicket = runnerHasActiveWorkContext(runner);
   const stateSignalText = [
@@ -8366,7 +8354,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
     return "idle";
   }
   const stateText = [stateSignalText, runner.conversationPreview].join(" ").toLowerCase();
-  const hasWorkerIdleSignal = /\b(ticket_inputs_unchanged|no_todo_available)\b/.test(stateText);
+  const hasWorkerIdleSignal = /\b(ticket_inputs_unchanged|no_actionable_ticket)\b/.test(stateText);
   const hasCompletionFinalizerCommit = /\bcommitted_via_completion_finalizer\b/.test(stateText);
   const isFailLike =
     status === "failed" ||
@@ -8402,7 +8390,7 @@ function runnerStageKey(runner: AutoflowRunner): string {
 
   if (runnerActiveTicket) {
     if (/^(merging)$/.test(activeStage)) return "merging";
-    if (/^(executing|claimed|inprogress|ready_to_merge|ready-to-merge|review|merging)$/.test(activeStage)) {
+    if (/^(executing|claimed|inprogress|review|merging)$/.test(activeStage)) {
       return "inprogress";
     }
     return "inprogress";
@@ -8415,22 +8403,30 @@ function runnerStageKey(runner: AutoflowRunner): string {
   return "idle";
 }
 
+function runnerLivePtyBusyStageKey(runner: AutoflowRunner) {
+  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
+  if (role.includes("wiki")) return "syncing";
+  if (role === "planner" || role === "plan") return "planning";
+  return "inprogress";
+}
+
 function runnerHasActiveWorkContext(runner: AutoflowRunner) {
   const activeStage = (runner.activeStage || "").toLowerCase();
   const activeStageCarriesWork =
-    /^(planning|generating-todo|claimed|executing|inprogress|verifying|verify_pending|verifier_pending|merging|ready_to_merge|ready-to-merge|revision_requested|replan_requested)$/.test(activeStage);
+    /^(planning|generating-todo|claimed|executing|inprogress|verifying|verify_pending|verifier_pending|merging|revision_requested|replan_requested|blocked)$/.test(activeStage);
+  const hasOpenAssignment = runnerHasOpenAssignment(runner);
   return Boolean(
-    runner.activeTicketId ||
     runner.activeItem ||
     runner.activeTicketTitle ||
     runner.activeSpecRef ||
+    (hasOpenAssignment && (runner.activeTicketId || runner.activeTicketPath || runner.assignedItemRef)) ||
     activeStageCarriesWork
   );
 }
 
 function runnerSuccessSignalIsStale(runner: AutoflowRunner, value: string) {
   if (runnerHasActiveWorkContext(runner)) return false;
-  return /\b(done|pass|complete|completed|committed_via_completion_finalizer|verifier_pass|verifier_passed)\b/i.test(value || "");
+  return /(done|pass|complete|completed|committed_via_completion_finalizer|verifier_pass|verifier_passed|needs_ai_merge)/i.test(value || "");
 }
 
 function runnerCycleResult(runner: AutoflowRunner): "done" | "blocked" | "reject" | "" {
@@ -8489,6 +8485,11 @@ function runnerProgressDetail(runner: AutoflowRunner) {
     return displayActiveItemLabel(runner.activeItem);
   }
 
+  if (runnerHasAssignmentAwaitingStart(runner)) {
+    const assignedLabel = displayActiveItemLabel(runner.assignedItemRef || runner.activeTicketPath || "");
+    return assignedLabel || "러너 시작 필요";
+  }
+
   const statusLower = (runner.stateStatus || "").toLowerCase();
   const lastResultLower = (runner.lastResult || "").toLowerCase();
 
@@ -8535,7 +8536,7 @@ function stageStatusLabel(stageKey: string, stageLabel: string | undefined, role
   if (stageKey === "planning") return "계획 중";
   if (stageKey === "generating-todo") return "티켓 생성 중";
   if (stageKey === "inprogress") return normalizedRole === "verifier" ? "검증 중" : "구현 중";
-  if (stageKey === "merging") return "머지 중";
+  if (stageKey === "merging") return "Worker 마무리 중";
   if (stageKey === "syncing") return "위키 작성 중";
   if (!stageLabel) return "실행 중";
   return stageLabel.endsWith("중") ? stageLabel : `${stageLabel} 중`;
@@ -8552,11 +8553,24 @@ function idleStatusDetailText(value: string) {
   return (value || "").replace(/^대기\s*중(?:\s*[—–-]\s*)?/u, "").trim();
 }
 
+function runnerDetailLooksLikeEmptyQueue(runner: AutoflowRunner, detailText: string) {
+  const text = [
+    runner.queueStatus,
+    runner.queueStatusLabel,
+    runner.queueStatusDetail,
+    detailText
+  ].join(" ");
+  return (
+    (runner.queueStatus || "").toLowerCase() === "none" ||
+    /처리할 작업 없음|대기열 비어 있음|변경 없음/.test(text)
+  );
+}
+
 function runnerStatusSummaryTitle(runner: AutoflowRunner, label: string, detail: string, currentKey: string) {
   void currentKey;
   return compactStatusParts([
     detail ? `${label} · ${detail}` : label,
-    runner.activeTicketId ? `작업=${displayActiveTicketBadge(runner.activeTicketId)}` : "",
+    runnerHasActiveWorkContext(runner) && runner.activeTicketId ? `작업=${displayActiveTicketBadge(runner.activeTicketId)}` : "",
     runner.lastResult && !runnerHandoffResultIsInternal(runner.lastResult) && !runnerSuccessSignalIsStale(runner, runner.lastResult)
       ? `최근 결과=${displayStatus(runner.lastResult)}`
       : ""
@@ -8576,7 +8590,8 @@ function runnerStatusSummary({
   detailText,
   transitionLabel,
   isApplyingConfig,
-  showAuthPrompt
+  showAuthPrompt,
+  livePtyBusy
 }: {
   runner: AutoflowRunner;
   status: string;
@@ -8591,6 +8606,7 @@ function runnerStatusSummary({
   transitionLabel: string;
   isApplyingConfig: boolean;
   showAuthPrompt: boolean;
+  livePtyBusy: boolean;
 }) {
   let label = displayStatus(status);
   let tone: RunnerStatusTone = "idle";
@@ -8612,10 +8628,18 @@ function runnerStatusSummary({
     label = runner.backgroundTaskLabel;
     tone = "running";
     detailParts = compactStatusParts([activeTicketLabel]);
-  } else if (statusLower === "stopped" || statusLower === "user_stopped") {
+  } else if (
+    !runner.pid ||
+    statusLower === "stopped" ||
+    statusLower === "user_stopped"
+  ) {
     label = "중지됨";
     tone = "stopped";
     detailParts = [];
+  } else if (runnerHasAssignmentAwaitingStart(runner)) {
+    label = "시작 필요";
+    tone = "pending";
+    detailParts = compactStatusParts([activeTicketLabel, detailText]);
   } else if (isBlocked || cycleResult === "blocked") {
     label = "막힘";
     tone = "blocked";
@@ -8629,16 +8653,40 @@ function runnerStatusSummary({
     tone = "done";
     detailParts = compactStatusParts([activeTicketLabel, detailText]);
   } else if (statusLower === "running") {
-    label = stageStatusLabel(currentKey, stageLabel, role);
-    tone = "running";
-    detailParts = compactStatusParts([
-      activeTicketLabel,
-      currentKey === "idle" ? idleStatusDetailText(detailText) : detailText
-    ]);
+    // running 이라도 실제로 처리 중인 ticket 이 없으면 "대기 중" 으로 표시.
+    // sidecar 가 PTY 가 살아있다는 사실만으로 status=running 을 덮어쓸 수
+    // 있어서, active_ticket_id 가 비어있는데 단계 라벨이 표시되는 모순을 막는다.
+    const hasActiveTicket =
+      Boolean(runner.activeTicketId && runner.activeTicketId.trim()) ||
+      Boolean(runner.activeItem && runner.activeItem.trim());
+    if (hasActiveTicket) {
+      label = stageStatusLabel(currentKey, stageLabel, role);
+      tone = "running";
+      detailParts = compactStatusParts([
+        activeTicketLabel,
+        currentKey === "idle" ? idleStatusDetailText(detailText) : detailText
+      ]);
+    } else {
+      label = "대기 중";
+      tone = "idle";
+      detailParts = compactStatusParts([idleStatusDetailText(detailText)]);
+    }
   } else if (statusLower === "idle") {
-    label = "대기 중";
-    tone = "idle";
-    detailParts = compactStatusParts([idleStatusDetailText(detailText)]);
+    // idle 일 때는 실제로 처리 중 ticket 이 있을 때만 단계 라벨 유지.
+    // active_stage 만 stale 로 남아있는 경우는 idle 로 본다 — "처리할 작업
+    // 없음" 같은 detail 이 함께 표시되는데 단계 라벨이 보이는 모순을 막는다.
+    const hasActiveTicket =
+      Boolean(runner.activeTicketId && runner.activeTicketId.trim()) ||
+      Boolean(runner.activeItem && runner.activeItem.trim());
+    if (hasActiveTicket) {
+      label = stageStatusLabel(currentKey, stageLabel, role);
+      tone = "running";
+      detailParts = compactStatusParts([activeTicketLabel, detailText]);
+    } else {
+      label = "대기 중";
+      tone = "idle";
+      detailParts = compactStatusParts([idleStatusDetailText(detailText)]);
+    }
   } else if (statusLower === "failed" || statusLower === "error") {
     tone = "error";
     detailParts = compactStatusParts([activeTicketLabel, detailText]);
@@ -8666,7 +8714,6 @@ function isMachineRunnerLog(value: string) {
 function canonicalWorkflowRunnerRole(value: string) {
   const normalized = (value || "").toLowerCase();
   if (normalized === "worker" || /^(worker|ai)-/.test(normalized)) return "worker";
-  if (normalized === "merge" || normalized === "merge-bot" || /^merge-/.test(normalized)) return "worker";
   if (normalized === "planner" || /^(planner|plan)-/.test(normalized)) return "planner";
   if (normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki-maintainer";
   return "";
@@ -8675,7 +8722,6 @@ function canonicalWorkflowRunnerRole(value: string) {
 function startupRuleRoleForValue(value: string) {
   const normalized = (value || "").toLowerCase();
   if (normalized === "worker" || normalized === "ticket" || /^(worker|ai)-/.test(normalized)) return "worker";
-  if (normalized === "merge" || normalized === "merge-bot" || /^merge-/.test(normalized)) return "worker";
   if (normalized === "planner" || normalized === "plan" || /^(planner|plan)-/.test(normalized)) return "planner";
   if (normalized === "verifier" || normalized === "verify" || /^verifier-/.test(normalized)) return "verifier";
   if (normalized === "wiki-maintainer" || normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) {
@@ -8685,13 +8731,50 @@ function startupRuleRoleForValue(value: string) {
 }
 
 function startupRuleRoleForRunner(runner: AutoflowRunner) {
-  return startupRuleRoleForValue(runner.role) || startupRuleRoleForValue(runner.id);
+  return (
+    startupRuleRoleForValue(runner.activeRole) ||
+    startupRuleRoleForValue(runner.assignmentRole) ||
+    startupRuleRoleForValue(runner.role) ||
+    startupRuleRoleForValue(inferredActiveRoleForRunner(runner)) ||
+    startupRuleRoleForValue(runner.id)
+  );
+}
+
+function runnerShouldShowOnAiProgressBoard(runner: AutoflowRunner) {
+  return Boolean((runner.id || "").trim());
+}
+
+function runnerHasOpenAssignment(runner: AutoflowRunner) {
+  const assignmentStatus = (runner.assignmentStatus || "").toLowerCase();
+  const queueStatus = (runner.queueStatus || "").toLowerCase();
+  const stateStatus = (runner.stateStatus || "").toLowerCase();
+  const hasAssignedRef = Boolean(runner.assignedItemRef || runner.activeTicketId || runner.activeTicketPath || runner.activeItem);
+  if (
+    hasAssignedRef &&
+    !runner.pid &&
+    ["none", "idle", "empty"].includes(queueStatus) &&
+    ["", "idle", "stopped"].includes(stateStatus)
+  ) {
+    return false;
+  }
+  return Boolean(
+    assignmentStatus &&
+    !["completed", "released"].includes(assignmentStatus) &&
+    hasAssignedRef
+  );
+}
+
+function runnerHasAssignmentAwaitingStart(runner: AutoflowRunner) {
+  if (!runnerHasOpenAssignment(runner)) return false;
+  if (runner.pid) return false;
+  const status = (runner.stateStatus || "").toLowerCase();
+  return status !== "running" && status !== "starting" && status !== "restarting";
 }
 
 function runnerRoleMatchesDisplayRole(role: string, displayRole: string) {
   const normalized = (role || "").toLowerCase();
   if (displayRole === "worker") {
-    return normalized === "worker" || normalized === "ticket" || normalized === "merge" || normalized === "merge-bot" || /^merge-/.test(normalized);
+    return normalized === "worker" || normalized === "ticket";
   }
   if (displayRole === "planner") {
     return normalized === "planner" || normalized === "plan";
@@ -8715,7 +8798,7 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (!value) return value;
   const role = canonicalWorkflowRunnerRole(value);
   const singleton = workflowRoleIsSingleton(runners, role);
-  const workerAliasMatch = value.match(/^(?:worker|ai|merge)-(\d+)$/i);
+  const workerAliasMatch = value.match(/^(?:worker|ai)-(\d+)$/i);
   if (value === "worker") return "worker";
   if (singleton && role === "worker") return "worker";
   if (workerAliasMatch) {
@@ -8725,9 +8808,9 @@ function displayWorkflowRunnerId(value: string, runners?: AutoflowRunner[]) {
   if (/^planner-\d+$/.test(value) || /^plan-\d+$/.test(value)) {
     return singleton ? "planner" : value.replace(/^plan-/, "planner-");
   }
-  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "위키" : "위키-1";
-  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "위키-");
-  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "위키-");
+  if (value === "wiki-maintainer-1" || value === "wiki") return singleton ? "wiki" : "wiki-1";
+  if (/^wiki-maintainer-\d+$/.test(value)) return value.replace(/^wiki-maintainer-/, "wiki-");
+  if (/^wiki-\d+$/.test(value)) return value.replace(/^wiki-/, "wiki-");
   if (value === "coordinator-1") return "coordinator";
   return value;
 }
@@ -8746,9 +8829,9 @@ function displayProgressWorkerLabel(runner: AutoflowRunner, runners?: AutoflowRu
     return `Worker${visibleWorkerIndex + 1}`;
   }
 
-  if (id === "worker" || id === "ai" || id === "merge") return "Worker";
+  if (id === "worker" || id === "ai") return "Worker";
 
-  const numbered = id.match(/^(?:worker|ai|merge)-(\d+)$/);
+  const numbered = id.match(/^(?:worker|ai)-(\d+)$/);
   if (numbered) return `Worker${Number.parseInt(numbered[1], 10) + 1}`;
 
   return titleCaseWorkflowRunnerId(displayWorkflowRunnerId(runner.id, runners) || "worker");
@@ -8758,23 +8841,77 @@ function isCoordinatorRole(value: string) {
   return ["coordinator", "coord"].includes((value || "").toLowerCase());
 }
 
-function displayProgressRunnerLabel(runner: AutoflowRunner) {
-  const agent = runner.agent || "AI";
-  return isCoordinatorRole(runner.role) ? `${agent}(coordinator)` : agent;
+function displayRoleKeyForValue(value: string) {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "worker" || normalized === "ticket" || /^(worker|ai)-/.test(normalized)) return "worker";
+  if (normalized === "planner" || normalized === "plan" || /^(planner|plan)-/.test(normalized)) return "planner";
+  if (normalized === "verifier" || normalized === "verify" || /^verifier-/.test(normalized)) return "verifier";
+  if (normalized === "wiki-maintainer" || normalized === "wiki" || /^(wiki-maintainer|wiki)-/.test(normalized)) return "wiki";
+  return "";
+}
+
+function inferredActiveRoleForRunner(runner: AutoflowRunner) {
+  const activeStage = (runner.activeStage || "").toLowerCase();
+  const activeTicketId = (runner.activeTicketId || "").trim();
+  const signalText = [
+    runner.lastResult,
+    runner.lastLogLine,
+    runner.activeItem,
+    runner.activeTicketPath,
+    runner.assignedItemRef,
+    runner.queueStatusLabel,
+    runner.queueStatusDetail,
+    runner.backgroundTask,
+    runner.backgroundTaskLabel
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/^merging$/.test(activeStage) || /\bneeds_ai_merge\b|\bai_merge_required\b|\bmerging\b/.test(signalText)) return "worker";
+  if (/\bworker[_-]|\bworker_ticket\b|\bfinish_ticket\b/.test(signalText)) return "worker";
+  if (/^(planning|generating-todo)$/.test(activeStage) || /\bplanner[_-]|\bprd-to-todo\b|\btodo_ticket=/.test(signalText)) {
+    return "planner";
+  }
+  if (/^verifier[_-]/.test(activeStage) || /\bverifier[_-]|\bverifier\b/.test(signalText)) return "verifier";
+  if (/\bwiki[_-]|\bwiki-maintainer\b|\bllm wiki\b/.test(signalText)) return "wiki-maintainer";
+  if (/^(claimed|executing|inprogress|verify_pending|verifier_pending)$/.test(activeStage)) {
+    return "worker";
+  }
+  if (activeTicketId.startsWith("PRD-")) return "planner";
+  if (activeTicketId) return "worker";
+  return "";
+}
+
+function displayRoleKeyForRunner(runner: AutoflowRunner) {
+  return (
+    displayRoleKeyForValue(runner.activeRole) ||
+    displayRoleKeyForValue(runner.assignmentRole) ||
+    displayRoleKeyForValue(runner.role) ||
+    displayRoleKeyForValue(inferredActiveRoleForRunner(runner))
+  );
+}
+
+function displayProgressRoleName(roleKey: string) {
+  if (roleKey === "planner") return "Planner";
+  if (roleKey === "worker") return "Worker";
+  if (roleKey === "verifier") return "Verifier";
+  if (roleKey === "wiki") return "Wiki";
+  return "";
+}
+
+function displayProgressRunnerLabel(runner: AutoflowRunner, runners?: AutoflowRunner[]) {
+  if (isCoordinatorRole(runner.role)) return "Coordinator";
+  return displayProgressRoleLabel(runner, runners);
 }
 
 function displayProgressRoleLabel(runner: AutoflowRunner, runners?: AutoflowRunner[]) {
-  const role = (runner.role || "").toLowerCase();
-  if (role === "planner" || role === "plan") return "Planner";
-  if (role === "worker" || role === "ticket" || role === "merge" || role === "merge-bot" || /^merge-/.test(role)) {
-    return displayProgressWorkerLabel(runner, runners);
-  }
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki")) return "LLM Wiki";
-  if (role === "verifier") return "Verifier";
+  const roleKey = displayRoleKeyForRunner(runner) || displayRoleKeyForValue(runner.id);
+  const roleName = displayProgressRoleName(roleKey);
+  if (roleName) return roleName;
+  if (startupRuleRoleForRunner(runner) === "worker") return displayProgressWorkerLabel(runner, runners);
 
   const metaLabel = displayWorkflowRunnerId(runner.id, runners);
-  const agentName = runner.agent ? runner.agent.charAt(0).toUpperCase() + runner.agent.slice(1) : "AI";
-  return metaLabel ? `${agentName}(${metaLabel})` : agentName;
+  return metaLabel ? titleCaseWorkflowRunnerId(metaLabel) : "Runner";
 }
 
 function displayAiAgentRunnerLabel(value: string, runners?: AutoflowRunner[]) {
@@ -8784,31 +8921,33 @@ function displayAiAgentRunnerLabel(value: string, runners?: AutoflowRunner[]) {
 }
 
 function progressBoardRunnerOrder(runner: AutoflowRunner) {
-  const role = (runner.role || "").toLowerCase();
+  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
   const runnerId = (runner.id || "").toLowerCase();
   const idRole = canonicalWorkflowRunnerRole(runner.id);
-  if (runnerId === "worker") return 1;
-  if (/^worker-\d+$/.test(runnerId)) return 2;
-  if (runnerId === "verifier") return 3;
+  if (["planner", "plan"].includes(role) || idRole === "planner") return 0;
+  if (["worker", "ticket"].includes(role) || idRole === "worker") return 1;
+  if (role === "verifier") return 2;
+  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 3;
+  if (runnerId === "worker") return 4;
+  if (/^worker-\d+$/.test(runnerId)) return 5;
+  if (runnerId === "verifier") return 6;
   if (
     runnerId === "wiki" ||
     runnerId === "wiki-maintainer" ||
     /^wiki-\d+$/.test(runnerId) ||
     /^wiki-maintainer-\d+$/.test(runnerId)
   ) {
-    return 4;
+    return 7;
   }
-  if (["planner", "plan", "orchestrator"].includes(role) || idRole === "planner") return 0;
-  if (["worker", "ticket", "merge", "merge-bot"].includes(role) || /^merge-/.test(role) || idRole === "worker") return 5;
-  if (role === "verifier") return 6;
-  if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 7;
   return 8;
 }
 
 function sortProgressBoardRunners(runners: AutoflowRunner[]) {
   return runners
     .map((runner, index) => ({ runner, index }))
-    .sort((a, b) => progressBoardRunnerOrder(a.runner) - progressBoardRunnerOrder(b.runner) || a.index - b.index)
+    .sort((a, b) => {
+      return progressBoardRunnerOrder(a.runner) - progressBoardRunnerOrder(b.runner) || a.index - b.index;
+    })
     .map(({ runner }) => runner);
 }
 
@@ -8846,13 +8985,15 @@ function projectKeyFromSpecRef(value: string) {
 }
 
 function displayActiveTicketBadge(value: string) {
-  return workflowFileDisplayName(value.endsWith(".md") ? value : `${value}.md`);
+  const trimmed = value.trim();
+  const basename = trimmed.split(/[\\/]/).filter(Boolean).pop() || trimmed;
+  return workflowFileDisplayName(basename.endsWith(".md") ? basename : `${basename}.md`);
 }
 
 function canonicalActiveItemLabel(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  return workflowFileDisplayName(trimmed.endsWith(".md") ? trimmed : `${trimmed}.md`).toLowerCase();
+  return displayActiveTicketBadge(trimmed).toLowerCase();
 }
 
 function repeatsActiveTicketBadge(value: string, activeTicketId: string) {
@@ -8894,11 +9035,14 @@ function activeItemPreviewPaths(runner: AutoflowRunner) {
   if (runner.activeSpecRef) {
     paths.add(runner.activeSpecRef);
   }
+  if (runner.activeTicketPath) {
+    paths.add(runner.activeTicketPath);
+  }
   if (activeId.startsWith("PRD-")) {
     addFiles(["prd", "backlog"], [`${activeId}.md`]);
   }
 
-  addFiles(["inprogress", "todo"], activeItemFileAliases(activeId));
+  addFiles(["inprogress", "verifier", "todo"], activeItemFileAliases(activeId));
   return [...paths];
 }
 
@@ -8933,7 +9077,12 @@ function AiProgressRow({
   onDraftChange?: (runnerId: string, field: keyof RunnerDraft, value: string) => void;
   onConfigure?: (runner: AutoflowRunner, restartAfterSave?: boolean) => void;
 }) {
-  const currentKey = runnerStageKey(runner);
+  const livePtyActivity = useLivePtyActivity(runner, options);
+  const livePtyBusy = Boolean(runner.livePtyBusy) || livePtyActivity.busy;
+  const baseCurrentKey = runnerStageKey(runner);
+  const currentKey = livePtyBusy && baseCurrentKey === "idle"
+    ? runnerLivePtyBusyStageKey(runner)
+    : baseCurrentKey;
   const hideProgressTrack = isCoordinatorRole(runner.role);
   const flowStages = flowStagesForRunner(runner);
   const stage = flowStages.find((candidate) => candidate.key === currentKey) || flowStages[Math.min(1, flowStages.length - 1)];
@@ -8945,13 +9094,20 @@ function AiProgressRow({
   );
   const cycleResult = runnerCycleResult(runner);
   const status = runner.stateStatus || "idle";
-  const role = (runner.role || "").toLowerCase();
-  const isWorkerProgressRow = role === "worker" || role === "ticket" || role === "merge" || role === "merge-bot" || /^merge-/.test(role);
-  const isBlocked = (runner.activeStage || "").toLowerCase() === "blocked";
+  const role = displayRoleKeyForRunner(runner) || runnerCurrentRoleValue(runner);
+  const isWorkerProgressRow = role === "worker" || role === "ticket";
+  const isBlocked = runnerBlockedNeedsAttention(runner);
   const detail = runnerProgressDetail(runner);
   const detailTimestamp = timestampFromRunnerLog(detail);
   const displayDetail = isMachineRunnerLog(detail) ? "" : detail;
-  const activeTicketLabel = runner.activeTicketId ? displayActiveTicketBadge(runner.activeTicketId) : "";
+  const hasActiveWorkContext = runnerHasActiveWorkContext(runner);
+  const activeTicketLabel = hasActiveWorkContext
+    ? runner.activeTicketId
+      ? displayActiveTicketBadge(runner.activeTicketId)
+      : runner.assignedItemRef
+        ? displayActiveTicketBadge(runner.assignedItemRef)
+        : ""
+    : "";
   const activeTicketTitle = runner.activeTicketTitle && !repeatsActiveTicketBadge(runner.activeTicketTitle, runner.activeTicketId)
     ? runner.activeTicketTitle
     : "";
@@ -8967,7 +9123,6 @@ function AiProgressRow({
   const statusLower = status.toLowerCase();
   const scheduledLoop = runnerUsesScheduledLoop(runner);
   const mode = scheduledLoop ? (runner.mode || "loop") : "";
-  // actionKey holds the action label for THIS runner only ("" when idle).
   const isWorking = Boolean(actionKey);
   const transitionLabel = runnerTransitionLabel(actionKey);
   const canForceStop = actionKey === "stopping_pending";
@@ -8994,17 +9149,10 @@ function AiProgressRow({
     detailText,
     transitionLabel,
     isApplyingConfig,
-    showAuthPrompt
+    showAuthPrompt,
+    livePtyBusy
   });
-  const showAgentConfig =
-    runner.role === "wiki-maintainer" ||
-    runner.role === "wiki" ||
-    runner.role === "worker" ||
-    runner.role === "merge" ||
-    runner.role === "merge-bot" ||
-    runner.role === "planner" ||
-    runner.role === "plan" ||
-    runner.role === "verifier";
+  const showAgentConfig = true;
 
   const [ticketDialogOpen, setTicketDialogOpen] = React.useState(false);
   const [ticketContent, setTicketContent] = React.useState<AutoflowFileContentResult | null>(null);
@@ -9072,12 +9220,14 @@ function AiProgressRow({
               <>
                 <Button
                   variant="outline"
-                size="icon"
-                className="runner-icon-button runner-plain-icon-button"
-                aria-label={`${agentTitle} 중지`}
-                disabled={Boolean(actionKey)}
-                onClick={() => {
-                  onControl?.("stop", runner.id);
+                  size="icon"
+                  className="runner-icon-button runner-plain-icon-button"
+                  aria-label={`${agentTitle} 정지`}
+                  title={`${agentTitle} 정지`}
+                  disabled={Boolean(actionKey)}
+                  onClick={() => {
+                    onSelectRunner?.(runner.id);
+                    onControl?.("stop", runner.id);
                   }}
                 >
                   {isWorking && (actionKey === "stopping_pending" || actionKey === "stopping_force") ? (
@@ -9088,15 +9238,17 @@ function AiProgressRow({
                 </Button>
                 {canForceStop ? (
                   <Button
-                  variant="outline"
-                  size="icon"
-                  className="runner-icon-button runner-plain-icon-button"
-                  aria-label={`${agentTitle} 강제 종료`}
-                  onClick={() => {
-                    if (window.confirm(`${agentTitle} runner 를 강제 종료할까요?`)) {
-                      onControl?.("stop", runner.id, { force: true });
-                    }
-                  }}
+                    variant="outline"
+                    size="icon"
+                    className="runner-icon-button runner-plain-icon-button"
+                    aria-label={`${agentTitle} 강제 종료`}
+                    title={`${agentTitle} 강제 종료`}
+                    onClick={() => {
+                      if (window.confirm(`${agentTitle} 러너를 강제 종료할까요?`)) {
+                        onSelectRunner?.(runner.id);
+                        onControl?.("stop", runner.id, { force: true });
+                      }
+                    }}
                   >
                     <TriangleAlert className="h-4 w-4" />
                   </Button>
@@ -9108,8 +9260,10 @@ function AiProgressRow({
                 size="icon"
                 className="runner-icon-button runner-plain-icon-button"
                 aria-label={`${agentTitle} 시작`}
+                title={`${agentTitle} 시작`}
                 disabled={!canStart || Boolean(actionKey)}
                 onClick={() => {
+                  onSelectRunner?.(runner.id);
                   onControl?.("start", runner.id);
                 }}
               >
@@ -9249,7 +9403,7 @@ function AiProgressRow({
             {!ticketError && ticketContent ? (
               <div className="workflow-pin-detail-body">
                 {ticketContent.content ? (
-                  <MarkdownViewer content={ticketContent.content} />
+                  <MarkdownViewer content={ticketMarkdownDisplayContent(ticketContent.content)} />
                 ) : (
                   <p className="workflow-pin-detail-empty">(비어 있음)</p>
                 )}
@@ -9543,12 +9697,10 @@ function WikiList({
 }
 
 function wikiDbTableLabel(name: string) {
-  if (name === "wiki_chunks") return "chunks";
-  if (name === "wiki_vectors") return "vectors";
-  if (name === "wiki_chunks_fts") return "fts";
-  if (name === "wiki_index_meta") return "meta";
-  if (name.startsWith("wiki_chunks_fts_")) return "fts shadow";
-  return "table";
+  if (name === "wiki") return "canonical markdown";
+  if (name === "raw") return "raw sources";
+  if (name === "done") return "done evidence";
+  return "markdown";
 }
 
 function wikiDbCellPreview(value: string) {
@@ -9571,8 +9723,8 @@ function WikiDatabasePanel({
   onSelectTable: (table: string) => void;
   onRefresh: () => void;
 }) {
-  const activeTable = result?.selectedTable || selectedTable || "wiki_chunks";
-  const dbPath = result?.dbPath || ".autoflow/runners/state/wiki-search.db";
+  const activeTable = result?.selectedTable || selectedTable || "wiki";
+  const dbPath = result?.dbPath || ".autoflow/wiki";
   const columns = result?.columns?.length
     ? result.columns
     : Object.keys(result?.rows?.[0] || {}).map((name) => ({
@@ -9585,9 +9737,9 @@ function WikiDatabasePanel({
 
   return (
     <div className="wiki-db-panel">
-      <aside className="wiki-db-sidebar" aria-label="위키 DB 테이블">
+      <aside className="wiki-db-sidebar" aria-label="위키 파일 그룹">
         <div className="wiki-db-sidebar-header">
-          <Database className="h-4 w-4" />
+          <BookOpenText className="h-4 w-4" />
           <div className="min-w-0">
             <strong>{basename(dbPath)}</strong>
             <span title={dbPath}>{dbPath}</span>
@@ -9603,7 +9755,7 @@ function WikiDatabasePanel({
               onClick={() => onSelectTable(table.name)}
               title={table.name}
             >
-              <Table2 className="h-4 w-4" />
+              <FileText className="h-4 w-4" />
               <div className="wiki-db-table-button-copy">
                 <strong>{table.name}</strong>
                 <span>{wikiDbTableLabel(table.name)}</span>
@@ -9613,14 +9765,14 @@ function WikiDatabasePanel({
           ))}
         </div>
       </aside>
-      <section className="wiki-db-table-pane" aria-label="위키 DB 행">
+      <section className="wiki-db-table-pane" aria-label="위키 markdown 파일">
         <div className="wiki-db-table-header">
           <div className="wiki-db-table-heading">
-            <Table2 className="h-4 w-4" />
+            <FileText className="h-4 w-4" />
             <div className="min-w-0">
               <strong>{activeTable}</strong>
               <span>
-                {formatCount(result?.rowCount || rows.length)} rows · {formatCount(columns.length)} columns
+                {formatCount(result?.rowCount || rows.length)} files · {formatCount(columns.length)} fields
               </span>
             </div>
           </div>
@@ -9630,18 +9782,18 @@ function WikiDatabasePanel({
             className="wiki-db-refresh"
             onClick={onRefresh}
             disabled={isLoading}
-            aria-label="DB 새로고침"
-            title="DB 새로고침"
+            aria-label="위키 새로고침"
+            title="위키 새로고침"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </div>
         {error ? <div className="knowledge-error wiki-db-error">{error}</div> : null}
         {!error && isLoading ? (
-          <div className="empty-panel wiki-db-empty">DB를 읽는 중입니다</div>
+          <div className="empty-panel wiki-db-empty">위키를 읽는 중입니다</div>
         ) : null}
         {!error && !isLoading && !rows.length ? (
-          <div className="empty-panel wiki-db-empty">표시할 row가 없습니다</div>
+          <div className="empty-panel wiki-db-empty">표시할 markdown 파일이 없습니다</div>
         ) : null}
         {!error && rows.length ? (
           <div className="wiki-db-table-scroll">

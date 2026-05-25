@@ -118,6 +118,9 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  readRoleAssignment,
+  assignmentMatchesItem,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -147,7 +150,6 @@ function compactVerifierSource(item: VerifierTicketItem): JsonObject {
     path: item.path,
     id: item.id,
     prd_key: item.prd_key || "",
-    priority: item.priority,
     title: item.title,
     stage: item.stage || "",
     claimed_by: item.claimed_by || "",
@@ -164,13 +166,20 @@ function compactVerifierSource(item: VerifierTicketItem): JsonObject {
 
 export function cmdVerifierQueueSnapshot(): void {
   const runnerId = currentRunnerId("verifier");
+  const assignmentCheck = readRoleAssignment("verifier", runnerId);
   const maxItems = positiveInt(getArg("--max-items") || "", 12);
   const tickets: VerifierTicketItem[] = listWorkerTicketItems("verifier").map((item) => ({
     ...item,
     verify_pending: item.stage === "verify_pending" || item.stage === "",
   }));
   tickets.sort(verifierFifoSort);
-  const actionable = tickets.find((item) => item.verify_pending) || tickets[0];
+  const assignmentIsScoped = Boolean(assignmentCheck.assignment);
+  const assignedTickets = assignmentCheck.ok && assignmentIsScoped
+    ? tickets.filter((item) => assignmentMatchesItem(assignmentCheck.assignment, item.path))
+    : assignmentCheck.ok
+      ? tickets
+    : [];
+  const actionable = assignedTickets.find((item) => item.verify_pending) || assignedTickets[0];
   const visibleTickets = actionable && !tickets.slice(0, maxItems).some((item) => item.path === actionable.path)
     ? [actionable, ...tickets.filter((item) => item.path !== actionable.path).slice(0, Math.max(0, maxItems - 1))]
     : tickets.slice(0, maxItems);
@@ -178,13 +187,16 @@ export function cmdVerifierQueueSnapshot(): void {
   ok({
     tool: "verifier.queue-snapshot",
     runner: runnerId,
+    assignment_required: assignmentIsScoped,
+    assignment_status: assignmentCheck.ok ? (assignmentIsScoped ? "active" : "fixed_runner") : assignmentCheck.reason,
+    assignment: compactAssignment(assignmentCheck.assignment),
     generated_at: utils.nowIso(),
     ticket_count_total: tickets.length,
     ticket_count: visibleTickets.length,
     tickets_truncated: tickets.length > visibleTickets.length,
     tickets: visibleTickets,
     ai_followup_recommended: Boolean(actionable),
-    ai_followup_reason: actionable ? "verifier_ticket_pending" : "no_pending_verifier_ticket",
+    ai_followup_reason: actionable ? "verifier_ticket_pending" : assignmentCheck.reason || "no_pending_verifier_ticket",
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,
       max_files_to_open: scopedSourceFileCount(scopedSources),

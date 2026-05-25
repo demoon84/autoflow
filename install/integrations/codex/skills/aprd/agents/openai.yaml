@@ -1,4 +1,0 @@
-interface:
-  display_name: "Autoflow PRD"
-  short_description: "Autoflow PRD handoff (/aprd)"
-  default_prompt: "Use $aprd to gather requirements, split into multiple PRDs when needed, render drafts only on explicit request, and save only after approval."

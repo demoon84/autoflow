@@ -140,7 +140,7 @@ function verifierRequired(): boolean {
 
 export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const backendOutcome = command === "request-replan" ? "replan" : "pass";
-  const ticket = requireTicket(["inprogress", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress"]);
   const message = backendOutcome === "pass" ? getArg("--summary") : getArg("--reason");
   if (!message) fail(2, `worker ${command} requires --${backendOutcome === "pass" ? "summary" : "reason"}`);
   const ticketId = idFromPath(ticket);
@@ -148,7 +148,7 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const hasVerifierApproval = fs.existsSync(verifierMarker);
 
   if (command === "submit-to-verifier" && hasVerifierApproval) {
-    fail(2, "verifier approval marker already exists; use worker finalize-approved after merging the approved worktree into PROJECT_ROOT", {
+    fail(2, "verifier approval marker already exists; use worker finalize-approved to commit the approved worktree result", {
       ticket_id: `TODO-${ticketId}`,
       verifier_marker: boardRel(verifierMarker),
     });
@@ -184,7 +184,7 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
         tool: `worker.${command}`,
         ticket_id: `TODO-${ticketId}`,
         backend_status: backendStatus,
-        next_scan: "after context compact, run worker.active-get; if no owned ticket, run worker.todo-snapshot before idling",
+      next_scan: "after context compact, run worker.active-get; if no owned ticket, run worker.work-snapshot before idling",
       })
     : { ok: false, path: "" };
   ok({

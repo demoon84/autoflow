@@ -1,6 +1,5 @@
 import {fs, path, BOARD_ROOT} from "./context";
 import {extractNumericId} from "./ids";
-import {priorityRank} from "./priority";
 
 function migrateLegacyQueueDir(fromName: string, toName: string): void {
   const ticketsRoot = path.join(BOARD_ROOT, "tickets");
@@ -41,8 +40,6 @@ export function listMatchingFiles(dir: string, patterns: RegExp[]): string[] {
     .map((name) => path.join(dir, name))
     .filter((file) => fs.statSync(file).isFile())
     .sort((a, b) => {
-      const rank = priorityRank(a) - priorityRank(b);
-      if (rank !== 0) return rank;
       const id = Number.parseInt(extractNumericId(a) || "999999", 10) - Number.parseInt(extractNumericId(b) || "999999", 10);
       if (id !== 0) return id;
       return a.localeCompare(b);
@@ -67,7 +64,7 @@ export function collectFiles(root: string, basenameRe: RegExp): string[] {
 
 export function nextTicketId(): string {
   let max = 0;
-  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^TODO-\d+\.md$/)) {
+  for (const file of collectFiles(path.join(BOARD_ROOT, "tickets"), /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/)) {
     const id = Number.parseInt(extractNumericId(file) || "0", 10);
     if (id > max) max = id;
   }

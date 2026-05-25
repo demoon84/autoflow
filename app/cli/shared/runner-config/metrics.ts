@@ -55,37 +55,129 @@ type CodeTotals = {
     net: number;
 };
 
-function readMarkerTotals(ctx: ProjectContext, runnerId: string): { found: boolean; totals: CodeTotals; files: Set<string> } {
-    const dir = path.join(ctx.boardRoot, "runners", "state", "code-metrics", safeSegment(runnerId));
-    const totals: CodeTotals = {files: 0, insertions: 0, deletions: 0, volume: 0, net: 0};
-    const files = new Set<string>();
-    let entries: string[] = [];
-    try {
-        entries = fs.readdirSync(dir).filter((entry) => entry.endsWith(".json"));
-    } catch {
-        return {found: false, totals, files};
+type CodeMetricEntry = {
+    key: string;
+    totals: CodeTotals;
+    files: Set<string>;
+    reportedAtMs: number;
+    source: string;
+};
+
+function codeMetricKey(rawTicketId: unknown, fallback: string): string {
+    const ticketId = String(rawTicketId || "").trim();
+    return ticketId ? `ticket:${ticketId}` : fallback;
+}
+
+function codeMetricEntryIsBetter(candidate: CodeMetricEntry, current: CodeMetricEntry): boolean {
+    if (candidate.reportedAtMs !== current.reportedAtMs) return candidate.reportedAtMs > current.reportedAtMs;
+    if (candidate.totals.volume !== current.totals.volume) return candidate.totals.volume > current.totals.volume;
+    return candidate.source.localeCompare(current.source) > 0;
+}
+
+function upsertCodeMetricEntry(entries: Map<string, CodeMetricEntry>, entry: CodeMetricEntry): void {
+    const current = entries.get(entry.key);
+    if (!current || codeMetricEntryIsBetter(entry, current)) {
+        entries.set(entry.key, entry);
     }
-    let fallbackFileCount = 0;
-    for (const entry of entries) {
-        let marker: Record<string, unknown> = {};
+}
+
+function markerReportedAtMs(marker: Record<string, unknown>): number {
+    const parsed = Date.parse(String(marker.reported_at || marker.created_at || marker.updated_at || ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function markerCodeEntry(marker: Record<string, unknown>, markerPath: string): CodeMetricEntry {
+    const files = new Set(markerCodeFiles(marker));
+    const fallbackFiles = files.size > 0 ? 0 : Math.max(0, intMarker(marker, "code_files_changed_count"));
+    return {
+        key: codeMetricKey(marker.ticket_id, `marker:${markerPath}`),
+        totals: {
+            files: files.size + fallbackFiles,
+            insertions: Math.max(0, intMarker(marker, "code_insertions_count")),
+            deletions: Math.max(0, intMarker(marker, "code_deletions_count")),
+            volume: Math.max(0, intMarker(marker, "code_volume_count")),
+            net: intMarker(marker, "code_net_delta_count"),
+        },
+        files,
+        reportedAtMs: markerReportedAtMs(marker),
+        source: markerPath,
+    };
+}
+
+function collectMarkerCodeEntries(ctx: ProjectContext): Map<string, CodeMetricEntry> {
+    const root = path.join(ctx.boardRoot, "runners", "state", "code-metrics");
+    const entries = new Map<string, CodeMetricEntry>();
+    let runnerDirs: string[] = [];
+    try {
+        runnerDirs = fs.readdirSync(root, {withFileTypes: true})
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name);
+    } catch {
+        return entries;
+    }
+    for (const runnerDir of runnerDirs) {
+        const dir = path.join(root, runnerDir);
+        let markerFiles: string[] = [];
         try {
-            marker = JSON.parse(fs.readFileSync(path.join(dir, entry), "utf8")) as Record<string, unknown>;
+            markerFiles = fs.readdirSync(dir).filter((entry) => entry.endsWith(".json"));
         } catch {
             continue;
         }
-        const markerFiles = markerCodeFiles(marker);
-        if (markerFiles.length > 0) {
-            for (const file of markerFiles) files.add(file);
-        } else {
-            fallbackFileCount += intMarker(marker, "code_files_changed_count");
+        for (const markerFile of markerFiles) {
+            const markerPath = path.join(dir, markerFile);
+            try {
+                const marker = JSON.parse(fs.readFileSync(markerPath, "utf8")) as Record<string, unknown>;
+                upsertCodeMetricEntry(entries, markerCodeEntry(marker, markerPath));
+            } catch {
+                continue;
+            }
         }
-        totals.insertions += intMarker(marker, "code_insertions_count");
-        totals.deletions += intMarker(marker, "code_deletions_count");
-        totals.volume += intMarker(marker, "code_volume_count");
-        totals.net += intMarker(marker, "code_net_delta_count");
     }
-    totals.files = files.size + fallbackFileCount;
-    return {found: entries.length > 0, totals, files};
+    return entries;
+}
+
+function runnerIdsWithState(ctx: ProjectContext, runners: Record<string, string>[]): string[] {
+    const ids = new Set<string>();
+    for (const runner of runners) {
+        const id = String(runner.id || "").trim();
+        if (id) ids.add(id);
+    }
+    const stateDir = path.join(ctx.boardRoot, "runners", "state");
+    try {
+        for (const entry of fs.readdirSync(stateDir)) {
+            if (entry.endsWith(".state")) ids.add(entry.replace(/\.state$/, ""));
+        }
+    } catch {}
+    return [...ids].sort();
+}
+
+function stateCodeEntry(runnerId: string, state: Record<string, string>): CodeMetricEntry | null {
+    const totals = {
+        files: Math.max(0, intState(state, "cumulative_code_files_changed")),
+        insertions: Math.max(0, intState(state, "cumulative_code_insertions")),
+        deletions: Math.max(0, intState(state, "cumulative_code_deletions")),
+        volume: Math.max(0, intState(state, "cumulative_code_volume")),
+        net: intState(state, "cumulative_code_net_delta"),
+    };
+    const hasPositiveCode = totals.files > 0 || totals.insertions > 0 || totals.deletions > 0 || totals.volume > 0;
+    if (!hasPositiveCode && (state.code_source || "none") === "none") return null;
+    const reportedAtMs = Date.parse(String(state.last_code_reported_at || ""));
+    return {
+        key: codeMetricKey(state.last_code_ticket_id, `state:${runnerId}`),
+        totals,
+        files: new Set<string>(),
+        reportedAtMs: Number.isFinite(reportedAtMs) ? reportedAtMs : 0,
+        source: `state:${runnerId}`,
+    };
+}
+
+function addCodeMetricEntryToTotals(entry: CodeMetricEntry, totals: CodeTotals, uniqueFiles: Set<string>): void {
+    for (const file of entry.files) uniqueFiles.add(file);
+    totals.files += Math.max(0, entry.totals.files - entry.files.size);
+    totals.insertions += entry.totals.insertions;
+    totals.deletions += entry.totals.deletions;
+    totals.volume += entry.totals.volume;
+    totals.net += entry.totals.net;
 }
 
 export function runnerOwnsCodeMetrics(runner: Record<string, string>): boolean {
@@ -103,27 +195,17 @@ export function codeMetricTotals(ctx: ProjectContext, runners = parseRunnerConfi
         net: 0,
     };
     const uniqueFiles = new Set<string>();
-    let fallbackFileCount = 0;
-    for (const runner of runners) {
-        if (!runnerOwnsCodeMetrics(runner)) continue;
-        const markers = readMarkerTotals(ctx, runner.id || "");
-        if (markers.found) {
-            for (const file of markers.files) uniqueFiles.add(file);
-            fallbackFileCount += markers.totals.files - markers.files.size;
-            totals.insertions += markers.totals.insertions;
-            totals.deletions += markers.totals.deletions;
-            totals.volume += markers.totals.volume;
-            totals.net += markers.totals.net;
-            continue;
-        }
-        const state = readRunnerState(ctx, runner.id || "");
-        fallbackFileCount += intState(state, "cumulative_code_files_changed");
-        totals.insertions += intState(state, "cumulative_code_insertions");
-        totals.deletions += intState(state, "cumulative_code_deletions");
-        totals.volume += intState(state, "cumulative_code_volume");
-        totals.net += intState(state, "cumulative_code_net_delta");
+    const markerEntries = collectMarkerCodeEntries(ctx);
+    const stateEntries = new Map<string, CodeMetricEntry>();
+    for (const runnerId of runnerIdsWithState(ctx, runners)) {
+        const entry = stateCodeEntry(runnerId, readRunnerState(ctx, runnerId));
+        if (!entry || markerEntries.has(entry.key)) continue;
+        upsertCodeMetricEntry(stateEntries, entry);
     }
-    totals.files = uniqueFiles.size + fallbackFileCount;
+    for (const entry of [...markerEntries.values(), ...stateEntries.values()]) {
+        addCodeMetricEntryToTotals(entry, totals, uniqueFiles);
+    }
+    totals.files += uniqueFiles.size;
     return totals;
 }
 
@@ -132,12 +214,14 @@ export type RunnerTokenAccounting = {
     cumulativeTotalTokens: number;
     cumulativeCacheReadTokens: number;
     cumulativeCacheCreateTokens: number;
+    cumulativeLlmRequestCount: number;
     lastTurnTokens: number;
     lastTurnTotalTokens: number;
     lastTurnInputTokens: number;
     lastTurnOutputTokens: number;
     lastTurnCacheReadTokens: number;
     lastTurnCacheCreateTokens: number;
+    lastTurnLlmRequestCount: number;
     lastTurnAt: string;
     lastTurnTickId: string;
     tokenSource: string;
@@ -146,30 +230,80 @@ export type RunnerTokenAccounting = {
 
 export function runnerTokenAccounting(ctx: ProjectContext, runnerId: string): RunnerTokenAccounting {
     const state = readRunnerState(ctx, runnerId);
-    const stateCumulative = state.token_source === "llm_reported" ? intState(state, "cumulative_tokens") : 0;
-    const stateCumulativeTotal = intState(state, "cumulative_total_tokens") || stateCumulative;
-    const stateCumulativeCacheRead = intState(state, "cumulative_cache_read_tokens") || intState(state, "last_turn_cache_read_tokens");
-    const stateCumulativeCacheCreate = intState(state, "cumulative_cache_create_tokens") || intState(state, "last_turn_cache_create_tokens");
-    const stateLastTurn = intState(state, "last_turn_tokens");
-    const stateLastTurnTotal = intState(state, "last_turn_total_tokens") || stateLastTurn;
-    const stateLastCacheRead = intState(state, "last_turn_cache_read_tokens");
-    const stateLastCacheCreate = intState(state, "last_turn_cache_create_tokens");
+    const hasAccumulatedLlmUsage = state.token_source === "llm_reported";
+    const stateCumulative = hasAccumulatedLlmUsage ? intState(state, "cumulative_tokens") : 0;
+    const stateCumulativeTotal = hasAccumulatedLlmUsage ? intState(state, "cumulative_total_tokens") || stateCumulative : 0;
+    const stateCumulativeCacheRead = hasAccumulatedLlmUsage ? intState(state, "cumulative_cache_read_tokens") || intState(state, "last_turn_cache_read_tokens") : 0;
+    const stateCumulativeCacheCreate = hasAccumulatedLlmUsage ? intState(state, "cumulative_cache_create_tokens") || intState(state, "last_turn_cache_create_tokens") : 0;
+    const stateRequestCount = hasAccumulatedLlmUsage ? intState(state, "cumulative_llm_request_count") : 0;
+    const stateLastTurn = hasAccumulatedLlmUsage ? intState(state, "last_turn_tokens") : 0;
+    const stateLastTurnTotal = hasAccumulatedLlmUsage ? intState(state, "last_turn_total_tokens") || stateLastTurn : 0;
+    const stateLastCacheRead = hasAccumulatedLlmUsage ? intState(state, "last_turn_cache_read_tokens") : 0;
+    const stateLastCacheCreate = hasAccumulatedLlmUsage ? intState(state, "last_turn_cache_create_tokens") : 0;
     return {
         cumulativeTokens: stateCumulative,
         cumulativeTotalTokens: stateCumulativeTotal,
         cumulativeCacheReadTokens: stateCumulativeCacheRead,
         cumulativeCacheCreateTokens: stateCumulativeCacheCreate,
+        cumulativeLlmRequestCount: stateRequestCount,
         lastTurnTokens: stateLastTurn,
         lastTurnTotalTokens: stateLastTurnTotal,
-        lastTurnInputTokens: intState(state, "last_turn_input_tokens"),
-        lastTurnOutputTokens: intState(state, "last_turn_output_tokens"),
+        lastTurnInputTokens: hasAccumulatedLlmUsage ? intState(state, "last_turn_input_tokens") : 0,
+        lastTurnOutputTokens: hasAccumulatedLlmUsage ? intState(state, "last_turn_output_tokens") : 0,
         lastTurnCacheReadTokens: stateLastCacheRead,
         lastTurnCacheCreateTokens: stateLastCacheCreate,
-        lastTurnAt: state.last_turn_at || "",
-        lastTurnTickId: state.last_turn_tick_id || "",
-        tokenSource: state.token_source || "none",
-        lastTokenUsageSource: state.last_token_usage_source || state.token_source || "none",
+        lastTurnLlmRequestCount: hasAccumulatedLlmUsage ? intState(state, "last_turn_llm_request_count") : 0,
+        lastTurnAt: hasAccumulatedLlmUsage ? state.last_turn_at || "" : "",
+        lastTurnTickId: hasAccumulatedLlmUsage ? state.last_turn_tick_id || "" : "",
+        tokenSource: hasAccumulatedLlmUsage ? state.token_source || "none" : "none",
+        lastTokenUsageSource: hasAccumulatedLlmUsage ? state.last_token_usage_source || state.token_source || "none" : "none",
     };
+}
+
+function canonicalTokenRole(value: string): string {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "planner" || normalized === "plan" || /^(planner|plan)-/.test(normalized)) return "planner";
+    if (normalized === "worker" || normalized === "ticket" || /^(worker|ai)-/.test(normalized)) return "worker";
+    if (normalized === "verifier" || normalized === "verify" || /^verifier-/.test(normalized)) return "verifier";
+    if (normalized === "wiki" || normalized === "wiki-maintainer" || /^(wiki|wiki-maintainer)-/.test(normalized)) {
+        return "wiki";
+    }
+    return "";
+}
+
+function inferTokenRoleFromState(runner: Record<string, string>, state: Record<string, string>): string {
+    const candidates = [
+        state.last_turn_role,
+        state.active_role,
+        state.assignment_role,
+        state.role,
+        runner.role,
+    ];
+    for (const candidate of candidates) {
+        const role = canonicalTokenRole(candidate || "");
+        if (role) return role;
+    }
+
+    const stage = String(state.active_stage || "").toLowerCase();
+    const signal = [
+        state.last_result,
+        state.last_log_line,
+        state.active_item,
+        state.active_ticket_id,
+        state.active_ticket_path,
+        state.assigned_item_ref,
+    ].join(" ").toLowerCase();
+    if (/^verifier[_-]/.test(stage) || /\bverifier[_-]|\bverifier\b/.test(signal)) return "verifier";
+    if (/^(planning|generating-todo)$/.test(stage) || /\bplanner[_-]|\bprd-to-todo\b|\btodo_ticket=/.test(signal)) {
+        return "planner";
+    }
+    if (/\bwiki[_-]|\bwiki-maintainer\b|\bllm wiki\b/.test(signal)) return "wiki";
+    if (/^(claimed|executing|inprogress|verify_pending|verifier_pending|merging)$/.test(stage)) {
+        return "worker";
+    }
+    if (String(state.active_ticket_id || "").startsWith("PRD-")) return "planner";
+    if (String(state.active_ticket_id || "")) return "worker";
+    return "unknown";
 }
 
 export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConfig(ctx)): Record<string, number | string> {
@@ -177,6 +311,22 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
     let totalUsage = 0;
     let cacheReadUsage = 0;
     let cacheCreateUsage = 0;
+    let requestCount = 0;
+    let usage1h = 0;
+    let usage24h = 0;
+    let input1h = 0;
+    let output1h = 0;
+    let cache1h = 0;
+    let input24h = 0;
+    let output24h = 0;
+    let cache24h = 0;
+    const runnerBreakdown24h: Record<string, number> = {};
+    const roleBreakdown24h: Record<string, number> = {};
+    const modelBreakdown24h: Record<string, number> = {};
+    const hourly24h = new Map<number, { hour: number; input: number; output: number; cache: number }>();
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+    const twentyFourHoursAgo = now - 24 * 60 * 60 * 1000;
 
     for (const runner of runners) {
         const runnerId = runner.id || "";
@@ -186,10 +336,50 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
         const stateTotal = state.token_source === "llm_reported" ? intState(state, "cumulative_total_tokens") || stateCumulative : 0;
         const stateCacheRead = state.token_source === "llm_reported" ? intState(state, "cumulative_cache_read_tokens") : 0;
         const stateCacheCreate = state.token_source === "llm_reported" ? intState(state, "cumulative_cache_create_tokens") : 0;
+        const stateRequestCount = state.token_source === "llm_reported" ? intState(state, "cumulative_llm_request_count") : 0;
         usage += stateCumulative;
         totalUsage += stateTotal;
         cacheReadUsage += stateCacheRead;
         cacheCreateUsage += stateCacheCreate;
+        if (stateRequestCount > 0) {
+            requestCount += stateRequestCount;
+        } else if (state.token_source === "llm_reported" && (state.last_turn_tick_id || stateCumulative > 0)) {
+            requestCount += 1;
+        }
+
+        const lastTurnAtMs = Date.parse(state.last_turn_at || "");
+        if (!Number.isFinite(lastTurnAtMs) || lastTurnAtMs <= 0 || lastTurnAtMs < twentyFourHoursAgo || lastTurnAtMs > now + 60_000) {
+            continue;
+        }
+
+        const lastVisible = intState(state, "last_turn_tokens");
+        const lastInput = intState(state, "last_turn_input_tokens");
+        const lastOutput = intState(state, "last_turn_output_tokens");
+        const lastCache = intState(state, "last_turn_cache_read_tokens") + intState(state, "last_turn_cache_create_tokens");
+        usage24h += lastVisible;
+        input24h += lastInput;
+        output24h += lastOutput;
+        cache24h += lastCache;
+
+        runnerBreakdown24h[runnerId] = (runnerBreakdown24h[runnerId] || 0) + lastVisible;
+        const role = inferTokenRoleFromState(runner, state);
+        roleBreakdown24h[role] = (roleBreakdown24h[role] || 0) + lastVisible;
+        const model = runner.model || state.model || "unknown";
+        modelBreakdown24h[model] = (modelBreakdown24h[model] || 0) + lastVisible;
+
+        const hour = Math.floor(lastTurnAtMs / (60 * 60 * 1000)) * 3600;
+        const bucket = hourly24h.get(hour) || {hour, input: 0, output: 0, cache: 0};
+        bucket.input += lastInput;
+        bucket.output += lastOutput;
+        bucket.cache += lastCache;
+        hourly24h.set(hour, bucket);
+
+        if (lastTurnAtMs >= oneHourAgo) {
+            usage1h += lastVisible;
+            input1h += lastInput;
+            output1h += lastOutput;
+            cache1h += lastCache;
+        }
     }
 
     return {
@@ -197,5 +387,19 @@ export function tokenMetricTotals(ctx: ProjectContext, runners = parseRunnerConf
         autoflow_token_total_count: totalUsage,
         autoflow_token_cache_read_count: cacheReadUsage,
         autoflow_token_cache_create_count: cacheCreateUsage,
+        autoflow_token_report_count: requestCount,
+        autoflow_llm_request_count: requestCount,
+        autoflow_token_usage_1h_count: usage1h,
+        autoflow_token_usage_24h_count: usage24h,
+        autoflow_token_input_1h_count: input1h,
+        autoflow_token_output_1h_count: output1h,
+        autoflow_token_cache_1h_count: cache1h,
+        autoflow_token_input_24h_count: input24h,
+        autoflow_token_output_24h_count: output24h,
+        autoflow_token_cache_24h_count: cache24h,
+        autoflow_token_runner_breakdown_24h_json: JSON.stringify(runnerBreakdown24h),
+        autoflow_token_role_breakdown_24h_json: JSON.stringify(roleBreakdown24h),
+        autoflow_token_model_breakdown_24h_json: JSON.stringify(modelBreakdown24h),
+        autoflow_token_hourly_24h_json: JSON.stringify([...hourly24h.values()].sort((left, right) => left.hour - right.hour)),
     };
 }

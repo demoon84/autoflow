@@ -1,5 +1,5 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listWorkerTicketItems, ticketItemOwnedByRunner } from "./tickets";
 import { replaceSectionBlock } from "./sections";
 
@@ -207,21 +207,29 @@ export function ensureWorkerTicketWorktree(ticket: string): JsonObject {
     };
   }
 
+  // TODO 는 반드시 PRD worktree 안에서 처리된다. 별도 TODO branch/worktree 는 만들지 않는다.
+  // Planner 가 PRD 발행 시점에 PRD worktree 를 만들어둔다는 계약을 따른다.
   const prdTrackActive = prdTrack.source === "prd_branch" && Boolean(prdTrack.branch);
-  const branch = prdTrackActive ? prdTrack.branch : `autoflow/TODO-${ticketId}`;
-  const baseCommit = prdTrackActive ? prdTrack.base : mainHead;
-  const existingPath = utils.ticketWorktreePathFromFile(ticket);
-  const existingBranch = existingPath && isGitWorktree(existingPath)
-    ? git(["symbolic-ref", "--short", "HEAD"], existingPath).stdout.trim()
-    : "";
-  const prdWorktreePath = prdTrackActive
-    ? checkedOutWorktreePathForBranch(gitRoot, branch) || ticketWorktreePath("prd", prdIdFromKey(prdKey), gitRoot)
-    : "";
-  let worktreePath = prdTrackActive
-    ? (existingBranch === branch ? existingPath : prdWorktreePath)
-    : existingPath && isGitWorktree(existingPath)
-      ? existingPath
-      : defaultTicketWorktreePath(ticketId, gitRoot);
+  if (!prdTrackActive) {
+    replaceSectionBlock(
+      ticket,
+      "Worktree",
+      `- Path:
+- Branch:
+- Base Commit:
+- Worktree Commit:
+- Integration Status: blocked_no_prd_branch`
+    );
+    fail(1, "TODO worktree requires an existing PRD branch", {
+      ticket: boardRel(ticket),
+      prd_key: prdKey || "",
+      detail: "Planner 가 PRD worktree 를 먼저 만들어야 worker 가 작업할 수 있다.",
+    });
+  }
+  const branch = prdTrack.branch;
+  const baseCommit = prdTrack.base;
+  const prdWorktreePath = checkedOutWorktreePathForBranch(gitRoot, branch) || ticketWorktreePath("prd", prdIdFromKey(prdKey), gitRoot);
+  const worktreePath = prdWorktreePath;
   fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
 
   if (!isGitWorktree(worktreePath)) {
@@ -323,16 +331,15 @@ export type TicketWorktreeResult = {
 };
 
 /**
- * Provision (or reuse) a branch + worktree for a ticket and commit the ticket
- * markdown into that worktree. PRD-backed TODOs do not get their own TODO
- * worktree; they are written into the parent PRD worktree so one worker can
- * finish the whole PRD as a single squash merge.
+ * Provision (or reuse) a branch + worktree for a ticket. Ticket markdown stays
+ * in the local board; PRD-backed work items reuse the parent PRD worktree so
+ * product changes can finish as a single squash merge.
  */
 export function ensureTicketWorktree(opts: {
   id: string;
   kind: "prd" | "todo";
   content: string;
-  prdKey?: string;          // todo only — points at the parent PRD worktree
+  prdKey?: string;          // work item only — points at the parent PRD worktree
   commitMessage?: string;   // override default `[KIND-id] init/update`
 }): TicketWorktreeResult {
   const gitRoot = utils.gitRootPath(PROJECT_ROOT);
@@ -356,8 +363,7 @@ export function ensureTicketWorktree(opts: {
     ? ticketWorktreePath("prd", prdTodoId, gitRoot)
     : ticketWorktreePath(opts.kind, opts.id, gitRoot);
 
-  // Resolve base: PRD-backed TODOs always use the PRD branch HEAD; direct
-  // atodo TODOs and PRDs use the current project HEAD.
+  // Resolve base: PRD-backed work items always use the PRD branch HEAD.
   let baseCommit = git(["rev-parse", "--verify", "HEAD"], gitRoot).stdout.trim();
   if (opts.kind === "todo" && prdTodoId) {
     if (!gitBranchExists(gitRoot, branch)) {
@@ -386,7 +392,10 @@ export function ensureTicketWorktree(opts: {
     };
   }
 
-  // Create branch if missing. PRD-backed TODOs never create a TODO branch.
+  let createdBranch = false;
+  let createdWorktree = false;
+
+  // Create branch if missing. PRD-backed work items reuse the PRD branch.
   if (opts.kind === "prd" && !gitBranchExists(gitRoot, branch)) {
     const create = git(["branch", branch, baseCommit], gitRoot);
     if (create.status !== 0) {
@@ -396,6 +405,7 @@ export function ensureTicketWorktree(opts: {
         stderr: create.stderr,
       });
     }
+    createdBranch = true;
   }
   if (opts.kind === "todo" && !prdTodoId && !gitBranchExists(gitRoot, branch)) {
     const create = git(["branch", branch, baseCommit], gitRoot);
@@ -406,6 +416,7 @@ export function ensureTicketWorktree(opts: {
         stderr: create.stderr,
       });
     }
+    createdBranch = true;
   }
 
   // Ensure worktree.
@@ -423,60 +434,17 @@ export function ensureTicketWorktree(opts: {
         stdout: add.stdout,
       });
     }
+    createdWorktree = true;
   }
 
-  // Write ticket markdown inside the worktree and commit if changed.
-  const filename = opts.kind === "prd" ? `PRD-${opts.id}.md` : `TODO-${opts.id}.md`;
-  const ticketRel = path.posix.join(".autoflow", "tickets", opts.kind, filename);
-  const ticketAbs = path.join(worktreePath, ticketRel);
-  const ticketDir = path.dirname(ticketAbs);
-  fs.mkdirSync(ticketDir, {recursive: true});
-
-  let existing = "";
-  try { existing = fs.readFileSync(ticketAbs, "utf8"); } catch {}
-
-  const normalized = ensureTrailingNewline(opts.content);
-  if (existing === normalized) {
-    const headSha = git(["rev-parse", "--verify", "HEAD"], worktreePath).stdout.trim();
-    return {
-      status: "unchanged",
-      branch,
-      baseCommit,
-      worktreePath,
-      ticketRelPath: ticketRel,
-      ticketAbsPath: ticketAbs,
-      commit: headSha,
-    };
-  }
-
-  fs.writeFileSync(ticketAbs, normalized, "utf8");
-  const stage = git(["add", ticketRel], worktreePath);
-  if (stage.status !== 0) {
-    fail(1, "git add failed for ticket file", {
-      worktree_path: worktreePath,
-      ticket_rel: ticketRel,
-      stderr: stage.stderr,
-    });
-  }
-  const msg = opts.commitMessage || (existing
-    ? `[${opts.kind === "prd" ? "PRD" : "TODO"}-${opts.id}] ticket update`
-    : `[${opts.kind === "prd" ? "PRD" : "TODO"}-${opts.id}] ticket init`);
-  const commit = git(["commit", "-m", msg], worktreePath);
-  if (commit.status !== 0) {
-    fail(1, "git commit failed for ticket file", {
-      worktree_path: worktreePath,
-      ticket_rel: ticketRel,
-      stderr: commit.stderr,
-    });
-  }
   const headSha = git(["rev-parse", "--verify", "HEAD"], worktreePath).stdout.trim();
   return {
-    status: existing ? "updated" : "created",
+    status: createdBranch || createdWorktree ? "created" : "unchanged",
     branch,
     baseCommit,
     worktreePath,
-    ticketRelPath: ticketRel,
-    ticketAbsPath: ticketAbs,
+    ticketRelPath: "",
+    ticketAbsPath: "",
     commit: headSha,
   };
 }
@@ -523,13 +491,7 @@ export function resolvePrdTrackBase(
 }
 
 function prdIdFromKey(raw: string): string {
-  const trimmed = String(raw || "").trim();
-  if (!trimmed) return "";
-  const m = trimmed.match(/(?:PRD[-_]|prd_|project_)(\d+)/i);
-  if (m) return m[1].padStart(3, "0");
-  const numericOnly = trimmed.match(/^(\d+)$/);
-  if (numericOnly) return numericOnly[1].padStart(3, "0");
-  return "";
+  return parseTicketId(raw).id;
 }
 
 function locatePrdFile(prdId: string): string {

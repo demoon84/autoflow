@@ -126,7 +126,7 @@ const {
 } = shared;
 
 export function cmdWorkerStageSet(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier"]);
   const stage = getArg("--stage");
   if (!stage) fail(2, "worker stage-set requires --stage");
   const runnerId = currentRunnerId("worker");

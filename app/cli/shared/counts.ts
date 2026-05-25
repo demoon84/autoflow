@@ -1,5 +1,9 @@
 import {fs, path, type ProjectContext} from "./context";
 
+const ticketIdSource = "(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\\d+";
+export const prdFilenameRe = new RegExp(`^PRD-${ticketIdSource}\\.md$`);
+export const todoFilenameRe = new RegExp(`^TODO-${ticketIdSource}\\.md$`, "i");
+
 export function countFiles(dir: string, pattern: RegExp): number {
     if (!fs.existsSync(dir)) {
         return 0;
@@ -61,7 +65,7 @@ export function countTicketStage(dir: string, wantedStage: string): number {
         return 0;
     }
     return fs.readdirSync(dir)
-        .filter((name) => /^TODO-\d+\.md$/.test(name))
+        .filter((name) => todoFilenameRe.test(name))
         .filter((name) => fileContainsTicketStage(path.join(dir, name), wantedStage))
         .length;
 }

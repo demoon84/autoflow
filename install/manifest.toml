@@ -11,10 +11,9 @@ overwrite = "upgrade"
 template = false
 skip_shell = true
 
-# Static templates / agent prompts / contracts / rules / sqlite schema.
-# Identical across every project, so they live once at the user-scope share
-# root (default ~/.autoflow/share, overridable via AUTOFLOW_SHARE_ROOT) instead
-# of being copied into each board.
+# 정적 템플릿 / agent prompt / 계약 / 규칙 / 상태 schema.
+# 기본값은 active core의 install/share를 직접 참조한다.
+# AUTOFLOW_SHARE_ROOT를 지정한 경우에만 별도 share root로 동기화한다.
 [sources.share]
 path = "install/share"
 target = "{{USER_SHARE_ROOT}}"
@@ -39,8 +38,8 @@ template = true
 
 [sources.claude_skills]
 path = "install/integrations/claude/skills"
-target = ".claude/skills"
-type = "host"
+target = "{{CLAUDE_HOME}}/skills"
+type = "user_home"
 overwrite = "upgrade"
 template = true
 
@@ -51,21 +50,15 @@ type = "host"
 overwrite = "upgrade"
 template = true
 
-[sources.claude_plugin_skills]
-path = "install/integrations/claude/skills"
-target = ".claude/autoflow-plugin/skills"
-type = "host"
-overwrite = "upgrade"
-template = true
-
 [sources.codex_skills]
 path = "install/integrations/codex/skills"
-target = ".codex/skills"
-type = "host"
+target = "{{CODEX_HOME}}/skills"
+type = "user_home"
 overwrite = "upgrade"
 template = true
 
-# 런타임 스크립트는 보드에 설치하지 않는다. 실행 코드는 `app/runtime/`에 있고,
-# 앱 또는 host repo의 CLI가 `BOARD_ROOT` / `PROJECT_ROOT` 환경변수로 대상 보드를
-# 가리키며 호출한다. 보드는 데이터(`tickets`, `runners/state`,
-# `metrics`, `conversations`)와 DB-only 위키 인덱스 상태만 가진다.
+# 런타임 스크립트는 보드에 설치하지 않는다. 실행 코드는 resolved Autoflow
+# core의 `app/runtime/`에 있고, CLI가 `BOARD_ROOT` / `PROJECT_ROOT`
+# 환경변수로 대상 보드를 가리키며 호출한다. 보드는 데이터(`tickets`,
+# `runners/state`, `metrics`, `conversations`), markdown 위키와 raw source,
+# 그리고 설치 시 생성되는 `manifest.toml` core/share 참조만 가진다.

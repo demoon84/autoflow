@@ -21,7 +21,7 @@ function ensureDir(dir: string): void {
 function hasPendingTickets(): boolean {
   try {
     const files = fs.readdirSync(verifierDir);
-    return files.some(f => /^TODO-\d+\.md$/i.test(f));
+    return files.some(f => /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(f));
   } catch {
     return false;
   }

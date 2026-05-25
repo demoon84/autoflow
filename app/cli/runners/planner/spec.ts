@@ -1,5 +1,5 @@
 import * as shared from "../../shared";
-const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
+const {fs, path, spawnSync, crypto, CLI_DIR, REPO_ROOT, out, err, fail, shellQuoteStrip, packageVersion, oneLine, defaultBoardDirName, resolveProjectRoot, boardRootPath, projectContext, ensureBoard, ensureDir, writeFile, writeFileAtomic, copyTree, walkMarkdownFiles, readSingleLine, cleanupObsoleteBoardFiles, legacyWorkerTermReplacements, isTextMigrationTarget, migrateWorkerTerminology, parseArgs, firstFlag, allFlags, hasFlag, readStdin, readRequestText, listMarkdownIds, nextNumericId, nextNamespacedId, requiredTsxCli, runNodeOrTsScript, runtimeScriptPath, runRuntimeScript, countFiles, countTicketDirs, countTopLevelMarkdown, fileContainsTicketStage, countTicketStage, gitRun, realPathSafe, samePath, gitState, appendGitignorePatterns, boardGitignorePattern, ensureInstallGitignore, ensureGitBaseline, runnerConfigFieldOrder, runnerStringFieldDefaults, runnerConfigBasePath, runnerConfigLocalPath, runnerConfigPath, runnerConfigWritePath, stripTomlInlineComment, parseTomlScalar, parseRunnerConfig, readRunnerState, runnerTokenStateDefaults, serializeRunnerState, writeRunnerState, pidIsRunning, intState, runnerOwnsCodeMetrics, codeMetricTotals, runnerEffectiveStateStatus, runnerConfigFingerprint, formatTomlValue, serializeRunnerConfig, writeRunnerConfig, runnerUpdateEntries, outputRunner} = shared;
 
 export function specProject(args: string[]): void {
     if (args.includes("--help") || args.includes("-h")) {
@@ -27,7 +27,7 @@ Options:
     ensureBoard(ctx);
     const prdDir = path.join(ctx.boardRoot, "tickets", "prd");
     ensureDir(prdDir);
-    const id = nextNumericId(path.join(ctx.boardRoot, "tickets"), "prd", firstFlag(parsed, "id"));
+    const id = nextNamespacedId(path.join(ctx.boardRoot, "tickets"), "prd", ctx.projectRoot, firstFlag(parsed, "id"));
     const title = firstFlag(parsed, "title") || `PRD ${id}`;
     const goal = firstFlag(parsed, "goal") || readRequestText(parsed, "goal") || title;
     const file = path.join(prdDir, `PRD-${id}.md`);
@@ -44,7 +44,6 @@ Options:
 - Title: ${title}
 - AI: autoflow
 - Status: approved
-- Priority: normal
 - Change Type: code
 - Requires Secrets: []
 - Branch:
@@ -66,7 +65,7 @@ ${goal.trim()}
 
 ## Scope
 
-- In Scope: 플래너 러너가 이 요청을 구체적인 todo 작업으로 승격합니다.
+- In Scope: 플래너 역할이 이 요청을 구체적인 work item으로 분해합니다.
 - Out of Scope: TBD
 - Assumptions: TBD
 - Remaining Unknowns: 구체적인 Allowed Paths는 필요하면 PRD 저장 후 보강합니다.
@@ -82,16 +81,16 @@ ${goal.trim()}
 
 ## Global Acceptance Criteria
 
-- [ ] 플래너 러너가 이 PRD를 하나 이상의 todo ticket으로 승격한다.
+- [ ] 플래너 역할이 이 PRD를 하나 이상의 work item으로 분해한다.
 
 ## Done When
 
-- [ ] todo 티켓이 하나 이상 생성된다.
+- [ ] work item이 하나 이상 생성된다.
 
 ## Verification
 
 - Command: none-shell
-- Notes: 구체적인 검증 명령은 todo ticket 작성 시 확정한다.
+- Notes: 구체적인 검증 명령은 work item 작성 시 확정한다.
 
 ## Conversation Handoff
 
@@ -99,7 +98,7 @@ ${goal.trim()}
 
 ## Notes
 
-- \`autoflow spec create\`가 생성한 기본 PRD다. 플래너 승격 전에 \`Allowed Paths\`와 검증 조건을 구체화해야 할 수 있다.
+- \`autoflow spec create\`가 생성한 기본 PRD다. work item 분해 전에 \`Allowed Paths\`와 검증 조건을 구체화해야 할 수 있다.
 `;
     const stateDir = path.join(ctx.boardRoot, "runners", "state");
     ensureDir(stateDir);

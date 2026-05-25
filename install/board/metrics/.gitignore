@@ -1,6 +1,2 @@
-*.jsonl
-*.json
-*.env
-*.tsv
+*
 !.gitignore
-!README.md

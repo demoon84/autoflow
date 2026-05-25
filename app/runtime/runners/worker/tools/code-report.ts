@@ -127,7 +127,7 @@ const {
 } = shared;
 
 export function cmdWorkerCodeReport(): void {
-  const ticket = requireTicket(["inprogress", "todo", "verifier", "ready-to-merge", "done"]);
+  const ticket = requireTicket(["inprogress", "todo", "verifier", "done"]);
   ok(recordWorkerCodeMetrics(ticket));
 }
 

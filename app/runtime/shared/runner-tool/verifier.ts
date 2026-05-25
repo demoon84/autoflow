@@ -1,5 +1,5 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, normalizePrdKey, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { cleanSectionLines, replaceSectionBlock } from "./sections";
 import { diffCheck, diffPatch } from "./diff";
 import { readTitle } from "./queue";
@@ -106,8 +106,8 @@ export function workerRunnerIdFromTicket(ticket: string): string {
 }
 
 function prdBranchForTicket(ticket: string): string {
-  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
-  if (!/^PRD-\d+$/i.test(prdKey)) return "";
+  const prdKey = normalizePrdKey(stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key")));
+  if (!prdKey) return "";
   const candidates = [
     path.join(TICKETS_ROOT, "prd", `${prdKey}.md`),
     path.join(TICKETS_ROOT, "done", prdKey, `${prdKey}.md`),
@@ -123,7 +123,7 @@ function prdBranchForTicket(ticket: string): string {
 function mergeTargetDescription(ticket: string): string {
   const prdBranch = prdBranchForTicket(ticket);
   if (prdBranch) return `${prdBranch} PRD branch`;
-  return "main (atodo 또는 Branch 없는 legacy PRD)";
+  return "main";
 }
 
 export function markWorkerTicketVerified(ticket: string, ticketId: string, reason: string, logPath: string, markerPath: string): void {
@@ -140,17 +140,17 @@ export function markWorkerTicketVerified(ticket: string, ticketId: string, reaso
   replaceSectionBlock(
 	    ticket,
 	    "Next Action",
-	    `- Next: 검증 러너가 이 worktree를 승인했다. 워커 러너는 검증된 worktree를 Allowed Paths 안에서 ${mergeTarget}에 merge하고, 필요한 conflict를 해결하고, 해당 merge target에서 검증을 다시 실행한 뒤 \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`를 호출해야 한다.`
+	    `- Next: 검증 러너가 이 worktree를 승인했다. 워커 러너는 검증된 결과를 Allowed Paths 안에서 ${mergeTarget}에 반영하고, 필요한 conflict를 해결하고, 해당 target에서 검증을 다시 실행한 뒤 \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`를 호출해야 한다.`
   );
   replaceSectionBlock(
     ticket,
     "Resume Context",
-	    `- Current state: 검증 러너의 semantic pass가 기록되었고 ${mergeTarget} merge는 아직 대기 중이다.
+	    `- Current state: 검증 러너의 semantic pass가 기록되었고 ${mergeTarget} 반영은 아직 대기 중이다.
 	- Last completed action: ${now}에 verifier pass를 기록했다.
 	- First thing to inspect on resume: Worktree, Verification, Allowed Paths, verifier semantic decision.`
   );
-  utils.appendNote(ticket, `${now}에 verifier pass를 기록했다. worker merge는 이제 허용되었지만 아직 완료되지 않았다.`);
-  updateWorkerState(workerRunnerIdFromTicket(ticket), ticket, "verified_pending_merge", "verifier_passed_merge_pending");
+  utils.appendNote(ticket, `${now}에 verifier pass를 기록했다. worker finalization은 아직 완료되지 않았다.`);
+  updateWorkerState(workerRunnerIdFromTicket(ticket), ticket, "verified_pending_merge", "verifier_passed_worker_finalization_pending");
 }
 
 export function markWorkerTicketRevisionRequested(ticket: string, ticketId: string, reason: string, logPath: string): void {
@@ -190,7 +190,7 @@ export function markWorkerTicketReplanRequested(ticket: string, ticketId: string
   replaceSectionBlock(
 	    ticket,
 	    "Next Action",
-	    `- Next: 검증 러너가 ${ticketId} replan을 요청했다. 워커 러너는 \`autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>"\`를 실행해야 한다. 이 명령은 워크트리를 정리하고, 이 inprogress ticket을 tickets/todo/ 로 복귀시키며 (Replan Count/Decision 누적), 워커가 새 워크트리에서 재시도할 수 있게 한다. follow-up 경로를 처리하기 전에는 관련 없는 todo 작업을 claim하지 않는다.`
+	    `- Next: 검증 러너가 ${ticketId} replan을 요청했다. 워커 러너는 \`autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>"\`를 실행해야 한다. 이 명령은 워크트리를 정리하고, 이 inprogress work item을 pending work lane으로 복귀시키며 (Replan Count/Decision 누적), 워커가 새 워크트리에서 재시도할 수 있게 한다. follow-up 경로를 처리하기 전에는 관련 없는 work item을 claim하지 않는다.`
   );
   replaceSectionBlock(
     ticket,

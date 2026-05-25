@@ -10,6 +10,66 @@ function resolveRepoRoot() {
   return path.resolve(path.dirname(self), "..", "..");
 }
 
+function isAutoflowCoreRoot(candidate) {
+  return Boolean(
+    candidate &&
+    fs.existsSync(path.join(candidate, "package.json")) &&
+    fs.existsSync(path.join(candidate, "app", "bin", "autoflow")) &&
+    fs.existsSync(path.join(candidate, "app", "runtime")) &&
+    fs.existsSync(path.join(candidate, "install", "manifest.toml"))
+  );
+}
+
+function readRegistryCoreRoot() {
+  const home = process.env.AUTOFLOW_HOME || path.join(process.env.HOME || "", ".autoflow");
+  const registryPath = path.join(home, "core-registry.json");
+  try {
+    const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+    const active = registry && typeof registry.active === "string" ? registry.active : "";
+    const entry = active && registry.cores && registry.cores[active] ? registry.cores[active] : null;
+    return entry && typeof entry.coreRoot === "string" ? path.resolve(entry.coreRoot) : "";
+  } catch {
+    return "";
+  }
+}
+
+function maybeDelegateToCore(currentRoot) {
+  // These commands must run from the binary the user explicitly invoked;
+  // otherwise an old active registry entry would prevent registering/linking a
+  // new core.
+  if (process.argv[2] === "dev-link" || process.argv[2] === "install-cli") {
+    return false;
+  }
+  const requestedRoot = process.env.AUTOFLOW_CORE_ROOT && process.env.AUTOFLOW_CORE_ROOT.trim()
+    ? path.resolve(process.env.AUTOFLOW_CORE_ROOT)
+    : readRegistryCoreRoot();
+  if (!requestedRoot || !isAutoflowCoreRoot(requestedRoot)) {
+    return false;
+  }
+  let sameRoot = false;
+  try {
+    sameRoot = fs.realpathSync(requestedRoot) === fs.realpathSync(currentRoot);
+  } catch {
+    sameRoot = path.resolve(requestedRoot) === path.resolve(currentRoot);
+  }
+  if (sameRoot) {
+    return false;
+  }
+  const targetBin = path.join(requestedRoot, "app", "bin", "autoflow");
+  const result = spawnSync(process.execPath, [targetBin, ...process.argv.slice(2)], {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      AUTOFLOW_CORE_ROOT: requestedRoot,
+    },
+  });
+  if (result.error) {
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
+  process.exit(typeof result.status === "number" ? result.status : 1);
+}
+
 function resolveTsxCli(repoRoot) {
   try {
     return require.resolve("tsx/cli", {paths: [repoRoot]});
@@ -20,6 +80,7 @@ function resolveTsxCli(repoRoot) {
 }
 
 const repoRoot = resolveRepoRoot();
+maybeDelegateToCore(repoRoot);
 const tsxCli = resolveTsxCli(repoRoot);
 const entrypoint = path.join(repoRoot, "app", "cli", "autoflow.ts");
 const result = spawnSync(process.execPath, [tsxCli, entrypoint, ...process.argv.slice(2)], {

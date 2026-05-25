@@ -1,4 +1,0 @@
-interface:
-  display_name: "Autoflow Todo"
-  short_description: "Direct todo intake (/atodo)"
-  default_prompt: "Use $atodo to drop a small, worker-claimable todo straight into tickets/todo/, preserving the user's request and providing concrete Allowed Paths and Done When."

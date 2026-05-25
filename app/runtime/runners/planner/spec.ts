@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /*
- * start-spec.ts — reserve/resume a PRD authoring slot.
+ * start-spec.ts — reserve/resume a PRD authoring runner.
  */
 
 import * as fs from "node:fs";
@@ -37,7 +37,7 @@ if (active) {
       requested_spec_id: requested,
       board_root: boardRoot,
       project_root: projectRoot,
-      next_action: "Resume, save, cancel, or hand off the active PRD before reserving another slot.",
+      next_action: "Resume, save, cancel, or hand off the active PRD before reserving another runner.",
     });
     process.exit(0);
   }
@@ -71,7 +71,7 @@ function activeSpecFile(): string {
   const context = readContext();
   if (context.role !== "spec" || !context.active_ticket_id) return "";
   if (context.active_ticket_path) return path.join(boardRoot, context.active_ticket_path);
-  return path.join(specDir, `PRD-${normalizeId(context.active_ticket_id)}.md`);
+  return path.join(specDir, `PRD-${normalizeExistingId(context.active_ticket_id)}.md`);
 }
 
 function readContext(): Record<string, string> {
@@ -93,9 +93,10 @@ function setContext(specId: string, specFile: string): void {
 
 function nextSpecId(): string {
   let max = 0;
-  for (const file of listFiles(path.join(boardRoot, "tickets"), /^PRD-\d+\.md$/)) {
+  for (const file of listFiles(path.join(boardRoot, "tickets"), /^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/)) {
     if (isPlaceholder(file)) continue;
-    max = Math.max(max, Number.parseInt(idFromPath(file), 10) || 0);
+    const parsed = parseExistingId(idFromPath(file));
+    max = Math.max(max, parsed.numeric);
   }
   return String(max + 1).padStart(3, "0");
 }
@@ -121,13 +122,41 @@ function isPlaceholder(file: string): boolean {
 }
 
 function idFromPath(file: string): string {
-  const match = path.basename(file).match(/(\d+)/);
-  return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
+  return normalizeExistingId(path.basename(file).replace(/\.md$/i, "").replace(/^PRD-/i, ""));
 }
 
 function normalizeId(value: string): string {
-  const match = value.match(/(\d+)/);
-  return match ? String(Number.parseInt(match[1], 10)).padStart(3, "0") : "";
+  const existing = parseExistingId(value.replace(/^PRD-/i, ""));
+  if (existing.numeric <= 0) return "";
+  return String(existing.numeric).padStart(3, "0");
+}
+
+function normalizeExistingId(value: string): string {
+  const parsed = parseExistingId(value);
+  return parsed.id;
+}
+
+function parseExistingId(value: string): {namespace: string; numeric: number; id: string} {
+  const raw = String(value || "").trim().replace(/\.md$/i, "").replace(/^PRD-/i, "");
+  const scoped = raw.match(/^([A-Za-z0-9][A-Za-z0-9_.-]*)-(\d+)$/);
+  if (scoped) {
+    const namespace = slug(scoped[1]);
+    const numeric = Number.parseInt(scoped[2], 10) || 0;
+    return {namespace, numeric, id: numeric ? String(numeric).padStart(3, "0") : ""};
+  }
+  const numericMatch = raw.match(/(\d+)/);
+  const numeric = numericMatch ? Number.parseInt(numericMatch[1], 10) || 0 : 0;
+  return {namespace: "", numeric, id: numeric ? String(numeric).padStart(3, "0") : ""};
+}
+
+function slug(value: string): string {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[^\x00-\x7F]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "local";
 }
 
 function nowIso(): string {

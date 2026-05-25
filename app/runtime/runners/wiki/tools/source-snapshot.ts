@@ -116,6 +116,8 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  readRoleAssignment,
+  compactAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -126,10 +128,13 @@ const {
 } = shared;
 
 export function cmdWikiSourceSnapshot(): void {
+  const runnerId = currentRunnerId("wiki");
+  const assignmentCheck = readRoleAssignment("wiki", runnerId);
+  const assignmentIsScoped = Boolean(assignmentCheck.assignment);
   const maxItems = positiveInt(getArg("--max-items") || "", 20);
   const groups = wikiSourceGroups();
   const allFiles = Object.values(groups).flat();
-  const recent = allFiles
+  const recent = assignmentCheck.ok ? allFiles
     .map((file) => {
       const stat = fs.statSync(file);
       return {
@@ -139,11 +144,14 @@ export function cmdWikiSourceSnapshot(): void {
       };
     })
     .sort((a, b) => b.mtime.localeCompare(a.mtime) || a.path.localeCompare(b.path))
-    .slice(0, maxItems);
+    .slice(0, maxItems) : [];
 
   ok({
     tool: "wiki.source-snapshot",
-    runner: currentRunnerId("wiki"),
+    runner: runnerId,
+    assignment_required: assignmentIsScoped,
+    assignment_status: assignmentCheck.ok ? (assignmentIsScoped ? "active" : "fixed_runner") : assignmentCheck.reason,
+    assignment: compactAssignment(assignmentCheck.assignment),
     generated_at: utils.nowIso(),
     board_root: BOARD_ROOT,
     project_root: PROJECT_ROOT,

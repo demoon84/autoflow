@@ -1,7 +1,7 @@
 {
   "name": "autoflow",
   "version": "0.1.0",
-  "description": "Autoflow goal orchestration (/autoflow), PRD handoff (/aprd), and direct todo (/atodo) skills for a project-local Autoflow board.",
+  "description": "Autoflow Claude Code hook plugin for runner stop-guard integration. Autoflow skills are installed globally.",
   "author": {
     "name": "Autoflow",
     "email": "autoflow@example.invalid"

@@ -116,6 +116,7 @@ const {
   numberValue,
   safeSegment,
   currentRunnerId,
+  requireRoleAssignment,
   boardRel,
   stringValue,
   safeIsFile,
@@ -126,8 +127,9 @@ const {
 } = shared;
 
 export function cmdWikiWritePage(): void {
-  // DB-only mode: wiki pages are not written to disk. Content is chunked and
-  // upserted directly into wiki_chunks. AI runners retrieve via wiki query.
+  requireRoleAssignment("wiki", currentRunnerId("wiki"));
+  // Markdown is the canonical LLM Wiki storage. Search indexes such as qmd are
+  // optional derived accelerators and must be rebuildable from these files.
   const rawPath = getArg("--path");
   if (!rawPath) fail(2, "wiki write-page requires --path");
   const normalizedPath = String(rawPath || "")
@@ -153,9 +155,8 @@ export function cmdWikiWritePage(): void {
   const cliArgs = ["wiki", "upsert", PROJECT_ROOT, boardDirName(), "--path", normalizedPath];
   if (contentFile) cliArgs.push("--content-file", contentFile);
 
-  // Use the autoflow CLI wrapper so the underlying upsert (chunk + embed +
-  // DB INSERT) runs in the standard CLI context. We forward stdin/content
-  // through --content-file when available; otherwise we pipe via a temp file.
+  // Use the autoflow CLI wrapper so path validation, index.md refresh, and
+  // log.md append happen in one standard CLI context.
   if (!contentFile) {
     const tmp = path.join(BOARD_ROOT, "runners", "state", `wiki-upsert.${process.pid}.${Date.now()}.md`);
     try {

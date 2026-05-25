@@ -176,15 +176,33 @@ export function currentRunnerId(fallback = "planner"): string {
   return getArg("--runner") || process.env.RUNNER_ID || process.env.AUTOFLOW_RUNNER_ID || process.env.AUTOFLOW_WORKER_ID || fallback;
 }
 
+export function ticketIdNamespace(): string {
+  return "";
+}
+
+export function parseTicketId(raw: string): { namespace: string; numeric: number; id: string } {
+  const value = String(raw || "")
+    .trim()
+    .replace(/\.md$/i, "")
+    .replace(/^(?:PRD|TODO)-/i, "")
+    .replace(/^(?:project|ticket)[-_]/i, "");
+  const scoped = value.match(/^([A-Za-z0-9][A-Za-z0-9_.-]*)-(\d+)$/);
+  if (scoped) {
+    const namespace = safeSegment(scoped[1]).toLowerCase();
+    const numeric = Number.parseInt(scoped[2], 10) || 0;
+    return { namespace, numeric, id: numeric ? String(numeric).padStart(3, "0") : "" };
+  }
+  const numericMatch = value.match(/(\d+)/);
+  const numeric = numericMatch ? Number.parseInt(numericMatch[1], 10) || 0 : 0;
+  return { namespace: "", numeric, id: numeric ? String(numeric).padStart(3, "0") : "" };
+}
+
 export function idFromPath(file: string): string {
-  const base = path.basename(file);
-  const m = base.match(/(\d+)/);
-  return m ? String(Number.parseInt(m[1], 10)).padStart(3, "0") : "";
+  return parseTicketId(path.basename(file)).id;
 }
 
 export function normalizeId(raw: string): string {
-  const m = String(raw || "").match(/(\d+)/);
-  return m ? String(Number.parseInt(m[1], 10)).padStart(3, "0") : "";
+  return parseTicketId(raw).id;
 }
 
 export function collectFiles(root: string, pattern: RegExp, depth: number): string[] {
@@ -224,14 +242,16 @@ export function boardRel(file: string): string {
 }
 
 export function normalizePrdKey(raw: string): string {
-  const match = String(raw || "").match(/\bPRD[-_]?(\d+)\b/i);
-  if (!match) return "";
-  return `PRD-${String(Number.parseInt(match[1], 10)).padStart(3, "0")}`;
+  const match = String(raw || "").match(/\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/i);
+  const legacy = !match ? String(raw || "").match(/\b(?:PRD[-_]|prd_|project_)(\d+)\b/i) : null;
+  if (!match && !legacy) return "";
+  const parsed = parseTicketId(match?.[1] || legacy?.[1] || "");
+  return parsed.id ? `PRD-${parsed.id}` : "";
 }
 
 export function prdKeysFromText(text: string): string[] {
   const keys = new Set<string>();
-  const re = /\bPRD[-_]?(\d+)\b/gi;
+  const re = /\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(String(text || ""))) !== null) {
     const key = normalizePrdKey(match[0]);

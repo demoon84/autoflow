@@ -1,19 +1,42 @@
 import {path, type ProjectContext} from "../context";
 import {isRunnerProcessAlive, readRunnerStateFile, serializeRunnerStateFields, writeRunnerStateFile} from "../../../shared/runner-state-store";
 
+export const runnerTokenAccountingKeys = [
+    "cumulative_tokens",
+    "cumulative_total_tokens",
+    "cumulative_cache_read_tokens",
+    "cumulative_cache_create_tokens",
+    "cumulative_llm_request_count",
+    "last_turn_tokens",
+    "last_turn_total_tokens",
+    "last_turn_input_tokens",
+    "last_turn_output_tokens",
+    "last_turn_cache_read_tokens",
+    "last_turn_cache_create_tokens",
+    "last_turn_llm_request_count",
+    "last_turn_at",
+    "last_turn_tick_id",
+    "last_turn_role",
+    "token_source",
+    "last_token_usage_source",
+];
+
 export const runnerTokenStateDefaults: Record<string, string> = {
     cumulative_tokens: "0",
     cumulative_total_tokens: "0",
     cumulative_cache_read_tokens: "0",
     cumulative_cache_create_tokens: "0",
+    cumulative_llm_request_count: "0",
     last_turn_tokens: "0",
     last_turn_total_tokens: "0",
     last_turn_input_tokens: "0",
     last_turn_output_tokens: "0",
     last_turn_cache_read_tokens: "0",
     last_turn_cache_create_tokens: "0",
+    last_turn_llm_request_count: "0",
     last_turn_at: "",
     last_turn_tick_id: "",
+    last_turn_role: "",
     token_source: "none",
     last_token_usage_source: "none",
     cumulative_code_files_changed: "0",
@@ -30,6 +53,12 @@ export const runnerTokenStateDefaults: Record<string, string> = {
     last_code_reported_at: "",
     code_source: "none",
 };
+
+export function runnerTokenAccountingResetFields(): Record<string, string> {
+    return Object.fromEntries(
+        runnerTokenAccountingKeys.map((key) => [key, runnerTokenStateDefaults[key] ?? ""])
+    );
+}
 
 export function readRunnerState(ctx: ProjectContext, runnerId: string): Record<string, string> {
     const stateFile = path.join(ctx.boardRoot, "runners", "state", `${runnerId}.state`);
@@ -52,11 +81,29 @@ export function writeRunnerState(ctx: ProjectContext, runnerId: string, updates:
         ...updates,
         updated_at: new Date().toISOString(),
     };
-    writeRunnerStateFile(stateFile, next);
+    writeRunnerStateFile(stateFile, next, new Set(Object.keys(updates)));
 }
 
 export function pidIsRunning(pidValue: string): boolean {
     return isRunnerProcessAlive(pidValue);
+}
+
+const staleStartingStateMs = 120_000;
+
+function stateTimestampMs(state: Record<string, string>): number {
+    const raw = state.control_requested_at || state.updated_at || state.last_event_at || "";
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldRepairStaleStartingState(state: Record<string, string>): boolean {
+    const status = state.status || "idle";
+    if (status !== "starting" || pidIsRunning(state.pid || "")) {
+        return false;
+    }
+    const timestampMs = stateTimestampMs(state);
+    if (!timestampMs) return true;
+    return Date.now() - timestampMs > staleStartingStateMs;
 }
 
 function normalizeStaleRunnerState(
@@ -64,7 +111,10 @@ function normalizeStaleRunnerState(
     runnerId: string,
     state: Record<string, string>,
 ): Record<string, string> {
-    if ((state.status || "idle") !== "running" || pidIsRunning(state.pid || "")) {
+    const status = state.status || "idle";
+    const staleRunning = status === "running" && !pidIsRunning(state.pid || "");
+    const staleStarting = shouldRepairStaleStartingState(state);
+    if (!staleRunning && !staleStarting) {
         return state;
     }
 
@@ -78,8 +128,12 @@ function normalizeStaleRunnerState(
         runner_status: "stopped",
         pid: "",
         stopped_by: "",
-        last_stop_reason: state.pid ? "stale_dead_pid" : "stale_no_pid",
+        last_stop_reason: staleStarting ? "stale_starting_no_pid" : state.pid ? "stale_dead_pid" : "stale_no_pid",
         last_result: "loop_stopped",
+        control_action: "",
+        control_source: "",
+        control_requested_at: "",
+        control_force: "",
         last_event_at: timestamp,
         updated_at: timestamp,
     };

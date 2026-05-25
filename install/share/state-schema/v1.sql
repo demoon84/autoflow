@@ -80,13 +80,13 @@ CREATE TABLE IF NOT EXISTS origin_chain (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL,
   source TEXT NOT NULL,                  -- 'claude_code' | 'codex'
-  trigger_kind TEXT NOT NULL,            -- 'aprd' | 'atodo' | 'plan' | 'todo'
+  trigger_kind TEXT NOT NULL,            -- 'autoflow'
   trigger_ts TEXT NOT NULL,
   user_prompt_excerpt TEXT,              -- first 280 chars of the triggering user prompt
   prd_path TEXT,                         -- e.g. '.autoflow/tickets/done/PRD-142/PRD-142.md'
   prd_key TEXT,                          -- e.g. 'PRD-142'
-  ticket_id TEXT,                        -- normalized 3-digit id of the resulting TODO-NNN
-  ticket_status TEXT,                    -- 'prd' | 'todo' | 'inprogress' | 'done' | 'failed'
+  ticket_id TEXT,                        -- resulting work item id
+  ticket_status TEXT,                    -- 'prd' | 'work' | 'inprogress' | 'verifier' | 'merge' | 'done' | 'failed'
   commit_hash TEXT,
   commit_subject TEXT,
   done_at TEXT,

@@ -3,14 +3,26 @@ import {idFromTicketPath, normalizeId, read, stripTicks, write} from "./io";
 import {scalar} from "./ticket-sections";
 import {git, gitOut} from "./git";
 
+const ticketBranchIdPattern = "(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\\d+";
+const managedTodoBranchRe = new RegExp(`^autoflow\\/(?:TODO|work)-${ticketBranchIdPattern}$`, "i");
+const managedPrdBranchRe = new RegExp(`^autoflow\\/prd-${ticketBranchIdPattern}$`, "i");
+
+function isManagedTodoBranch(branch: string): boolean {
+  return managedTodoBranchRe.test(branch);
+}
+
+function isManagedPrdBranch(branch: string): boolean {
+  return managedPrdBranchRe.test(branch);
+}
+
 function isManagedAutoflowBranch(branch: string): boolean {
-  return /^autoflow\/TODO-\d+$/.test(branch);
+  return isManagedTodoBranch(branch) || isManagedPrdBranch(branch);
 }
 
 function isPrdTrackTicket(ticketFile: string): boolean {
   const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
   const branch = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
-  return Boolean(prdKey) && /^autoflow\/prd-\d+$/i.test(branch);
+  return Boolean(prdKey) && isManagedPrdBranch(branch);
 }
 
 function isManagedAutoflowWorktree(worktreePath: string): boolean {
@@ -24,7 +36,7 @@ function isManagedAutoflowWorktree(worktreePath: string): boolean {
 
 function ticketBranch(ticketFile: string): string {
   const recorded = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
-  if (isManagedAutoflowBranch(recorded)) return recorded;
+  if (isManagedTodoBranch(recorded)) return recorded;
   const ticketId = idFromTicketPath(ticketFile);
   return ticketId ? `autoflow/TODO-${ticketId}` : "";
 }
@@ -95,7 +107,7 @@ export function resolveTicketFile(ref: string): string {
   }
   const id = normalizeId(ref);
   if (!id) return "";
-  for (const state of ["inprogress", "ready-to-merge", "todo", "verifier"]) {
+  for (const state of ["inprogress", "todo", "verifier"]) {
     for (const name of [`TODO-${id}.md`, `TODO-${id}.md`]) {
       const candidate = path.join(boardRoot, "tickets", state, name);
       if (fs.existsSync(candidate)) return candidate;

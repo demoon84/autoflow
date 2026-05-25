@@ -81,7 +81,7 @@ export function main(): void {
       worktree_path: prep.worktreePath,
       worktree_commit: prep.worktreeCommit,
       commit_status: "ai_merge_required",
-      next_action: "AI must manually integrate the verified worktree changes into PROJECT_ROOT, resolve conflicts, rerun verification, and rerun worker finalize-approved. Runtime scripts will not perform the merge.",
+      next_action: "Worker must manually integrate the verified worktree changes into PROJECT_ROOT, resolve conflicts, rerun verification, and rerun worker finalize-approved. Runtime scripts will not choose the merge strategy.",
       board_root: boardRoot,
       project_root: projectRoot,
     });
@@ -101,7 +101,7 @@ export function main(): void {
       worktree_path: prep.worktreePath,
       worktree_commit: prep.worktreeCommit,
       commit_status: "ai_merge_required",
-      next_action: "AI must manually integrate the verified worktree changes into PROJECT_ROOT, rerun verification, and rerun worker finalize-approved.",
+      next_action: "Worker must manually integrate the verified worktree changes into PROJECT_ROOT, rerun verification, and rerun worker finalize-approved.",
       board_root: boardRoot,
       project_root: projectRoot,
     });
@@ -132,7 +132,7 @@ export function main(): void {
   }
 
   const doneFile = archiveDone(ticketFile, ticketId);
-  const commit = commitCompletion(doneFile, ticketId, message || scalar(doneFile, "Result", "Summary") || "complete worker work");
+  const commit = commitCompletion(doneFile, ticketId, message || scalar(doneFile, "Result", "Summary") || "complete work item");
   const commitOk = [
     "committed",
     "already_committed",
@@ -167,6 +167,7 @@ export function main(): void {
   cleanupWorktree(doneFile);
   clearActiveState("done");
 
+  const finalizerRole = "worker";
   printPairs({
     status: "done",
     outcome: "pass",
@@ -175,13 +176,13 @@ export function main(): void {
     worktree_path: prep.worktreePath,
     worktree_commit: prep.worktreeCommit,
     finalization: "done; log written; wiki deferred to wiki runner",
-    merge_actor: "worker",
+    merge_actor: finalizerRole,
     finalizer_merge_action: "none",
     "wiki.status": "ai_owned",
-    "wiki.next_action": "Wiki runner inspects done/log sources and upserts focused wiki pages into wiki-search.db via autoflow wiki write-page when synthesis is warranted.",
+    "wiki.next_action": "Wiki runner inspects done/log sources and writes focused markdown wiki pages via autoflow wiki write-page when synthesis is warranted.",
     commit_status: commit.status === "committed" ? "committed_via_completion_finalizer" : commit.status,
     commit_hash: commit.hash,
-    next_action: "Worker-owned merge finalization completed. Worker runner may pick the next todo ticket on the next tick.",
+    next_action: "Merge finalization completed. Orchestrator may checkpoint this PRD turn and assign the next role lease.",
     board_root: boardRoot,
     project_root: projectRoot,
   });

@@ -28,7 +28,7 @@ const exactTextFileNames = new Set([
 const checks = [
   {
     id: "legacy-script-entrypoint",
-    pattern: /\b(?:scripts\/)?(?:runner-tool|start-ticket|verify-ticket|finish-ticket|merge-ready-ticket|update-wiki)\.ts\b/g,
+    pattern: /\b(?:scripts\/)?(?:runner-tool|start-ticket|verify-ticket|finish-ticket|update-wiki)\.ts\b/g,
   },
   {
     id: "legacy-runner-label",
@@ -40,7 +40,7 @@ const checks = [
     allow: (relativePath, line) => {
       const normalized = relativePath.split(path.sep).join("/");
       return (
-        normalized.endsWith("reference/ticket-template.md") ||
+        normalized.endsWith("reference/work-item-template.md") ||
         (normalized.endsWith("reference/tickets-board.md") &&
           (line.includes("Required fields include") ||
             line.includes("`Verifier AI`") ||
@@ -122,4 +122,3 @@ for (const root of scanRoots) {
 if (findings.length > 0) {
   process.exit(1);
 }
-

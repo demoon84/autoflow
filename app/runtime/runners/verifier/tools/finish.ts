@@ -111,6 +111,7 @@ const {
   priorityRank,
   idFromPath,
   normalizeId,
+  currentRunnerId,
   getArg,
   getArgs,
   hasFlag,
@@ -119,6 +120,8 @@ const {
   safeSegment,
   boardRel,
   stringValue,
+  requireRoleAssignmentForItem,
+  compactAssignment,
   safeIsFile,
   ensureTrailingNewline,
   escapeRe,
@@ -127,10 +130,10 @@ const {
 } = shared;
 
 type VerifierDecision = shared.VerifierDecision;
-type VerifierCompletionCommand = "approve-merge" | "request-revision" | "request-replan";
+type VerifierCompletionCommand = "pass" | "request-revision" | "request-replan";
 
 function commandForOutcome(outcome: VerifierDecision): VerifierCompletionCommand {
-  if (outcome === "pass") return "approve-merge";
+  if (outcome === "pass") return "pass";
   if (outcome === "revise") return "request-revision";
   return "request-replan";
 }
@@ -158,6 +161,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
   if (!message) fail(2, `verifier ${command} requires --${outcome === "pass" ? "summary" : "reason"}`);
   const decisionReason = message;
   const ticketId = idFromPath(ticket);
+  const runnerId = currentRunnerId("verifier");
+  const assignment = requireRoleAssignmentForItem("verifier", ticket, runnerId);
   const original = findTicketById(["inprogress"], ticketId);
 
   if (outcome === "pass") {
@@ -170,6 +175,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     }
     ok({
       tool: `verifier.${command}`,
+      runner: runnerId,
+      assignment: compactAssignment(assignment),
       ticket_id: `TODO-${ticketId}`,
       verifier_ticket: boardRel(ticket),
       worker_ticket: boardRel(workerTicket),
@@ -180,7 +187,7 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
       removed_verifier_ticket: !fs.existsSync(ticket),
       context_reset: "not_queued",
       context_reset_path: "",
-      next_action: "Worker must run worker active-get, merge the verifier-approved worktree into the ticket merge target (PRD branch when PRD Key+Branch exists, otherwise main), rerun verification from that merge target, then call worker finalize-approved.",
+      next_action: "Worker must run worker finalize-approved to commit the verifier-approved result into the PRD worktree, rerun required verification from that target, and merge the PRD worktree if this was the final TODO.",
     });
     return;
   }
@@ -198,6 +205,8 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
   }
   ok({
     tool: `verifier.${command}`,
+    runner: runnerId,
+    assignment: compactAssignment(assignment),
     ticket_id: `TODO-${ticketId}`,
     verifier_ticket: boardRel(ticket),
     worker_ticket: boardRel(workerTicket),
@@ -210,6 +219,6 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     context_reset_path: "",
     next_action: outcome === "revise"
       ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker submit-to-verifier again."
-      : "Worker must run worker request-replan so the worktree is cleaned up and this ticket is moved back to tickets/todo/ for a fresh worker attempt.",
+      : "Worker must run worker request-replan so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.",
   });
 }

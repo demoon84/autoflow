@@ -40,14 +40,13 @@ export function listQueueItems(bucket: string, patterns: RegExp[], kind: string)
 
 export function readQueueItem(file: string, kind: string): QueueItem {
   const text = utils.readFileSafe(file);
-  const priority = normalizePriority(readAnyPriority(file, text));
   const rel = boardRel(file);
   return {
     kind,
     path: rel,
     id: idFromPath(file),
-    priority,
-    priority_rank: priorityRank(priority),
+    priority: "normal",
+    priority_rank: priorityRank("normal"),
     title: readTitle(file, text),
     status: readStatus(file),
     stage: utils.extractScalarFieldInSection(file, "Ticket", "Stage"),

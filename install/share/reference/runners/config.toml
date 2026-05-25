@@ -1,0 +1,40 @@
+# Autoflow fixed runners reference config.
+#
+# 데스크탑 sidecar는 4개 고정 러너를 표시한다.
+# Merge runner는 없다.
+
+[runners.planner]
+id = "planner"
+label = "Planner"
+agent = "codex"
+model = ""
+reasoning = "medium"
+enabled = true
+command = ""
+
+[runners.worker]
+id = "worker"
+label = "Worker"
+agent = "codex"
+model = ""
+reasoning = "medium"
+enabled = true
+command = ""
+
+[runners.verifier]
+id = "verifier"
+label = "Verifier"
+agent = "codex"
+model = ""
+reasoning = "medium"
+enabled = true
+command = ""
+
+[runners.wiki]
+id = "wiki"
+label = "LLM Wiki"
+agent = "codex"
+model = ""
+reasoning = "medium"
+enabled = true
+command = ""

@@ -132,7 +132,7 @@ export function cmdWikiDiffSnapshot(): void {
     return;
   }
 
-  const pathArgs = [path.join(BOARD_ROOT, "wiki"), path.join(BOARD_ROOT, "wiki-raw")].filter((p) => fs.existsSync(p));
+  const pathArgs = [path.join(BOARD_ROOT, "wiki"), path.join(BOARD_ROOT, "raw")].filter((p) => fs.existsSync(p));
   if (pathArgs.length === 0) {
     ok({ tool: "wiki.diff-snapshot", is_git_repo: true, changed_file_count: 0, changed_files: [] });
     return;

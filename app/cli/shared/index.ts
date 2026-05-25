@@ -1,5 +1,6 @@
 export * from "./context";
 export * from "./manifest";
+export * from "./core";
 export * from "./project";
 export * from "./fs";
 export * from "./install";

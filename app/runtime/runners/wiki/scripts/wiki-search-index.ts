@@ -1,9 +1,9 @@
 #!/usr/bin/env npx tsx
 /*
- * wiki-search-index.ts — wiki source-scan lexical+vector hybrid index refresher.
+ * wiki-search-index.ts — markdown wiki index refresher.
  *
- * Builds .autoflow/runners/state/wiki-search.db so `autoflow wiki query --rag`
- * can use source Markdown lexical scoring plus dense vector similarity.
+ * Refreshes .autoflow/wiki/index.md and reports optional qmd availability.
+ * Autoflow does not own a canonical wiki DB; qmd caches are derived.
  */
 
 import * as fs from "node:fs";
@@ -31,9 +31,7 @@ const autoflowBin = (() => {
 const args = ["wiki", "ingest", PROJECT_ROOT, path.basename(BOARD_ROOT), ...process.argv.slice(2)];
 const env = {
   ...process.env,
-  AUTOFLOW_WIKI_VECTOR_INDEX: "on",
-  AUTOFLOW_WIKI_VECTOR_MODEL: process.env.AUTOFLOW_WIKI_VECTOR_MODEL || "BAAI/bge-m3",
-  AUTOFLOW_WIKI_VECTOR_DIM: process.env.AUTOFLOW_WIKI_VECTOR_DIM || "1024",
+  AUTOFLOW_WIKI_SEARCH_PROVIDER: process.env.AUTOFLOW_WIKI_SEARCH_PROVIDER || "auto",
 };
 
 function shellQuote(value: string): string {

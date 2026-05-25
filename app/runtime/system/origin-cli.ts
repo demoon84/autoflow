@@ -160,7 +160,7 @@ function fallbackRows(): OriginRow[] {
         mtimeMs,
         row: {
           source: "markdown",
-          trigger_kind: rel.includes("/prd/") ? "aprd" : "atodo",
+          trigger_kind: "autoflow",
           prd_path: rel,
           path: rel,
           prd_key: rel.match(/PRD-\d+/i)?.[0] || "",

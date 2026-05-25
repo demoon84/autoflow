@@ -89,7 +89,9 @@ export function writeAtomic(target: string, content: string): void {
 }
 
 export function extractIdFromContent(content: string, kind: "prd" | "ticket"): string {
-  const pattern = kind === "ticket" ? /\bTODO-(\d+)\b/ : /\bPRD-(\d+)\b/;
+  const pattern = kind === "ticket"
+    ? /\bTODO-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/
+    : /\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/;
   const m = content.match(pattern);
   return m ? normalizeId(m[1]) : "";
 }

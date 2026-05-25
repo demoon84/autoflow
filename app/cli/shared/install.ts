@@ -1,6 +1,8 @@
+import * as os from "node:os";
 import {fs, path, REPO_ROOT, SHARE_ROOT, type ProjectContext} from "./context";
 import {readInstallSourceEntries, type InstallSourceEntry} from "./manifest";
 import {writeFileAtomic} from "./fs";
+import {coreBundledShareRoot, resolveAutoflowCore, type ResolvedAutoflowCore} from "./core";
 
 export type InstallAssetSummary = {
     created: number;
@@ -45,26 +47,41 @@ function mergeInstallAssetSummary(target: InstallAssetSummary, source: InstallAs
     target.files.push(...source.files);
 }
 
-function renderInstallTemplate(content: string, ctx: ProjectContext): string {
+function renderInstallTemplate(content: string, ctx: ProjectContext, core: ResolvedAutoflowCore = resolveAutoflowCore(ctx)): string {
     return content
         .replaceAll("{{BOARD_DIR}}", ctx.boardDirName)
-        .replaceAll("{{SHARE_ROOT}}", SHARE_ROOT);
+        .replaceAll("{{SHARE_ROOT}}", core.shareRoot)
+        .replaceAll("{{CORE_ROOT}}", core.coreRoot)
+        .replaceAll("{{RUNTIME_ROOT}}", core.runtimeRoot)
+        .replaceAll("{{INSTALL_ROOT}}", core.installRoot)
+        .replaceAll("{{CODEX_HOME}}", codexHomeRoot())
+        .replaceAll("{{CLAUDE_HOME}}", claudeHomeRoot())
+        .replaceAll("{{USER_HOME}}", os.homedir());
 }
 
 function hostGuidanceStaleMatches(text: string): string[] {
     const checks: Array<[string, RegExp]> = [
-        ["legacy-script-entrypoint", /\b(?:scripts\/)?(?:runner-tool|start-ticket|verify-ticket|finish-ticket|merge-ready-ticket|update-wiki)\.ts\b/],
+        ["legacy-script-entrypoint", /\b(?:scripts\/)?(?:runner-tool|start-ticket|verify-ticket|finish-ticket|update-wiki)\.ts\b/],
         ["legacy-runner-label", /\b(?:Plan AI|Planner AI|Impl AI|Wiki AI)\b/],
         ["verifier-ai-label", /\bVerifier AI\b/],
         ["coordinator-active-contract", /\b(?:autoflow runners start coordinator-1|coordinator runner remains reachable|new installs can opt in|looped coordinator)\b/i],
+        ["legacy-aprd-atodo-trigger", /(?:#|\/|\$)(?:aprd|atodo)\b/i],
+        ["legacy-4-runner-flow", /\b4-runner\b|기본\s*4[- ]runner/i],
+        ["legacy-db-wiki", /\bwiki-search\.db\b|DB-only|wiki_chunks/i],
+        ["legacy-work-lane", /\btickets\/work\/|Work ticket|work ticket/i],
     ];
     return checks.filter(([, pattern]) => pattern.test(text)).map(([id]) => id);
 }
 
-function syncInstallFile(src: string, dest: string, ctx: ProjectContext, overwrite: boolean, renderTemplate: boolean): InstallAssetSummary {
-    const summary = emptyInstallAssetSummary();
+function installSummaryPath(ctx: ProjectContext, dest: string): string {
     const relative = path.relative(ctx.projectRoot, dest).split(path.sep).join("/");
-    const content = renderTemplate ? renderInstallTemplate(fs.readFileSync(src, "utf8"), ctx) : fs.readFileSync(src);
+    return relative.startsWith("../") || relative === ".." ? dest : relative;
+}
+
+function syncInstallFile(src: string, dest: string, ctx: ProjectContext, overwrite: boolean, renderTemplate: boolean, core: ResolvedAutoflowCore): InstallAssetSummary {
+    const summary = emptyInstallAssetSummary();
+    const relative = installSummaryPath(ctx, dest);
+    const content = renderTemplate ? renderInstallTemplate(fs.readFileSync(src, "utf8"), ctx, core) : fs.readFileSync(src);
     if (fs.existsSync(dest)) {
         const existing = renderTemplate ? fs.readFileSync(dest, "utf8") : fs.readFileSync(dest);
         if (existing instanceof Buffer && content instanceof Buffer ? existing.equals(content) : existing === content) {
@@ -97,14 +114,14 @@ function syncInstallFile(src: string, dest: string, ctx: ProjectContext, overwri
     return summary;
 }
 
-function syncInstallTree(srcRoot: string, destRoot: string, ctx: ProjectContext, overwrite: boolean, renderTemplate: boolean, skipShell: boolean): InstallAssetSummary {
+function syncInstallTree(srcRoot: string, destRoot: string, ctx: ProjectContext, overwrite: boolean, renderTemplate: boolean, skipShell: boolean, core: ResolvedAutoflowCore): InstallAssetSummary {
     const summary = emptyInstallAssetSummary();
     if (!fs.existsSync(srcRoot)) {
         throw new Error(`Install source not found: ${srcRoot}`);
     }
     const stat = fs.statSync(srcRoot);
     if (!stat.isDirectory()) {
-        return syncInstallFile(srcRoot, destRoot, ctx, overwrite, renderTemplate);
+        return syncInstallFile(srcRoot, destRoot, ctx, overwrite, renderTemplate, core);
     }
     fs.mkdirSync(destRoot, {recursive: true});
     for (const name of fs.readdirSync(srcRoot)) {
@@ -117,7 +134,7 @@ function syncInstallTree(srcRoot: string, destRoot: string, ctx: ProjectContext,
         }
         mergeInstallAssetSummary(
             summary,
-            syncInstallTree(src, path.join(destRoot, name), ctx, overwrite, renderTemplate, skipShell)
+            syncInstallTree(src, path.join(destRoot, name), ctx, overwrite, renderTemplate, skipShell, core)
         );
     }
     return summary;
@@ -129,33 +146,56 @@ function shouldOverwriteInstallSource(entry: InstallSourceEntry, upgrade: boolea
     return false;
 }
 
-function sourcePath(entry: InstallSourceEntry): string {
-    return path.join(REPO_ROOT, entry.path);
+function sourcePath(entry: InstallSourceEntry, coreRoot = REPO_ROOT): string {
+    return path.join(coreRoot, entry.path);
 }
 
-function targetPath(ctx: ProjectContext, entry: InstallSourceEntry): string {
+function sameResolvedPath(left: string, right: string): boolean {
+    const normalize = (value: string): string => path.resolve(value || "").replace(/[\\/]+$/, "");
+    return normalize(left) === normalize(right);
+}
+
+function coreUsesBundledShare(core: ResolvedAutoflowCore): boolean {
+    return sameResolvedPath(core.shareRoot, coreBundledShareRoot(core.coreRoot));
+}
+
+function targetPath(ctx: ProjectContext, entry: InstallSourceEntry, core: ResolvedAutoflowCore = resolveAutoflowCore(ctx)): string {
     if (entry.target === "{{BOARD_ROOT}}") {
         return ctx.boardRoot;
     }
     if (entry.target === "{{USER_SHARE_ROOT}}") {
-        return SHARE_ROOT;
+        return core.shareRoot;
     }
-    const renderedTarget = renderInstallTemplate(entry.target, ctx);
+    const renderedTarget = renderInstallTemplate(entry.target, ctx, core);
     if (entry.type === "user_share") {
-        return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(SHARE_ROOT, renderedTarget);
+        return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(core.shareRoot, renderedTarget);
+    }
+    if (entry.type === "user_home") {
+        return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(os.homedir(), renderedTarget);
     }
     const base = entry.type === "board" ? ctx.boardRoot : ctx.projectRoot;
     return path.isAbsolute(renderedTarget) ? renderedTarget : path.join(base, renderedTarget);
 }
 
+export function codexHomeRoot(): string {
+    const override = process.env.CODEX_HOME;
+    return override && override.trim() ? path.resolve(override) : path.join(os.homedir(), ".codex");
+}
+
+export function claudeHomeRoot(): string {
+    const override = process.env.CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR;
+    return override && override.trim() ? path.resolve(override) : path.join(os.homedir(), ".claude");
+}
+
 export function detectHostGuidanceDrift(ctx: ProjectContext): HostGuidanceDrift[] {
     const hostGuidanceTargets = new Set(["AGENTS.md", "CLAUDE.md"]);
     const findings: HostGuidanceDrift[] = [];
-    for (const entry of readInstallSourceEntries()) {
+    const core = resolveAutoflowCore(ctx);
+    for (const entry of readInstallSourceEntries(core.coreRoot)) {
         if (entry.type !== "host" || !hostGuidanceTargets.has(entry.target)) {
             continue;
         }
-        const dest = targetPath(ctx, entry);
+        const dest = targetPath(ctx, entry, core);
         const file = path.relative(ctx.projectRoot, dest).split(path.sep).join("/");
         if (!fs.existsSync(dest)) {
             findings.push({
@@ -169,7 +209,7 @@ export function detectHostGuidanceDrift(ctx: ProjectContext): HostGuidanceDrift[
         let expected = "";
         let existing = "";
         try {
-            expected = entry.template ? renderInstallTemplate(fs.readFileSync(sourcePath(entry), "utf8"), ctx) : fs.readFileSync(sourcePath(entry), "utf8");
+            expected = entry.template ? renderInstallTemplate(fs.readFileSync(sourcePath(entry, core.coreRoot), "utf8"), ctx, core) : fs.readFileSync(sourcePath(entry, core.coreRoot), "utf8");
             existing = fs.readFileSync(dest, "utf8");
         } catch {
             findings.push({
@@ -194,7 +234,8 @@ export function detectHostGuidanceDrift(ctx: ProjectContext): HostGuidanceDrift[
 
 export function syncBoardInstallAssets(ctx: ProjectContext, options: {overwrite?: boolean} = {}): InstallAssetSummary {
     const summary = emptyInstallAssetSummary();
-    const boardEntries = readInstallSourceEntries().filter((entry) => entry.type === "board");
+    const core = resolveAutoflowCore(ctx);
+    const boardEntries = readInstallSourceEntries(core.coreRoot).filter((entry) => entry.type === "board");
     if (boardEntries.length === 0) {
         throw new Error("install/manifest.toml has no board install source.");
     }
@@ -202,7 +243,7 @@ export function syncBoardInstallAssets(ctx: ProjectContext, options: {overwrite?
     for (const entry of boardEntries) {
         mergeInstallAssetSummary(
             summary,
-            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell)
+            syncInstallTree(sourcePath(entry, core.coreRoot), targetPath(ctx, entry, core), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell, core)
         );
     }
     return summary;
@@ -210,23 +251,108 @@ export function syncBoardInstallAssets(ctx: ProjectContext, options: {overwrite?
 
 export function syncUserShareInstallAssets(ctx: ProjectContext, options: {overwrite?: boolean} = {}): InstallAssetSummary {
     const summary = emptyInstallAssetSummary();
-    const shareEntries = readInstallSourceEntries().filter((entry) => entry.type === "user_share");
+    const core = resolveAutoflowCore(ctx);
+    if (coreUsesBundledShare(core)) {
+        return summary;
+    }
+    const shareEntries = readInstallSourceEntries(core.coreRoot).filter((entry) => entry.type === "user_share");
     if (shareEntries.length === 0) {
         return summary;
     }
     const upgrade = Boolean(options.overwrite);
-    fs.mkdirSync(SHARE_ROOT, {recursive: true});
+    fs.mkdirSync(core.shareRoot, {recursive: true});
     for (const entry of shareEntries) {
         mergeInstallAssetSummary(
             summary,
-            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell)
+            syncInstallTree(sourcePath(entry, core.coreRoot), targetPath(ctx, entry, core), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell, core)
         );
     }
     return summary;
 }
 
-export function userShareRoot(): string {
-    return SHARE_ROOT;
+export function cleanupObsoleteUserShareFiles(ctx: ProjectContext): string[] {
+    const core = resolveAutoflowCore(ctx);
+    if (coreUsesBundledShare(core)) {
+        return [];
+    }
+    const obsolete = [
+        path.join(core.shareRoot, "reference", "ticket-template.md"),
+        path.join(core.shareRoot, "reference", "todo-template.md"),
+        path.join(core.shareRoot, "reference", "hook-logs.md"),
+        path.join(core.shareRoot, "protocols", "recovery.md"),
+    ];
+    const removed: string[] = [];
+    for (const file of obsolete) {
+        if (!fs.existsSync(file)) continue;
+        fs.rmSync(file, {recursive: true, force: true});
+        removed.push(path.relative(core.shareRoot, file).split(path.sep).join("/"));
+    }
+    return removed;
+}
+
+export function migrateRunnerConfigToLocal(ctx: ProjectContext): string[] {
+    const core = resolveAutoflowCore(ctx);
+    const local = path.join(ctx.boardRoot, "runners", "config.local.toml");
+    const legacy = path.join(ctx.boardRoot, "runners", "config.toml");
+    const template = path.join(core.shareRoot, "reference", "runners", "config.toml");
+    const changed: string[] = [];
+    const readIfExists = (file: string): string => fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+    const templateText = readIfExists(template);
+    const matchesTemplate = (text: string): boolean => Boolean(templateText) && text === templateText;
+    const hasDeprecatedRunnerArrayConfig = (text: string): boolean => /\[\[runners\]\]/.test(text);
+
+    fs.mkdirSync(path.dirname(local), {recursive: true});
+    if (fs.existsSync(legacy)) {
+        fs.rmSync(legacy, {force: true});
+        changed.push("removed:runners/config.toml");
+    }
+
+    if (fs.existsSync(local)) {
+        const text = fs.readFileSync(local, "utf8");
+        if (hasDeprecatedRunnerArrayConfig(text)) {
+            fs.rmSync(local, {force: true});
+            changed.push("removed:runners/config.local.toml:default-runner-config");
+        } else if (matchesTemplate(text)) {
+            fs.rmSync(local, {force: true});
+            changed.push("removed:runners/config.local.toml:matches-global-default");
+        }
+    }
+
+    const oldBackup = path.join(ctx.boardRoot, "runners", "state", "config.local.legacy-runners.toml");
+    const previousBackup = path.join(ctx.boardRoot, "runners", "state", "config.local.previous-runners.toml");
+    if (fs.existsSync(oldBackup)) {
+        fs.rmSync(oldBackup, {force: true});
+        changed.push("removed:runners/state/config.local.legacy-runners.toml");
+    }
+    if (fs.existsSync(previousBackup)) {
+        fs.rmSync(previousBackup, {force: true});
+        changed.push("removed:runners/state/config.local.previous-runners.toml");
+    }
+
+    return changed;
+}
+
+export function userShareRoot(coreRoot = REPO_ROOT): string {
+    return process.env.AUTOFLOW_SHARE_ROOT && process.env.AUTOFLOW_SHARE_ROOT.trim()
+        ? SHARE_ROOT
+        : coreBundledShareRoot(coreRoot);
+}
+
+export function syncUserHomeInstallAssets(ctx: ProjectContext, options: {overwrite?: boolean} = {}): InstallAssetSummary {
+    const summary = emptyInstallAssetSummary();
+    const core = resolveAutoflowCore(ctx);
+    const homeEntries = readInstallSourceEntries(core.coreRoot).filter((entry) => entry.type === "user_home");
+    if (homeEntries.length === 0) {
+        return summary;
+    }
+    const upgrade = Boolean(options.overwrite);
+    for (const entry of homeEntries) {
+        mergeInstallAssetSummary(
+            summary,
+            syncInstallTree(sourcePath(entry, core.coreRoot), targetPath(ctx, entry, core), ctx, shouldOverwriteInstallSource(entry, upgrade), entry.template, entry.skipShell, core)
+        );
+    }
+    return summary;
 }
 
 function isHostGuidanceEntry(entry: InstallSourceEntry): boolean {
@@ -237,12 +363,13 @@ export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {over
     const summary = emptyInstallAssetSummary();
     const overwriteSkills = Boolean(options.overwriteSkills);
     const overwriteHostGuidance = Boolean(options.overwriteHostGuidance);
-    const hostEntries = readInstallSourceEntries().filter((entry) => entry.type === "host");
+    const core = resolveAutoflowCore(ctx);
+    const hostEntries = readInstallSourceEntries(core.coreRoot).filter((entry) => entry.type === "host");
     for (const entry of hostEntries) {
         const overwrite = shouldOverwriteInstallSource(entry, overwriteSkills) || (overwriteHostGuidance && isHostGuidanceEntry(entry));
         mergeInstallAssetSummary(
             summary,
-            syncInstallTree(sourcePath(entry), targetPath(ctx, entry), ctx, overwrite, entry.template, entry.skipShell)
+            syncInstallTree(sourcePath(entry, core.coreRoot), targetPath(ctx, entry, core), ctx, overwrite, entry.template, entry.skipShell, core)
         );
     }
     return summary;
@@ -722,7 +849,7 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
         path.join(ctx.boardRoot, "automations", ["heart", "beat-set.toml"].join("")),
         path.join(ctx.boardRoot, "automations", removedSignalModel),
         path.join(ctx.boardRoot, "automations", "templates"),
-        // PRD: extracted to ~/.autoflow/share/. Remove the per-board copies on upgrade.
+        // 공통 문서는 active core share로 이동했다. 보드 안 복제본은 upgrade 때 제거한다.
         path.join(ctx.boardRoot, "agents"),
         path.join(ctx.boardRoot, "protocols"),
         path.join(ctx.boardRoot, "reference"),
@@ -732,25 +859,26 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
         path.join(ctx.boardRoot, "logs"),
         // Runner runtime logs are no longer written. Drop the whole directory on upgrade.
         path.join(ctx.boardRoot, "runners", "logs"),
-        // wiki/ pages are DB-only (wiki-search.db). Drop legacy on-disk trees on upgrade.
-        path.join(ctx.boardRoot, "wiki"),
         path.join(ctx.boardRoot, "runners", "state", "wiki-baseline.history"),
+        path.join(ctx.boardRoot, "runners", "state", "wiki-search.db"),
+        path.join(ctx.boardRoot, "runners", "state", "config.local.previous-runners.toml"),
+        path.join(ctx.boardRoot, "runners", "state", "config.local.legacy-runners.toml"),
         // Sticky-context per-runner caches no longer used.
         // (handled below via state-dir scan)
         // Project-local generated-data folders do not need nested boilerplate docs.
         path.join(ctx.boardRoot, "metrics", "README.md"),
+        path.join(ctx.boardRoot, "metrics", "wiki"),
         path.join(ctx.boardRoot, "runners", "state", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "architecture", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "decisions", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "features", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "learnings", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "skills", "README.md"),
-        path.join(ctx.boardRoot, "wiki", "skills", "skill-template.md"),
-        path.join(ctx.boardRoot, "wiki", "skills-local", "README.md"),
-        // Former telemetry summaries now live under metrics/wiki/ instead of wiki/.
-        path.join(ctx.boardRoot, "wiki", "agents", "prompt-evolution.md"),
-        path.join(ctx.boardRoot, "wiki", "operations", "runner-health.md"),
-        path.join(ctx.boardRoot, "wiki", "operations", "runner-timing.md"),
+        // Automation 운영 문서는 active core share로 이동했다.
+        path.join(ctx.boardRoot, "automations", "README.md"),
+        path.join(ctx.boardRoot, "automations", "legacy-file-watch.md"),
+        path.join(ctx.boardRoot, "automations", "non-goals.md"),
+        path.join(ctx.boardRoot, "automations", "operating-principles.md"),
+        path.join(ctx.boardRoot, "automations", "topology.md"),
+        path.join(ctx.boardRoot, "automations", "triggers.md"),
+        path.join(ctx.boardRoot, "automations", "state", "README.md"),
+        path.join(ctx.boardRoot, "automations", "state", "context-lifecycle.md"),
+        path.join(ctx.boardRoot, "automations", "state", "worker-identity.md"),
     ];
     const stateDir = path.join(ctx.boardRoot, "runners", "state");
     try {
@@ -772,20 +900,21 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
             // Semantic-lint per-page fingerprint directories are stale (semantic lint removed).
             if (entry.endsWith(".semantic-lint.pages.d")) {
                 obsolete.push(path.join(stateDir, entry));
+                continue;
+            }
+            // Startup/handoff prompt snapshots are generated per old fixed-runner
+            // sessions. Runner assignments now rebuild prompts from contracts.
+            if (entry.endsWith("-startup-prompt.md") || entry.endsWith("-handoff-prompt.md")) {
+                obsolete.push(path.join(stateDir, entry));
+                continue;
+            }
+            // Old DB-only wiki staging files are superseded by .autoflow/wiki/*.md.
+            if (/^wiki-(?:prd|todo)-.+\.md$/i.test(entry) || /^wiki-upsert\..+\.md$/i.test(entry)) {
+                obsolete.push(path.join(stateDir, entry));
             }
         }
     } catch {}
-    const obsoleteEmptyDirs = [
-        path.join(ctx.boardRoot, "wiki", "agents"),
-        path.join(ctx.boardRoot, "wiki", "answers"),
-        path.join(ctx.boardRoot, "wiki", "architecture"),
-        path.join(ctx.boardRoot, "wiki", "decisions"),
-        path.join(ctx.boardRoot, "wiki", "features"),
-        path.join(ctx.boardRoot, "wiki", "learnings"),
-        path.join(ctx.boardRoot, "wiki", "operations"),
-        path.join(ctx.boardRoot, "wiki", "skills"),
-        path.join(ctx.boardRoot, "wiki", "skills-local"),
-    ];
+    const obsoleteEmptyDirs: string[] = [];
     const removed: string[] = [];
     for (const file of obsolete) {
         if (!fs.existsSync(file)) {
@@ -810,17 +939,18 @@ export function cleanupObsoleteBoardFiles(ctx: ProjectContext): string[] {
 
 export function cleanupObsoleteHostFiles(ctx: ProjectContext): string[] {
     const obsolete = [
+        path.join(ctx.projectRoot, ".claude", "skills", "autoflow"),
         path.join(ctx.projectRoot, ".claude", "skills", "agoal"),
         path.join(ctx.projectRoot, ".claude", "skills", "order"),
+        path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "autoflow"),
         path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "agoal"),
         path.join(ctx.projectRoot, ".claude", "autoflow-plugin", "skills", "order"),
+        path.join(ctx.projectRoot, ".codex", "skills", "autoflow"),
         path.join(ctx.projectRoot, ".codex", "skills", "agoal"),
         path.join(ctx.projectRoot, ".codex", "skills", "order"),
         // Older autoflow installs also dropped skills under `.agents/skills/`;
         // current installers no longer write there but legacy boards still
         // carry the folders, so clean them on every upgrade.
-        path.join(ctx.projectRoot, ".agents", "skills", "aprd"),
-        path.join(ctx.projectRoot, ".agents", "skills", "atodo"),
         path.join(ctx.projectRoot, ".agents", "skills", "autoflow"),
         path.join(ctx.projectRoot, ".agents", "skills", "order"),
     ];
@@ -1013,7 +1143,7 @@ export function migrateStaleVerifyPendingDecisionFields(ctx: ProjectContext): st
         if (!fs.existsSync(root)) continue;
         let names: string[] = [];
         try {
-            names = fs.readdirSync(root).filter((name) => /^TODO-\d+\.md$/i.test(name)).sort();
+            names = fs.readdirSync(root).filter((name) => /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(name)).sort();
         } catch {
             continue;
         }
@@ -1355,6 +1485,195 @@ export function migrateTicketNaming(ctx: ProjectContext): TicketNamingMigrationS
     };
     renameDirVisit(ctx.boardRoot);
 
+    return summary;
+}
+
+export type PreviousWorkflowTerminologyMigrationSummary = {
+    filesChanged: string[];
+    replacements: number;
+};
+
+export type PreviousRunnerResidueCleanupSummary = {
+    filesChanged: string[];
+    replacements: number;
+};
+
+const PREVIOUS_WORKFLOW_CONTENT_RULES: ReadonlyArray<{pattern: RegExp; replacement: string}> = [
+    {pattern: /direct goal 또는 branch 없는 초기 PRD/g, replacement: "초기 PRD"},
+    {pattern: /atodo 또는 Branch 없는 legacy PRD/g, replacement: "초기 PRD"},
+    {pattern: /Branch 없는 legacy PRD/g, replacement: "branch 없는 초기 PRD"},
+    {pattern: /([/#$])aprd\b/gi, replacement: "$1autoflow"},
+    {pattern: /([/#$])atodo\b/gi, replacement: "$1autoflow"},
+    {pattern: /\baprd\b/gi, replacement: "PRD intake"},
+    {pattern: /\batodo-direct\b/gi, replacement: "direct-goal"},
+    {pattern: /\batodo direct intake\b/gi, replacement: "direct goal intake"},
+    {pattern: /\batodo intake\b/gi, replacement: "goal intake"},
+    {pattern: /\batodo\b/gi, replacement: "direct goal"},
+    {pattern: /\blegacy PRD\b/g, replacement: "initial PRD"},
+    {pattern: /\.autoflow\/tickets\/todo\/(TODO-[A-Za-z0-9_.-]+\.md)/g, replacement: ".autoflow work item $1"},
+    {pattern: /tickets\/todo\/(TODO-[A-Za-z0-9_.-]+\.md)/g, replacement: "work item $1"},
+    {pattern: /\btickets\/todo\//g, replacement: "work item queue/"},
+    {pattern: /\b4-runner\b/g, replacement: "fixed runner"},
+    {pattern: /\bDB-only\b/g, replacement: "markdown-first"},
+    {pattern: /\bwiki-search\.db\b/g, replacement: "qmd optional index"},
+    {pattern: /\bwiki_chunks\b/g, replacement: "markdown wiki chunks"},
+    {pattern: /\bMerge Queue\b/g, replacement: "Worker Finalization Queue"},
+    {pattern: /\brunner-tool merge finalize-approved\b/g, replacement: "runner-tool worker finalize-approved"},
+    {pattern: /merge 역할/g, replacement: "worker finalization"},
+    {pattern: /\bmerge role\b/g, replacement: "worker finalization"},
+];
+
+function rewritePreviousWorkflowTerminology(raw: string): {next: string; replacements: number} {
+    let next = raw;
+    let replacements = 0;
+    for (const rule of PREVIOUS_WORKFLOW_CONTENT_RULES) {
+        next = next.replace(rule.pattern, (...args) => {
+            replacements += 1;
+            return rule.replacement.replace(/\$(\d)/g, (_, idx) => {
+                const groupIdx = Number(idx);
+                const value = args[groupIdx];
+                return typeof value === "string" ? value : "";
+            });
+        });
+    }
+    return {next, replacements};
+}
+
+export function migratePreviousWorkflowTerminology(ctx: ProjectContext): PreviousWorkflowTerminologyMigrationSummary {
+    const summary: PreviousWorkflowTerminologyMigrationSummary = {
+        filesChanged: [],
+        replacements: 0,
+    };
+    if (!fs.existsSync(ctx.boardRoot)) return summary;
+
+    const visit = (current: string): void => {
+        const stat = fs.statSync(current);
+        if (stat.isDirectory()) {
+            const relative = path.relative(ctx.boardRoot, current);
+            if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {
+                return;
+            }
+            for (const name of fs.readdirSync(current)) {
+                visit(path.join(current, name));
+            }
+            return;
+        }
+        if (!stat.isFile() || !isTextMigrationTarget(current)) {
+            return;
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(current, "utf8");
+        } catch {
+            return;
+        }
+        const {next, replacements} = rewritePreviousWorkflowTerminology(raw);
+        if (next === raw) {
+            return;
+        }
+        writeFileAtomic(current, next);
+        summary.filesChanged.push(path.relative(ctx.boardRoot, current));
+        summary.replacements += replacements;
+    };
+    visit(ctx.boardRoot);
+    return summary;
+}
+
+function previousRunnerIdPattern(flags = "g"): RegExp {
+    const previousRunnerToken = ["slo", "t"].join("");
+    return new RegExp(`\\b${previousRunnerToken}-\\d+\\b`, flags);
+}
+
+function textHasPreviousRunnerId(value: string): boolean {
+    return previousRunnerIdPattern("").test(value);
+}
+
+function replacePreviousRunnerResidue(raw: string): {next: string; replacements: number} {
+    let next = raw;
+    let replacements = 0;
+    const previousRunnerToken = ["slo", "t"].join("");
+    const replace = (pattern: RegExp, replacement: string) => {
+        next = next.replace(pattern, () => {
+            replacements += 1;
+            return replacement;
+        });
+    };
+    const previousRunnerSource = previousRunnerIdPattern("").source;
+    replace(new RegExp(`\\b${previousRunnerSource}\\s+through\\s+${previousRunnerSource}\\b`, "g"), "planner through wiki");
+    replace(new RegExp(`\\bAI:\\s*${previousRunnerSource}\\b`, "g"), "AI: worker");
+    replace(new RegExp(`\\brunner=${previousRunnerSource}\\b`, "g"), "runner=worker");
+    replace(new RegExp(`\\bpassed by ${previousRunnerSource}\\b`, "g"), "passed by worker");
+    replace(new RegExp(`\\bWorker runner ${previousRunnerSource} finalized\\b`, "g"), "Worker runner finalized");
+    replace(previousRunnerIdPattern("g"), "worker");
+    replace(new RegExp(`\\brunner ${previousRunnerToken}s\\b`, "g"), "runners");
+    replace(new RegExp(`\\b${previousRunnerToken}s stopped\\b`, "g"), "runners stopped");
+    replace(new RegExp(`\\b${previousRunnerToken} cleanup\\b`, "g"), "runner cleanup");
+    return {next, replacements};
+}
+
+function resolvePreviousRunnerConflictBlocks(raw: string): {next: string; replacements: number} {
+    let replacements = 0;
+    const next = raw.replace(
+        /^<<<<<<<[^\n]*\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>>[^\n]*(?:\n|$)/gm,
+        (block, left: string, right: string) => {
+            if (!textHasPreviousRunnerId(block)) return block;
+            const leftHasPrevious = textHasPreviousRunnerId(left);
+            const rightHasPrevious = textHasPreviousRunnerId(right);
+            replacements += 1;
+            if (leftHasPrevious && !rightHasPrevious) return right;
+            if (rightHasPrevious && !leftHasPrevious) return left;
+            return right || left;
+        }
+    );
+    return {next, replacements};
+}
+
+function rewritePreviousRunnerResidue(raw: string): {next: string; replacements: number} {
+    const resolved = resolvePreviousRunnerConflictBlocks(raw);
+    const replaced = replacePreviousRunnerResidue(resolved.next);
+    return {
+        next: replaced.next,
+        replacements: resolved.replacements + replaced.replacements,
+    };
+}
+
+export function cleanupPreviousRunnerResidue(ctx: ProjectContext): PreviousRunnerResidueCleanupSummary {
+    const summary: PreviousRunnerResidueCleanupSummary = {
+        filesChanged: [],
+        replacements: 0,
+    };
+    if (!fs.existsSync(ctx.boardRoot)) return summary;
+
+    const visit = (current: string): void => {
+        const stat = fs.statSync(current);
+        if (stat.isDirectory()) {
+            const relative = path.relative(ctx.boardRoot, current);
+            if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {
+                return;
+            }
+            for (const name of fs.readdirSync(current)) {
+                visit(path.join(current, name));
+            }
+            return;
+        }
+        if (!stat.isFile() || !isTextMigrationTarget(current)) {
+            return;
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(current, "utf8");
+        } catch {
+            return;
+        }
+        const {next, replacements} = rewritePreviousRunnerResidue(raw);
+        if (next === raw) {
+            return;
+        }
+        writeFileAtomic(current, next);
+        summary.filesChanged.push(path.relative(ctx.boardRoot, current));
+        summary.replacements += replacements;
+    };
+    visit(ctx.boardRoot);
     return summary;
 }
 

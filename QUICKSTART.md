@@ -32,7 +32,7 @@ npm run check
 
 ## 3. 입력 만들기
 
-모든 작업은 PRD 한 가지 입력으로 들어간다. 작은 mechanical 변경은 직접 todo 로 갈 수 있도록 PRD 가 표시한다.
+모든 작업은 `autoflow` 목표 한 가지 입력으로 들어간다. 작은 변경도 `autoflow` skill 대화가 필요한 PRD로 발행한다.
 
 ```bash
 ./app/bin/autoflow prd create <project-root> \
@@ -41,7 +41,7 @@ npm run check
   --from-file ./request.md
 ```
 
-Codex/Claude skill 을 쓰는 프로젝트라면 사용자 대화에서는 `$autoflow` / `/autoflow` 로 goal 기반 완료 루프를 시작하고, `$aprd` / `/aprd` 로 풍부한 PRD 를 만들고, `$atodo` / `/atodo` 로 작은 1-파일 mechanical 작업을 todo 로 바로 떨군다.
+Codex/Claude skill 을 쓰는 프로젝트라면 사용자 대화에서는 `$autoflow` / `/autoflow` 로 goal 기반 skill을 시작한다. Skill 대화는 프로젝트 상태와 LLM Wiki를 참고해 PRD를 발행하고, 보드 evidence로 목표 충족 여부를 확인한 뒤 goal complete를 선언한다.
 
 ## 4. 러너 실행
 
@@ -54,14 +54,14 @@ Codex/Claude skill 을 쓰는 프로젝트라면 사용자 대화에서는 `$aut
 ./app/bin/autoflow run wiki <project-root>
 ```
 
-`run planner`는 PRD를 Todo로 승격한다. `run worker`는 owned active ticket 또는 다음 todo 후보를 보여주는 시작 컨텍스트이며, 단독으로 구현 루프를 오래 실행하지 않는다. `run verifier`는 verifier 대기 티켓을 검토하고 pass/revise/replan 상태를 기록한다. `run wiki`는 wiki baseline update 확인용이다. 일반 위키 러너 루프에서는 먼저 `autoflow tool runner-tool wiki tick`을 호출한다. `runners start` 계열 CLI는 runner state/config 준비 명령이며, 데스크톱 앱이 실제 PTY runner 프로세스를 띄운다.
+`run planner`, `run worker`, `run verifier`, `run wiki`는 role assignment 실행 표면이다. 장기 실행 프로세스는 데스크톱 앱의 4개 고정 러너가 관리한다.
 
 역할:
 
-- 플래너 러너(`planner`): PRD를 Todo 티켓으로 정리
-- 워커 러너(`worker`): Todo claim, worktree 작업, 로컬 검증, 검증 러너 handoff, pass 후 merge/finalization, revise/replan 처리
-- 검증 러너(`verifier`): pass / revise / replan 판단과 worker ticket state 갱신
-- 위키 러너(`wiki`): 완료된 작업에서 debounce 된 운영 지식 갱신
+- 플래너 역할(`planner`): 지정 PRD를 work item으로 분해
+- 워커 역할(`worker`): 지정 work item 구현, 로컬 검증 evidence 기록, verifier pass 뒤 PRD worktree commit/merge
+- 검증 역할(`verifier`): 지정 item의 pass / revise / replan 판단
+- 위키 역할(`wiki`): 완료 evidence에서 파생 지식 갱신
 
 상태 확인:
 
@@ -83,8 +83,11 @@ npm run dev
 
 - 플래너 러너와 위키 러너는 보통 한 보드에서 하나만 켠다.
 - 워커 러너는 여러 개 둘 수 있지만, 한 워커는 한 번에 한 티켓만 claim한다.
+- `.autoflow/`는 개인 로컬 실행 원장이며 Git에 커밋하지 않는다. 공유가 필요한 내용은 PR 요약이나 별도 문서로 명시적으로 export한다.
 - 루트 Autoflow 저장소에는 `.autoflow/` 보드를 만들지 않는다.
-- `app/runtime/` 코드는 보드에 복사되지 않는다. `autoflow upgrade`는 `install/` source를 대상 프로젝트 보드에 동기화한다.
+- `app/runtime/` 코드는 보드에 복사되지 않는다. 보드의 `manifest.toml`은 전역 core/share 참조와 schema 정보를 기록한다.
+- 개발 중에는 `./app/bin/autoflow dev-link`로 현재 core를 전역 registry에 등록하면 보드가 `<core-root>/install/share`와 runtime을 직접 참조하므로 공통 파일 업그레이드 없이 수정 사항을 바로 볼 수 있다.
+- `autoflow upgrade`는 공통 파일 복사가 아니라 보드 schema migration, 누락 scaffold 보정, host guidance refresh에 집중한다.
 - 막힌 흐름은 `autoflow doctor <project-root>` 와 `tickets/inprogress/`, `tickets/verifier/`를 먼저 본다.
 
 ## 7. 다음 문서

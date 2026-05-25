@@ -1,10 +1,9 @@
-# 처리된 PRD 큐
+# 처리된 PRD
 
-이전 Autoflow 버전은 소비된 spec에 `tickets/prd/processed/`를 사용했다.
+완료된 PRD는 `tickets/done/<project-key>/` 아래에 archive한다.
 
-현재 규칙:
+규칙:
 
-- 워커는 소비된 spec을 `tickets/done/<project-key>/`로 옮긴다.
-- Legacy planner도 소비된 spec을 `tickets/done/<project-key>/` 아래에 archive 한다.
-- Upgrade script는 old processed spec을 done project folder로 migrate 한다.
-- 새 board는 이 folder를 만들지 않는다.
+- active PRD는 모든 TODO가 verifier pass 이후 commit되고, 마지막 TODO를 처리한 Worker가 PRD worktree merge evidence를 남긴 뒤 done으로 이동한다.
+- done archive에는 PRD 본문, TODO evidence, verifier evidence, PRD worktree commit/merge evidence가 함께 있어야 한다.
+- 새 board는 별도 processed queue를 만들지 않는다.

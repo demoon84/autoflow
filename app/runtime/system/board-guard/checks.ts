@@ -184,16 +184,18 @@ export function checkRogueProjectRootBoardPaths(): void {
         execFileSync("git", ["-C", PROJECT_ROOT, "rev-parse", "--is-inside-work-tree"], {
             stdio: ["ignore", "ignore", "ignore"]
         });
-        trackedOutput = utils.gitOutput(["ls-files", "--", ".autoflow"], PROJECT_ROOT)
+        const boardRel = path.relative(PROJECT_ROOT, BOARD_ROOT).split(path.sep).join("/") || ".autoflow";
+        const boardPathspec = !boardRel.startsWith("..") && !path.isAbsolute(boardRel) ? boardRel : ".autoflow";
+        trackedOutput = utils.gitOutput(["ls-files", "--", boardPathspec], PROJECT_ROOT)
             .split(/\r?\n/)
-            .filter((l) => l && !l.startsWith(path.relative(PROJECT_ROOT, BOARD_ROOT) + "/"))
+            .filter(Boolean)
             .join("\n");
     } catch {
     }
     if (trackedOutput) {
         rogue += 1;
         const list = trackedOutput.split(/\r?\n/).slice(0, 10).join(",");
-        recordError(`project root contains tracked board path copies: ${list}`);
+        recordError(`project root contains tracked Autoflow board files: ${list}`);
     }
     const wikiAlias = path.join(PROJECT_ROOT, "wiki");
     if (fs.existsSync(wikiAlias) && wikiAlias !== BOARD_ROOT) {
@@ -240,7 +242,7 @@ export function checkDonePrdHasTodo(): void {
     let projectDirs: string[] = [];
     try {
         projectDirs = fs.readdirSync(doneRoot, { withFileTypes: true })
-            .filter((entry) => entry.isDirectory() && /^(PRD)-\d+$/i.test(entry.name))
+            .filter((entry) => entry.isDirectory() && /^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(entry.name))
             .map((entry) => entry.name);
     } catch {
         recordCheck("done_prd_has_todo", "ok");
@@ -256,7 +258,7 @@ export function checkDonePrdHasTodo(): void {
         }
         const hasPrd = entries.some((name) => new RegExp(`^${projectKey}\\.md$`, "i").test(name));
         if (!hasPrd) continue;
-        const hasLocalTodo = entries.some((name) => /^TODO-\d+\.md$/.test(name));
+        const hasLocalTodo = entries.some((name) => /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/.test(name));
         if (hasLocalTodo) continue;
         const prdKeyRe = new RegExp(`^-\\s*PRD Key\\s*:\\s*${projectKey}\\b`, "im");
         let referencingCount = 0;
@@ -264,13 +266,13 @@ export function checkDonePrdHasTodo(): void {
             const dir = path.join(TICKETS_ROOT, bucket);
             if (!fs.existsSync(dir)) continue;
             for (const name of fs.readdirSync(dir)) {
-                if (!/^TODO-\d+\.md$/.test(name)) continue;
+                if (!/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/.test(name)) continue;
                 const full = path.join(dir, name);
                 if (prdKeyRe.test(utils.readFileSafe(full))) referencingCount += 1;
             }
         }
         if (referencingCount === 0) {
-            recordWarning(`tickets/done/${projectKey}/${projectKey}.md has no Todo referencing PRD Key=${projectKey}. PRDs must produce ≥1 Todo before archival; pass --force-archive-orphan with a documented reason when intentional.`);
+            recordWarning(`tickets/done/${projectKey}/${projectKey}.md has no work item referencing PRD Key=${projectKey}. PRDs must produce at least one work item before archival; pass --force-archive-orphan with a documented reason when intentional.`);
             orphan += 1;
         }
     }

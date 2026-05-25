@@ -2,7 +2,7 @@ import {boardRoot, projectRoot, requestedTicket, runnerId} from "./context";
 import {asArray, asObject, oneLine, printPairs} from "./io";
 import {tool} from "./tool";
 import {findTicket, ticketItemFromPath} from "./ticket";
-import {emitActiveTicket, emitTodoCandidate, emitIdle} from "./emit";
+import {emitActiveTicket, emitWorkCandidate, emitIdle} from "./emit";
 
 export function main(): void {
   try {
@@ -20,18 +20,18 @@ export function main(): void {
         process.exit(1);
       }
       if (requested.state === "todo") {
-        emitTodoCandidate(ticketItemFromPath(requested.path), "requested");
+        emitWorkCandidate(ticketItemFromPath(requested.path), "requested");
         return;
       }
       emitActiveTicket(ticketItemFromPath(requested.path), requested.state);
       return;
     }
 
-    const snapshot = tool("worker", "todo-snapshot", "--runner", runnerId);
-    const todos = asArray(snapshot.todos);
-    const claimable = todos.find((item) => Boolean(asObject(item).claimable));
+    const snapshot = tool("worker", "work-snapshot", "--runner", runnerId);
+    const workItems = asArray(snapshot.work_items);
+    const claimable = workItems.find((item) => Boolean(asObject(item).claimable));
     if (!claimable) {
-      const blocked = todos.find((item) => String(asObject(item).blocked_reason || "") !== "");
+      const blocked = workItems.find((item) => String(asObject(item).blocked_reason || "") !== "");
       if (blocked) {
         const blockedObj = asObject(blocked);
         emitIdle(String(blockedObj.blocked_reason || "ticket_blocked"), String(blockedObj.path || ""));
@@ -41,7 +41,7 @@ export function main(): void {
       return;
     }
 
-    emitTodoCandidate(claimable, "todo");
+    emitWorkCandidate(claimable, "work");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     printPairs({

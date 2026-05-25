@@ -15,7 +15,7 @@ export function dispatchVerifier(command: string): void {
     case "decision-record":
       cmdVerifierDecisionRecord();
       return;
-    case "approve-merge":
+    case "pass":
       cmdVerifierComplete("pass");
       return;
     case "request-revision":
