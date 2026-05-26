@@ -22,7 +22,7 @@ function requireRunnerRole(role: string): string {
     const raw = role.toLowerCase();
     const normalized = normalizeRunnerRole(role);
     if (normalized === "coordinator") {
-        fail(`Unsupported runner role: ${role}. Coordinator is not a runner; use planner, worker, verifier, or wiki-maintainer.`);
+        fail(`Unsupported runner role: ${role}. Coordinator is not a runner; use planner, worker, or wiki-maintainer.`);
     }
     if (!allowedRunnerRoles.has(normalized)) {
         fail(`Unsupported runner role: ${role}`);

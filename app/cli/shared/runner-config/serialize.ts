@@ -72,7 +72,8 @@ export function serializeRunnerConfig(runners: Array<Record<string, string>>): s
         "",
     ];
     for (const runner of runners) {
-        lines.push("[[runners]]");
+        const runnerId = runner.id || "";
+        lines.push(`[runners.${JSON.stringify(runnerId)}]`);
         const known = new Set(runnerConfigFieldOrder);
         for (const key of runnerConfigFieldOrder) {
             if (isScheduledLoopField(key)) {

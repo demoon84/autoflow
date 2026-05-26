@@ -70,7 +70,7 @@ export function handoffToVerifier(ticketFile: string, ticketId: string): void {
 }
 
 export function shouldHandoffToVerifier(ticketId: string): boolean {
-  if ((process.env.AUTOFLOW_VERIFIER_ENABLED || "1") === "0") return false;
+  if ((process.env.AUTOFLOW_VERIFIER_ENABLED || "0") !== "1") return false;
   if ((process.env.AUTOFLOW_SKIP_VERIFIER || "0") === "1") return false;
   return !fs.existsSync(verifierMarker(ticketId));
 }

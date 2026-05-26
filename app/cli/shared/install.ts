@@ -3,6 +3,8 @@ import {fs, path, REPO_ROOT, SHARE_ROOT, type ProjectContext} from "./context";
 import {readInstallSourceEntries, type InstallSourceEntry} from "./manifest";
 import {writeFileAtomic} from "./fs";
 import {coreBundledShareRoot, resolveAutoflowCore, type ResolvedAutoflowCore} from "./core";
+import {parseRunnerConfigText} from "./runner-config/parse";
+import {normalizeRunnerReasoningValue, runnerStringFieldDefaults, serializeRunnerConfig} from "./runner-config/serialize";
 
 export type InstallAssetSummary = {
     created: number;
@@ -310,12 +312,17 @@ export function migrateRunnerConfigToLocal(ctx: ProjectContext): string[] {
 
     if (fs.existsSync(local)) {
         const text = fs.readFileSync(local, "utf8");
-        if (hasDeprecatedRunnerArrayConfig(text)) {
-            fs.rmSync(local, {force: true});
-            changed.push("removed:runners/config.local.toml:default-runner-config");
-        } else if (matchesTemplate(text)) {
+        if (matchesTemplate(text)) {
             fs.rmSync(local, {force: true});
             changed.push("removed:runners/config.local.toml:matches-global-default");
+        } else if (hasDeprecatedRunnerArrayConfig(text)) {
+            if (runnerConfigSemanticallyMatches(text, templateText)) {
+                fs.rmSync(local, {force: true});
+                changed.push("removed:runners/config.local.toml:default-runner-config");
+            } else {
+                writeFileAtomic(local, serializeRunnerConfig(parseRunnerConfigText(text)));
+                changed.push("migrated:runners/config.local.toml:array-to-named");
+            }
         }
     }
 
@@ -358,6 +365,44 @@ export function syncUserHomeInstallAssets(ctx: ProjectContext, options: {overwri
 
 function isHostGuidanceEntry(entry: InstallSourceEntry): boolean {
     return entry.type === "host" && (entry.target === "AGENTS.md" || entry.target === "CLAUDE.md");
+}
+
+function runnerRoleFromId(id: string): string {
+    const value = id.toLowerCase();
+    if (value === "planner" || value.startsWith("planner-") || value.startsWith("plan-")) return "planner";
+    if (value === "verifier" || value.startsWith("verifier-")) return "verifier";
+    if (value === "wiki" || value === "wiki-maintainer" || value.startsWith("wiki-")) return "wiki-maintainer";
+    return "worker";
+}
+
+function normalizeRunnerConfigEntry(entry: Record<string, string>): Record<string, string> {
+    const id = entry.id || "";
+    const agent = entry.agent || runnerStringFieldDefaults.agent;
+    return {
+        id,
+        role: entry.role || runnerRoleFromId(id),
+        label: entry.label || "",
+        agent,
+        codex_history: entry.codex_history || runnerStringFieldDefaults.codex_history,
+        model: entry.model ?? runnerStringFieldDefaults.model,
+        reasoning: normalizeRunnerReasoningValue(agent, entry.reasoning ?? runnerStringFieldDefaults.reasoning),
+        mode: entry.mode || "",
+        interval_seconds: entry.interval_seconds || "",
+        enabled: String(entry.enabled ?? runnerStringFieldDefaults.enabled).toLowerCase(),
+        command: entry.command ?? runnerStringFieldDefaults.command,
+    };
+}
+
+function runnerConfigSemanticFingerprint(text: string): string {
+    const entries = parseRunnerConfigText(text)
+        .map(normalizeRunnerConfigEntry)
+        .sort((left, right) => left.id.localeCompare(right.id));
+    return JSON.stringify(entries);
+}
+
+function runnerConfigSemanticallyMatches(left: string, right: string): boolean {
+    if (!left || !right) return false;
+    return runnerConfigSemanticFingerprint(left) === runnerConfigSemanticFingerprint(right);
 }
 
 export function syncProjectHostInstallAssets(ctx: ProjectContext, options: {overwriteSkills?: boolean; overwriteHostGuidance?: boolean} = {}): InstallAssetSummary {
@@ -1134,6 +1179,37 @@ const verifierDecisionFields = [
     "Semantic Marker",
 ];
 
+export function migrateLegacyVerifierTicketsToInprogress(boardRoot: string): string[] {
+    const verifierDir = path.join(boardRoot, "tickets", "verifier");
+    if (!fs.existsSync(verifierDir)) return [];
+    const inprogressDir = path.join(boardRoot, "tickets", "inprogress");
+    let names: string[] = [];
+    try {
+        names = fs.readdirSync(verifierDir).filter((name) => /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(name)).sort();
+    } catch {
+        return [];
+    }
+    if (names.length === 0) return [];
+    if (!fs.existsSync(inprogressDir)) fs.mkdirSync(inprogressDir, {recursive: true});
+    const moved: string[] = [];
+    for (const name of names) {
+        const src = path.join(verifierDir, name);
+        const dst = path.join(inprogressDir, name);
+        if (fs.existsSync(dst)) continue;
+        try {
+            fs.renameSync(src, dst);
+            moved.push(name);
+        } catch {}
+    }
+    try {
+        const remaining = fs.readdirSync(verifierDir).filter((n) => n !== ".gitkeep" && !n.startsWith("."));
+        if (remaining.length === 0) {
+            try { fs.rmdirSync(verifierDir); } catch {}
+        }
+    } catch {}
+    return moved;
+}
+
 export function migrateStaleVerifyPendingDecisionFields(ctx: ProjectContext): string[] {
     const migrated: string[] = [];
     const ticketRoots = [
@@ -1179,6 +1255,7 @@ function rewriteQueuePathReferences(ctx: ProjectContext): string[] {
     const changed: string[] = [];
     const visit = (current: string): void => {
         const stat = fs.statSync(current);
+        if (skipBroadTextMigrationPath(ctx, current)) return;
         if (stat.isDirectory()) {
             const relative = path.relative(ctx.boardRoot, current);
             if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {
@@ -1511,9 +1588,6 @@ const PREVIOUS_WORKFLOW_CONTENT_RULES: ReadonlyArray<{pattern: RegExp; replaceme
     {pattern: /\batodo intake\b/gi, replacement: "goal intake"},
     {pattern: /\batodo\b/gi, replacement: "direct goal"},
     {pattern: /\blegacy PRD\b/g, replacement: "initial PRD"},
-    {pattern: /\.autoflow\/tickets\/todo\/(TODO-[A-Za-z0-9_.-]+\.md)/g, replacement: ".autoflow work item $1"},
-    {pattern: /tickets\/todo\/(TODO-[A-Za-z0-9_.-]+\.md)/g, replacement: "work item $1"},
-    {pattern: /\btickets\/todo\//g, replacement: "work item queue/"},
     {pattern: /\b4-runner\b/g, replacement: "fixed runner"},
     {pattern: /\bDB-only\b/g, replacement: "markdown-first"},
     {pattern: /\bwiki-search\.db\b/g, replacement: "qmd optional index"},
@@ -1540,6 +1614,16 @@ function rewritePreviousWorkflowTerminology(raw: string): {next: string; replace
     return {next, replacements};
 }
 
+function skipBroadTextMigrationPath(ctx: ProjectContext, current: string): boolean {
+    const relative = path.relative(ctx.boardRoot, current).split(path.sep).join("/");
+    return relative === "automations/state" ||
+        relative.startsWith("automations/state/") ||
+        relative === "runners/state" ||
+        relative.startsWith("runners/state/") ||
+        relative === "runners/logs" ||
+        relative.startsWith("runners/logs/");
+}
+
 export function migratePreviousWorkflowTerminology(ctx: ProjectContext): PreviousWorkflowTerminologyMigrationSummary {
     const summary: PreviousWorkflowTerminologyMigrationSummary = {
         filesChanged: [],
@@ -1549,6 +1633,7 @@ export function migratePreviousWorkflowTerminology(ctx: ProjectContext): Previou
 
     const visit = (current: string): void => {
         const stat = fs.statSync(current);
+        if (skipBroadTextMigrationPath(ctx, current)) return;
         if (stat.isDirectory()) {
             const relative = path.relative(ctx.boardRoot, current);
             if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {
@@ -1647,6 +1732,7 @@ export function cleanupPreviousRunnerResidue(ctx: ProjectContext): PreviousRunne
 
     const visit = (current: string): void => {
         const stat = fs.statSync(current);
+        if (skipBroadTextMigrationPath(ctx, current)) return;
         if (stat.isDirectory()) {
             const relative = path.relative(ctx.boardRoot, current);
             if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {
@@ -1686,6 +1772,7 @@ export function migrateWorkerTerminology(ctx: ProjectContext): string[] {
     const changed: string[] = [];
     const visit = (current: string): void => {
         const stat = fs.statSync(current);
+        if (skipBroadTextMigrationPath(ctx, current)) return;
         if (stat.isDirectory()) {
             const relative = path.relative(ctx.boardRoot, current);
             if (relative === path.join("runners", "logs") || relative === path.join("runners", "state", "wiki-embed-models")) {

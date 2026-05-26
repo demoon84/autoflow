@@ -13,6 +13,7 @@
 - assignment 밖의 item을 선택하지 않는다.
 - assignment 밖의 role로 행동하지 않는다.
 - runner tool이 `assignment_required`, `assignment_role_mismatch`, `assignment_item_mismatch`, `assignment_not_active`를 반환하면 새 item을 고르지 말고 현재 runner 상태를 보드에 남긴 뒤 멈춘다.
+- 실행 중 사용자에게 되묻거나 선택지를 제시하지 않는다. 러너 PTY 입력은 사용자 입력 채널이 아니므로 질문이 필요하면 `blocked` 또는 `replan` reason과 필요한 보정 정보를 보드에 남기고 멈춘다.
 - role contract file은 assignment summary만으로 안전하게 진행할 수 없을 때만 읽는다.
 - Runner tool은 deterministic helper로 사용한다. Scope, next action, pass/revise/replan, blocked 처리, evidence 충분성은 해당 role이 판단한다.
 - 이 runner는 Sub-agent가 아니라 assignment 책임을 가진 메인 에이전트다. Sub-agent는 조사/분석/요약 helper로만 사용하고, board 상태 전이, assignment 처리, 최종 판단, runner tool 호출 책임을 넘기지 않는다.

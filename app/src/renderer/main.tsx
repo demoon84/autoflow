@@ -776,7 +776,7 @@ const statusLabels: Record<string, string> = {
   false: "중지"
 };
 
-// Default topology is planner + worker + verifier + wiki.
+// Default topology is planner + worker + wiki.
 const runnerRoleLabels: Record<string, string> = {
   "worker": "Worker",
   ticket: "Worker",
@@ -784,7 +784,7 @@ const runnerRoleLabels: Record<string, string> = {
   plan: "Planner",
   "wiki-maintainer": "Wiki",
   wiki: "Wiki",
-  verifier: "Verifier",
+  verifier: "Verifier (legacy)",
   coordinator: "coordinator (legacy)",
   coord: "coordinator (legacy)",
   todo: "작업자 (legacy)",

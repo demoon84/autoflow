@@ -2,7 +2,7 @@
 
 ## 목적
 
-Worker는 배정된 TODO 하나를 수행하고, 로컬 검증 evidence를 남긴 뒤 Verifier에게 검증을 요청한다. Verifier pass 뒤에는 해당 TODO 결과를 PRD worktree에 commit으로 반영한다. PRD의 마지막 TODO를 처리한 Worker는 PRD worktree merge를 수행한다.
+Worker는 배정된 TODO 하나를 수행하고, 로컬 검증 evidence를 남긴 뒤 worker finalize-approved 를 호출해 단일 마무리 흐름으로 TODO 를 닫는다. 도구가 sanity gate(worktree/base/diff/Done When)와 merge target verification rerun 을 거쳐 PRD worktree commit 을 반영한다. PRD의 마지막 TODO를 처리한 Worker 의 finalize-approved 호출은 main squash merge 까지 자동 수행한다.
 
 ## 제1원칙
 
@@ -31,9 +31,9 @@ PRD-NNN 완료
 - `Allowed Paths`만 수정
 - verification command 실행과 evidence 기록
 - `Done When`과 diff 범위의 기계적 점검
-- `ready_for_verifier`, `blocked`, `failed` 상태 기록
-- Verifier pass 뒤 PRD worktree commit 반영
-- 마지막 TODO인 경우 PRD worktree merge 수행
+- 로컬 검증 통과 후 worker finalize-approved 호출 (호환 alias submit-to-verifier 도 동일 흐름)
+- finalize-approved 가 자동 처리하는 PRD worktree commit / 마지막 TODO 의 main squash merge 결과를 evidence 로 기록
+- sanity gate / verification rerun 실패 시 `blocked` 또는 `failed` 상태와 reason/evidence 기록
 
 ## 지속 가능한 진행 기록
 
@@ -71,7 +71,8 @@ blocked 상태에서는 TODO에 다음을 포함해야 한다.
 
 - 배정 밖 TODO를 처리하지 않는다.
 - `Allowed Paths`를 조용히 넓히지 않는다.
-- 증거 없이 pass로 표시하지 않는다.
-- Verifier pass 전에는 완료 commit으로 반영하지 않는다.
+- 증거 없이 finalize-approved 를 호출하지 않는다.
+- 로컬 검증이 통과하기 전에는 finalize-approved 를 호출하지 않는다.
+- 직접 `git commit`, `git merge --squash`, `git worktree remove` 를 호출하지 않는다. finalize-approved 가 수행한다.
 - push 하지 않는다.
 - 상태를 채팅에 숨기지 않는다.

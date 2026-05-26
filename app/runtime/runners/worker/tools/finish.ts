@@ -52,6 +52,9 @@ const {
   diffStats,
   readVerifierEvidence,
   recordVerifierDecision,
+  requireRoleAssignmentForItem,
+  completeRoleAssignment,
+  compactAssignment,
   findTicketById,
   workerRunnerIdFromTicket,
   markWorkerTicketVerified,
@@ -133,7 +136,7 @@ function verifierMarkerForTicket(ticketId: string): string {
 }
 
 function verifierRequired(): boolean {
-  if ((process.env.AUTOFLOW_VERIFIER_ENABLED || "1") === "0") return false;
+  if ((process.env.AUTOFLOW_VERIFIER_ENABLED || "0") !== "1") return false;
   if ((process.env.AUTOFLOW_SKIP_VERIFIER || "0") === "1") return false;
   return true;
 }
@@ -141,20 +144,22 @@ function verifierRequired(): boolean {
 export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const backendOutcome = command === "request-replan" ? "replan" : "pass";
   const ticket = requireTicket(["inprogress"]);
+  const assignment = requireRoleAssignmentForItem("worker", ticket, currentRunnerId("worker"));
   const message = backendOutcome === "pass" ? getArg("--summary") : getArg("--reason");
   if (!message) fail(2, `worker ${command} requires --${backendOutcome === "pass" ? "summary" : "reason"}`);
   const ticketId = idFromPath(ticket);
   const verifierMarker = verifierMarkerForTicket(ticketId);
   const hasVerifierApproval = fs.existsSync(verifierMarker);
+  const verifierActive = verifierRequired();
 
-  if (command === "submit-to-verifier" && hasVerifierApproval) {
+  if (command === "submit-to-verifier" && verifierActive && hasVerifierApproval) {
     fail(2, "verifier approval marker already exists; use worker finalize-approved to commit the approved worktree result", {
       ticket_id: `TODO-${ticketId}`,
       verifier_marker: boardRel(verifierMarker),
     });
   }
 
-  if (command === "finalize-approved" && verifierRequired() && !hasVerifierApproval) {
+  if (command === "finalize-approved" && verifierActive && !hasVerifierApproval) {
     fail(2, "verifier approval marker is missing; use worker submit-to-verifier before merge/finalization", {
       ticket_id: `TODO-${ticketId}`,
       expected_marker: boardRel(verifierMarker),
@@ -178,6 +183,13 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const backendStatus = stringValue(parsed.status);
   const outputPath = stringValue(parsed.ticket) || stringValue(parsed.verifier_ticket) || boardRel(ticket);
   const finalBoundaryStatuses = new Set(["done", "replanned"]);
+  const completedAssignment = result.status === 0 && finalBoundaryStatuses.has(backendStatus)
+    ? completeRoleAssignment(
+        assignment,
+        `worker ${command} finished with ${backendStatus}`,
+        backendStatus === "replanned" ? "released" : "completed"
+      )
+    : assignment;
   const contextResetMode = "compact";
   const contextReset = result.status === 0 && finalBoundaryStatuses.has(backendStatus)
     ? emitRunnerContextReset(currentRunnerId("worker"), `worker.${command}`, contextResetMode, {
@@ -196,6 +208,8 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
     backend_status: backendStatus,
     backend_commit_status: stringValue(parsed.commit_status),
     backend_next_action: stringValue(parsed.next_action),
+    assignment: compactAssignment(completedAssignment),
+    assignment_lifecycle: completedAssignment.status !== assignment.status ? completedAssignment.status : "unchanged",
     context_reset: contextReset.ok ? "queued" : "not_queued",
     context_reset_path: contextReset.path,
     parsed,

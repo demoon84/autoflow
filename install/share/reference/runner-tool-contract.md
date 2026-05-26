@@ -19,6 +19,15 @@ Planner, Worker, Verifier는 자신의 상태를 보드에 기록한다. 각 run
 
 Runner tool은 워크플로의 판단자가 아니다. 도구는 상태를 검사하고 좁은 보드 변경을 수행하며, 작업 선택, pass/revise/replan 판단, 목표 완료 판단을 하지 않는다.
 
+## 사용자 재질문 금지
+
+4개 러너(플래너 러너, 워커 러너, 검증 러너, 위키 러너)는 실행 중 사용자에게 되묻거나 선택지를 제시하지 않는다. 러너 PTY 입력은 사용자 입력 채널이 아니며 입력이 차단될 수 있으므로, 실행 중 질문은 진행 불능 상태와 같다.
+
+- 질문이 필요한 범위, 완료 조건, 선호도는 Autoflow skill의 시작 게이트에서 PRD/TODO/assignment 발행 전에 확인한다.
+- PRD/TODO/assignment가 발행된 뒤에는 이미 결정된 계약으로 보고, 러너는 선택지를 만들지 않는다.
+- 정보가 부족하면 역할 계약 안에서 가장 보수적인 safe action을 선택하고 `Assumptions`, `Notes`, `Next Action`, `Verification`, `blocked` 또는 `replan` reason에 근거를 남긴다.
+- 사용자 입력 없이는 진행할 수 없는 경우에도 질문하지 않는다. 관찰 가능한 blocker와 필요한 보정 정보를 보드에 기록하고 러너 상태를 닫는다.
+
 ## 4개 Runner
 
 `Planner`:

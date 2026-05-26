@@ -16,8 +16,9 @@ Claude Code는 이 파일을 먼저 읽으므로, 공통 규칙은 [AGENTS.md](A
 
 - 플래너 러너 (`planner`)
 - 워커 러너 (`worker`)
-- 검증 러너 (`verifier`)
 - 위키 러너 (`wiki`)
+
+검증 러너(`verifier`)는 legacy 비활성 역할이다. 사용자-facing 새 문서에는 활성 역할로 안내하지 않는다. 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리한다.
 
 예전 AI식 runner 표기는 새 문서나 사용자-facing 설명에 추가하지 않는다.
 

@@ -301,7 +301,7 @@ export function readPendingRunnerContextResetEvents(boardRoot: string, runnerId:
 export function contextResetEventIsSchedulable(event: { tool?: string; reason?: string; backend_status?: string } | undefined | null): boolean {
   const tool = String(event?.tool || event?.reason || "");
   const backendStatus = String(event?.backend_status || "");
-  if (tool === "worker.submit-to-verifier" || backendStatus === "verify_pending") return false;
+  if (backendStatus === "verify_pending") return false;
   if (tool.startsWith("verifier.")) return false;
   return true;
 }
@@ -350,24 +350,21 @@ export function buildRunnerStartupScan({ role, runnerId }: { role: string; runne
         `  - 모든 TODO 는 PRD worktree (autoflow/prd-<id>) 안에서 작업한다. 작업 전에 그 worktree 로 cd.`,
         `  - 별도 TODO worktree/branch 는 만들지 않는다. claim/worktree-ensure 가 반환하는 path 가 곧 PRD worktree.`,
         `  - PROJECT_ROOT(main) 에서 직접 편집하지 않는다.`,
-        `  - 작업 후 직접 git commit 하지 않는다. submit-to-verifier 를 호출해서 verifier 검토를 먼저 받는다.`,
-        `  - verifier pass 후 worker finalize-approved 만 호출하면 도구가 자동으로 PRD worktree 에 commit 한다. 이게 같은 PRD 의 마지막 TODO 이면 finalize-approved 가 자동으로 main 으로 squash merge + PRD branch/worktree 삭제까지 처리한다.`,
+        `  - 작업 후 직접 git commit 하지 않는다. 로컬 검증(Done When, verification command, diff/Allowed Paths sanity)을 통과한 뒤 worker finalize-approved 만 호출한다. 도구가 sanity gate 와 merge target verification rerun 을 거쳐 자동으로 PRD worktree 에 commit 한다. 같은 PRD 의 마지막 TODO 이면 finalize-approved 가 자동으로 main 으로 squash merge + PRD branch/worktree 삭제까지 처리한다.`,
         `  - 직접 \`git commit\`, \`git merge --squash\`, \`git worktree remove\` 같은 명령을 호출하지 않는다. 시스템 도구만 호출한다.`,
-        `  - revise: working tree 의 변경을 수정하고 다시 submit-to-verifier 호출.`,
+        `  - sanity gate / verification rerun 이 실패하면 finalize-approved 가 blocked 와 reason/evidence 를 남기므로 같은 worktree 에서 수정 후 다시 호출한다.`,
+        `  - submit-to-verifier 는 호환 alias 다 (finalize-approved 와 동일 흐름). 기존 prompt 호출이 깨지지 않도록 유지된다.`,
         `  - replan: request-replan 호출. working tree 변경은 PRD worktree 에 그대로 두고 ticket 만 다시 todo 로.`,
         `  - merge 충돌이 발생하면 worker LLM 가 PRD worktree 안에서 직접 해결한 뒤 도구를 다시 호출.`,
         `Atomic rule: 동시에 최대 1 개의 active ticket.`,
         `Startup scan order:`,
         `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "active-get", "--runner", runnerId, "--max-items", "12"])}\` once.`,
-        `  2. If active-get.active_get_terminal=true or active-get.ai_followup_reason=worker_ticket_waiting_for_verifier, summarize the compact result without opening source files or running work-snapshot; leave this runner idle and waiting for the next handoff.`,
-        `  3. If active-get.ai_followup_reason=verifier_passed_worker_finalization_pending, finalize 한다: PRD worktree 안에서 검증을 다시 한 번 실행 → worker finalize-approved 호출. finalize-approved 가 자동으로 PRD worktree commit + (마지막 TODO 면) main squash merge 까지 처리한다. 직접 git 명령을 추가로 실행하지 않는다.`,
-        `  4. If active-get.ai_followup_reason=verifier_revision_requested, do not idle and do not claim another ticket. Inspect only the scoped ticket/worktree, fix the verifier reason inside Allowed Paths (PRD worktree 안에서), rerun local verification, then submit-to-verifier again.`,
-        `  5. If active-get.ai_followup_reason=verifier_replan_requested, do not idle and do not claim another ticket. Inspect only the scoped ticket, then run worker request-replan for that ticket.`,
-        `  6. If active-get.ai_followup_recommended=true, inspect only active-get.ai_followup_scope.inspect_only_recent_sources and resume that ticket. If the ticket is blocked, do one runner-owned blocked-handling pass (Allowed Paths 안 수정, 좁은 Done When/Allowed Paths 보정, verifier/replan 라우팅) before any no-work decision.`,
-        `  7. If no owned ticket exists, always run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "work-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once before deciding there is no work; active-get=false is not an idle decision.`,
-        `  8. If work-snapshot.ai_followup_recommended=false, summarize the compact result without opening source files; leave this runner idle and waiting for the next handoff.`,
-        `  9. If a candidate exists, inspect only work-snapshot.ai_followup_scope.inspect_only_recent_sources, then claim/worktree-ensure that one work item before product edits. claim/worktree-ensure 가 반환하는 path 는 PRD worktree (autoflow/prd-<id>) 이므로 거기로 cd 하고 작업한다.`,
-        `  10. Do not inspect unrelated tickets or project files outside the selected ticket's Allowed Paths.`
+        `  2. If active-get.active_get_terminal=true, summarize the compact result without opening source files or running work-snapshot; leave this runner idle and waiting for the next handoff.`,
+        `  3. If active-get.ai_followup_recommended=true, inspect only active-get.ai_followup_scope.inspect_only_recent_sources and resume that ticket. If the ticket is blocked, do one runner-owned blocked-handling pass (Allowed Paths 안 수정, 좁은 Done When/Allowed Paths 보정) before any no-work decision.`,
+        `  4. If no owned ticket exists, always run \`${autoflowShellCommand(["tool", "runner-tool", "worker", "work-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once before deciding there is no work; active-get=false is not an idle decision.`,
+        `  5. If work-snapshot.ai_followup_recommended=false, summarize the compact result without opening source files; leave this runner idle and waiting for the next handoff.`,
+        `  6. If a candidate exists, inspect only work-snapshot.ai_followup_scope.inspect_only_recent_sources, then claim/worktree-ensure that one work item before product edits. claim/worktree-ensure 가 반환하는 path 는 PRD worktree (autoflow/prd-<id>) 이므로 거기로 cd 하고 작업한다.`,
+        `  7. Do not inspect unrelated tickets or project files outside the selected ticket's Allowed Paths.`
       ].join("\n");
     case "verifier":
       return [

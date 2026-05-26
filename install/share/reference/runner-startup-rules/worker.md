@@ -17,14 +17,13 @@ Worker runner에 주입되는 규칙이다.
 - 구현 전에 mini-plan을 상태에 기록한다.
 - 지정된 worktree root에서 `Allowed Paths` 안의 변경만 수행한다.
 - verification command를 실행하고 evidence를 기록한다.
-- 성공하면 `ready_for_verifier` 상태를 기록한다.
-- Verifier pass가 기록되면 PRD worktree commit을 반영한다.
-- PRD의 모든 TODO가 완료됐고 자신이 마지막 TODO를 처리했다면 PRD worktree merge를 수행한다.
-- 진행할 수 없으면 `blocked` 또는 `failed`와 reason/evidence를 기록한다.
+- 로컬 검증이 통과하면 worker finalize-approved 를 호출한다 (호환 alias submit-to-verifier 도 동일 흐름). 도구가 sanity gate / merge target verification rerun 을 거쳐 PRD worktree commit 을 자동으로 반영한다.
+- PRD의 모든 TODO가 완료됐고 자신이 마지막 TODO를 처리했다면 같은 finalize-approved 호출이 main squash merge 까지 수행한다.
+- sanity gate / verification rerun 실패 시 도구가 남긴 `blocked` 상태와 reason 을 보고 같은 worktree 에서 수정한 뒤 다시 호출한다.
 
 ## Boundaries
 
 - 한 번에 여러 TODO를 처리하지 않는다.
-- 검증 meaning decision을 대신하지 않는다.
-- Verifier pass 전에는 완료 commit으로 반영하지 않는다.
+- 로컬 검증이 통과하기 전에는 finalize-approved 를 호출하지 않는다.
+- 직접 `git commit`, `git merge --squash`, `git worktree remove` 를 호출하지 않는다. finalize-approved 가 수행한다.
 - push하지 않는다.

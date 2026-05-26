@@ -50,17 +50,15 @@ Codex/Claude skill 을 쓰는 프로젝트라면 사용자 대화에서는 `$aut
 ```bash
 ./app/bin/autoflow run planner <project-root>
 ./app/bin/autoflow run worker <project-root>
-./app/bin/autoflow run verifier <project-root>
 ./app/bin/autoflow run wiki <project-root>
 ```
 
-`run planner`, `run worker`, `run verifier`, `run wiki`는 role assignment 실행 표면이다. 장기 실행 프로세스는 데스크톱 앱의 4개 고정 러너가 관리한다.
+`run planner`, `run worker`, `run wiki`는 role assignment 실행 표면이다. 장기 실행 프로세스는 데스크톱 앱의 3개 고정 러너가 관리한다.
 
 역할:
 
 - 플래너 역할(`planner`): 지정 PRD를 work item으로 분해
-- 워커 역할(`worker`): 지정 work item 구현, 로컬 검증 evidence 기록, verifier pass 뒤 PRD worktree commit/merge
-- 검증 역할(`verifier`): 지정 item의 pass / revise / replan 판단
+- 워커 역할(`worker`): 지정 work item 구현, 로컬 검증 evidence 기록, sanity gate / merge target verification rerun 을 거쳐 worker finalize-approved 가 PRD worktree commit + (마지막 TODO 면) main squash merge 까지 자동 수행
 - 위키 역할(`wiki`): 완료 evidence에서 파생 지식 갱신
 
 상태 확인:
@@ -88,7 +86,7 @@ npm run dev
 - `app/runtime/` 코드는 보드에 복사되지 않는다. 보드의 `manifest.toml`은 전역 core/share 참조와 schema 정보를 기록한다.
 - 개발 중에는 `./app/bin/autoflow dev-link`로 현재 core를 전역 registry에 등록하면 보드가 `<core-root>/install/share`와 runtime을 직접 참조하므로 공통 파일 업그레이드 없이 수정 사항을 바로 볼 수 있다.
 - `autoflow upgrade`는 공통 파일 복사가 아니라 보드 schema migration, 누락 scaffold 보정, host guidance refresh에 집중한다.
-- 막힌 흐름은 `autoflow doctor <project-root>` 와 `tickets/inprogress/`, `tickets/verifier/`를 먼저 본다.
+- 막힌 흐름은 `autoflow doctor <project-root>` 와 `tickets/inprogress/`를 먼저 본다.
 
 ## 7. 다음 문서
 

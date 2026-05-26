@@ -4,7 +4,15 @@ import path from "node:path";
 import { cliInvocation } from "./cli-invocation";
 import { activeCoreRegistryEntry, coreBundledShareRoot } from "./core-registry";
 import { parseTomlStringValue, stripTomlComment } from "./manifest-toml";
-import { normalizeRunnerRole, wikiPendingReviewPathsSync } from "./board-queue";
+import {
+  boardRelPath,
+  listQueueFilesSync,
+  normalizeRunnerRole,
+  readMarkdownTitleSync,
+  wikiPendingReviewPathsSync,
+  workerTodoFileIsClaimableSync,
+  workItemQueueFilePattern
+} from "./board-queue";
 import { defaultBoardDirName } from "./pty-scope";
 
 function repoRoot(): string {
@@ -215,6 +223,95 @@ export function ensureWikiAssignmentForPendingWorkSync(
   } catch {
     return readRunnerAssignmentSync(boardRoot, runnerId);
   }
+}
+
+export function ensureWorkerAssignmentForPendingWorkSync(
+  { projectRoot, boardDirName, boardRoot, runnerId }: { projectRoot: string; boardDirName: string; boardRoot: string; runnerId: string }
+): Record<string, unknown> | null {
+  if (!projectRoot || !boardRoot || !runnerId) return null;
+  const pendingPaths = listQueueFilesSync(boardRoot, "tickets/todo", workItemQueueFilePattern, 1000)
+    .filter(workerTodoFileIsClaimableSync)
+    .map((filePath) => boardRelPath(boardRoot, filePath));
+  if (pendingPaths.length === 0) return null;
+
+  const current = readRunnerAssignmentSync(boardRoot, runnerId);
+  if (current && activeAssignmentStatus(current.status)) {
+    if (String(current.role || "").toLowerCase() !== "worker") return null;
+    if (workerAssignmentStillOpenSync(boardRoot, current)) return current;
+  }
+
+  const item = pendingPaths[0];
+  const title = readMarkdownTitleSync(path.join(boardRoot, item));
+  const invocation = cliInvocation([
+    "tool",
+    "assignment",
+    "create",
+    "--runner",
+    runnerId,
+    "--role",
+    "worker",
+    "--item",
+    item,
+    "--contract-id",
+    "worker-assignment-v1",
+    "--contract-summary",
+    `워커 러너 TODO 처리 필요: ${item}${title ? ` - ${title}` : ""}`,
+    "--contract-ref",
+    "agents/worker-agent.md",
+    "--contract-ref",
+    "reference/runner-startup-rules/worker.md",
+    "--ttl-sec",
+    "21600"
+  ]);
+  const env = {
+    ...process.env,
+    ...invocation.env,
+    PROJECT_ROOT: projectRoot,
+    AUTOFLOW_PROJECT_ROOT: projectRoot,
+    BOARD_ROOT: boardRoot,
+    AUTOFLOW_BOARD_ROOT: boardRoot,
+    AUTOFLOW_BOARD_DIR_NAME: boardDirName || defaultBoardDirName(),
+    AUTOFLOW_ROLE: "worker",
+    AUTOFLOW_RUNNER_ID: runnerId,
+    RUNNER_ID: runnerId
+  };
+  const result = spawnSync(invocation.command, invocation.args, {
+    cwd: projectRoot,
+    encoding: "utf8",
+    env
+  });
+  if (result.status !== 0) return null;
+  try {
+    const parsed = JSON.parse(String(result.stdout || "{}"));
+    return parsed?.assignment || null;
+  } catch {
+    return readRunnerAssignmentSync(boardRoot, runnerId);
+  }
+}
+
+function workItemIdFromRef(raw: unknown): string {
+  const match = String(raw || "").match(/\bTODO-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/i);
+  if (!match) return "";
+  return `TODO-${match[1]}`;
+}
+
+function workerAssignmentMatchesRef(assignment: Record<string, unknown>, candidate: string): boolean {
+  const assigned = String(assignment.assigned_item_ref || "").replace(/\\/g, "/").replace(/^\.autoflow\//, "");
+  const normalizedCandidate = String(candidate || "").replace(/\\/g, "/").replace(/^\.autoflow\//, "");
+  if (!assigned || !normalizedCandidate) return false;
+  if (assigned === normalizedCandidate || assigned.endsWith(`/${normalizedCandidate}`) || normalizedCandidate.endsWith(`/${assigned}`)) return true;
+  const assignedId = workItemIdFromRef(assigned);
+  const candidateId = workItemIdFromRef(normalizedCandidate);
+  return Boolean(assignedId && candidateId && assignedId === candidateId);
+}
+
+function workerAssignmentStillOpenSync(boardRoot: string, assignment: Record<string, unknown>): boolean {
+  for (const relDir of ["tickets/todo", "tickets/inprogress", "tickets/verifier"]) {
+    for (const filePath of listQueueFilesSync(boardRoot, relDir, workItemQueueFilePattern, 1000)) {
+      if (workerAssignmentMatchesRef(assignment, boardRelPath(boardRoot, filePath))) return true;
+    }
+  }
+  return false;
 }
 
 export function runnerStateAssignmentRole(projectRoot: string, boardDirName: string, runnerId: string): string {

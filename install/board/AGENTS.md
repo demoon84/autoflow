@@ -37,8 +37,7 @@ autoflow skill 대화가 read-only 점검 후 PRD 발행
 - `tickets/prd/`: skill 대화가 발행한 PRD.
 - `tickets/todo/`: Planner가 만든 pending TODO.
 - `tickets/inprogress/`: Worker가 수행 중이거나 재개해야 하는 TODO.
-- `tickets/verifier/`: Verifier 검증 대상.
-- `tickets/done/<project-key>/`: 완료된 PRD/TODO/verifier/commit/merge evidence.
+- `tickets/done/<project-key>/`: 완료된 PRD/TODO/commit/merge evidence. (legacy `tickets/verifier/` 잔재는 upgrade 가 자동으로 `tickets/inprogress/` 로 이동시킨다.)
 - `runners/`: runner config와 runtime state.
 - `wiki/`: LLM Wiki markdown source.
 - `raw/`: 위키에 반영할 원본 source.

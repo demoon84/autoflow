@@ -21,6 +21,7 @@ import { stripTerminalControlSequences } from "./codex";
 import { runnerPromptFileSegment } from "./context-reset";
 import {
   canonicalWorkerRunnerId,
+  ensureWorkerAssignmentForPendingWorkSync,
   ensureWikiAssignmentForPendingWorkSync,
   inferRunnerRoleFromId,
   readRunnerConfigBlocks,
@@ -528,6 +529,7 @@ export function scheduleVerifierHandoffTurn(
 export function scheduleVerifierHandoffTurnsForScope(
   { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
 ): void {
+  if ((process.env.AUTOFLOW_VERIFIER_ENABLED || "0") !== "1") return;
   if (!verifierQueueChangeReasons(reasons)) return;
   if (listQueueFilesSync(boardRoot, "tickets/verifier", workItemQueueFilePattern, 1).length === 0) return;
   const verifierRunners = readRunnerConfigBlocks(projectRoot, boardDirName)
@@ -755,6 +757,7 @@ export function scheduleWorkerTodoHandoffTurn(
   const pendingTodos = listQueueFilesSync(boardRoot, "tickets/todo", workItemQueueFilePattern, 1000)
     .filter(workerTodoFileIsClaimableSync);
   if (pendingTodos.length === 0) return;
+  if (!ensureWorkerAssignmentForPendingWorkSync({ projectRoot, boardDirName, boardRoot, runnerId })) return;
 
   const fingerprint = workerTodoQueueFingerprint(boardRoot);
   const now = Date.now();
@@ -784,6 +787,7 @@ export function scheduleWorkerTodoHandoffTurn(
       const currentPending = listQueueFilesSync(boardRoot, "tickets/todo", workItemQueueFilePattern, 1000)
         .filter(workerTodoFileIsClaimableSync);
       if (currentPending.length === 0) { clearEntry(); return; }
+      if (!ensureWorkerAssignmentForPendingWorkSync({ projectRoot, boardDirName, boardRoot, runnerId })) { clearEntry(); return; }
       const idleMs = Number.isFinite(live.lastDataAt) && (live.lastDataAt || 0) > 0
         ? Date.now() - (live.lastDataAt || 0)
         : Number.POSITIVE_INFINITY;
@@ -955,6 +959,16 @@ export function scheduleWikiHandoffTurnsForScope(
       runnerId: runner.id, reason: (reasons || []).join(",")
     });
   }
+}
+
+export function scheduleAllHandoffTurnsForScope(
+  { projectRoot, boardDirName, boardRoot, reasons }: { projectRoot: string; boardDirName: string; boardRoot: string; reasons: unknown[] }
+): void {
+  scheduleWorkerVerifierDecisionTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons });
+  scheduleVerifierHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons });
+  schedulePlannerHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons });
+  scheduleWorkerTodoHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons });
+  scheduleWikiHandoffTurnsForScope({ projectRoot, boardDirName, boardRoot, reasons });
 }
 
 // 한 runner 의 모든 handoff turn 타이머와 dedup 기록을 정리한다.

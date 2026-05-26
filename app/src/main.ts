@@ -2534,17 +2534,8 @@ function countRunnerQueueStatus(runner: any, boardRoot: any) {
             };
         }
         if (role === "verifier") {
-            const pending = listQueueFilesSync(boardRoot, "tickets/verifier", workItemQueueFilePattern, 1000).length;
-            return pending > 0
-                ? {
-                    queueStatus: "claimable",
-                    queueStatusLabel: "검증 티켓 확인 대기",
-                    queueStatusDetail: `${pending}개 대기`,
-                    queueClaimableCount: pending,
-                    queueBlockedCount: 0,
-                    queuePendingCount: pending
-                }
-                : {...empty, queueStatusDetail: "검증 대기열 비어 있음"};
+            // legacy: verifier 러너는 기본 진행판에 노출되지 않는다. queue 카운트도 0으로 고정.
+            return {...empty, queueStatusDetail: "검증 러너 비활성 (legacy)"};
         }
         if (role === "planner" || role === "plan") {
             const pending = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000)
@@ -2839,8 +2830,8 @@ async function listTicketFolders(ticketsRoot: any) {
     }
 
     const entries = await fs.readdir(ticketsRoot, {withFileTypes: true});
-    const canonicalOrder = ["prd", "todo", "inprogress", "verifier", "done", "check"];
-    const ignoredLegacyFolders = new Set(["inbox", "backlog", "reject", "order"]);
+    const canonicalOrder = ["prd", "todo", "inprogress", "done", "check"];
+    const ignoredLegacyFolders = new Set(["inbox", "backlog", "reject", "order", "verifier"]);
     return entries
         .filter((entry) => entry.isDirectory())
         .filter((entry) => !ignoredLegacyFolders.has(entry.name))
@@ -3800,25 +3791,8 @@ async function enrichRunnerActiveTicketFromFs(runners: any, boardRoot: any) {
                 clearActiveTicket(runner);
             }
         } else if (runner.role === "verifier") {
-            const queuedByState = verifierTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
-            const queued = queuedByState || verifierTickets[0];
-            if (queued) {
-                await assignTicketToRunner(runner, queued, "verifying");
-                runner.activeStage = "verifying";
-                continue;
-            }
-            const byClaim = inprogressTickets.find((ticket) => runnerClaimsTicketFromMeta(runner, ticket.meta));
-            const byState = inprogressTickets.find((ticket) => (runner.activeTicketId || "") === ticket.id);
-            const blockedVerifierTicket = inprogressTickets.find((ticket) => {
-                const stage = String(ticket.meta?.stage || "").toLowerCase();
-                return stage === "verifying" || (stage === "blocked" && runnerClaimsTicketFromMeta(runner, ticket.meta));
-            });
-            const ticket = byClaim || byState || blockedVerifierTicket;
-            if (ticket) {
-                await assignTicketToRunner(runner, ticket, "verifying");
-            } else {
-                clearActiveTicket(runner);
-            }
+            // legacy: 검증 러너는 기본 진행판에서 active ticket 을 가지지 않는다.
+            clearActiveTicket(runner);
         } else if (runner.role === "planner") {
             const activePrdId = String(runner.activeTicketId || "");
             const activePlannerStage = String(runner.activeStage || "").toLowerCase();

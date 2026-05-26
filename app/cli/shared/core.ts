@@ -332,7 +332,7 @@ export function writeBoardCoreManifest(ctx: ProjectContext, options: {mode?: "in
         `updated_at = ${tomlString(now)}`,
         "",
         "[core]",
-        `ref = ${tomlString(existing.core.ref || "global")}`,
+        `ref = ${tomlString(resolved.ref || existing.core.ref || "global")}`,
         `required_core_version = ${tomlString(existing.core.required_core_version || packageVersion())}`,
         `last_resolved_root = ${tomlString(resolved.coreRoot)}`,
         `last_resolved_version = ${tomlString(resolved.version)}`,

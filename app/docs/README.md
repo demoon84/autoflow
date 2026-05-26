@@ -10,11 +10,11 @@ app/
   bootstrap/       Electron main bootstrap (tracked CJS -> TS source)
   cli/             autoflow CLI 구현
     autoflow.ts      실제 command router
-    runners/         planner/worker/verifier/wiki CLI surfaces
+    runners/         planner/worker/wiki (verifier 는 legacy 호환만) CLI surfaces
     system/          install/status/runners/tool 등 시스템 명령
     shared/          CLI 공통 헬퍼
   runtime/         runner 실행 코드 (BOARD_ROOT/PROJECT_ROOT env 만 받아 동작)
-    runners/         planner/worker/verifier/wiki 별 도구·시작·종료 흐름
+    runners/         planner/worker/wiki (verifier 는 legacy 호환만) 별 도구·시작·종료 흐름
     system/          board-guard, stop hook, stage/token
     shared/          공통 markdown/git/board/runner-tool 헬퍼
   src/             Electron 앱 본체
@@ -63,4 +63,4 @@ Electron은 `package.json`의 `main`으로 `app/bootstrap/main.cjs`를 읽는다
 
 ## 데스크톱 화면 1차
 
-프로젝트 루트 선택, `.autoflow/` 없으면 보드 설치, 마지막 업데이트/스냅샷, runner 목록·상태, runner agent/model/reasoning/codex_history/enabled/command 편집, PTY runner 출력 패널, live stdout/runtime/prompt/stderr artifact 열람, 상태 카운트·티켓 큐·로그·wiki·metrics history, ticket/log/wiki/metrics 검색·미리보기. runner start/stop/restart 는 UI 버튼으로 노출하지 않고 `autoflow runners start|stop|restart ...` CLI 제어 요청만 표준 surface로 둔다. 데스크톱 앱은 CLI가 보드 state에 쓴 요청을 감지해 같은 PTY runner spawn/stop 경로를 실행한다. 데스크톱 PTY는 내부적으로 project root + board dir + runner id 로 scope 를 나누지만, 보드 state/log/runner output은 계속 `planner`, `worker`, `verifier`, `wiki` 같은 public runner id 를 쓴다. 자세한 동작은 [../src/main.ts](../src/main.ts) 와 [../src/renderer/main.tsx](../src/renderer/main.tsx) 참고.
+프로젝트 루트 선택, `.autoflow/` 없으면 보드 설치, 마지막 업데이트/스냅샷, runner 목록·상태, runner agent/model/reasoning/codex_history/enabled/command 편집, PTY runner 출력 패널, live stdout/runtime/prompt/stderr artifact 열람, 상태 카운트·티켓 큐·로그·wiki·metrics history, ticket/log/wiki/metrics 검색·미리보기. runner start/stop/restart 는 UI 버튼으로 노출하지 않고 `autoflow runners start|stop|restart ...` CLI 제어 요청만 표준 surface로 둔다. 데스크톱 앱은 CLI가 보드 state에 쓴 요청을 감지해 같은 PTY runner spawn/stop 경로를 실행한다. 데스크톱 PTY는 내부적으로 project root + board dir + runner id 로 scope 를 나누지만, 보드 state/log/runner output은 계속 `planner`, `worker`, `wiki` 같은 public runner id (verifier id 는 legacy 호환) 를 쓴다. 자세한 동작은 [../src/main.ts](../src/main.ts) 와 [../src/renderer/main.tsx](../src/renderer/main.tsx) 참고.

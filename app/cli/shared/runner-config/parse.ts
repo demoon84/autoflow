@@ -56,7 +56,7 @@ function parseRunnerConfigSection(
     return item;
 }
 
-function parseRunnerConfigText(text: string): Array<Record<string, string>> {
+export function parseRunnerConfigText(text: string): Array<Record<string, string>> {
     const items: Array<Record<string, string>> = [];
     let current: {tableId: string; lines: string[]} | null = null;
     const flush = () => {

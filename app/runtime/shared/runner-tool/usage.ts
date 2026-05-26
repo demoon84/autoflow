@@ -21,16 +21,12 @@ export function usage(): void {
   autoflow tool runner-tool worker done-when-check --ticket <work-item-id|path>
   autoflow tool runner-tool worker diff-check --ticket <work-item-id|path>
   autoflow tool runner-tool worker code-report --ticket <work-item-id|path> [--runner <id>]
-  autoflow tool runner-tool worker submit-to-verifier --ticket <work-item-id|path> --summary <text>
   autoflow tool runner-tool worker finalize-approved --ticket <work-item-id|path> --summary <text>
+  autoflow tool runner-tool worker submit-to-verifier --ticket <work-item-id|path> --summary <text>   # 호환 alias: 기본 환경에서는 finalize-approved 와 동일한 단일 마무리 흐름 (sanity gate + merge target verification rerun)을 실행한다.
   autoflow tool runner-tool worker request-replan --ticket <work-item-id|path> --reason <text>
 
-  autoflow tool runner-tool verifier queue-snapshot [--runner <id>]
-  autoflow tool runner-tool verifier evidence --ticket <work-item-id|path> [--patch-bytes <n>]
-  autoflow tool runner-tool verifier decision-record --ticket <work-item-id|path> --decision <pass|revise|replan> --reason <text> [--runner <id>]
-  autoflow tool runner-tool verifier pass --ticket <work-item-id|path> --summary <text> [--runner <id>]
-  autoflow tool runner-tool verifier request-revision --ticket <work-item-id|path> --reason <text> [--runner <id>]
-  autoflow tool runner-tool verifier request-replan --ticket <work-item-id|path> --reason <text> [--runner <id>]
+  # verifier 그룹은 legacy 입니다. 기본 흐름에서 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리합니다.
+  # 기존 prompt 호환을 위해 dispatch 만 남아있고, 사용자-facing 활성 역할로는 노출하지 않습니다.
 
   autoflow tool runner-tool wiki source-snapshot [--runner <id>] [--max-items <n>]
   autoflow tool runner-tool wiki tick [--runner <id>] [--max-items <n>] [--window 7d|30d|all] [--skip-telemetry] [--skip-lint] [--force-index] [--wait-index] [--no-index] [--no-tickets] [--verbose]
@@ -42,6 +38,6 @@ export function usage(): void {
   autoflow tool runner-tool wiki write-page --path wiki/<path>.md --content-file <file> [--overwrite]
   autoflow tool runner-tool wiki diff-snapshot
 
-출력은 JSON입니다. Runner tool은 scope, Done When, work 선택을 추론하지 않습니다. runner assignment가 있으면 요청 item과 맞아야 하며, 없으면 4개 고정 러너가 해당 role의 대기열에서 하나만 선택해 실행합니다.
+출력은 JSON입니다. Runner tool은 scope, Done When, work 선택을 추론하지 않습니다. runner assignment가 있으면 요청 item과 맞아야 하며, 없으면 3개 고정 러너(planner/worker/wiki)가 해당 role의 대기열에서 하나만 선택해 실행합니다.
 `);
 }

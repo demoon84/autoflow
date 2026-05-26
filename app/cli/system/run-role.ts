@@ -15,9 +15,11 @@ function normalizeRunRole(role: string): string {
 const knownRunRoles = new Set([
     "planner",
     "worker",
-    "verifier",
     "wiki",
     "spec",
+]);
+const legacyDisabledRunRoles = new Set([
+    "verifier",
 ]);
 
 export function runRole(args: string[]): never | void {
@@ -26,6 +28,9 @@ export function runRole(args: string[]): never | void {
         fail("Usage: autoflow run <role> [project-root] [board-dir-name]");
     }
     const role = normalizeRunRole(requestedRole);
+    if (legacyDisabledRunRoles.has(role)) {
+        fail(`Run role '${role}' is legacy and no longer active. Worker finalize-approved now performs the single-finish flow without a verifier handoff.`);
+    }
     if (!knownRunRoles.has(role)) {
         fail(`Unknown run role: ${role}`);
     }
@@ -62,9 +67,6 @@ export function runRole(args: string[]): never | void {
             break;
         case "worker":
             runRuntimeScript(ctx, "runners/worker/start/index.ts", [], runnerEnv);
-            break;
-        case "verifier":
-            runRuntimeScript(ctx, "runners/verifier/start.ts", [], runnerEnv);
             break;
         case "wiki":
             wikiProject(["update", ctx.projectRoot, ctx.boardDirName]);

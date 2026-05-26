@@ -90,6 +90,23 @@ export function isReadyWorktree(result: JsonObject): boolean {
     Boolean(result.working_root);
 }
 
+export function worktreeStatusIsSetupBlocker(status: string): boolean {
+  return [
+    "pending",
+    "pending_claim",
+    "worktree_missing",
+    "blocked_recovery_missing_worktree",
+    "blocked_worktree_setup_failed",
+    "blocked_prd_branch_missing",
+    "blocked_prd_worktree_unavailable",
+    "blocked_no_prd_branch",
+    "not_git_repo",
+    "no_head_commit",
+    "disabled",
+    "project_root_fallback",
+  ].includes(String(status || "").toLowerCase());
+}
+
 export function acquireDispatchLock(options: { waitMs?: number; pollMs?: number } = {}): { acquired: boolean; path: string; pid: number } {
   const lockDir = path.join(BOARD_ROOT, "runners", "state", "dispatch.lock");
   const pidFile = path.join(lockDir, "pid");
@@ -257,17 +274,7 @@ export function ensureWorkerTicketWorktree(ticket: string): JsonObject {
   const existingBase = stripTicks(utils.extractScalarFieldInSection(ticket, "Worktree", "Base Commit"));
   const existingCommit = stripTicks(utils.extractScalarFieldInSection(ticket, "Worktree", "Worktree Commit"));
   let integrationStatus = utils.extractScalarFieldInSection(ticket, "Worktree", "Integration Status") || "pending";
-  if ([
-    "pending",
-    "pending_claim",
-    "worktree_missing",
-    "blocked_recovery_missing_worktree",
-    "blocked_worktree_setup_failed",
-    "not_git_repo",
-    "no_head_commit",
-    "disabled",
-    "project_root_fallback",
-  ].includes(integrationStatus)) {
+  if (worktreeStatusIsSetupBlocker(integrationStatus)) {
     integrationStatus = "ready";
   }
   replaceSectionBlock(
@@ -457,6 +464,30 @@ export function gitBranchExists(cwd: string, branch: string): boolean {
   return git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], cwd).status === 0;
 }
 
+function unsetWorktreeValue(raw: string): boolean {
+  const value = stripTicks(raw).trim();
+  return !value || /^(TBD|TODO:?|N\/A|NA|NONE|null|undefined)$/i.test(value);
+}
+
+function defaultPrdBranchName(prdId: string): string {
+  return `autoflow/prd-${prdId}`;
+}
+
+function autoCreatablePrdBranch(branch: string, prdId: string): boolean {
+  const normalized = String(branch || "").trim();
+  return normalized === defaultPrdBranchName(prdId) ||
+    new RegExp(`^autoflow/prd-${escapeRe(prdId)}$`, "i").test(normalized);
+}
+
+function commitShaOrFallback(gitRoot: string, commitish: string, fallbackHead: string): string {
+  const raw = stripTicks(commitish);
+  if (!unsetWorktreeValue(raw)) {
+    const sha = git(["rev-parse", "--verify", `${raw}^{commit}`], gitRoot).stdout.trim();
+    if (sha) return sha;
+  }
+  return fallbackHead;
+}
+
 function checkedOutWorktreePathForBranch(gitRoot: string, branch: string): string {
   let current = "";
   for (const line of git(["worktree", "list", "--porcelain"], gitRoot).stdout.split(/\r?\n/)) {
@@ -480,10 +511,24 @@ export function resolvePrdTrackBase(
   if (!prdId) return { base: fallbackHead, branch: "", source: "main" };
   const prdFile = locatePrdFile(prdId);
   if (!prdFile) return { base: fallbackHead, branch: "", source: "main" };
-  const branch = stripTicks(utils.extractScalarFieldInSection(prdFile, "Project", "Branch"));
-  if (!branch) return { base: fallbackHead, branch: "", source: "main" };
+  const rawBranch = stripTicks(utils.extractScalarFieldInSection(prdFile, "Project", "Branch"));
+  const branchWasUnset = unsetWorktreeValue(rawBranch);
+  const branch = branchWasUnset ? defaultPrdBranchName(prdId) : rawBranch;
   if (!gitBranchExists(gitRoot, branch)) {
-    return { base: fallbackHead, branch: "", source: "main_branch_missing" };
+    if (!branchWasUnset && !autoCreatablePrdBranch(branch, prdId)) {
+      return { base: fallbackHead, branch, source: "main_branch_missing" };
+    }
+    const base = commitShaOrFallback(gitRoot, utils.extractScalarFieldInSection(prdFile, "Project", "Base Commit"), fallbackHead);
+    const created = git(["branch", branch, base], gitRoot);
+    if (created.status !== 0) {
+      return { base: fallbackHead, branch, source: "main_branch_missing" };
+    }
+    utils.replaceScalarFieldInSection(prdFile, "Project", "Branch", branch);
+    utils.replaceScalarFieldInSection(prdFile, "Project", "Base Commit", base);
+  } else if (branchWasUnset) {
+    utils.replaceScalarFieldInSection(prdFile, "Project", "Branch", branch);
+    const base = commitShaOrFallback(gitRoot, utils.extractScalarFieldInSection(prdFile, "Project", "Base Commit"), fallbackHead);
+    utils.replaceScalarFieldInSection(prdFile, "Project", "Base Commit", base);
   }
   const sha = git(["rev-parse", "--verify", branch], gitRoot).stdout.trim();
   if (!sha) return { base: fallbackHead, branch: "", source: "main" };

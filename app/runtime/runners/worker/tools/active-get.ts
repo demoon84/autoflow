@@ -40,6 +40,7 @@ const {
   releaseDispatchLock,
   readWorktreeStatus,
   ensureWorkerTicketWorktree,
+  worktreeStatusIsSetupBlocker,
   worktreeModeDisabled,
   defaultTicketWorktreePath,
   isGitWorktree,
@@ -152,6 +153,7 @@ function compactWorkerSource(item: WorkerTicketItem): JsonObject {
 
 function workerFollowupReason(active?: WorkerTicketItem): string {
   if (!active) return "no_owned_inprogress_ticket";
+  if (workerWorktreeSetupStillBlocked(active)) return "worker_ticket_blocked_waiting_for_prd_worktree";
   const stage = (active.stage || "").toLowerCase();
   const decision = (active.semantic_decision || "").toLowerCase();
   if (stage === "blocked") return "worker_ticket_blocked";
@@ -192,6 +194,9 @@ function workerNextAction(active?: WorkerTicketItem): string {
   if (reason === "worker_ticket_blocked") {
     return "perform_one_runner_owned_blocked_handling_pass_before_idle";
   }
+  if (reason === "worker_ticket_blocked_waiting_for_prd_worktree") {
+    return "idle_until_prd_worktree_or_branch_is_repaired";
+  }
   return "resume_owned_inprogress_ticket";
 }
 
@@ -212,6 +217,9 @@ function workerNextActionInstruction(active?: WorkerTicketItem): string {
   if (reason === "worker_ticket_blocked") {
     return "Do one runner-owned blocked-handling pass before any idle decision.";
   }
+  if (reason === "worker_ticket_blocked_waiting_for_prd_worktree") {
+    return "The ticket is still blocked by PRD worktree/branch setup after a worker worktree-ensure attempt. Summarize the blocker and idle; do not retry the same tool until the PRD branch/worktree changes.";
+  }
   if (active) {
     return "Inspect only the scoped ticket/worktree and continue the owned ticket. Do not run work-snapshot for another assignment while this active ticket exists.";
   }
@@ -220,6 +228,13 @@ function workerNextActionInstruction(active?: WorkerTicketItem): string {
 
 function readText(file: string): string {
   try { return fs.readFileSync(file, "utf8"); } catch { return ""; }
+}
+
+function workerWorktreeSetupStillBlocked(active?: WorkerTicketItem): boolean {
+  if (!active || String(active.stage || "").toLowerCase() !== "blocked") return false;
+  if (!worktreeStatusIsSetupBlocker(active.worktree_status || "")) return false;
+  const activePath = resolveBoardPath(active.path);
+  return /reason=worktree_setup_still_blocked/.test(readText(activePath));
 }
 
 function writeText(file: string, text: string): void {
@@ -610,7 +625,10 @@ export function cmdWorkerActiveGet(): void {
   const noOwnedNextAction = "run worker.work-snapshot before idling";
   const followupReason = workerFollowupReason(active);
   const nextAction = workerNextAction(active);
-  const terminal = followupReason === "worker_ticket_waiting_for_verifier" || followupReason === "verifier_passed_worker_finalization_pending";
+  const blockedSetupTerminal = followupReason === "worker_ticket_blocked_waiting_for_prd_worktree";
+  const terminal = blockedSetupTerminal ||
+    followupReason === "worker_ticket_waiting_for_verifier" ||
+    followupReason === "verifier_passed_worker_finalization_pending";
   const mustContinue = Boolean(active && !terminal);
   ok({
     tool: "worker.active-get",
@@ -637,7 +655,7 @@ export function cmdWorkerActiveGet(): void {
     idle_allowed: !active || terminal,
     active_get_terminal: terminal,
     no_owned_ticket_instruction: active ? "" : noOwnedNextAction,
-    ai_followup_recommended: Boolean(active),
+    ai_followup_recommended: Boolean(active && !blockedSetupTerminal),
     ai_followup_reason: followupReason,
     ai_followup_scope: {
       inspect_only_recent_sources: scopedSources,

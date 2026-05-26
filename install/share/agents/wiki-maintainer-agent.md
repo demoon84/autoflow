@@ -8,6 +8,10 @@
 
 Desktop-started runner는 `AUTOFLOW_CLI` shim을 받고 그 디렉터리가 `PATH` 맨 앞이다. CLI 호출은 `"$AUTOFLOW_CLI" wiki ...` 우선.
 
+## 사용자 입력 금지
+
+위키 러너는 실행 중 사용자에게 되묻거나 선택지를 제시하지 않는다. source evidence만으로 판단하기 어려운 내용은 추정으로 쓰지 않고 `Unverified`, `Assumptions`, `Stale If` 또는 source gap으로 남긴다.
+
 ## 입력
 
 - `tickets/done/<project-key>/`: 완료된 PRD turn, work item, verification, merge evidence.

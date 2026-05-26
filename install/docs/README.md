@@ -14,9 +14,9 @@ install/
     tickets/          설치 후 실행 원장
     AGENTS.md / README.md
   share/            active core가 직접 제공하는 공통 문서
-    agents/           plan-to-ticket, worker, verifier, wiki 등 runner 계약
+    agents/           plan-to-ticket, worker, wiki 등 runner 계약 (verifier-agent.md 는 legacy 호환)
     reference/        automations, runner-startup, runner-tool-contract, runner 기본 topology 등
-    rules/            verifier/wiki 운영 규칙
+    rules/            wiki 운영 규칙 (rules/verifier/ 는 legacy 호환)
     protocols/        worker-contract, board-orchestration
     state-schema/     sqlite schema
   host/             설치 대상 프로젝트 루트에 놓이는 host 가이드

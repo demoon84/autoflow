@@ -2,6 +2,7 @@ import type {JsonObject} from "./context";
 import {
     BOARD_ROOT,
     PROJECT_ROOT,
+    TICKETS_ROOT,
     SCRIPT_DIR,
     currentRunnerId,
     fail,
@@ -47,7 +48,7 @@ export interface AssignmentCheck {
 }
 
 const activeAssignmentStatuses = new Set<AssignmentStatus>(["leased", "running"]);
-const fixedRunnerRoles = new Set(["planner", "worker", "verifier", "wiki"]);
+const fixedRunnerRoles = new Set(["planner", "worker", "wiki"]);
 
 function assignmentSafeSegment(raw: string): string {
     return String(raw || "").trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -133,6 +134,56 @@ function readAssignmentForRunner(runnerId: string, role: string): AssignmentReco
     } catch {
         return null;
     }
+}
+
+const workItemFilenamePattern = /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i;
+
+function collectWorkerAssignmentItems(root: string, recursive = false): string[] {
+    const out: string[] = [];
+    const visit = (dir: string): void => {
+        let entries: fs.Dirent[] = [];
+        try {
+            entries = fs.readdirSync(dir, {withFileTypes: true});
+        } catch {
+            return;
+        }
+        for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (recursive) visit(full);
+                continue;
+            }
+            if (entry.isFile() && workItemFilenamePattern.test(entry.name)) out.push(full);
+        }
+    };
+    visit(root);
+    return out.sort((left, right) => left.localeCompare(right));
+}
+
+function workerAssignmentMatchesQueue(record: AssignmentRecord, queue: "todo" | "inprogress" | "verifier" | "done"): boolean {
+    const root = path.join(TICKETS_ROOT, queue);
+    const recursive = queue === "done";
+    return collectWorkerAssignmentItems(root, recursive).some((candidate) => assignmentMatchesItem(record, candidate));
+}
+
+function workerAssignmentHasOpenItem(record: AssignmentRecord): boolean {
+    return workerAssignmentMatchesQueue(record, "todo") ||
+        workerAssignmentMatchesQueue(record, "inprogress") ||
+        workerAssignmentMatchesQueue(record, "verifier");
+}
+
+function completeStaleWorkerAssignment(record: AssignmentRecord): AssignmentRecord {
+    if (normalizeAssignmentRole(record.role) !== "worker") return record;
+    if (!activeAssignmentStatuses.has(record.status)) return record;
+    if (!record.assigned_item_ref || workerAssignmentHasOpenItem(record)) return record;
+    const done = workerAssignmentMatchesQueue(record, "done");
+    return completeRoleAssignment(
+        record,
+        done
+            ? `worker assignment item already completed: ${record.assigned_item_ref}`
+            : `worker assignment item is no longer active: ${record.assigned_item_ref}`,
+        done ? "completed" : "released"
+    );
 }
 
 function assignmentLifecycleEnv(): NodeJS.ProcessEnv {
@@ -280,7 +331,7 @@ export function readRoleAssignment(role: string, fallbackRunnerId = ""): Assignm
     const normalizedRole = normalizeAssignmentRole(role);
     const runnerId = currentAssignmentRunnerId(fallbackRunnerId || runnerIdForRole(normalizedRole));
     if (!runnerId) return {ok: false, reason: "assignment_runner_required", runner_id: "", assignment: null};
-    const record = readAssignmentForRunner(runnerId, normalizedRole);
+    let record = readAssignmentForRunner(runnerId, normalizedRole);
     if (!record) {
         if (fixedRunnerModeAllowsMissingAssignment(normalizedRole, runnerId)) {
             return {ok: true, reason: "fixed_runner_no_assignment", runner_id: runnerId, assignment: null};
@@ -290,7 +341,11 @@ export function readRoleAssignment(role: string, fallbackRunnerId = ""): Assignm
     if (normalizeAssignmentRole(record.role) !== normalizedRole) {
         return {ok: false, reason: "assignment_role_mismatch", runner_id: runnerId, assignment: record};
     }
+    record = completeStaleWorkerAssignment(record);
     if (!activeAssignmentStatuses.has(record.status)) {
+        if (fixedRunnerModeAllowsMissingAssignment(normalizedRole, runnerId)) {
+            return {ok: true, reason: "fixed_runner_no_assignment", runner_id: runnerId, assignment: null};
+        }
         return {ok: false, reason: "assignment_not_active", runner_id: runnerId, assignment: record};
     }
     return {ok: true, reason: "", runner_id: runnerId, assignment: record};
