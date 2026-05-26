@@ -6,9 +6,8 @@
 
 - Autoflow는 skill이다.
 - 데스크탑 앱은 skill과 runner를 실행하는 sidecar다.
-- `autoflow` skill은 goal 기능을 사용해 사용자 목표를 완료한다.
-- Skill 대화는 프로젝트 현재 구현 상태와 LLM Wiki를 참고해 PRD를 하나 이상 발행한다.
-- Skill 대화는 구현, 검증, PRD worktree commit/merge, 위키 작성을 직접 하지 않는다.
+- `autoflow` skill 대화는 프로젝트 현재 구현 상태와 LLM Wiki를 read-only로 점검한 뒤 PRD를 하나 이상 발행한다.
+- Skill 대화는 구현, 검증, PRD branch/worktree 생성, commit/merge, 위키 작성을 직접 하지 않는다.
 - Desktop sidecar는 보드 상태를 실시간 감지하고 4개 고정 러너를 표시한다.
 
 ## 4개 Runner
@@ -23,16 +22,14 @@
 ## 흐름
 
 ```text
-goal active
-  -> autoflow skill이 PRD 발행
+autoflow skill 대화가 read-only 점검 후 PRD 발행
   -> Planner가 PRD 기준 TODO 생성
   -> Worker가 배정 TODO 수행
   -> Worker가 Verifier에게 검증 요청
   -> Verifier가 pass | revise | replan 기록
   -> pass면 Worker가 PRD worktree commit 반영
   -> PRD의 모든 TODO 완료 시 마지막 Worker가 PRD worktree merge
-  -> autoflow skill이 goal 기준 부족분 확인
-  -> PRD 추가 발행 또는 goal complete
+  -> 추가 작업이 필요하면 skill 대화가 새 PRD 발행
 ```
 
 ## 디렉터리
@@ -58,4 +55,3 @@ goal active
 6. Verifier 실패 시 Worker는 Verifier 후속조치에 따른다.
 7. PRD의 모든 TODO가 완료되면 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
 8. LLM Wiki 작성은 deferred maintenance다.
-9. Goal complete는 최초 목표가 보드 evidence로 충족될 때만 수행한다.

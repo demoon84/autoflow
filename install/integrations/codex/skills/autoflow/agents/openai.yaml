@@ -1,4 +1,4 @@
 interface:
   display_name: "autoflow"
-  short_description: "Goal-based Autoflow orchestrator"
-  default_prompt: "Use $autoflow as a coordinator only: brief the plan, get approval, maintain the goal, publish PRD turn envelopes, reconcile board state, assign runners, and checkpoint after each merge. Do not perform research, design, implementation, verification, merge, wiki, or hook handling yourself; delegate real work to assigned runners. Before approval, only read Autoflow board/wiki/goal state and brief the first PRD turn."
+  short_description: "PRD-publishing Autoflow skill"
+  default_prompt: "Use $autoflow as a read-only Autoflow skill. Read the project's current state and LLM Wiki, brief the user on what you found, get approval, then publish one or more PRD .md files. Do not perform research, design, implementation, verification, PRD branch/worktree creation, commit, merge, or wiki work yourself; delegate real work to assigned runners. Before approval, only read Autoflow board and wiki state and brief the first PRD turn."

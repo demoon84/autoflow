@@ -5,27 +5,24 @@
 ## 핵심 계약
 
 1. `autoflow`는 사용자-facing skill이다.
-2. `autoflow` skill은 goal 기능을 사용해 사용자 목표를 유지하고 완료한다.
-3. Skill 대화의 주된 역할은 프로젝트 현재 구현 상태와 LLM Wiki를 read-only로 참고해 PRD를 하나 이상 발행하는 것이다.
-4. Skill 대화는 구현, 검증, PRD worktree commit/merge, 위키 작성을 직접 하지 않는다.
-5. Autoflow 스킬은 PRD `.md`만 발행하고, PRD branch/worktree 생성은 플래너 러너의 책임이다.
-6. 데스크탑 sidecar는 보드 상태를 실시간 감지하고 4개 고정 러너를 실행/표시한다.
-7. Runner는 `Planner`, `Worker`, `Verifier`, `LLM Wiki` 네 개다.
-8. `Merge` runner는 없다.
+2. `autoflow` skill 대화는 프로젝트 현재 구현 상태와 LLM Wiki를 read-only로 점검한 뒤 사용자에게 브리핑하고, 승인 시 PRD를 하나 이상 발행한다.
+3. Skill 대화는 PRD `.md` 발행까지만 수행한다. 구현, 검증, PRD branch/worktree 생성, commit/merge, 위키 작성은 직접 하지 않는다.
+4. PRD branch/worktree 생성은 플래너 러너의 책임이다.
+5. 데스크탑 sidecar는 보드 상태를 실시간 감지하고 4개 고정 러너를 실행/표시한다.
+6. Runner는 `Planner`, `Worker`, `Verifier`, `LLM Wiki` 네 개다.
+7. `Merge` runner는 없다.
 
 ## Autoflow Flow
 
 ```text
-goal active
-  -> autoflow skill이 PRD 발행
+autoflow skill 대화가 read-only 점검 후 PRD 발행
   -> Planner가 PRD 기준 TODO 생성
   -> Worker가 배정 TODO 수행
   -> Worker가 Verifier에게 검증 요청
   -> Verifier가 pass | revise | replan 기록
   -> pass면 Worker가 PRD worktree commit 반영
   -> PRD의 모든 TODO 완료 시 마지막 Worker가 PRD worktree merge
-  -> autoflow skill이 goal 기준 부족분 확인
-  -> PRD 추가 발행 또는 goal complete
+  -> 추가 작업이 필요하면 skill 대화가 새 PRD를 발행
 ```
 
 ## Runner 책임
@@ -37,18 +34,13 @@ goal active
 
 ## Wiki
 
-LLM Wiki는 skill 대화가 PRD를 발행할 때 참고하는 read-only memory다. 위키 작성은 PRD 완료나 goal 완료를 막지 않는다.
-
-## Goal 완료
-
-Goal complete는 최초 목표의 완료 조건이 PRD/TODO/verifier/commit/merge evidence로 덮였고, active critical work가 없을 때만 수행한다. 부족분이 있으면 skill 대화가 PRD를 추가 발행한다.
+LLM Wiki는 skill 대화가 PRD를 발행할 때 참고하는 read-only memory다. 위키 작성은 PRD 완료를 막지 않는다.
 
 ## Trigger
 
-- `#autoflow` / `/autoflow` / `$autoflow`: goal 기반 Autoflow skill을 시작한다.
-- 승인 전에는 goal/board/LLM Wiki 상태만 read-only로 확인한다.
-- 승인 뒤 첫 mutating action은 goal 활성화다.
-- goal 기능을 실제로 사용할 수 없으면 goal이 켜졌다고 말하지 않는다.
+- `#autoflow` / `/autoflow` / `$autoflow`: Autoflow skill 대화를 시작한다.
+- 승인 전에는 프로젝트 상태와 LLM Wiki만 read-only로 확인한다.
+- 승인 뒤 첫 mutating action은 PRD `.md` 발행이다.
 
 ## 경로
 

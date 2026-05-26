@@ -69,6 +69,7 @@ function hostGuidanceStaleMatches(text: string): string[] {
         ["legacy-4-runner-flow", /\b4-runner\b|기본\s*4[- ]runner/i],
         ["legacy-db-wiki", /\bwiki-search\.db\b|DB-only|wiki_chunks/i],
         ["legacy-work-lane", /\btickets\/work\/|Work ticket|work ticket/i],
+        ["legacy-goal-trigger", /\b(?:create_goal|update_goal|get_goal)\b|(?:^|[^A-Za-z0-9_])\/goal\b|Goal Acceptance|goal complete|goal 기능|goal 활성화/i],
     ];
     return checks.filter(([, pattern]) => pattern.test(text)).map(([id]) => id);
 }
