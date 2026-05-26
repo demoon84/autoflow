@@ -182,15 +182,83 @@ function writeState(runner: string, content: string): boolean {
   catch (err: any) { warn(`state write failed: ${err && err.message}`); return false; }
 }
 
-function appendTokenHistory(
+type TokenHistoryEntry = {
+  at: string;
+  tickId?: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheCreate: number;
+};
+
+// tickId 가 비어 있는 legacy/외부 entry 와의 중복도 막기 위해 (at + 사용량 tuple)
+// 기반 fallback 키를 함께 만든다. 같은 turn 의 record 는 이 키가 일치한다.
+function tokenHistoryFallbackKey(entry: TokenHistoryEntry): string {
+  return `at:${entry.at}|in:${entry.input}|out:${entry.output}|cr:${entry.cacheRead}|cc:${entry.cacheCreate}`;
+}
+
+function tokenHistoryKeysFor(entry: TokenHistoryEntry): string[] {
+  const keys: string[] = [];
+  const tickId = String(entry.tickId || "").trim();
+  if (tickId) keys.push(`tick:${tickId}`);
+  keys.push(tokenHistoryFallbackKey(entry));
+  return keys;
+}
+
+function readTokenHistoryKeys(runner: string): Set<string> {
+  const set = new Set<string>();
+  let text = "";
+  try { text = fs.readFileSync(tokenHistoryPath(runner), "utf8"); } catch { return set; }
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(trimmed); } catch { continue; }
+    if (!parsed || typeof parsed !== "object") continue;
+    const entry: TokenHistoryEntry = {
+      at: String(parsed.at || ""),
+      tickId: String(parsed.tickId || parsed.tick_id || ""),
+      input: parseInt0(parsed.input),
+      output: parseInt0(parsed.output),
+      cacheRead: parseInt0(parsed.cacheRead ?? parsed.cache_read),
+      cacheCreate: parseInt0(parsed.cacheCreate ?? parsed.cache_create),
+    };
+    for (const key of tokenHistoryKeysFor(entry)) set.add(key);
+  }
+  return set;
+}
+
+function appendTokenHistoryEntries(
   runner: string,
-  entry: { at: string; input: number; output: number; cacheRead: number; cacheCreate: number },
-): void {
+  entries: TokenHistoryEntry[],
+  knownKeys: Set<string>,
+): number {
+  if (entries.length === 0) return 0;
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (!entry.at) continue;
+    const keys = tokenHistoryKeysFor(entry);
+    if (keys.some((key) => knownKeys.has(key))) continue;
+    for (const key of keys) knownKeys.add(key);
+    // 기존 reader 호환을 위해 표준 필드 순서를 유지하고 tickId 는 추가 필드로만 둔다.
+    const out: TokenHistoryEntry = {
+      at: entry.at,
+      input: entry.input,
+      output: entry.output,
+      cacheRead: entry.cacheRead,
+      cacheCreate: entry.cacheCreate,
+    };
+    if (entry.tickId) out.tickId = entry.tickId;
+    lines.push(JSON.stringify(out));
+  }
+  if (lines.length === 0) return 0;
   try {
-    fs.appendFileSync(tokenHistoryPath(runner), JSON.stringify(entry) + "\n", "utf8");
+    fs.appendFileSync(tokenHistoryPath(runner), lines.join("\n") + "\n", "utf8");
   } catch (err: any) {
     warn(`token history append failed: ${err?.message || err}`);
+    return 0;
   }
+  return lines.length;
 }
 
 function pruneTokenHistoryIfLarge(runner: string, nowMs: number): void {
@@ -673,7 +741,12 @@ export function reportCore(runner: string, opts: ReportOpts): { ok: boolean; mes
 
     let message = "";
     if (writeState(runner, serializeStateLines(map))) {
-      appendTokenHistory(runner, { at, input: inputT, output: outputT, cacheRead: cacheR, cacheCreate: cacheC });
+      const reportHistoryKeys = readTokenHistoryKeys(runner);
+      appendTokenHistoryEntries(
+        runner,
+        [{ at, tickId, input: inputT, output: outputT, cacheRead: cacheR, cacheCreate: cacheC }],
+        reportHistoryKeys,
+      );
       pruneTokenHistoryIfLarge(runner, Number.isFinite(atMs) ? atMs : Date.now());
       message = `[runner-tokens] ${runner}: +${visible} (total=${turnTotal}, cum=${newVisible})\n`;
     }
@@ -725,6 +798,32 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
     const cursorAll = loadSessionCursor(runner);
     const agent = String(map.get("agent") || "").toLowerCase();
     const emptyTicks = new Set<string>();
+    const knownHistoryKeys = readTokenHistoryKeys(runner);
+    const nowMs = Date.now();
+    const backfillAfterMs = Math.max(0, nowMs - 24 * 60 * 60 * 1000);
+    // backfill 은 이미 cumulative 에 반영된 turn 중 history 파일에서 빠진 항목만
+    // 보강한다. session 파일 cursor 를 건드리지 않도록 별도 cursor 객체와
+    // useCursor=false 로 24시간 범위를 다시 스캔한다.
+    if (afterMs > backfillAfterMs) {
+      const backfillCursor: SessionCursorAll = {};
+      const backfillTicks = new Set<string>();
+      const backfillEntries = [
+        ...(agent === "codex"  ? scopedCodexSessionTokenEntries(runner, map, backfillTicks, backfillAfterMs, backfillCursor, false) : []),
+        ...(agent === "claude" ? scopedClaudeSessionTokenEntries(runner, projectRoot, map, backfillTicks, backfillAfterMs, backfillCursor, false) : []),
+      ].filter((entry) => entry.atMs <= afterMs);
+      appendTokenHistoryEntries(
+        runner,
+        backfillEntries.map((entry) => ({
+          at: entry.at,
+          tickId: entry.tickId,
+          input: entry.input,
+          output: entry.output,
+          cacheRead: entry.cacheRead,
+          cacheCreate: entry.cacheCreate,
+        })),
+        knownHistoryKeys,
+      );
+    }
     const entries = [
       ...(agent === "codex"  ? scopedCodexSessionTokenEntries(runner, map, emptyTicks, afterMs, cursorAll) : []),
       ...(agent === "claude" ? scopedClaudeSessionTokenEntries(runner, projectRoot, map, emptyTicks, afterMs, cursorAll) : []),
@@ -774,6 +873,19 @@ export function importSessionTokenUsageCore(runner: string): ImportSessionResult
     map.set("last_token_usage_source", "llm_reported");
     map.set("updated_at", NOW());
     writeState(runner, serializeStateLines(map));
+    appendTokenHistoryEntries(
+      runner,
+      entries.map((entry) => ({
+        at: entry.at,
+        tickId: entry.tickId,
+        input: entry.input,
+        output: entry.output,
+        cacheRead: entry.cacheRead,
+        cacheCreate: entry.cacheCreate,
+      })),
+      knownHistoryKeys,
+    );
+    pruneTokenHistoryIfLarge(runner, nowMs);
     return { imported: entries.length, cumulative, cumulativeVisible, cumulativeRequests, last };
   });
 
