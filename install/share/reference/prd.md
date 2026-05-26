@@ -16,6 +16,6 @@
 - PRD 하나는 Planner가 여러 TODO로 나눌 수 있다.
 - 여러 TODO가 필요하면 PRD에 `## Work Item Split`을 둔다.
 - Worker는 PRD queue item을 직접 처리하지 않고 Planner가 만든 TODO를 수행한다.
-- PRD 완료는 해당 PRD의 TODO가 모두 verifier pass 이후 commit되고, 마지막 TODO를 처리한 Worker가 PRD worktree merge evidence를 남긴 상태다.
+- PRD 완료는 해당 PRD의 TODO가 모두 로컬 검증과 finalize gate 이후 commit되고, 마지막 TODO를 처리한 Worker가 PRD worktree merge evidence를 남긴 상태다.
 - PRD 완료 뒤 skill 대화는 goal 기준 부족분을 확인하고 필요하면 PRD를 추가 발행한다.
 - LLM Wiki 작성은 PRD 완료 조건이 아니다.

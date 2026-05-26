@@ -1,6 +1,6 @@
 # Autoflow Board
 
-이 디렉터리는 host project 안에 설치되는 Autoflow 보드다. 보드는 `autoflow` skill, 데스크탑 sidecar, 4개 고정 러너가 공유하는 file-based source of truth다.
+이 디렉터리는 host project 안에 설치되는 Autoflow 보드다. 보드는 `autoflow` skill, 데스크탑 sidecar, 3개 고정 러너가 공유하는 file-based source of truth다.
 
 ## 기본 흐름
 
@@ -10,11 +10,10 @@
 4. Skill 대화가 필요한 PRD를 하나 이상 발행한다.
 5. Desktop sidecar가 보드 상태를 실시간 감지한다.
 6. Planner가 PRD 기준 TODO를 만든다.
-7. Worker가 배정 TODO를 수행하고 Verifier에게 검증을 요청한다.
-8. Verifier가 `pass | revise | replan`과 후속조치를 기록한다.
-9. `pass`면 Worker가 PRD worktree commit을 반영한다.
-10. PRD의 모든 TODO가 완료되면 마지막 TODO를 처리한 Worker가 PRD worktree를 merge한다.
-11. 추가 작업이 필요하면 skill 대화가 새 PRD를 발행한다.
+7. Worker가 배정 TODO를 수행하고 로컬 검증 evidence를 기록한다.
+8. Worker가 `worker finalize-approved`를 호출해 sanity gate와 merge target verification rerun을 통과하면 PRD worktree commit을 반영한다.
+9. PRD의 모든 TODO가 완료되면 마지막 TODO를 처리한 Worker가 PRD worktree를 merge한다.
+10. 추가 작업이 필요하면 skill 대화가 새 PRD를 발행한다.
 
 LLM Wiki 작성은 PRD 완료를 막지 않는다.
 
@@ -40,7 +39,7 @@ Desktop sidecar는 다음 3개 러너를 표시한다.
 - `Worker`
 - `LLM Wiki`
 
-`Verifier` 와 `Merge` runner 는 없다. 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리한다.
+별도 검증 runner와 `Merge` runner 는 없다. 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리한다.
 
 ## Runner Tool
 

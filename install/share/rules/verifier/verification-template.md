@@ -1,14 +1,3 @@
-# Verification Decision Template
+# Legacy Review Decision Template
 
-별도 record가 유용할 때 verifier decision note는 이 형태를 쓴다.
-
-```md
-# Verifier Decision: <WORK-NNN>
-
-- Decision: pass|revise|replan
-- Reason: <짧고 구체적인 이유>
-- Evidence:
-  - <command, diff fact, file path, observed output>
-- Follow-up:
-  - <none, worker revision request, replan request>
-```
+이 템플릿은 이전 `verifier` role 호환용 비활성 자료다. 현재 완료 evidence는 TODO의 `Verification`, `Result`, 그리고 워커 러너의 finalize 기록에 남긴다.

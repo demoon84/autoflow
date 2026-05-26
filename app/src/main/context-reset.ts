@@ -353,7 +353,6 @@ export function buildRunnerStartupScan({ role, runnerId }: { role: string; runne
         `  - 작업 후 직접 git commit 하지 않는다. 로컬 검증(Done When, verification command, diff/Allowed Paths sanity)을 통과한 뒤 worker finalize-approved 만 호출한다. 도구가 sanity gate 와 merge target verification rerun 을 거쳐 자동으로 PRD worktree 에 commit 한다. 같은 PRD 의 마지막 TODO 이면 finalize-approved 가 자동으로 main 으로 squash merge + PRD branch/worktree 삭제까지 처리한다.`,
         `  - 직접 \`git commit\`, \`git merge --squash\`, \`git worktree remove\` 같은 명령을 호출하지 않는다. 시스템 도구만 호출한다.`,
         `  - sanity gate / verification rerun 이 실패하면 finalize-approved 가 blocked 와 reason/evidence 를 남기므로 같은 worktree 에서 수정 후 다시 호출한다.`,
-        `  - submit-to-verifier 는 호환 alias 다 (finalize-approved 와 동일 흐름). 기존 prompt 호출이 깨지지 않도록 유지된다.`,
         `  - replan: request-replan 호출. working tree 변경은 PRD worktree 에 그대로 두고 ticket 만 다시 todo 로.`,
         `  - merge 충돌이 발생하면 worker LLM 가 PRD worktree 안에서 직접 해결한 뒤 도구를 다시 호출.`,
         `Atomic rule: 동시에 최대 1 개의 active ticket.`,
@@ -368,11 +367,10 @@ export function buildRunnerStartupScan({ role, runnerId }: { role: string; runne
       ].join("\n");
     case "verifier":
       return [
-        `Startup scan:`,
-        `  1. Run \`${autoflowShellCommand(["tool", "runner-tool", "verifier", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once and let it complete.`,
-        `  2. If snapshot.ai_followup_recommended=false, summarize the compact result without opening source files; leave this runner idle and waiting for the next handoff.`,
-        `  3. If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, then run verifier evidence for that one ticket.`,
-        `  4. Make exactly one semantic pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then summarize.`
+        `Legacy inactive role:`,
+        `  - This role is retained only for old board compatibility.`,
+        `  - Current Autoflow uses planner, worker, and wiki-maintainer. Worker finalize-approved performs the single finish flow.`,
+        `  - Do not claim new work from this role. Summarize that the role is inactive and exit.`
       ].join("\n");
     case "wiki-maintainer":
       return [

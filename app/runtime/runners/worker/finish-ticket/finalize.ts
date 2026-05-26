@@ -1,6 +1,6 @@
 import {fs, path, boardRoot, projectRoot, spawnSync, timestamp, workerId} from "./context";
 import {normalizeId, oneLine, safeSegment, unique} from "./io";
-import {allowedPaths, appendNote, doneWhenItems, normalizedChangeType, replaceScalar, replaceSection, scalar, updateGoalRuntime} from "./ticket-sections";
+import {allowedPaths, appendNote, doneWhenItems, normalizedChangeType, replaceScalar, replaceSection, scalar, ticketPrdKey, updateGoalRuntime} from "./ticket-sections";
 import {changedFiles, diffLineCount, git, gitLines, gitOut, gitRootPath, headContainsCommit, isGitWorktree, pathsOverlap, rootContainsWorktreeChange, statusPaths} from "./git";
 import {positiveInt, read} from "./io";
 
@@ -143,7 +143,7 @@ function ticketCompletionCommitExists(cwd: string, ticketFile: string): boolean 
 }
 
 function prdBranchForTicket(ticketFile: string): { prdKey: string; branch: string } {
-  const prdKey = normalizePrdKey(scalar(ticketFile, "Ticket", "PRD Key"));
+  const prdKey = ticketPrdKey(ticketFile);
   if (!prdKey) return { prdKey: "", branch: "" };
   const candidates = [
     path.join(boardRoot, "tickets", "prd", `${prdKey}.md`),
@@ -398,7 +398,7 @@ export function finalizationPreflight(ticketFile: string): { status: "ok" | "nee
 }
 
 export function archiveDone(ticketFile: string, ticketId: string): string {
-  const projectKey = scalar(ticketFile, "Ticket", "PRD Key") || `ticket_${ticketId}`;
+  const projectKey = ticketPrdKey(ticketFile) || `ticket_${ticketId}`;
   replaceScalar(ticketFile, "Ticket", "Stage", "done");
   replaceScalar(ticketFile, "Ticket", "Claimed By", "");
   replaceScalar(ticketFile, "Ticket", "Execution AI", "");
@@ -442,7 +442,7 @@ export function commitCompletion(doneFile: string, ticketId: string, summary: st
   const gitRoot = gitRootPath(projectRoot);
   if (!gitRoot) return { status: "not_git_repo", hash: "", detail: "" };
 
-  const prdKey = normalizePrdKey(scalar(doneFile, "Ticket", "PRD Key"));
+  const prdKey = ticketPrdKey(doneFile);
   if (prdKey) {
     return commitPrdTrackCompletion(gitRoot, doneFile, ticketId, prdKey, summary);
   }
@@ -534,7 +534,7 @@ function prdTodoQueueDrained(prdKey: string): boolean {
     for (const entry of entries) {
       if (!/^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(entry) && !/^Todo-\d+\.md$/.test(entry) && !/^tickets_\d+\.md$/i.test(entry)) continue;
       const candidate = path.join(dir, entry);
-      if (normalizePrdKey(scalar(candidate, "Ticket", "PRD Key")) === prdKey) return false;
+      if (ticketPrdKey(candidate) === prdKey) return false;
     }
   }
   return true;

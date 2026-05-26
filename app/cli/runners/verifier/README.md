@@ -1,2 +1,3 @@
-검증 러너가 소유하는 top-level command가 필요할 때 verifier runner CLI command를 여기에 둔다.
-현재 verifier action은 deterministic runtime tool을 통해 노출한다.
+이 디렉터리는 이전 `verifier` role 호환용으로 남아 있다.
+
+현재 active runner CLI 흐름은 planner, worker, wiki를 기준으로 하며, TODO 마무리는 worker finalize-approved 단일 흐름을 사용한다.

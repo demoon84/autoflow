@@ -758,13 +758,13 @@ const statusLabels: Record<string, string> = {
   runner_has_active_ticket: "담당 티켓 처리 중",
   worker_owned_ticket_pending: "담당 티켓 진행 대기",
   worker_ticket_blocked: "티켓 보완 필요",
-  worker_ticket_waiting_for_verifier: "Verifier 응답 대기",
+  worker_ticket_waiting_for_verifier: "Worker 마무리 대기",
   worker_work_blocked: "처리할 work item 없음",
   worker_work_claimable: "처리 가능한 work item 있음",
   planner_handoff_turn_requested: "Planner 호출 요청됨",
-  verifier_handoff_turn_requested: "Verifier 호출 요청됨",
-  verifier_revision_requested: "검증 수정 요청 확인됨",
-  verifier_replan_requested: "검증 재계획 요청 확인됨",
+  verifier_handoff_turn_requested: "마무리 호출 요청됨",
+  verifier_revision_requested: "수정 요청 확인됨",
+  verifier_replan_requested: "재계획 요청 확인됨",
   worker_work_handoff_turn_requested: "Worker 호출 요청됨",
   wiki_handoff_turn_requested: "Wiki 호출 요청됨",
   wiki_idle_no_followup: "처리할 작업 없음",
@@ -784,7 +784,7 @@ const runnerRoleLabels: Record<string, string> = {
   plan: "Planner",
   "wiki-maintainer": "Wiki",
   wiki: "Wiki",
-  verifier: "Verifier (legacy)",
+  verifier: "비활성 역할",
   coordinator: "coordinator (legacy)",
   coord: "coordinator (legacy)",
   todo: "작업자 (legacy)",
@@ -1453,7 +1453,7 @@ function runnerHealthToastKey(runners: AutoflowRunner[]) {
 }
 
 function runnerHealthToastMessage(unhealthy: AutoflowRunner[], allRunners: AutoflowRunner[]) {
-  // Single-flow design: verifier replan happens in-place on the PRD ticket,
+  // Single-flow design: replan happens in-place on the PRD ticket,
   // so raw last_result is noise here. We only surface the runner display name
   // and its top-level stateStatus (running / idle / blocked / failed) —
   // actionable retry context lives in the active ticket itself.
@@ -3681,7 +3681,6 @@ function RunnerConsole({
       runner.role === "plan" ||
       runner.role === "wiki-maintainer" ||
       runner.role === "wiki" ||
-      runner.role === "verifier" ||
       (isCoordinatorRole(runner.role) && runnerIsEnabled(runner.enabled))
   );
   const runningCount = runners.filter((runner) => runner.stateStatus === "running" || Boolean(runner.pid)).length;
@@ -3700,7 +3699,7 @@ function RunnerConsole({
               {blockedCount ? <Badge variant="destructive">막힘 {blockedCount}</Badge> : null}
               <Badge variant="outline">중지 {stoppedCount}</Badge>
             </div>
-            <span className="ticket-workspace-tab-copy">Planner / Worker / Verifier / Wiki</span>
+            <span className="ticket-workspace-tab-copy">Planner / Worker / Wiki</span>
           </div>
         }
       >
@@ -3783,7 +3782,7 @@ function RunnerConsole({
               <div className="ai-progress-empty runner-empty-state">
                 <strong>AI가 없습니다</strong>
                 <span>
-                  플래너(planner) / 워커(worker) / 검증(verifier) / 위키(wiki-maintainer) 러너가 추가되면 여기에 표시됩니다.
+                  플래너(planner) / 워커(worker) / 위키(wiki-maintainer) 러너가 추가되면 여기에 표시됩니다.
                 </span>
               </div>
             )}
@@ -4847,7 +4846,7 @@ function displayReportRunnerLabel(value: string, runners?: AutoflowRunner[]) {
   const wikiMatch = label.match(/^위키-(\d+)$/);
 
   if (normalized === "planner") return "Planner";
-  if (normalized === "verifier") return "Verifier";
+  if (normalized === "verifier") return "비활성 역할";
   if (normalized === "worker") return "Worker";
   if (normalized === "unknown") return "역할 미확인";
   if (workerMatch) return `Worker${workerMatch[1]}`;
@@ -4862,7 +4861,6 @@ function reportRunnerSortWeight(value: string) {
   const role = startupRuleRoleForValue(value);
   if (role === "planner") return 10;
   if (role === "worker") return 20;
-  if (role === "verifier") return 30;
   if (role === "wiki-maintainer") return 40;
   return 90;
 }
@@ -4918,8 +4916,7 @@ function ReportingDashboard({
   const ticketBreakdown = [
     { label: "PRD", value: board?.tickets.prd?.length || 0 },
     { label: "대기", value: board?.tickets.todo?.length || 0 },
-    { label: "진행", value: board?.tickets.inprogress?.length || 0 },
-    { label: "검증", value: board?.tickets.verifier?.length || 0 },
+    { label: "진행", value: (board?.tickets.inprogress?.length || 0) + (board?.tickets.verifier?.length || 0) },
     { label: "완료", value: board?.tickets.done?.length || 0 }
   ];
   const runnerStatusBreakdown = [
@@ -5296,7 +5293,7 @@ type WorkflowFileEntry = AutoflowFilePreview & {
 };
 
 type TicketWorkspaceTabKey = "prd" | "todo" | "coverage";
-type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "verifier" | "blocked" | "done";
+type TicketWorkspaceStatusKey = "prd" | "todo" | "inprogress" | "blocked" | "done";
 type TicketWorkspaceItemKind = "prd" | "ticket";
 type TicketKanbanFolderKey = string;
 
@@ -5325,7 +5322,7 @@ const namespacedTodoFilePattern = /^TODO-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md
 const legacyPrdFilePattern = /^pr(?:d|oject)_\d+\.md$/i;
 const legacyTodoFilePattern = /^(?:Todo-\d+|tickets_\d+)\.md$/i;
 
-const ticketKanbanFolderOrder = ["prd", "todo", "inprogress", "verifier", "done"] as const;
+const ticketKanbanFolderOrder = ["prd", "todo", "inprogress", "done"] as const;
 const ticketWorkspaceTabs: Array<{
   key: TicketWorkspaceTabKey;
   label: string;
@@ -5342,7 +5339,6 @@ const ticketKanbanFolderMeta: Record<string, {
   prd: { label: "PRD", description: "PRD 대기" },
   todo: { label: "WORK", description: "아직 시작 전" },
   inprogress: { label: "진행 중", description: "Worker가 처리중" },
-  verifier: { label: "검증 대기", description: "Verifier가 확인할 항목" },
   done: { label: "완료", description: "완료 기록" }
 };
 
@@ -5382,7 +5378,8 @@ function boardPath(value: string) {
 
 function ticketFolderKeyFromFile(file: AutoflowFilePreview) {
   const match = boardPath(file.filePath).match(/\/tickets\/([^/]+)/);
-  return match?.[1] || "";
+  const key = match?.[1] || "";
+  return key === "verifier" ? "inprogress" : key;
 }
 
 function isPrdBoardFile(file: AutoflowFilePreview) {
@@ -5414,9 +5411,12 @@ function normalizePrdKey(value: string): string {
 function prdKeyFromTicketContent(content: string): string {
   const direct =
     markdownScalar(content, ["PRD Key"]) ||
+    markdownScalar(content, ["PRD"]) ||
     markdownScalar(content, ["Project Key"]) ||
     markdownScalar(content, ["Key"]);
-  const sourcePrd = markdownScalar(content, ["Source PRD"]);
+  const sourcePrd =
+    markdownScalar(content, ["Source PRD"]) ||
+    markdownScalar(content, ["Origin"]);
   return normalizePrdKey(direct || sourcePrd);
 }
 
@@ -5472,7 +5472,7 @@ function ticketWorkspaceStatusForFile(file: AutoflowFilePreview): TicketWorkspac
     return "inprogress";
   }
   if (normalized.includes("/tickets/verifier/")) {
-    return "verifier";
+    return "inprogress";
   }
   if (normalized.includes("/tickets/done/")) {
     return "done";
@@ -5489,16 +5489,12 @@ function ticketWorkspaceStatusLabel(statusKey: TicketWorkspaceStatusKey, file: A
     return "막힘";
   }
 
-  if (statusKey === "verifier") {
-    return "검증 대기";
-  }
-
   if (statusKey === "inprogress") {
     const stage = markdownScalar(content, ["Stage"]).toLowerCase();
     return displayStatus(stage || "executing");
   }
 
-  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "verifier" | "blocked">, string> = {
+  const labels: Record<Exclude<TicketWorkspaceStatusKey, "prd" | "inprogress" | "blocked">, string> = {
     todo: "발급됨",
     done: "완료"
   };
@@ -5510,7 +5506,7 @@ function ticketWorkspaceStatusVariant(statusKey: TicketWorkspaceStatusKey) {
     return "destructive" as const;
   }
 
-  if (statusKey === "inprogress" || statusKey === "verifier" || statusKey === "done") {
+  if (statusKey === "inprogress" || statusKey === "done") {
     return "default" as const;
   }
 
@@ -6282,7 +6278,7 @@ function TicketWorkspaceDetailPane({
   );
 }
 
-type CoverageStageKey = "todo" | "inprogress" | "verifier" | "done";
+type CoverageStageKey = "todo" | "inprogress" | "done";
 
 type CoverageTodoRef = {
   file: WorkflowFileEntry;
@@ -6373,7 +6369,7 @@ function buildPrdCoverage(board: AutoflowBoardSnapshot | null, prdKeyByPath: Rec
   };
   collectFrom("todo", board.tickets.todo);
   collectFrom("inprogress", board.tickets.inprogress);
-  collectFrom("verifier", board.tickets.verifier);
+  collectFrom("inprogress", board.tickets.verifier);
   collectFrom("done", board.tickets.done);
 
   const todosByPrd = new Map<string, CoverageTodoRef[]>();
@@ -6392,7 +6388,7 @@ function buildPrdCoverage(board: AutoflowBoardSnapshot | null, prdKeyByPath: Rec
   const entries: CoveragePrdEntry[] = Array.from(allKeys).map((key) => {
     const prd = prdMap.get(key);
     const todos = (todosByPrd.get(key) || []).sort((a, b) => a.file.name.localeCompare(b.file.name));
-    const counts: Record<CoverageStageKey, number> = { todo: 0, inprogress: 0, verifier: 0, done: 0 };
+    const counts: Record<CoverageStageKey, number> = { todo: 0, inprogress: 0, done: 0 };
     for (const t of todos) counts[t.stage] = (counts[t.stage] || 0) + 1;
     const total = todos.length;
     const closure = total > 0 ? Math.round((counts.done / total) * 100) : 0;
@@ -6441,14 +6437,13 @@ function buildPrdCoverage(board: AutoflowBoardSnapshot | null, prdKeyByPath: Rec
 const coverageStageMeta: Record<CoverageStageKey, { label: string; tone: "neutral" | "info" | "warning" | "success" }> = {
   todo: { label: "대기", tone: "neutral" },
   inprogress: { label: "진행", tone: "info" },
-  verifier: { label: "검증", tone: "warning" },
   done: { label: "완료", tone: "success" },
 };
 
 function PrdCoverageView({ board, options }: { board: AutoflowBoardSnapshot | null; options?: WorkflowBoardOptions }) {
   const coverageTodoFiles = React.useMemo(() => {
     if (!board) return [];
-    return ["todo", "inprogress", "verifier", "done"].flatMap((bucket) =>
+    return ["todo", "inprogress", "done"].flatMap((bucket) =>
       (board.tickets[bucket] || []).filter((file): file is WorkflowFileEntry => isTodoFileName(file.name))
     );
   }, [board]);
@@ -6864,7 +6859,7 @@ function TicketKanban({
               files={todoFiles}
               options={options}
               runners={board?.runners}
-              defaultFolders={["todo", "inprogress", "verifier", "done"]}
+              defaultFolders={["todo", "inprogress", "done"]}
               ariaLabel="폴더 기준 work item 칸반"
             />
           ) : null}
@@ -6924,18 +6919,15 @@ function TicketBoard({
   const runners = allProgressRunners.filter(runnerShouldShowOnAiProgressBoard);
   const plannerRunners: AutoflowRunner[] = [];
   const workerRunners: AutoflowRunner[] = [];
-  const verifierRunners: AutoflowRunner[] = [];
   const wikiRunners: AutoflowRunner[] = [];
   const otherRunners: AutoflowRunner[] = [];
   for (const runner of runners) {
     const role = startupRuleRoleForRunner(runner);
     if (role === "planner") plannerRunners.push(runner);
     else if (role === "worker") workerRunners.push(runner);
-    else if (role === "verifier") verifierRunners.push(runner);
     else if (role === "wiki-maintainer") wikiRunners.push(runner);
     else otherRunners.push(runner);
   }
-  const hasVerifierRunner = verifierRunners.length > 0;
   const renderProgressRow = (runner: AutoflowRunner) => (
     <AiProgressRow
       key={runner.id}
@@ -6953,30 +6945,49 @@ function TicketBoard({
       onConfigure={onConfigure}
     />
   );
+  const todoTicketSources = (board?.tickets.todo || []).filter(isTicketBoardFile);
+  const inprogressTicketSources = (board?.tickets.inprogress || []).filter(isTicketBoardFile);
+  const verifierTicketSources = (board?.tickets.verifier || []).filter(isTicketBoardFile);
+  const doneTicketSources = (board?.tickets.done || []).filter(isTicketBoardFile);
+  const activeWorkPrdKeys = new Set(
+    [...todoTicketSources, ...inprogressTicketSources, ...verifierTicketSources]
+      .map((file) => normalizePrdKey(file.prdKey || ""))
+      .filter(Boolean)
+  );
+  const doneWorkPrdKeys = new Set(
+    doneTicketSources
+      .map((file) => normalizePrdKey(file.prdKey || "") || prdKeyFromDonePath(file.filePath))
+      .filter(Boolean)
+  );
   const prdSpecs = (board?.tickets.prd || [])
     .filter((file) => {
       const name = file?.name || "";
       return name.startsWith("PRD-");
     })
-    .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
+    .map((file) => {
+      const prdKey = prdKeyFromFileName(file.name);
+      const hasActiveWork = Boolean(prdKey && activeWorkPrdKeys.has(prdKey));
+      const hasDoneWork = Boolean(prdKey && doneWorkPrdKeys.has(prdKey));
+      return {
+        ...file,
+        stateLabel: hasActiveWork ? "진행 중" : hasDoneWork ? "정리 중" : "대기",
+        stateTone: "neutral"
+      } as WorkflowFileEntry;
+    });
   const doneSpecs = (board?.tickets.done || [])
     .filter((file) => {
       const name = file?.name || "";
       return name.startsWith("PRD-");
     })
     .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
-  const todoTickets = (board?.tickets.todo || [])
-    .filter(isTicketBoardFile)
+  const todoTickets = todoTicketSources
     .map((file) => ({ ...file, stateLabel: "대기", stateTone: "neutral" } as WorkflowFileEntry));
-  const doneTickets = (board?.tickets.done || [])
-    .filter(isTicketBoardFile)
+  const doneTickets = doneTicketSources
     .map((file) => ({ ...file, stateLabel: "완료", stateTone: "success" } as WorkflowFileEntry));
-  const inprogressTickets = (board?.tickets.inprogress || [])
-    .filter(isTicketBoardFile)
+  const inprogressTickets = inprogressTicketSources
     .map((file) => ({ ...file, stateLabel: "진행 중", stateTone: "neutral" } as WorkflowFileEntry));
-  const verifierTickets = (board?.tickets.verifier || [])
-    .filter(isTicketBoardFile)
-    .map((file) => ({ ...file, stateLabel: "검증 대기", stateTone: "neutral" } as WorkflowFileEntry));
+  const verifierTickets = verifierTicketSources
+    .map((file) => ({ ...file, stateLabel: "진행 중", stateTone: "neutral" } as WorkflowFileEntry));
   const specNumericId = (name: string) => {
     const match = name.match(/PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?(\d+)/i);
     return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
@@ -6997,7 +7008,8 @@ function TicketBoard({
   const todoFiles: WorkflowFileEntry[] = Array.from(todoFilesById.values()).sort(
     (a, b) => ticketNumericId(b.name) - ticketNumericId(a.name)
   );
-  const prdPinTitle = `PRD (${prdSpecs.length}/${specFiles.length})`;
+  const pendingPrdCount = prdSpecs.filter((file) => file.stateLabel === "대기").length;
+  const prdPinTitle = `PRD (${pendingPrdCount}/${specFiles.length})`;
   const activeWorkCount = todoTickets.length + inprogressTickets.length + verifierTickets.length;
   const todoPinTitle = `WORK (${activeWorkCount}/${todoFiles.length})`;
   const hasWorkflowPins = Boolean(specFiles.length || todoFiles.length);
@@ -7046,21 +7058,6 @@ function TicketBoard({
             <>
               {plannerRunners.map(renderProgressRow)}
               {workerRunners.map(renderProgressRow)}
-              {hasVerifierRunner ? (
-                verifierRunners.map(renderProgressRow)
-              ) : (
-                <article
-                  className="ai-progress-row ai-progress-row-placeholder ai-progress-row-placeholder-verifier"
-                  data-runner-role="verifier"
-                  data-runner-id="verifier"
-                  aria-label="Verifier 자리 (대기 중)"
-                >
-                  <div className="ai-progress-row-placeholder-body">
-                    <strong>Verifier</strong>
-                    <span>config.local.toml에 verifier 블록을 추가하면 활성화됩니다.</span>
-                  </div>
-                </article>
-              )}
               {wikiRunners.map(renderProgressRow)}
               {otherRunners.map(renderProgressRow)}
             </>
@@ -8626,7 +8623,7 @@ function runnerQueueStatusText(runner: AutoflowRunner) {
 
 function runnerProgressDetail(runner: AutoflowRunner) {
   // Blocker classification strings (e.g. "dirty_root") are no longer surfaced —
-  // single-flow fail handling resurfaces every blocker through verifier replan,
+  // single-flow fail handling resurfaces blockers through the active ticket,
   // so users only need the active title.
   if (runner.backgroundTaskLabel) {
     return runner.backgroundTaskLabel;
@@ -8690,7 +8687,7 @@ function stageStatusLabel(stageKey: string, stageLabel: string | undefined, role
   if (stageKey === "idle") return "대기 중";
   if (stageKey === "planning") return "계획 중";
   if (stageKey === "generating-todo") return "티켓 생성 중";
-  if (stageKey === "inprogress") return normalizedRole === "verifier" ? "검증 중" : "구현 중";
+  if (stageKey === "inprogress") return "구현 중";
   if (stageKey === "merging") return "Worker 마무리 중";
   if (stageKey === "syncing") return "위키 작성 중";
   if (!stageLabel) return "실행 중";
@@ -8892,7 +8889,7 @@ function startupRuleRoleForRunner(runner: AutoflowRunner) {
 }
 
 function runnerShouldShowOnAiProgressBoard(runner: AutoflowRunner) {
-  return Boolean((runner.id || "").trim());
+  return Boolean((runner.id || "").trim()) && startupRuleRoleForRunner(runner) !== "verifier";
 }
 
 function runnerHasOpenAssignment(runner: AutoflowRunner) {
@@ -9045,7 +9042,7 @@ function displayRoleKeyForRunner(runner: AutoflowRunner) {
 function displayProgressRoleName(roleKey: string) {
   if (roleKey === "planner") return "Planner";
   if (roleKey === "worker") return "Worker";
-  if (roleKey === "verifier") return "Verifier";
+  if (roleKey === "verifier") return "비활성 역할";
   if (roleKey === "wiki") return "Wiki";
   return "";
 }
@@ -9077,11 +9074,9 @@ function progressBoardRunnerOrder(runner: AutoflowRunner) {
   const idRole = canonicalWorkflowRunnerRole(runner.id);
   if (["planner", "plan"].includes(role) || idRole === "planner") return 0;
   if (["worker", "ticket"].includes(role) || idRole === "worker") return 1;
-  if (role === "verifier") return 2;
   if (role === "wiki-maintainer" || role === "wiki" || role.includes("wiki") || idRole === "wiki-maintainer") return 3;
   if (runnerId === "worker") return 4;
   if (/^worker-\d+$/.test(runnerId)) return 5;
-  if (runnerId === "verifier") return 6;
   if (
     runnerId === "wiki" ||
     runnerId === "wiki-maintainer" ||

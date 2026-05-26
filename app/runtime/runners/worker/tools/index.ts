@@ -47,9 +47,6 @@ export function dispatchWorker(command: string): void {
     case "code-report":
       cmdWorkerCodeReport();
       return;
-    case "submit-to-verifier":
-      cmdWorkerComplete("submit-to-verifier");
-      return;
     case "finalize-approved":
       cmdWorkerComplete("finalize-approved");
       return;

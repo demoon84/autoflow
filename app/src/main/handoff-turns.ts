@@ -438,17 +438,17 @@ function buildVerifierHandoffTurnPrompt(
   const relTicket = boardRelPath(boardRoot, ticketPath);
   const title = readMarkdownTitleSync(ticketPath);
   return [
-    `Autoflow verifier handoff detected by Desktop.`,
-    `This is a one-shot verifier turn for a ticket that just entered tickets/verifier/; it is not a recurring loop.`,
+    `Autoflow legacy review handoff detected by Desktop.`,
+    `This is a one-shot legacy review turn for a ticket that just entered tickets/verifier/; it is not a recurring loop.`,
     `Project root: ${projectRoot}`,
     `Board root:   ${boardRoot}`,
     `Runner id:    ${runnerId}`,
-    `Pending verifier ticket: ${relTicket}${title ? ` — ${title}` : ""}`,
+    `Pending legacy ticket: ${relTicket}${title ? ` — ${title}` : ""}`,
     ``,
     `Run \`${autoflowShellCommand(["tool", "runner-tool", "verifier", "queue-snapshot", "--runner", runnerId, "--max-items", "12"])}\` once.`,
     `If snapshot.ai_followup_recommended=false, summarize the compact result without opening source files; leave this runner idle and waiting for the next handoff.`,
-    `If a verifier ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, run verifier evidence for that one ticket, make exactly one pass/revise/replan decision, run the matching verifier tool, rerun queue-snapshot once, then summarize.`,
-    `Do not open full AGENTS, rule docs, or unrelated project files unless the compact verifier tool fails or the scoped verifier ticket directly requires them.`
+    `If a legacy ticket exists, inspect only snapshot.ai_followup_scope.inspect_only_recent_sources, run the legacy evidence command for that one ticket, make exactly one pass/revise/replan decision, rerun queue-snapshot once, then summarize.`,
+    `Do not open full AGENTS, rule docs, or unrelated project files unless the compact legacy tool fails or the scoped ticket directly requires them.`
   ].join("\n");
 }
 

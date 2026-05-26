@@ -58,7 +58,6 @@ const {
 const {
     boardManifestShareRoot,
     resolvedShareRoot,
-    runnerConfigReadPath,
     readRunnerConfigBlocks,
     readRunnerConfigBlock,
     safeAssignmentSegment,
@@ -196,6 +195,7 @@ const {
     allowedPathIsConcreteRepoPathSync,
     normalizeRelPathSync,
     workerTodoFileIsClaimableSync,
+    prdHasGeneratedWorkItemsSync,
     stripMarkdownTicksSync,
     gitBranchExistsSync,
     gitTrackedDirtySummarySync,
@@ -326,8 +326,8 @@ const allowedWikiActions = new Set(["update", "lint", "query"]);
 const RUNNER_RESOURCE_USAGE_MAX_CPU_PERCENT = 180;
 const RUNNER_RESOURCE_USAGE_MAX_MEMORY_PERCENT = 12;
 // Roles accepted by `autoflow run <role>` per app/cli/system/run-role.ts
-// case statement. Active: worker / planner / verifier / wiki (with their
-// ticket, plan, wiki-maintainer aliases).
+// case statement. Active: worker / planner / wiki (with their ticket, plan,
+// wiki-maintainer aliases). `verifier` is retained only for legacy compatibility.
 // PRD authoring: spec.
 const allowedRunRoles = new Set([
     "ticket", "worker",
@@ -336,8 +336,8 @@ const allowedRunRoles = new Set([
     "verifier",
     "wiki", "wiki-maintainer"
 ]);
-// Active runner roles: worker / planner / verifier / wiki-maintainer (with
-// plan / wiki aliases). Coordinator stays idle/noop when encountered.
+// Active runner roles: worker / planner / wiki-maintainer (with plan / wiki
+// aliases). `verifier` stays available only for legacy compatibility.
 // Mirrors runner role validation in app/cli/system/runners.ts.
 const allowedRunnerRoles = new Set([
     "worker", "ticket",
@@ -701,7 +701,7 @@ async function spawnRunnerPtySession(opts: any = {}, source: any = "manual") {
     });
     const normalizedRole = normalizeRunnerRole(role);
     if (normalizedRole === "coordinator") {
-        return {ok: false, error: "coordinator is not a runner; use planner, worker, verifier, or wiki runners."};
+        return {ok: false, error: "coordinator is not a runner; use planner, worker, or wiki runners."};
     }
     const agent = String(diskRunnerConfig.agent || opts.agent || "codex").toLowerCase();
     const model = String(diskRunnerConfig.model ?? opts.model ?? "");
@@ -2534,13 +2534,13 @@ function countRunnerQueueStatus(runner: any, boardRoot: any) {
             };
         }
         if (role === "verifier") {
-            // legacy: verifier 러너는 기본 진행판에 노출되지 않는다. queue 카운트도 0으로 고정.
-            return {...empty, queueStatusDetail: "검증 러너 비활성 (legacy)"};
+            // legacy: 비활성 역할은 기본 진행판에 노출되지 않는다. queue 카운트도 0으로 고정.
+            return {...empty, queueStatusDetail: "비활성 역할 (legacy)"};
         }
         if (role === "planner" || role === "plan") {
-            const pending = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000)
-                .filter(plannerQueueFileIsActionableSync)
-                .length;
+            const prdFiles = listQueueFilesSync(boardRoot, "tickets/prd", /^PRD[-_].+\.md$/i, 1000);
+            const pending = prdFiles.filter(plannerQueueFileIsActionableSync).length;
+            const inFlight = prdFiles.filter((file) => !plannerQueueFileIsActionableSync(file) && prdHasGeneratedWorkItemsSync(file)).length;
             return pending > 0
                 ? {
                     queueStatus: "claimable",
@@ -2550,7 +2550,12 @@ function countRunnerQueueStatus(runner: any, boardRoot: any) {
                     queueBlockedCount: 0,
                     queuePendingCount: pending
                 }
-                : {...empty, queueStatusDetail: "PRD 대기열 비어 있음"};
+                : {
+                    ...empty,
+                    queueStatusDetail: inFlight > 0
+                        ? `TODO 진행 중인 PRD ${inFlight}개`
+                        : "PRD 대기열 비어 있음"
+                };
         }
         if (role.includes("wiki")) {
             const pendingPaths = wikiPendingReviewPathsSync(boardRoot);
@@ -2674,9 +2679,12 @@ const ticketPrdKeyPattern = /PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+/i;
 function extractTicketPrdKey(content: any) {
     const direct =
         extractTicketScalar(content, "PRD Key") ||
+        extractTicketScalar(content, "PRD") ||
         extractTicketScalar(content, "Project Key") ||
         extractTicketScalar(content, "Key");
-    const sourcePrd = extractTicketScalar(content, "Source PRD");
+    const sourcePrd =
+        extractTicketScalar(content, "Source PRD") ||
+        extractTicketScalar(content, "Origin");
     const sourceMatch = sourcePrd.match(ticketPrdKeyPattern);
     const raw = direct || (sourceMatch ? sourceMatch[0] : "");
     if (!raw) return "";
@@ -3791,7 +3799,7 @@ async function enrichRunnerActiveTicketFromFs(runners: any, boardRoot: any) {
                 clearActiveTicket(runner);
             }
         } else if (runner.role === "verifier") {
-            // legacy: 검증 러너는 기본 진행판에서 active ticket 을 가지지 않는다.
+            // legacy: 비활성 역할은 기본 진행판에서 active ticket 을 가지지 않는다.
             clearActiveTicket(runner);
         } else if (runner.role === "planner") {
             const activePrdId = String(runner.activeTicketId || "");
@@ -4924,7 +4932,7 @@ async function sweepStaleRunnersForScope(scope: any) {
         values.last_result = "loop_stopped";
         values.last_event_at = new Date().toISOString().replace(/\.\d+Z$/, "Z");
         // Clear active ticket — single-flow design: any unfinished blocker should
-        // re-emerge through verifier replan, not as stale state on the new desktop
+        // re-emerge through the active ticket, not as stale state on the new desktop
         // session.
         for (const key of [
             "active_item",
@@ -5758,7 +5766,7 @@ app.whenReady().then(() => {
         });
         const normalizedRole = normalizeRunnerRole(role);
         if (normalizedRole === "coordinator") {
-            return {ok: false, error: "coordinator is not a runner; use planner, worker, verifier, or wiki runners."};
+            return {ok: false, error: "coordinator is not a runner; use planner, worker, or wiki runners."};
         }
         const agent = String(diskRunnerConfig.agent || opts.agent || "codex").toLowerCase();
         const model = String(diskRunnerConfig.model ?? opts.model ?? "");
@@ -5963,16 +5971,8 @@ app.whenReady().then(() => {
             try {
                 const projectRoot = repoRoot;
                 const boardDirName = defaultBoardDirName;
-                const configPath = runnerConfigReadPath(projectRoot, boardDirName);
-                const text = fsSync.readFileSync(configPath, "utf8");
-                // Minimal TOML scrape for [[runners]] blocks. We only need id /
-                // agent / model / reasoning / role / enabled per block.
-                const blocks = text.split(/\[\[runners\]\]/).slice(1);
-                for (const blk of blocks) {
-                    const grab = (k) => {
-                        const m = blk.match(new RegExp(`^${k}\\s*=\\s*"?([^"\\n]+)"?`, "m"));
-                        return m ? m[1].trim() : "";
-                    };
+                for (const config of readRunnerConfigBlocks(projectRoot, boardDirName)) {
+                    const grab = (key) => String(config[key] || "").trim();
                     const enabled = grab("enabled");
                     if (enabled !== "true") continue;
                     const runnerId = grab("id");

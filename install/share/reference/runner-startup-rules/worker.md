@@ -17,7 +17,7 @@ Worker runner에 주입되는 규칙이다.
 - 구현 전에 mini-plan을 상태에 기록한다.
 - 지정된 worktree root에서 `Allowed Paths` 안의 변경만 수행한다.
 - verification command를 실행하고 evidence를 기록한다.
-- 로컬 검증이 통과하면 worker finalize-approved 를 호출한다 (호환 alias submit-to-verifier 도 동일 흐름). 도구가 sanity gate / merge target verification rerun 을 거쳐 PRD worktree commit 을 자동으로 반영한다.
+- 로컬 검증이 통과하면 worker finalize-approved 를 호출한다. 도구가 sanity gate / merge target verification rerun 을 거쳐 PRD worktree commit 을 자동으로 반영한다.
 - PRD의 모든 TODO가 완료됐고 자신이 마지막 TODO를 처리했다면 같은 finalize-approved 호출이 main squash merge 까지 수행한다.
 - sanity gate / verification rerun 실패 시 도구가 남긴 `blocked` 상태와 reason 을 보고 같은 worktree 에서 수정한 뒤 다시 호출한다.
 

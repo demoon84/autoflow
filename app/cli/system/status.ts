@@ -90,6 +90,6 @@ export function statusProject(args: string[]): void {
     out(`board_root=${ctx.boardRoot}`);
     out(`work_item_pending=${counts.todo}`);
     out(`inprogress=${counts.inprogress}`);
-    out(`verifier=${counts.verifier}`);
+    out(`legacy_verifier=${counts.verifier}`);
     out(`done=${counts.done}`);
 }

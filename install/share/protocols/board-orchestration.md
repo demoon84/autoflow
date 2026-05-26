@@ -2,7 +2,7 @@
 
 ## 목적
 
-보드는 Autoflow의 source of truth다. `autoflow` skill 대화, 데스크탑 sidecar, Planner/Worker/Verifier/LLM Wiki runner는 모두 보드 상태를 기준으로 움직인다.
+보드는 Autoflow의 source of truth다. `autoflow` skill 대화, 데스크탑 sidecar, Planner/Worker/LLM Wiki runner는 모두 보드 상태를 기준으로 움직인다.
 
 ## 책임
 
@@ -17,14 +17,13 @@
 Desktop sidecar:
 
 - 보드 상태 실시간 감지.
-- 4개 고정 러너 표시: `Planner`, `Worker`, `Verifier`, `LLM Wiki`.
+- 3개 고정 러너 표시: `Planner`, `Worker`, `LLM Wiki`.
 - runner 실행/중지/PTY/lifecycle 관리.
 
 Runner:
 
 - Planner는 PRD를 TODO로 분해한다.
-- Worker는 배정 TODO를 수행하고 verifier pass 뒤 PRD worktree commit을 반영한다. 마지막 TODO를 처리한 Worker는 PRD worktree merge를 수행한다.
-- Verifier는 검증 결과와 후속조치를 기록한다.
+- Worker는 배정 TODO를 수행하고 로컬 검증 evidence를 남긴 뒤 `worker finalize-approved`로 PRD worktree commit을 반영한다. 마지막 TODO를 처리한 Worker는 같은 호출로 PRD worktree merge까지 수행한다.
 - LLM Wiki는 지연/배치로 파생 지식을 정리한다.
 
 ## 결정 순서
@@ -35,12 +34,11 @@ Runner:
 4. Desktop sidecar가 PRD 상태를 감지한다.
 5. Planner가 PRD 기준 TODO를 만든다.
 6. Worker가 pending TODO를 수행한다.
-7. Worker가 완료 후보를 Verifier에게 넘긴다.
-8. Verifier가 `pass | revise | replan`을 기록한다.
-9. `pass`면 Worker가 PRD worktree commit을 반영한다.
-10. PRD의 모든 TODO가 완료되면 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
-11. Skill 대화가 goal 기준 부족분을 확인한다.
-12. 부족하면 PRD를 추가 발행하고, 충분하면 goal complete를 수행한다.
+7. Worker가 로컬 검증 evidence를 남긴다.
+8. Worker가 `worker finalize-approved`로 PRD worktree commit을 반영한다.
+9. PRD의 모든 TODO가 완료되면 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
+10. Skill 대화가 goal 기준 부족분을 확인한다.
+11. 부족하면 PRD를 추가 발행하고, 충분하면 goal complete를 수행한다.
 
 ## 위키
 

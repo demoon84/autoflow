@@ -4,9 +4,7 @@ Rules는 agent가 safety와 completion을 판단하는 방식을 정의한다.
 
 Board state를 바꾸기 전에 다음 문서를 읽는다.
 
-- `rules/verifier/README.md`
-- `rules/verifier/checklist-template.md`
-- `rules/verifier/verification-template.md`
+- `rules/verifier/*` 는 legacy 호환 자료이며 현재 3개 러너 topology의 active rule이 아니다.
 - `rules/wiki/README.md`
 
 Ticket file과 verification record는 인상이 아니라 관찰 가능한 evidence를 인용해야 한다.

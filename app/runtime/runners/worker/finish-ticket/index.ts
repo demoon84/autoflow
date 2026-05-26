@@ -46,7 +46,7 @@ export function main(): void {
     replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
     replaceScalar(ticketFile, "Worktree", "Integration Status", `blocked_${sanity.failure}`);
     updateGoalRuntime(ticketFile, "blocked", timestamp);
-    replaceSection(ticketFile, "Next Action", `- Next: shell sanity gate refused pass (${sanity.failure}). Worker must keep this same worktree, fix the issue, rerun local verification, update Done When, then call \`autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>"\` again. Do not request replan requeue for this mechanical false-pass block.`);
+    replaceSection(ticketFile, "Next Action", `- Next: shell sanity gate refused pass (${sanity.failure}). Worker must keep this same worktree, fix the issue, rerun local verification, update Done When, then call \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\` again. Do not request replan requeue for this mechanical false-pass block.`);
     printPairs({
       status: "blocked",
       outcome: "pass_refused",
@@ -54,7 +54,7 @@ export function main(): void {
       reason: sanity.detail,
       ticket: ticketFile,
       ticket_id: ticketId,
-      next_action: "Worker must revise the same worktree and rerun worker submit-to-verifier; no replan requeue was created.",
+      next_action: "Worker must revise the same worktree and rerun worker finalize-approved; no replan requeue was created.",
       board_root: boardRoot,
       project_root: projectRoot,
     });

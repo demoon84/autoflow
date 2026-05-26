@@ -91,8 +91,8 @@ export function main(): void {
     board_root: boardRoot,
     project_root: projectRoot,
     next_action: passed
-      ? `Worker must inspect this local verification evidence, then call autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<short summary>" to hand off to verifier before any PRD worktree finalization.`
-      : `Fix inside scope in the same worktree and rerun verification. If the ticket itself must be replaced, record the reason in Notes and use the verifier/replan path; do not merge or finalize this failed result.`,
+      ? `Worker must inspect this local verification evidence, then call autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<short summary>" for PRD worktree finalization.`
+      : `Fix inside scope in the same worktree and rerun verification. If the ticket itself must be replaced, record the reason in Notes and use worker request-replan; do not merge or finalize this failed result.`,
   });
 }
 

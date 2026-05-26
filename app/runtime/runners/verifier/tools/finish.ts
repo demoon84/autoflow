@@ -229,7 +229,7 @@ export function cmdVerifierComplete(outcome: VerifierDecision): void {
     context_reset: decisionContextReset.ok ? "queued" : "not_queued",
     context_reset_path: stringValue(decisionContextReset.path),
     next_action: outcome === "revise"
-      ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker submit-to-verifier again."
+      ? "Worker must keep the same worktree, apply corrections, rerun local verification, and run worker finalize-approved again."
       : "Worker must run worker request-replan so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.",
   });
 }

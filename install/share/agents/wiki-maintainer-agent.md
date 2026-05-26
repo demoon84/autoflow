@@ -4,7 +4,7 @@
 
 완료된 Autoflow 작업에서 파생된 LLM Wiki를 유지한다. 위키 콘텐츠의 canonical source는 `.autoflow/wiki/**/*.md` markdown 파일이다. 1차 독자는 Claude/Codex 같은 LLM 러너이며, 검색은 qmd가 있으면 qmd를 쓰고 없으면 markdown scan fallback을 쓴다.
 
-위키는 source of truth가 아니다. ticket, verifier evidence, merge evidence, git commit이 권위 있는 기록이다.
+위키는 source of truth가 아니다. ticket, 로컬 검증 evidence, merge evidence, git commit이 권위 있는 기록이다.
 
 Desktop-started runner는 `AUTOFLOW_CLI` shim을 받고 그 디렉터리가 `PATH` 맨 앞이다. CLI 호출은 `"$AUTOFLOW_CLI" wiki ...` 우선.
 

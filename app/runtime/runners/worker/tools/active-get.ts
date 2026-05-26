@@ -180,13 +180,13 @@ function workerNextAction(active?: WorkerTicketItem): string {
   if (!active) return "run_worker_work_snapshot_before_idle";
   const reason = workerFollowupReason(active);
   if (reason === "worker_ticket_waiting_for_verifier") {
-    return "wait_for_verifier_decision";
+    return "continue_legacy_review_state";
   }
   if (reason === "verifier_passed_worker_finalization_pending") {
     return "wait_for_worker_finalization";
   }
   if (reason === "verifier_revision_requested") {
-    return "revise_same_worktree_rerun_local_verification_then_submit_to_verifier";
+    return "revise_same_worktree_rerun_local_verification_then_finalize";
   }
   if (reason === "verifier_replan_requested") {
     return "run_worker_request_replan_for_this_ticket";
@@ -203,13 +203,13 @@ function workerNextAction(active?: WorkerTicketItem): string {
 function workerNextActionInstruction(active?: WorkerTicketItem): string {
   const reason = workerFollowupReason(active);
   if (reason === "worker_ticket_waiting_for_verifier") {
-    return "Verifier still owns this ticket. Summarize compact result and idle; do not open source files or run work-snapshot.";
+    return "This ticket is in a legacy review state. Summarize compact result and idle unless the ticket has returned to Worker ownership.";
   }
   if (reason === "verifier_passed_worker_finalization_pending") {
     return "Worker owns finalization now. Run worker finalize-approved after reviewing the scoped ticket/worktree.";
   }
   if (reason === "verifier_revision_requested") {
-    return "Do not idle. Inspect only the scoped ticket/worktree, apply the verifier requested corrections inside Allowed Paths, rerun local verification, record evidence, then call worker submit-to-verifier again.";
+    return "Do not idle. Inspect only the scoped ticket/worktree, apply the requested corrections inside Allowed Paths, rerun local verification, record evidence, then call worker finalize-approved.";
   }
   if (reason === "verifier_replan_requested") {
     return "Do not idle. Inspect only the scoped ticket and run worker request-replan for this ticket before accepting another assignment.";
@@ -267,6 +267,15 @@ function normalizePrdKey(value: string): string {
   const match = trimmed.match(/(?:PRD[-_]|prd_|project_)(\d+)/i);
   if (match) return `PRD-${match[1].padStart(3, "0")}`;
   return "";
+}
+
+function markdownPrdKey(file: string): string {
+  return normalizePrdKey(
+    markdownScalar(file, "Ticket", "PRD Key") ||
+    markdownScalar(file, "Ticket", "PRD") ||
+    markdownScalar(file, "References", "PRD") ||
+    markdownScalar(file, "Source", "PRD")
+  );
 }
 
 function runnerStatePath(runnerId: string): string {
@@ -407,7 +416,7 @@ function prdHasActiveQueue(prdKey: string): boolean {
       if (!/^(PRD|TODO)-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+\.md$/i.test(entry)) continue;
       const file = path.join(dir, entry);
       if (normalizePrdKey(path.basename(entry, ".md")) === prdKey) return true;
-      if (normalizePrdKey(markdownScalar(file, "Ticket", "PRD Key")) === prdKey) return true;
+      if (markdownPrdKey(file) === prdKey) return true;
     }
   }
   return false;

@@ -30,8 +30,8 @@ export function emitActiveTicket(rawItem: unknown, source: string): void {
     next_action: worktreeReady
       ? nextActionFor(ticketId, stage, ticketAbs)
       : `Call autoflow tool runner-tool worker worktree-ensure --ticket ${ticketRel || ticketId} before implementation. Do not edit PROJECT_ROOT as fallback.`,
-    routing_pass: `After worktree verification evidence passes, run autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<short summary>" to hand off to verifier before any PROJECT_ROOT merge.`,
-    routing_replan: `If verifier says the work item must be redone from scratch, run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<concrete reason>". The work item returns to the pending work lane for a fresh worker attempt.`,
+    routing_pass: `After worktree verification evidence passes, run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<short summary>" to run the single finish flow.`,
+    routing_replan: `If the work item must be redone from scratch, run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<concrete reason>". The work item returns to the pending work lane for a fresh worker attempt.`,
   });
 }
 

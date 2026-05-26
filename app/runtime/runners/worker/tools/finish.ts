@@ -129,7 +129,7 @@ const {
   fail
 } = shared;
 
-type WorkerCompletionCommand = "submit-to-verifier" | "finalize-approved" | "request-replan";
+type WorkerCompletionCommand = "finalize-approved" | "request-replan";
 
 function verifierMarkerForTicket(ticketId: string): string {
   return path.join(BOARD_ROOT, "runners", "state", `verifier-ok-${ticketId}.marker`);
@@ -152,15 +152,8 @@ export function cmdWorkerComplete(command: WorkerCompletionCommand): void {
   const hasVerifierApproval = fs.existsSync(verifierMarker);
   const verifierActive = verifierRequired();
 
-  if (command === "submit-to-verifier" && verifierActive && hasVerifierApproval) {
-    fail(2, "verifier approval marker already exists; use worker finalize-approved to commit the approved worktree result", {
-      ticket_id: `TODO-${ticketId}`,
-      verifier_marker: boardRel(verifierMarker),
-    });
-  }
-
   if (command === "finalize-approved" && verifierActive && !hasVerifierApproval) {
-    fail(2, "verifier approval marker is missing; use worker submit-to-verifier before merge/finalization", {
+    fail(2, "legacy approval marker is missing; finalize-approved cannot continue while legacy approval is required", {
       ticket_id: `TODO-${ticketId}`,
       expected_marker: boardRel(verifierMarker),
     });

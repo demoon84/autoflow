@@ -249,6 +249,15 @@ export function normalizePrdKey(raw: string): string {
   return parsed.id ? `PRD-${parsed.id}` : "";
 }
 
+export function ticketPrdKeyFromFile(file: string): string {
+  return normalizePrdKey(
+    utils.extractScalarFieldInSection(file, "Ticket", "PRD Key") ||
+    utils.extractScalarFieldInSection(file, "Ticket", "PRD") ||
+    utils.extractScalarFieldInSection(file, "References", "PRD") ||
+    utils.extractScalarFieldInSection(file, "Source", "PRD")
+  );
+}
+
 export function prdKeysFromText(text: string): string[] {
   const keys = new Set<string>();
   const re = /\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/gi;

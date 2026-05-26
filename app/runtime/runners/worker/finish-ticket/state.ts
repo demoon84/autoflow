@@ -1,6 +1,6 @@
 import {fs, path, boardRoot, projectRoot, timestamp, workerId} from "./context";
 import {idFromTicketPath, normalizeId, read, stripTicks, write} from "./io";
-import {scalar} from "./ticket-sections";
+import {scalar, ticketPrdKey} from "./ticket-sections";
 import {git, gitOut} from "./git";
 
 const ticketBranchIdPattern = "(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\\d+";
@@ -20,7 +20,7 @@ function isManagedAutoflowBranch(branch: string): boolean {
 }
 
 function isPrdTrackTicket(ticketFile: string): boolean {
-  const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
+  const prdKey = ticketPrdKey(ticketFile);
   const branch = stripTicks(scalar(ticketFile, "Worktree", "Branch"));
   return Boolean(prdKey) && isManagedPrdBranch(branch);
 }

@@ -55,7 +55,7 @@
 6. worktree root에서 구현한다.
 7. verification command를 실행하고 결과를 기록한다.
 8. `Done When`과 diff 범위를 점검한다.
-9. 로컬 검증이 통과하면 worker finalize-approved 를 호출한다 (호환 alias 인 submit-to-verifier 호출도 동일 흐름). 실패하면 `blocked` 또는 `failed`를 기록한다.
+9. 로컬 검증이 통과하면 worker finalize-approved 를 호출한다. 실패하면 `blocked` 또는 `failed`를 기록한다.
 10. finalize-approved 가 sanity gate 와 merge target verification rerun 을 거쳐 PRD worktree commit 을 자동으로 반영한다. 마지막 TODO 라면 같은 호출이 main squash merge 까지 수행한다.
 11. sanity gate / verification rerun 실패 시 도구가 남긴 reason 을 보고 같은 worktree 안에서 수정한 뒤 다시 호출한다.
 12. 상태를 닫는다.

@@ -1,5 +1,5 @@
 import {fs, path, boardRoot, timestamp, workerId} from "./context";
-import {appendNote, removeScalars, replaceScalar, replaceSection, scalar, updateGoalRuntime} from "./ticket-sections";
+import {appendNote, removeScalars, replaceScalar, replaceSection, scalar, ticketPrdKey, updateGoalRuntime} from "./ticket-sections";
 import {boardRel, printPairs, read, write} from "./io";
 
 const verifierDecisionFields = [
@@ -11,7 +11,7 @@ const verifierDecisionFields = [
 ];
 
 function prdBranchForTicket(ticketFile: string): string {
-  const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
+  const prdKey = ticketPrdKey(ticketFile);
   if (!/^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(prdKey)) return "";
   const candidates = [
     path.join(boardRoot, "tickets", "prd", `${prdKey}.md`),
@@ -42,7 +42,7 @@ export function handoffToVerifier(ticketFile: string, ticketId: string): void {
       ticket: ticketFile,
       ticket_id: ticketId,
       verifier_ticket: verifierTicket,
-      next_action: "Verifier ticket already exists. Worker must wait for the verifier decision instead of overwriting the verifier lane.",
+      next_action: "Legacy review ticket already exists. Worker must wait for the existing decision instead of overwriting the legacy lane.",
     });
     process.exit(1);
   }
@@ -51,8 +51,8 @@ export function handoffToVerifier(ticketFile: string, ticketId: string): void {
   replaceScalar(ticketFile, "Ticket", "Last Updated", timestamp);
   replaceScalar(ticketFile, "Worktree", "Integration Status", "verify_pending");
   updateGoalRuntime(ticketFile, "verify_pending", timestamp);
-  replaceSection(ticketFile, "Next Action", `- Next: verifier must review tickets/verifier/TODO-${ticketId}.md before any PROJECT_ROOT merge. Verifier pass/revise/replan moves this ticket back to tickets/inprogress/ with the next worker action recorded.`);
-  appendNote(ticketFile, `Worker pass handed off to verifier at ${timestamp}; PROJECT_ROOT merge is blocked until verifier pass.`);
+  replaceSection(ticketFile, "Next Action", `- Next: legacy review must complete for tickets/verifier/TODO-${ticketId}.md before any PROJECT_ROOT merge. The decision moves this ticket back to tickets/inprogress/ with the next worker action recorded.`);
+  appendNote(ticketFile, `Worker pass entered legacy review at ${timestamp}; PROJECT_ROOT merge is blocked until approval.`);
   if (path.resolve(ticketFile) !== path.resolve(verifierTicket)) {
     fs.renameSync(ticketFile, verifierTicket);
   }
@@ -65,7 +65,7 @@ export function handoffToVerifier(ticketFile: string, ticketId: string): void {
     ticket_id: ticketId,
     moved_from: ticketFile,
     verifier_ticket: verifierTicket,
-    next_action: `Verifier runner should inspect tickets/verifier/TODO-${ticketId}.md on its next startup scan. On pass/revise/replan it moves the ticket back to tickets/inprogress/ with the corresponding worker stage; worker then finalizes, revises, or runs request-replan.`,
+    next_action: `Legacy review should inspect tickets/verifier/TODO-${ticketId}.md on its next startup scan. On pass/revise/replan it moves the ticket back to tickets/inprogress/ with the corresponding worker stage; worker then finalizes, revises, or runs request-replan.`,
   });
 }
 
@@ -135,7 +135,7 @@ export function markNeedsAiMerge(ticketFile: string, ticketId: string, reason: s
   replaceScalar(ticketFile, "Worktree", "Integration Status", "needs_ai_merge");
   updateGoalRuntime(ticketFile, "merging", timestamp);
   const mergeTarget = mergeTargetDescription(ticketFile);
-    replaceSection(ticketFile, "Next Action", `- Next: verifier has approved this worktree. Worker must now integrate verified worktree changes into ${mergeTarget} inside Allowed Paths, resolve conflicts if needed, rerun required verification from that merge target, then run \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`. Do not accept another TODO before finalization is complete.`);
+    replaceSection(ticketFile, "Next Action", `- Next: legacy review approved this worktree. Worker must now integrate verified worktree changes into ${mergeTarget} inside Allowed Paths, resolve conflicts if needed, rerun required verification from that merge target, then run \`autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>"\`. Do not accept another TODO before finalization is complete.`);
   appendNote(ticketFile, `Finish paused at ${timestamp}: ${reason}. AI must integrate worktree changes into ${mergeTarget} before finalization.`);
   updateWorkerMergeState(ticketFile, ticketId);
 }

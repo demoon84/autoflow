@@ -22,11 +22,10 @@ export function usage(): void {
   autoflow tool runner-tool worker diff-check --ticket <work-item-id|path>
   autoflow tool runner-tool worker code-report --ticket <work-item-id|path> [--runner <id>]
   autoflow tool runner-tool worker finalize-approved --ticket <work-item-id|path> --summary <text>
-  autoflow tool runner-tool worker submit-to-verifier --ticket <work-item-id|path> --summary <text>   # 호환 alias: 기본 환경에서는 finalize-approved 와 동일한 단일 마무리 흐름 (sanity gate + merge target verification rerun)을 실행한다.
   autoflow tool runner-tool worker request-replan --ticket <work-item-id|path> --reason <text>
 
-  # verifier 그룹은 legacy 입니다. 기본 흐름에서 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리합니다.
-  # 기존 prompt 호환을 위해 dispatch 만 남아있고, 사용자-facing 활성 역할로는 노출하지 않습니다.
+  # legacy 호환 그룹은 기본 도움말에서 활성 역할로 다루지 않습니다.
+  # 워커 finalize-approved 가 sanity gate + merge target verification rerun 으로 단일 마무리합니다.
 
   autoflow tool runner-tool wiki source-snapshot [--runner <id>] [--max-items <n>]
   autoflow tool runner-tool wiki tick [--runner <id>] [--max-items <n>] [--window 7d|30d|all] [--skip-telemetry] [--skip-lint] [--force-index] [--wait-index] [--no-index] [--no-tickets] [--verbose]

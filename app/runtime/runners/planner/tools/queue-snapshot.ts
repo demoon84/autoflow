@@ -122,6 +122,7 @@ const {
   safeSegment,
   currentRunnerId,
   normalizePrdKey,
+  ticketPrdKeyFromFile,
   readRoleAssignment,
   assignmentMatchesItem,
   startAssignmentIfLeased,
@@ -156,8 +157,12 @@ function compactPlannerSource(item: PlannerQueueItem): JsonObject {
 }
 
 function plannerQueueItemIsActionable(item: PlannerQueueItem): boolean {
+  if (item.kind !== "prd") return false;
   const status = String(item.status || "").trim().toLowerCase();
-  return !["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status);
+  if (["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status)) return false;
+  const prdKey = normalizePrdKey(item.path || path.basename(item.path || ""));
+  if (prdKey && findWorkItemsForPrdKey(prdKey).length > 0) return false;
+  return true;
 }
 
 function planSelectionRank(item: PlannerQueueItem): number {
@@ -180,11 +185,7 @@ function prdKeyFromAssignment(record: AssignmentRecord | null): string {
 }
 
 function workItemPrdKey(file: string): string {
-  return normalizePrdKey(
-    utils.extractScalarFieldInSection(file, "Work Item", "PRD Key") ||
-    utils.extractScalarFieldInSection(file, "Ticket", "PRD Key") ||
-    utils.extractScalarFieldInSection(file, "Project", "PRD Key")
-  );
+  return ticketPrdKeyFromFile(file);
 }
 
 function findWorkItemsForPrdKey(prdKey: string): string[] {
@@ -216,8 +217,6 @@ function compactGeneratedWorkItems(files: string[]): JsonObject[] {
 function plannerCompletionCandidate(record: AssignmentRecord | null): { shouldComplete: boolean; prdKey: string; workItems: string[] } {
   const prdKey = prdKeyFromAssignment(record);
   if (!record || !prdKey) return { shouldComplete: false, prdKey, workItems: [] };
-  const activePrd = path.join(TICKETS_ROOT, "prd", `${prdKey}.md`);
-  if (safeIsFile(activePrd)) return { shouldComplete: false, prdKey, workItems: [] };
   const workItems = findWorkItemsForPrdKey(prdKey);
   return { shouldComplete: workItems.length > 0, prdKey, workItems };
 }

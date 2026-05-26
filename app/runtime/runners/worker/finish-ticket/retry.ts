@@ -1,10 +1,10 @@
 import {crypto, fs, path, boardRoot, projectRoot, timestamp} from "./context";
-import {appendNote, appendReplanReason, replaceScalar, scalar, updateGoalRuntime} from "./ticket-sections";
+import {appendNote, appendReplanReason, replaceScalar, scalar, ticketPrdKey, updateGoalRuntime} from "./ticket-sections";
 import {cleanupWorktree, clearActiveState} from "./state";
 import {positiveInt, printPairs} from "./io";
 
 export function routeToTodoReplan(ticketFile: string, ticketId: string, failure: string, replanMessage: string): void {
-  const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
+  const prdKey = ticketPrdKey(ticketFile);
   const title = scalar(ticketFile, "Ticket", "Title");
   if (replanMessage) appendReplanReason(ticketFile, replanMessage);
 
@@ -43,7 +43,7 @@ export function routeToTodoReplan(ticketFile: string, ticketId: string, failure:
   replaceScalar(todoFile, "Goal Runtime", "Replan Fingerprint", fingerprint);
   replaceScalar(todoFile, "Goal Runtime", "Failure Class", failure);
   updateGoalRuntime(todoFile, decision === "needs_user" ? "needs_user" : "todo", timestamp);
-  appendNote(todoFile, `Verifier replan at ${timestamp}: replan_count=${retryCount}/${retryMax} fingerprint=${fingerprint} failure_class=${failure} decision=${decision}. ${replanMessage || "(see ticket replan reason)"}`);
+  appendNote(todoFile, `Legacy replan at ${timestamp}: replan_count=${retryCount}/${retryMax} fingerprint=${fingerprint} failure_class=${failure} decision=${decision}. ${replanMessage || "(see ticket replan reason)"}`);
 
   clearActiveState();
   printPairs({

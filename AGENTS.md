@@ -9,7 +9,7 @@
 1. 루트 `.autoflow/` 는 dev test 인스턴스로 둘 수 있지만 source of truth 가 아니다. 보드 템플릿 변경은 항상 `install/board/` 의 source 를 수정한다.
 2. 설치 보드에 들어갈 데이터(문서/규칙/템플릿/skill)는 `install/board/`(per-project), `install/share/`(user-scope `~/.autoflow/share/`), `install/host/`, `install/integrations/`, `app/cli/shared/install.ts` 를 기준으로 수정한다. runner 실행 코드는 `app/runtime/` 에 있고 보드에는 복사되지 않는다.
 3. 설치 검증은 `./app/bin/autoflow upgrade <project-root> .autoflow` 로 source repo 루트 또는 별도 대상 프로젝트에 upgrade 한 뒤 보드에서 직접 실행해 확인한다.
-4. 사용자와 대화할 때 runner 이름은 `플래너 러너`, `워커 러너`, `위키 러너` 로 부른다. 코드 식별자나 파일명 설명이 필요할 때만 `planner`, `worker`, `wiki` 를 함께 적는다. 검증 러너(`verifier`)는 legacy 비활성 역할이며 새 사용자-facing 문서에 활성 역할로 등장시키지 않는다.
+4. 사용자와 대화할 때 runner 이름은 `플래너 러너`, `워커 러너`, `위키 러너` 로 부른다. 코드 식별자나 파일명 설명이 필요할 때만 `planner`, `worker`, `wiki` 를 함께 적는다. `verifier`는 legacy 비활성 역할이며 새 사용자-facing 문서에 활성 역할로 등장시키지 않는다.
 5. worktree, merge, 워커 단일 마무리 흐름(sanity gate + merge target verification rerun)은 설치 계약 문서(`install/share/reference/`, `install/host/AGENTS.md`)와 런타임 코드가 기준이다.
 6. `tickets/prd/`, `tickets/todo/`, `tickets/inprogress/`, `tickets/done/` 은 설치 보드 안의 실행 원장이다. source of truth 는 `install/board/` 이고, source repo 루트의 `.autoflow/` 가 있다면 dev 인스턴스의 ledger 일 뿐이다. 기존 보드의 `tickets/verifier/` 잔재는 upgrade 가 자동으로 `tickets/inprogress/` 로 옮긴다.
 7. 새 기능이나 리팩터링 뒤에는 가능한 한 `npm run typecheck`, 관련 smoke 테스트, 그리고 별도 대상 프로젝트 upgrade 검증까지 이어서 한다.

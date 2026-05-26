@@ -9,7 +9,7 @@
 - 사용자 goal과 완료 조건.
 - 현재 보드 상태.
 - 프로젝트 현재 구현 상태.
-- 완료된 PRD/TODO/verifier/commit/merge evidence.
+- 완료된 PRD/TODO/로컬 검증/commit/merge evidence.
 - 관련 LLM Wiki query 결과.
 - `reference/autoflow-state-loop.md`.
 - `reference/prd-template.md`.
@@ -20,7 +20,7 @@
 - 관찰 가능한 Global Acceptance Criteria.
 - 안전한 Allowed Paths.
 - Verification intent.
-- Planner/Worker/Verifier가 이해할 수 있는 Conversation Handoff.
+- Planner/Worker가 이해할 수 있는 Conversation Handoff.
 
 ## 규칙
 
@@ -49,13 +49,13 @@
 
 ## Work Item Split 슬롯
 
-`Work Item Split`의 각 항목에는 `Depends On:`과 `Notes:` 슬롯을 함께 둔다. `Depends On:`은 다른 work item이 먼저 완료되어야 같은 PRD worktree에서 안전하게 진행할 수 있을 때 해당 TODO id를 적고, 독립 실행 가능하면 `Depends On: (없음)`처럼 비운 이유를 명확히 남긴다. `Notes:`는 worker/verifier가 놓치면 안 되는 제약, 위험, 수동 확인 기준, handoff 맥락이 있을 때 채우고, 별도 메모가 없으면 `Notes: (없음)` placeholder를 권장한다.
+`Work Item Split`의 각 항목에는 `Depends On:`과 `Notes:` 슬롯을 함께 둔다. `Depends On:`은 다른 work item이 먼저 완료되어야 같은 PRD worktree에서 안전하게 진행할 수 있을 때 해당 TODO id를 적고, 독립 실행 가능하면 `Depends On: (없음)`처럼 비운 이유를 명확히 남긴다. `Notes:`는 Worker가 놓치면 안 되는 제약, 위험, 수동 확인 기준, handoff 맥락이 있을 때 채우고, 별도 메모가 없으면 `Notes: (없음)` placeholder를 권장한다.
 
 ## Acceptance Criteria 태그
 
 `Global Acceptance Criteria`와 work item `Done When`의 체크박스는 `- [ ] (auto) ...` 또는 `- [ ] (manual) ...` 형식으로 작성한다.
 
-- `(auto)`는 명령 실행, 파일 내용, diff, 상태값처럼 verifier가 evidence로 자동 확인할 수 있는 항목에 쓴다.
+- `(auto)`는 명령 실행, 파일 내용, diff, 상태값처럼 Worker와 finalize gate가 evidence로 확인할 수 있는 항목에 쓴다.
 - `(manual)`은 UI 시각 확인, 문구의 자연스러움, 디자인 품질, 사람이 직접 봐야 하는 사용자 경험 판단에 쓴다.
 - 한 항목 안에 자동 검증 가능한 조건과 사람 확인이 필요한 조건이 함께 있으면 한 줄에 섞지 않고 별도 체크박스로 분리한다.
 
@@ -65,7 +65,7 @@ PRD 완료 뒤 skill 대화는 다음을 확인한다.
 
 - 목표 완료 조건이 이미 충족됐는가?
 - 남은 부족분이 있는가?
-- 기존 PRD/TODO/verifier evidence가 새 제약을 드러냈는가?
+- 기존 PRD/TODO/로컬 검증 evidence가 새 제약을 드러냈는가?
 - 추가 PRD가 필요한가?
 - 사용자 확인 없이 계속 진행해도 되는가?
 

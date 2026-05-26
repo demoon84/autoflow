@@ -259,15 +259,14 @@ export function buildInitialPrompt(
           `- Use worker active-get first. When active-get reports no owned ticket, always run work-snapshot before any no-work decision.`,
           `- Do not open or follow references outside the selected ticket scope before claim/worktree-ensure.`,
           `- Product file inspection starts only after worktree-ensure succeeds and must stay inside Allowed Paths.`,
-          `- After the current ticket reaches a wait state, verifier handoff, blocker, or finalization, summarize briefly. If no actionable work remains, leave this runner idle and waiting for the next handoff.`
+          `- After the current ticket reaches a wait state, blocker, or finalization, summarize briefly. If no actionable work remains, leave this runner idle and waiting for the next handoff.`
         ];
       case "verifier":
         return [
-          `Verifier turn boundaries:`,
-          `- Do not call runner-stage, runner-tokens, or date during this focused verifier startup turn; Desktop tracks PTY state and usage.`,
-          `- Use only verifier queue-snapshot output and its ai_followup_scope before opening any verifier ticket.`,
-          `- Gather evidence for one scoped verifier ticket and do not inspect unrelated project files outside the evidence/Allowed Paths boundary.`,
-          `- After one pass/revise/replan decision and one queue-snapshot rerun, or immediately if the snapshot has no work, summarize briefly and leave this runner idle when no actionable work remains.`
+          `Legacy inactive role boundaries:`,
+          `- This role is retained only for old board compatibility.`,
+          `- Current Autoflow uses planner, worker, and wiki-maintainer.`,
+          `- Do not claim new work from this role. Summarize that the role is inactive and leave it idle.`
         ];
       case "wiki-maintainer":
         return [

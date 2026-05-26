@@ -8,9 +8,8 @@ Autoflow는 skill이고, 데스크탑 앱은 skill과 runner를 실행하는 sid
 2. Skill 대화는 PRD `.md` 발행까지만 수행한다.
 3. Skill 대화는 구현, 검증, PRD branch/worktree 생성, commit/merge, 위키 작성을 직접 하지 않는다.
 4. PRD branch/worktree 생성은 플래너 러너의 책임이다.
-5. 데스크탑 sidecar는 `Planner`, `Worker`, `Verifier`, `LLM Wiki` 4개 고정 러너를 표시하고 보드 상태를 실시간 감지한다.
+5. 데스크탑 sidecar는 `Planner`, `Worker`, `LLM Wiki` 3개 고정 러너를 표시하고 보드 상태를 실시간 감지한다.
 6. `Merge` runner는 없다.
 7. Planner는 PRD에서 TODO를 만든다. PRD 하나에서 여러 TODO가 나올 수 있다.
-8. Worker는 배정 TODO를 수행하고 Verifier pass 뒤 PRD worktree commit을 반영한다. PRD의 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
-9. Verifier는 pass/revise/replan과 후속조치를 기록한다.
-10. LLM Wiki 작성은 PRD 완료를 막지 않는다.
+8. Worker는 배정 TODO를 수행하고 로컬 검증 evidence를 남긴 뒤, `worker finalize-approved`로 sanity gate와 merge target verification rerun을 통과하면 PRD worktree commit을 반영한다. PRD의 마지막 TODO를 처리한 Worker가 PRD worktree merge를 수행한다.
+9. LLM Wiki 작성은 PRD 완료를 막지 않는다.

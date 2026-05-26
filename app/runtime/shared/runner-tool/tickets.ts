@@ -1,5 +1,5 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, normalizePrdKey, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, ticketPrdKeyFromFile, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listQueueItems, readQueueItem } from "./queue";
 import { extractChecklistFromText, extractSectionLines } from "./sections";
 
@@ -16,10 +16,7 @@ export function listWorkerTicketItems(bucket: string): WorkerTicketItem[] {
 
 export function readWorkerTicketItem(file: string, kind: string): WorkerTicketItem {
   const base = readQueueItem(file, kind);
-  const prdKey = normalizePrdKey(
-    utils.extractScalarFieldInSection(file, "Ticket", "PRD Key") ||
-    utils.extractScalarFieldInSection(file, "References", "PRD")
-  );
+  const prdKey = ticketPrdKeyFromFile(file);
   return {
     ...base,
     prd_key: prdKey,

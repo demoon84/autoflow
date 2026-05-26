@@ -10,7 +10,7 @@ export function ticketWorkflowMetrics(ctx: ProjectContext): Record<string, numbe
         ticket_total: ticketTotal,
         ticket_done_count: counts.done || 0,
         active_ticket_count: activeTicketCount,
-        handoff_count: counts.verifier || 0,
+        handoff_count: 0,
         completion_rate_percent: ticketTotal > 0 ? Number((((counts.done || 0) / ticketTotal) * 100).toFixed(1)) : 0,
     };
 }

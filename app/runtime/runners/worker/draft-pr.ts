@@ -18,7 +18,7 @@ if (!ticketFile || !fs.existsSync(ticketFile)) {
 }
 
 const ticketId = idFromPath(ticketFile);
-const prdKey = scalar(ticketFile, "Ticket", "PRD Key");
+const prdKey = ticketPrdKey(ticketFile);
 const title = scalar(ticketFile, "Ticket", "Title");
 const summary = scalar(ticketFile, "Result", "Summary") || "(see ticket)";
 const verifyCmd = scalar(ticketFile, "Verification", "Command") || "(none)";
@@ -60,6 +60,15 @@ function normalizePrdKey(value: string): string {
   const numeric = trimmed.match(/(?:PRD[-_]|prd_|project_)(\d+)/i);
   if (numeric) return `PRD-${numeric[1].padStart(3, "0")}`;
   return trimmed.toUpperCase().replace(/_/g, "-");
+}
+
+function ticketPrdKey(file: string): string {
+  return normalizePrdKey(
+    scalar(file, "Ticket", "PRD Key") ||
+    scalar(file, "Ticket", "PRD") ||
+    scalar(file, "References", "PRD") ||
+    scalar(file, "Source", "PRD")
+  );
 }
 
 function scalar(file: string, section: string, field: string): string {

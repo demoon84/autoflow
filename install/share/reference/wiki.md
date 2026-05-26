@@ -43,7 +43,7 @@ Wiki로 판단하지 않는 것:
 
 - active ticket stage
 - assignment/claim 상태
-- verifier decision
+- 로컬 검증 evidence
 - commit/merge 상태
 - work item done 여부
 

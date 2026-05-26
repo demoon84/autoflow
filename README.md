@@ -90,7 +90,7 @@ target-project/
 | 워커 러너 | `worker` | 지정 work item 구현, worktree 준비, 로컬 검증, sanity gate + merge target verification rerun 을 거쳐 worker finalize-approved 로 PRD worktree commit + (마지막 TODO 면) main squash merge 까지 자동 수행 |
 | 위키 러너 | `wiki` | 완료된 작업과 운영 지식을 debounce 된 wiki tick / index / query / lint 흐름으로 갱신 |
 
-검증 러너(`verifier`)는 legacy 비활성 역할이다. 사용자-facing 새 문서/설치에 활성 역할로 등장하지 않는다. 호환 alias `submit-to-verifier` 는 `finalize-approved` 와 동일 단일 마무리 흐름을 실행한다.
+`verifier`는 legacy 비활성 역할이다. 사용자-facing 새 문서/설치에 활성 역할로 등장하지 않는다. 워커 `finalize-approved` 가 단일 마무리 흐름을 실행한다.
 
 ## 주요 명령
 

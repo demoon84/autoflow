@@ -120,7 +120,7 @@ function runnerRoleLabel(role: string): string {
         case "ticket":
             return "worker (워커 러너)";
         case "verifier":
-            return "verifier (검증 러너)";
+            return "verifier (legacy)";
         case "wiki":
         case "wiki-maintainer":
             return "wiki (위키 러너)";

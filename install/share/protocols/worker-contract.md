@@ -31,7 +31,7 @@ PRD-NNN 완료
 - `Allowed Paths`만 수정
 - verification command 실행과 evidence 기록
 - `Done When`과 diff 범위의 기계적 점검
-- 로컬 검증 통과 후 worker finalize-approved 호출 (호환 alias submit-to-verifier 도 동일 흐름)
+- 로컬 검증 통과 후 worker finalize-approved 호출
 - finalize-approved 가 자동 처리하는 PRD worktree commit / 마지막 TODO 의 main squash merge 결과를 evidence 로 기록
 - sanity gate / verification rerun 실패 시 `blocked` 또는 `failed` 상태와 reason/evidence 기록
 

@@ -1,5 +1,5 @@
 import type { ConflictInfo, GitRunResult, JsonObject, JsonValue, QueueItem, WorkerTicketItem } from "./context";
-import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
+import { BOARD_ROOT, PROJECT_ROOT, TICKETS_ROOT, args, fs, path, spawnSync, utils, crypto, boardRel, currentRunnerId, ensureTrailingNewline, escapeRe, fail, getArg, getArgs, git, hasFlag, numberValue, ok, oneLine, positiveInt, readOptionalTextFile, safeIsFile, safeSegment, idFromPath, normalizeId, ticketPrdKeyFromFile, parseTicketId, collectFiles, resolveBoardPath, spawnOutputText, spawnTsScript, stringValue, stripTicks, unique } from "./context";
 import { listWorkerTicketItems, ticketItemOwnedByRunner } from "./tickets";
 import { replaceSectionBlock } from "./sections";
 
@@ -201,7 +201,7 @@ export function ensureWorkerTicketWorktree(ticket: string): JsonObject {
     return { worktree_status: "no_head_commit", working_root: "" };
   }
   const ticketId = idFromPath(ticket);
-  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
+  const prdKey = ticketPrdKeyFromFile(ticket);
   const prdTrack = resolvePrdTrackBase(ticket, gitRoot, mainHead);
   if (prdKey && prdTrack.source !== "prd_branch") {
     const blockedStatus = prdTrack.source === "main_branch_missing"
@@ -505,7 +505,7 @@ export function resolvePrdTrackBase(
   gitRoot: string,
   fallbackHead: string
 ): { base: string; branch: string; source: "prd_branch" | "main" | "main_branch_missing" } {
-  const prdKey = stripTicks(utils.extractScalarFieldInSection(ticket, "Ticket", "PRD Key"));
+  const prdKey = ticketPrdKeyFromFile(ticket);
   if (!prdKey) return { base: fallbackHead, branch: "", source: "main" };
   const prdId = prdIdFromKey(prdKey);
   if (!prdId) return { base: fallbackHead, branch: "", source: "main" };

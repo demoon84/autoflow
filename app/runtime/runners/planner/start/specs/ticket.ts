@@ -343,7 +343,7 @@ ${slice.doneWhen}
 
 ## Next Action
 
-	- 다음 즉시 작업: 워커 러너가 이 todo ticket을 claim하고, mini-plan을 작성한 뒤 Allowed Paths 안에서 구현하고, 검증 근거를 기록한 다음 검증 러너 handoff로 진행한다.
+	- 다음 즉시 작업: 워커 러너가 이 todo ticket을 claim하고, mini-plan을 작성한 뒤 Allowed Paths 안에서 구현하고, 검증 근거를 기록한 다음 worker finalize-approved 로 마무리한다.
 
 ## Resume Context
 

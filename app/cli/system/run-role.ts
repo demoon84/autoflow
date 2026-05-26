@@ -29,7 +29,7 @@ export function runRole(args: string[]): never | void {
     }
     const role = normalizeRunRole(requestedRole);
     if (legacyDisabledRunRoles.has(role)) {
-        fail(`Run role '${role}' is legacy and no longer active. Worker finalize-approved now performs the single-finish flow without a verifier handoff.`);
+        fail(`Run role '${role}' is legacy and no longer active. Worker finalize-approved now performs the single-finish flow.`);
     }
     if (!knownRunRoles.has(role)) {
         fail(`Unknown run role: ${role}`);

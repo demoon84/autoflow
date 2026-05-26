@@ -94,9 +94,28 @@ export function ticketSectionScalar(file: string, section: string, field: string
   return "";
 }
 
+function normalizePrdKey(value: string): string {
+  const trimmed = String(value || "").trim();
+  const scoped = trimmed.match(/\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/i);
+  if (scoped) return `PRD-${normalizeId(scoped[1])}`;
+  const numeric = trimmed.match(/\b(?:PRD[-_]|prd_|project_)(\d+)\b/i);
+  if (numeric) return `PRD-${numeric[1].padStart(3, "0")}`;
+  return "";
+}
+
+function ticketPrdKey(ticketAbs: string): string {
+  if (!ticketAbs) return "";
+  return normalizePrdKey(
+    ticketScalar(ticketAbs, "PRD Key") ||
+    ticketScalar(ticketAbs, "PRD") ||
+    ticketSectionScalar(ticketAbs, "References", "PRD") ||
+    ticketSectionScalar(ticketAbs, "Source", "PRD")
+  );
+}
+
 function prdBranchForTicket(ticketAbs: string): string {
   if (!ticketAbs) return "";
-  const prdKey = ticketScalar(ticketAbs, "PRD Key");
+  const prdKey = ticketPrdKey(ticketAbs);
   if (!/^PRD-(?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+$/i.test(prdKey)) return "";
   const candidates = [
     path.join(boardRoot, "tickets", "prd", `${prdKey}.md`),
@@ -117,7 +136,7 @@ function mergeTargetDescription(ticketAbs: string): string {
 }
 
 export function doneTarget(ticketAbs: string): string {
-  const projectKey = ticketScalar(ticketAbs, "PRD Key") || "unknown";
+  const projectKey = ticketPrdKey(ticketAbs) || "unknown";
   return path.join(boardRoot, "tickets", "done", projectKey, path.basename(ticketAbs));
 }
 
@@ -126,21 +145,21 @@ export function nextActionFor(ticketId: string, stage: string, ticketAbs = ""): 
     return `Ticket ${ticketId} is blocked. Worker must inspect Notes/Next Action for the blocker, fix it inside Allowed Paths in the same worktree, update Next Action, set the stage back to executing, then continue. If progress is impossible without planner or user input, leave one concrete next-step note and idle once.`;
   }
   if (stage === "verify_pending" || stage === "verifying") {
-    return `Wait for verifier semantic review for ticket ${ticketId}. Worker must not merge into PROJECT_ROOT until verifier records pass.`;
+    return `Ticket ${ticketId} is in a legacy review state. Worker must inspect the ticket evidence and continue with local verification or request replan without merging unverified work.`;
   }
   if (stage === "verified_pending_merge") {
-    return `Verifier passed ticket ${ticketId}. Worker owns finalization now: run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>" to commit the verified result into ${mergeTargetDescription(ticketAbs)}, rerun required verification, and merge the PRD worktree if this was the final TODO.`;
+    return `Ticket ${ticketId} is ready for Worker finalization: run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>" to commit the verified result into ${mergeTargetDescription(ticketAbs)}, rerun required verification, and merge the PRD worktree if this was the final TODO.`;
   }
   if (stage === "revision_requested") {
-    return `Verifier requested revise for ticket ${ticketId}. Keep the same worktree, fix the verifier notes inside Allowed Paths, rerun local verification, then run autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>" to submit again.`;
+    return `Revision was requested for ticket ${ticketId}. Keep the same worktree, apply the notes inside Allowed Paths, rerun local verification, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
   }
   if (stage === "replan_requested") {
-    return `Verifier requested replan for ticket ${ticketId}. Run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>" so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.`;
+    return `Replan was requested for ticket ${ticketId}. Run autoflow tool runner-tool worker request-replan --ticket ${ticketId} --reason "<reason>" so the worktree is cleaned up and this work item returns to the pending work lane for a fresh worker attempt.`;
   }
   if (stage === "merging" || stage === "needs_ai_merge") {
-    return `Worker must continue finalization for ticket ${ticketId}: integrate verifier-approved worktree changes into ${mergeTargetDescription(ticketAbs)}, rerun verification from that merge target, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
+    return `Worker must continue finalization for ticket ${ticketId}: integrate verified worktree changes into ${mergeTargetDescription(ticketAbs)}, rerun verification from that merge target, then run autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>".`;
   }
-  return `Use this same worker turn to update the mini-plan and implement within Allowed Paths. Then run the verification command yourself, record evidence with autoflow tool runner-tool worker verification-record, and call autoflow tool runner-tool worker submit-to-verifier --ticket ${ticketId} --summary "<summary>" for verifier handoff. If the ticket itself must be redone from scratch, use worker request-replan after verifier/blocker evidence records the reason. Never git push.`;
+  return `Use this same worker turn to update the mini-plan and implement within Allowed Paths. Then run the verification command yourself, record evidence with autoflow tool runner-tool worker verification-record, and call autoflow tool runner-tool worker finalize-approved --ticket ${ticketId} --summary "<summary>". If the ticket itself must be redone from scratch, use worker request-replan after blocker evidence records the reason. Never git push.`;
 }
 
 export function worktreeStatusAllowsResume(status: string): boolean {

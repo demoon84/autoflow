@@ -117,6 +117,53 @@ export function markdownScalarInSectionSync(filePath: string, section: string, f
   return "";
 }
 
+export function normalizePrdKeySync(value: unknown): string {
+  const raw = stripMarkdownTicksSync(value);
+  const scoped = raw.match(/\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/i);
+  if (scoped) return `PRD-${scoped[1]}`;
+  const numeric = raw.match(/\b(?:PRD[-_]|prd_|project_)(\d+)\b/i);
+  if (numeric) return `PRD-${String(Number.parseInt(numeric[1], 10)).padStart(3, "0")}`;
+  return "";
+}
+
+export function ticketPrdKeyFromFileSync(filePath: string): string {
+  return normalizePrdKeySync(
+    markdownScalarInSectionSync(filePath, "Ticket", "PRD Key") ||
+    markdownScalarInSectionSync(filePath, "Ticket", "PRD") ||
+    markdownScalarInSectionSync(filePath, "References", "PRD") ||
+    markdownScalarInSectionSync(filePath, "Source", "PRD") ||
+    markdownScalarInSectionSync(filePath, "Source", "Origin")
+  );
+}
+
+function boardRootFromPrdFileSync(filePath: string): string {
+  const prdDir = path.dirname(filePath);
+  const ticketsDir = path.dirname(prdDir);
+  return path.dirname(ticketsDir);
+}
+
+function prdKeyFromPrdFileSync(filePath: string): string {
+  return normalizePrdKeySync(
+    markdownScalarInSectionSync(filePath, "Project", "ID") ||
+    path.basename(filePath, ".md")
+  );
+}
+
+function generatedWorkItemFilesForPrdSync(boardRoot: string, prdKey: string): string[] {
+  if (!boardRoot || !prdKey) return [];
+  const active = ["todo", "inprogress", "verifier"].flatMap((dir) =>
+    listQueueFilesSync(boardRoot, `tickets/${dir}`, workItemQueueFilePattern, 1000)
+  );
+  const done = walkMarkdownFilesSync(path.join(boardRoot, "tickets", "done"))
+    .filter((filePath) => workItemQueueFilePattern.test(path.basename(filePath)));
+  return [...active, ...done].filter((filePath) => ticketPrdKeyFromFileSync(filePath) === prdKey);
+}
+
+export function prdHasGeneratedWorkItemsSync(filePath: string): boolean {
+  const prdKey = prdKeyFromPrdFileSync(filePath);
+  return generatedWorkItemFilesForPrdSync(boardRootFromPrdFileSync(filePath), prdKey).length > 0;
+}
+
 export function plannerQueueFileIsActionableSync(filePath: string): boolean {
   const status = markdownScalarInSectionSync(filePath, "Project", "Status").toLowerCase();
   if (["done", "complete", "completed", "archived", "cancelled", "canceled", "closed"].includes(status)) {
@@ -126,6 +173,7 @@ export function plannerQueueFileIsActionableSync(filePath: string): boolean {
     const title = markdownScalarInSectionSync(filePath, "Project", "Title");
     if (!title) return false;
   }
+  if (prdHasGeneratedWorkItemsSync(filePath)) return false;
   return true;
 }
 

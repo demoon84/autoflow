@@ -1,4 +1,4 @@
-import {read, write, stripTicks, escapeRe, unique} from "./io";
+import {read, write, stripTicks, escapeRe, unique, normalizeId} from "./io";
 
 function sectionBodyRange(content: string, section: string): {bodyStart: number; bodyEnd: number} | null {
   const headingRe = new RegExp(`(^|\\n)## ${escapeRe(section)}\\b[^\\n]*(?:\\n|$)`);
@@ -30,6 +30,24 @@ export function scalar(file: string, section: string, field: string): string {
     if (match) return stripTicks(match[1].trim());
   }
   return "";
+}
+
+function normalizePrdKey(value: string): string {
+  const trimmed = String(value || "").trim();
+  const scoped = trimmed.match(/\bPRD-((?:[A-Za-z0-9][A-Za-z0-9_.-]*-)?\d+)\b/i);
+  if (scoped) return `PRD-${normalizeId(scoped[1])}`;
+  const numeric = trimmed.match(/\b(?:PRD[-_]|prd_|project_)(\d+)\b/i);
+  if (numeric) return `PRD-${numeric[1].padStart(3, "0")}`;
+  return "";
+}
+
+export function ticketPrdKey(file: string): string {
+  return normalizePrdKey(
+    scalar(file, "Ticket", "PRD Key") ||
+    scalar(file, "Ticket", "PRD") ||
+    scalar(file, "References", "PRD") ||
+    scalar(file, "Source", "PRD")
+  );
 }
 
 export function replaceScalar(file: string, section: string, field: string, value: string): void {

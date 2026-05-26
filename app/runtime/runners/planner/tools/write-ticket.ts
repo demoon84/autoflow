@@ -155,7 +155,7 @@ function projectKeyFromTicketContent(content: string, ticketId: string): string 
     scalarFromTicketContent(content, "Project key") ||
     scalarFromTicketContent(content, "Project Key") ||
     firstPlainSectionLine(content, "Project") ||
-    scalarFromTicketContent(content, "PRD Key") ||
+    prdKeyFromTicketContent(content) ||
     `ticket_${ticketId}`
   );
 }
@@ -165,6 +165,16 @@ function sourcePrdRefsFromTicketContent(content: string): string[] {
     (String(content || "").match(/tickets\/prd\/PRD-[A-Za-z0-9._-]+\.md/g) || [])
       .map((part) => stripTicks(part).trim())
       .filter(Boolean)
+  );
+}
+
+function prdKeyFromTicketContent(content: string): string {
+  return normalizePrdKey(
+    scalarFromTicketContent(content, "PRD Key") ||
+    scalarFromTicketContent(content, "PRD") ||
+    scalarFromTicketContent(content, "Source PRD") ||
+    sourcePrdRefsFromTicketContent(content)[0] ||
+    ""
   );
 }
 
@@ -180,8 +190,7 @@ function enforcePrdReferenceExists(content: string): void {
   // does not exist on the board. Without this gate, a work item can claim
   // provenance from a PRD that was lost, leaving the UI to render an orphan
   // "PRD 없음" group.
-  const prdKey = scalarFromTicketContent(content, "PRD Key");
-  const normalizedPrdKey = normalizePrdKey(prdKey);
+  const normalizedPrdKey = prdKeyFromTicketContent(content);
   if (!normalizedPrdKey) return;
   if (prdBodyExists(normalizedPrdKey)) return;
   if (hasFlag("--allow-missing-prd")) return;
@@ -207,7 +216,7 @@ function prdBranchFromKey(prdKey: string): string {
 }
 
 function enforcePrdWorktreeAvailable(content: string): void {
-  const prdKey = normalizePrdKey(scalarFromTicketContent(content, "PRD Key"));
+  const prdKey = prdKeyFromTicketContent(content);
   if (!prdKey) return;
   const branch = prdBranchFromKey(prdKey);
   if (!branch) {
@@ -227,7 +236,7 @@ function enforcePrdWorktreeAvailable(content: string): void {
 }
 
 function plannerAssignmentCandidateForWorkItem(content: string, fallbackTarget: string): string {
-  const prdKey = normalizePrdKey(scalarFromTicketContent(content, "PRD Key"));
+  const prdKey = prdKeyFromTicketContent(content);
   if (prdKey) return path.join(TICKETS_ROOT, "prd", `${prdKey}.md`);
   const refs = sourcePrdRefsFromTicketContent(content);
   if (refs.length > 0) return refs[0];
@@ -297,7 +306,7 @@ export function cmdPlannerWriteTicket(): void {
 
   // 2) Provision the correct worktree. Ticket markdown stays in the local
   //    board; PRD-derived work items reuse the PRD worktree.
-  const prdKey = scalarFromTicketContent(payload.content, "PRD Key");
+  const prdKey = prdKeyFromTicketContent(payload.content);
   const wt = ensureTicketWorktree({ id, kind: "todo", content: payload.content, prdKey });
   if (prdKey && wt.status === "skipped") {
     fail(1, "PRD-derived work item could not use the PRD worktree", {
